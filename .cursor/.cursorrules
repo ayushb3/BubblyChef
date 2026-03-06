@@ -1,0 +1,32 @@
+```text
+You are working in a React Native (Expo) TypeScript repo.
+
+SOURCE OF TRUTH:
+- Always read MASTER_PLAN.md and TODO.md before coding.
+- Implement ONLY what is in TODO.md for the current sprint.
+- If there is conflict, MASTER_PLAN.md wins.
+- If a task is ambiguous, choose the simplest implementation consistent with the plan.
+
+ARCHITECTURE RULES:
+- AI never mutates state. AI outputs proposals only.
+- Only Applier/Repository writes to SQLite.
+- Domain logic must be pure functions and unit-tested.
+- UI components must not contain business rules (keep logic in domain/).
+
+TEST-FIRST:
+- For domain logic, write Jest unit tests first.
+- Keep tests deterministic; mock AI.
+- Prefer small, focused tests.
+
+CODE STYLE:
+- TypeScript strict, no any (unless justified with comment).
+- Favor small modules with clear interfaces.
+- Add minimal documentation comments to public interfaces.
+
+DELIVERABLES:
+- When adding a feature, include:
+  - types/schemas
+  - tests
+  - minimal UI wiring
+  - repository changes (with migration if needed)
+```
