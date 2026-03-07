@@ -69,7 +69,9 @@ BubblyChef/
 
 Backend runs at `http://localhost:9000`. Frontend at `http://localhost:5173`.
 
-**Quick Start:** Run `./start.sh` from the project root to start both backend and frontend.
+**Quick Start:**
+- Run `./start.sh` and choose an option (both/backend/frontend)
+- Or run separately: `./scripts/start-backend.sh` and `./scripts/start-frontend.sh`
 
 ### Endpoints
 
@@ -144,9 +146,14 @@ interface CreatePantryItem {
 
 ## Running the App
 
-### Quick Start (Both)
+### Quick Start
 ```bash
-./start.sh  # Runs both backend and frontend
+# Interactive menu
+./start.sh
+
+# Or run separately:
+./scripts/start-backend.sh   # Backend only
+./scripts/start-frontend.sh  # Frontend only
 ```
 
 ### Backend
@@ -185,9 +192,12 @@ npm run dev
 # → http://localhost:5173
 ```
 
-### Both (dev script)
+### Scripts
 ```bash
-./start.sh  # or: ./scripts/dev.sh
+./start.sh                    # Interactive menu
+./scripts/start-backend.sh    # Backend only
+./scripts/start-frontend.sh   # Frontend only
+./scripts/dev.sh              # Both (runs in same terminal)
 ```
 
 ---

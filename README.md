@@ -70,14 +70,30 @@ cd web
 npm install
 cd ..
 
-# 5. Start both backend and frontend
+# 5. Start the app
 ./start.sh
 ```
+
+You'll be prompted to choose:
+- **Both** backend and frontend (opens 2 terminals)
+- **Backend only** (port 9000)
+- **Frontend only** (port 5173)
 
 The app will be available at:
 - 🌐 **Frontend:** http://localhost:5173
 - 🔧 **Backend API:** http://localhost:9000
 - 📖 **API Docs:** http://localhost:9000/docs
+
+### Quick Start Scripts
+
+```bash
+# Interactive menu (recommended)
+./start.sh
+
+# Or run directly:
+./scripts/start-backend.sh   # Backend only
+./scripts/start-frontend.sh  # Frontend only
+```
 
 ### Optional: Ollama Setup (Self-hosted AI)
 
@@ -124,14 +140,25 @@ See [docs/TODO.md](docs/TODO.md) for the full roadmap.
 
 ## 🛠️ Development
 
-### Running Manually
+### Running Services
 
 ```bash
-# Backend only (terminal 1)
+# Interactive menu - choose what to run
+./start.sh
+
+# Or run services separately:
+./scripts/start-backend.sh   # Backend on port 9000
+./scripts/start-frontend.sh  # Frontend on port 5173
+```
+
+### Manual Setup (Alternative)
+
+```bash
+# Backend (terminal 1)
 source .venv/bin/activate
 uvicorn bubbly_chef.api.app:app --reload --port 9000
 
-# Frontend only (terminal 2)
+# Frontend (terminal 2)
 cd web
 npm run dev
 ```
