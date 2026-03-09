@@ -1,17 +1,25 @@
 """FastAPI application factory and configuration."""
 
+import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from bubbly_chef import __version__
 from bubbly_chef.config import settings
-from bubbly_chef.logger import setup_logging, get_logger
+from bubbly_chef.repository.sqlite import get_repository
+from bubbly_chef.tools.llm_client import get_ollama_client
 
-# Initialize logging first
-setup_logging()
-logger = get_logger(__name__)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG if settings.debug else logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -21,27 +29,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     Handles startup and shutdown tasks.
     """
-    from bubbly_chef.api.deps import get_ai_manager
-    from bubbly_chef.repository.sqlite import get_repository
-
     # Startup
-    logger.info(f"Starting {settings.app_name} v{settings.app_version}")
+    logger.info(f"Starting {settings.app_name} v{__version__}")
 
     # Initialize repository
     repo = await get_repository()
     logger.info("Database initialized")
 
-    # Check AI provider availability
-    ai_manager = get_ai_manager()
-    status = await ai_manager.health_check()
-
-    if status["healthy"]:
-        available = [p["name"] for p in status["providers"] if p["available"]]
-        logger.info(f"AI providers available: {available}")
+    # Check Ollama availability
+    llm = get_ollama_client()
+    if await llm.is_available():
+        logger.info(f"Ollama available with model: {llm.model}")
     else:
         logger.warning(
-            "No AI providers available! "
-            "Set BUBBLY_GEMINI_API_KEY or run Ollama locally."
+            f"Ollama not available at {llm.base_url} or model {llm.model} not found. "
+            "LLM features will fail until Ollama is running."
         )
 
     yield
@@ -49,7 +51,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Shutdown
     logger.info("Shutting down...")
     await repo.close()
-    await ai_manager.close()
+    await llm.close()
 
 
 def create_app() -> FastAPI:
@@ -57,38 +59,28 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title=settings.app_name,
-        description="AI-powered pantry and recipe assistant",
-        version=settings.app_version,
+        description="AI-first agentic workflow service for pantry and recipe management",
+        version=__version__,
         lifespan=lifespan,
     )
 
-    # Logging middleware (should be first)
-    from bubbly_chef.api.middleware import LoggingMiddleware
-
-    app.add_middleware(LoggingMiddleware)
-
-    # CORS middleware for web app
+    # CORS middleware for mobile app
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins,
+        allow_origins=["*"],  # Configure appropriately for production
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
     # Register routers
-    from bubbly_chef.api.routes import health, pantry, scan
+    from bubbly_chef.api.routes import health, ingest, pantry, apply, chat
 
-    # Health routes (no prefix)
     app.include_router(health.router)
-
-    # API routes
+    app.include_router(ingest.router, prefix=settings.api_v1_prefix)
     app.include_router(pantry.router, prefix=settings.api_v1_prefix)
-    app.include_router(scan.router, prefix=settings.api_v1_prefix)
-
-    # TODO: Add these as they're implemented
-    # app.include_router(recipes.router, prefix=settings.api_v1_prefix)
-    # app.include_router(chat.router, prefix=settings.api_v1_prefix)
+    app.include_router(apply.router, prefix=settings.api_v1_prefix)
+    app.include_router(chat.router, prefix=settings.api_v1_prefix)
 
     return app
 
