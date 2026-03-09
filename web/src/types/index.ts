@@ -109,3 +109,67 @@ export interface OcrStatusResponse {
   service: string | null;
   message: string;
 }
+
+// Recipe Types
+export interface RecipeIngredient {
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  preparation: string | null;
+  optional: boolean;
+  substitutes: string[];
+}
+
+export interface Recipe {
+  id: string;
+  title: string;
+  description: string | null;
+  source_url: string | null;
+  image_url: string | null;
+  prep_time_minutes: number | null;
+  cook_time_minutes: number | null;
+  total_time_minutes: number | null;
+  servings: number | null;
+  ingredients: RecipeIngredient[];
+  instructions: string[];
+  cuisine: string | null;
+  meal_type: string | null;
+  dietary_tags: string[];
+  difficulty: string | null;
+  tips: string[];
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IngredientStatus {
+  ingredient_name: string;
+  status: 'have' | 'partial' | 'missing';
+  pantry_item_id: string | null;
+  pantry_item_name: string | null;
+  have_quantity: number | null;
+  have_unit: string | null;
+  need_quantity: number | null;
+  need_unit: string | null;
+}
+
+export interface GenerateRecipeRequest {
+  prompt: string;
+  constraints?: {
+    max_time_minutes?: number;
+    cuisine?: string;
+    dietary?: string[];
+    use_expiring?: boolean;
+    servings?: number;
+  };
+  previous_recipe_context?: string;
+}
+
+export interface GenerateRecipeResponse {
+  recipe: Recipe;
+  ingredients_status: IngredientStatus[];
+  missing_count: number;
+  have_count: number;
+  partial_count: number;
+  pantry_match_score: number;
+}

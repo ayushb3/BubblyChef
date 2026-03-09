@@ -8,34 +8,27 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "BubblyChef"
-    app_version: str = "0.2.0"
+    app_version: str = "0.1.0"
     debug: bool = False
 
     # API
-    api_v1_prefix: str = "/api"
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    api_v1_prefix: str = "/v1"
 
-    # AI Providers
-    # Gemini (primary - free tier)
-    gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.0-flash"
-    gemini_timeout_seconds: float = 60.0
-
-    # Ollama (fallback - self-hosted)
+    # Ollama LLM
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2:3b"
-    ollama_timeout_seconds: float = 120.0
+    ollama_model: str = "llama3.2:3b"  # Good balance of speed and quality
+    ollama_timeout_seconds: float = 60.0
+    ollama_max_retries: int = 3
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./bubbly_chef.db"
 
-    # Receipt scanning
-    auto_add_confidence_threshold: float = 0.8  # Above this, auto-add
-    review_confidence_threshold: float = 0.5  # Below this, likely noise
+    # Confidence thresholds
+    auto_apply_confidence_threshold: float = 0.95  # Above this, can auto-apply
+    review_confidence_threshold: float = 0.7  # Below this, requires review
 
-    # Logging
-    log_file: str | None = None  # Optional log file path
-    log_requests: bool = True  # Log HTTP requests/responses
+    # Schema version for proposals
+    schema_version: str = "1.0.0"
 
     class Config:
         env_prefix = "BUBBLY_"

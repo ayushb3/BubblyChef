@@ -15,6 +15,8 @@ import type {
   ConfirmItemsResponse,
   UndoResponse,
   OcrStatusResponse,
+  GenerateRecipeRequest,
+  GenerateRecipeResponse,
 } from '../types';
 
 const API_BASE_URL = 'http://localhost:8888';
@@ -249,5 +251,42 @@ export function useOcrStatus() {
     queryKey: ['ocr-status'],
     queryFn: checkOcrStatus,
     staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+// Recipe Generation API Functions
+async function generateRecipe(
+  request: GenerateRecipeRequest
+): Promise<GenerateRecipeResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/recipes/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to generate recipe: ${error}`);
+  }
+  return response.json();
+}
+
+async function fetchRecipeSuggestions(): Promise<string[]> {
+  const response = await fetch(`${API_BASE_URL}/api/recipes/suggestions`);
+  if (!response.ok) throw new Error('Failed to fetch recipe suggestions');
+  return response.json();
+}
+
+// Recipe Generation React Query Hooks
+export function useGenerateRecipe() {
+  return useMutation({
+    mutationFn: generateRecipe,
+  });
+}
+
+export function useRecipeSuggestions() {
+  return useQuery({
+    queryKey: ['recipe-suggestions'],
+    queryFn: fetchRecipeSuggestions,
+    staleTime: 1000 * 60, // 1 minute
   });
 }
