@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker-compose -f docker-compose.sandbox.yml config --quiet)",
+      "Bash(ls -lh /Users/I589687/Personal/BubblyChef/docs/WORKFLOW*.md)",
+      "Bash(curl -s http://localhost:8888/health)"
+    ]
+  }
+}

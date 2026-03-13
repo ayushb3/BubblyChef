@@ -17,6 +17,10 @@ import type {
   OcrStatusResponse,
   GenerateRecipeRequest,
   GenerateRecipeResponse,
+  UserProfile,
+  CreateUserProfileRequest,
+  UpdateUserProfileRequest,
+  ProfileResponse,
 } from '../types';
 
 const API_BASE_URL = 'http://localhost:8888';
@@ -42,7 +46,7 @@ async function fetchPantryItems(params?: {
   if (params?.location) searchParams.append('location', params.location);
   if (params?.search) searchParams.append('search', params.search);
 
-  const url = `${API_BASE_URL}/api/pantry${
+  const url = `${API_BASE_URL}/pantry${
     searchParams.toString() ? `?${searchParams.toString()}` : ''
   }`;
 
@@ -53,14 +57,14 @@ async function fetchPantryItems(params?: {
 
 async function fetchExpiringItems(days: number = 3): Promise<PantryItem[]> {
   const response = await fetch(
-    `${API_BASE_URL}/api/pantry/expiring?days=${days}`
+    `${API_BASE_URL}/pantry/expiring?days=${days}`
   );
   if (!response.ok) throw new Error('Failed to fetch expiring items');
   return response.json();
 }
 
 async function fetchPantryItem(id: string): Promise<PantryItem> {
-  const response = await fetch(`${API_BASE_URL}/api/pantry/${id}`);
+  const response = await fetch(`${API_BASE_URL}/pantry/${id}`);
   if (!response.ok) throw new Error('Failed to fetch pantry item');
   return response.json();
 }
@@ -68,7 +72,7 @@ async function fetchPantryItem(id: string): Promise<PantryItem> {
 async function createPantryItem(
   item: CreatePantryItem
 ): Promise<PantryItem> {
-  const response = await fetch(`${API_BASE_URL}/api/pantry`, {
+  const response = await fetch(`${API_BASE_URL}/pantry`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(item),
@@ -81,7 +85,7 @@ async function updatePantryItem(
   id: string,
   item: UpdatePantryItem
 ): Promise<PantryItem> {
-  const response = await fetch(`${API_BASE_URL}/api/pantry/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/pantry/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(item),
@@ -91,7 +95,7 @@ async function updatePantryItem(
 }
 
 async function deletePantryItem(id: string): Promise<DeleteResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/pantry/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/pantry/${id}`, {
     method: 'DELETE',
   });
   if (!response.ok) throw new Error('Failed to delete pantry item');
@@ -103,7 +107,7 @@ async function uploadReceipt(file: File): Promise<ScanReceiptResponse> {
   const formData = new FormData();
   formData.append('image', file);
 
-  const response = await fetch(`${API_BASE_URL}/api/scan/receipt`, {
+  const response = await fetch(`${API_BASE_URL}/scan/receipt`, {
     method: 'POST',
     body: formData,
   });
@@ -118,7 +122,7 @@ async function confirmScanItems(
   requestId: string,
   items: ConfirmItem[]
 ): Promise<ConfirmItemsResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/scan/confirm`, {
+  const response = await fetch(`${API_BASE_URL}/scan/confirm`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ request_id: requestId, items }),
@@ -131,7 +135,7 @@ async function confirmScanItems(
 }
 
 async function undoScan(requestId: string): Promise<UndoResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/scan/undo/${requestId}`, {
+  const response = await fetch(`${API_BASE_URL}/scan/undo/${requestId}`, {
     method: 'POST',
   });
   if (!response.ok) {
@@ -142,7 +146,7 @@ async function undoScan(requestId: string): Promise<UndoResponse> {
 }
 
 async function checkOcrStatus(): Promise<OcrStatusResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/scan/ocr-status`);
+  const response = await fetch(`${API_BASE_URL}/scan/ocr-status`);
   if (!response.ok) {
     const error = await response.text();
     throw new Error(`Failed to check OCR status: ${error}`);
@@ -258,7 +262,7 @@ export function useOcrStatus() {
 async function generateRecipe(
   request: GenerateRecipeRequest
 ): Promise<GenerateRecipeResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/recipes/generate`, {
+  const response = await fetch(`${API_BASE_URL}/recipes/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -271,7 +275,7 @@ async function generateRecipe(
 }
 
 async function fetchRecipeSuggestions(): Promise<string[]> {
-  const response = await fetch(`${API_BASE_URL}/api/recipes/suggestions`);
+  const response = await fetch(`${API_BASE_URL}/recipes/suggestions`);
   if (!response.ok) throw new Error('Failed to fetch recipe suggestions');
   return response.json();
 }
@@ -288,5 +292,128 @@ export function useRecipeSuggestions() {
     queryKey: ['recipe-suggestions'],
     queryFn: fetchRecipeSuggestions,
     staleTime: 1000 * 60, // 1 minute
+  });
+}
+
+// User Profile API Functions
+async function fetchProfile(id: string): Promise<UserProfile> {
+  const response = await fetch(`${API_BASE_URL}/profile/${id}`);
+  if (!response.ok) throw new Error('Failed to fetch profile');
+  const data: ProfileResponse = await response.json();
+  return data.profile;
+}
+
+async function fetchProfileByEmail(email: string): Promise<UserProfile> {
+  const response = await fetch(`${API_BASE_URL}/profile/email/${encodeURIComponent(email)}`);
+  if (!response.ok) throw new Error('Failed to fetch profile');
+  const data: ProfileResponse = await response.json();
+  return data.profile;
+}
+
+async function fetchProfileByUsername(username: string): Promise<UserProfile> {
+  const response = await fetch(`${API_BASE_URL}/profile/username/${encodeURIComponent(username)}`);
+  if (!response.ok) throw new Error('Failed to fetch profile');
+  const data: ProfileResponse = await response.json();
+  return data.profile;
+}
+
+async function createProfile(
+  request: CreateUserProfileRequest
+): Promise<UserProfile> {
+  const response = await fetch(`${API_BASE_URL}/profile`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to create profile: ${error}`);
+  }
+  const data: ProfileResponse = await response.json();
+  return data.profile;
+}
+
+async function updateProfile(
+  id: string,
+  request: UpdateUserProfileRequest
+): Promise<UserProfile> {
+  const response = await fetch(`${API_BASE_URL}/profile/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to update profile: ${error}`);
+  }
+  const data: ProfileResponse = await response.json();
+  return data.profile;
+}
+
+async function deleteProfile(id: string): Promise<DeleteResponse> {
+  const response = await fetch(`${API_BASE_URL}/profile/${id}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) throw new Error('Failed to delete profile');
+  return response.json();
+}
+
+// User Profile React Query Hooks
+export function useProfile(id: string | null) {
+  return useQuery({
+    queryKey: ['profile', id],
+    queryFn: () => fetchProfile(id!),
+    enabled: !!id,
+  });
+}
+
+export function useProfileByEmail(email: string | null) {
+  return useQuery({
+    queryKey: ['profile', 'email', email],
+    queryFn: () => fetchProfileByEmail(email!),
+    enabled: !!email,
+  });
+}
+
+export function useProfileByUsername(username: string | null) {
+  return useQuery({
+    queryKey: ['profile', 'username', username],
+    queryFn: () => fetchProfileByUsername(username!),
+    enabled: !!username,
+  });
+}
+
+export function useCreateProfile() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: createProfile,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+    },
+  });
+}
+
+export function useUpdateProfile() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, profile }: { id: string; profile: UpdateUserProfileRequest }) =>
+      updateProfile(id, profile),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['profile', data.id] });
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+    },
+  });
+}
+
+export function useDeleteProfile() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteProfile,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+    },
   });
 }

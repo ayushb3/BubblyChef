@@ -74,13 +74,16 @@ def create_app() -> FastAPI:
     )
 
     # Register routers
-    from bubbly_chef.api.routes import health, ingest, pantry, apply, chat
+    from bubbly_chef.api.routes import health, ingest, pantry, apply, chat, recipes, scan, profile
 
     app.include_router(health.router)
-    app.include_router(ingest.router, prefix=settings.api_v1_prefix)
-    app.include_router(pantry.router, prefix=settings.api_v1_prefix)
-    app.include_router(apply.router, prefix=settings.api_v1_prefix)
-    app.include_router(chat.router, prefix=settings.api_v1_prefix)
+    app.include_router(ingest.router)
+    app.include_router(pantry.router)
+    app.include_router(apply.router)
+    app.include_router(chat.router)
+    app.include_router(recipes.router)
+    app.include_router(scan.router)
+    app.include_router(profile.router)
 
     return app
 

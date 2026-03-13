@@ -9,10 +9,11 @@ from pydantic import BaseModel, Field
 
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.config import settings
-from bubbly_chef.models.pantry import PantryItem, Category, Location
+from bubbly_chef.models.pantry import PantryItem, FoodCategory, StorageLocation
 from bubbly_chef.repository.sqlite import get_repository
 from bubbly_chef.services.ocr import get_ocr_service
 from bubbly_chef.services.receipt_parser import parse_receipt, ParsedReceiptItem
+from bubbly_chef.services.image_preprocessor import get_image_preprocessor, PreprocessMode
 from bubbly_chef.logger import get_logger, log_db_operation, log_error
 
 logger = get_logger(__name__)
@@ -60,8 +61,8 @@ class ConfirmItem(BaseModel):
     name: str
     quantity: float = 1.0
     unit: str = "item"
-    category: Category = Category.OTHER
-    location: Location = Location.PANTRY
+    category: FoodCategory = FoodCategory.OTHER
+    location: StorageLocation = StorageLocation.PANTRY
     expiry_date: date | None = None
 
 
@@ -85,7 +86,9 @@ class UndoResponse(BaseModel):
 
 @router.post("/receipt", response_model=ScanReceiptResponse)
 async def scan_receipt(
-    image: UploadFile = File(..., description="Receipt image (PNG, JPEG)")
+    image: UploadFile = File(..., description="Receipt image (PNG, JPEG)"),
+    preprocess: bool = False,
+    preprocess_mode: PreprocessMode = "auto"
 ) -> ScanReceiptResponse:
     """
     Scan a receipt image and extract grocery items.
@@ -94,6 +97,14 @@ async def scan_receipt(
     - Lower confidence items are returned for review
     - Nothing is added to the database until confirmed
     - Returns a request_id for confirming items
+
+    **Optional Preprocessing:**
+    Set `preprocess=True` to automatically preprocess the image before OCR.
+    This can improve accuracy for poor quality images (low lighting, blurry, skewed).
+
+    - `preprocess_mode='auto'`: Automatically detect quality and apply appropriate preprocessing
+    - `preprocess_mode='light'`: Minimal preprocessing for good quality images
+    - `preprocess_mode='aggressive'`: Full preprocessing for challenging images
     """
     # Validate file type
     if image.content_type not in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
@@ -107,6 +118,19 @@ async def scan_receipt(
 
     if len(image_data) == 0:
         raise HTTPException(status_code=400, detail="Empty image file")
+
+    # Preprocess image if requested
+    if preprocess:
+        try:
+            preprocessor = get_image_preprocessor(mode=preprocess_mode)
+            image_data = await preprocessor.preprocess(
+                image_data,
+                return_format="bytes"
+            )
+            logger.info(f"Applied preprocessing with mode: {preprocess_mode}")
+        except Exception as e:
+            logger.warning(f"Preprocessing failed, using original image: {e}")
+            # Continue with original image if preprocessing fails
 
     # Get OCR service
     ocr = get_ocr_service()
@@ -313,3 +337,122 @@ async def ocr_status() -> dict[str, Any]:
         "service": "tesseract" if available else None,
         "message": "OCR ready" if available else "Tesseract not installed",
     }
+
+
+class PreprocessReceiptRequest(BaseModel):
+    """Request model for receipt preprocessing."""
+    mode: PreprocessMode = Field(
+        default="auto",
+        description="Preprocessing mode: 'auto' (default), 'light', or 'aggressive'"
+    )
+
+
+class PreprocessReceiptResponse(BaseModel):
+    """Response from receipt preprocessing."""
+    success: bool
+    message: str
+    original_size: tuple[int, int]
+    preprocessed_size: tuple[int, int]
+    preprocessing_mode: str
+    image_data: str = Field(description="Base64-encoded preprocessed image")
+
+
+@router.post("/preprocess", response_model=PreprocessReceiptResponse)
+async def preprocess_receipt(
+    image: UploadFile = File(..., description="Receipt image (PNG, JPEG)"),
+    mode: PreprocessMode = "auto"
+) -> PreprocessReceiptResponse:
+    """
+    Preprocess a receipt image for optimal OCR performance.
+
+    This endpoint accepts a receipt image and applies various preprocessing techniques
+    to improve OCR accuracy:
+
+    - **Grayscale conversion**: Simplifies image for OCR
+    - **Contrast enhancement**: Makes text more readable
+    - **Noise reduction**: Removes artifacts and grain
+    - **Sharpening**: Improves edge definition
+    - **Deskewing**: Corrects rotation (if needed)
+    - **Binarization**: Converts to pure black & white
+
+    **Preprocessing Modes:**
+    - `auto` (default): Automatically selects preprocessing level based on image quality
+    - `light`: Minimal processing for high-quality images (grayscale + contrast)
+    - `aggressive`: Full pipeline for challenging images (low quality, poor lighting)
+
+    **Usage:**
+    1. Upload an image to this endpoint to preprocess it
+    2. Use the returned preprocessed image with the `/scan/receipt` endpoint for better OCR results
+
+    **Returns:**
+    - `image_data`: Base64-encoded preprocessed image (PNG format)
+    - `preprocessing_mode`: The mode that was applied
+    - Image size information and status
+    """
+    import base64
+    from PIL import Image
+    import io
+
+    # Validate file type
+    if image.content_type not in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid image type: {image.content_type}. Use PNG, JPEG, or WebP."
+        )
+
+    # Read image data
+    image_data = await image.read()
+
+    if len(image_data) == 0:
+        raise HTTPException(status_code=400, detail="Empty image file")
+
+    # Get original image size
+    try:
+        original_image = Image.open(io.BytesIO(image_data))
+        original_size = original_image.size
+    except Exception as e:
+        logger.error(f"Failed to load original image: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid image file: {str(e)}")
+
+    # Get preprocessor
+    preprocessor = get_image_preprocessor(mode=mode)
+
+    # Preprocess image
+    try:
+        preprocessed_bytes = await preprocessor.preprocess(
+            image_data,
+            return_format="bytes"
+        )
+
+        # Get preprocessed image size
+        preprocessed_image = Image.open(io.BytesIO(preprocessed_bytes))
+        preprocessed_size = preprocessed_image.size
+
+        # Encode as base64 for JSON response
+        image_base64 = base64.b64encode(preprocessed_bytes).decode("utf-8")
+
+        logger.info(
+            f"Preprocessed receipt image: "
+            f"mode={mode}, "
+            f"original_size={original_size}, "
+            f"preprocessed_size={preprocessed_size}"
+        )
+
+        return PreprocessReceiptResponse(
+            success=True,
+            message=f"Image preprocessed successfully using '{mode}' mode",
+            original_size=original_size,
+            preprocessed_size=preprocessed_size,
+            preprocessing_mode=mode,
+            image_data=image_base64,
+        )
+
+    except ValueError as e:
+        logger.error(f"Preprocessing failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected preprocessing error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Image preprocessing failed: {str(e)}"
+        )

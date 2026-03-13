@@ -85,16 +85,32 @@ Bubbly Chef is a **recipe assistant grounded in your actual pantry**. The core e
 - **Review low confidence (<0.8)** before adding
 - Normalize names, estimate expiry dates
 
-### 3. Recipe Generation
+### 3. Recipe Generation & Management
 - Input: natural language ("creamy pasta with what I have")
 - AI checks pantry, suggests recipes
 - Shows what you have vs. what's missing
 - Generate step-by-step instructions
 
+**Recipe Sources:**
+1. **AI-generated recipes** - Created on-demand from prompts
+2. **Video recipe ingestion** - Parse TikToks/Reels/YouTube Shorts (Phase 3+)
+3. **URL imports** - Scrape traditional recipe websites
+4. **Manual entry** - User-created recipes
+
 **Phase 2+ additions:**
-- Save favorite recipes
-- Recipe history
+- Save favorite recipes (both generated and imported)
+- Recipe history and collections
 - Shopping list from missing ingredients
+- Recipe search across all saved recipes
+
+**Phase 3+ Video Recipe Ingestion:**
+- Parse cooking videos from TikTok, Instagram Reels, YouTube Shorts
+- Extract recipe data: ingredients, steps, timing, tips
+- Index video recipes into searchable database
+- Chat can reference saved video recipes ("make that butter chicken from TikTok")
+- Store video metadata: source URL, creator, timestamp, thumbnail
+- Transcription + visual analysis for ingredient detection
+- Support for multi-language videos
 
 ### 4. Chat (Phase 2 - Orchestrator)
 - Single conversational interface
@@ -103,6 +119,14 @@ Bubbly Chef is a **recipe assistant grounded in your actual pantry**. The core e
   - "I bought groceries" → Scan module
   - "Add milk" → Direct pantry update
   - General questions → Direct response
+
+**Recipe Integration with Chat:**
+- Chat has access to user's saved recipe library
+- Can reference recipes by name or source ("that TikTok recipe", "the butter chicken you saved")
+- Suggest saved recipes that match pantry contents
+- Compare multiple recipes ("which one uses fewer ingredients?")
+- Adapt saved recipes based on what's available
+- Track which saved recipes have been cooked
 
 ---
 
@@ -128,9 +152,31 @@ id              UUID PRIMARY KEY
 title           TEXT NOT NULL
 ingredients     JSON           -- [{name, quantity, unit}]
 instructions    JSON           -- [step1, step2, ...]
-source_url      TEXT           -- if imported from web
+source_type     TEXT           -- 'generated', 'video', 'url', 'manual'
+source_url      TEXT           -- TikTok/Reel/YouTube URL or recipe website
+source_metadata JSON           -- {platform, creator, duration, thumbnail, etc.}
 tags            JSON           -- [cuisine, difficulty, etc.]
+notes           TEXT           -- user's personal notes
+times_cooked    INTEGER        -- usage tracking
+last_cooked_at  TIMESTAMP      -- when last prepared
 created_at      TIMESTAMP
+updated_at      TIMESTAMP
+```
+
+**Video Recipe Metadata (stored in source_metadata):**
+```json
+{
+  "platform": "tiktok|instagram|youtube",
+  "creator": "username or channel name",
+  "video_duration": 45,
+  "thumbnail_url": "https://...",
+  "video_id": "original platform ID",
+  "transcription": "full text transcript",
+  "prep_time": 10,
+  "cook_time": 20,
+  "original_caption": "Easy butter chicken!",
+  "hashtags": ["cooking", "indian", "dinner"]
+}
 ```
 
 ### No complex proposal tables — just simple request/response
@@ -226,18 +272,31 @@ class AIManager:
 
 **Exit criteria:** Chat can invoke all features
 
-### Phase 3: Polish + Enhancements
-- [ ] Recipe saving
-- [ ] Recipe history
-- [ ] Shopping list generation
+### Phase 3: Recipe Library + Video Ingestion
+- [ ] Recipe CRUD (save, edit, delete recipes)
+- [ ] Recipe collections and favorites
+- [ ] Recipe search and filtering
+- [ ] Shopping list generation from recipes
+- [ ] **Video recipe ingestion system**
+  - [ ] TikTok video parser (URL → recipe)
+  - [ ] Instagram Reels parser
+  - [ ] YouTube Shorts parser
+  - [ ] Video transcription service integration
+  - [ ] AI extraction: ingredients + steps from video
+  - [ ] Thumbnail extraction and storage
+  - [ ] Video metadata indexing
+- [ ] Recipe recommendation engine (saved + generated)
 - [ ] Better OCR accuracy
 - [ ] Ollama self-hosted support
 
 ### Phase 4+: Future
 - [ ] Mobile app (React Native)
+- [ ] In-app video playback for saved video recipes
 - [ ] Barcode scanning
 - [ ] Meal planning calendar
 - [ ] Multi-user/household support
+- [ ] Social recipe sharing with video embeds
+- [ ] Video recipe commenting and ratings
 
 ---
 

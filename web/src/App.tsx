@@ -6,6 +6,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Pantry } from './pages/Pantry';
 import { Scan } from './pages/Scan';
 import { Recipes } from './pages/Recipes';
+import { Profile } from './pages/Profile';
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
             <Route path="/pantry" element={<Pantry />} />
             <Route path="/scan" element={<Scan />} />
             <Route path="/recipes" element={<Recipes />} />
+            <Route path="/profile" element={<Profile />} />
           </Routes>
         </Layout>
       </BrowserRouter>

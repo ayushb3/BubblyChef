@@ -1,6 +1,7 @@
 """Pantry query endpoints."""
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -13,7 +14,7 @@ from bubbly_chef.tools.expiry import get_expiry_heuristics
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["Pantry"])
+router = APIRouter(prefix="/pantry", tags=["Pantry"])
 
 
 class PantryListResponse(BaseModel):
@@ -34,7 +35,7 @@ class PantryItemResponse(BaseModel):
 
 
 @router.get(
-    "/pantry",
+    "",
     response_model=PantryListResponse,
     summary="List all pantry items",
 )
@@ -84,7 +85,54 @@ async def list_pantry(
 
 
 @router.get(
-    "/pantry/{item_id}",
+    "/expiring",
+    response_model=PantryListResponse,
+    summary="List pantry items expiring soon",
+)
+async def list_expiring_items(
+    days: int = Query(default=7, ge=1, le=365, description="Days until expiration"),
+) -> PantryListResponse:
+    """
+    Get pantry items expiring within the specified number of days.
+
+    - **days**: Number of days to look ahead (default: 7)
+    """
+    logger.info(f"Fetching expiring items within {days} days")
+
+    repo = await get_repository()
+    expiry = get_expiry_heuristics()
+
+    all_items = await repo.get_all_pantry_items()
+    now = datetime.now(timezone.utc).date()
+    threshold = (datetime.now(timezone.utc) + timedelta(days=days)).date()
+
+    # Filter items that expire within the threshold and are not already expired
+    expiring_items = [
+        item for item in all_items
+        if item.expiry_date and now <= item.expiry_date <= threshold
+    ]
+
+    # Sort by expiry date (soonest first)
+    expiring_items.sort(key=lambda x: x.expiry_date or datetime.max.date())
+
+    # Count expired items separately
+    expired_items = [
+        item for item in all_items
+        if item.expiry_date and item.expiry_date < now
+    ]
+
+    logger.info(f"Found {len(expiring_items)} items expiring within {days} days")
+
+    return PantryListResponse(
+        items=expiring_items,
+        total_count=len(expiring_items),
+        expiring_soon_count=len(expiring_items),
+        expired_count=len(expired_items),
+    )
+
+
+@router.get(
+    "/{item_id}",
     response_model=PantryItemResponse,
     summary="Get a single pantry item",
 )
@@ -110,7 +158,7 @@ async def get_pantry_item(item_id: UUID) -> PantryItemResponse:
 
 
 @router.delete(
-    "/pantry/{item_id}",
+    "/{item_id}",
     summary="Delete a pantry item",
 )
 async def delete_pantry_item(item_id: UUID) -> dict[str, Any]:

@@ -543,6 +543,44 @@ Only the first node calls the LLM. All other nodes use deterministic logic.
 - `auto_apply_confidence_threshold`: 0.95 (above this, UI could auto-apply)
 - `review_confidence_threshold`: 0.70 (below this, strongly requires review)
 
+## User Profiles
+
+The app now supports user profiles with dietary preferences management:
+
+- **Profile Management**: Create, read, update, and delete user profiles
+- **Dietary Preferences**: Track dietary restrictions (vegetarian, vegan, gluten-free, etc.)
+- **API Integration**: RESTful endpoints at `/v1/profile/*`
+- **UI Component**: Profile page accessible via bottom navigation
+
+### Profile Endpoints
+
+```bash
+# Get profile by ID
+GET /v1/profile/:id
+
+# Get profile by email
+GET /v1/profile/email/:email
+
+# Create new profile
+POST /v1/profile
+{
+  "username": "foodlover",
+  "email": "food@example.com",
+  "dietary_preferences": ["vegetarian"]
+}
+
+# Update profile
+PUT /v1/profile/:id
+{
+  "dietary_preferences": ["vegan", "gluten-free"]
+}
+
+# Delete profile
+DELETE /v1/profile/:id
+```
+
+See `CLAUDE.md` for full API documentation and integration details.
+
 ## Future Enhancements
 
 - [ ] Real OCR integration (Tesseract/cloud OCR)

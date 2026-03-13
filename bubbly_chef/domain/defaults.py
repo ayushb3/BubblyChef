@@ -1,6 +1,6 @@
 """Default quantity and unit inference for pantry items."""
 
-from bubbly_chef.models.pantry import Category
+from bubbly_chef.models.pantry import FoodCategory
 
 # Common default quantities for items when not specified
 DEFAULT_QUANTITIES = {
@@ -93,21 +93,21 @@ def get_default_quantity_and_unit(name: str, category: str) -> tuple[float, str]
             return defaults["quantity"], defaults["unit"]
 
     # Fallback to category-based defaults
-    if category == Category.DAIRY.value:
+    if category == FoodCategory.DAIRY.value:
         return 1, "container"
-    elif category == Category.PRODUCE.value:
+    elif category == FoodCategory.PRODUCE.value:
         return 1, "lb"
-    elif category == Category.MEAT.value or category == Category.SEAFOOD.value:
+    elif category == FoodCategory.MEAT.value or category == FoodCategory.SEAFOOD.value:
         return 1, "lb"
-    elif category == Category.BAKERY.value:
+    elif category == FoodCategory.BAKERY.value:
         return 1, "loaf"
-    elif category == Category.BEVERAGES.value:
+    elif category == FoodCategory.BEVERAGES.value:
         return 1, "bottle"
-    elif category == Category.CONDIMENTS.value:
+    elif category == FoodCategory.CONDIMENTS.value:
         return 1, "jar"
-    elif category == Category.FROZEN.value:
+    elif category == FoodCategory.FROZEN.value:
         return 1, "package"
-    elif category == Category.SNACKS.value:
+    elif category == FoodCategory.SNACKS.value:
         return 1, "package"
 
     # Ultimate fallback

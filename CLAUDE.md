@@ -6,19 +6,48 @@ Track groceries • Scan receipts • Plan meals • Never waste food 🍳✨
 
 ---
 
-## 📋 Quick Reference
+## � Session Startup — Read This First
 
-| Info | Value |
-|------|-------|
-| **Version** | 0.2.0 |
-| **Backend** | Python 3.12 + FastAPI (Port 8888) |
-| **Frontend** | React 18 + TypeScript + Vite (Port 5173) |
-| **Database** | SQLite (aiosqlite) |
-| **AI** | Gemini API (free tier) + Ollama (self-hosted fallback) |
-| **OCR** | Tesseract |
-| **Phase** | 1C Complete (Recipe Generation) |
+**At the start of EVERY session**, before doing anything else:
+
+1. **Read [`docs/ROADMAP.md`](docs/ROADMAP.md)** — Understand the product vision, phase plan, and long-term priorities.
+2. **Read [`docs/TODO.md`](docs/TODO.md)** — Know the current sprint, what's done, what's in-progress, and what's next.
+
+> **Why:** These two files are the ground truth for what should be built and in what order. Nothing should be implemented that contradicts or skips ahead of the plan defined there.
+
+### Starting a New Sprint
+
+When the user says "start a sprint", "let's begin Phase X", or "what should we work on next", follow this process:
+
+1. **Summarize where we are** — State the last completed phase and any in-progress items from TODO.md.
+2. **Propose the sprint scope** — Based on ROADMAP.md's next phase, list the concrete tasks to implement, in priority order.
+3. **Confirm with the user** — Ask if the scope looks right, or if anything should be added/removed/reordered before starting.
+4. **Break down each task** — For each item, identify which files need to change (backend models, routes, frontend types, UI components, tests).
+5. **Implement incrementally** — Complete one task at a time, run tests, then move to the next.
+6. **Update TODO.md after each task** — Mark completed items `[x]`, add any newly discovered tasks.
+
+### Mid-Session Check-ins
+
+- After completing a task, always show the user what was done and what comes next.
+- If a task turns out to be larger or different than expected, flag it before proceeding.
+- Never skip the documentation update step (see checklist at the bottom of this file).
+
+---
+
+## �📋 Quick Reference
+
+| Info         | Value                                                  |
+| ------------ | ------------------------------------------------------ |
+| **Version**  | 0.2.0                                                  |
+| **Backend**  | Python 3.12 + FastAPI (Port 8888)                      |
+| **Frontend** | React 18 + TypeScript + Vite (Port 5173)               |
+| **Database** | SQLite (aiosqlite)                                     |
+| **AI**       | Gemini API (free tier) + Ollama (self-hosted fallback) |
+| **OCR**      | Tesseract                                              |
+| **Phase**    | 1C Complete (Recipe Generation)                        |
 
 ### Quick Start
+
 ```bash
 # Start backend
 uvicorn bubbly_chef.api.app:app --reload --port 8888
@@ -102,7 +131,9 @@ BubblyChef/
 │   │   └── routes/
 │   │       ├── health.py    # Health checks
 │   │       ├── pantry.py    # Pantry CRUD endpoints
-│   │       └── scan.py      # Receipt scanning endpoints
+│   │       ├── scan.py      # Receipt scanning endpoints
+│   │       ├── recipes.py   # Recipe generation endpoints
+│   │       └── profile.py   # User profile endpoints (NEW)
 │   │
 │   ├── ai/                   # AI Provider System
 │   │   ├── provider.py      # Base AIProvider protocol
@@ -117,10 +148,12 @@ BubblyChef/
 │   │
 │   ├── services/             # External Services
 │   │   ├── ocr.py           # Tesseract OCR wrapper
-│   │   └── receipt_parser.py # AI-powered receipt parsing
+│   │   ├── receipt_parser.py # AI-powered receipt parsing
+│   │   └── image_preprocessor.py # Image preprocessing for OCR (NEW)
 │   │
 │   ├── models/               # Pydantic Models
-│   │   └── pantry.py        # PantryItem, Category, Location
+│   │   ├── pantry.py        # PantryItem, Category, Location
+│   │   └── user.py          # UserProfile, Create/Update requests (NEW)
 │   │
 │   ├── repository/           # Data Access
 │   │   ├── base.py          # Repository protocol
@@ -135,12 +168,15 @@ BubblyChef/
 │   │   │   └── client.ts    # API client + React Query hooks
 │   │   │
 │   │   ├── pages/
+│   │   │   ├── Dashboard.tsx # Dashboard home
 │   │   │   ├── Pantry.tsx   # Pantry list/management
-│   │   │   └── Scan.tsx     # Receipt scanning UI
+│   │   │   ├── Scan.tsx     # Receipt scanning UI
+│   │   │   ├── Recipes.tsx  # Recipe generation UI
+│   │   │   └── Profile.tsx  # User profile management (NEW)
 │   │   │
 │   │   ├── components/      # Reusable UI components
 │   │   ├── types/           # TypeScript type definitions
-│   │   │   └── index.ts     # Shared types (PantryItem, etc.)
+│   │   │   └── index.ts     # Shared types (PantryItem, UserProfile, etc.)
 │   │   │
 │   │   ├── App.tsx          # Root component + routing
 │   │   └── main.tsx         # Entry point
@@ -165,6 +201,9 @@ BubblyChef/
 │
 ├── tests/                    # Backend Tests
 │   ├── api/                 # API endpoint tests
+│   │   ├── test_pantry.py
+│   │   ├── test_scan.py
+│   │   └── test_profile.py  # Profile endpoint tests (NEW)
 │   ├── domain/              # Domain logic tests
 │   ├── services/            # Service tests
 │   └── conftest.py          # Pytest fixtures
@@ -188,11 +227,13 @@ BubblyChef/
 ### 1. Pantry Management
 
 **Models:**
+
 - `PantryItem` - Core data model with computed properties
 - `Category` - Enum: produce, dairy, meat, seafood, frozen, pantry, beverages, condiments, bakery, snacks, other
 - `Location` - Enum: fridge, freezer, pantry, counter
 
 **Auto-categorization Flow:**
+
 ```python
 User adds "milk" → normalize_food_name("milk") → "milk"
                 → detect_category("milk") → Category.DAIRY
@@ -201,6 +242,7 @@ User adds "milk" → normalize_food_name("milk") → "milk"
 ```
 
 **Smart Defaults (NEW in 0.2.0):**
+
 ```python
 # If AI doesn't return quantity/unit, use smart defaults
 "eggs" → quantity: 1, unit: "dozen"
@@ -211,37 +253,78 @@ User adds "milk" → normalize_food_name("milk") → "milk"
 
 ### 2. Receipt Scanning Flow
 
-**Updated Flow (as of 2026-03-06):**
+**Updated Flow (as of 2026-03-09):**
 
 ```
 1. User uploads receipt image
    ↓
-2. Backend: OCR extracts text (Tesseract)
+2. Backend: (Optional) Preprocess image for optimal OCR
+   - Auto-detect image quality
+   - Apply preprocessing: grayscale, contrast, noise reduction, sharpening
    ↓
-3. Backend: AI parses items with confidence scores
+3. Backend: OCR extracts text (Tesseract)
    ↓
-4. Backend: Split by confidence:
+4. Backend: AI parses items with confidence scores
+   ↓
+5. Backend: Split by confidence:
    - ≥ 0.8 → ready_to_add (NOT added to DB yet!)
    - 0.5-0.8 → needs_review
    - < 0.5 → skipped
    ↓
-5. Frontend: Display 3 sections:
+6. Frontend: Display 3 sections:
    - "Ready to Add" (green) - High confidence, editable
    - "Please Check" (orange) - Medium confidence, editable
    - "Skipped" (gray) - Low confidence, can promote to review
    ↓
-6. User reviews/edits ALL items
+7. User reviews/edits ALL items
    ↓
-7. User clicks "Add X Items to Pantry"
+8. User clicks "Add X Items to Pantry"
    ↓
-8. Backend: ALL items written to database at once
+9. Backend: ALL items written to database at once
 ```
 
-**Key Improvement (v0.2.0):**
-- **Before:** High confidence items auto-added immediately (user had to undo)
-- **After:** Nothing added until user confirms (full control)
+**Key Improvements:**
+
+- **v0.2.0:** Nothing added until user confirms (full control)
+- **v0.2.0+:** Image preprocessing for improved OCR accuracy on poor quality images
+
+**Image Preprocessing (NEW):**
+The system now supports optional image preprocessing to improve OCR accuracy:
+
+**Preprocessing Modes:**
+
+- `auto` (default): Automatically detects image quality and applies appropriate preprocessing
+  - Analyzes brightness, contrast, and image statistics
+  - Selects light or aggressive mode based on quality
+- `light`: Minimal preprocessing for high-quality images
+  - Grayscale conversion
+  - Moderate contrast enhancement
+  - Light sharpening
+- `aggressive`: Full preprocessing pipeline for challenging images
+  - Grayscale + auto-contrast normalization
+  - Noise reduction (median filter)
+  - Strong contrast enhancement
+  - Sharpening + unsharp mask
+  - Deskewing (rotation correction)
+  - Binarization (adaptive thresholding)
+
+**Usage:**
+
+```python
+# Standalone preprocessing endpoint
+POST /api/scan/preprocess
+  image: <file>
+  mode: "auto" | "light" | "aggressive"
+
+# Inline preprocessing with scanning
+POST /api/scan/receipt
+  image: <file>
+  preprocess: true
+  preprocess_mode: "auto"
+```
 
 **AI Prompt Improvements:**
+
 - Explicit rule: "Ignore prices - numbers with decimals are NOT quantities"
 - Examples: "Eggs 6.17" → quantity: null (not 6)
 - Only extract quantity if explicitly part of product (e.g., "12pk")
@@ -249,6 +332,7 @@ User adds "milk" → normalize_food_name("milk") → "milk"
 ### 3. Domain Logic
 
 **Food Name Normalization:**
+
 ```python
 normalize_food_name("ORGANIC WHOLE MILK 1GAL") → "organic whole milk"
 # Lowercase, remove extra whitespace, strip PLU codes
@@ -256,6 +340,7 @@ normalize_food_name("ORGANIC WHOLE MILK 1GAL") → "organic whole milk"
 
 **Category Detection:**
 Uses keyword matching + synonyms:
+
 ```python
 detect_category("chicken breast") → "meat"
 detect_category("almond milk") → "dairy"  # Has "milk"
@@ -263,6 +348,7 @@ detect_category("ice cream") → "frozen"
 ```
 
 **Expiry Estimation:**
+
 ```python
 estimate_expiry_days("milk", "dairy", "fridge") → 7 days
 estimate_expiry_days("chicken", "meat", "fridge") → 3 days
@@ -272,6 +358,7 @@ estimate_expiry_days("frozen peas", "frozen", "freezer") → 180 days
 ### 4. AI Provider System
 
 **Pluggable Architecture:**
+
 ```python
 class AIProvider(Protocol):
     async def complete(prompt: str, response_schema: Type[T]) -> T | str
@@ -290,6 +377,7 @@ class AIManager:
 
 **Structured Output:**
 Uses Pydantic models for type-safe AI responses:
+
 ```python
 class ReceiptItem(BaseModel):
     name: str
@@ -303,23 +391,66 @@ result = await ai_manager.complete(
 )
 ```
 
+### 5. User Profile Management
+
+**Models:**
+
+- `UserProfile` - User account with dietary preferences
+- `CreateUserProfileRequest` - Request model for creating profiles
+- `UpdateUserProfileRequest` - Request model for updating profiles
+
+**Profile Workflow:**
+
+```python
+# Create new profile
+profile = UserProfile(
+    username="foodlover",
+    email="food@example.com",
+    display_name="Food Lover",
+    dietary_preferences=["vegetarian", "gluten-free"]
+)
+await repo.create_profile(profile)
+
+# Update profile
+await repo.update_profile(profile_id, {
+    "dietary_preferences": ["vegan"]
+})
+
+# Lookup by email or username
+profile = await repo.get_profile_by_email("food@example.com")
+profile = await repo.get_profile_by_username("foodlover")
+```
+
+**Dietary Preferences:**
+- Used for recipe generation constraints
+- Common preferences: vegetarian, vegan, gluten-free, dairy-free, nut-free, pescatarian, keto, paleo
+- Stored as array for flexibility
+- Can be edited via Profile page UI
+
+**Integration Points:**
+- Recipe generation uses dietary preferences for filtering
+- Future: Pantry warnings for dietary restrictions
+- Future: Shopping list generation respects preferences
+
 ---
 
 ## 🎨 Design System (Sanrio/Kawaii Aesthetic)
 
 ### Color Palette
+
 ```css
---pastel-pink: #FFB5C5;      /* Primary accent */
---pastel-mint: #B5EAD7;      /* Success states */
---pastel-lavender: #C9B5E8;  /* Secondary accent */
---pastel-peach: #FFDAB3;     /* Warning states */
---pastel-coral: #FF9AA2;     /* Alert states */
---pastel-yellow: #FFF1B5;    /* Highlights */
---cream-white: #FFF9F5;      /* Background */
---soft-charcoal: #4A4A4A;    /* Text */
+--pastel-pink: #ffb5c5; /* Primary accent */
+--pastel-mint: #b5ead7; /* Success states */
+--pastel-lavender: #c9b5e8; /* Secondary accent */
+--pastel-peach: #ffdab3; /* Warning states */
+--pastel-coral: #ff9aa2; /* Alert states */
+--pastel-yellow: #fff1b5; /* Highlights */
+--cream-white: #fff9f5; /* Background */
+--soft-charcoal: #4a4a4a; /* Text */
 ```
 
 ### Design Principles
+
 - **Rounded everything:** 12-16px border radius on all UI elements
 - **Pill-shaped buttons:** Fully rounded (999px radius)
 - **Emoji-driven:** Use food emojis instead of icon fonts
@@ -328,6 +459,7 @@ result = await ai_manager.complete(
 - **Friendly fonts:** Nunito/Quicksand (rounded sans-serif)
 
 ### Component Patterns
+
 - **Cards:** White background, soft shadow, rounded corners
 - **Sections:** Pastel backgrounds with matching borders
 - **Buttons:** Pill-shaped, bold text, active state scale
@@ -340,12 +472,14 @@ result = await ai_manager.complete(
 ### Backend (Python)
 
 **Code Style:**
+
 - Use `ruff` for linting (line length: 100)
 - Type hints everywhere (mypy strict mode)
 - Async/await for all I/O operations
 - Pydantic for validation and serialization
 
 **Conventions:**
+
 ```python
 # Dependency injection via FastAPI
 async def get_repository() -> PantryRepository:
@@ -365,6 +499,7 @@ logger.info("Item added", extra={"item_id": item.id, "category": item.category})
 ```
 
 **Testing:**
+
 ```bash
 # Run all tests
 pytest
@@ -382,12 +517,14 @@ pytest -k "test_receipt"
 ### Frontend (React + TypeScript)
 
 **Code Style:**
+
 - TypeScript strict mode
 - Functional components + hooks
 - Tailwind for styling (no custom CSS)
 - React Query for server state
 
 **Conventions:**
+
 ```typescript
 // API client with React Query
 export function usePantryItems() {
@@ -425,6 +562,7 @@ export function Pantry() {
 ```
 
 **Building:**
+
 ```bash
 cd web
 npm run build  # Production build
@@ -436,6 +574,7 @@ npm run dev    # Development server
 ## 📡 API Reference
 
 ### Base URLs
+
 - Backend: `http://localhost:8888`
 - Frontend: `http://localhost:5173`
 - API Docs: `http://localhost:8888/docs` (Swagger UI)
@@ -443,12 +582,14 @@ npm run dev    # Development server
 ### Endpoints
 
 #### Health
+
 ```
 GET  /health                    → { status: "healthy", version: "0.2.0" }
 GET  /health/ai                 → { healthy: true, providers: [...] }
 ```
 
 #### Pantry
+
 ```
 GET    /api/pantry              → { items: [...], total_count: N, ... }
 GET    /api/pantry?category=dairy
@@ -462,21 +603,50 @@ DELETE /api/pantry/:id          → { success: true, deleted_id: "..." }
 ```
 
 #### Receipt Scanning
+
 ```
 GET    /api/scan/ocr-status     → { available: bool, service: "tesseract", ... }
+POST   /api/scan/preprocess     → { success: bool, image_data: "base64...", ... } (NEW)
 POST   /api/scan/receipt        → { request_id, ready_to_add: [...], needs_review: [...], skipped: [...] }
 POST   /api/scan/confirm        → { added: [...], failed: [...] }
 ```
 
+**Preprocess Receipt Request (NEW):**
+
+```
+POST /api/scan/preprocess
+Content-Type: multipart/form-data
+
+image: <file>
+mode: "auto" | "light" | "aggressive" (default: "auto")
+```
+
+**Preprocess Receipt Response:**
+
+```json
+{
+  "success": true,
+  "message": "Image preprocessed successfully using 'auto' mode",
+  "original_size": [1920, 1080],
+  "preprocessed_size": [1920, 1080],
+  "preprocessing_mode": "auto",
+  "image_data": "iVBORw0KGgoAAAANS..." // Base64-encoded PNG
+}
+```
+
 **Scan Receipt Request:**
+
 ```
 POST /api/scan/receipt
 Content-Type: multipart/form-data
 
 image: <file>
+preprocess: true | false (default: false) (NEW)
+preprocess_mode: "auto" | "light" | "aggressive" (default: "auto") (NEW)
 ```
 
 **Scan Receipt Response:**
+
 ```json
 {
   "request_id": "uuid",
@@ -503,6 +673,7 @@ image: <file>
 ```
 
 **Confirm Items Request:**
+
 ```json
 {
   "request_id": "uuid",
@@ -518,12 +689,63 @@ image: <file>
 ```
 
 #### Recipe Generation
+
 ```
 POST   /api/recipes/generate     → { recipe, ingredients_status, missing_count, ... }
 GET    /api/recipes/suggestions  → ["Use up my chicken...", "Quick dinner...", ...]
 ```
 
+#### User Profile
+
+```
+GET    /api/profile/:id           → { profile: UserProfile }
+GET    /api/profile/email/:email  → { profile: UserProfile }
+GET    /api/profile/username/:username → { profile: UserProfile }
+POST   /api/profile               → { profile: UserProfile } (creates new profile)
+PUT    /api/profile/:id           → { profile: UserProfile } (updates)
+DELETE /api/profile/:id           → { success: true, deleted_id: "..." }
+```
+
+**Create Profile Request:**
+
+```json
+{
+  "username": "foodlover",
+  "email": "foodlover@example.com",
+  "display_name": "Food Lover",
+  "avatar_url": "https://example.com/avatar.jpg",
+  "dietary_preferences": ["vegetarian", "gluten-free"]
+}
+```
+
+**Update Profile Request:**
+
+```json
+{
+  "display_name": "Updated Name",
+  "dietary_preferences": ["vegan"]
+}
+```
+
+**Profile Response:**
+
+```json
+{
+  "profile": {
+    "id": "uuid",
+    "username": "foodlover",
+    "email": "foodlover@example.com",
+    "display_name": "Food Lover",
+    "avatar_url": "https://example.com/avatar.jpg",
+    "dietary_preferences": ["vegetarian", "gluten-free"],
+    "created_at": "2026-03-10T12:00:00Z",
+    "updated_at": "2026-03-10T12:00:00Z"
+  }
+}
+```
+
 **Generate Recipe Request:**
+
 ```json
 {
   "prompt": "What can I make with chicken?",
@@ -534,11 +756,12 @@ GET    /api/recipes/suggestions  → ["Use up my chicken...", "Quick dinner...",
     "use_expiring": true,
     "servings": 4
   },
-  "previous_recipe_context": "{...}"  // Optional, for follow-ups
+  "previous_recipe_context": "{...}" // Optional, for follow-ups
 }
 ```
 
 **Generate Recipe Response:**
+
 ```json
 {
   "recipe": {
@@ -550,8 +773,18 @@ GET    /api/recipes/suggestions  → ["Use up my chicken...", "Quick dinner...",
     "total_time_minutes": 25,
     "servings": 4,
     "ingredients": [
-      { "name": "chicken breast", "quantity": 1, "unit": "lb", "preparation": "sliced" },
-      { "name": "garlic", "quantity": 3, "unit": "cloves", "preparation": "minced" }
+      {
+        "name": "chicken breast",
+        "quantity": 1,
+        "unit": "lb",
+        "preparation": "sliced"
+      },
+      {
+        "name": "garlic",
+        "quantity": 3,
+        "unit": "cloves",
+        "preparation": "minced"
+      }
     ],
     "instructions": [
       "Slice chicken breast into strips",
@@ -563,7 +796,11 @@ GET    /api/recipes/suggestions  → ["Use up my chicken...", "Quick dinner...",
     "difficulty": "easy"
   },
   "ingredients_status": [
-    { "ingredient_name": "chicken breast", "status": "have", "pantry_item_name": "Chicken Breast" },
+    {
+      "ingredient_name": "chicken breast",
+      "status": "have",
+      "pantry_item_name": "Chicken Breast"
+    },
     { "ingredient_name": "soy sauce", "status": "missing" }
   ],
   "missing_count": 2,
@@ -580,6 +817,7 @@ GET    /api/recipes/suggestions  → ["Use up my chicken...", "Quick dinner...",
 ### Backend Tests
 
 **Structure:**
+
 ```
 tests/
 ├── api/
@@ -591,11 +829,13 @@ tests/
 │   └── test_defaults.py      # Smart defaults (NEW)
 ├── services/
 │   ├── test_ocr.py           # OCR service
-│   └── test_receipt_parser.py # AI parsing (mocked)
+│   ├── test_receipt_parser.py # AI parsing (mocked)
+│   └── test_image_preprocessor.py # Image preprocessing (NEW - TODO)
 └── conftest.py               # Shared fixtures
 ```
 
 **Running Tests:**
+
 ```bash
 # All tests
 pytest
@@ -611,6 +851,7 @@ ptw
 ```
 
 **Mocking AI Providers:**
+
 ```python
 @pytest.fixture
 def mock_ai_manager():
@@ -622,6 +863,7 @@ def mock_ai_manager():
 ```
 
 ### Frontend Tests
+
 (Not yet implemented - TODO)
 
 ---
@@ -631,11 +873,13 @@ def mock_ai_manager():
 ### Environment Variables
 
 **Required:**
+
 ```bash
 BUBBLY_GEMINI_API_KEY=your-key-here  # Get from https://aistudio.google.com/
 ```
 
 **Optional:**
+
 ```bash
 # Ollama (self-hosted AI)
 BUBBLY_OLLAMA_BASE_URL=http://localhost:11434
@@ -656,6 +900,7 @@ BUBBLY_DEBUG=false
 ```
 
 **Setup:**
+
 ```bash
 cp .env.example .env
 # Edit .env with your values
@@ -668,6 +913,7 @@ cp .env.example .env
 ### Adding a New Pantry Field
 
 1. **Update model** (`bubbly_chef/models/pantry.py`):
+
    ```python
    class PantryItem(BaseModel):
        ...
@@ -675,6 +921,7 @@ cp .env.example .env
    ```
 
 2. **Update database schema** (`bubbly_chef/repository/sqlite.py`):
+
    ```python
    CREATE TABLE pantry_items (
        ...
@@ -683,6 +930,7 @@ cp .env.example .env
    ```
 
 3. **Update API types** (`web/src/types/index.ts`):
+
    ```typescript
    export interface PantryItem {
        ...
@@ -698,6 +946,7 @@ cp .env.example .env
 ### Adding a New API Endpoint
 
 1. **Add route** (`bubbly_chef/api/routes/pantry.py`):
+
    ```python
    @router.get("/api/pantry/custom")
    async def custom_endpoint():
@@ -705,17 +954,18 @@ cp .env.example .env
    ```
 
 2. **Add API client** (`web/src/api/client.ts`):
+
    ```typescript
    async function customEndpoint(): Promise<CustomResponse> {
-       const response = await fetch(`${API_BASE_URL}/api/pantry/custom`);
-       return response.json();
+     const response = await fetch(`${API_BASE_URL}/api/pantry/custom`);
+     return response.json();
    }
 
    export function useCustomEndpoint() {
-       return useQuery({
-           queryKey: ['custom'],
-           queryFn: customEndpoint,
-       });
+     return useQuery({
+       queryKey: ["custom"],
+       queryFn: customEndpoint,
+     });
    }
    ```
 
@@ -727,6 +977,7 @@ cp .env.example .env
 ### Updating Smart Defaults
 
 Edit `bubbly_chef/domain/defaults.py`:
+
 ```python
 DEFAULT_QUANTITIES = {
     "new_item": {"quantity": 1, "unit": "package"},
@@ -739,7 +990,7 @@ DEFAULT_QUANTITIES = {
 ## 🚀 Deployment (Future)
 
 Not yet implemented. Future considerations:
-- Docker containerization
+
 - Database migrations (Alembic)
 - Environment-specific configs
 - Cloud deployment (Render, Railway, Fly.io)
@@ -750,6 +1001,7 @@ Not yet implemented. Future considerations:
 ## 🐛 Known Issues & Limitations
 
 ### Current Limitations
+
 - **Unit conversion not supported** - Can't deduct "3 eggs" from "1 dozen eggs"
 - **No user authentication** - Single-user only
 - **No offline support** - Requires network for AI calls
@@ -757,7 +1009,9 @@ Not yet implemented. Future considerations:
 - **SQLite only** - No PostgreSQL support yet
 
 ### TODO Items
+
 See `docs/TODO.md` for complete list. Key items:
+
 - [ ] Unit conversion system for recipe integration
 - [ ] Recipe management (Phase 1C)
 - [ ] User authentication (Phase 2)
@@ -769,18 +1023,24 @@ See `docs/TODO.md` for complete list. Key items:
 
 ## 📚 Additional Documentation
 
-- **[README.md](README.md)** - User-facing quick start
-- **[docs/architecture/overview.md](docs/architecture/overview.md)** - Detailed architecture
-- **[docs/TODO.md](docs/TODO.md)** - Current sprint & roadmap
-- **[docs/guides/testing.md](docs/guides/testing.md)** - Testing strategy
-- **[docs/guides/logging.md](docs/guides/logging.md)** - Logging system
-- **[docs/design/v0-prompts.md](docs/design/v0-prompts.md)** - UI design system
+> ⚠️ **Always read ROADMAP.md and TODO.md at the start of every session.** They define what to build and in what order.
+
+| File                                                               | Purpose                                | Read When                         |
+| ------------------------------------------------------------------ | -------------------------------------- | --------------------------------- |
+| **[docs/ROADMAP.md](docs/ROADMAP.md)**                             | Product vision, phase plan, priorities | **Every session start**           |
+| **[docs/TODO.md](docs/TODO.md)**                                   | Current sprint, completed tasks, bugs  | **Every session start**           |
+| **[README.md](README.md)**                                         | User-facing quick start                | When changing setup/install steps |
+| **[docs/architecture/overview.md](docs/architecture/overview.md)** | Detailed architecture diagrams         | When adding new systems           |
+| **[docs/guides/testing.md](docs/guides/testing.md)**               | Testing strategy & conventions         | When writing tests                |
+| **[docs/guides/logging.md](docs/guides/logging.md)**               | Logging system                         | When adding logging               |
+| **[docs/design/v0-prompts.md](docs/design/v0-prompts.md)**         | UI design system                       | When building UI components       |
 
 ---
 
 ## 🎯 Current Phase: 1C Complete
 
 ### Completed Features ✅
+
 - Pantry CRUD (create, read, update, delete)
 - Auto-categorization and expiry estimation
 - Receipt scanning with OCR + AI parsing
@@ -796,6 +1056,7 @@ See `docs/TODO.md` for complete list. Key items:
   - Follow-up support ("make it spicier")
 
 ### Next Phase: 2 - Dashboard & Chat
+
 - Dashboard home page with insights
 - Chat interface for natural language interactions
 - Recipe saving and management
@@ -808,16 +1069,19 @@ See `docs/TODO.md` for complete list. Key items:
 **IMPORTANT:** When implementing a new feature, update these docs:
 
 ### For Every Feature:
+
 - [ ] **This file (CLAUDE.md)** - Add to architecture, workflows, or API reference
 - [ ] **docs/TODO.md** - Mark task as complete, add new tasks if discovered
 - [ ] **Git commit message** - Use clear, descriptive commits
 
 ### For Major Features:
+
 - [ ] **README.md** - Update feature list, quick start if changed
 - [ ] **docs/architecture/overview.md** - Update diagrams, data flows
 - [ ] **API docs (Swagger)** - FastAPI auto-generates, but verify examples
 
 ### For Breaking Changes:
+
 - [ ] **CHANGELOG.md** - Document breaking changes (TODO: create this file)
 - [ ] **Migration guide** - Document upgrade path
 - [ ] **Frontend types** - Update TypeScript interfaces
@@ -826,6 +1090,7 @@ See `docs/TODO.md` for complete list. Key items:
 ### Documentation Triggers:
 
 **Always update docs when:**
+
 1. Adding/removing API endpoints
 2. Changing data models (PantryItem, etc.)
 3. Adding new environment variables
@@ -836,6 +1101,7 @@ See `docs/TODO.md` for complete list. Key items:
 8. Changing database schema
 
 **Example Commit Messages:**
+
 ```
 feat: Add unit conversion system for recipe consumption
 - Add UnitConverter class with conversion table
@@ -873,5 +1139,5 @@ MIT
 
 ---
 
-**Last Updated:** 2026-03-08
+**Last Updated:** 2026-03-09
 **Current Version:** 0.2.0

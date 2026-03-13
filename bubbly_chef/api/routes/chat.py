@@ -10,6 +10,7 @@ and route appropriately.
 """
 
 import logging
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -101,19 +102,19 @@ _workflow_states: dict[str, dict[str, Any]] = {}
 async def chat(request: ChatRequest) -> ProposalEnvelope:
     """
     Main conversational interface for the BubblyChef assistant.
-    
+
     Send natural language messages to:
     - Add groceries: "I bought milk and eggs"
     - Remove items: "I used all the milk"
     - Request receipt scan: "I want to scan a receipt"
     - Request product lookup: "Scan this barcode"
     - General questions: "How long does cheese last?"
-    
+
     The system classifies intent and returns an appropriate response:
     - Pantry updates return a proposal with actions to review
     - Ingest requests return handoff instructions for the UI
     - General chat returns a conversational response
-    
+
     **Response Structure (Output Contract):**
     - `request_id`: Unique ID for this request
     - `workflow_id`: ID for workflow resumption (if paused)
@@ -124,8 +125,19 @@ async def chat(request: ChatRequest) -> ProposalEnvelope:
     - `requires_review`: Whether human review is needed
     - `next_action`: Hint for UI (NONE, REVIEW_PROPOSAL, REQUEST_RECEIPT_IMAGE, etc.)
     """
-    logger.info(f"Chat request: {request.message[:100]}...")
-    
+    start_time = datetime.now()
+
+    logger.info(
+        "Chat request received",
+        extra={
+            "message_preview": request.message[:100],
+            "message_length": len(request.message),
+            "conversation_id": str(request.conversation_id) if request.conversation_id else None,
+            "mode": request.mode,
+            "has_pantry_snapshot": request.pantry_snapshot is not None,
+        }
+    )
+
     try:
         # Run the chat workflow
         envelope = await run_chat_workflow(
@@ -134,14 +146,14 @@ async def chat(request: ChatRequest) -> ProposalEnvelope:
             mode=request.mode,
             pantry_snapshot=request.pantry_snapshot,
         )
-        
+
         # Store workflow state if it requires future resumption
         if envelope.requires_review:
             _workflow_states[str(envelope.workflow_id)] = {
                 "envelope": envelope.model_dump(),
                 "request": request.model_dump(),
             }
-        
+
         # Log the interaction
         try:
             repo = await get_repository()
@@ -158,17 +170,37 @@ async def chat(request: ChatRequest) -> ProposalEnvelope:
             )
         except Exception as log_error:
             logger.warning(f"Failed to log interaction: {log_error}")
-        
+
+        elapsed = (datetime.now() - start_time).total_seconds()
         logger.info(
-            f"Chat response: intent={envelope.intent.value}, "
-            f"requires_review={envelope.requires_review}, "
-            f"next_action={envelope.next_action.value}"
+            "Chat workflow completed",
+            extra={
+                "intent": envelope.intent.value,
+                "requires_review": envelope.requires_review,
+                "next_action": envelope.next_action.value,
+                "confidence": envelope.confidence.overall,
+                "has_proposal": envelope.proposal is not None,
+                "workflow_id": str(envelope.workflow_id),
+                "elapsed_seconds": elapsed,
+                "warnings_count": len(envelope.warnings) if envelope.warnings else 0,
+                "errors_count": len(envelope.errors) if envelope.errors else 0,
+            }
         )
-        
+
         return envelope
-        
+
     except Exception as e:
-        logger.error(f"Chat workflow failed: {e}", exc_info=True)
+        elapsed = (datetime.now() - start_time).total_seconds()
+        logger.error(
+            "Chat workflow failed",
+            extra={
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "elapsed_seconds": elapsed,
+                "message_preview": request.message[:100],
+            },
+            exc_info=True
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Chat processing failed: {str(e)}"
@@ -191,31 +223,41 @@ async def submit_workflow_event(
 ) -> ProposalEnvelope:
     """
     Submit an event to resume a paused workflow.
-    
+
     Use this endpoint to:
     - Approve a proposal: `event_type: "submit_review", decision: "approve"`
     - Approve with edits: `event_type: "submit_review", decision: "approve_with_edits", edits: {...}`
     - Reject a proposal: `event_type: "submit_review", decision: "reject"`
     - Provide clarification: `event_type: "provide_clarification", clarification_response: "..."`
     - Cancel workflow: `event_type: "cancel"`
-    
-    **Idempotency:** 
+
+    **Idempotency:**
     Include `idempotency_key` to prevent duplicate submissions.
     """
     workflow_id_str = str(workflow_id)
-    
+
+    logger.info(
+        "Workflow event received",
+        extra={
+            "workflow_id": workflow_id_str,
+            "event_type": event.event_type,
+            "decision": getattr(event, 'decision', None),
+            "has_edits": getattr(event, 'edits', None) is not None,
+            "idempotency_key": getattr(event, 'idempotency_key', None),
+        }
+    )
+
     # Check if workflow exists
     if workflow_id_str not in _workflow_states:
+        logger.warning(f"Workflow {workflow_id_str} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow {workflow_id} not found or already completed"
         )
-    
+
     stored_state = _workflow_states[workflow_id_str]
-    
+
     # TODO: Implement idempotency check using event.idempotency_key
-    
-    logger.info(f"Workflow event received: workflow={workflow_id}, type={event.event_type}")
     
     try:
         if event.event_type == "cancel":

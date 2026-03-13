@@ -173,3 +173,35 @@ export interface GenerateRecipeResponse {
   partial_count: number;
   pantry_match_score: number;
 }
+
+// User Profile Types
+export interface UserProfile {
+  id: string;
+  username: string;
+  email: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  dietary_preferences: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateUserProfileRequest {
+  username: string;
+  email: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  dietary_preferences?: string[];
+}
+
+export interface UpdateUserProfileRequest {
+  username?: string;
+  email?: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  dietary_preferences?: string[];
+}
+
+export interface ProfileResponse {
+  profile: UserProfile;
+}

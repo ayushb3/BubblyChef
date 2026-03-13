@@ -1,4 +1,4 @@
-import { Home, Package, Camera, Sparkles } from 'lucide-react';
+import { Home, Package, Camera, Sparkles, User } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
 const navItems = [
@@ -6,6 +6,7 @@ const navItems = [
   { path: '/pantry', icon: Package, label: 'Pantry' },
   { path: '/scan', icon: Camera, label: 'Scan' },
   { path: '/recipes', icon: Sparkles, label: 'Recipes' },
+  { path: '/profile', icon: User, label: 'Profile' },
 ];
 
 export function BottomNav() {

@@ -7,7 +7,7 @@ from bubbly_chef.ai import AIManager
 from bubbly_chef.domain.normalizer import normalize_food_name, detect_category
 from bubbly_chef.domain.expiry import estimate_expiry_days, get_default_location
 from bubbly_chef.domain.defaults import get_default_quantity_and_unit
-from bubbly_chef.models.pantry import Category, Location
+from bubbly_chef.models.pantry import FoodCategory, StorageLocation
 
 
 class ParsedReceiptItem(BaseModel):
@@ -19,8 +19,8 @@ class ParsedReceiptItem(BaseModel):
     name_normalized: str = Field(default="")
     quantity: float | None = Field(default=None)
     unit: str | None = Field(default=None)
-    category: Category = Field(default=Category.OTHER)
-    location: Location = Field(default=Location.PANTRY)
+    category: FoodCategory = Field(default=FoodCategory.OTHER)
+    location: StorageLocation = Field(default=StorageLocation.PANTRY)
     expiry_days: int | None = Field(default=None)
     confidence: float = Field(ge=0.0, le=1.0)
 
@@ -154,10 +154,10 @@ async def parse_receipt(
 
         # Detect category
         detected_cat = detect_category(name_normalized)
-        category = Category(detected_cat) if detected_cat else Category.OTHER
+        category = FoodCategory(detected_cat) if detected_cat else FoodCategory.OTHER
 
         # Get default location
-        location = Location(get_default_location(category.value))
+        location = StorageLocation(get_default_location(category.value))
 
         # Estimate expiry
         expiry_days = estimate_expiry_days(
@@ -170,7 +170,7 @@ async def parse_receipt(
         confidence = ai_confidence
 
         # Penalize if category couldn't be detected
-        if category == Category.OTHER:
+        if category == FoodCategory.OTHER:
             confidence -= 0.1
 
         # Get quantity and unit from AI or use smart defaults

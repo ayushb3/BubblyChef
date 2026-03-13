@@ -42,10 +42,10 @@ fi
 # Start backend
 cd "$PROJECT_ROOT"
 echo -e "${GREEN}Starting backend server...${NC}"
-echo -e "   Backend:  http://localhost:9000"
-echo -e "   API Docs: http://localhost:9000/docs"
+echo -e "   Backend:  http://localhost:8888"
+echo -e "   API Docs: http://localhost:8888/docs"
 echo ""
 echo -e "Press Ctrl+C to stop."
 echo ""
 
-uvicorn bubbly_chef.api.app:app --reload --host 0.0.0.0 --port 9000
+uvicorn bubbly_chef.api.app:app --reload --host 0.0.0.0 --port 8888

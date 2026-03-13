@@ -7,7 +7,8 @@ from typing import Any
 
 import aiosqlite
 
-from bubbly_chef.models.pantry import PantryItem, Category, Location
+from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
+from bubbly_chef.models.user import UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,20 @@ class SQLiteRepository:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                id TEXT PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE,
+                email TEXT NOT NULL UNIQUE,
+                display_name TEXT,
+                avatar_url TEXT,
+                dietary_preferences TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_user_email ON user_profiles(email);
+            CREATE INDEX IF NOT EXISTS idx_user_username ON user_profiles(username);
         """
         )
 
@@ -88,15 +103,14 @@ class SQLiteRepository:
         return PantryItem(
             id=row["id"],
             name=row["name"],
-            name_normalized=row["name_normalized"],
-            category=Category(row["category"]),
-            location=Location(row["location"]),
+            category=FoodCategory(row["category"]),
+            storage_location=StorageLocation(row["location"]),
             quantity=row["quantity"],
             unit=row["unit"],
             expiry_date=(
                 date.fromisoformat(row["expiry_date"]) if row["expiry_date"] else None
             ),
-            added_at=datetime.fromisoformat(row["added_at"]),
+            created_at=datetime.fromisoformat(row["added_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
 
@@ -181,15 +195,15 @@ class SQLiteRepository:
                 expiry_date, added_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                item.id,
+                str(item.id),
                 item.name,
-                item.name_normalized,
+                item.name.lower().strip(),
                 item.category.value,
-                item.location.value,
+                item.storage_location.value,
                 item.quantity,
                 item.unit,
                 item.expiry_date.isoformat() if item.expiry_date else None,
-                item.added_at.isoformat(),
+                item.created_at.isoformat(),
                 item.updated_at.isoformat(),
             ),
         )
@@ -209,9 +223,10 @@ class SQLiteRepository:
         values = []
 
         for key, value in updates.items():
-            if key == "category" and isinstance(value, Category):
+            if key == "category" and isinstance(value, FoodCategory):
                 value = value.value
-            elif key == "location" and isinstance(value, Location):
+            elif key == "storage_location" and isinstance(value, StorageLocation):
+                key = "location"
                 value = value.value
             elif key == "expiry_date" and isinstance(value, date):
                 value = value.isoformat()
@@ -246,6 +261,155 @@ class SQLiteRepository:
         deleted = cursor.rowcount > 0
         if deleted:
             logger.debug(f"Deleted pantry item: {item_id}")
+        return deleted
+
+    # =========================================================================
+    # User profile operations
+    # =========================================================================
+
+    def _row_to_user_profile(self, row: aiosqlite.Row) -> UserProfile:
+        """Convert database row to UserProfile."""
+        import json
+
+        dietary_preferences = (
+            json.loads(row["dietary_preferences"])
+            if row["dietary_preferences"]
+            else []
+        )
+
+        return UserProfile(
+            id=row["id"],
+            username=row["username"],
+            email=row["email"],
+            display_name=row["display_name"],
+            avatar_url=row["avatar_url"],
+            dietary_preferences=dietary_preferences,
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    async def get_profile_by_id(self, profile_id: str) -> UserProfile | None:
+        """Get a user profile by ID."""
+        conn = self._get_conn()
+        async with conn.execute(
+            "SELECT * FROM user_profiles WHERE id = ?", (profile_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return self._row_to_user_profile(row)
+        return None
+
+    async def get_profile_by_email(self, email: str) -> UserProfile | None:
+        """Get a user profile by email."""
+        conn = self._get_conn()
+        async with conn.execute(
+            "SELECT * FROM user_profiles WHERE email = ?", (email,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return self._row_to_user_profile(row)
+        return None
+
+    async def get_profile_by_username(self, username: str) -> UserProfile | None:
+        """Get a user profile by username."""
+        conn = self._get_conn()
+        async with conn.execute(
+            "SELECT * FROM user_profiles WHERE username = ?", (username,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return self._row_to_user_profile(row)
+        return None
+
+    async def create_profile(self, profile: UserProfile) -> UserProfile:
+        """Create a new user profile."""
+        import json
+
+        conn = self._get_conn()
+
+        try:
+            await conn.execute(
+                """INSERT INTO user_profiles
+                   (id, username, email, display_name, avatar_url, dietary_preferences,
+                    created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(profile.id),
+                    profile.username,
+                    profile.email,
+                    profile.display_name,
+                    profile.avatar_url,
+                    json.dumps(profile.dietary_preferences),
+                    profile.created_at.isoformat(),
+                    profile.updated_at.isoformat(),
+                ),
+            )
+            await conn.commit()
+            logger.debug(f"Created user profile: {profile.username} ({profile.id})")
+            return profile
+        except aiosqlite.IntegrityError as e:
+            logger.error(f"Failed to create profile: {e}")
+            raise ValueError(
+                "Username or email already exists"
+            ) from e
+
+    async def update_profile(
+        self, profile_id: str, updates: dict[str, Any]
+    ) -> UserProfile:
+        """Update an existing user profile."""
+        import json
+
+        conn = self._get_conn()
+
+        # Build SET clause
+        set_parts = []
+        values = []
+
+        for key, value in updates.items():
+            if key == "dietary_preferences" and isinstance(value, list):
+                value = json.dumps(value)
+            elif key == "updated_at" and isinstance(value, datetime):
+                value = value.isoformat()
+
+            set_parts.append(f"{key} = ?")
+            values.append(value)
+
+        # Always update updated_at
+        if "updated_at" not in updates:
+            set_parts.append("updated_at = ?")
+            values.append(datetime.utcnow().isoformat())
+
+        values.append(profile_id)
+
+        try:
+            await conn.execute(
+                f"UPDATE user_profiles SET {', '.join(set_parts)} WHERE id = ?",
+                values,
+            )
+            await conn.commit()
+        except aiosqlite.IntegrityError as e:
+            logger.error(f"Failed to update profile: {e}")
+            raise ValueError(
+                "Username or email already exists"
+            ) from e
+
+        # Return updated profile
+        profile = await self.get_profile_by_id(profile_id)
+        if profile is None:
+            raise ValueError(f"Profile not found: {profile_id}")
+        return profile
+
+    async def delete_profile(self, profile_id: str) -> bool:
+        """Delete a user profile."""
+        conn = self._get_conn()
+        cursor = await conn.execute(
+            "DELETE FROM user_profiles WHERE id = ?", (profile_id,)
+        )
+        await conn.commit()
+
+        deleted = cursor.rowcount > 0
+        if deleted:
+            logger.debug(f"Deleted user profile: {profile_id}")
         return deleted
 
 

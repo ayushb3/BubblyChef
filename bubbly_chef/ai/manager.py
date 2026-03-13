@@ -3,10 +3,14 @@
 Manages AI provider selection and fallback logic.
 """
 
+import logging
+from datetime import datetime
 from typing import Type, TypeVar
 from pydantic import BaseModel
 
 from .provider import AIProvider, ProviderUnavailableError
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -69,11 +73,23 @@ class AIManager:
             NoProviderAvailableError: If no providers are available or all fail
         """
         errors = []
+        start_time = datetime.now()
 
         for provider in self.providers:
             try:
                 if not await provider.is_available():
+                    logger.debug(f"Provider {provider.name} not available, skipping")
                     continue
+
+                logger.info(
+                    "AI request starting",
+                    extra={
+                        "provider": provider.name,
+                        "prompt_length": len(prompt),
+                        "has_schema": response_schema is not None,
+                        "temperature": temperature,
+                    }
+                )
 
                 result = await provider.complete(
                     prompt=prompt,
@@ -81,12 +97,54 @@ class AIManager:
                     temperature=temperature,
                 )
                 self._current_provider = provider
+
+                elapsed = (datetime.now() - start_time).total_seconds()
+                logger.info(
+                    "AI request completed",
+                    extra={
+                        "provider": provider.name,
+                        "elapsed_seconds": elapsed,
+                        "response_type": type(result).__name__,
+                    }
+                )
+
                 return result
 
             except ProviderUnavailableError as e:
+                elapsed = (datetime.now() - start_time).total_seconds()
+                logger.warning(
+                    "AI provider failed, trying next",
+                    extra={
+                        "provider": provider.name,
+                        "error": str(e),
+                        "elapsed_seconds": elapsed,
+                    }
+                )
+                errors.append(f"{provider.name}: {e}")
+                continue
+            except Exception as e:
+                elapsed = (datetime.now() - start_time).total_seconds()
+                logger.error(
+                    "AI request failed with unexpected error",
+                    extra={
+                        "provider": provider.name,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "elapsed_seconds": elapsed,
+                    },
+                    exc_info=True
+                )
                 errors.append(f"{provider.name}: {e}")
                 continue
 
+        elapsed = (datetime.now() - start_time).total_seconds()
+        logger.error(
+            "All AI providers failed",
+            extra={
+                "elapsed_seconds": elapsed,
+                "errors": errors,
+            }
+        )
         raise NoProviderAvailableError(
             f"All providers failed. Errors: {errors}"
         )

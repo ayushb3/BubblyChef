@@ -1,14 +1,14 @@
 # BubblyChef TODO & Roadmap
 
-**Last Updated:** 2026-03-06
+**Last Updated:** 2026-03-08
 
 This document tracks current tasks, bugs, and future enhancements. See [docs/plans/roadmap.md](plans/roadmap.md) for the long-term product vision.
 
 ---
 
-## 🎯 Current Sprint (Phase 1B - Complete)
+## 🎯 Current Sprint (Phase 1C - Recipe Generation)
 
-### ✅ Completed
+### ✅ Completed (Phase 1B)
 - [x] Backend pantry CRUD API
 - [x] Frontend pantry management UI
 - [x] Receipt scanning with Tesseract OCR
@@ -16,6 +16,15 @@ This document tracks current tasks, bugs, and future enhancements. See [docs/pla
 - [x] Receipt review & confirmation flow
 - [x] Comprehensive logging system
 - [x] Project reorganization and documentation cleanup
+
+### ✅ Completed (Phase 1C)
+- [x] Recipe generation API endpoint (`POST /api/recipes/generate`)
+- [x] Pantry-grounded AI prompting (includes pantry context and expiring items)
+- [x] Recipe response with ingredient availability (have/partial/missing)
+- [x] Recipe suggestions endpoint (`GET /api/recipes/suggestions`)
+- [x] Recipe input UI with prompt and suggestions
+- [x] Recipe display with ingredient status indicators
+- [x] Session-based follow-up support ("make it spicier")
 
 ---
 
@@ -27,6 +36,10 @@ This document tracks current tasks, bugs, and future enhancements. See [docs/pla
 - [ ] Empty states with illustrations
 - [ ] Toast notifications for actions
 - [ ] Mobile responsiveness improvements
+- [ ] **Desktop layout optimization**
+  - Problem: On desktop, content is vertically contained like mobile with lots of horizontal whitespace
+  - Consider: Grid layout (2-3 columns), sidebar navigation, wider max-width
+  - Explore: Multi-column card grid, split view (list + detail), dashboard widgets
 
 ### Backend Improvements
 - [ ] Add pagination to pantry list endpoint
@@ -34,6 +47,12 @@ This document tracks current tasks, bugs, and future enhancements. See [docs/pla
 - [ ] Add bulk operations (delete multiple, update multiple)
 - [ ] Improve AI prompt for better receipt parsing accuracy
 - [ ] Add retry logic for AI provider failures
+- [ ] **Product catalog system with icons**
+  - Problem: Items like "bananas" show wrong emoji (🥬 lettuce instead of 🍌)
+  - Need: Baseline product catalog with curated name → emoji mappings
+  - Features: Common product database, fuzzy matching, category-appropriate fallbacks
+  - Format: JSON/YAML catalog with canonical names + metadata (emoji, alt names, category)
+  - Consider: User-editable product library, learn from corrections
 - [ ] **Unit conversion system for recipe consumption**
   - Problem: Pantry tracks "1 dozen eggs" but recipes use "3 eggs"
   - Need conversion logic: dozen → individual eggs, gallon → cups, lb → oz
@@ -58,13 +77,16 @@ This document tracks current tasks, bugs, and future enhancements. See [docs/pla
 
 ## 📋 Next Phase: Phase 1C - Recipes
 
-### Phase 1C: Recipes Core Features
-- [ ] Recipe data model and database schema
-- [ ] Recipe CRUD API endpoints
+### Phase 1C: Remaining Tasks
+- [ ] **Recipe CRUD for saving recipes**
+  - Save AI-generated recipes
+  - Save imported recipes (URL, video, manual)
+  - Edit saved recipes
+  - Delete recipes
+  - Recipe collections/folders
 - [ ] Recipe list and detail pages
 - [ ] Recipe search and filtering
 - [ ] Recipe to shopping list converter
-- [ ] "What can I make?" feature (based on pantry items)
 - [ ] **Recipe consumption tracking**
   - Deduct ingredients from pantry when cooking
   - Handle unit conversions (dozen eggs → individual eggs)
@@ -72,7 +94,7 @@ This document tracks current tasks, bugs, and future enhancements. See [docs/pla
   - History of cooked recipes
 
 ### AI Features
-- [ ] Recipe extraction from URL (scraping)
+- [ ] Recipe extraction from URL (scraping traditional websites)
 - [ ] Recipe import from text/photo
 - [ ] Recipe suggestions based on pantry contents
 - [ ] Ingredient substitution recommendations
@@ -84,25 +106,51 @@ This document tracks current tasks, bugs, and future enhancements. See [docs/pla
 ### Phase 2: Dashboard & Chat (Q2 2026)
 - [ ] Dashboard home page with insights
 - [ ] Chat interface for natural language interactions
+- [ ] Intent router for chat commands
 - [ ] "I bought milk and eggs" → auto-add to pantry
 - [ ] "What should I cook tonight?" → recipe suggestions
+- [ ] **Chat-recipe integration**
+  - Chat can access saved recipe library
+  - Reference recipes by name ("that butter chicken recipe")
+  - Suggest saved recipes matching pantry
+  - "Make that TikTok recipe I saved" → retrieve and display
 - [ ] Shopping list generation from recipes
 
-### Phase 3: Mobile PWA/Native (Q3 2026)
+### Phase 3: Recipe Library + Video Ingestion (Q3 2026)
+- [ ] Recipe collections and organization
+- [ ] Recipe search across all sources (generated, video, URL, manual)
+- [ ] **Video recipe ingestion system (MAJOR FEATURE)**
+  - [ ] TikTok API/parser integration
+  - [ ] Instagram Reels parser
+  - [ ] YouTube Shorts parser (YouTube Data API v3)
+  - [ ] Video download and processing pipeline
+  - [ ] Video transcription service (Whisper API, Rev.ai, or AssemblyAI)
+  - [ ] AI extraction of ingredients from transcription + video frames
+  - [ ] AI extraction of cooking steps with timestamps
+  - [ ] Thumbnail generation and storage
+  - [ ] Video metadata indexing (creator, duration, hashtags, caption)
+  - [ ] Link video recipes to pantry matching
+  - [ ] "Saved from TikTok" badge/indicator in UI
+- [ ] Better OCR accuracy for receipts
+- [ ] Ollama self-hosted AI support
+
+### Phase 4: Mobile PWA + Social (Q4 2026)
 - [ ] Progressive Web App (PWA) setup
 - [ ] Offline support
 - [ ] Push notifications for expiring items
 - [ ] Camera integration for receipt scanning
-- [ ] Barcode scanning for products
+- [ ] **In-app video playback for saved recipes**
 - [ ] Share recipes with friends
+- [ ] Video recipe commenting and ratings
+- [ ] Barcode scanning for products
 
-### Phase 4: Social & Advanced (Q4 2026)
+### Phase 5: Advanced Features (2027+)
 - [ ] User accounts and authentication
 - [ ] Meal planning calendar
 - [ ] Nutrition tracking
-- [ ] Recipe ratings and reviews
-- [ ] Community recipe sharing
-- [ ] Multi-household support (families)
+- [ ] Multi-user/household support
+- [ ] Social recipe sharing with video embeds
+- [ ] Recipe remix feature (edit video recipes)
 
 ---
 
@@ -125,7 +173,6 @@ This document tracks current tasks, bugs, and future enhancements. See [docs/pla
 
 ### DevOps
 - [ ] Set up CI/CD pipeline
-- [ ] Docker containerization
 - [ ] Deployment scripts for production
 - [ ] Monitoring and alerting
 - [ ] Automated backups
@@ -160,6 +207,12 @@ This document tracks current tasks, bugs, and future enhancements. See [docs/pla
 - [ ] Learn from user corrections
 - [ ] Dietary preferences and restrictions
 - [ ] Allergen warnings
+- [ ] **Video recipe parsing improvements**
+  - [ ] Multi-language video transcription
+  - [ ] Visual ingredient detection from video frames
+  - [ ] Cooking technique recognition
+  - [ ] Auto-tagging (cuisine, difficulty, dietary tags)
+  - [ ] Ingredient quantity estimation from visual cues
 
 ### Integrations
 - [ ] Google Calendar integration for meal planning
@@ -167,6 +220,11 @@ This document tracks current tasks, bugs, and future enhancements. See [docs/pla
 - [ ] Smart home integration (Alexa, Google Home)
 - [ ] Fitness apps (MyFitnessPal)
 - [ ] Recipe APIs (Spoonacular, Edamam)
+- [ ] **Video platform APIs**
+  - [ ] TikTok API for metadata and video access
+  - [ ] Instagram Graph API for Reels
+  - [ ] YouTube Data API v3 for Shorts
+  - [ ] Video transcription services (Whisper, Rev.ai, AssemblyAI)
 
 ---
 
@@ -194,6 +252,14 @@ This document tracks current tasks, bugs, and future enhancements. See [docs/pla
 - [ ] Recipe scraping best practices
 - [ ] Nutrition data APIs
 - [ ] Food safety guidelines and expiry data
+- [ ] **Video processing technologies**
+  - [ ] Video transcription APIs (cost, accuracy, language support)
+  - [ ] Computer vision for ingredient detection (YOLO, CLIP)
+  - [ ] TikTok/Instagram API access and limitations
+  - [ ] YouTube Shorts vs regular videos API differences
+  - [ ] Video storage solutions (local, S3, CDN)
+  - [ ] Video frame extraction libraries (ffmpeg, opencv)
+  - [ ] Copyright and fair use considerations for saved videos
 
 ### Performance Optimization
 - [ ] Database query optimization
@@ -214,8 +280,9 @@ This document tracks current tasks, bugs, and future enhancements. See [docs/pla
 
 ### Deferred Features
 - Shopping list sync with grocery stores (too complex for MVP)
-- Barcode scanning (not enough value vs effort)
-- Recipe video integration (bandwidth concerns)
+- Barcode scanning (not enough value vs effort for Phase 1)
+- ~~Recipe video integration~~ → PROMOTED to Phase 3 (major feature)
+- Video downloading/hosting (Phase 3 - will link to original URLs first, local storage later)
 
 ---
 
