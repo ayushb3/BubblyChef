@@ -2,10 +2,11 @@
 
 from datetime import date, datetime
 from enum import Enum
+from functools import cached_property
 from typing import Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 class FoodCategory(str, Enum):
@@ -71,6 +72,35 @@ class PantryItem(BaseModel):
     notes: str | None = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    @property
+    def location(self) -> StorageLocation:
+        """Alias for storage_location (backward compatibility)."""
+        return self.storage_location
+
+    @property
+    def name_normalized(self) -> str:
+        """Return normalized name for matching."""
+        return self.name.lower().strip()
+
+    @property
+    def days_until_expiry(self) -> int | None:
+        """Calculate days until expiry."""
+        if self.expiry_date is None:
+            return None
+        return (self.expiry_date - date.today()).days
+
+    @property
+    def is_expiring_soon(self) -> bool:
+        """Check if item expires within 3 days."""
+        days = self.days_until_expiry
+        return days is not None and 0 <= days <= 3
+
+    @property
+    def is_expired(self) -> bool:
+        """Check if item is expired."""
+        days = self.days_until_expiry
+        return days is not None and days < 0
 
     def generate_client_key(self) -> str:
         """Generate a deterministic client_item_key from category and normalized name."""

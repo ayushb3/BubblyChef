@@ -316,7 +316,7 @@ def match_ingredient_to_pantry(
             return IngredientStatus(
                 ingredient_name=ingredient.name,
                 status="partial",
-                pantry_item_id=best_match.id,
+                pantry_item_id=str(best_match.id),
                 pantry_item_name=best_match.name,
                 have_quantity=best_match.quantity,
                 have_unit=best_match.unit,
@@ -327,7 +327,7 @@ def match_ingredient_to_pantry(
     return IngredientStatus(
         ingredient_name=ingredient.name,
         status="have",
-        pantry_item_id=best_match.id,
+        pantry_item_id=str(best_match.id),
         pantry_item_name=best_match.name,
         have_quantity=best_match.quantity,
         have_unit=best_match.unit,

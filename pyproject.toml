@@ -30,6 +30,12 @@ dev = [
     "httpx>=0.26.0",
     "ruff>=0.1.0",
     "mypy>=1.8.0",
+    "pytest-xdist>=3.5.0",
+    "pytest-mock>=3.12.0",
+    "pytest-timeout>=2.2.0",
+    "respx>=0.20.0",
+    "hypothesis>=6.90.0",
+    "faker>=22.0.0",
 ]
 cli = [
     "rich>=13.0.0",
@@ -56,3 +62,26 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+[tool.coverage.run]
+source = ["bubbly_chef"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/__init__.py",
+    "*/cli/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@abstractmethod",
+]
+fail_under = 80
+show_missing = true
+skip_covered = false
+
+[tool.coverage.html]
+directory = "htmlcov"
