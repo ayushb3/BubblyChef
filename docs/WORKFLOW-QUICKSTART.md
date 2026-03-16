@@ -1,68 +1,42 @@
-# Three-Agent Workflow — Quick Start Guide
+# Workflow Quick Start
 
-This is a TL;DR for the full workflow documented in [WORKFLOW.md](WORKFLOW.md).
-
-## The Setup
+## 5 commands for 90% of work
 
 ```
-PM (You in VSCode)
-     ↓ writes tasks in CURRENT_SPRINT.md
-Dev (Warp Terminal)
-     ↓ implements code
-QA (VSCode Terminal)
-     ↓ verifies & tests
-PM (You review diff)
-     ↓ commits
+/status               → where am I? what's ready?
+/rpi "goal"           → full cycle: research + plan + implement + validate
+/vibe recent          → is this code shippable?
+/plan "goal"          → break into issues, then /crank to execute
+/evolve               → run overnight against GOALS.md fitness gates
 ```
 
-## The Commands
+## Session start
 
 ```bash
-# 1. PM: Define tasks in CURRENT_SPRINT.md
-
-# 2. Dev: Implement
-./scripts/dev-agent.sh --yolo
-
-# 3. QA: Verify
-./scripts/qa-agent.sh
-
-# 4. PM: Review & commit
-git add . && git commit -m "feat: whatever"
+/status               # loads context, shows current work
 ```
 
-## When to Use Each Agent
+## After writing code
 
-| Agent | When | Where |
-|-------|------|-------|
-| **Dev** | You've written a task in CURRENT_SPRINT.md | Warp Terminal |
-| **QA** | Dev marked task [x], before you commit | VSCode Terminal |
-| **Planner** | You need help breaking down work | VSCode + Claude Code/Copilot |
+```bash
+/vibe recent          # validate changes before committing
+git commit -m "..."   # commit clean diff
+/retro --quick "what I learned"   # feed the knowledge flywheel
+```
 
-## The Key Files
+## Start a new feature
 
-- `CURRENT_SPRINT.md` — Source of truth (tasks, acceptance criteria)
-- `scripts/dev-agent.sh` — Launch Dev agent
-- `scripts/qa-agent.sh` — Launch QA agent
-- `scripts/new-sprint.sh` — Start new sprint, archive old one
-- `docs/WORKFLOW.md` — Full documentation (read this!)
+```bash
+/rpi "describe what you want to build"
+# → research → plan [approval] → parallel implementation → validate
+# You review diff, then commit
+```
 
-## QA vs No QA
+## Key files
 
-**Use QA when:**
-- Feature adds new functionality
-- Changes affect user-facing behavior
-- Task has acceptance criteria to verify
-- Not 100% confident it works
-
-**Skip QA when:**
-- Typo fixes
-- Doc updates
-- Trivial changes you're confident about
-
-## The Magic
-
-Dev doesn't worry about edge cases → QA catches them before PM review → Bugs found early → Less rework → Faster shipping.
-
----
-
-**Read the full docs:** [WORKFLOW.md](WORKFLOW.md)
+| File | Purpose |
+|------|---------|
+| `GOALS.md` | Fitness gates — `/evolve` runs until these pass |
+| `.agents/` | Knowledge store — auto-injected each session |
+| `docs/WORKFLOW.md` | Full workflow reference |
+| `docs/AGENTOPS.md` | Complete command reference |
