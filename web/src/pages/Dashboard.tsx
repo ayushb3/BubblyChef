@@ -43,9 +43,9 @@ export function Dashboard() {
   };
 
   return (
-    <div className="p-4 space-y-6">
-      {/* Header */}
-      <div className="pt-4">
+    <div className="p-4 space-y-6 lg:p-8">
+      {/* Header — hidden on desktop (sidebar shows brand) */}
+      <div className="pt-4 lg:hidden">
         <div className="flex items-center gap-2 mb-2">
           <ChefHat className="text-pastel-pink" size={32} strokeWidth={2.5} />
           <h1 className="text-3xl font-bold text-soft-charcoal">BubblyChef</h1>
@@ -53,6 +53,14 @@ export function Dashboard() {
         <p className="text-soft-charcoal/70 text-lg">
           {getGreeting()}! 🍳
         </p>
+      </div>
+
+      {/* Card grid — single col mobile, two col desktop */}
+      <div className="lg:grid lg:grid-cols-2 lg:gap-6 space-y-6 lg:space-y-0">
+
+      {/* Desktop greeting (sidebar hides the mobile header) */}
+      <div className="hidden lg:block lg:col-span-2 pt-2">
+        <p className="text-soft-charcoal/70 text-lg">{getGreeting()}! 🍳</p>
       </div>
 
       {/* Expiring Soon Card */}
@@ -110,7 +118,7 @@ export function Dashboard() {
         <h2 className="text-xl font-bold text-soft-charcoal mb-4">
           Quick Actions
         </h2>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 lg:grid-cols-3 gap-3">
           <button
             onClick={() => navigate('/scan')}
             className="flex flex-col items-center gap-2 p-4 bg-pastel-pink/20 rounded-2xl hover:bg-pastel-pink/30 transition-colors active:scale-95"
@@ -148,7 +156,7 @@ export function Dashboard() {
       </div>
 
       {/* Recent Activity Card */}
-      <div className="bg-white rounded-2xl p-5 shadow-soft">
+      <div className="bg-white rounded-2xl p-5 shadow-soft lg:col-span-2">
         <h2 className="text-xl font-bold text-soft-charcoal mb-4">
           Recent Activity
         </h2>
@@ -170,6 +178,8 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+
+      </div>{/* end card grid */}
     </div>
   );
 }

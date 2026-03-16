@@ -61,9 +61,11 @@ export function Recipes() {
   };
 
   return (
-    <div className="p-4 space-y-4 pb-24">
+    <div className="p-4 lg:p-8 lg:flex lg:gap-6 lg:items-start">
+      {/* Left column: input + suggestions + empty/loading state */}
+      <div className="lg:w-2/5 lg:sticky lg:top-8 space-y-4">
       {/* Header */}
-      <div className="pt-4">
+      <div className="pt-4 lg:pt-0">
         <h1 className="text-3xl font-bold text-soft-charcoal flex items-center gap-2">
           Recipe Magic <Sparkles className="text-pastel-lavender" size={28} />
         </h1>
@@ -81,7 +83,7 @@ export function Recipes() {
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
             placeholder="What would you like to make?"
-            className="flex-1 px-4 py-3 rounded-xl border border-pastel-pink/20 bg-cream-white focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all"
+            className="flex-1 px-4 py-3 rounded-xl border border-pastel-pink/20 bg-cream focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all"
             disabled={isGenerating}
           />
           <button
@@ -98,7 +100,7 @@ export function Recipes() {
         </div>
 
         {/* Suggestions */}
-        {!generatedRecipe && suggestions && suggestions.length > 0 && (
+        {suggestions && suggestions.length > 0 && (
           <div className="mt-4">
             <p className="text-xs text-soft-charcoal/50 mb-2 font-medium">Try asking:</p>
             <div className="flex flex-wrap gap-2">
@@ -117,6 +119,22 @@ export function Recipes() {
         )}
       </div>
 
+      {/* Empty State (shown in left col on desktop) */}
+      {!generatedRecipe && !isGenerating && (
+        <div className="text-center py-12 lg:py-6">
+          <p className="text-6xl mb-4">👨‍🍳</p>
+          <h3 className="text-xl font-bold text-soft-charcoal mb-2">
+            Ready to cook?
+          </h3>
+          <p className="text-soft-charcoal/60 max-w-xs mx-auto">
+            Ask me what to make and I'll suggest a recipe based on what's in your pantry!
+          </p>
+        </div>
+      )}
+      </div>{/* end left column */}
+
+      {/* Right column: recipe result / loading */}
+      <div className="lg:flex-1 space-y-4 mt-4 lg:mt-0">
       {/* Loading State */}
       {isGenerating && !generatedRecipe && (
         <div className="text-center py-16">
@@ -137,18 +155,7 @@ export function Recipes() {
         />
       )}
 
-      {/* Empty State */}
-      {!generatedRecipe && !isGenerating && (
-        <div className="text-center py-12">
-          <p className="text-6xl mb-4">👨‍🍳</p>
-          <h3 className="text-xl font-bold text-soft-charcoal mb-2">
-            Ready to cook?
-          </h3>
-          <p className="text-soft-charcoal/60 max-w-xs mx-auto">
-            Ask me what to make and I'll suggest a recipe based on what's in your pantry!
-          </p>
-        </div>
-      )}
+      </div>{/* end right column */}
     </div>
   );
 }

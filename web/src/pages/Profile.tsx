@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, Mail, AtSign, Edit2, Save, X } from 'lucide-react';
+import { Mail, AtSign, Edit2, Save, X } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '../api/client';
 import type { UpdateUserProfileRequest } from '../types';
 
@@ -72,7 +72,7 @@ export function Profile() {
 
   if (isLoading) {
     return (
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-4 lg:p-8">
         <div className="pt-4 flex items-center justify-center h-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pastel-pink mx-auto mb-4"></div>
@@ -85,7 +85,7 @@ export function Profile() {
 
   if (error || !profile) {
     return (
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-4 lg:p-8">
         <div className="pt-4">
           <div className="bg-pastel-coral/10 border border-pastel-coral/20 rounded-2xl p-6 text-center">
             <p className="text-soft-charcoal mb-4">
@@ -101,7 +101,7 @@ export function Profile() {
   }
 
   return (
-    <div className="p-4 space-y-4 pb-24">
+    <div className="p-4 space-y-4 pb-8 lg:p-8">
       {/* Header */}
       <div className="pt-4 flex items-center justify-between">
         <div>
@@ -122,6 +122,8 @@ export function Profile() {
         )}
       </div>
 
+      {/* Profile Card + Account Stats — side by side on desktop */}
+      <div className="lg:grid lg:grid-cols-[2fr_1fr] lg:gap-6 space-y-4 lg:space-y-0">
       {/* Profile Card */}
       <div className="bg-white rounded-3xl shadow-soft p-6 space-y-6">
         {/* Avatar Section */}
@@ -318,6 +320,7 @@ export function Profile() {
           </div>
         </div>
       </div>
+      </div>{/* end grid */}
     </div>
   );
 }

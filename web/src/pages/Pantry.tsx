@@ -63,7 +63,7 @@ export function Pantry() {
   };
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-4 space-y-4 lg:p-8">
       {/* Header */}
       <div className="pt-4 flex items-center justify-between">
         <div>
@@ -121,7 +121,7 @@ export function Pantry() {
           Loading your pantry...
         </div>
       ) : data && data.items.length > 0 ? (
-        <div className="space-y-3 pb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 pb-4">
           {data.items.map((item) => (
             <div
               key={item.id}

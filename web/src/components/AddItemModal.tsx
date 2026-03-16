@@ -133,7 +133,7 @@ export function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-lg bg-white rounded-t-3xl sm:rounded-3xl shadow-soft-lg max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full max-w-lg lg:max-w-xl bg-white rounded-t-3xl sm:rounded-3xl shadow-soft-lg max-h-[90vh] overflow-y-auto">
         {/* Drag Handle */}
         <div className="flex justify-center pt-3 pb-1 sm:hidden">
           <div className="w-12 h-1.5 bg-soft-charcoal/20 rounded-full" />

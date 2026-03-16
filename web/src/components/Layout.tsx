@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { BottomNav } from './BottomNav';
+import { Sidebar } from './Sidebar';
 
 interface LayoutProps {
   children: ReactNode;
@@ -7,11 +8,21 @@ interface LayoutProps {
 
 export function Layout({ children }: LayoutProps) {
   return (
-    <div className="min-h-screen bg-cream pb-20">
-      <div className="max-w-lg mx-auto">
-        {children}
+    <div className="min-h-screen bg-cream">
+      {/* Desktop sidebar */}
+      <Sidebar />
+
+      {/* Main content — offset by sidebar width on desktop, bottom nav height on mobile */}
+      <div className="lg:ml-56 pb-20 lg:pb-0">
+        <div className="max-w-5xl mx-auto">
+          {children}
+        </div>
       </div>
-      <BottomNav />
+
+      {/* Mobile bottom nav — hidden on desktop */}
+      <div className="lg:hidden">
+        <BottomNav />
+      </div>
     </div>
   );
 }

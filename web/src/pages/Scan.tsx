@@ -306,7 +306,7 @@ export function Scan() {
   // Upload State
   if (scanState === 'upload') {
     return (
-      <div className="p-4 pt-8 space-y-6">
+      <div className="p-4 pt-8 space-y-6 lg:p-8 lg:pt-10">
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-soft-charcoal flex items-center gap-2">
@@ -471,7 +471,7 @@ export function Scan() {
 
   // Results State
   return (
-    <div className="p-4 pt-8 space-y-4 pb-24">
+    <div className="p-4 pt-8 space-y-4 pb-32 lg:p-8 lg:pt-10 lg:pb-8">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -701,8 +701,8 @@ export function Scan() {
       )}
 
       {/* Action Buttons */}
-      <div className="fixed bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-cream via-cream to-transparent">
-        <div className="max-w-lg mx-auto flex gap-3">
+      <div className="fixed bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-cream via-cream to-transparent lg:static lg:bottom-auto lg:[background:none] lg:p-0 lg:pt-2">
+        <div className="max-w-lg lg:max-w-5xl mx-auto flex gap-3">
           <button
             onClick={handleReset}
             className="px-6 py-3 text-soft-charcoal/60 font-semibold rounded-full hover:bg-soft-charcoal/5 transition-all"
