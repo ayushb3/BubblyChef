@@ -78,7 +78,11 @@ class AIManager:
         for provider in self.providers:
             try:
                 if not await provider.is_available():
-                    logger.debug(f"Provider {provider.name} not available, skipping")
+                    logger.warning(
+                        "AI provider not available, skipping",
+                        extra={"provider": provider.name},
+                    )
+                    errors.append(f"{provider.name}: not available (check credentials/model/connection)")
                     continue
 
                 logger.info(

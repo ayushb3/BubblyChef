@@ -46,6 +46,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "LLM features will fail until Ollama is running."
         )
 
+    # Check Gemini availability
+    from bubbly_chef.api.deps import get_ai_manager
+    if settings.gemini_api_key:
+        ai_manager = get_ai_manager()
+        gemini_providers = [p for p in ai_manager.providers if "gemini" in p.name]
+        for p in gemini_providers:
+            if await p.is_available():
+                logger.info(f"Gemini available: {p.name}")
+            else:
+                logger.warning(
+                    f"Gemini not available ({p.name}). Check that the model name is valid "
+                    "and that the API key has access. LLM features will fall back to Ollama."
+                )
+    else:
+        logger.warning(
+            "BUBBLY_GEMINI_API_KEY not set. Gemini provider disabled. "
+            "LLM features require Ollama to be running."
+        )
+
     yield
 
     # Shutdown

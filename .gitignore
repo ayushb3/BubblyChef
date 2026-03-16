@@ -53,3 +53,17 @@ htmlcov/
 Thumbs.db
 
 *.obsidian
+
+# AgentOps session artifacts (auto-added by ao init)
+.agents/
+.playwright-cli/mobile-dashboard.png
+.playwright-cli/page-2026-03-16T23-09-38-537Z.yml
+.playwright-cli/page-2026-03-16T23-09-40-667Z.png
+.playwright-cli/page-2026-03-16T23-09-47-199Z.yml
+.playwright-cli/page-2026-03-16T23-09-47-253Z.png
+.playwright-cli/page-2026-03-16T23-09-54-070Z.yml
+.playwright-cli/page-2026-03-16T23-09-54-188Z.png
+.playwright-cli/page-2026-03-16T23-10-00-137Z.yml
+.playwright-cli/page-2026-03-16T23-10-00-193Z.png
+.playwright-cli/page-2026-03-16T23-10-06-189Z.yml
+.playwright-cli/page-2026-03-16T23-10-06-239Z.png

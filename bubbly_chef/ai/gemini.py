@@ -4,11 +4,14 @@ Google Gemini provider using the free tier API.
 """
 
 import json
+import logging
 import httpx
 from typing import Type, TypeVar
 from pydantic import BaseModel, ValidationError
 
 from .provider import AIProvider, ProviderUnavailableError, StructuredOutputError
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -130,8 +133,18 @@ Return ONLY the JSON, no markdown formatting or extra text."""
                 url,
                 params={"key": self.api_key},
             )
-            return response.status_code == 200
-        except httpx.RequestError:
+            if response.status_code == 200:
+                return True
+            logger.warning(
+                "Gemini availability check failed",
+                extra={"status_code": response.status_code, "model": self.model},
+            )
+            return False
+        except httpx.RequestError as e:
+            logger.warning(
+                "Gemini availability check failed: connection error",
+                extra={"error": str(e)},
+            )
             return False
 
     async def close(self):
