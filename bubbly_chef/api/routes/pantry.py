@@ -1,16 +1,34 @@
 """Pantry query endpoints."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from bubbly_chef.models.pantry import PantryItem, FoodCategory, StorageLocation
+from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.repository.sqlite import get_repository
 from bubbly_chef.tools.expiry import get_expiry_heuristics
+
+
+class CreatePantryItemRequest(BaseModel):
+    name: str
+    quantity: float = 1.0
+    unit: str = "item"
+    category: FoodCategory = FoodCategory.OTHER
+    storage_location: StorageLocation = StorageLocation.PANTRY
+    expiry_date: str | None = None
+
+
+class UpdatePantryItemRequest(BaseModel):
+    name: str | None = None
+    quantity: float | None = None
+    unit: str | None = None
+    category: FoodCategory | None = None
+    storage_location: StorageLocation | None = None
+    expiry_date: str | None = None
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +74,11 @@ async def list_pantry(
 
     # Get items with optional filters
     if search:
-        items = await repo.find_pantry_items(name=search)
+        items = await repo.search_pantry_items(search)
     elif category or storage:
-        items = await repo.find_pantry_items(
+        items = await repo.get_pantry_items(
             category=category.value if category else None,
-            storage_location=storage.value if storage else None,
+            location=storage.value if storage else None,
         )
     else:
         items = await repo.get_all_pantry_items()
@@ -100,11 +118,11 @@ async def list_expiring_items(
     logger.info(f"Fetching expiring items within {days} days")
 
     repo = await get_repository()
-    expiry = get_expiry_heuristics()
+    get_expiry_heuristics()
 
     all_items = await repo.get_all_pantry_items()
-    now = datetime.now(timezone.utc).date()
-    threshold = (datetime.now(timezone.utc) + timedelta(days=days)).date()
+    now = datetime.now(UTC).date()
+    threshold = (datetime.now(UTC) + timedelta(days=days)).date()
 
     # Filter items that expire within the threshold and are not already expired
     expiring_items = [
@@ -131,6 +149,70 @@ async def list_expiring_items(
     )
 
 
+@router.post(
+    "",
+    response_model=PantryItem,
+    status_code=201,
+    summary="Create a pantry item",
+)
+async def create_pantry_item(body: CreatePantryItemRequest) -> PantryItem:
+    """Create a new pantry item directly (no AI workflow)."""
+    from datetime import date as date_type
+
+    repo = await get_repository()
+    expiry = get_expiry_heuristics()
+
+    expiry_date: date_type | None = None
+    estimated = False
+    if body.expiry_date:
+        expiry_date = date_type.fromisoformat(body.expiry_date)
+    else:
+        expiry_date, estimated = expiry.estimate_expiry(body.category, body.storage_location, body.name)
+
+    item = PantryItem(
+        name=body.name,
+        category=body.category,
+        storage_location=body.storage_location,
+        quantity=body.quantity,
+        unit=body.unit,
+        expiry_date=expiry_date,
+        estimated_expiry=estimated or body.expiry_date is None,
+    )
+    return await repo.add_pantry_item(item)
+
+
+@router.put(
+    "/{item_id}",
+    response_model=PantryItem,
+    summary="Update a pantry item",
+)
+async def update_pantry_item(item_id: UUID, body: UpdatePantryItemRequest) -> PantryItem:
+    """Update an existing pantry item by ID."""
+    from datetime import date as date_type
+
+    repo = await get_repository()
+
+    existing = await repo.get_pantry_item(str(item_id))
+    if not existing:
+        raise HTTPException(status_code=404, detail="Pantry item not found")
+
+    updates: dict[str, Any] = {"updated_at": datetime.now(UTC)}
+    if body.name is not None:
+        updates["name"] = body.name
+    if body.quantity is not None:
+        updates["quantity"] = body.quantity
+    if body.unit is not None:
+        updates["unit"] = body.unit
+    if body.category is not None:
+        updates["category"] = body.category
+    if body.storage_location is not None:
+        updates["storage_location"] = body.storage_location
+    if body.expiry_date is not None:
+        updates["expiry_date"] = date_type.fromisoformat(body.expiry_date)
+
+    return await repo.update_pantry_item(str(item_id), updates)
+
+
 @router.get(
     "/{item_id}",
     response_model=PantryItemResponse,
@@ -145,7 +227,7 @@ async def get_pantry_item(item_id: UUID) -> PantryItemResponse:
     repo = await get_repository()
     expiry = get_expiry_heuristics()
 
-    item = await repo.get_pantry_item(item_id)
+    item = await repo.get_pantry_item(str(item_id))
 
     if not item:
         raise HTTPException(status_code=404, detail="Pantry item not found")
@@ -169,7 +251,7 @@ async def delete_pantry_item(item_id: UUID) -> dict[str, Any]:
     """
     repo = await get_repository()
 
-    deleted = await repo.delete_pantry_item(item_id)
+    deleted = await repo.delete_pantry_item(str(item_id))
 
     if not deleted:
         raise HTTPException(status_code=404, detail="Pantry item not found")

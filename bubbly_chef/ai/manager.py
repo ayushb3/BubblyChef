@@ -5,7 +5,8 @@ Manages AI provider selection and fallback logic.
 
 import logging
 from datetime import datetime
-from typing import Type, TypeVar
+from typing import TypeVar
+
 from pydantic import BaseModel
 
 from .provider import AIProvider, ProviderUnavailableError
@@ -53,7 +54,7 @@ class AIManager:
     async def complete(
         self,
         prompt: str,
-        response_schema: Type[T] | None = None,
+        response_schema: type[T] | None = None,
         temperature: float = 0.7,
     ) -> T | str:
         """
@@ -82,7 +83,10 @@ class AIManager:
                         "AI provider not available, skipping",
                         extra={"provider": provider.name},
                     )
-                    errors.append(f"{provider.name}: not available (check credentials/model/connection)")
+                    errors.append(
+                        f"{provider.name}: not available"
+                        " (check credentials/model/connection)"
+                    )
                     continue
 
                 logger.info(

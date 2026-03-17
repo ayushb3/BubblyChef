@@ -1,15 +1,13 @@
 """Pantry-related Pydantic models."""
 
 from datetime import date, datetime
-from enum import Enum
-from functools import cached_property
-from typing import Optional
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, computed_field
 
 
-class FoodCategory(str, Enum):
+class FoodCategory(StrEnum):
     """Food categories for expiry heuristics and organization."""
 
     PRODUCE = "produce"
@@ -26,7 +24,7 @@ class FoodCategory(str, Enum):
     OTHER = "other"
 
 
-class StorageLocation(str, Enum):
+class StorageLocation(StrEnum):
     """Storage locations in a typical kitchen."""
 
     FRIDGE = "fridge"
@@ -35,7 +33,7 @@ class StorageLocation(str, Enum):
     COUNTER = "counter"
 
 
-class ActionType(str, Enum):
+class ActionType(StrEnum):
     """Types of pantry actions."""
 
     ADD = "add"
@@ -73,16 +71,25 @@ class PantryItem(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def location(self) -> StorageLocation:
         """Alias for storage_location (backward compatibility)."""
         return self.storage_location
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def name_normalized(self) -> str:
         """Return normalized name for matching."""
         return self.name.lower().strip()
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def added_at(self) -> datetime:
+        """Alias for created_at (frontend compatibility)."""
+        return self.created_at
+
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def days_until_expiry(self) -> int | None:
         """Calculate days until expiry."""
@@ -90,12 +97,14 @@ class PantryItem(BaseModel):
             return None
         return (self.expiry_date - date.today()).days
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def is_expiring_soon(self) -> bool:
         """Check if item expires within 3 days."""
         days = self.days_until_expiry
         return days is not None and 0 <= days <= 3
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def is_expired(self) -> bool:
         """Check if item is expired."""

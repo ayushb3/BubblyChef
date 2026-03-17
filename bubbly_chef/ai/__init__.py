@@ -5,10 +5,10 @@ AI provider abstraction layer.
 Supports multiple providers (Gemini, Ollama) with automatic fallback.
 """
 
-from .provider import AIProvider, AIProviderError, ProviderUnavailableError, StructuredOutputError
-from .manager import AIManager, NoProviderAvailableError
 from .gemini import GeminiProvider
+from .manager import AIManager, NoProviderAvailableError
 from .ollama import OllamaProvider
+from .provider import AIProvider, AIProviderError, ProviderUnavailableError, StructuredOutputError
 
 __all__ = [
     # Base classes

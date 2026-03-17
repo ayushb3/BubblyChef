@@ -1,5 +1,3 @@
 """API routes package."""
 
-from bubbly_chef.api.routes import health, ingest, pantry, apply, recipes, scan, profile
-
-__all__ = ["health", "ingest", "pantry", "apply", "recipes", "scan", "profile"]
+__all__ = ["health", "ingest", "pantry", "apply", "recipes", "scan", "profile", "chat"]

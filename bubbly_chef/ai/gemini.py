@@ -5,8 +5,9 @@ Google Gemini provider using the free tier API.
 
 import json
 import logging
+from typing import TypeVar
+
 import httpx
-from typing import Type, TypeVar
 from pydantic import BaseModel, ValidationError
 
 from .provider import AIProvider, ProviderUnavailableError, StructuredOutputError
@@ -47,7 +48,7 @@ class GeminiProvider(AIProvider):
     async def complete(
         self,
         prompt: str,
-        response_schema: Type[T] | None = None,
+        response_schema: type[T] | None = None,
         temperature: float = 0.7,
     ) -> T | str:
         """Generate completion using Gemini API."""
