@@ -306,3 +306,122 @@ async def test_get_pantry_items_filtered(repo: SQLiteRepository) -> None:
 
     both = await repo.get_pantry_items(category="dairy", location="fridge")
     assert len(both) == 1
+
+
+# =========================================================================
+# apply_pantry_proposal
+# =========================================================================
+
+
+@pytest.mark.asyncio
+async def test_apply_pantry_proposal_add(repo):
+    """apply_pantry_proposal adds new items."""
+    actions = [
+        {"action_type": "add", "item": {"name": "milk", "quantity": 2, "unit": "gallon", "category": "dairy"}},
+        {"action_type": "add", "item": {"name": "eggs", "quantity": 12, "unit": "item", "category": "dairy"}},
+    ]
+    applied, failed, errors = await repo.apply_pantry_proposal(actions)
+    assert applied == 2
+    assert failed == 0
+    assert errors == []
+    items = await repo.get_all_pantry_items()
+    names = [i.name for i in items]
+    assert "milk" in names
+    assert "eggs" in names
+
+
+@pytest.mark.asyncio
+async def test_apply_pantry_proposal_add_existing_accumulates_quantity(repo):
+    """apply_pantry_proposal adds to existing item quantity when action=add."""
+    item = PantryItem(name="milk", quantity=1, unit="gallon", category=FoodCategory.DAIRY)
+    await repo.add_pantry_item(item)
+
+    actions = [{"action_type": "add", "item": {"name": "milk", "quantity": 2, "unit": "gallon", "category": "dairy"}}]
+    applied, failed, errors = await repo.apply_pantry_proposal(actions)
+    assert applied == 1
+    items = await repo.get_all_pantry_items()
+    milk = next(i for i in items if i.name == "milk")
+    assert milk.quantity == 3.0
+
+
+@pytest.mark.asyncio
+async def test_apply_pantry_proposal_update_replaces_quantity(repo):
+    """apply_pantry_proposal update action replaces quantity."""
+    item = PantryItem(name="bread", quantity=2, unit="loaf", category=FoodCategory.BAKERY)
+    await repo.add_pantry_item(item)
+
+    actions = [{"action_type": "update", "item": {"name": "bread", "quantity": 1, "unit": "loaf", "category": "bakery"}}]
+    applied, failed, errors = await repo.apply_pantry_proposal(actions)
+    assert applied == 1
+    items = await repo.get_all_pantry_items()
+    bread = next(i for i in items if i.name == "bread")
+    assert bread.quantity == 1.0
+
+
+@pytest.mark.asyncio
+async def test_apply_pantry_proposal_remove(repo):
+    """apply_pantry_proposal remove action deletes the item."""
+    item = PantryItem(name="yogurt", quantity=3, unit="cup", category=FoodCategory.DAIRY)
+    await repo.add_pantry_item(item)
+
+    actions = [{"action_type": "remove", "item": {"name": "yogurt", "quantity": 1, "unit": "cup", "category": "dairy"}}]
+    applied, failed, errors = await repo.apply_pantry_proposal(actions)
+    assert applied == 1
+    items = await repo.get_all_pantry_items()
+    assert all(i.name != "yogurt" for i in items)
+
+
+@pytest.mark.asyncio
+async def test_apply_pantry_proposal_use_deducts_quantity(repo):
+    """apply_pantry_proposal use action deducts quantity; deletes if zero."""
+    item = PantryItem(name="butter", quantity=4, unit="tbsp", category=FoodCategory.DAIRY)
+    await repo.add_pantry_item(item)
+
+    actions = [{"action_type": "use", "item": {"name": "butter", "quantity": 2, "unit": "tbsp", "category": "dairy"}}]
+    applied, failed, errors = await repo.apply_pantry_proposal(actions)
+    assert applied == 1
+    items = await repo.get_all_pantry_items()
+    butter = next((i for i in items if i.name == "butter"), None)
+    assert butter is not None
+    assert butter.quantity == 2.0
+
+
+@pytest.mark.asyncio
+async def test_apply_pantry_proposal_use_deletes_when_zero(repo):
+    """apply_pantry_proposal use deletes item when quantity reaches zero."""
+    item = PantryItem(name="cheese", quantity=1, unit="slice", category=FoodCategory.DAIRY)
+    await repo.add_pantry_item(item)
+
+    actions = [{"action_type": "use", "item": {"name": "cheese", "quantity": 1, "unit": "slice", "category": "dairy"}}]
+    applied, failed, errors = await repo.apply_pantry_proposal(actions)
+    assert applied == 1
+    items = await repo.get_all_pantry_items()
+    assert all(i.name != "cheese" for i in items)
+
+
+@pytest.mark.asyncio
+async def test_apply_pantry_proposal_remove_missing_fails(repo):
+    """apply_pantry_proposal returns failure when removing a missing item."""
+    actions = [{"action_type": "remove", "item": {"name": "ghost_item", "quantity": 1, "unit": "item", "category": "other"}}]
+    applied, failed, errors = await repo.apply_pantry_proposal(actions)
+    assert applied == 0
+    assert failed == 1
+    assert any("ghost_item" in e for e in errors)
+
+
+@pytest.mark.asyncio
+async def test_apply_pantry_proposal_missing_name_fails(repo):
+    """apply_pantry_proposal returns failure for actions with no item name."""
+    actions = [{"action_type": "add", "item": {"name": "", "quantity": 1, "unit": "item"}}]
+    applied, failed, errors = await repo.apply_pantry_proposal(actions)
+    assert failed == 1
+    assert any("name" in e.lower() for e in errors)
+
+
+@pytest.mark.asyncio
+async def test_apply_pantry_proposal_unknown_action_fails(repo):
+    """apply_pantry_proposal returns failure for unknown action_type."""
+    actions = [{"action_type": "teleport", "item": {"name": "apple", "quantity": 1, "unit": "item", "category": "produce"}}]
+    applied, failed, errors = await repo.apply_pantry_proposal(actions)
+    assert failed == 1
+    assert any("teleport" in e for e in errors)

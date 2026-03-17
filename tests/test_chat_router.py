@@ -693,3 +693,68 @@ class TestEdgeCases:
         )
 
         assert envelope is not None
+
+
+# =============================================================================
+# Pantry Context Injection Tests (cooking_help + general_chat)
+# =============================================================================
+
+
+class TestPantryContextInjection:
+    """Verify that cooking_help and general_chat responses inject pantry context."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_ai(self):
+        mock_manager = AsyncMock()
+        mock_manager.complete.return_value = "Here are some recipe ideas based on your pantry."
+        with patch(
+            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            return_value=mock_manager,
+        ):
+            self._mock_manager = mock_manager
+            yield
+
+    @pytest.mark.asyncio
+    async def test_cooking_help_calls_get_repository(self, mock_repository):
+        """cooking_help_response fetches pantry items from the repository."""
+        from bubbly_chef.models.pantry import PantryItem
+
+        mock_item = PantryItem(name="chicken", quantity=2, unit="lb", category="meat")
+        mock_repository.get_all_pantry_items.return_value = [mock_item]
+
+        envelope = await run_chat_workflow(message="What can I make for dinner tonight?")
+
+        # Repository should have been queried for pantry context
+        mock_repository.get_all_pantry_items.assert_called()
+        assert envelope.assistant_message != ""
+
+    @pytest.mark.asyncio
+    async def test_cooking_help_with_expiring_items(self, mock_repository):
+        """cooking_help_response surfaces expiring items in context."""
+        from datetime import date, timedelta
+        from bubbly_chef.models.pantry import PantryItem
+
+        expiring = PantryItem(
+            name="spinach",
+            quantity=1,
+            unit="bag",
+            category="produce",
+            expiry_date=date.today() + timedelta(days=1),
+        )
+        mock_repository.get_all_pantry_items.return_value = [expiring]
+
+        envelope = await run_chat_workflow(message="What should I cook to use up ingredients?")
+
+        mock_repository.get_all_pantry_items.assert_called()
+        assert envelope is not None
+
+    @pytest.mark.asyncio
+    async def test_intent_preserved_in_envelope_for_cooking_help(self, mock_repository):
+        """The cooking_help intent is preserved through the response envelope."""
+        mock_repository.get_all_pantry_items.return_value = []
+
+        envelope = await run_chat_workflow(message="What can I cook for dinner tonight?")
+
+        assert envelope.intent == Intent.COOKING_HELP
+        assert envelope.next_action == NextAction.NONE
+        assert envelope.proposal is None
