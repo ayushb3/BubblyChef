@@ -1,0 +1,308 @@
+"""Tests for SQLiteRepository methods including new recipe and ingestion features."""
+
+import tempfile
+from datetime import UTC, datetime
+from uuid import uuid4
+
+import pytest
+import pytest_asyncio
+
+from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
+from bubbly_chef.models.recipe import Ingredient, RecipeCard
+from bubbly_chef.repository.sqlite import SQLiteRepository
+
+
+@pytest_asyncio.fixture
+async def repo():
+    """Create a fresh repository for each test."""
+    _, db_path = tempfile.mkstemp(suffix=".db")
+    repository = SQLiteRepository(db_path=db_path)
+    await repository.initialize()
+    yield repository
+    await repository.close()
+
+
+# =========================================================================
+# find_similar_item
+# =========================================================================
+
+
+@pytest.mark.asyncio
+async def test_find_similar_item_exact_match(repo: SQLiteRepository) -> None:
+    """find_similar_item returns item with matching normalized name."""
+    item = PantryItem(name="Whole Milk", category=FoodCategory.DAIRY)
+    await repo.add_pantry_item(item)
+
+    found = await repo.find_similar_item("whole milk")
+    assert found is not None
+    assert found.name == "Whole Milk"
+
+
+@pytest.mark.asyncio
+async def test_find_similar_item_case_insensitive(repo: SQLiteRepository) -> None:
+    """find_similar_item is case-insensitive."""
+    item = PantryItem(name="Brown Rice", category=FoodCategory.DRY_GOODS)
+    await repo.add_pantry_item(item)
+
+    found = await repo.find_similar_item("BROWN RICE")
+    assert found is not None
+    assert found.name == "Brown Rice"
+
+
+@pytest.mark.asyncio
+async def test_find_similar_item_not_found(repo: SQLiteRepository) -> None:
+    """find_similar_item returns None when no match."""
+    found = await repo.find_similar_item("nonexistent item")
+    assert found is None
+
+
+# =========================================================================
+# Recipe CRUD
+# =========================================================================
+
+
+def _make_recipe(**kwargs: object) -> RecipeCard:
+    """Helper to create a test recipe."""
+    defaults = {
+        "title": "Test Pasta",
+        "description": "A simple pasta recipe",
+        "ingredients": [
+            Ingredient(name="pasta", quantity=1.0, unit="lb"),
+            Ingredient(name="tomato sauce", quantity=1.0, unit="jar"),
+        ],
+        "instructions": ["Boil pasta", "Add sauce", "Serve"],
+        "prep_time_minutes": 5,
+        "cook_time_minutes": 15,
+        "servings": 4,
+        "dietary_tags": ["vegetarian"],
+    }
+    defaults.update(kwargs)  # type: ignore[arg-type]
+    return RecipeCard(**defaults)  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_add_and_get_recipe(repo: SQLiteRepository) -> None:
+    """Can add a recipe and retrieve it by ID."""
+    recipe = _make_recipe()
+    added = await repo.add_recipe(recipe)
+    assert added.id == recipe.id
+
+    fetched = await repo.get_recipe(recipe.id)
+    assert fetched is not None
+    assert fetched.title == "Test Pasta"
+    assert len(fetched.ingredients) == 2
+    assert fetched.ingredients[0].name == "pasta"
+    assert fetched.instructions == ["Boil pasta", "Add sauce", "Serve"]
+    assert fetched.dietary_tags == ["vegetarian"]
+
+
+@pytest.mark.asyncio
+async def test_get_recipe_not_found(repo: SQLiteRepository) -> None:
+    """get_recipe returns None for missing ID."""
+    result = await repo.get_recipe(uuid4())
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_all_recipes(repo: SQLiteRepository) -> None:
+    """get_all_recipes returns all stored recipes."""
+    await repo.add_recipe(_make_recipe(title="Recipe A"))
+    await repo.add_recipe(_make_recipe(title="Recipe B"))
+
+    all_recipes = await repo.get_all_recipes()
+    assert len(all_recipes) == 2
+    titles = {r.title for r in all_recipes}
+    assert titles == {"Recipe A", "Recipe B"}
+
+
+@pytest.mark.asyncio
+async def test_update_recipe(repo: SQLiteRepository) -> None:
+    """Can update an existing recipe."""
+    recipe = _make_recipe(title="Original Title")
+    await repo.add_recipe(recipe)
+
+    recipe.title = "Updated Title"
+    recipe.servings = 8
+    recipe.updated_at = datetime.now(UTC)
+    updated = await repo.update_recipe(recipe)
+    assert updated.title == "Updated Title"
+
+    fetched = await repo.get_recipe(recipe.id)
+    assert fetched is not None
+    assert fetched.title == "Updated Title"
+    assert fetched.servings == 8
+
+
+@pytest.mark.asyncio
+async def test_delete_recipe(repo: SQLiteRepository) -> None:
+    """Can delete a recipe."""
+    recipe = _make_recipe()
+    await repo.add_recipe(recipe)
+
+    deleted = await repo.delete_recipe(recipe.id)
+    assert deleted is True
+
+    fetched = await repo.get_recipe(recipe.id)
+    assert fetched is None
+
+
+@pytest.mark.asyncio
+async def test_delete_recipe_not_found(repo: SQLiteRepository) -> None:
+    """delete_recipe returns False for missing recipe."""
+    result = await repo.delete_recipe(uuid4())
+    assert result is False
+
+
+# =========================================================================
+# Ingestion logs
+# =========================================================================
+
+
+@pytest.mark.asyncio
+async def test_log_and_get_ingestion(repo: SQLiteRepository) -> None:
+    """Can log an ingestion and retrieve it."""
+    request_id = uuid4()
+    await repo.log_ingestion(
+        request_id=request_id,
+        intent="pantry_update",
+        input_payload={"text": "I bought milk"},
+        proposal={"actions": [{"name": "milk"}]},
+        errors=[],
+    )
+
+    log = await repo.get_ingestion_log(request_id)
+    assert log is not None
+    assert log["request_id"] == str(request_id)
+    assert log["intent"] == "pantry_update"
+    assert log["input_payload"]["text"] == "I bought milk"
+    assert log["proposal"]["actions"][0]["name"] == "milk"
+    assert log["errors"] == []
+
+
+@pytest.mark.asyncio
+async def test_log_ingestion_with_errors(repo: SQLiteRepository) -> None:
+    """Ingestion log preserves error messages."""
+    request_id = uuid4()
+    await repo.log_ingestion(
+        request_id=request_id,
+        intent="receipt_ingest_request",
+        input_payload={"ocr_text": "blurry receipt"},
+        proposal=None,
+        errors=["OCR failed", "No items found"],
+    )
+
+    log = await repo.get_ingestion_log(request_id)
+    assert log is not None
+    assert log["proposal"] is None
+    assert log["errors"] == ["OCR failed", "No items found"]
+
+
+@pytest.mark.asyncio
+async def test_get_ingestion_log_not_found(repo: SQLiteRepository) -> None:
+    """get_ingestion_log returns None for missing request."""
+    result = await repo.get_ingestion_log(uuid4())
+    assert result is None
+
+
+# =========================================================================
+# update_pantry_item (both signatures)
+# =========================================================================
+
+
+@pytest.mark.asyncio
+async def test_update_pantry_item_with_object(repo: SQLiteRepository) -> None:
+    """update_pantry_item accepts a PantryItem object (full replacement)."""
+    item = PantryItem(
+        name="Eggs",
+        category=FoodCategory.DAIRY,
+        storage_location=StorageLocation.FRIDGE,
+        quantity=12,
+        unit="item",
+    )
+    await repo.add_pantry_item(item)
+
+    item.quantity = 6
+    item.updated_at = datetime.now(UTC)
+    result = await repo.update_pantry_item(item)
+    assert result.quantity == 6
+
+    fetched = await repo.get_pantry_item(str(item.id))
+    assert fetched is not None
+    assert fetched.quantity == 6
+
+
+@pytest.mark.asyncio
+async def test_update_pantry_item_with_dict(repo: SQLiteRepository) -> None:
+    """update_pantry_item accepts item_id + updates dict (legacy path)."""
+    item = PantryItem(
+        name="Butter",
+        category=FoodCategory.DAIRY,
+        storage_location=StorageLocation.FRIDGE,
+        quantity=1,
+        unit="lb",
+    )
+    await repo.add_pantry_item(item)
+
+    result = await repo.update_pantry_item(
+        str(item.id),
+        {"quantity": 2, "unit": "lb"},
+    )
+    assert result.quantity == 2
+
+
+@pytest.mark.asyncio
+async def test_update_pantry_item_not_found(repo: SQLiteRepository) -> None:
+    """update_pantry_item raises ValueError for missing item (dict path)."""
+    with pytest.raises(ValueError, match="Item not found"):
+        await repo.update_pantry_item("nonexistent-id", {"quantity": 1})
+
+
+# =========================================================================
+# Edge cases for search/filter
+# =========================================================================
+
+
+@pytest.mark.asyncio
+async def test_search_pantry_items(repo: SQLiteRepository) -> None:
+    """search_pantry_items finds items by partial name match."""
+    await repo.add_pantry_item(
+        PantryItem(name="Organic Milk", category=FoodCategory.DAIRY)
+    )
+    await repo.add_pantry_item(
+        PantryItem(name="Almond Milk", category=FoodCategory.DAIRY)
+    )
+    await repo.add_pantry_item(
+        PantryItem(name="Bread", category=FoodCategory.BAKERY)
+    )
+
+    results = await repo.search_pantry_items("milk")
+    assert len(results) == 2
+
+
+@pytest.mark.asyncio
+async def test_get_pantry_items_filtered(repo: SQLiteRepository) -> None:
+    """get_pantry_items filters by category and location."""
+    await repo.add_pantry_item(
+        PantryItem(
+            name="Cheese",
+            category=FoodCategory.DAIRY,
+            storage_location=StorageLocation.FRIDGE,
+        )
+    )
+    await repo.add_pantry_item(
+        PantryItem(
+            name="Frozen Peas",
+            category=FoodCategory.FROZEN,
+            storage_location=StorageLocation.FREEZER,
+        )
+    )
+
+    dairy = await repo.get_pantry_items(category="dairy")
+    assert len(dairy) == 1
+    assert dairy[0].name == "Cheese"
+
+    fridge = await repo.get_pantry_items(location="fridge")
+    assert len(fridge) == 1
+
+    both = await repo.get_pantry_items(category="dairy", location="fridge")
+    assert len(both) == 1
