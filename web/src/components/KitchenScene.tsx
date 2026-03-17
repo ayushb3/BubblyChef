@@ -11,8 +11,7 @@ interface KitchenSceneProps {
   onItemClick: (item: PantryItem) => void;
 }
 
-const TWEEN_DURATION = 300; // ms
-const ZOOM_SCALE = 2.5;
+const FADE_DURATION = 200; // ms
 const COUNTER_MAX_COLS = 8;
 
 const ZONE_TITLE_STYLE = new TextStyle({
@@ -49,18 +48,16 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
   const appRef = useRef<Application | null>(null);
   const stateRef = useRef<{
     zoomedZone: Location | null;
-    tweening: boolean;
+    animating: boolean;
     roomContainer: Container | null;
     zoneContainer: Container | null;
-    counterSprites: Container | null;
     zones: ApplianceZone[];
     isMobile: boolean;
   }>({
     zoomedZone: null,
-    tweening: false,
+    animating: false,
     roomContainer: null,
     zoneContainer: null,
-    counterSprites: null,
     zones: [],
     isMobile: false,
   });
@@ -71,24 +68,23 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
   const onItemClickRef = useRef(onItemClick);
   onItemClickRef.current = onItemClick;
 
-  // Refs for stable access in PixiJS event handlers (avoids stale closures)
   const zoomInRef = useRef<(app: Application, zone: ApplianceZone) => void>();
   const zoomOutRef = useRef<(app: Application) => void>();
 
-  const buildZoneView = useCallback(
-    (_app: Application, zone: ApplianceZone, zoneContainer: Container) => {
+  const buildInterior = useCallback(
+    (zone: ApplianceZone, zoneContainer: Container) => {
       zoneContainer.removeChildren();
 
       const zoneItems = itemsRef.current.filter((i) => i.location === zone.location);
 
-      // Use the immersive interior renderer for this location
+      // Render the immersive interior
       const renderer = getInteriorRenderer(zone.location);
       renderer(zoneContainer, {
         items: zoneItems,
         onItemClick: (item: PantryItem) => onItemClickRef.current(item),
       });
 
-      // Overlay: back arrow button (always on top)
+      // Overlay: back arrow button
       const backBtn = new Container();
       const backBg = new Graphics();
       backBg.roundRect(0, 0, 44, 44, 12).fill({ color: 0xffffff, alpha: 0.85 });
@@ -113,7 +109,7 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
       });
       zoneContainer.addChild(backBtn);
 
-      // Overlay: zone title (floating label)
+      // Overlay: zone title
       const titleBg = new Graphics();
       titleBg.roundRect(0, 0, 160, 32, 8).fill({ color: 0xffffff, alpha: 0.85 });
       titleBg.x = 68;
@@ -134,116 +130,78 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
   const zoomIn = useCallback(
     (app: Application, zone: ApplianceZone) => {
       const state = stateRef.current;
-      if (state.tweening || state.zoomedZone) return;
+      if (state.animating || state.zoomedZone) return;
       if (!state.roomContainer || !state.zoneContainer) return;
 
-      state.tweening = true;
+      state.animating = true;
       state.zoomedZone = zone.location;
-
-      // Build zone detail view
-      buildZoneView(app, zone, state.zoneContainer);
 
       const room = state.roomContainer;
       const zoneC = state.zoneContainer;
 
-      // Calculate pivot to center on the clicked zone
-      const pivotX = zone.x + zone.width / 2;
-      const pivotY = zone.y + zone.height / 2;
+      // Build interior view and scale it to match canvas
+      buildInterior(zone, zoneC);
+      const scale = state.isMobile ? 0.6 : 1;
+      zoneC.scale.set(scale);
 
-      const startScale = room.scale.x;
-      const startPivotX = room.pivot.x;
-      const startPivotY = room.pivot.y;
-      const startPosX = room.x;
-      const startPosY = room.y;
-
-      // Mobile uses 0.6 base scale; zoom relative to that
-      const mobileF = state.isMobile ? 0.6 : 1;
-      const targetScale = ZOOM_SCALE * mobileF;
-      const targetPivotX = pivotX;
-      const targetPivotY = pivotY;
-      const targetPosX = 400 * mobileF;
-      const targetPosY = 260 * mobileF;
+      // Crossfade: room fades out, interior fades in
+      zoneC.visible = true;
+      zoneC.alpha = 0;
 
       const startTime = performance.now();
-
       const tickerFn = () => {
         const elapsed = performance.now() - startTime;
-        const progress = Math.min(elapsed / TWEEN_DURATION, 1);
+        const progress = Math.min(elapsed / FADE_DURATION, 1);
         const t = easeOutCubic(progress);
 
-        const s = lerp(startScale, targetScale, t);
-        room.scale.set(s);
-        room.pivot.x = lerp(startPivotX, targetPivotX, t);
-        room.pivot.y = lerp(startPivotY, targetPivotY, t);
-        room.x = lerp(startPosX, targetPosX, t);
-        room.y = lerp(startPosY, targetPosY, t);
         room.alpha = lerp(1, 0, t);
+        zoneC.alpha = lerp(0, 1, t);
 
         if (progress >= 1) {
           app.ticker.remove(tickerFn);
           room.visible = false;
-          zoneC.visible = true;
+          room.alpha = 1; // reset for later
           zoneC.alpha = 1;
-          state.tweening = false;
+          state.animating = false;
         }
       };
-
       app.ticker.add(tickerFn);
     },
-    [buildZoneView],
+    [buildInterior],
   );
 
   const zoomOut = useCallback((app: Application) => {
     const state = stateRef.current;
-    if (state.tweening || !state.zoomedZone) return;
+    if (state.animating || !state.zoomedZone) return;
     if (!state.roomContainer || !state.zoneContainer) return;
 
-    state.tweening = true;
+    state.animating = true;
 
     const room = state.roomContainer;
     const zoneC = state.zoneContainer;
 
+    // Crossfade: interior fades out, room fades in
     room.visible = true;
     room.alpha = 0;
-    zoneC.visible = true;
-
-    const startScale = room.scale.x;
-    const startPivotX = room.pivot.x;
-    const startPivotY = room.pivot.y;
-    const startPosX = room.x;
-    const startPosY = room.y;
-
-    // Zoom back to base scale (0.6 on mobile, 1 on desktop)
-    const targetScale = state.isMobile ? 0.6 : 1;
 
     const startTime = performance.now();
-
     const tickerFn = () => {
       const elapsed = performance.now() - startTime;
-      const progress = Math.min(elapsed / TWEEN_DURATION, 1);
+      const progress = Math.min(elapsed / FADE_DURATION, 1);
       const t = easeOutCubic(progress);
 
-      const s = lerp(startScale, targetScale, t);
-      room.scale.set(s);
-      room.pivot.x = lerp(startPivotX, 0, t);
-      room.pivot.y = lerp(startPivotY, 0, t);
-      room.x = lerp(startPosX, 0, t);
-      room.y = lerp(startPosY, 0, t);
       room.alpha = lerp(0, 1, t);
       zoneC.alpha = lerp(1, 0, t);
 
       if (progress >= 1) {
         app.ticker.remove(tickerFn);
         zoneC.visible = false;
-        room.scale.set(targetScale);
-        room.pivot.set(0, 0);
-        room.position.set(0, 0);
+        zoneC.alpha = 1; // reset
         room.alpha = 1;
         state.zoomedZone = null;
-        state.tweening = false;
+        state.animating = false;
       }
     };
-
     app.ticker.add(tickerFn);
   }, []);
 
@@ -262,7 +220,6 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
     const ch = Math.round(520 * scale);
 
     const app = new Application();
-    // Assign immediately so cleanup can always reach it
     appRef.current = app;
     let destroyed = false;
 
@@ -277,16 +234,21 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
           background: COLORS.wall,
         });
       } catch {
-        // WebGL unavailable or canvas creation blocked — fail gracefully
-        appRef.current = null;
+        // Only clear ref if it still points to this app instance
+        if (appRef.current === app) appRef.current = null;
         return;
       }
 
       if (destroyed) {
-        app.destroy(true);
-        appRef.current = null;
+        try { app.destroy(true); } catch { /* StrictMode race */ }
+        // Only clear ref if it still points to this app instance
+        if (appRef.current === app) appRef.current = null;
         return;
       }
+
+      // Re-assign after async init in case StrictMode cleanup ran between
+      // new Application() and init() resolving
+      appRef.current = app;
 
       el.appendChild(app.canvas);
 
@@ -305,23 +267,18 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
       zoneContainer.visible = false;
       app.stage.addChild(zoneContainer);
 
-      // Container for counter item sprites
-      const counterSprites = new Container();
-      roomContainer.addChild(counterSprites);
-
       const state = stateRef.current;
       state.roomContainer = roomContainer;
       state.zoneContainer = zoneContainer;
-      state.counterSprites = counterSprites;
       state.isMobile = isMobile;
+      // Reset transition state in case of StrictMode re-mount
+      state.zoomedZone = null;
+      state.animating = false;
 
       // Count items per zone
       const currentItems = itemsRef.current;
       const counts: Record<Location, number> = {
-        fridge: 0,
-        freezer: 0,
-        pantry: 0,
-        counter: 0,
+        fridge: 0, freezer: 0, pantry: 0, counter: 0,
       };
       for (const item of currentItems) {
         counts[item.location]++;
@@ -331,8 +288,16 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
       const { zones } = drawKitchenRoom(roomContainer, counts, isMobile);
       state.zones = zones;
 
-      // Make each appliance interactive — use refs for stable callbacks
+      // Make each appliance interactive
       for (const zone of zones) {
+        // Explicit hit area covering the appliance bounds
+        const hitArea = new Graphics();
+        hitArea.rect(zone.x, zone.y, zone.width, zone.height).fill({
+          color: 0xffffff,
+          alpha: 0.01,
+        });
+        zone.container.addChild(hitArea);
+
         zone.container.eventMode = 'static';
         zone.container.cursor = 'pointer';
 
@@ -348,7 +313,11 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
         });
       }
 
-      // Draw counter items on the counter surface
+      // Counter item sprites (non-interactive overlay)
+      const counterSprites = new Container();
+      counterSprites.eventMode = 'none';
+      roomContainer.addChild(counterSprites);
+
       const counterZone = zones.find((z) => z.location === 'counter');
       const counterItems = currentItems.filter((i) => i.location === 'counter');
       if (counterZone && counterItems.length > 0) {
@@ -373,27 +342,18 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
 
     return () => {
       destroyed = true;
-      if (appRef.current) {
-        try {
-          appRef.current.destroy(true);
-        } catch {
-          // PixiJS v8 may throw during destroy if init() hadn't fully completed
-          // (e.g. React StrictMode double-invoke). Safe to ignore.
-        }
+      if (appRef.current === app) {
+        try { app.destroy(true); } catch { /* PixiJS v8 StrictMode */ }
         appRef.current = null;
       }
-      // Reset mutable state container (stateRef is stable across renders)
       // eslint-disable-next-line react-hooks/exhaustive-deps
       const s = stateRef.current;
       s.roomContainer = null;
       s.zoneContainer = null;
-      s.counterSprites = null;
       s.zones = [];
       s.zoomedZone = null;
-      s.tweening = false;
+      s.animating = false;
     };
-    // Mount-only: PixiJS app lifecycle tied to DOM mount, not item changes.
-    // Items are read via itemsRef.current when zones are clicked.
   }, []);
 
   return (
