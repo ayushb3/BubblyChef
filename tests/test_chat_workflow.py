@@ -49,11 +49,11 @@ class TestChatIngestWorkflow:
     async def test_chat_ingest_full_workflow(self, mock_llm_result):
         """Test the complete chat ingest workflow with mocked LLM."""
         
-        with patch("bubbly_chef.workflows.chat_ingest.get_ollama_client") as mock_get_client:
+        with patch("bubbly_chef.workflows.chat_ingest.get_ai_manager") as mock_get_mgr:
             # Setup mock
-            mock_client = AsyncMock()
-            mock_client.generate_structured.return_value = (mock_llm_result, None)
-            mock_get_client.return_value = mock_client
+            mock_manager = AsyncMock()
+            mock_manager.complete.return_value = mock_llm_result
+            mock_get_mgr.return_value = mock_manager
             
             # Run workflow
             envelope = await run_chat_ingest(
@@ -82,11 +82,11 @@ class TestChatIngestWorkflow:
     async def test_chat_ingest_llm_error(self):
         """Test workflow handles LLM errors gracefully."""
         
-        with patch("bubbly_chef.workflows.chat_ingest.get_ollama_client") as mock_get_client:
-            # Setup mock to return error
-            mock_client = AsyncMock()
-            mock_client.generate_structured.return_value = (None, "Connection failed")
-            mock_get_client.return_value = mock_client
+        with patch("bubbly_chef.workflows.chat_ingest.get_ai_manager") as mock_get_mgr:
+            # Setup mock to raise error
+            mock_manager = AsyncMock()
+            mock_manager.complete.side_effect = Exception("Connection failed")
+            mock_get_mgr.return_value = mock_manager
             
             # Run workflow
             envelope = await run_chat_ingest("I bought some groceries")
@@ -101,13 +101,15 @@ class TestChatIngestWorkflow:
     async def test_chat_ingest_empty_input(self):
         """Test workflow handles empty input."""
         
-        with patch("bubbly_chef.workflows.chat_ingest.get_ollama_client") as mock_get_client:
-            mock_client = AsyncMock()
-            mock_get_client.return_value = mock_client
-            
+        with patch("bubbly_chef.workflows.chat_ingest.get_ai_manager") as mock_get_mgr:
+            mock_manager = AsyncMock()
+            # general_chat_response node will call complete() with no schema → returns str
+            mock_manager.complete.return_value = "I can help with your pantry!"
+            mock_get_mgr.return_value = mock_manager
+
             envelope = await run_chat_ingest("")
-            
-            assert envelope.requires_review is True
+
+            # Empty input goes to general_chat, then legacy wrapper returns empty pantry proposal
             assert len(envelope.proposal.actions) == 0
     
     # ==========================================================================

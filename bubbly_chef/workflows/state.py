@@ -1,11 +1,11 @@
 """Shared workflow state and utilities."""
 
-from datetime import date
 from typing import Any, TypedDict
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
+from bubbly_chef.config import settings
 from bubbly_chef.models.base import (
     ConfidenceScore,
     Intent,
@@ -16,25 +16,20 @@ from bubbly_chef.models.base import (
 from bubbly_chef.models.pantry import (
     ActionType,
     FoodCategory,
-    PantryItem,
     PantryProposal,
     PantryUpsertAction,
-    StorageLocation,
 )
 from bubbly_chef.models.proposals import (
-    HandoffProposal,
     HandoffKind,
-    ClarificationRequest,
-    ParsedPantryItem,
+    HandoffProposal,
 )
-from bubbly_chef.models.recipe import Ingredient, RecipeCard, RecipeCardProposal
-from bubbly_chef.config import settings
+from bubbly_chef.models.recipe import RecipeCard, RecipeCardProposal
 
 
 class WorkflowState(TypedDict, total=False):
     """
     Shared state for LangGraph workflows.
-    
+
     Each node reads from and writes to this state.
     This state object flows through the entire graph.
     """
@@ -44,7 +39,7 @@ class WorkflowState(TypedDict, total=False):
     request_id: str  # UUID as string for serialization
     workflow_id: str  # UUID as string
     conversation_id: str | None
-    
+
     # ==========================================================================
     # Input
     # ==========================================================================
@@ -52,7 +47,7 @@ class WorkflowState(TypedDict, total=False):
     input_type: str  # "chat", "receipt", "product", "recipe"
     input_mode: str  # "text" or "voice"
     pantry_snapshot: list[dict[str, Any]] | None
-    
+
     # ==========================================================================
     # Intent Classification
     # ==========================================================================
@@ -60,56 +55,56 @@ class WorkflowState(TypedDict, total=False):
     intent_confidence: float
     intent_reasoning: str | None
     detected_entities: list[str]
-    
+
     # ==========================================================================
     # Parsed Items (from LLM)
     # ==========================================================================
     raw_llm_output: str
     parsed_items: list[dict[str, Any]]
     parse_error: str | None
-    
+
     # ==========================================================================
     # Normalized Items
     # ==========================================================================
     normalized_items: list[dict[str, Any]]
-    
+
     # ==========================================================================
     # Final Actions & Proposals
     # ==========================================================================
     actions: list[PantryUpsertAction]
     proposal: PantryProposal | HandoffProposal | None
-    
+
     # ==========================================================================
     # Recipe-specific
     # ==========================================================================
     recipe: RecipeCard | None
-    
+
     # ==========================================================================
     # Response Fields
     # ==========================================================================
     assistant_message: str
     next_action: str  # NextAction enum value
-    
+
     # ==========================================================================
     # Clarification & Review
     # ==========================================================================
     clarifying_questions: list[str]
     requires_review: bool
     interrupt_payload: dict[str, Any] | None
-    
+
     # ==========================================================================
     # Confidence & Quality
     # ==========================================================================
     confidence: float
     field_confidences: dict[str, float]
     per_item_confidences: list[float]
-    
+
     # ==========================================================================
     # Warnings & Errors
     # ==========================================================================
     warnings: list[str]
     errors: list[str]
-    
+
     # ==========================================================================
     # Workflow Control
     # ==========================================================================
@@ -119,7 +114,7 @@ class WorkflowState(TypedDict, total=False):
 
 class LLMParsedItem(BaseModel):
     """Schema for LLM-parsed pantry items."""
-    
+
     name: str = Field(description="Item name")
     quantity: float = Field(default=1.0, description="Quantity")
     unit: str = Field(default="item", description="Unit of measurement")
@@ -130,14 +125,14 @@ class LLMParsedItem(BaseModel):
 
 class LLMParseResult(BaseModel):
     """Schema for LLM parse response."""
-    
+
     items: list[LLMParsedItem] = Field(default_factory=list)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
 class LLMIntentResult(BaseModel):
     """Schema for LLM intent classification response."""
-    
+
     intent: str = Field(
         description="One of: pantry_update, receipt_ingest_request, product_ingest_request, recipe_ingest_request, general_chat"
     )
@@ -148,7 +143,7 @@ class LLMIntentResult(BaseModel):
 
 class LLMGeneralChatResult(BaseModel):
     """Schema for LLM general chat response."""
-    
+
     response: str = Field(description="The assistant's response to the user")
     topics: list[str] = Field(default_factory=list, description="Detected topics")
     follow_ups: list[str] = Field(default_factory=list, description="Suggested follow-up topics")
@@ -156,7 +151,7 @@ class LLMGeneralChatResult(BaseModel):
 
 class LLMRecipeResult(BaseModel):
     """Schema for LLM recipe parse response."""
-    
+
     title: str
     description: str | None = None
     prep_time_minutes: int | None = None
@@ -187,13 +182,12 @@ def create_pantry_envelope(
     per_item_confidences: list[float] | None = None,
 ) -> ProposalEnvelope[PantryProposal]:
     """Create a proposal envelope for pantry proposals."""
-    from uuid import UUID
-    
+
     requires_review = (
         confidence < settings.auto_apply_confidence_threshold
         or len(errors) > 0
     )
-    
+
     # Determine workflow status
     if errors:
         status = WorkflowStatus.FAILED
@@ -201,7 +195,7 @@ def create_pantry_envelope(
         status = WorkflowStatus.AWAITING_REVIEW
     else:
         status = WorkflowStatus.COMPLETED
-    
+
     # Generate assistant message if not provided
     if not assistant_message:
         num_actions = len(proposal.actions)
@@ -212,10 +206,10 @@ def create_pantry_envelope(
             assistant_message = f"I found 1 item: {item.name}. Please review before adding."
         else:
             assistant_message = f"I found {num_actions} items to add to your pantry. Please review."
-    
+
     return ProposalEnvelope[PantryProposal](
-        request_id=UUID(request_id) if request_id else None,
-        workflow_id=UUID(workflow_id) if workflow_id else None,
+        request_id=UUID(request_id) if request_id else uuid4(),
+        workflow_id=UUID(workflow_id) if workflow_id else uuid4(),
         conversation_id=UUID(conversation_id) if conversation_id else None,
         schema_version=settings.schema_version,
         intent=Intent.PANTRY_UPDATE,
@@ -246,19 +240,18 @@ def create_recipe_envelope(
     workflow_id: str | None = None,
 ) -> ProposalEnvelope[RecipeCardProposal]:
     """Create a proposal envelope for recipe proposals."""
-    from uuid import UUID
-    
+
     requires_review = (
         confidence < settings.auto_apply_confidence_threshold
         or len(errors) > 0
     )
-    
+
     if not assistant_message:
         assistant_message = f"I've parsed the recipe: {proposal.recipe.title}. Please review."
-    
+
     return ProposalEnvelope[RecipeCardProposal](
-        request_id=UUID(request_id) if request_id else None,
-        workflow_id=UUID(workflow_id) if workflow_id else None,
+        request_id=UUID(request_id) if request_id else uuid4(),
+        workflow_id=UUID(workflow_id) if workflow_id else uuid4(),
         schema_version=settings.schema_version,
         intent=Intent.RECIPE_CARD,
         proposal=proposal,
@@ -287,21 +280,20 @@ def create_handoff_envelope(
     conversation_id: str | None = None,
 ) -> ProposalEnvelope[HandoffProposal]:
     """Create a proposal envelope for handoff to another workflow."""
-    from uuid import UUID
-    
+
     proposal = HandoffProposal(
         kind=handoff_kind,
         instructions=instructions,
         required_inputs=required_inputs,
         optional_inputs=optional_inputs or [],
     )
-    
+
     return ProposalEnvelope[HandoffProposal](
-        request_id=UUID(request_id) if request_id else None,
-        workflow_id=UUID(workflow_id) if workflow_id else None,
+        request_id=UUID(request_id) if request_id else uuid4(),
+        workflow_id=UUID(workflow_id) if workflow_id else uuid4(),
         conversation_id=UUID(conversation_id) if conversation_id else None,
         schema_version=settings.schema_version,
-        intent=Intent.RECEIPT_INGEST if handoff_kind == HandoffKind.RECEIPT 
+        intent=Intent.RECEIPT_INGEST if handoff_kind == HandoffKind.RECEIPT
                else Intent.PRODUCT_INGEST if handoff_kind == HandoffKind.PRODUCT
                else Intent.RECIPE_INGEST,
         proposal=proposal,
@@ -322,11 +314,10 @@ def create_general_chat_envelope(
     conversation_id: str | None = None,
 ) -> ProposalEnvelope[None]:
     """Create a proposal envelope for general chat responses."""
-    from uuid import UUID
-    
+
     return ProposalEnvelope[None](
-        request_id=UUID(request_id) if request_id else None,
-        workflow_id=UUID(workflow_id) if workflow_id else None,
+        request_id=UUID(request_id) if request_id else uuid4(),
+        workflow_id=UUID(workflow_id) if workflow_id else uuid4(),
         conversation_id=UUID(conversation_id) if conversation_id else None,
         schema_version=settings.schema_version,
         intent=Intent.GENERAL_CHAT,
@@ -345,9 +336,9 @@ def map_category(category_str: str | None) -> FoodCategory:
     """Map a string category to FoodCategory enum."""
     if not category_str:
         return FoodCategory.OTHER
-    
+
     category_lower = category_str.lower()
-    
+
     # Direct mapping
     mapping = {
         "produce": FoodCategory.PRODUCE,
@@ -382,14 +373,14 @@ def map_category(category_str: str | None) -> FoodCategory:
         "bakery": FoodCategory.BAKERY,
         "bread": FoodCategory.BAKERY,
     }
-    
+
     return mapping.get(category_lower, FoodCategory.OTHER)
 
 
 def map_action_type(action_str: str) -> ActionType:
     """Map a string action to ActionType enum."""
     action_lower = action_str.lower()
-    
+
     mapping = {
         "add": ActionType.ADD,
         "update": ActionType.UPDATE,
@@ -398,5 +389,5 @@ def map_action_type(action_str: str) -> ActionType:
         "use": ActionType.USE,
         "consume": ActionType.USE,
     }
-    
+
     return mapping.get(action_lower, ActionType.ADD)

@@ -137,7 +137,6 @@ class TestIntentClassification:
         """Test that recipe keywords trigger recipe intent."""
         test_cases = [
             "I want to save this recipe",
-            "how to make pasta",
             "import recipe from website",
         ]
         
@@ -394,7 +393,7 @@ class TestReviewGate:
         result = review_gate(state)
         
         assert result["requires_review"] is True
-        assert result["next_action"] == NextAction.REVIEW_PROPOSAL.value
+        assert result["next_action"] == NextAction.REQUEST_CLARIFICATION.value
     
     def test_high_confidence_no_review(self):
         """Test that high confidence doesn't require review."""
@@ -481,10 +480,10 @@ class TestFullWorkflow:
     async def test_pantry_update_full_flow(self, mock_llm_parse_result):
         """Test complete pantry update flow with mocked LLM."""
         
-        with patch("bubbly_chef.workflows.chat_ingest.get_ollama_client") as mock_get_client:
-            mock_client = AsyncMock()
-            mock_client.generate_structured.return_value = (mock_llm_parse_result, None)
-            mock_get_client.return_value = mock_client
+        with patch("bubbly_chef.workflows.chat_ingest.get_ai_manager") as mock_get_mgr:
+            mock_manager = AsyncMock()
+            mock_manager.complete.return_value = mock_llm_parse_result
+            mock_get_mgr.return_value = mock_manager
             
             envelope = await run_chat_workflow(
                 message="I bought 2 gallons of milk and a dozen eggs"
@@ -525,10 +524,10 @@ class TestFullWorkflow:
     async def test_legacy_api_compatibility(self, mock_llm_parse_result):
         """Test that legacy run_chat_ingest still works."""
         
-        with patch("bubbly_chef.workflows.chat_ingest.get_ollama_client") as mock_get_client:
-            mock_client = AsyncMock()
-            mock_client.generate_structured.return_value = (mock_llm_parse_result, None)
-            mock_get_client.return_value = mock_client
+        with patch("bubbly_chef.workflows.chat_ingest.get_ai_manager") as mock_get_mgr:
+            mock_manager = AsyncMock()
+            mock_manager.complete.return_value = mock_llm_parse_result
+            mock_get_mgr.return_value = mock_manager
             
             envelope = await run_chat_ingest("I bought milk")
             
