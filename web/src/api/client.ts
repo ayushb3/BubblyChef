@@ -21,6 +21,8 @@ import type {
   CreateUserProfileRequest,
   UpdateUserProfileRequest,
   ProfileResponse,
+  ChatRequest,
+  ChatResponse,
 } from '../types';
 
 const API_BASE_URL = 'http://localhost:8888';
@@ -415,5 +417,61 @@ export function useDeleteProfile() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profile'] });
     },
+  });
+}
+
+// ─── Chat API ──────────────────────────────────────────────────────────────────
+
+async function sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Chat request failed: ${error}`);
+  }
+  return response.json();
+}
+
+export function useChat() {
+  return useMutation({
+    mutationFn: sendChatMessage,
+  });
+}
+
+// ─── Recent Activity (derived from pantry) ────────────────────────────────────
+
+async function fetchRecentActivity(limit: number = 5): Promise<PantryItem[]> {
+  // Fetch all items and sort client-side by added_at descending, then slice
+  const data = await fetchPantryItems();
+  return [...data.items]
+    .sort((a, b) => new Date(b.added_at).getTime() - new Date(a.added_at).getTime())
+    .slice(0, limit);
+}
+
+export function useRecentActivity(limit: number = 5) {
+  return useQuery({
+    queryKey: ['pantry', 'recent-activity', limit],
+    queryFn: () => fetchRecentActivity(limit),
+    staleTime: 1000 * 60, // 1 minute
+  });
+}
+
+// ─── AI Health ────────────────────────────────────────────────────────────────
+
+async function fetchAIHealth(): Promise<{ ai_available: boolean; ai_providers: { name: string; available: boolean }[] }> {
+  const res = await fetch(`${API_BASE_URL}/health/ai`);
+  if (!res.ok) throw new Error('Health check failed');
+  return res.json();
+}
+
+export function useAIHealth() {
+  return useQuery({
+    queryKey: ['health', 'ai'],
+    queryFn: fetchAIHealth,
+    staleTime: 1000 * 30, // 30 seconds
+    retry: false,
   });
 }

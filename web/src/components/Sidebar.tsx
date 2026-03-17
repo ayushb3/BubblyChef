@@ -1,4 +1,4 @@
-import { Home, Package, Camera, Sparkles, User, ChefHat } from 'lucide-react';
+import { Home, Package, Camera, Sparkles, User, ChefHat, MessageCircle } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
 const navItems = [
@@ -6,6 +6,7 @@ const navItems = [
   { path: '/pantry', icon: Package, label: 'Pantry' },
   { path: '/scan', icon: Camera, label: 'Scan' },
   { path: '/recipes', icon: Sparkles, label: 'Recipes' },
+  { path: '/chat', icon: MessageCircle, label: 'Chat' },
   { path: '/profile', icon: User, label: 'Profile' },
 ];
 

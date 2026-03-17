@@ -205,3 +205,105 @@ export interface UpdateUserProfileRequest {
 export interface ProfileResponse {
   profile: UserProfile;
 }
+
+// ─── Chat / Conversational AI Types ───────────────────────────────────────────
+
+/**
+ * Intent values returned by the backend ProposalEnvelope.
+ * Maps to bubbly_chef/models/base.py Intent enum.
+ */
+export type ChatIntent =
+  | 'pantry_update'
+  | 'receipt_ingest_request'
+  | 'product_ingest_request'
+  | 'recipe_ingest_request'
+  | 'recipe_card'
+  | 'cooking_help'
+  | 'general_chat';
+
+/**
+ * Next action hint from backend — tells the UI what to render next.
+ */
+export type ChatNextAction =
+  | 'none'
+  | 'request_receipt_image'
+  | 'request_product_barcode'
+  | 'request_product_photos'
+  | 'request_recipe_text'
+  | 'request_clarification'
+  | 'review_proposal';
+
+/** A single pantry action item inside a PantryProposal. */
+export interface PantryProposalItem {
+  name: string;
+  category?: string;
+  storage_location?: string;
+  quantity?: number;
+  unit?: string;
+  brand?: string | null;
+}
+
+export interface PantryProposalAction {
+  action_type: 'add' | 'update' | 'remove' | 'use';
+  item: PantryProposalItem;
+  confidence: number;
+  reasoning?: string | null;
+}
+
+export interface PantryProposalData {
+  actions: PantryProposalAction[];
+  source_text?: string | null;
+}
+
+/** Compact recipe data returned when intent is recipe_card. */
+export interface ChatRecipeData {
+  title?: string;
+  description?: string | null;
+  prep_time_minutes?: number | null;
+  cook_time_minutes?: number | null;
+  total_time_minutes?: number | null;
+  difficulty?: string | null;
+  servings?: number | null;
+  ingredients?: Array<{ name: string; quantity?: number | null; unit?: string | null }>;
+  instructions?: string[];
+  cuisine?: string | null;
+  meal_type?: string | null;
+  dietary_tags?: string[];
+}
+
+/** The full ChatResponse shape — mirrors ProposalEnvelope from the backend. */
+export interface ChatResponse {
+  request_id: string;
+  workflow_id: string;
+  conversation_id: string | null;
+  schema_version: string;
+  intent: ChatIntent;
+  proposal: PantryProposalData | ChatRecipeData | Record<string, unknown> | null;
+  assistant_message: string;
+  confidence: { overall: number };
+  requires_review: boolean;
+  next_action: ChatNextAction;
+  clarifying_questions: string[];
+  warnings: string[];
+  errors: string[];
+  workflow_status: string;
+  created_at: string;
+}
+
+/** Request body for POST /v1/chat. */
+export interface ChatRequest {
+  message: string;
+  conversation_id?: string | null;
+  mode?: string;
+}
+
+/** A single message in the UI conversation thread. */
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  intent?: ChatIntent;
+  timestamp: Date;
+  /** The full response envelope for assistant messages — used for intent-specific rendering. */
+  response?: ChatResponse;
+}

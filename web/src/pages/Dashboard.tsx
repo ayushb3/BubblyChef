@@ -1,6 +1,6 @@
 import { Camera, Plus, Sparkles, ChefHat } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useExpiringItems } from '../api/client';
+import { useExpiringItems, useRecentActivity } from '../api/client';
 
 const categoryEmojis: Record<string, string> = {
   produce: '🥬',
@@ -19,12 +19,28 @@ const categoryEmojis: Record<string, string> = {
 export function Dashboard() {
   const navigate = useNavigate();
   const { data: expiringItems, isLoading } = useExpiringItems(7);
+  const { data: recentItems, isLoading: isLoadingRecent } = useRecentActivity(5);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good morning';
     if (hour < 18) return 'Good afternoon';
     return 'Good evening';
+  };
+
+  const getRelativeTime = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 2) return 'just now';
+    if (diffMin < 60) return `${diffMin} minutes ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr} hour${diffHr !== 1 ? 's' : ''} ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay === 1) return 'Yesterday';
+    if (diffDay < 7) return `${diffDay} days ago`;
+    return date.toLocaleDateString();
   };
 
   const getExpiryBadgeColor = (days: number | null) => {
@@ -160,23 +176,37 @@ export function Dashboard() {
         <h2 className="text-xl font-bold text-soft-charcoal mb-4">
           Recent Activity
         </h2>
-        <div className="space-y-3">
-          <div className="flex items-center gap-3 text-soft-charcoal/70">
-            <span className="text-xl">🥛</span>
-            <div className="flex-1">
-              <p className="text-sm">Added milk</p>
-              <p className="text-xs text-soft-charcoal/50">2 hours ago</p>
-            </div>
+        {isLoadingRecent ? (
+          <div className="text-center py-6 text-soft-charcoal/50 text-sm">Loading…</div>
+        ) : recentItems && recentItems.length > 0 ? (
+          <div className="space-y-3">
+            {recentItems.map((item, idx) => (
+              <div key={item.id}>
+                <div className="flex items-center gap-3 text-soft-charcoal/70">
+                  <span className="text-xl">
+                    {categoryEmojis[item.category] ?? '📦'}
+                  </span>
+                  <div className="flex-1">
+                    <p className="text-sm">Added {item.name}</p>
+                    <p className="text-xs text-soft-charcoal/50">
+                      {getRelativeTime(item.added_at)}
+                    </p>
+                  </div>
+                </div>
+                {idx < recentItems.length - 1 && (
+                  <div className="h-px bg-pastel-pink/10 mt-3" />
+                )}
+              </div>
+            ))}
           </div>
-          <div className="h-px bg-pastel-pink/10" />
-          <div className="flex items-center gap-3 text-soft-charcoal/70">
-            <span className="text-xl">🍗</span>
-            <div className="flex-1">
-              <p className="text-sm">Added chicken breast</p>
-              <p className="text-xs text-soft-charcoal/50">Yesterday</p>
-            </div>
+        ) : (
+          <div className="text-center py-6">
+            <p className="text-2xl mb-2">🌱</p>
+            <p className="text-soft-charcoal/60 text-sm">
+              No items yet — add something to your pantry!
+            </p>
           </div>
-        </div>
+        )}
       </div>
 
       </div>{/* end card grid */}

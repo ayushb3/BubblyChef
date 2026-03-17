@@ -7,6 +7,7 @@ import { Pantry } from './pages/Pantry';
 import { Scan } from './pages/Scan';
 import { Recipes } from './pages/Recipes';
 import { Profile } from './pages/Profile';
+import { Chat } from './pages/Chat';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
             <Route path="/pantry" element={<Pantry />} />
             <Route path="/scan" element={<Scan />} />
             <Route path="/recipes" element={<Recipes />} />
+            <Route path="/chat" element={<Chat />} />
             <Route path="/profile" element={<Profile />} />
           </Routes>
         </Layout>
