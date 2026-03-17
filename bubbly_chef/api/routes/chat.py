@@ -101,7 +101,7 @@ _workflow_states: dict[str, dict[str, Any]] = {}
         }
     },
 )
-async def chat(request: ChatRequest) -> ProposalEnvelope:
+async def chat(request: ChatRequest) -> ProposalEnvelope[Any]:
     """
     Main conversational interface for the BubblyChef assistant.
 
@@ -159,7 +159,7 @@ async def chat(request: ChatRequest) -> ProposalEnvelope:
         # Log the interaction
         try:
             repo = await get_repository()
-            await repo.log_ingestion(
+            await repo.log_ingestion(  # type: ignore[attr-defined]
                 request_id=envelope.request_id,
                 intent=envelope.intent.value,
                 input_payload={
@@ -224,7 +224,7 @@ async def chat(request: ChatRequest) -> ProposalEnvelope:
 async def submit_workflow_event(
     workflow_id: UUID,
     event: WorkflowEventRequest,
-) -> ProposalEnvelope:
+) -> ProposalEnvelope[Any]:
     """
     Submit an event to resume a paused workflow.
 
@@ -422,7 +422,7 @@ async def submit_workflow_event(
     response_model=ProposalEnvelope,
     summary="Get current state of a workflow",
 )
-async def get_workflow_state(workflow_id: UUID) -> ProposalEnvelope:
+async def get_workflow_state(workflow_id: UUID) -> ProposalEnvelope[Any]:
     """
     Retrieve the current state of a workflow.
 

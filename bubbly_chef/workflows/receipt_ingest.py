@@ -210,7 +210,7 @@ def clean_receipt_items(state: WorkflowState) -> WorkflowState:
             warnings.append(f"Skipped item with too short name: {item.get('name')}")
             continue
         if len(name) > 100:
-            warnings.append(f"Skipped item with too long name: {item.get('name')[:50]}...")
+            warnings.append(f"Skipped item with too long name: {str(item.get('name', ''))[:50]}...")
             continue
 
         cleaned.append(item)
@@ -334,7 +334,7 @@ def create_receipt_actions(state: WorkflowState) -> WorkflowState:
 # =============================================================================
 
 
-def build_receipt_ingest_graph() -> StateGraph:
+def build_receipt_ingest_graph() -> StateGraph[WorkflowState]:
     """Build the receipt ingest LangGraph workflow."""
 
     workflow = StateGraph(WorkflowState)
@@ -395,7 +395,7 @@ async def run_receipt_ingest(
     }
 
     # Run the graph
-    final_state = await receipt_ingest_graph.ainvoke(initial_state)
+    final_state = await receipt_ingest_graph.ainvoke(initial_state)  # type: ignore[arg-type]
 
     # Build proposal
     actions = final_state.get("actions", [])

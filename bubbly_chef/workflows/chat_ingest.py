@@ -20,6 +20,7 @@ from typing import Any
 from uuid import uuid4
 
 from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.api.deps import get_ai_manager
@@ -1031,7 +1032,7 @@ def finalize_pantry_proposal(state: WorkflowState) -> WorkflowState:
 # =============================================================================
 
 
-def build_chat_router_graph() -> StateGraph:
+def build_chat_router_graph() -> StateGraph[WorkflowState]:
     """
     Build the ChatRouterGraph workflow.
 
@@ -1116,7 +1117,7 @@ def build_chat_router_graph() -> StateGraph:
 _chat_router_graph = None
 
 
-def get_chat_router_graph():
+def get_chat_router_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     """Get or create the compiled chat router graph."""
     global _chat_router_graph
     if _chat_router_graph is None:
@@ -1134,7 +1135,7 @@ async def run_chat_workflow(
     conversation_id: str | None = None,
     mode: str = "text",
     pantry_snapshot: list[dict[str, Any]] | None = None,
-) -> ProposalEnvelope:
+) -> ProposalEnvelope[Any]:
     """
     Run the chat router workflow and return a ProposalEnvelope.
 

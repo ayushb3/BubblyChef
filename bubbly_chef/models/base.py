@@ -125,7 +125,7 @@ class ProposalEnvelope(BaseModel, Generic[T]):
     )
 
     class Config:
-        json_schema_extra = {
+        json_schema_extra: dict[str, Any] = {
             "example": {
                 "request_id": "550e8400-e29b-41d4-a716-446655440000",
                 "workflow_id": "660e8400-e29b-41d4-a716-446655440001",

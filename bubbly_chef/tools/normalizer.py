@@ -332,7 +332,7 @@ class FoodNormalizer(Normalizer):
         ],
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Build reverse lookup: synonym -> normalized
         self._reverse_synonyms: dict[str, str] = {}
         for normalized, synonyms in self.SYNONYMS.items():

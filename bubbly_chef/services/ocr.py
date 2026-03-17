@@ -29,7 +29,7 @@ class OCRService(ABC):
 class TesseractOCR(OCRService):
     """Tesseract OCR implementation (local, free)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._available: bool | None = None
 
     def is_available(self) -> bool:
@@ -38,7 +38,7 @@ class TesseractOCR(OCRService):
             return self._available
 
         try:
-            import pytesseract
+            import pytesseract  # type: ignore[import-untyped]
 
             # Try to get version to verify it's working
             pytesseract.get_tesseract_version()
@@ -57,7 +57,7 @@ class TesseractOCR(OCRService):
         from PIL import Image
 
         # Load image from bytes
-        image = Image.open(io.BytesIO(image_data))
+        image: Image.Image = Image.open(io.BytesIO(image_data))
 
         # Convert to RGB if necessary (Tesseract works best with RGB)
         if image.mode != "RGB":
@@ -66,7 +66,7 @@ class TesseractOCR(OCRService):
         # Extract text
         # Use --psm 6 for uniform block of text (good for receipts)
         # Use -l eng for English
-        text = pytesseract.image_to_string(image, config="--psm 6 -l eng")
+        text: str = pytesseract.image_to_string(image, config="--psm 6 -l eng")
 
         return text.strip()
 

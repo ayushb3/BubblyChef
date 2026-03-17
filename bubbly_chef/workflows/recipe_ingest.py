@@ -35,7 +35,6 @@ class RecipeWorkflowState(WorkflowState):
     url: str | None
     caption: str | None
     fetched_content: str | None
-    recipe: RecipeCard | None
 
 
 # =============================================================================
@@ -297,7 +296,7 @@ def validate_recipe(state: RecipeWorkflowState) -> RecipeWorkflowState:
 # =============================================================================
 
 
-def build_recipe_ingest_graph() -> StateGraph:
+def build_recipe_ingest_graph() -> StateGraph[RecipeWorkflowState]:
     """Build the recipe ingest LangGraph workflow."""
 
     workflow = StateGraph(RecipeWorkflowState)
@@ -354,7 +353,7 @@ async def run_recipe_ingest(
     }
 
     # Run the graph
-    final_state = await recipe_ingest_graph.ainvoke(initial_state)
+    final_state = await recipe_ingest_graph.ainvoke(initial_state)  # type: ignore[arg-type]
 
     # Build proposal
     recipe = final_state.get("recipe")

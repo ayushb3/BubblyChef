@@ -1,6 +1,7 @@
 """Recipe generation service using AI."""
 
 import asyncio
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -56,7 +57,7 @@ class GenerateRecipeRequest(BaseModel):
     """Request for recipe generation."""
 
     prompt: str = Field(description="User's recipe request")
-    constraints: dict | None = Field(default=None, description="Optional constraints")
+    constraints: dict[str, Any] | None = Field(default=None, description="Optional constraints")
     previous_recipe_context: str | None = Field(
         default=None, description="Previous recipe for follow-up requests"
     )
@@ -226,7 +227,7 @@ def format_expiring_items(pantry_items: list[PantryItem]) -> str:
     return "\n".join(lines) if lines else "No items expiring soon."
 
 
-def format_constraints(constraints: dict | None) -> str:
+def format_constraints(constraints: dict[str, Any] | None) -> str:
     """Format constraints for prompt."""
     if not constraints:
         return "None specified."
@@ -371,7 +372,7 @@ async def generate_recipe(
     prompt: str,
     pantry_items: list[PantryItem],
     ai_manager: AIManager,
-    constraints: dict | None = None,
+    constraints: dict[str, Any] | None = None,
     previous_recipe: RecipeCard | None = None,
 ) -> GenerateRecipeResponse:
     """
@@ -441,6 +442,11 @@ async def generate_recipe(
                 ) from e
 
     # Convert AI output to RecipeCard
+    if isinstance(result, str):
+        raise StructuredOutputError(
+            f"AI returned raw text instead of structured output: {result[:200]}"
+        )
+
     ingredients = [
         Ingredient(
             name=ing.name,

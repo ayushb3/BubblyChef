@@ -1,7 +1,7 @@
 """Middleware for logging and monitoring."""
 
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -15,10 +15,15 @@ logger = get_logger(__name__)
 class LoggingMiddleware(BaseHTTPMiddleware):
     """Middleware to log all HTTP requests and responses."""
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
         """Log request and response details."""
         if not settings.log_requests:
-            return await call_next(request)
+            response: Response = await call_next(request)
+            return response
 
         # Extract request info
         method = request.method

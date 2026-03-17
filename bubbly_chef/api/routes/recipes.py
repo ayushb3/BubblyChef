@@ -1,6 +1,7 @@
 """Recipe generation endpoints."""
 
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -23,7 +24,7 @@ class GenerateRecipeRequest(BaseModel):
     """Request for recipe generation."""
 
     prompt: str = Field(description="User's recipe request", min_length=1)
-    constraints: dict | None = Field(
+    constraints: dict[str, Any] | None = Field(
         default=None,
         description=(
             "Optional constraints: max_time_minutes, cuisine,"

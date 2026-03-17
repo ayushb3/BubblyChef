@@ -94,7 +94,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
 
         # If no schema, return raw text
         if not response_schema:
-            return text
+            return str(text)
 
         # Parse structured output
         try:
@@ -133,6 +133,6 @@ Return ONLY the JSON, no markdown formatting or extra text."""
         except httpx.RequestError:
             return False
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the HTTP client."""
         await self._client.aclose()

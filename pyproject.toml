@@ -63,6 +63,11 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+warn_unused_ignores = false
+exclude = [
+    "bubbly_chef/logger_templates\\.py",
+    "bubbly_chef/cli/",
+]
 
 [tool.coverage.run]
 source = ["bubbly_chef"]

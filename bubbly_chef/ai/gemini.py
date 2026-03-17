@@ -5,7 +5,7 @@ Google Gemini provider using the free tier API.
 
 import json
 import logging
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -69,18 +69,20 @@ Respond with valid JSON matching this schema:
 
 Return ONLY the JSON, no markdown formatting or extra text."""
 
-        payload = {
-            "contents": [{"parts": [{"text": full_prompt}]}],
-            "generationConfig": {
-                "temperature": temperature,
-                "topP": 0.95,
-                "topK": 40,
-            },
+        generation_config: dict[str, Any] = {
+            "temperature": temperature,
+            "topP": 0.95,
+            "topK": 40,
         }
 
         # If structured output, request JSON mime type
         if response_schema:
-            payload["generationConfig"]["responseMimeType"] = "application/json"
+            generation_config["responseMimeType"] = "application/json"
+
+        payload: dict[str, Any] = {
+            "contents": [{"parts": [{"text": full_prompt}]}],
+            "generationConfig": generation_config,
+        }
 
         try:
             response = await self._client.post(
@@ -105,7 +107,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
 
         # If no schema, return raw text
         if not response_schema:
-            return text
+            return str(text)
 
         # Parse structured output
         try:
@@ -120,7 +122,8 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             cleaned = cleaned.strip()
 
             parsed = json.loads(cleaned)
-            return response_schema.model_validate(parsed)
+            result: T = response_schema.model_validate(parsed)
+            return result
         except json.JSONDecodeError as e:
             raise StructuredOutputError(f"Failed to parse JSON: {text}") from e
         except ValidationError as e:
@@ -148,6 +151,6 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             )
             return False
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the HTTP client."""
         await self._client.aclose()

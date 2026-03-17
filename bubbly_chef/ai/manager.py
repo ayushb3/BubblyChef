@@ -5,7 +5,7 @@ Manages AI provider selection and fallback logic.
 
 import logging
 from datetime import datetime
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
@@ -160,31 +160,32 @@ class AIManager:
         """The provider that handled the last successful request."""
         return self._current_provider
 
-    async def health_check(self) -> dict:
+    async def health_check(self) -> dict[str, Any]:
         """
         Check status of all providers.
 
         Returns:
             Dict with provider status information
         """
-        status = {
-            "providers": [],
-            "available_count": 0,
-        }
+        providers_list: list[dict[str, Any]] = []
+        available_count = 0
 
         for provider in self.providers:
             available = await provider.is_available()
-            status["providers"].append(
+            providers_list.append(
                 {
                     "name": provider.name,
                     "available": available,
                 }
             )
             if available:
-                status["available_count"] += 1
+                available_count += 1
 
-        status["healthy"] = status["available_count"] > 0
-        return status
+        return {
+            "providers": providers_list,
+            "available_count": available_count,
+            "healthy": available_count > 0,
+        }
 
     async def close(self) -> None:
         """Close all provider connections."""

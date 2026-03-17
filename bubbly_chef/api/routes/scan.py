@@ -130,7 +130,9 @@ async def scan_receipt(
     if preprocess:
         try:
             preprocessor = get_image_preprocessor(mode=preprocess_mode)
-            image_data = await preprocessor.preprocess(image_data, return_format="bytes")
+            preprocessed = await preprocessor.preprocess(image_data, return_format="bytes")
+            assert isinstance(preprocessed, bytes)
+            image_data = preprocessed
             logger.info(f"Applied preprocessing with mode: {preprocess_mode}")
         except Exception as e:
             logger.warning(f"Preprocessing failed, using original image: {e}")
@@ -278,13 +280,10 @@ async def confirm_items(request: ConfirmItemsRequest) -> ConfirmItemsResponse:
 
     for item in request.items:
         try:
-            from bubbly_chef.domain.normalizer import normalize_food_name
-
             pantry_item = PantryItem(
                 name=item.name,
-                name_normalized=normalize_food_name(item.name),
                 category=item.category,
-                location=item.location,
+                storage_location=item.location,
                 quantity=item.quantity,
                 unit=item.unit,
                 expiry_date=item.expiry_date,
@@ -427,7 +426,9 @@ async def preprocess_receipt(
 
     # Preprocess image
     try:
-        preprocessed_bytes = await preprocessor.preprocess(image_data, return_format="bytes")
+        preprocessed_result = await preprocessor.preprocess(image_data, return_format="bytes")
+        assert isinstance(preprocessed_result, bytes)
+        preprocessed_bytes: bytes = preprocessed_result
 
         # Get preprocessed image size
         preprocessed_image = Image.open(io.BytesIO(preprocessed_bytes))

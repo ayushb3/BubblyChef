@@ -1,5 +1,7 @@
 """LangGraph workflow orchestration for BubblyChef."""
 
+from typing import Any
+
 # Lazy imports to avoid circular dependencies.
 # Use: from bubbly_chef.workflows.chat_ingest import run_chat_workflow
 
@@ -17,7 +19,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):  # noqa: N807
+def __getattr__(name: str) -> Any:  # noqa: N807
     """Lazy import to avoid circular imports."""
     if name in (
         "run_chat_workflow",

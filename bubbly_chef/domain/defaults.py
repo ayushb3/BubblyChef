@@ -1,9 +1,11 @@
 """Default quantity and unit inference for pantry items."""
 
+from typing import Any
+
 from bubbly_chef.models.pantry import FoodCategory
 
 # Common default quantities for items when not specified
-DEFAULT_QUANTITIES = {
+DEFAULT_QUANTITIES: dict[str, dict[str, Any]] = {
     # Dairy
     "milk": {"quantity": 1, "unit": "gallon"},
     "eggs": {"quantity": 1, "unit": "dozen"},
@@ -82,7 +84,7 @@ def get_default_quantity_and_unit(name: str, category: str) -> tuple[float, str]
     # Check for specific item matches
     for key, defaults in DEFAULT_QUANTITIES.items():
         if key in name_lower:
-            return defaults["quantity"], defaults["unit"]
+            return float(defaults["quantity"]), str(defaults["unit"])
 
     # Fallback to category-based defaults
     if category == FoodCategory.DAIRY.value:
@@ -103,4 +105,5 @@ def get_default_quantity_and_unit(name: str, category: str) -> tuple[float, str]
         return 1, "package"
 
     # Ultimate fallback
-    return DEFAULT_QUANTITIES["default"]["quantity"], DEFAULT_QUANTITIES["default"]["unit"]
+    default = DEFAULT_QUANTITIES["default"]
+    return float(default["quantity"]), str(default["unit"])

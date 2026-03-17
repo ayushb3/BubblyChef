@@ -1,6 +1,7 @@
 """Receipt parsing service using AI."""
 
 import uuid
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -36,7 +37,7 @@ class ReceiptParseResult(BaseModel):
 class LLMReceiptOutput(BaseModel):
     """Schema for LLM structured output."""
 
-    items: list[dict]
+    items: list[dict[str, Any]]
 
 
 RECEIPT_PARSE_PROMPT = """You are a grocery receipt parser.
@@ -160,6 +161,15 @@ async def parse_receipt(
 
     # Process each item
     parsed_items = []
+
+    if isinstance(result, str):
+        return ReceiptParseResult(
+            items=[],
+            warnings=[
+                f"AI returned raw text instead of structured output: "
+                f"{result[:100]}"
+            ],
+        )
 
     for item_data in result.items:
         name = item_data.get("name", "").strip()

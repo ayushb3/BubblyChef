@@ -183,7 +183,7 @@ class OllamaClient(LLMClient):
 
             result = response.json()
             self._record_success()
-            return result.get("response", "")
+            return str(result.get("response", ""))
 
         except httpx.TimeoutException as e:
             self._record_failure()

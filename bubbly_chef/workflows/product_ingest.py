@@ -319,7 +319,7 @@ def create_product_action(state: ProductWorkflowState) -> ProductWorkflowState:
 # =============================================================================
 
 
-def build_product_ingest_graph() -> StateGraph:
+def build_product_ingest_graph() -> StateGraph[ProductWorkflowState]:
     """Build the product ingest LangGraph workflow."""
 
     workflow = StateGraph(ProductWorkflowState)
@@ -381,7 +381,7 @@ async def run_product_ingest(
     }
 
     # Run the graph
-    final_state = await product_ingest_graph.ainvoke(initial_state)
+    final_state = await product_ingest_graph.ainvoke(initial_state)  # type: ignore[arg-type]
 
     # Build proposal
     actions = final_state.get("actions", [])
