@@ -36,7 +36,7 @@ export interface CreatePantryItem {
   quantity?: number;
   unit?: string;
   category?: Category;
-  location?: Location;
+  storage_location?: Location;
   expiry_date?: string;
 }
 
@@ -45,7 +45,7 @@ export interface UpdatePantryItem {
   quantity?: number;
   unit?: string;
   category?: Category;
-  location?: Location;
+  storage_location?: Location;
   expiry_date?: string;
 }
 
@@ -89,7 +89,7 @@ export interface ConfirmItem {
   quantity: number;
   unit: string;
   category?: Category;
-  location?: Location;
+  storage_location?: Location;
   expiry_date?: string;
 }
 

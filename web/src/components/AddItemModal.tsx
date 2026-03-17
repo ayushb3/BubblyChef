@@ -94,7 +94,7 @@ export function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
       quantity: parseFloat(quantity) || 1,
       unit,
       category,
-      location,
+      storage_location: location,
       expiry_date: expiryDate || undefined,
     };
 

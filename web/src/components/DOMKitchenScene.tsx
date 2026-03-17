@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { CSSProperties } from 'react';
 import type { PantryItem, Location } from '../types';
@@ -24,34 +24,16 @@ const ZONE_FALLBACK_BG: Record<Location, string> = {
   counter: '#d4c4a8',
 };
 
-const CATEGORY_EMOJI: Record<string, string> = {
-  produce: '\u{1F34E}',
-  dairy: '\u{1F95B}',
-  meat: '\u{1F357}',
-  seafood: '\u{1F41F}',
-  frozen: '\u{1F9CA}',
-  canned: '\u{1F96B}',
-  dry_goods: '\u{1F4E6}',
-  condiments: '\u{1F9C8}',
-  beverages: '\u{1F375}',
-  snacks: '\u{1F37F}',
-  bakery: '\u{1F35E}',
-  other: '\u{2753}',
-};
-
 /**
  * Appliance positions as percentages of the 800×520 room.
- * Derived from the PixiJS coordinate system:
- *   fridge:  x=30, y=66, w=120, h=170
- *   pantry:  x=390, y=84, w=180, h=140
- *   freezer: x=640, y=76, w=108, h=160
- *   counter: x=50, y=270, w=700, h=80
+ * Layout: pantry (back-left near window), fridge+freezer (back-right together),
+ * counter (foreground along back wall above floor line).
  */
 const APPLIANCE_POSITIONS: Record<Location, CSSProperties> = {
-  fridge:  { top: '12.7%', left: '3.75%', width: '15%',  height: '32.7%' },
-  pantry:  { top: '16.2%', left: '48.75%', width: '22.5%', height: '26.9%' },
-  freezer: { top: '14.6%', left: '80%', width: '13.5%', height: '30.8%' },
-  counter: { top: '51.9%', left: '6.25%', width: '87.5%', height: '15.4%' },
+  pantry:  { top: '45%',   left: '18%',   width: '35%',  height: '35%', zIndex: 2 },
+  fridge:  { top: '40%',   left: '40%',  width: '40%',  height: '40%', zIndex: 2 },
+  freezer: { top: '40%',   left: '58%',  width: '40%',  height: '40%', zIndex: 2 },
+  counter: { top: '51%',  left: '25%',   width: '50%',  height: '50%', zIndex: 3 },
 };
 
 const LOCATIONS: Location[] = ['fridge', 'pantry', 'freezer', 'counter'];
@@ -68,11 +50,6 @@ export default function DOMKitchenScene({ items, onItemClick }: DOMKitchenSceneP
   const zoneItems = useMemo(
     () => (zoomedZone ? items.filter((i) => i.location === zoomedZone) : []),
     [items, zoomedZone],
-  );
-
-  const counterItems = useMemo(
-    () => items.filter((i) => i.location === 'counter').slice(0, 12),
-    [items],
   );
 
   return (
@@ -108,11 +85,6 @@ export default function DOMKitchenScene({ items, onItemClick }: DOMKitchenSceneP
                   onClick={() => setZoomedZone(loc)}
                 />
               ))}
-
-              {/* Counter item previews */}
-              {counterItems.length > 0 && (
-                <CounterPreviews items={counterItems} />
-              )}
             </motion.div>
           ) : (
             <InteriorView
@@ -179,7 +151,7 @@ function RoomBackground() {
       <img
         src="/kitchen/room/background.png"
         alt=""
-        className="absolute inset-0 w-full h-full object-cover image-pixelated"
+        className="absolute inset-0 w-full h-full object-cover image-pixelated z-0"
         onError={(e) => {
           (e.target as HTMLImageElement).style.display = 'none';
         }}
@@ -200,6 +172,14 @@ function ApplianceButton({
   count: number;
   onClick: () => void;
 }) {
+  const fallbackRef = useRef<HTMLDivElement>(null);
+  const [pngLoaded, setPngLoaded] = useState(false);
+
+  const handlePngLoad = useCallback(() => {
+    setPngLoaded(true);
+    if (fallbackRef.current) fallbackRef.current.style.display = 'none';
+  }, []);
+
   return (
     <motion.button
       className="absolute cursor-pointer"
@@ -209,25 +189,33 @@ function ApplianceButton({
       onClick={onClick}
       aria-label={ZONE_LABELS[location]}
     >
-      {/* PNG appliance sprite with CSS fallback */}
       <div className="relative w-full h-full">
-        {/* CSS fallback shape */}
-        <ApplianceFallback location={location} />
+        {/* CSS fallback shape (removed from DOM when PNG loads) */}
+        <div ref={fallbackRef}>
+          <ApplianceFallback location={location} />
+        </div>
 
-        {/* PNG sprite (overlays fallback when loaded) */}
+        {/* PNG sprite */}
         <img
           src={`/kitchen/appliances/${location === 'pantry' ? 'pantry-shelf' : location}.png`}
           alt=""
           className="absolute inset-0 w-full h-full object-contain image-pixelated"
+          onLoad={handlePngLoad}
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = 'none';
           }}
         />
       </div>
 
-      {/* Item count badge */}
+      {/* Item count badge — bottom-right of the visible PNG area */}
       {count > 0 && (
-        <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1.5 bg-pastel-coral text-white text-[11px] font-bold rounded-full flex items-center justify-center border border-white/80 z-10">
+        <span
+          className="absolute min-w-[20px] h-5 px-1.5 bg-pastel-coral text-white text-[11px] font-bold rounded-full flex items-center justify-center border border-white/80 z-10"
+          style={{
+            bottom: pngLoaded ? '2px' : '-6px',
+            right: pngLoaded ? '2px' : '-6px',
+          }}
+        >
           {count}
         </span>
       )}
@@ -356,24 +344,4 @@ function ApplianceFallback({ location }: { location: Location }) {
         </div>
       );
   }
-}
-
-/** Small emoji previews of counter items in room view */
-function CounterPreviews({ items }: { items: PantryItem[] }) {
-  return (
-    <div
-      className="absolute pointer-events-none flex flex-wrap gap-1"
-      style={{
-        top: '49%',
-        left: '9%',
-        width: '70%',
-      }}
-    >
-      {items.slice(0, 8).map((item) => (
-        <span key={item.id} className="text-[10px] opacity-70">
-          {CATEGORY_EMOJI[item.category] ?? CATEGORY_EMOJI.other}
-        </span>
-      ))}
-    </div>
-  );
 }
