@@ -131,9 +131,7 @@ async def create_profile(request: CreateUserProfileRequest) -> ProfileResponse:
     response_model=ProfileResponse,
     summary="Update a user profile",
 )
-async def update_profile(
-    profile_id: UUID, request: UpdateUserProfileRequest
-) -> ProfileResponse:
+async def update_profile(profile_id: UUID, request: UpdateUserProfileRequest) -> ProfileResponse:
     """
     Update an existing user profile.
 

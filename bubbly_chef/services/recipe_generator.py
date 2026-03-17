@@ -1,14 +1,14 @@
 """Recipe generation service using AI."""
 
 import asyncio
+
 from pydantic import BaseModel, Field
 
 from bubbly_chef.ai import AIManager
 from bubbly_chef.ai.provider import StructuredOutputError
 from bubbly_chef.domain.normalizer import normalize_food_name
 from bubbly_chef.models.pantry import PantryItem
-from bubbly_chef.models.recipe import RecipeCard, Ingredient
-
+from bubbly_chef.models.recipe import Ingredient, RecipeCard
 
 # Maximum retry attempts for AI generation
 MAX_RETRIES = 2
@@ -73,7 +73,9 @@ class GenerateRecipeResponse(BaseModel):
     pantry_match_score: float = Field(ge=0.0, le=1.0)
 
 
-RECIPE_GENERATION_PROMPT = """You are a helpful cooking assistant. Generate a recipe based on the user's request.
+RECIPE_GENERATION_PROMPT = """\
+You are a helpful cooking assistant.
+Generate a recipe based on the user's request.
 
 ## User's Pantry
 The user has these ingredients available:
@@ -95,7 +97,8 @@ Generate a recipe that:
 4. Provides clear, numbered step-by-step instructions
 5. Estimates prep and cook time realistically
 
-IMPORTANT: You MUST return actual recipe data, NOT a schema or template. Generate a real recipe with actual values.
+IMPORTANT: You MUST return actual recipe data, NOT a schema or template.
+Generate a real recipe with actual values.
 
 Example of what to return:
 {{
@@ -105,16 +108,22 @@ Example of what to return:
   "cook_time_minutes": 15,
   "servings": 4,
   "ingredients": [
-    {{"name": "chicken breast", "quantity": 1, "unit": "lb", "preparation": "sliced thin", "optional": false}},
-    {{"name": "garlic", "quantity": 3, "unit": "cloves", "preparation": "minced", "optional": false}},
-    {{"name": "soy sauce", "quantity": 3, "unit": "tablespoons", "preparation": null, "optional": false}}
+    {{"name": "chicken breast", "quantity": 1, "unit": "lb",
+      "preparation": "sliced thin", "optional": false}},
+    {{"name": "garlic", "quantity": 3, "unit": "cloves",
+      "preparation": "minced", "optional": false}},
+    {{"name": "soy sauce", "quantity": 3, "unit": "tablespoons",
+      "preparation": null, "optional": false}}
   ],
   "instructions": [
-    "Slice chicken breast into thin strips and season with salt and pepper",
+    "Slice chicken into thin strips, season with salt and pepper",
     "Mince garlic and prepare your vegetables",
     "Heat oil in a large wok or skillet over high heat"
   ],
-  "tips": ["Add extra honey for a sweeter sauce", "Use a very hot wok for best results"],
+  "tips": [
+    "Add extra honey for a sweeter sauce",
+    "Use a very hot wok for best results"
+  ],
   "cuisine": "Asian",
   "difficulty": "easy"
 }}
@@ -122,7 +131,9 @@ Example of what to return:
 Now generate YOUR recipe following this same structure with ACTUAL VALUES (not the schema).
 """
 
-RECIPE_FOLLOWUP_PROMPT = """You are a helpful cooking assistant. The user wants to modify the previous recipe.
+RECIPE_FOLLOWUP_PROMPT = """\
+You are a helpful cooking assistant.
+The user wants to modify the previous recipe.
 
 ## Previous Recipe
 {previous_recipe}
@@ -133,22 +144,32 @@ RECIPE_FOLLOWUP_PROMPT = """You are a helpful cooking assistant. The user wants 
 ## User's Modification Request
 {user_prompt}
 
-Modify the recipe according to the user's request. Keep the same format but adjust ingredients, instructions, or other aspects as needed.
+Modify the recipe according to the user's request.
+Keep the same format but adjust ingredients, instructions,
+or other aspects as needed.
 
-IMPORTANT: You MUST return actual recipe data with real values, NOT a schema or template.
+IMPORTANT: You MUST return actual recipe data with real values,
+NOT a schema or template.
 
 Example of what to return:
 {{
   "title": "Spicy Honey Garlic Chicken Stir-Fry",
-  "description": "A quick and delicious stir-fry with tender chicken, crisp vegetables, and a spicy kick",
+  "description": "A quick and delicious stir-fry with tender chicken,
+crisp vegetables, and a spicy kick",
   "prep_time_minutes": 10,
   "cook_time_minutes": 15,
   "servings": 4,
   "ingredients": [
-    {{"name": "chicken breast", "quantity": 1, "unit": "lb", "preparation": "sliced thin", "optional": false}},
-    {{"name": "garlic", "quantity": 4, "unit": "cloves", "preparation": "minced", "optional": false}},
-    {{"name": "red pepper flakes", "quantity": 1, "unit": "teaspoon", "preparation": null, "optional": false}},
-    {{"name": "soy sauce", "quantity": 3, "unit": "tablespoons", "preparation": null, "optional": false}}
+    {{"name": "chicken breast", "quantity": 1, "unit": "lb",
+      "preparation": "sliced thin", "optional": false}},
+    {{"name": "garlic", "quantity": 4, "unit": "cloves",
+      "preparation": "minced", "optional": false}},
+    {{"name": "red pepper flakes", "quantity": 1,
+      "unit": "teaspoon", "preparation": null,
+      "optional": false}},
+    {{"name": "soy sauce", "quantity": 3,
+      "unit": "tablespoons", "preparation": null,
+      "optional": false}}
   ],
   "instructions": [
     "Slice chicken breast into thin strips and season with salt and pepper",
@@ -183,10 +204,7 @@ def format_pantry_for_prompt(pantry_items: list[PantryItem]) -> str:
 
 def format_expiring_items(pantry_items: list[PantryItem]) -> str:
     """Format expiring items with emphasis."""
-    expiring = [
-        item for item in pantry_items
-        if item.is_expiring_soon or item.is_expired
-    ]
+    expiring = [item for item in pantry_items if item.is_expiring_soon or item.is_expired]
 
     if not expiring:
         return "No items expiring soon."
@@ -309,10 +327,7 @@ def match_ingredient_to_pantry(
     # (Unit conversion would be needed for proper partial matching)
     if ingredient.quantity is not None and best_match.quantity is not None:
         # Same unit comparison (simplified)
-        if (
-            ingredient.unit == best_match.unit
-            and best_match.quantity < ingredient.quantity
-        ):
+        if ingredient.unit == best_match.unit and best_match.quantity < ingredient.quantity:
             return IngredientStatus(
                 ingredient_name=ingredient.name,
                 status="partial",
@@ -415,7 +430,7 @@ async def generate_recipe(
             last_error = e
             if attempt < MAX_RETRIES:
                 # Wait briefly before retry (exponential backoff)
-                wait_time = 2 ** attempt  # 1s, 2s, 4s
+                wait_time = 2**attempt  # 1s, 2s, 4s
                 await asyncio.sleep(wait_time)
                 continue
             else:
@@ -462,9 +477,7 @@ async def generate_recipe(
     )
 
     # Match ingredients to pantry
-    statuses = [
-        match_ingredient_to_pantry(ing, pantry_items) for ing in recipe.ingredients
-    ]
+    statuses = [match_ingredient_to_pantry(ing, pantry_items) for ing in recipe.ingredients]
 
     # Count statuses
     have_count = sum(1 for s in statuses if s.status == "have")

@@ -59,9 +59,7 @@ class PantryItem(BaseModel):
     quantity: float = Field(default=1.0, ge=0)
     unit: str = Field(default="item", description="Unit of measurement")
     brand: str | None = Field(default=None)
-    barcode: str | None = Field(
-        default=None, description="EAN/UPC barcode if available"
-    )
+    barcode: str | None = Field(default=None, description="EAN/UPC barcode if available")
     purchase_date: date | None = Field(default=None)
     expiry_date: date | None = Field(default=None)
     estimated_expiry: bool = Field(
@@ -122,12 +120,8 @@ class PantryUpsertAction(BaseModel):
 
     action_type: ActionType = Field(description="Type of action")
     item: PantryItem = Field(description="The item to upsert")
-    confidence: float = Field(
-        ge=0.0, le=1.0, description="Confidence for this specific action"
-    )
-    reasoning: str | None = Field(
-        default=None, description="Why this action was proposed"
-    )
+    confidence: float = Field(ge=0.0, le=1.0, description="Confidence for this specific action")
+    reasoning: str | None = Field(default=None, description="Why this action was proposed")
     match_existing_id: UUID | None = Field(
         default=None,
         description="If UPDATE/REMOVE/USE, the ID of the existing item to modify",
@@ -153,9 +147,7 @@ class PantryProposal(BaseModel):
     source_text: str | None = Field(
         default=None, description="Original text that generated this proposal"
     )
-    dedup_applied: bool = Field(
-        default=False, description="Whether deduplication was applied"
-    )
+    dedup_applied: bool = Field(default=False, description="Whether deduplication was applied")
     normalization_applied: bool = Field(
         default=False, description="Whether name normalization was applied"
     )

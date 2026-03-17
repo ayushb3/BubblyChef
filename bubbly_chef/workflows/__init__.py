@@ -25,29 +25,33 @@ def __getattr__(name: str):  # noqa: N807
         "build_chat_router_graph",
         "run_chat_ingest",
     ):
-        from bubbly_chef.workflows.chat_ingest import (
+        from bubbly_chef.workflows.chat_ingest import (  # noqa: F401
             build_chat_router_graph,
             get_chat_router_graph,
             run_chat_ingest,
             run_chat_workflow,
         )
+
         return locals()[name]
     if name in ("receipt_ingest_graph", "run_receipt_ingest"):
-        from bubbly_chef.workflows.receipt_ingest import (
+        from bubbly_chef.workflows.receipt_ingest import (  # noqa: F401
             receipt_ingest_graph,
             run_receipt_ingest,
         )
+
         return locals()[name]
     if name in ("product_ingest_graph", "run_product_ingest"):
-        from bubbly_chef.workflows.product_ingest import (
+        from bubbly_chef.workflows.product_ingest import (  # noqa: F401
             product_ingest_graph,
             run_product_ingest,
         )
+
         return locals()[name]
     if name in ("recipe_ingest_graph", "run_recipe_ingest"):
-        from bubbly_chef.workflows.recipe_ingest import (
+        from bubbly_chef.workflows.recipe_ingest import (  # noqa: F401
             recipe_ingest_graph,
             run_recipe_ingest,
         )
+
         return locals()[name]
     raise AttributeError(f"module 'bubbly_chef.workflows' has no attribute {name!r}")

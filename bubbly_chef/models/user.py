@@ -1,7 +1,6 @@
 """User profile-related Pydantic models."""
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, EmailStr, Field
@@ -18,9 +17,7 @@ class UserProfile(BaseModel):
         max_length=100,
         description="Display name shown in UI (optional)",
     )
-    avatar_url: str | None = Field(
-        default=None, description="URL to user avatar image"
-    )
+    avatar_url: str | None = Field(default=None, description="URL to user avatar image")
     dietary_preferences: list[str] = Field(
         default_factory=list,
         description="Dietary preferences (e.g., vegetarian, gluten-free, vegan)",

@@ -4,8 +4,9 @@ Ollama provider for self-hosted local LLM inference.
 """
 
 import json
+from typing import TypeVar
+
 import httpx
-from typing import Type, TypeVar
 from pydantic import BaseModel, ValidationError
 
 from .provider import AIProvider, ProviderUnavailableError, StructuredOutputError
@@ -42,7 +43,7 @@ class OllamaProvider(AIProvider):
     async def complete(
         self,
         prompt: str,
-        response_schema: Type[T] | None = None,
+        response_schema: type[T] | None = None,
         temperature: float = 0.7,
     ) -> T | str:
         """Generate completion using Ollama API."""

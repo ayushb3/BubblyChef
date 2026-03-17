@@ -2,11 +2,11 @@
 
 from functools import lru_cache
 
-from bubbly_chef.config import settings
 from bubbly_chef.ai import AIManager, GeminiProvider, OllamaProvider
+from bubbly_chef.config import settings
 
 
-@lru_cache()
+@lru_cache
 def get_ai_manager() -> AIManager:
     """
     Get the AI manager singleton.

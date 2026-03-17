@@ -30,6 +30,7 @@ class UpdatePantryItemRequest(BaseModel):
     storage_location: StorageLocation | None = None
     expiry_date: str | None = None
 
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/pantry", tags=["Pantry"])
@@ -59,9 +60,7 @@ class PantryItemResponse(BaseModel):
 )
 async def list_pantry(
     category: FoodCategory | None = Query(None, description="Filter by category"),
-    storage: StorageLocation | None = Query(
-        None, description="Filter by storage location"
-    ),
+    storage: StorageLocation | None = Query(None, description="Filter by storage location"),
     search: str | None = Query(None, description="Search by name"),
 ) -> PantryListResponse:
     """
@@ -118,7 +117,6 @@ async def list_expiring_items(
     logger.info(f"Fetching expiring items within {days} days")
 
     repo = await get_repository()
-    get_expiry_heuristics()
 
     all_items = await repo.get_all_pantry_items()
     now = datetime.now(UTC).date()
@@ -126,18 +124,14 @@ async def list_expiring_items(
 
     # Filter items that expire within the threshold and are not already expired
     expiring_items = [
-        item for item in all_items
-        if item.expiry_date and now <= item.expiry_date <= threshold
+        item for item in all_items if item.expiry_date and now <= item.expiry_date <= threshold
     ]
 
     # Sort by expiry date (soonest first)
     expiring_items.sort(key=lambda x: x.expiry_date or datetime.max.date())
 
     # Count expired items separately
-    expired_items = [
-        item for item in all_items
-        if item.expiry_date and item.expiry_date < now
-    ]
+    expired_items = [item for item in all_items if item.expiry_date and item.expiry_date < now]
 
     logger.info(f"Found {len(expiring_items)} items expiring within {days} days")
 
@@ -167,7 +161,9 @@ async def create_pantry_item(body: CreatePantryItemRequest) -> PantryItem:
     if body.expiry_date:
         expiry_date = date_type.fromisoformat(body.expiry_date)
     else:
-        expiry_date, estimated = expiry.estimate_expiry(body.category, body.storage_location, body.name)
+        expiry_date, estimated = expiry.estimate_expiry(
+            body.category, body.storage_location, body.name
+        )
 
     item = PantryItem(
         name=body.name,

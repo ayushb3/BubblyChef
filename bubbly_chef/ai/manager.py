@@ -18,6 +18,7 @@ T = TypeVar("T", bound=BaseModel)
 
 class NoProviderAvailableError(Exception):
     """Raised when no AI providers are available."""
+
     pass
 
 
@@ -84,8 +85,7 @@ class AIManager:
                         extra={"provider": provider.name},
                     )
                     errors.append(
-                        f"{provider.name}: not available"
-                        " (check credentials/model/connection)"
+                        f"{provider.name}: not available (check credentials/model/connection)"
                     )
                     continue
 
@@ -96,7 +96,7 @@ class AIManager:
                         "prompt_length": len(prompt),
                         "has_schema": response_schema is not None,
                         "temperature": temperature,
-                    }
+                    },
                 )
 
                 result = await provider.complete(
@@ -113,7 +113,7 @@ class AIManager:
                         "provider": provider.name,
                         "elapsed_seconds": elapsed,
                         "response_type": type(result).__name__,
-                    }
+                    },
                 )
 
                 return result
@@ -126,7 +126,7 @@ class AIManager:
                         "provider": provider.name,
                         "error": str(e),
                         "elapsed_seconds": elapsed,
-                    }
+                    },
                 )
                 errors.append(f"{provider.name}: {e}")
                 continue
@@ -140,7 +140,7 @@ class AIManager:
                         "error_type": type(e).__name__,
                         "elapsed_seconds": elapsed,
                     },
-                    exc_info=True
+                    exc_info=True,
                 )
                 errors.append(f"{provider.name}: {e}")
                 continue
@@ -151,11 +151,9 @@ class AIManager:
             extra={
                 "elapsed_seconds": elapsed,
                 "errors": errors,
-            }
+            },
         )
-        raise NoProviderAvailableError(
-            f"All providers failed. Errors: {errors}"
-        )
+        raise NoProviderAvailableError(f"All providers failed. Errors: {errors}")
 
     @property
     def current_provider(self) -> AIProvider | None:
@@ -176,10 +174,12 @@ class AIManager:
 
         for provider in self.providers:
             available = await provider.is_available()
-            status["providers"].append({
-                "name": provider.name,
-                "available": available,
-            })
+            status["providers"].append(
+                {
+                    "name": provider.name,
+                    "available": available,
+                }
+            )
             if available:
                 status["available_count"] += 1
 

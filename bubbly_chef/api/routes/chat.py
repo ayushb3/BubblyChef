@@ -17,15 +17,13 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 
 from bubbly_chef.models.base import Intent, ProposalEnvelope
-from bubbly_chef.models.pantry import PantryProposal
-from bubbly_chef.models.proposals import HandoffProposal
 from bubbly_chef.models.requests import ChatRequest, WorkflowEventRequest
 from bubbly_chef.repository.sqlite import get_repository
 from bubbly_chef.workflows.chat_ingest import run_chat_workflow
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["Chat"])
+router = APIRouter(prefix="/v1", tags=["Chat"])
 
 
 # In-memory workflow state store (TODO: persist to SQLite)
@@ -53,13 +51,17 @@ _workflow_states: dict[str, dict[str, Any]] = {}
                                 "assistant_message": "I found 2 items. Please review.",
                                 "proposal": {
                                     "actions": [
-                                        {"action_type": "add", "item": {"name": "milk"}, "confidence": 0.9}
+                                        {
+                                            "action_type": "add",
+                                            "item": {"name": "milk"},
+                                            "confidence": 0.9,
+                                        }
                                     ]
                                 },
                                 "confidence": {"overall": 0.85},
                                 "requires_review": True,
-                                "next_action": "review_proposal"
-                            }
+                                "next_action": "review_proposal",
+                            },
                         },
                         "receipt_request": {
                             "summary": "Receipt scan request",
@@ -72,12 +74,12 @@ _workflow_states: dict[str, dict[str, Any]] = {}
                                 "proposal": {
                                     "kind": "receipt",
                                     "instructions": "Upload a photo...",
-                                    "required_inputs": ["receipt_image"]
+                                    "required_inputs": ["receipt_image"],
                                 },
                                 "confidence": {"overall": 1.0},
                                 "requires_review": False,
-                                "next_action": "request_receipt_image"
-                            }
+                                "next_action": "request_receipt_image",
+                            },
                         },
                         "general_chat": {
                             "summary": "General chat response",
@@ -90,14 +92,14 @@ _workflow_states: dict[str, dict[str, Any]] = {}
                                 "proposal": None,
                                 "confidence": {"overall": 1.0},
                                 "requires_review": False,
-                                "next_action": "none"
-                            }
-                        }
+                                "next_action": "none",
+                            },
+                        },
                     }
                 }
-            }
+            },
         }
-    }
+    },
 )
 async def chat(request: ChatRequest) -> ProposalEnvelope:
     """
@@ -135,7 +137,7 @@ async def chat(request: ChatRequest) -> ProposalEnvelope:
             "conversation_id": str(request.conversation_id) if request.conversation_id else None,
             "mode": request.mode,
             "has_pantry_snapshot": request.pantry_snapshot is not None,
-        }
+        },
     )
 
     try:
@@ -162,7 +164,9 @@ async def chat(request: ChatRequest) -> ProposalEnvelope:
                 intent=envelope.intent.value,
                 input_payload={
                     "message": request.message,
-                    "conversation_id": str(request.conversation_id) if request.conversation_id else None,
+                    "conversation_id": str(request.conversation_id)
+                    if request.conversation_id
+                    else None,
                     "mode": request.mode,
                 },
                 proposal=envelope.proposal.model_dump() if envelope.proposal else None,
@@ -184,7 +188,7 @@ async def chat(request: ChatRequest) -> ProposalEnvelope:
                 "elapsed_seconds": elapsed,
                 "warnings_count": len(envelope.warnings) if envelope.warnings else 0,
                 "errors_count": len(envelope.errors) if envelope.errors else 0,
-            }
+            },
         )
 
         return envelope
@@ -199,11 +203,11 @@ async def chat(request: ChatRequest) -> ProposalEnvelope:
                 "elapsed_seconds": elapsed,
                 "message_preview": request.message[:100],
             },
-            exc_info=True
+            exc_info=True,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Chat processing failed: {str(e)}"
+            detail=f"Chat processing failed: {str(e)}",
         )
 
 
@@ -215,7 +219,7 @@ async def chat(request: ChatRequest) -> ProposalEnvelope:
         200: {"description": "Workflow resumed successfully"},
         404: {"description": "Workflow not found"},
         400: {"description": "Invalid event for workflow state"},
-    }
+    },
 )
 async def submit_workflow_event(
     workflow_id: UUID,
@@ -226,7 +230,8 @@ async def submit_workflow_event(
 
     Use this endpoint to:
     - Approve a proposal: `event_type: "submit_review", decision: "approve"`
-    - Approve with edits: `event_type: "submit_review", decision: "approve_with_edits", edits: {...}`
+    - Approve with edits: `event_type: "submit_review",
+      decision: "approve_with_edits", edits: {...}`
     - Reject a proposal: `event_type: "submit_review", decision: "reject"`
     - Provide clarification: `event_type: "provide_clarification", clarification_response: "..."`
     - Cancel workflow: `event_type: "cancel"`
@@ -241,10 +246,10 @@ async def submit_workflow_event(
         extra={
             "workflow_id": workflow_id_str,
             "event_type": event.event_type,
-            "decision": getattr(event, 'decision', None),
-            "has_edits": getattr(event, 'edits', None) is not None,
-            "idempotency_key": getattr(event, 'idempotency_key', None),
-        }
+            "decision": getattr(event, "decision", None),
+            "has_edits": getattr(event, "edits", None) is not None,
+            "idempotency_key": getattr(event, "idempotency_key", None),
+        },
     )
 
     # Check if workflow exists
@@ -252,22 +257,22 @@ async def submit_workflow_event(
         logger.warning(f"Workflow {workflow_id_str} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Workflow {workflow_id} not found or already completed"
+            detail=f"Workflow {workflow_id} not found or already completed",
         )
 
     stored_state = _workflow_states[workflow_id_str]
 
     # TODO: Implement idempotency check using event.idempotency_key
-    
+
     try:
         if event.event_type == "cancel":
             # Remove workflow from pending state
             del _workflow_states[workflow_id_str]
-            
+
             # Return a cancelled status envelope
-            from bubbly_chef.models.base import ConfidenceScore, WorkflowStatus, NextAction
             from bubbly_chef.config import settings
-            
+            from bubbly_chef.models.base import ConfidenceScore, NextAction, WorkflowStatus
+
             return ProposalEnvelope(
                 request_id=stored_state["envelope"]["request_id"],
                 workflow_id=workflow_id,
@@ -280,20 +285,20 @@ async def submit_workflow_event(
                 next_action=NextAction.NONE,
                 workflow_status=WorkflowStatus.CANCELLED,
             )
-        
+
         elif event.event_type == "submit_review":
             if event.decision == "approve":
                 # Mark as ready to apply
                 # TODO: Actually apply the proposal to the database
                 logger.info(f"Proposal approved for workflow {workflow_id}")
-                
+
                 # Clean up stored state
                 envelope_data = stored_state["envelope"]
                 del _workflow_states[workflow_id_str]
-                
-                from bubbly_chef.models.base import ConfidenceScore, WorkflowStatus, NextAction
+
                 from bubbly_chef.config import settings
-                
+                from bubbly_chef.models.base import ConfidenceScore, NextAction, WorkflowStatus
+
                 # Return updated envelope with completed status
                 return ProposalEnvelope(
                     request_id=envelope_data["request_id"],
@@ -307,23 +312,23 @@ async def submit_workflow_event(
                     next_action=NextAction.NONE,
                     workflow_status=WorkflowStatus.COMPLETED,
                 )
-            
+
             elif event.decision == "approve_with_edits":
                 if not event.edits:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="edits field required for approve_with_edits decision"
+                        detail="edits field required for approve_with_edits decision",
                     )
-                
+
                 # TODO: Apply edited proposal
                 logger.info(f"Proposal approved with edits for workflow {workflow_id}")
-                
+
                 envelope_data = stored_state["envelope"]
                 del _workflow_states[workflow_id_str]
-                
-                from bubbly_chef.models.base import ConfidenceScore, WorkflowStatus, NextAction
+
                 from bubbly_chef.config import settings
-                
+                from bubbly_chef.models.base import ConfidenceScore, NextAction, WorkflowStatus
+
                 return ProposalEnvelope(
                     request_id=envelope_data["request_id"],
                     workflow_id=workflow_id,
@@ -336,15 +341,15 @@ async def submit_workflow_event(
                     next_action=NextAction.NONE,
                     workflow_status=WorkflowStatus.COMPLETED,
                 )
-            
+
             elif event.decision == "reject":
                 # Reject and clean up
                 logger.info(f"Proposal rejected for workflow {workflow_id}")
                 del _workflow_states[workflow_id_str]
-                
-                from bubbly_chef.models.base import ConfidenceScore, WorkflowStatus, NextAction
+
                 from bubbly_chef.config import settings
-                
+                from bubbly_chef.models.base import ConfidenceScore, NextAction, WorkflowStatus
+
                 return ProposalEnvelope(
                     request_id=stored_state["envelope"]["request_id"],
                     workflow_id=workflow_id,
@@ -357,31 +362,33 @@ async def submit_workflow_event(
                     next_action=NextAction.NONE,
                     workflow_status=WorkflowStatus.COMPLETED,
                 )
-            
+
             else:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid decision: {event.decision}"
+                    detail=f"Invalid decision: {event.decision}",
                 )
-        
+
         elif event.event_type == "provide_clarification":
             if not event.clarification_response:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="clarification_response required for provide_clarification event"
+                    detail="clarification_response required for provide_clarification event",
                 )
-            
+
             # Re-run workflow with clarification as additional context
             original_request = stored_state["request"]
-            clarified_message = f"{original_request['message']} (Clarification: {event.clarification_response})"
-            
+            clarified_message = (
+                f"{original_request['message']} (Clarification: {event.clarification_response})"
+            )
+
             envelope = await run_chat_workflow(
                 message=clarified_message,
                 conversation_id=original_request.get("conversation_id"),
                 mode=original_request.get("mode", "text"),
                 pantry_snapshot=original_request.get("pantry_snapshot"),
             )
-            
+
             # Update stored state if still needs review
             if envelope.requires_review:
                 _workflow_states[str(envelope.workflow_id)] = {
@@ -391,22 +398,22 @@ async def submit_workflow_event(
             else:
                 # Clean up old workflow
                 del _workflow_states[workflow_id_str]
-            
+
             return envelope
-        
+
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unknown event type: {event.event_type}"
+                detail=f"Unknown event type: {event.event_type}",
             )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Workflow event processing failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Event processing failed: {str(e)}"
+            detail=f"Event processing failed: {str(e)}",
         )
 
 
@@ -418,25 +425,24 @@ async def submit_workflow_event(
 async def get_workflow_state(workflow_id: UUID) -> ProposalEnvelope:
     """
     Retrieve the current state of a workflow.
-    
+
     Useful for:
     - Checking if a workflow is still pending review
     - Retrieving proposal details for display
     """
     workflow_id_str = str(workflow_id)
-    
+
     if workflow_id_str not in _workflow_states:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Workflow {workflow_id} not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Workflow {workflow_id} not found"
         )
-    
+
     stored_state = _workflow_states[workflow_id_str]
     envelope_data = stored_state["envelope"]
-    
-    from bubbly_chef.models.base import ConfidenceScore, WorkflowStatus, NextAction
+
     from bubbly_chef.config import settings
-    
+    from bubbly_chef.models.base import ConfidenceScore, NextAction, WorkflowStatus
+
     return ProposalEnvelope(
         request_id=envelope_data["request_id"],
         workflow_id=workflow_id,

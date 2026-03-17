@@ -4,17 +4,17 @@ import uuid
 from datetime import date, timedelta
 from typing import Any
 
-from fastapi import APIRouter, File, UploadFile, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.config import settings
-from bubbly_chef.models.pantry import PantryItem, FoodCategory, StorageLocation
+from bubbly_chef.logger import get_logger
+from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.repository.sqlite import get_repository
+from bubbly_chef.services.image_preprocessor import PreprocessMode, get_image_preprocessor
 from bubbly_chef.services.ocr import get_ocr_service
-from bubbly_chef.services.receipt_parser import parse_receipt, ParsedReceiptItem
-from bubbly_chef.services.image_preprocessor import get_image_preprocessor, PreprocessMode
-from bubbly_chef.logger import get_logger, log_db_operation, log_error
+from bubbly_chef.services.receipt_parser import ParsedReceiptItem, parse_receipt
 
 logger = get_logger(__name__)
 
@@ -27,6 +27,7 @@ _pending_scans: dict[str, "ScanSession"] = {}
 
 class ScanSession(BaseModel):
     """Tracks a scan session for undo functionality."""
+
     request_id: str
     auto_added_ids: list[str] = Field(default_factory=list)
     pending_items: list[ParsedReceiptItem] = Field(default_factory=list)
@@ -34,6 +35,7 @@ class ScanSession(BaseModel):
 
 class ParsedItemResponse(BaseModel):
     """Response model for a parsed item."""
+
     temp_id: str
     raw_text: str
     name: str
@@ -48,6 +50,7 @@ class ParsedItemResponse(BaseModel):
 
 class ScanReceiptResponse(BaseModel):
     """Response from receipt scanning."""
+
     request_id: str
     ready_to_add: list[ParsedItemResponse]
     needs_review: list[ParsedItemResponse]
@@ -57,6 +60,7 @@ class ScanReceiptResponse(BaseModel):
 
 class ConfirmItem(BaseModel):
     """Item to confirm from review."""
+
     temp_id: str
     name: str
     quantity: float = 1.0
@@ -68,18 +72,21 @@ class ConfirmItem(BaseModel):
 
 class ConfirmItemsRequest(BaseModel):
     """Request to confirm reviewed items."""
+
     request_id: str
     items: list[ConfirmItem]
 
 
 class ConfirmItemsResponse(BaseModel):
     """Response after confirming items."""
+
     added: list[PantryItem]
     failed: list[str]
 
 
 class UndoResponse(BaseModel):
     """Response after undoing auto-added items."""
+
     removed_count: int
     removed_ids: list[str]
 
@@ -88,7 +95,7 @@ class UndoResponse(BaseModel):
 async def scan_receipt(
     image: UploadFile = File(..., description="Receipt image (PNG, JPEG)"),
     preprocess: bool = False,
-    preprocess_mode: PreprocessMode = "auto"
+    preprocess_mode: PreprocessMode = "auto",
 ) -> ScanReceiptResponse:
     """
     Scan a receipt image and extract grocery items.
@@ -110,7 +117,7 @@ async def scan_receipt(
     if image.content_type not in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid image type: {image.content_type}. Use PNG, JPEG, or WebP."
+            detail=f"Invalid image type: {image.content_type}. Use PNG, JPEG, or WebP.",
         )
 
     # Read image data
@@ -123,10 +130,7 @@ async def scan_receipt(
     if preprocess:
         try:
             preprocessor = get_image_preprocessor(mode=preprocess_mode)
-            image_data = await preprocessor.preprocess(
-                image_data,
-                return_format="bytes"
-            )
+            image_data = await preprocessor.preprocess(image_data, return_format="bytes")
             logger.info(f"Applied preprocessing with mode: {preprocess_mode}")
         except Exception as e:
             logger.warning(f"Preprocessing failed, using original image: {e}")
@@ -137,8 +141,7 @@ async def scan_receipt(
 
     if not ocr.is_available():
         raise HTTPException(
-            status_code=503,
-            detail="OCR service is not available. Please install Tesseract."
+            status_code=503, detail="OCR service is not available. Please install Tesseract."
         )
 
     # Extract text from image
@@ -151,7 +154,7 @@ async def scan_receipt(
     if not ocr_text.strip():
         raise HTTPException(
             status_code=400,
-            detail="Could not extract any text from the image. Try a clearer photo."
+            detail="Could not extract any text from the image. Try a clearer photo.",
         )
 
     # Parse receipt with AI
@@ -190,18 +193,20 @@ async def scan_receipt(
         if item.expiry_days:
             expiry_date = (date.today() + timedelta(days=item.expiry_days)).isoformat()
 
-        ready_to_add_responses.append(ParsedItemResponse(
-            temp_id=item.temp_id,
-            raw_text=item.raw_text,
-            name=item.name,
-            name_normalized=item.name_normalized,
-            quantity=item.quantity,
-            unit=item.unit,
-            category=item.category.value,
-            location=item.location.value,
-            expiry_date=expiry_date,
-            confidence=item.confidence,
-        ))
+        ready_to_add_responses.append(
+            ParsedItemResponse(
+                temp_id=item.temp_id,
+                raw_text=item.raw_text,
+                name=item.name,
+                name_normalized=item.name_normalized,
+                quantity=item.quantity,
+                unit=item.unit,
+                category=item.category.value,
+                location=item.location.value,
+                expiry_date=expiry_date,
+                confidence=item.confidence,
+            )
+        )
 
     # Convert review items to response format
     review_responses = []
@@ -210,18 +215,20 @@ async def scan_receipt(
         if item.expiry_days:
             expiry_date = (date.today() + timedelta(days=item.expiry_days)).isoformat()
 
-        review_responses.append(ParsedItemResponse(
-            temp_id=item.temp_id,
-            raw_text=item.raw_text,
-            name=item.name,
-            name_normalized=item.name_normalized,
-            quantity=item.quantity,
-            unit=item.unit,
-            category=item.category.value,
-            location=item.location.value,
-            expiry_date=expiry_date,
-            confidence=item.confidence,
-        ))
+        review_responses.append(
+            ParsedItemResponse(
+                temp_id=item.temp_id,
+                raw_text=item.raw_text,
+                name=item.name,
+                name_normalized=item.name_normalized,
+                quantity=item.quantity,
+                unit=item.unit,
+                category=item.category.value,
+                location=item.location.value,
+                expiry_date=expiry_date,
+                confidence=item.confidence,
+            )
+        )
 
     # Convert skipped items to response format
     skipped_responses = []
@@ -230,18 +237,20 @@ async def scan_receipt(
         if item.expiry_days:
             expiry_date = (date.today() + timedelta(days=item.expiry_days)).isoformat()
 
-        skipped_responses.append(ParsedItemResponse(
-            temp_id=item.temp_id,
-            raw_text=item.raw_text,
-            name=item.name,
-            name_normalized=item.name_normalized,
-            quantity=item.quantity,
-            unit=item.unit,
-            category=item.category.value,
-            location=item.location.value,
-            expiry_date=expiry_date,
-            confidence=item.confidence,
-        ))
+        skipped_responses.append(
+            ParsedItemResponse(
+                temp_id=item.temp_id,
+                raw_text=item.raw_text,
+                name=item.name,
+                name_normalized=item.name_normalized,
+                quantity=item.quantity,
+                unit=item.unit,
+                category=item.category.value,
+                location=item.location.value,
+                expiry_date=expiry_date,
+                confidence=item.confidence,
+            )
+        )
 
     return ScanReceiptResponse(
         request_id=request_id,
@@ -260,7 +269,7 @@ async def confirm_items(request: ConfirmItemsRequest) -> ConfirmItemsResponse:
     Use the temp_id from needs_review items to identify which items to add.
     You can modify name, quantity, category, etc. before confirming.
     """
-    session = _pending_scans.get(request.request_id)
+    _pending_scans.get(request.request_id)
 
     # Even if session expired, we can still add items
     repo = await get_repository()
@@ -301,10 +310,7 @@ async def undo_auto_added(request_id: str) -> UndoResponse:
     session = _pending_scans.get(request_id)
 
     if not session:
-        raise HTTPException(
-            status_code=404,
-            detail="Scan session not found or expired"
-        )
+        raise HTTPException(status_code=404, detail="Scan session not found or expired")
 
     repo = await get_repository()
     removed_ids = []
@@ -341,14 +347,15 @@ async def ocr_status() -> dict[str, Any]:
 
 class PreprocessReceiptRequest(BaseModel):
     """Request model for receipt preprocessing."""
+
     mode: PreprocessMode = Field(
-        default="auto",
-        description="Preprocessing mode: 'auto' (default), 'light', or 'aggressive'"
+        default="auto", description="Preprocessing mode: 'auto' (default), 'light', or 'aggressive'"
     )
 
 
 class PreprocessReceiptResponse(BaseModel):
     """Response from receipt preprocessing."""
+
     success: bool
     message: str
     original_size: tuple[int, int]
@@ -360,7 +367,7 @@ class PreprocessReceiptResponse(BaseModel):
 @router.post("/preprocess", response_model=PreprocessReceiptResponse)
 async def preprocess_receipt(
     image: UploadFile = File(..., description="Receipt image (PNG, JPEG)"),
-    mode: PreprocessMode = "auto"
+    mode: PreprocessMode = "auto",
 ) -> PreprocessReceiptResponse:
     """
     Preprocess a receipt image for optimal OCR performance.
@@ -390,14 +397,15 @@ async def preprocess_receipt(
     - Image size information and status
     """
     import base64
-    from PIL import Image
     import io
+
+    from PIL import Image
 
     # Validate file type
     if image.content_type not in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid image type: {image.content_type}. Use PNG, JPEG, or WebP."
+            detail=f"Invalid image type: {image.content_type}. Use PNG, JPEG, or WebP.",
         )
 
     # Read image data
@@ -419,10 +427,7 @@ async def preprocess_receipt(
 
     # Preprocess image
     try:
-        preprocessed_bytes = await preprocessor.preprocess(
-            image_data,
-            return_format="bytes"
-        )
+        preprocessed_bytes = await preprocessor.preprocess(image_data, return_format="bytes")
 
         # Get preprocessed image size
         preprocessed_image = Image.open(io.BytesIO(preprocessed_bytes))
@@ -452,7 +457,4 @@ async def preprocess_receipt(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Unexpected preprocessing error: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Image preprocessing failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Image preprocessing failed: {str(e)}")

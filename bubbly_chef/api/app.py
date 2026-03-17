@@ -47,6 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Check Gemini availability
     from bubbly_chef.api.deps import get_ai_manager
+
     if settings.gemini_api_key:
         ai_manager = get_ai_manager()
         gemini_providers = [p for p in ai_manager.providers if "gemini" in p.name]

@@ -2,7 +2,6 @@
 
 import re
 
-
 # Synonym mappings: normalized_name -> [synonyms]
 SYNONYMS: dict[str, list[str]] = {
     # Dairy
@@ -52,40 +51,120 @@ SYNONYMS: dict[str, list[str]] = {
 # Category keyword mappings
 CATEGORY_KEYWORDS: dict[str, list[str]] = {
     "produce": [
-        "apple", "banana", "orange", "lemon", "lime", "tomato", "onion",
-        "garlic", "potato", "carrot", "celery", "lettuce", "spinach",
-        "broccoli", "pepper", "cucumber", "avocado", "fruit", "vegetable",
-        "berry", "grape", "melon", "peach", "pear", "mango",
+        "apple",
+        "banana",
+        "orange",
+        "lemon",
+        "lime",
+        "tomato",
+        "onion",
+        "garlic",
+        "potato",
+        "carrot",
+        "celery",
+        "lettuce",
+        "spinach",
+        "broccoli",
+        "pepper",
+        "cucumber",
+        "avocado",
+        "fruit",
+        "vegetable",
+        "berry",
+        "grape",
+        "melon",
+        "peach",
+        "pear",
+        "mango",
     ],
     "dairy": [
-        "milk", "cheese", "yogurt", "butter", "cream", "cottage",
-        "sour cream", "cream cheese", "mozzarella", "cheddar", "parmesan",
+        "milk",
+        "cheese",
+        "yogurt",
+        "butter",
+        "cream",
+        "cottage",
+        "sour cream",
+        "cream cheese",
+        "mozzarella",
+        "cheddar",
+        "parmesan",
     ],
     "meat": [
-        "chicken", "beef", "pork", "lamb", "turkey", "steak",
-        "bacon", "sausage", "ham", "ground", "chop", "rib", "wing",
+        "chicken",
+        "beef",
+        "pork",
+        "lamb",
+        "turkey",
+        "steak",
+        "bacon",
+        "sausage",
+        "ham",
+        "ground",
+        "chop",
+        "rib",
+        "wing",
     ],
     "seafood": [
-        "fish", "salmon", "tuna", "shrimp", "crab", "lobster",
-        "cod", "tilapia", "halibut",
+        "fish",
+        "salmon",
+        "tuna",
+        "shrimp",
+        "crab",
+        "lobster",
+        "cod",
+        "tilapia",
+        "halibut",
     ],
     "frozen": ["frozen", "ice cream"],
     "pantry": [
-        "flour", "sugar", "rice", "pasta", "cereal", "oat",
-        "bean", "lentil", "canned", "can of",
+        "flour",
+        "sugar",
+        "rice",
+        "pasta",
+        "cereal",
+        "oat",
+        "bean",
+        "lentil",
+        "canned",
+        "can of",
     ],
     "beverages": [
-        "water", "juice", "soda", "coffee", "tea", "drink",
+        "water",
+        "juice",
+        "soda",
+        "coffee",
+        "tea",
+        "drink",
     ],
     "condiments": [
-        "sauce", "ketchup", "mustard", "mayo", "dressing",
-        "vinegar", "oil", "soy sauce", "hot sauce",
+        "sauce",
+        "ketchup",
+        "mustard",
+        "mayo",
+        "dressing",
+        "vinegar",
+        "oil",
+        "soy sauce",
+        "hot sauce",
     ],
     "bakery": [
-        "bread", "bagel", "muffin", "croissant", "donut", "cake", "pastry",
+        "bread",
+        "bagel",
+        "muffin",
+        "croissant",
+        "donut",
+        "cake",
+        "pastry",
     ],
     "snacks": [
-        "chip", "cracker", "cookie", "candy", "chocolate", "popcorn", "nuts",
+        "chip",
+        "cracker",
+        "cookie",
+        "candy",
+        "chocolate",
+        "popcorn",
+        "nuts",
     ],
 }
 
@@ -115,7 +194,7 @@ def normalize_food_name(name: str) -> str:
     prefixes = ["organic ", "fresh ", "raw ", "natural ", "premium ", "local "]
     for prefix in prefixes:
         if cleaned.startswith(prefix):
-            cleaned = cleaned[len(prefix):]
+            cleaned = cleaned[len(prefix) :]
 
     # Remove quantity words at the start
     cleaned = re.sub(

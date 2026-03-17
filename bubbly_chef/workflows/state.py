@@ -33,6 +33,7 @@ class WorkflowState(TypedDict, total=False):
     Each node reads from and writes to this state.
     This state object flows through the entire graph.
     """
+
     # ==========================================================================
     # Identifiers
     # ==========================================================================
@@ -134,7 +135,11 @@ class LLMIntentResult(BaseModel):
     """Schema for LLM intent classification response."""
 
     intent: str = Field(
-        description="One of: pantry_update, receipt_ingest_request, product_ingest_request, recipe_ingest_request, general_chat"
+        description=(
+            "One of: pantry_update, receipt_ingest_request,"
+            " product_ingest_request, recipe_ingest_request,"
+            " general_chat"
+        )
     )
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     reasoning: str | None = Field(default=None, description="Why this intent was chosen")
@@ -184,10 +189,7 @@ def create_pantry_envelope(
 ) -> ProposalEnvelope[PantryProposal]:
     """Create a proposal envelope for pantry proposals."""
 
-    requires_review = (
-        confidence < settings.auto_apply_confidence_threshold
-        or len(errors) > 0
-    )
+    requires_review = confidence < settings.auto_apply_confidence_threshold or len(errors) > 0
 
     # Determine workflow status
     if errors:
@@ -242,10 +244,7 @@ def create_recipe_envelope(
 ) -> ProposalEnvelope[RecipeCardProposal]:
     """Create a proposal envelope for recipe proposals."""
 
-    requires_review = (
-        confidence < settings.auto_apply_confidence_threshold
-        or len(errors) > 0
-    )
+    requires_review = confidence < settings.auto_apply_confidence_threshold or len(errors) > 0
 
     if not assistant_message:
         assistant_message = f"I've parsed the recipe: {proposal.recipe.title}. Please review."
@@ -265,7 +264,9 @@ def create_recipe_envelope(
         errors=errors,
         requires_review=requires_review,
         next_action=NextAction.REVIEW_PROPOSAL if requires_review else NextAction.NONE,
-        workflow_status=WorkflowStatus.AWAITING_REVIEW if requires_review else WorkflowStatus.COMPLETED,
+        workflow_status=WorkflowStatus.AWAITING_REVIEW
+        if requires_review
+        else WorkflowStatus.COMPLETED,
     )
 
 
@@ -294,9 +295,11 @@ def create_handoff_envelope(
         workflow_id=UUID(workflow_id) if workflow_id else uuid4(),
         conversation_id=UUID(conversation_id) if conversation_id else None,
         schema_version=settings.schema_version,
-        intent=Intent.RECEIPT_INGEST if handoff_kind == HandoffKind.RECEIPT
-               else Intent.PRODUCT_INGEST if handoff_kind == HandoffKind.PRODUCT
-               else Intent.RECIPE_INGEST,
+        intent=Intent.RECEIPT_INGEST
+        if handoff_kind == HandoffKind.RECEIPT
+        else Intent.PRODUCT_INGEST
+        if handoff_kind == HandoffKind.PRODUCT
+        else Intent.RECIPE_INGEST,
         proposal=proposal,
         assistant_message=assistant_message,
         confidence=ConfidenceScore(overall=1.0),  # High confidence for handoff

@@ -2,7 +2,6 @@
 
 from datetime import date, timedelta
 
-
 # Default expiry days by category
 CATEGORY_DEFAULTS: dict[str, int] = {
     "produce": 7,

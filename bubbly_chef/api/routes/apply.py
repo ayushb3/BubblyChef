@@ -6,15 +6,14 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException
 
-from bubbly_chef.models.requests import ApplyRequest, ApplyResponse
 from bubbly_chef.models.pantry import (
     ActionType,
     FoodCategory,
     PantryItem,
-    PantryUpsertAction,
     StorageLocation,
 )
 from bubbly_chef.models.recipe import Ingredient, RecipeCard
+from bubbly_chef.models.requests import ApplyRequest, ApplyResponse
 from bubbly_chef.repository.sqlite import get_repository
 
 logger = logging.getLogger(__name__)
@@ -30,7 +29,7 @@ def parse_pantry_item(item_data: dict) -> PantryItem:
         item_id = UUID(item_id)
     elif item_id is None:
         item_id = uuid4()
-    
+
     # Handle category
     category = item_data.get("category", "other")
     if isinstance(category, str):
@@ -38,7 +37,7 @@ def parse_pantry_item(item_data: dict) -> PantryItem:
             category = FoodCategory(category)
         except ValueError:
             category = FoodCategory.OTHER
-    
+
     # Handle storage location
     storage = item_data.get("storage_location", "pantry")
     if isinstance(storage, str):
@@ -46,16 +45,16 @@ def parse_pantry_item(item_data: dict) -> PantryItem:
             storage = StorageLocation(storage)
         except ValueError:
             storage = StorageLocation.PANTRY
-    
+
     # Handle dates
     purchase_date = item_data.get("purchase_date")
     if isinstance(purchase_date, str):
         purchase_date = date.fromisoformat(purchase_date)
-    
+
     expiry_date = item_data.get("expiry_date")
     if isinstance(expiry_date, str):
         expiry_date = date.fromisoformat(expiry_date)
-    
+
     return PantryItem(
         id=item_id,
         name=item_data.get("name", "unknown"),
@@ -81,27 +80,27 @@ def parse_pantry_item(item_data: dict) -> PantryItem:
 async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
     """
     Apply a reviewed (and possibly modified) proposal to the database.
-    
+
     This endpoint is the human-in-the-loop checkpoint where the UI
     sends back the approved proposal for actual state mutation.
-    
+
     The operation is idempotent - reapplying the same proposal
     will update existing items rather than create duplicates.
     """
     logger.info(f"Apply request: {request.request_id}, intent={request.intent}")
-    
+
     repo = await get_repository()
-    
+
     applied_count = 0
     failed_count = 0
     errors: list[str] = []
     affected_ids: list[UUID] = []
-    
+
     try:
         if request.intent == "pantry_update":
             # Apply pantry actions
             actions_data = request.proposal.get("actions", [])
-            
+
             for action_data in actions_data:
                 try:
                     action_type_str = action_data.get("action_type", "add")
@@ -109,10 +108,10 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
                         action_type = ActionType(action_type_str)
                     except ValueError:
                         action_type = ActionType.ADD
-                    
+
                     item_data = action_data.get("item", {})
                     item = parse_pantry_item(item_data)
-                    
+
                     if action_type == ActionType.ADD:
                         # Check for existing similar item (dedup)
                         existing = await repo.find_similar_item(item.name)
@@ -128,7 +127,7 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
                             affected_ids.append(item.id)
                             logger.info(f"Added new item: {item.name}")
                         applied_count += 1
-                        
+
                     elif action_type == ActionType.UPDATE:
                         # Find and update the item
                         match_id = action_data.get("match_existing_id")
@@ -138,8 +137,15 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
                             existing = await repo.get_pantry_item(match_id)
                             if existing:
                                 # Update fields from the action
-                                for field in ["name", "quantity", "unit", "category", 
-                                             "storage_location", "expiry_date", "notes"]:
+                                for field in [
+                                    "name",
+                                    "quantity",
+                                    "unit",
+                                    "category",
+                                    "storage_location",
+                                    "expiry_date",
+                                    "notes",
+                                ]:
                                     if field in item_data:
                                         setattr(existing, field, getattr(item, field))
                                 existing.updated_at = datetime.utcnow()
@@ -161,7 +167,7 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
                             else:
                                 errors.append(f"No existing item found to update: {item.name}")
                                 failed_count += 1
-                                
+
                     elif action_type == ActionType.REMOVE:
                         # Delete the item
                         match_id = action_data.get("match_existing_id")
@@ -183,19 +189,19 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
                             else:
                                 errors.append(f"No item found to remove: {item.name}")
                                 failed_count += 1
-                                
+
                     elif action_type == ActionType.USE:
                         # Reduce quantity
                         match_id = action_data.get("match_existing_id")
                         existing = None
-                        
+
                         if match_id:
                             if isinstance(match_id, str):
                                 match_id = UUID(match_id)
                             existing = await repo.get_pantry_item(match_id)
                         else:
                             existing = await repo.find_similar_item(item.name)
-                        
+
                         if existing:
                             existing.quantity -= item.quantity
                             if existing.quantity <= 0:
@@ -210,16 +216,16 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
                         else:
                             errors.append(f"No item found to use: {item.name}")
                             failed_count += 1
-                            
+
                 except Exception as e:
                     logger.error(f"Failed to apply action: {e}")
                     errors.append(f"Action failed: {e}")
                     failed_count += 1
-                    
+
         elif request.intent == "recipe_card":
             # Apply recipe
             recipe_data = request.proposal.get("recipe", {})
-            
+
             try:
                 # Parse recipe
                 recipe_id = recipe_data.get("id")
@@ -227,17 +233,19 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
                     recipe_id = UUID(recipe_id)
                 elif recipe_id is None:
                     recipe_id = uuid4()
-                
+
                 ingredients = []
                 for ing_data in recipe_data.get("ingredients", []):
-                    ingredients.append(Ingredient(
-                        name=ing_data.get("name", ""),
-                        quantity=ing_data.get("quantity"),
-                        unit=ing_data.get("unit"),
-                        preparation=ing_data.get("preparation"),
-                        optional=ing_data.get("optional", False),
-                    ))
-                
+                    ingredients.append(
+                        Ingredient(
+                            name=ing_data.get("name", ""),
+                            quantity=ing_data.get("quantity"),
+                            unit=ing_data.get("unit"),
+                            preparation=ing_data.get("preparation"),
+                            optional=ing_data.get("optional", False),
+                        )
+                    )
+
                 recipe = RecipeCard(
                     id=recipe_id,
                     title=recipe_data.get("title", "Untitled Recipe"),
@@ -257,7 +265,7 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
                     tips=recipe_data.get("tips", []),
                     notes=recipe_data.get("notes"),
                 )
-                
+
                 # Check if exists
                 existing = await repo.get_recipe(recipe_id)
                 if existing:
@@ -265,29 +273,26 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
                     await repo.update_recipe(recipe)
                 else:
                     await repo.add_recipe(recipe)
-                
+
                 affected_ids.append(recipe_id)
                 applied_count += 1
                 logger.info(f"Applied recipe: {recipe.title}")
-                
+
             except Exception as e:
                 logger.error(f"Failed to apply recipe: {e}")
                 errors.append(f"Recipe apply failed: {e}")
                 failed_count += 1
         else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unknown intent: {request.intent}"
-            )
-            
+            raise HTTPException(status_code=400, detail=f"Unknown intent: {request.intent}")
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Apply failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-    
+
     success = applied_count > 0 and failed_count == 0
-    
+
     return ApplyResponse(
         request_id=request.request_id,
         success=success,

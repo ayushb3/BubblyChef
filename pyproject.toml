@@ -51,6 +51,7 @@ build-backend = "hatchling.build"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+exclude = ["bubbly_chef/logger_templates.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]

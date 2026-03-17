@@ -19,6 +19,7 @@ logger = get_logger(__name__)  # Always use __name__
 # =============================================================================
 
 from fastapi import APIRouter, HTTPException
+
 from bubbly_chef.logger import get_logger, log_db_operation, log_error
 
 logger = get_logger(__name__)
@@ -56,7 +57,7 @@ async def create_item(data: ItemCreate):
 # 3. REPOSITORY/DATABASE TEMPLATE
 # =============================================================================
 
-from bubbly_chef.logger import get_logger, log_db_operation
+from bubbly_chef.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -87,7 +88,7 @@ class MyRepository:
 # 4. WORKFLOW/SERVICE TEMPLATE
 # =============================================================================
 
-from bubbly_chef.logger import get_logger, log_ai_call, log_error
+from bubbly_chef.logger import get_logger, log_ai_call
 
 logger = get_logger(__name__)
 
@@ -136,7 +137,7 @@ async def process_receipt(image: bytes) -> ParsedReceipt:
 # 5. AI PROVIDER TEMPLATE
 # =============================================================================
 
-from bubbly_chef.logger import get_logger, log_ai_call, log_error
+from bubbly_chef.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -166,7 +167,7 @@ class AIClient:
             return response.text
 
         except APIError as e:
-            log_error(logger, f"AI call failed", e, model=self.model_name)
+            log_error(logger, "AI call failed", e, model=self.model_name)
             raise
 
 
@@ -174,7 +175,7 @@ class AIClient:
 # 6. ERROR HANDLING TEMPLATE
 # =============================================================================
 
-from bubbly_chef.logger import get_logger, log_error
+from bubbly_chef.logger import get_logger
 
 logger = get_logger(__name__)
 

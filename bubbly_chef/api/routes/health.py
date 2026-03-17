@@ -4,35 +4,42 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from bubbly_chef import __version__
-from bubbly_chef.config import settings
-from bubbly_chef.tools.llm_client import get_ollama_client
-
+from bubbly_chef.api.deps import get_ai_manager
 
 router = APIRouter(tags=["Health"])
 
 
-class HealthResponse(BaseModel):
-    """Health check response."""
+class AIProviderStatus(BaseModel):
+    name: str
+    available: bool
 
+
+class HealthResponse(BaseModel):
     status: str
     version: str
-    ollama_available: bool
-    ollama_model: str
+    ai_available: bool
+    ai_providers: list[AIProviderStatus]
 
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
-    """
-    Health check endpoint.
+    """Health check — returns service status and AI provider availability."""
+    ai_manager = get_ai_manager()
+    health = await ai_manager.health_check()
 
-    Returns service status and dependency availability.
-    """
-    llm = get_ollama_client()
-    ollama_available = await llm.is_available()
+    providers = [
+        AIProviderStatus(name=p["name"], available=p["available"]) for p in health["providers"]
+    ]
 
     return HealthResponse(
         status="healthy",
         version=__version__,
-        ollama_available=ollama_available,
-        ollama_model=settings.ollama_model,
+        ai_available=health["healthy"],
+        ai_providers=providers,
     )
+
+
+@router.get("/health/ai", response_model=HealthResponse)
+async def ai_health_check() -> HealthResponse:
+    """Detailed AI provider health — used by frontend to surface configuration warnings."""
+    return await health_check()

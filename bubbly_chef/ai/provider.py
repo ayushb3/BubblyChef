@@ -5,7 +5,8 @@ Supports structured output generation with Pydantic models.
 """
 
 from abc import ABC, abstractmethod
-from typing import TypeVar, Type, Any
+from typing import TypeVar
+
 from pydantic import BaseModel
 
 T = TypeVar("T", bound=BaseModel)
@@ -24,7 +25,7 @@ class AIProvider(ABC):
     async def complete(
         self,
         prompt: str,
-        response_schema: Type[T] | None = None,
+        response_schema: type[T] | None = None,
         temperature: float = 0.7,
     ) -> T | str:
         """
@@ -48,14 +49,17 @@ class AIProvider(ABC):
 
 class AIProviderError(Exception):
     """Base exception for AI provider errors."""
+
     pass
 
 
 class ProviderUnavailableError(AIProviderError):
     """Raised when a provider is not available."""
+
     pass
 
 
 class StructuredOutputError(AIProviderError):
     """Raised when structured output parsing fails."""
+
     pass

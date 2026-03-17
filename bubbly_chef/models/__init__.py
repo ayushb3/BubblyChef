@@ -1,32 +1,32 @@
 """Pydantic models for request/response contracts."""
 
 from bubbly_chef.models.base import (
-    ProposalEnvelope,
+    ConfidenceScore,
     Intent,
     NextAction,
+    ProposalEnvelope,
     WorkflowStatus,
-    ConfidenceScore,
 )
 from bubbly_chef.models.pantry import (
-    PantryItem,
-    PantryAction,
     ActionType,
+    FoodCategory,
+    PantryAction,
+    PantryItem,
     PantryProposal,
     PantryUpsertAction,
-    FoodCategory,
     StorageLocation,
 )
 from bubbly_chef.models.proposals import (
-    HandoffProposal,
-    HandoffKind,
     ChatMessage,
     ChatRole,
-    ReviewEvent,
-    ReviewDecision,
-    IntentClassification,
     ClarificationRequest,
-    ParsedPantryItem,
     GeneralChatResponse,
+    HandoffKind,
+    HandoffProposal,
+    IntentClassification,
+    ParsedPantryItem,
+    ReviewDecision,
+    ReviewEvent,
 )
 from bubbly_chef.models.recipe import (
     Ingredient,
@@ -34,13 +34,13 @@ from bubbly_chef.models.recipe import (
     RecipeCardProposal,
 )
 from bubbly_chef.models.requests import (
-    ChatIngestRequest,
-    ReceiptIngestRequest,
-    ProductIngestRequest,
-    RecipeIngestRequest,
     ApplyRequest,
     ApplyResponse,
+    ChatIngestRequest,
     ChatRequest,
+    ProductIngestRequest,
+    ReceiptIngestRequest,
+    RecipeIngestRequest,
     WorkflowEventRequest,
 )
 

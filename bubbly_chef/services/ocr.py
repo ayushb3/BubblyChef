@@ -1,8 +1,7 @@
 """OCR service abstraction."""
 
-from abc import ABC, abstractmethod
-from pathlib import Path
 import io
+from abc import ABC, abstractmethod
 
 
 class OCRService(ABC):
@@ -40,6 +39,7 @@ class TesseractOCR(OCRService):
 
         try:
             import pytesseract
+
             # Try to get version to verify it's working
             pytesseract.get_tesseract_version()
             self._available = True
@@ -66,10 +66,7 @@ class TesseractOCR(OCRService):
         # Extract text
         # Use --psm 6 for uniform block of text (good for receipts)
         # Use -l eng for English
-        text = pytesseract.image_to_string(
-            image,
-            config="--psm 6 -l eng"
-        )
+        text = pytesseract.image_to_string(image, config="--psm 6 -l eng")
 
         return text.strip()
 

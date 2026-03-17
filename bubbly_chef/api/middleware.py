@@ -1,7 +1,7 @@
 """Middleware for logging and monitoring."""
 
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -15,9 +15,7 @@ logger = get_logger(__name__)
 class LoggingMiddleware(BaseHTTPMiddleware):
     """Middleware to log all HTTP requests and responses."""
 
-    async def dispatch(
-        self, request: Request, call_next: Callable
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Log request and response details."""
         if not settings.log_requests:
             return await call_next(request)
@@ -43,7 +41,5 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
         except Exception as e:
             duration_ms = (time.time() - start_time) * 1000
-            logger.error(
-                f"❌ {method} {path} - Exception after {duration_ms:.2f}ms: {e}"
-            )
+            logger.error(f"❌ {method} {path} - Exception after {duration_ms:.2f}ms: {e}")
             raise

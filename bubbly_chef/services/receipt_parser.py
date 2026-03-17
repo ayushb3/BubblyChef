@@ -1,12 +1,13 @@
 """Receipt parsing service using AI."""
 
 import uuid
+
 from pydantic import BaseModel, Field
 
 from bubbly_chef.ai import AIManager
-from bubbly_chef.domain.normalizer import normalize_food_name, detect_category
-from bubbly_chef.domain.expiry import estimate_expiry_days, get_default_location
 from bubbly_chef.domain.defaults import get_default_quantity_and_unit
+from bubbly_chef.domain.expiry import estimate_expiry_days, get_default_location
+from bubbly_chef.domain.normalizer import detect_category, normalize_food_name
 from bubbly_chef.models.pantry import FoodCategory, StorageLocation
 
 
@@ -38,12 +39,14 @@ class LLMReceiptOutput(BaseModel):
     items: list[dict]
 
 
-RECEIPT_PARSE_PROMPT = """You are a grocery receipt parser. Extract food items from this receipt text.
+RECEIPT_PARSE_PROMPT = """You are a grocery receipt parser.
+Extract food items from this receipt text.
 
 CRITICAL RULES:
 1. Only extract FOOD items - ignore non-food (bags, tax, totals, discounts, coupons)
 2. IGNORE PRICES - Numbers with decimals (e.g., 6.17, 2.10) are PRICES, NOT quantities
-3. Only extract quantity if explicitly mentioned BEFORE or IN the item name (e.g., "2X MILK", "3 Bananas", "Eggs 12pk")
+3. Only extract quantity if explicitly mentioned BEFORE or IN the item name
+   (e.g., "2X MILK", "3 Bananas", "Eggs 12pk")
 4. If a number appears AFTER the item name, it is probably a price - IGNORE IT
 5. Expand common abbreviations: ORG=Organic, GAL=Gallon, DZ=Dozen, PK=Pack, LB=Pound, OZ=Ounce
 6. Clean up item names - remove store codes, PLU numbers, asterisks
@@ -61,12 +64,15 @@ For each food item, extract:
 - confidence: Your confidence 0.0-1.0 that this is a valid food item
 
 EXAMPLES OF CORRECT PARSING:
-✓ "Large Eggs      6.17" → {{"name": "Large Eggs", "quantity": null, "unit": null, "confidence": 0.95}}
+✓ "Large Eggs      6.17" →
+  {{"name": "Large Eggs", "quantity": null, "unit": null, "confidence": 0.95}}
 ✓ "Milk             1.80" → {{"name": "Milk", "quantity": null, "unit": null, "confidence": 0.95}}
 ✓ "2X Milk         3.80" → {{"name": "Milk", "quantity": 2, "unit": null, "confidence": 0.95}}
 ✓ "Bananas 1lb     0.68" → {{"name": "Bananas", "quantity": 1, "unit": "lb", "confidence": 0.90}}
-✓ "Canned Tuna 12pk 11.98" → {{"name": "Canned Tuna", "quantity": 12, "unit": "item", "confidence": 0.92}}
-✓ "Cheese Crackers 2.10" → {{"name": "Cheese Crackers", "quantity": null, "unit": null, "confidence": 0.90}}
+✓ "Canned Tuna 12pk 11.98" →
+  {{"name": "Canned Tuna", "quantity": 12, "unit": "item", "confidence": 0.92}}
+✓ "Cheese Crackers 2.10" →
+  {{"name": "Cheese Crackers", "quantity": null, "unit": null, "confidence": 0.90}}
 
 WRONG - DO NOT DO THIS:
 ✗ "Eggs 6.17" should NOT become {{"quantity": 6}} - that's a price!
@@ -77,11 +83,37 @@ Return JSON with an "items" array. Only include items you're reasonably confiden
 
 # Common non-food keywords to filter out
 NON_FOOD_KEYWORDS = {
-    "tax", "total", "subtotal", "change", "cash", "credit", "debit",
-    "bag", "bags", "coupon", "discount", "savings", "member", "rewards",
-    "receipt", "store", "thank", "visit", "date", "time", "cashier",
-    "transaction", "balance", "payment", "card", "visa", "mastercard",
-    "approved", "amount", "tender", "refund",
+    "tax",
+    "total",
+    "subtotal",
+    "change",
+    "cash",
+    "credit",
+    "debit",
+    "bag",
+    "bags",
+    "coupon",
+    "discount",
+    "savings",
+    "member",
+    "rewards",
+    "receipt",
+    "store",
+    "thank",
+    "visit",
+    "date",
+    "time",
+    "cashier",
+    "transaction",
+    "balance",
+    "payment",
+    "card",
+    "visa",
+    "mastercard",
+    "approved",
+    "amount",
+    "tender",
+    "refund",
 }
 
 
@@ -112,10 +144,7 @@ async def parse_receipt(
     warnings = []
 
     if not ocr_text.strip():
-        return ReceiptParseResult(
-            items=[],
-            warnings=["Receipt appears to be empty or unreadable"]
-        )
+        return ReceiptParseResult(items=[], warnings=["Receipt appears to be empty or unreadable"])
 
     # Call AI to parse the receipt
     prompt = RECEIPT_PARSE_PROMPT.format(receipt_text=ocr_text)
@@ -127,10 +156,7 @@ async def parse_receipt(
             temperature=0.3,  # Lower temperature for more consistent parsing
         )
     except Exception as e:
-        return ReceiptParseResult(
-            items=[],
-            warnings=[f"AI parsing failed: {str(e)}"]
-        )
+        return ReceiptParseResult(items=[], warnings=[f"AI parsing failed: {str(e)}"])
 
     # Process each item
     parsed_items = []
@@ -160,11 +186,7 @@ async def parse_receipt(
         location = StorageLocation(get_default_location(category.value))
 
         # Estimate expiry
-        expiry_days = estimate_expiry_days(
-            name_normalized,
-            category.value,
-            location.value
-        )
+        expiry_days = estimate_expiry_days(name_normalized, category.value, location.value)
 
         # Adjust confidence based on various factors
         confidence = ai_confidence
@@ -180,8 +202,7 @@ async def parse_receipt(
         # If quantity or unit is missing, use smart defaults based on item type
         if quantity is None or unit is None:
             default_qty, default_unit = get_default_quantity_and_unit(
-                name_normalized,
-                category.value
+                name_normalized, category.value
             )
             quantity = quantity if quantity is not None else default_qty
             unit = unit if unit is not None else default_unit

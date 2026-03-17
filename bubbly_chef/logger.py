@@ -26,9 +26,7 @@ class ColoredFormatter(logging.Formatter):
         # Add color to level name
         levelname = record.levelname
         if levelname in self.COLORS:
-            record.levelname = (
-                f"{self.COLORS[levelname]}{self.BOLD}{levelname}{self.RESET}"
-            )
+            record.levelname = f"{self.COLORS[levelname]}{self.BOLD}{levelname}{self.RESET}"
 
         # Add color to logger name
         record.name = f"\033[90m{record.name}{self.RESET}"
@@ -61,13 +59,10 @@ def setup_logging() -> None:
     if settings.debug:
         # More verbose in debug mode
         console_format = (
-            "%(asctime)s - %(name)s - %(levelname)s - "
-            "[%(filename)s:%(lineno)d] - %(message)s"
+            "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
         )
 
-    console_formatter = ColoredFormatter(
-        console_format, datefmt="%Y-%m-%d %H:%M:%S"
-    )
+    console_formatter = ColoredFormatter(console_format, datefmt="%Y-%m-%d %H:%M:%S")
     console_handler.setFormatter(console_formatter)
     root_logger.addHandler(console_handler)
 
@@ -131,14 +126,10 @@ def log_response(
         duration_ms: Request duration in milliseconds
     """
     emoji = "✅" if status_code < 400 else "❌"
-    logger.info(
-        f"{emoji} {method} {path} - {status_code} ({duration_ms:.2f}ms)"
-    )
+    logger.info(f"{emoji} {method} {path} - {status_code} ({duration_ms:.2f}ms)")
 
 
-def log_error(
-    logger: logging.Logger, message: str, error: Exception, **kwargs: Any
-) -> None:
+def log_error(logger: logging.Logger, message: str, error: Exception, **kwargs: Any) -> None:
     """
     Log an error with context.
 
@@ -194,6 +185,4 @@ def log_db_operation(
         **kwargs: Additional context (item_id, filters, etc.)
     """
     context = " ".join(f"{k}={v}" for k, v in kwargs.items() if v is not None)
-    logger.debug(
-        f"💾 DB: {operation.upper()} {table} (count={count}) {context}".strip()
-    )
+    logger.debug(f"💾 DB: {operation.upper()} {table} (count={count}) {context}".strip())

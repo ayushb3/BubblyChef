@@ -12,7 +12,6 @@ DEFAULT_QUANTITIES = {
     "cheese": {"quantity": 1, "unit": "lb"},
     "yogurt": {"quantity": 1, "unit": "container"},
     "cream": {"quantity": 1, "unit": "pint"},
-
     # Produce
     "bananas": {"quantity": 1, "unit": "bunch"},
     "banana": {"quantity": 1, "unit": "bunch"},
@@ -25,7 +24,6 @@ DEFAULT_QUANTITIES = {
     "onion": {"quantity": 1, "unit": "lb"},
     "carrots": {"quantity": 1, "unit": "lb"},
     "carrot": {"quantity": 1, "unit": "lb"},
-
     # Meat/Seafood
     "chicken": {"quantity": 1, "unit": "lb"},
     "beef": {"quantity": 1, "unit": "lb"},
@@ -34,32 +32,27 @@ DEFAULT_QUANTITIES = {
     "salmon": {"quantity": 1, "unit": "lb"},
     "tuna": {"quantity": 1, "unit": "can"},
     "shrimp": {"quantity": 1, "unit": "lb"},
-
     # Bakery
     "bread": {"quantity": 1, "unit": "loaf"},
     "bagels": {"quantity": 1, "unit": "package"},
     "bagel": {"quantity": 1, "unit": "package"},
     "rolls": {"quantity": 1, "unit": "package"},
     "tortillas": {"quantity": 1, "unit": "package"},
-
     # Beverages
     "juice": {"quantity": 1, "unit": "bottle"},
     "soda": {"quantity": 1, "unit": "bottle"},
     "water": {"quantity": 1, "unit": "bottle"},
     "wine": {"quantity": 1, "unit": "bottle"},
     "beer": {"quantity": 1, "unit": "bottle"},
-
     # Condiments
     "ketchup": {"quantity": 1, "unit": "bottle"},
     "mustard": {"quantity": 1, "unit": "bottle"},
     "mayo": {"quantity": 1, "unit": "jar"},
     "mayonnaise": {"quantity": 1, "unit": "jar"},
     "hot sauce": {"quantity": 1, "unit": "bottle"},
-
     # Frozen
     "ice cream": {"quantity": 1, "unit": "pint"},
     "frozen": {"quantity": 1, "unit": "package"},
-
     # Snacks/Crackers
     "crackers": {"quantity": 1, "unit": "box"},
     "cracker": {"quantity": 1, "unit": "box"},
@@ -68,7 +61,6 @@ DEFAULT_QUANTITIES = {
     "cookie": {"quantity": 1, "unit": "package"},
     "popcorn": {"quantity": 1, "unit": "bag"},
     "pretzels": {"quantity": 1, "unit": "bag"},
-
     # Default fallback
     "default": {"quantity": 1, "unit": "item"},
 }

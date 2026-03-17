@@ -3,8 +3,8 @@
 import io
 from typing import Literal
 
-from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 import numpy as np
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 from bubbly_chef.logger import get_logger
 
@@ -41,9 +41,7 @@ class ImagePreprocessor:
         logger.debug(f"ImagePreprocessor initialized with mode: {mode}")
 
     async def preprocess(
-        self,
-        image_data: bytes,
-        return_format: Literal["bytes", "image"] = "bytes"
+        self, image_data: bytes, return_format: Literal["bytes", "image"] = "bytes"
     ) -> bytes | Image.Image:
         """
         Preprocess an image for OCR.
@@ -191,7 +189,7 @@ class ImagePreprocessor:
         """
         try:
             # Convert to numpy array
-            np_image = np.array(image)
+            np.array(image)
 
             # Calculate projection profile to detect skew
             # This is a simplified implementation

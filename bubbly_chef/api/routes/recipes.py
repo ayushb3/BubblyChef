@@ -1,18 +1,18 @@
 """Recipe generation endpoints."""
 
 from datetime import datetime
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from bubbly_chef.api.deps import get_ai_manager
+from bubbly_chef.logger import get_logger, log_error
+from bubbly_chef.models.recipe import RecipeCard
 from bubbly_chef.repository.sqlite import get_repository
 from bubbly_chef.services.recipe_generator import (
-    generate_recipe,
-    GenerateRecipeResponse,
     IngredientStatus,
+    generate_recipe,
 )
-from bubbly_chef.models.recipe import RecipeCard
-from bubbly_chef.logger import get_logger, log_error, log_ai_call
 
 logger = get_logger(__name__)
 
@@ -25,7 +25,10 @@ class GenerateRecipeRequest(BaseModel):
     prompt: str = Field(description="User's recipe request", min_length=1)
     constraints: dict | None = Field(
         default=None,
-        description="Optional constraints: max_time_minutes, cuisine, dietary, use_expiring, servings",
+        description=(
+            "Optional constraints: max_time_minutes, cuisine,"
+            " dietary, use_expiring, servings"
+        ),
     )
     previous_recipe_context: str | None = Field(
         default=None,
@@ -74,7 +77,7 @@ async def generate_recipe_endpoint(request: GenerateRecipeRequest) -> GenerateRe
             "prompt_length": len(request.prompt),
             "has_constraints": request.constraints is not None,
             "has_context": request.previous_recipe_context is not None,
-        }
+        },
     )
 
     try:
@@ -87,6 +90,7 @@ async def generate_recipe_endpoint(request: GenerateRecipeRequest) -> GenerateRe
         if request.previous_recipe_context:
             try:
                 import json
+
                 previous_data = json.loads(request.previous_recipe_context)
                 previous_recipe = RecipeCard(**previous_data)
                 logger.debug("Using previous recipe context for follow-up")
@@ -112,7 +116,7 @@ async def generate_recipe_endpoint(request: GenerateRecipeRequest) -> GenerateRe
                 "have_count": result.have_count,
                 "missing_count": result.missing_count,
                 "elapsed_seconds": elapsed,
-            }
+            },
         )
 
         return GenerateRecipeAPIResponse(
@@ -134,13 +138,10 @@ async def generate_recipe_endpoint(request: GenerateRecipeRequest) -> GenerateRe
                 "elapsed_seconds": elapsed,
                 "prompt": request.prompt[:100],
             },
-            exc_info=True
+            exc_info=True,
         )
         log_error(logger, f"Failed to generate recipe for prompt: {request.prompt[:50]}...", e)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Recipe generation failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Recipe generation failed: {str(e)}")
 
 
 @router.get("/suggestions", response_model=list[str])
@@ -168,10 +169,7 @@ async def get_recipe_suggestions() -> list[str]:
                 suggestions.append(f"Use up my {item.name.lower()} before it expires")
 
         # Check for main proteins/ingredients
-        proteins = [
-            item for item in pantry_items
-            if item.category.value in ("meat", "seafood")
-        ]
+        proteins = [item for item in pantry_items if item.category.value in ("meat", "seafood")]
         if proteins:
             suggestions.append(f"What can I make with {proteins[0].name.lower()}?")
 
@@ -196,7 +194,7 @@ async def get_recipe_suggestions() -> list[str]:
                 "suggestions_count": len(suggestions[:5]),
                 "pantry_items_count": len(pantry_items),
                 "expiring_count": len(expiring),
-            }
+            },
         )
 
         return suggestions[:5]
@@ -205,7 +203,7 @@ async def get_recipe_suggestions() -> list[str]:
         logger.error(
             "Failed to get recipe suggestions",
             extra={"error": str(e), "error_type": type(e).__name__},
-            exc_info=True
+            exc_info=True,
         )
         log_error(logger, "Failed to get recipe suggestions", e)
         # Return generic suggestions on error

@@ -107,9 +107,7 @@ class SQLiteRepository:
             storage_location=StorageLocation(row["location"]),
             quantity=row["quantity"],
             unit=row["unit"],
-            expiry_date=(
-                date.fromisoformat(row["expiry_date"]) if row["expiry_date"] else None
-            ),
+            expiry_date=(date.fromisoformat(row["expiry_date"]) if row["expiry_date"] else None),
             created_at=datetime.fromisoformat(row["added_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
@@ -117,9 +115,7 @@ class SQLiteRepository:
     async def get_pantry_item(self, item_id: str) -> PantryItem | None:
         """Get a single pantry item by ID."""
         conn = self._get_conn()
-        async with conn.execute(
-            "SELECT * FROM pantry_items WHERE id = ?", (item_id,)
-        ) as cursor:
+        async with conn.execute("SELECT * FROM pantry_items WHERE id = ?", (item_id,)) as cursor:
             row = await cursor.fetchone()
             if row:
                 return self._row_to_pantry_item(row)
@@ -128,9 +124,7 @@ class SQLiteRepository:
     async def get_all_pantry_items(self) -> list[PantryItem]:
         """Get all pantry items."""
         conn = self._get_conn()
-        async with conn.execute(
-            "SELECT * FROM pantry_items ORDER BY name"
-        ) as cursor:
+        async with conn.execute("SELECT * FROM pantry_items ORDER BY name") as cursor:
             rows = await cursor.fetchall()
             return [self._row_to_pantry_item(row) for row in rows]
 
@@ -212,9 +206,7 @@ class SQLiteRepository:
         logger.debug(f"Added pantry item: {item.name} ({item.id})")
         return item
 
-    async def update_pantry_item(
-        self, item_id: str, updates: dict[str, Any]
-    ) -> PantryItem:
+    async def update_pantry_item(self, item_id: str, updates: dict[str, Any]) -> PantryItem:
         """Update an existing pantry item."""
         conn = self._get_conn()
 
@@ -253,9 +245,7 @@ class SQLiteRepository:
     async def delete_pantry_item(self, item_id: str) -> bool:
         """Delete a pantry item."""
         conn = self._get_conn()
-        cursor = await conn.execute(
-            "DELETE FROM pantry_items WHERE id = ?", (item_id,)
-        )
+        cursor = await conn.execute("DELETE FROM pantry_items WHERE id = ?", (item_id,))
         await conn.commit()
 
         deleted = cursor.rowcount > 0
@@ -272,9 +262,7 @@ class SQLiteRepository:
         import json
 
         dietary_preferences = (
-            json.loads(row["dietary_preferences"])
-            if row["dietary_preferences"]
-            else []
+            json.loads(row["dietary_preferences"]) if row["dietary_preferences"] else []
         )
 
         return UserProfile(
@@ -302,9 +290,7 @@ class SQLiteRepository:
     async def get_profile_by_email(self, email: str) -> UserProfile | None:
         """Get a user profile by email."""
         conn = self._get_conn()
-        async with conn.execute(
-            "SELECT * FROM user_profiles WHERE email = ?", (email,)
-        ) as cursor:
+        async with conn.execute("SELECT * FROM user_profiles WHERE email = ?", (email,)) as cursor:
             row = await cursor.fetchone()
             if row:
                 return self._row_to_user_profile(row)
@@ -349,13 +335,9 @@ class SQLiteRepository:
             return profile
         except aiosqlite.IntegrityError as e:
             logger.error(f"Failed to create profile: {e}")
-            raise ValueError(
-                "Username or email already exists"
-            ) from e
+            raise ValueError("Username or email already exists") from e
 
-    async def update_profile(
-        self, profile_id: str, updates: dict[str, Any]
-    ) -> UserProfile:
+    async def update_profile(self, profile_id: str, updates: dict[str, Any]) -> UserProfile:
         """Update an existing user profile."""
         import json
 
@@ -389,9 +371,7 @@ class SQLiteRepository:
             await conn.commit()
         except aiosqlite.IntegrityError as e:
             logger.error(f"Failed to update profile: {e}")
-            raise ValueError(
-                "Username or email already exists"
-            ) from e
+            raise ValueError("Username or email already exists") from e
 
         # Return updated profile
         profile = await self.get_profile_by_id(profile_id)
@@ -402,9 +382,7 @@ class SQLiteRepository:
     async def delete_profile(self, profile_id: str) -> bool:
         """Delete a user profile."""
         conn = self._get_conn()
-        cursor = await conn.execute(
-            "DELETE FROM user_profiles WHERE id = ?", (profile_id,)
-        )
+        cursor = await conn.execute("DELETE FROM user_profiles WHERE id = ?", (profile_id,))
         await conn.commit()
 
         deleted = cursor.rowcount > 0
