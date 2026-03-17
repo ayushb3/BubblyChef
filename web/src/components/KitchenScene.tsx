@@ -3,7 +3,8 @@ import { useEffect, useRef, useCallback } from 'react';
 import type { PantryItem, Location } from '../types';
 import { drawKitchenRoom, COLORS } from './pixel/drawAppliances';
 import type { ApplianceZone } from './pixel/drawAppliances';
-import { drawItemSprite, getExpiryColor } from './pixel/drawItems';
+import { drawItemSprite } from './pixel/drawItems';
+import { getInteriorRenderer } from './pixel/drawInteriors';
 
 interface KitchenSceneProps {
   items: PantryItem[];
@@ -12,45 +13,13 @@ interface KitchenSceneProps {
 
 const TWEEN_DURATION = 300; // ms
 const ZOOM_SCALE = 2.5;
-const MAX_ZONE_ITEMS = 56; // 7 rows x 8 cols within 520px canvas height
 const COUNTER_MAX_COLS = 8;
-
-// Shared immutable TextStyle singletons — do not mutate
-const LABEL_STYLE = new TextStyle({
-  fontFamily: 'Nunito, sans-serif',
-  fontSize: 10,
-  fill: 0x4a4a4a,
-  wordWrap: true,
-  wordWrapWidth: 60,
-  align: 'center',
-});
 
 const ZONE_TITLE_STYLE = new TextStyle({
   fontFamily: 'Nunito, sans-serif',
   fontSize: 16,
   fontWeight: 'bold',
   fill: 0x4a4a4a,
-});
-
-const EMPTY_STYLE = new TextStyle({
-  fontFamily: 'Nunito, sans-serif',
-  fontSize: 13,
-  fill: 0x999999,
-  fontStyle: 'italic',
-  align: 'center',
-});
-
-const QTY_STYLE = new TextStyle({
-  fontFamily: 'Nunito, sans-serif',
-  fontSize: 9,
-  fill: 0x888888,
-});
-
-const OVERFLOW_STYLE = new TextStyle({
-  fontFamily: 'Nunito, sans-serif',
-  fontSize: 11,
-  fill: 0x999999,
-  fontStyle: 'italic',
 });
 
 const ZONE_LABELS: Record<Location, string> = {
@@ -112,20 +81,29 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
 
       const zoneItems = itemsRef.current.filter((i) => i.location === zone.location);
 
-      // Background
-      const bg = new Graphics();
-      bg.rect(0, 0, 800, 520).fill(COLORS.wall);
-      zoneContainer.addChild(bg);
+      // Use the immersive interior renderer for this location
+      const renderer = getInteriorRenderer(zone.location);
+      renderer(zoneContainer, {
+        items: zoneItems,
+        onItemClick: (item: PantryItem) => onItemClickRef.current(item),
+      });
 
-      // Back arrow
+      // Overlay: back arrow button (always on top)
       const backBtn = new Container();
+      const backBg = new Graphics();
+      backBg.roundRect(0, 0, 44, 44, 12).fill({ color: 0xffffff, alpha: 0.85 });
+      backBg.roundRect(0, 0, 44, 44, 12).stroke({ width: 1, color: 0xdddddd, alpha: 0.5 });
+      backBtn.addChild(backBg);
+
       const arrow = new Graphics();
-      arrow.moveTo(24, 12).lineTo(8, 24).lineTo(24, 36);
-      arrow.stroke({ width: 3, color: 0x4a4a4a, alpha: 0.7 });
+      arrow.moveTo(26, 12).lineTo(14, 22).lineTo(26, 32);
+      arrow.stroke({ width: 3, color: 0x4a4a4a, alpha: 0.8 });
       backBtn.addChild(arrow);
+
       const backHit = new Graphics();
-      backHit.rect(0, 0, 48, 48).fill({ color: 0xffffff, alpha: 0.01 });
+      backHit.rect(0, 0, 44, 44).fill({ color: 0xffffff, alpha: 0.01 });
       backBtn.addChild(backHit);
+
       backBtn.x = 16;
       backBtn.y = 12;
       backBtn.eventMode = 'static';
@@ -135,111 +113,20 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
       });
       zoneContainer.addChild(backBtn);
 
-      // Zone title
+      // Overlay: zone title (floating label)
+      const titleBg = new Graphics();
+      titleBg.roundRect(0, 0, 160, 32, 8).fill({ color: 0xffffff, alpha: 0.85 });
+      titleBg.x = 68;
+      titleBg.y = 16;
+      zoneContainer.addChild(titleBg);
+
       const title = new Text({
         text: `${ZONE_EMOJIS[zone.location]} ${ZONE_LABELS[zone.location]}`,
         style: ZONE_TITLE_STYLE,
       });
-      title.x = 72;
-      title.y = 20;
+      title.x = 76;
+      title.y = 22;
       zoneContainer.addChild(title);
-
-      if (zoneItems.length === 0) {
-        const emptyText = new Text({
-          text: `No items in ${ZONE_LABELS[zone.location].toLowerCase()} yet`,
-          style: EMPTY_STYLE,
-        });
-        // Use anchor for reliable centering (avoids pre-render .width = 0 issue)
-        emptyText.anchor.set(0.5, 0);
-        emptyText.x = 400;
-        emptyText.y = 240;
-        zoneContainer.addChild(emptyText);
-        return;
-      }
-
-      // Grid of item sprites — cap to avoid canvas overflow
-      const visibleItems = zoneItems.slice(0, MAX_ZONE_ITEMS);
-      const overflow = zoneItems.length - visibleItems.length;
-      const cols = Math.min(visibleItems.length, 8);
-      const spriteSize = 16;
-      const cellW = 80;
-      const cellH = 60;
-      const gridW = cols * cellW;
-      const startX = Math.max(40, (800 - gridW) / 2);
-      const startY = 70;
-
-      visibleItems.forEach((item, idx) => {
-        const col = idx % cols;
-        const row = Math.floor(idx / cols);
-        const cx = startX + col * cellW;
-        const cy = startY + row * cellH;
-
-        const itemContainer = new Container();
-
-        // Sprite
-        const spriteG = new Graphics();
-        drawItemSprite(spriteG, item.category, cx + (cellW - spriteSize) / 2, cy);
-        itemContainer.addChild(spriteG);
-
-        // Expiry dot
-        const dotG = new Graphics();
-        const dotColor = getExpiryColor(item.days_until_expiry);
-        dotG.circle(cx + (cellW + spriteSize) / 2 + 4, cy + 2, 3).fill(dotColor);
-        itemContainer.addChild(dotG);
-
-        // Name label — use anchor for centering (avoids pre-render .width = 0)
-        const label = new Text({
-          text: item.name.length > 12 ? item.name.slice(0, 11) + '\u2026' : item.name,
-          style: LABEL_STYLE,
-        });
-        label.anchor.set(0.5, 0);
-        label.x = cx + cellW / 2;
-        label.y = cy + spriteSize + 4;
-        itemContainer.addChild(label);
-
-        // Quantity badge
-        if (item.quantity > 1) {
-          const qtyText = new Text({
-            text: `\u00d7${item.quantity}`,
-            style: QTY_STYLE,
-          });
-          qtyText.anchor.set(0.5, 0);
-          qtyText.x = cx + cellW / 2;
-          qtyText.y = cy + spriteSize + 16;
-          itemContainer.addChild(qtyText);
-        }
-
-        // Hit area for clicking
-        const hitArea = new Graphics();
-        hitArea.rect(cx, cy - 4, cellW, cellH).fill({ color: 0xffffff, alpha: 0.01 });
-        itemContainer.addChild(hitArea);
-
-        itemContainer.eventMode = 'static';
-        itemContainer.cursor = 'pointer';
-        itemContainer.on('pointerover', () => {
-          itemContainer.alpha = 0.75;
-        });
-        itemContainer.on('pointerout', () => {
-          itemContainer.alpha = 1;
-        });
-        itemContainer.on('pointerdown', () => {
-          onItemClickRef.current(item);
-        });
-
-        zoneContainer.addChild(itemContainer);
-      });
-
-      // Overflow indicator
-      if (overflow > 0) {
-        const moreText = new Text({
-          text: `+${overflow} more items`,
-          style: OVERFLOW_STYLE,
-        });
-        moreText.anchor.set(0.5, 0);
-        moreText.x = 400;
-        moreText.y = 490;
-        zoneContainer.addChild(moreText);
-      }
     },
     [],
   );
@@ -487,20 +374,26 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
     return () => {
       destroyed = true;
       if (appRef.current) {
-        appRef.current.destroy(true);
+        try {
+          appRef.current.destroy(true);
+        } catch {
+          // PixiJS v8 may throw during destroy if init() hadn't fully completed
+          // (e.g. React StrictMode double-invoke). Safe to ignore.
+        }
         appRef.current = null;
       }
-      const state = stateRef.current;
-      state.roomContainer = null;
-      state.zoneContainer = null;
-      state.counterSprites = null;
-      state.zones = [];
-      state.zoomedZone = null;
-      state.tweening = false;
+      // Reset mutable state container (stateRef is stable across renders)
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      const s = stateRef.current;
+      s.roomContainer = null;
+      s.zoneContainer = null;
+      s.counterSprites = null;
+      s.zones = [];
+      s.zoomedZone = null;
+      s.tweening = false;
     };
     // Mount-only: PixiJS app lifecycle tied to DOM mount, not item changes.
     // Items are read via itemsRef.current when zones are clicked.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
