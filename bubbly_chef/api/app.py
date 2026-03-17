@@ -1,8 +1,8 @@
 """FastAPI application factory and configuration."""
 
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +11,6 @@ from bubbly_chef import __version__
 from bubbly_chef.config import settings
 from bubbly_chef.repository.sqlite import get_repository
 from bubbly_chef.tools.llm_client import get_ollama_client
-
 
 # Configure logging
 logging.basicConfig(
@@ -86,14 +85,14 @@ def create_app() -> FastAPI:
     # CORS middleware for mobile app
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Configure appropriately for production
+        allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
     # Register routers
-    from bubbly_chef.api.routes import health, ingest, pantry, apply, chat, recipes, scan, profile
+    from bubbly_chef.api.routes import apply, chat, health, ingest, pantry, profile, recipes, scan
 
     app.include_router(health.router)
     app.include_router(ingest.router)
