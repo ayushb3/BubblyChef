@@ -159,7 +159,7 @@ async def chat(request: ChatRequest) -> ProposalEnvelope[Any]:
         # Log the interaction
         try:
             repo = await get_repository()
-            await repo.log_ingestion(  # type: ignore[attr-defined]
+            await repo.log_ingestion(
                 request_id=envelope.request_id,
                 intent=envelope.intent.value,
                 input_payload={

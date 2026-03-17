@@ -4,11 +4,12 @@ export type Category =
   | 'meat'
   | 'seafood'
   | 'frozen'
-  | 'pantry'
-  | 'beverages'
+  | 'canned'
+  | 'dry_goods'
   | 'condiments'
-  | 'bakery'
+  | 'beverages'
   | 'snacks'
+  | 'bakery'
   | 'other';
 
 export type Location = 'fridge' | 'freezer' | 'pantry' | 'counter';
