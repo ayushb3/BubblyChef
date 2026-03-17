@@ -2,6 +2,9 @@
 
 import re
 
+from bubbly_chef.domain.catalog import categorize as catalog_categorize
+from bubbly_chef.domain.catalog import lookup as catalog_lookup
+
 # Synonym mappings: normalized_name -> [synonyms]
 SYNONYMS: dict[str, list[str]] = {
     # Dairy
@@ -198,21 +201,33 @@ def normalize_food_name(name: str) -> str:
         if cleaned.startswith(prefix):
             cleaned = cleaned[len(prefix) :]
 
-    # Remove quantity words at the start
+    # Remove quantity words at the start or end
     cleaned = re.sub(
-        r"^\d+\s*(?:lb|lbs|oz|g|kg|ml|l|pk|pack|ct|count)?\s*(?:of\s+)?",
+        r"^\d+\s*(?:lb|lbs|oz|g|kg|ml|l|pk|pack|ct|count|gallon|gal|qt|quart|dozen)?\s*(?:of\s+)?",
         "",
         cleaned,
     )
+    cleaned = re.sub(
+        r"\s+\d+\s*(?:lb|lbs|oz|g|kg|ml|l|pk|pack|ct|count|gallon|gal|qt|quart|dozen)$",
+        "",
+        cleaned,
+    ).strip()
 
-    # Check synonym lookup
+    # Check synonym lookup (takes priority for known items)
     if cleaned in _REVERSE_SYNONYMS:
         return _REVERSE_SYNONYMS[cleaned]
 
-    # Try partial match
+    # Try partial match: only if the input contains a known synonym as its full value
+    # (i.e., the synonym equals the cleaned input — already handled above — or
+    # the cleaned input is contained within a longer known synonym)
     for synonym, normalized in _REVERSE_SYNONYMS.items():
-        if synonym in cleaned or cleaned in synonym:
+        if len(synonym) > len(cleaned) and cleaned in synonym:
             return normalized
+
+    # Check catalog for canonical form (data-driven, USDA-backed, high threshold)
+    catalog_entry = catalog_lookup(cleaned, threshold=95)
+    if catalog_entry:
+        return catalog_entry.canonical
 
     return cleaned
 
@@ -228,13 +243,15 @@ def detect_category(name: str) -> str | None:
 
     name_lower = name.lower()
 
+    # Try keyword matching first (domain-specific, highest priority)
     scores: dict[str, int] = {}
     for category, keywords in CATEGORY_KEYWORDS.items():
         score = sum(1 for kw in keywords if kw in name_lower)
         if score > 0:
             scores[category] = score
 
-    if not scores:
-        return None
+    if scores:
+        return max(scores, key=lambda k: scores[k])
 
-    return max(scores, key=lambda k: scores[k])
+    # Fall back to catalog lookup for items not covered by keywords
+    return catalog_categorize(name)

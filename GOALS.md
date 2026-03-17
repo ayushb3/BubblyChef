@@ -77,6 +77,41 @@ Always true regardless of phase:
 
 ## Backlog Phases
 
+### Phase K1: Fluent Emoji Icon System
+
+Replace broken HF-generated sprites with polished Microsoft Fluent Emoji 3D PNGs. Zero latency, MIT license, consistent style.
+
+**Exit gates:**
+- `GET /api/icons/{name}` always returns an image (never 404 — falls back to category icon)
+- Pantry grid and kitchen scene use `/api/icons/` — no more HEAD-request flicker pattern
+- HF background generation removed from pantry/scan routes
+- `pytest` passes, `tsc --noEmit` passes
+
+**Key deliverables:** `scripts/download_fluent_emoji.py`, `bubbly_chef/domain/icon_map.py`, `bubbly_chef/api/routes/icons.py`, ~150 food PNGs committed to `web/public/food-icons/fluent/`
+
+See `docs/plans/2026-03-17-kitchen-phase-plan.md` for full spec.
+
+---
+
+### Phase K2: Phaser Kitchen Game Scene
+
+Replace the DOM kitchen scene with a Phaser 3 game scene supporting drag-and-drop item placement, progression/decoration unlocks, and expiry animations.
+
+**Exit gates:**
+- Phaser scene mounts without console errors; items load in correct locations
+- Drag-and-drop: item snaps to slot, position persists across reload (`slot_index` in DB)
+- At least one decoration unlocks after triggering a milestone (5 pantry items)
+- Feature flag `VITE_KITCHEN_V2=true` enables Phaser scene; DOM scene still works without flag
+- `tsc --noEmit` passes
+
+**Key deliverables:** `KitchenGame.tsx`, Tiled `.tmj` maps, food icon texture atlas, `decorations` backend routes + DB table, item slot persistence
+
+**Depends on:** Phase K1 (icon atlas reused as Phaser spritesheet)
+
+See `docs/plans/2026-03-17-kitchen-phase-plan.md` for full spec.
+
+---
+
 ### Phase 3: Recipe Library + Multimodal Ingestion
 
 The core goal: users can save recipes from any source — website URL, TikTok/Reels short-form video, or longer YouTube content — and the system parses, extracts, and indexes them for fast lookup later. "Remember that matcha lemonade TikTok?" should work.
@@ -100,7 +135,7 @@ The core goal: users can save recipes from any source — website URL, TikTok/Re
 
 - Database migrations (Alembic)
 - Rate limiting for AI provider calls
-- Product catalog system (name → emoji mapping)
+- ~~Product catalog system (name → emoji mapping)~~ — resolved by K1 (Fluent Emoji icon system)
 - Unit conversion (dozen eggs → individual eggs)
 - Pagination for pantry list
 
@@ -116,4 +151,4 @@ The core goal: users can save recipes from any source — website URL, TikTok/Re
 
 ---
 
-*Last updated: 2026-03-16 — Phase 2 gates revised: removed recipe-save/shopping-list (→ Phase 3), added chat-ui gate, updated chat intents, fixed dashboard gate to require real DB data*
+*Last updated: 2026-03-17 — Added Phase K1 (Fluent Emoji icons) and Phase K2 (Phaser kitchen game) to Backlog Phases; struck through resolved tech debt item*

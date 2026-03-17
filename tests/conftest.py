@@ -1,10 +1,10 @@
 """Pytest configuration and fixtures."""
 
-import asyncio
 import os
 import tempfile
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -15,12 +15,18 @@ import bubbly_chef.repository.sqlite as sqlite_mod
 from bubbly_chef.repository.sqlite import SQLiteRepository
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an event loop for async tests."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+@pytest.fixture(autouse=True)
+def clear_ai_manager_cache():
+    """Clear the lru_cache on get_ai_manager before every test.
+
+    Without this, a test that triggers the real get_ai_manager() caches a live
+    OllamaProvider/GeminiProvider. Subsequent tests that only patch the function
+    reference still get the cached real provider, which hangs trying to connect.
+    """
+    from bubbly_chef.api.deps import get_ai_manager
+    get_ai_manager.cache_clear()
+    yield
+    get_ai_manager.cache_clear()
 
 
 def create_test_app() -> FastAPI:

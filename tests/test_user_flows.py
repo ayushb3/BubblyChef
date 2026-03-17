@@ -37,6 +37,15 @@ from bubbly_chef.models.pantry import ActionType, FoodCategory, PantryProposal
 from bubbly_chef.models.proposals import HandoffProposal, HandoffKind
 
 
+@pytest.fixture(autouse=True)
+def mock_repository():
+    """Prevent workflow nodes from hitting the real DB."""
+    repo_mock = AsyncMock()
+    repo_mock.get_all_pantry_items.return_value = []
+    with patch("bubbly_chef.workflows.chat_ingest.get_repository", return_value=repo_mock):
+        yield repo_mock
+
+
 # =============================================================================
 # Test Fixtures & Helpers
 # =============================================================================
