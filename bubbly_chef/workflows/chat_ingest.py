@@ -39,6 +39,7 @@ from bubbly_chef.models.pantry import (
     PantryUpsertAction,
 )
 from bubbly_chef.models.proposals import HandoffKind
+from bubbly_chef.repository.sqlite import get_repository
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 from bubbly_chef.tools.normalizer import get_normalizer
 from bubbly_chef.workflows.state import (
@@ -940,8 +941,34 @@ async def cooking_help_response(state: WorkflowState) -> WorkflowState:
     """
     Node: Generate a cooking help response (techniques, meal ideas, substitutions).
     Routes here when intent == COOKING_HELP.
+    Fetches the user's pantry so suggestions are grounded in what they actually have.
     """
     input_text = state.get("input_text", "")
+
+    # Fetch pantry items so the AI can give pantry-grounded suggestions
+    pantry_context = ""
+    try:
+        repo = await get_repository()
+        items = await repo.get_all_pantry_items()
+        if items:
+            expiring = [
+                it for it in items
+                if it.expiry_date and (it.expiry_date - date.today()).days <= 3
+            ]
+            pantry_lines = [f"- {it.name} ({it.quantity} {it.unit})" for it in items]
+            pantry_context = (
+                f"\n\nThe user's pantry currently has {len(items)} items:\n"
+                + "\n".join(pantry_lines[:30])  # cap to keep prompt reasonable
+            )
+            if len(items) > 30:
+                pantry_context += f"\n... and {len(items) - 30} more items"
+            if expiring:
+                exp_names = ", ".join(it.name for it in expiring)
+                pantry_context += (
+                    f"\n\n⚠️ EXPIRING SOON (use first!): {exp_names}"
+                )
+    except Exception as e:
+        logger.warning(f"Could not fetch pantry for cooking help: {e}")
 
     cooking_system = """\
 You are a friendly cooking assistant for BubblyChef, \
@@ -949,17 +976,22 @@ a pantry-aware recipe app.
 
 Help the user with:
 - Cooking techniques and how-to questions
-- Meal ideas and recipe suggestions
+- Meal ideas and recipe suggestions based on what they have
 - Ingredient substitutions
 - Food storage tips
 - General culinary advice
 
+When suggesting meals or recipes, prioritize ingredients the user \
+already has in their pantry (listed below). If items are expiring soon, \
+suggest ways to use them first.
+
 Keep responses friendly, concise, and practical. If the user asks \
-what they can make, remind them you can generate a full \
-pantry-matched recipe on the Recipes page."""
+what they can make, give concrete suggestions from their pantry and \
+mention they can generate a full step-by-step recipe on the Recipes page."""
 
     ai_manager = get_ai_manager()
-    prompt = cooking_system + f"\n\nUser: {input_text}\n\nRespond helpfully and concisely."
+    user_prompt = f"\n\nUser: {input_text}\n\nRespond helpfully and concisely."
+    prompt = cooking_system + pantry_context + user_prompt
 
     try:
         result = await ai_manager.complete(prompt=prompt, temperature=0.7)
