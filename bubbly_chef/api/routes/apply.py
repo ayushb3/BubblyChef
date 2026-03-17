@@ -1,7 +1,7 @@
 """Apply endpoint for applying reviewed proposals."""
 
 import logging
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -115,12 +115,12 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
 
                     if action_type == ActionType.ADD:
                         # Check for existing similar item (dedup)
-                        existing = await repo.find_similar_item(item.name)  # type: ignore[attr-defined]
+                        existing = await repo.find_similar_item(item.name)
                         if existing:
                             # Update quantity instead of adding new
                             existing.quantity += item.quantity
-                            existing.updated_at = datetime.utcnow()
-                            await repo.update_pantry_item(existing)  # type: ignore[call-arg]
+                            existing.updated_at = datetime.now(UTC)
+                            await repo.update_pantry_item(existing)
                             affected_ids.append(existing.id)
                             logger.info(f"Updated existing item: {existing.name}")
                         else:
@@ -149,8 +149,8 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
                                 ]:
                                     if field in item_data:
                                         setattr(existing, field, getattr(item, field))
-                                existing.updated_at = datetime.utcnow()
-                                await repo.update_pantry_item(existing)  # type: ignore[call-arg, arg-type]
+                                existing.updated_at = datetime.now(UTC)
+                                await repo.update_pantry_item(existing)
                                 affected_ids.append(existing.id)
                                 applied_count += 1
                             else:
@@ -158,11 +158,11 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
                                 failed_count += 1
                         else:
                             # No match ID, try to find by name
-                            existing = await repo.find_similar_item(item.name)  # type: ignore[attr-defined]
+                            existing = await repo.find_similar_item(item.name)
                             if existing:
                                 existing.quantity = item.quantity
-                                existing.updated_at = datetime.utcnow()
-                                await repo.update_pantry_item(existing)  # type: ignore[call-arg]
+                                existing.updated_at = datetime.now(UTC)
+                                await repo.update_pantry_item(existing)
                                 affected_ids.append(existing.id)
                                 applied_count += 1
                             else:
@@ -175,7 +175,7 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
                         if match_id:
                             if isinstance(match_id, str):
                                 match_id = UUID(match_id)
-                            deleted = await repo.delete_pantry_item(match_id)
+                            deleted = await repo.delete_pantry_item(str(match_id))
                             if deleted:
                                 applied_count += 1
                             else:
@@ -183,9 +183,9 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
                                 failed_count += 1
                         else:
                             # Try to find by name
-                            existing = await repo.find_similar_item(item.name)  # type: ignore[attr-defined]
+                            existing = await repo.find_similar_item(item.name)
                             if existing:
-                                await repo.delete_pantry_item(existing.id)
+                                await repo.delete_pantry_item(str(existing.id))
                                 applied_count += 1
                             else:
                                 errors.append(f"No item found to remove: {item.name}")
@@ -201,17 +201,17 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
                                 match_id = UUID(match_id)
                             existing = await repo.get_pantry_item(match_id)
                         else:
-                            existing = await repo.find_similar_item(item.name)  # type: ignore[attr-defined]
+                            existing = await repo.find_similar_item(item.name)
 
                         if existing:
                             existing.quantity -= item.quantity
                             if existing.quantity <= 0:
                                 # Remove if quantity is zero or negative
-                                await repo.delete_pantry_item(existing.id)
+                                await repo.delete_pantry_item(str(existing.id))
                                 logger.info(f"Removed depleted item: {existing.name}")
                             else:
-                                existing.updated_at = datetime.utcnow()
-                                await repo.update_pantry_item(existing)  # type: ignore[call-arg]
+                                existing.updated_at = datetime.now(UTC)
+                                await repo.update_pantry_item(existing)
                                 affected_ids.append(existing.id)
                             applied_count += 1
                         else:
@@ -268,12 +268,12 @@ async def apply_proposal(request: ApplyRequest) -> ApplyResponse:
                 )
 
                 # Check if exists
-                existing = await repo.get_recipe(recipe_id)  # type: ignore[attr-defined]
-                if existing:
-                    recipe.created_at = existing.created_at
-                    await repo.update_recipe(recipe)  # type: ignore[attr-defined]
+                existing_recipe = await repo.get_recipe(recipe_id)
+                if existing_recipe:
+                    recipe.created_at = existing_recipe.created_at
+                    await repo.update_recipe(recipe)
                 else:
-                    await repo.add_recipe(recipe)  # type: ignore[attr-defined]
+                    await repo.add_recipe(recipe)
 
                 affected_ids.append(recipe_id)
                 applied_count += 1

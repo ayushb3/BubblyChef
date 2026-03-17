@@ -50,7 +50,7 @@ async def ingest_chat(request: ChatIngestRequest) -> ProposalEnvelope[PantryProp
 
         # Log the ingestion
         repo = await get_repository()
-        await repo.log_ingestion(  # type: ignore[attr-defined]
+        await repo.log_ingestion(
             request_id=envelope.request_id,
             intent=envelope.intent.value,
             input_payload={"text": request.text, "context": request.context},
@@ -97,7 +97,7 @@ async def ingest_receipt(request: ReceiptIngestRequest) -> ProposalEnvelope[Pant
 
         # Log the ingestion
         repo = await get_repository()
-        await repo.log_ingestion(  # type: ignore[attr-defined]
+        await repo.log_ingestion(
             request_id=envelope.request_id,
             intent=envelope.intent.value,
             input_payload={
@@ -153,7 +153,7 @@ async def ingest_product(request: ProductIngestRequest) -> ProposalEnvelope[Pant
 
         # Log the ingestion
         repo = await get_repository()
-        await repo.log_ingestion(  # type: ignore[attr-defined]
+        await repo.log_ingestion(
             request_id=envelope.request_id,
             intent=envelope.intent.value,
             input_payload={
@@ -209,7 +209,7 @@ async def ingest_recipe(request: RecipeIngestRequest) -> ProposalEnvelope[Recipe
 
         # Log the ingestion
         repo = await get_repository()
-        await repo.log_ingestion(  # type: ignore[attr-defined]
+        await repo.log_ingestion(
             request_id=envelope.request_id,
             intent=envelope.intent.value,
             input_payload={

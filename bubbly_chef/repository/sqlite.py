@@ -1,13 +1,16 @@
 """SQLite repository implementation."""
 
+import json
 import logging
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import UUID, uuid4
 
 import aiosqlite
 
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
+from bubbly_chef.models.recipe import Ingredient, RecipeCard
 from bubbly_chef.models.user import UserProfile
 
 logger = logging.getLogger(__name__)
@@ -76,6 +79,19 @@ class SQLiteRepository:
 
             CREATE INDEX IF NOT EXISTS idx_user_email ON user_profiles(email);
             CREATE INDEX IF NOT EXISTS idx_user_username ON user_profiles(username);
+
+            CREATE TABLE IF NOT EXISTS ingestion_logs (
+                id TEXT PRIMARY KEY,
+                request_id TEXT NOT NULL UNIQUE,
+                intent TEXT NOT NULL,
+                input_payload TEXT NOT NULL DEFAULT '{}',
+                proposal TEXT,
+                errors TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_ingestion_request
+                ON ingestion_logs(request_id);
         """
         )
 
@@ -206,13 +222,50 @@ class SQLiteRepository:
         logger.debug(f"Added pantry item: {item.name} ({item.id})")
         return item
 
-    async def update_pantry_item(self, item_id: str, updates: dict[str, Any]) -> PantryItem:
-        """Update an existing pantry item."""
+    async def update_pantry_item(
+        self,
+        item_or_id: str | PantryItem,
+        updates: dict[str, Any] | None = None,
+    ) -> PantryItem:
+        """Update an existing pantry item.
+
+        Accepts either:
+        - A PantryItem object (full replacement)
+        - An item_id string + updates dict (partial update)
+        """
         conn = self._get_conn()
 
-        # Build SET clause
+        if isinstance(item_or_id, PantryItem):
+            item = item_or_id
+            item_id = str(item.id)
+            await conn.execute(
+                """UPDATE pantry_items SET
+                   name = ?, name_normalized = ?, category = ?,
+                   location = ?, quantity = ?, unit = ?,
+                   expiry_date = ?, updated_at = ?
+                   WHERE id = ?""",
+                (
+                    item.name,
+                    item.name.lower().strip(),
+                    item.category.value,
+                    item.storage_location.value,
+                    item.quantity,
+                    item.unit,
+                    item.expiry_date.isoformat() if item.expiry_date else None,
+                    item.updated_at.isoformat(),
+                    item_id,
+                ),
+            )
+            await conn.commit()
+            return item
+
+        # Legacy path: item_id + updates dict
+        item_id = item_or_id
+        if updates is None:
+            updates = {}
+
         set_parts = []
-        values = []
+        values: list[Any] = []
 
         for key, value in updates.items():
             if key == "category" and isinstance(value, FoodCategory):
@@ -236,11 +289,10 @@ class SQLiteRepository:
         )
         await conn.commit()
 
-        # Return updated item
-        item = await self.get_pantry_item(item_id)
-        if item is None:
+        result = await self.get_pantry_item(item_id)
+        if result is None:
             raise ValueError(f"Item not found: {item_id}")
-        return item
+        return result
 
     async def delete_pantry_item(self, item_id: str) -> bool:
         """Delete a pantry item."""
@@ -252,6 +304,203 @@ class SQLiteRepository:
         if deleted:
             logger.debug(f"Deleted pantry item: {item_id}")
         return deleted
+
+    async def find_similar_item(self, name: str) -> PantryItem | None:
+        """Find a pantry item with similar name (for dedup)."""
+        conn = self._get_conn()
+        normalized = name.lower().strip()
+        async with conn.execute(
+            "SELECT * FROM pantry_items WHERE name_normalized = ? LIMIT 1",
+            (normalized,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return self._row_to_pantry_item(row)
+        return None
+
+    # =========================================================================
+    # Recipe operations
+    # =========================================================================
+
+    def _row_to_recipe(self, row: aiosqlite.Row) -> RecipeCard:
+        """Convert database row to RecipeCard."""
+        ingredients_data = json.loads(row["ingredients"]) if row["ingredients"] else []
+        ingredients = [Ingredient(**ing) for ing in ingredients_data]
+        instructions = json.loads(row["instructions"]) if row["instructions"] else []
+        tags = json.loads(row["tags"]) if row["tags"] else []
+
+        return RecipeCard(
+            id=UUID(row["id"]),
+            title=row["title"],
+            description=row["description"],
+            ingredients=ingredients,
+            instructions=instructions,
+            prep_time_minutes=row["prep_time_minutes"],
+            cook_time_minutes=row["cook_time_minutes"],
+            servings=row["servings"],
+            source_url=row["source_url"],
+            dietary_tags=tags,
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    async def get_recipe(self, recipe_id: UUID) -> RecipeCard | None:
+        """Get a single recipe by ID."""
+        conn = self._get_conn()
+        async with conn.execute(
+            "SELECT * FROM recipes WHERE id = ?", (str(recipe_id),)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return self._row_to_recipe(row)
+        return None
+
+    async def get_all_recipes(self) -> list[RecipeCard]:
+        """Get all recipes."""
+        conn = self._get_conn()
+        async with conn.execute(
+            "SELECT * FROM recipes ORDER BY created_at DESC"
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [self._row_to_recipe(row) for row in rows]
+
+    async def add_recipe(self, recipe: RecipeCard) -> RecipeCard:
+        """Add a new recipe."""
+        conn = self._get_conn()
+        ingredients_json = json.dumps(
+            [ing.model_dump() for ing in recipe.ingredients]
+        )
+        instructions_json = json.dumps(recipe.instructions)
+        tags_json = json.dumps(recipe.dietary_tags)
+
+        await conn.execute(
+            """INSERT INTO recipes
+               (id, title, description, ingredients, instructions,
+                prep_time_minutes, cook_time_minutes, servings,
+                source_url, tags, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                str(recipe.id),
+                recipe.title,
+                recipe.description,
+                ingredients_json,
+                instructions_json,
+                recipe.prep_time_minutes,
+                recipe.cook_time_minutes,
+                recipe.servings,
+                recipe.source_url,
+                tags_json,
+                recipe.created_at.isoformat(),
+                recipe.updated_at.isoformat(),
+            ),
+        )
+        await conn.commit()
+        logger.debug(f"Added recipe: {recipe.title} ({recipe.id})")
+        return recipe
+
+    async def update_recipe(self, recipe: RecipeCard) -> RecipeCard:
+        """Update an existing recipe."""
+        conn = self._get_conn()
+        ingredients_json = json.dumps(
+            [ing.model_dump() for ing in recipe.ingredients]
+        )
+        instructions_json = json.dumps(recipe.instructions)
+        tags_json = json.dumps(recipe.dietary_tags)
+
+        await conn.execute(
+            """UPDATE recipes SET
+               title = ?, description = ?, ingredients = ?,
+               instructions = ?, prep_time_minutes = ?,
+               cook_time_minutes = ?, servings = ?,
+               source_url = ?, tags = ?, updated_at = ?
+               WHERE id = ?""",
+            (
+                recipe.title,
+                recipe.description,
+                ingredients_json,
+                instructions_json,
+                recipe.prep_time_minutes,
+                recipe.cook_time_minutes,
+                recipe.servings,
+                recipe.source_url,
+                tags_json,
+                recipe.updated_at.isoformat(),
+                str(recipe.id),
+            ),
+        )
+        await conn.commit()
+        logger.debug(f"Updated recipe: {recipe.title} ({recipe.id})")
+        return recipe
+
+    async def delete_recipe(self, recipe_id: UUID) -> bool:
+        """Delete a recipe."""
+        conn = self._get_conn()
+        cursor = await conn.execute(
+            "DELETE FROM recipes WHERE id = ?", (str(recipe_id),)
+        )
+        await conn.commit()
+        deleted = cursor.rowcount > 0
+        if deleted:
+            logger.debug(f"Deleted recipe: {recipe_id}")
+        return deleted
+
+    # =========================================================================
+    # Ingestion log operations
+    # =========================================================================
+
+    async def log_ingestion(
+        self,
+        request_id: UUID,
+        intent: str,
+        input_payload: dict[str, Any],
+        proposal: dict[str, Any] | None,
+        errors: list[str],
+    ) -> None:
+        """Log an ingestion request and its result."""
+        conn = self._get_conn()
+        await conn.execute(
+            """INSERT INTO ingestion_logs
+               (id, request_id, intent, input_payload, proposal,
+                errors, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                str(uuid4()),
+                str(request_id),
+                intent,
+                json.dumps(input_payload, default=str),
+                json.dumps(proposal, default=str) if proposal else None,
+                json.dumps(errors),
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+        await conn.commit()
+        logger.debug(f"Logged ingestion: {request_id} ({intent})")
+
+    async def get_ingestion_log(
+        self, request_id: UUID
+    ) -> dict[str, Any] | None:
+        """Get an ingestion log by request ID."""
+        conn = self._get_conn()
+        async with conn.execute(
+            "SELECT * FROM ingestion_logs WHERE request_id = ?",
+            (str(request_id),),
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return {
+                    "id": row["id"],
+                    "request_id": row["request_id"],
+                    "intent": row["intent"],
+                    "input_payload": json.loads(row["input_payload"]),
+                    "proposal": (
+                        json.loads(row["proposal"])
+                        if row["proposal"]
+                        else None
+                    ),
+                    "errors": json.loads(row["errors"]),
+                    "created_at": row["created_at"],
+                }
+        return None
 
     # =========================================================================
     # User profile operations
@@ -359,7 +608,7 @@ class SQLiteRepository:
         # Always update updated_at
         if "updated_at" not in updates:
             set_parts.append("updated_at = ?")
-            values.append(datetime.utcnow().isoformat())
+            values.append(datetime.now(UTC).isoformat())
 
         values.append(profile_id)
 

@@ -1,9 +1,9 @@
 """User profile-related Pydantic models."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserProfile(BaseModel):
@@ -22,24 +22,21 @@ class UserProfile(BaseModel):
         default_factory=list,
         description="Dietary preferences (e.g., vegetarian, gluten-free, vegan)",
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
-    class Config:
-        """Pydantic model configuration."""
-
-        json_schema_extra = {
-            "example": {
-                "id": "123e4567-e89b-12d3-a456-426614174000",
-                "username": "foodie123",
-                "email": "foodie@example.com",
-                "display_name": "Chef Foodie",
-                "avatar_url": "https://example.com/avatar.jpg",
-                "dietary_preferences": ["vegetarian", "gluten-free"],
-                "created_at": "2026-03-10T12:00:00Z",
-                "updated_at": "2026-03-10T12:00:00Z",
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "id": "123e4567-e89b-12d3-a456-426614174000",
+            "username": "foodie123",
+            "email": "foodie@example.com",
+            "display_name": "Chef Foodie",
+            "avatar_url": "https://example.com/avatar.jpg",
+            "dietary_preferences": ["vegetarian", "gluten-free"],
+            "created_at": "2026-03-10T12:00:00Z",
+            "updated_at": "2026-03-10T12:00:00Z",
         }
+    })
 
 
 class CreateUserProfileRequest(BaseModel):

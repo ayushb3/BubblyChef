@@ -3,7 +3,7 @@
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ChatIngestRequest(BaseModel):
@@ -16,13 +16,12 @@ class ChatIngestRequest(BaseModel):
         default=None, description="Optional context (e.g., previous conversation)"
     )
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "text": "I bought 2 gallons of milk, a dozen eggs, and some apples",
-                "context": None,
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "text": "I bought 2 gallons of milk, a dozen eggs, and some apples",
+            "context": None,
         }
+    })
 
 
 class ReceiptIngestRequest(BaseModel):
@@ -38,17 +37,16 @@ class ReceiptIngestRequest(BaseModel):
         default=None, description="Purchase date if known (YYYY-MM-DD)"
     )
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "ocr_text": (
-                    "WHOLE FOODS MARKET\n2% MILK 1GAL  $4.99\n"
-                    "ORGANIC EGGS DZ  $6.49\nBANANAS  $1.29\nTOTAL  $12.77"
-                ),
-                "store_name": "Whole Foods",
-                "purchase_date": "2026-02-17",
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "ocr_text": (
+                "WHOLE FOODS MARKET\n2% MILK 1GAL  $4.99\n"
+                "ORGANIC EGGS DZ  $6.49\nBANANAS  $1.29\nTOTAL  $12.77"
+            ),
+            "store_name": "Whole Foods",
+            "purchase_date": "2026-02-17",
         }
+    })
 
 
 class ProductIngestRequest(BaseModel):
@@ -59,15 +57,14 @@ class ProductIngestRequest(BaseModel):
     quantity: float = Field(default=1.0, ge=0, description="Quantity to add")
     unit: str = Field(default="item", description="Unit of measurement")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "barcode": "0012000001086",
-                "description": "Coca-Cola Classic 12oz can",
-                "quantity": 6,
-                "unit": "can",
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "barcode": "0012000001086",
+            "description": "Coca-Cola Classic 12oz can",
+            "quantity": 6,
+            "unit": "can",
         }
+    })
 
 
 class RecipeIngestRequest(BaseModel):
@@ -77,14 +74,13 @@ class RecipeIngestRequest(BaseModel):
     text: str | None = Field(default=None, description="Recipe text/transcript to parse")
     caption: str | None = Field(default=None, description="Optional caption or title hint")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "url": "https://example.com/recipes/chocolate-cake",
-                "text": None,
-                "caption": "Grandma's chocolate cake recipe",
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "url": "https://example.com/recipes/chocolate-cake",
+            "text": None,
+            "caption": "Grandma's chocolate cake recipe",
         }
+    })
 
 
 class ApplyRequest(BaseModel):
@@ -99,23 +95,22 @@ class ApplyRequest(BaseModel):
         default=None, description="Track what the user changed from original"
     )
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "request_id": "550e8400-e29b-41d4-a716-446655440000",
-                "intent": "pantry_update",
-                "proposal": {
-                    "actions": [
-                        {
-                            "action_type": "add",
-                            "item": {"name": "milk", "quantity": 1, "unit": "gallon"},
-                            "confidence": 0.95,
-                        }
-                    ]
-                },
-                "user_modifications": None,
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "request_id": "550e8400-e29b-41d4-a716-446655440000",
+            "intent": "pantry_update",
+            "proposal": {
+                "actions": [
+                    {
+                        "action_type": "add",
+                        "item": {"name": "milk", "quantity": 1, "unit": "gallon"},
+                        "confidence": 0.95,
+                    }
+                ]
+            },
+            "user_modifications": None,
         }
+    })
 
 
 class ApplyResponse(BaseModel):
@@ -130,20 +125,19 @@ class ApplyResponse(BaseModel):
         default_factory=list, description="IDs of created/updated items"
     )
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "request_id": "550e8400-e29b-41d4-a716-446655440000",
-                "success": True,
-                "applied_count": 3,
-                "failed_count": 0,
-                "errors": [],
-                "affected_item_ids": [
-                    "550e8400-e29b-41d4-a716-446655440001",
-                    "550e8400-e29b-41d4-a716-446655440002",
-                ],
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "request_id": "550e8400-e29b-41d4-a716-446655440000",
+            "success": True,
+            "applied_count": 3,
+            "failed_count": 0,
+            "errors": [],
+            "affected_item_ids": [
+                "550e8400-e29b-41d4-a716-446655440001",
+                "550e8400-e29b-41d4-a716-446655440002",
+            ],
         }
+    })
 
 
 # =============================================================================
@@ -178,16 +172,15 @@ class ChatRequest(BaseModel):
         default=None, description="Additional context (e.g., user preferences)"
     )
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "message": "I bought 2 gallons of milk and a dozen eggs",
-                "conversation_id": None,
-                "mode": "text",
-                "pantry_snapshot": None,
-                "context": None,
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "message": "I bought 2 gallons of milk and a dozen eggs",
+            "conversation_id": None,
+            "mode": "text",
+            "pantry_snapshot": None,
+            "context": None,
         }
+    })
 
 
 class WorkflowEventRequest(BaseModel):
@@ -214,14 +207,13 @@ class WorkflowEventRequest(BaseModel):
         default=None, description="Client key to prevent duplicate submissions"
     )
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "event_type": "submit_review",
-                "decision": "approve",
-                "edits": None,
-                "clarification_response": None,
-                "feedback": "Looks good!",
-                "idempotency_key": "user123-1708168800",
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "event_type": "submit_review",
+            "decision": "approve",
+            "edits": None,
+            "clarification_response": None,
+            "feedback": "Looks good!",
+            "idempotency_key": "user123-1708168800",
         }
+    })

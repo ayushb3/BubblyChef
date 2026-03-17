@@ -1,6 +1,6 @@
 """Recipe-related Pydantic models."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -59,8 +59,8 @@ class RecipeCard(BaseModel):
     notes: str | None = Field(default=None, description="Additional notes")
 
     # Timestamps
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class RecipeCardProposal(BaseModel):

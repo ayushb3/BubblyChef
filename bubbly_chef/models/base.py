@@ -1,11 +1,11 @@
 """Base models for the proposal envelope and common types."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Generic, TypeVar
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Intent(StrEnum):
@@ -118,35 +118,34 @@ class ProposalEnvelope(BaseModel, Generic[T]):
 
     # Metadata
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Timestamp when proposal was created"
+        default_factory=lambda: datetime.now(UTC), description="Timestamp when proposal was created"
     )
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata for debugging/logging"
     )
 
-    class Config:
-        json_schema_extra: dict[str, Any] = {
-            "example": {
-                "request_id": "550e8400-e29b-41d4-a716-446655440000",
-                "workflow_id": "660e8400-e29b-41d4-a716-446655440001",
-                "conversation_id": None,
-                "schema_version": "1.0.0",
-                "intent": "pantry_update",
-                "proposal": {},
-                "assistant_message": "I found 3 items to add to your pantry.",
-                "confidence": {
-                    "overall": 0.85,
-                    "field_scores": {},
-                    "per_item": [],
-                    "reasoning": None,
-                },
-                "requires_review": True,
-                "next_action": "review_proposal",
-                "clarifying_questions": [],
-                "warnings": [],
-                "errors": [],
-                "workflow_status": "awaiting_review",
-                "created_at": "2026-02-17T10:00:00Z",
-                "metadata": {},
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "request_id": "550e8400-e29b-41d4-a716-446655440000",
+            "workflow_id": "660e8400-e29b-41d4-a716-446655440001",
+            "conversation_id": None,
+            "schema_version": "1.0.0",
+            "intent": "pantry_update",
+            "proposal": {},
+            "assistant_message": "I found 3 items to add to your pantry.",
+            "confidence": {
+                "overall": 0.85,
+                "field_scores": {},
+                "per_item": [],
+                "reasoning": None,
+            },
+            "requires_review": True,
+            "next_action": "review_proposal",
+            "clarifying_questions": [],
+            "warnings": [],
+            "errors": [],
+            "workflow_status": "awaiting_review",
+            "created_at": "2026-02-17T10:00:00Z",
+            "metadata": {},
         }
+    })

@@ -1,11 +1,11 @@
 """Proposal types and related models for chat workflow."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class HandoffKind(StrEnum):
@@ -35,16 +35,15 @@ class HandoffProposal(BaseModel):
         default=None, description="Example of what the user could say/upload"
     )
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "kind": "receipt",
-                "instructions": "Please upload a photo of your receipt, or paste the text.",
-                "required_inputs": ["receipt_image"],
-                "optional_inputs": ["store_name", "purchase_date"],
-                "example_prompt": "Take a photo of your receipt and send it here.",
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "kind": "receipt",
+            "instructions": "Please upload a photo of your receipt, or paste the text.",
+            "required_inputs": ["receipt_image"],
+            "optional_inputs": ["store_name", "purchase_date"],
+            "example_prompt": "Take a photo of your receipt and send it here.",
         }
+    })
 
 
 class ChatRole(StrEnum):
@@ -65,21 +64,20 @@ class ChatMessage(BaseModel):
     id: UUID = Field(default_factory=uuid4, description="Message ID")
     role: ChatRole = Field(description="Who sent this message")
     content: str = Field(description="Message content")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata (e.g., intent detected, tokens used)"
     )
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "id": "550e8400-e29b-41d4-a716-446655440000",
-                "role": "user",
-                "content": "I bought milk and eggs",
-                "timestamp": "2026-02-17T10:00:00Z",
-                "metadata": {},
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "id": "550e8400-e29b-41d4-a716-446655440000",
+            "role": "user",
+            "content": "I bought milk and eggs",
+            "timestamp": "2026-02-17T10:00:00Z",
+            "metadata": {},
         }
+    })
 
 
 class ReviewDecision(StrEnum):
@@ -110,19 +108,18 @@ class ReviewEvent(BaseModel):
     idempotency_key: str | None = Field(
         default=None, description="Client-provided key to prevent duplicate submissions"
     )
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "workflow_id": "660e8400-e29b-41d4-a716-446655440001",
-                "decision": "approve_with_edits",
-                "edits": {"actions": [{"item": {"name": "whole milk"}}]},
-                "feedback": None,
-                "idempotency_key": "user123-1708168800",
-                "timestamp": "2026-02-17T10:00:00Z",
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "workflow_id": "660e8400-e29b-41d4-a716-446655440001",
+            "decision": "approve_with_edits",
+            "edits": {"actions": [{"item": {"name": "whole milk"}}]},
+            "feedback": None,
+            "idempotency_key": "user123-1708168800",
+            "timestamp": "2026-02-17T10:00:00Z",
         }
+    })
 
 
 class IntentClassification(BaseModel):
@@ -141,15 +138,14 @@ class IntentClassification(BaseModel):
         default_factory=list, description="Key entities detected in the input"
     )
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "intent": "pantry_update",
-                "confidence": 0.92,
-                "reasoning": "User mentions buying specific grocery items",
-                "detected_entities": ["milk", "eggs"],
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "intent": "pantry_update",
+            "confidence": 0.92,
+            "reasoning": "User mentions buying specific grocery items",
+            "detected_entities": ["milk", "eggs"],
         }
+    })
 
 
 class ClarificationRequest(BaseModel):
