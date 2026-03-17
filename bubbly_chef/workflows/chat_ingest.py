@@ -71,10 +71,14 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     "photographing a product, or looking up a specific product\n"
     "- recipe_ingest_request: User wants to SAVE, IMPORT, or STORE a "
     "recipe from a URL or text (must have save/import intent)\n"
-    "- cooking_help: User asking for cooking suggestions, meal ideas, "
-    "or what they can make (NOT saving a recipe)\n"
-    "- general_chat: General conversation not related to pantry or "
-    "cooking\n\n"
+    "- cooking_help: User asking about cooking, recipes, meal ideas, "
+    "food storage, ingredient substitutions, what they can make, "
+    "or ANY food/kitchen-related question\n"
+    "- general_chat: ONLY for messages truly unrelated to food, cooking, "
+    "or the kitchen (e.g. greetings, app questions, small talk)\n\n"
+    "IMPORTANT: When in doubt between cooking_help and general_chat, "
+    "prefer cooking_help. Any question about food, ingredients, meals, "
+    "or cooking should be cooking_help.\n\n"
     "Be accurate. Look for key indicators:\n"
     '- "bought", "got", "purchased", "used", "consumed", "threw away",'
     ' "add", "remove" -> pantry_update\n'
@@ -84,8 +88,9 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     ' "what\'s this product" -> product_ingest_request\n'
     '- "save recipe", "import recipe", "add this recipe",'
     " has URL -> recipe_ingest_request\n"
-    '- "what can I make", "recipe for", "dinner ideas",'
-    ' "how to cook" -> cooking_help\n'
+    '- "what can I make", "recipe for", "dinner ideas", "how to cook",'
+    ' "meal ideas", "food storage", "how long does X last",'
+    ' "substitute for", "what should I eat" -> cooking_help\n'
     "- Everything else -> general_chat"
 )
 
@@ -889,7 +894,27 @@ async def general_chat_response(state: WorkflowState) -> WorkflowState:
         }
 
     ai_manager = get_ai_manager()
-    prompt = GENERAL_CHAT_SYSTEM_PROMPT + "\n\n" + GENERAL_CHAT_USER_PROMPT.format(text=input_text)
+
+    # Include pantry summary so the AI can mention items when relevant
+    pantry_context = ""
+    try:
+        repo = await get_repository()
+        items = await repo.get_all_pantry_items()
+        if items:
+            names = [it.name for it in items[:20]]
+            pantry_context = (
+                f"\n\nThe user has {len(items)} pantry items"
+                f" including: {', '.join(names)}."
+            )
+    except Exception:
+        pass  # non-critical for general chat
+
+    prompt = (
+        GENERAL_CHAT_SYSTEM_PROMPT
+        + pantry_context
+        + "\n\n"
+        + GENERAL_CHAT_USER_PROMPT.format(text=input_text)
+    )
 
     try:
         result = await ai_manager.complete(prompt=prompt, temperature=0.7)
@@ -1265,6 +1290,7 @@ async def run_chat_workflow(
     else:  # general_chat or cooking_help — both return plain text envelope
         return create_general_chat_envelope(
             assistant_message=final_state.get("assistant_message", "I'm here to help!"),
+            intent=Intent(intent),
             request_id=final_state.get("request_id"),
             workflow_id=final_state.get("workflow_id"),
             conversation_id=final_state.get("conversation_id"),

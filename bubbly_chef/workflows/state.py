@@ -316,15 +316,16 @@ def create_general_chat_envelope(
     request_id: str | None = None,
     workflow_id: str | None = None,
     conversation_id: str | None = None,
+    intent: Intent = Intent.GENERAL_CHAT,
 ) -> ProposalEnvelope[None]:
-    """Create a proposal envelope for general chat responses."""
+    """Create a proposal envelope for general chat or cooking help responses."""
 
     return ProposalEnvelope[None](
         request_id=UUID(request_id) if request_id else uuid4(),
         workflow_id=UUID(workflow_id) if workflow_id else uuid4(),
         conversation_id=UUID(conversation_id) if conversation_id else None,
         schema_version=settings.schema_version,
-        intent=Intent.GENERAL_CHAT,
+        intent=intent,
         proposal=None,
         assistant_message=assistant_message,
         confidence=ConfidenceScore(overall=1.0),
