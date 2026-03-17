@@ -70,6 +70,7 @@ omit = [
     "*/tests/*",
     "*/__init__.py",
     "*/cli/*",
+    "*/logger_templates.py",
 ]
 
 [tool.coverage.report]

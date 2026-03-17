@@ -156,6 +156,7 @@ class LLMRecipeResult(BaseModel):
     description: str | None = None
     prep_time_minutes: int | None = None
     cook_time_minutes: int | None = None
+    total_time_minutes: int | None = None
     servings: int | None = None
     ingredients: list[dict[str, Any]] = Field(default_factory=list)
     instructions: list[str] = Field(default_factory=list)
