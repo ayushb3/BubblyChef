@@ -1,20 +1,7 @@
 import { Camera, Plus, Sparkles, ChefHat } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useExpiringItems, useRecentActivity } from '../api/client';
-
-const categoryEmojis: Record<string, string> = {
-  produce: '🥬',
-  dairy: '🥛',
-  meat: '🍖',
-  seafood: '🐟',
-  frozen: '❄️',
-  pantry: '🏠',
-  beverages: '🥤',
-  condiments: '🧂',
-  bakery: '🥖',
-  snacks: '🍿',
-  other: '📦',
-};
+import { categoryEmojis } from '../constants/categories';
 
 export function Dashboard() {
   const navigate = useNavigate();
