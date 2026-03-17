@@ -117,7 +117,7 @@ CATEGORY_KEYWORDS: dict[str, list[str]] = {
         "halibut",
     ],
     "frozen": ["frozen", "ice cream"],
-    "pantry": [
+    "dry_goods": [
         "flour",
         "sugar",
         "rice",
@@ -126,6 +126,8 @@ CATEGORY_KEYWORDS: dict[str, list[str]] = {
         "oat",
         "bean",
         "lentil",
+    ],
+    "canned": [
         "canned",
         "can of",
     ],

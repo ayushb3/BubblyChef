@@ -78,12 +78,16 @@ class TestDetectCategory:
         assert detect_category("shrimp") == "seafood"
         assert detect_category("tuna") == "seafood"
 
-    def test_pantry_detection(self):
-        """Test pantry staples detection."""
-        assert detect_category("rice") == "pantry"
-        assert detect_category("pasta") == "pantry"
-        assert detect_category("flour") == "pantry"
-        assert detect_category("canned beans") == "pantry"
+    def test_dry_goods_detection(self):
+        """Test dry goods / pantry staples detection."""
+        assert detect_category("rice") == "dry_goods"
+        assert detect_category("pasta") == "dry_goods"
+        assert detect_category("flour") == "dry_goods"
+
+    def test_canned_detection(self):
+        """Test canned goods detection."""
+        assert detect_category("canned soup") == "canned"
+        assert detect_category("can of corn") == "canned"
 
     def test_condiments_detection(self):
         """Test condiments detection."""
