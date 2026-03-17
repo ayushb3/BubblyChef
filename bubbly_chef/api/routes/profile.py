@@ -36,6 +36,7 @@ async def get_profile(profile_id: UUID) -> ProfileResponse:
 
     Returns the full profile information including dietary preferences.
     """
+    logger.info("GET /profile/%s", profile_id)
     repo = await get_repository()
     profile = await repo.get_profile_by_id(str(profile_id))
 
@@ -56,6 +57,7 @@ async def get_profile_by_email(email: str) -> ProfileResponse:
 
     Useful for login flows or checking if an email is already registered.
     """
+    logger.info("GET /profile/email/%s", email)
     repo = await get_repository()
     profile = await repo.get_profile_by_email(email)
 
@@ -76,6 +78,7 @@ async def get_profile_by_username(username: str) -> ProfileResponse:
 
     Useful for profile lookups or checking username availability.
     """
+    logger.info("GET /profile/username/%s", username)
     repo = await get_repository()
     profile = await repo.get_profile_by_username(username)
 

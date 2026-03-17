@@ -114,6 +114,14 @@ async def scan_receipt(
     - `preprocess_mode='aggressive'`: Full preprocessing for challenging images
     """
     # Validate file type
+    logger.info(
+        "POST /scan/receipt",
+        extra={
+            "content_type": image.content_type,
+            "preprocess": preprocess,
+            "preprocess_mode": preprocess_mode,
+        },
+    )
     if image.content_type not in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
         raise HTTPException(
             status_code=400,
@@ -271,6 +279,10 @@ async def confirm_items(request: ConfirmItemsRequest) -> ConfirmItemsResponse:
     Use the temp_id from needs_review items to identify which items to add.
     You can modify name, quantity, category, etc. before confirming.
     """
+    logger.info(
+        "POST /scan/confirm",
+        extra={"request_id": request.request_id, "item_count": len(request.items)},
+    )
     _pending_scans.get(request.request_id)
 
     # Even if session expired, we can still add items
@@ -293,6 +305,12 @@ async def confirm_items(request: ConfirmItemsRequest) -> ConfirmItemsResponse:
             added.append(saved)
 
         except Exception as e:
+            logger.error(
+                "Failed to add confirmed item: %s",
+                item.name,
+                extra={"error": str(e)},
+                exc_info=True,
+            )
             failed.append(f"{item.name}: {str(e)}")
 
     return ConfirmItemsResponse(added=added, failed=failed)
@@ -306,6 +324,7 @@ async def undo_auto_added(request_id: str) -> UndoResponse:
     Must be called with the request_id from the scan response.
     Only works for items from the same session.
     """
+    logger.info("POST /scan/undo/%s", request_id)
     session = _pending_scans.get(request_id)
 
     if not session:
@@ -334,6 +353,7 @@ async def undo_auto_added(request_id: str) -> UndoResponse:
 @router.get("/ocr-status")
 async def ocr_status() -> dict[str, Any]:
     """Check if OCR service is available."""
+    logger.info("GET /scan/ocr-status")
     ocr = get_ocr_service()
     available = ocr.is_available()
 
@@ -395,6 +415,7 @@ async def preprocess_receipt(
     - `preprocessing_mode`: The mode that was applied
     - Image size information and status
     """
+    logger.info("POST /scan/preprocess", extra={"content_type": image.content_type, "mode": mode})
     import base64
     import io
 

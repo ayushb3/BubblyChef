@@ -1,24 +1,22 @@
 """FastAPI application factory and configuration."""
 
-import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from bubbly_chef import __version__
 from bubbly_chef.config import settings
+from bubbly_chef.logger import get_logger, setup_logging
 from bubbly_chef.repository.sqlite import get_repository
 from bubbly_chef.tools.llm_client import get_ollama_client
 
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG if settings.debug else logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+# Initialize structured logging (replaces basicConfig)
+setup_logging()
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -91,6 +89,31 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Request/response logging middleware
+    from bubbly_chef.api.middleware import LoggingMiddleware
+
+    app.add_middleware(LoggingMiddleware)
+
+    # Global exception handler — catches unhandled errors and logs them
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.error(
+            "Unhandled exception",
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+            },
+            exc_info=True,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": f"Internal server error: {type(exc).__name__}: {exc}",
+            },
+        )
 
     # Register routers
     from bubbly_chef.api.routes import apply, chat, health, ingest, pantry, profile, recipes, scan

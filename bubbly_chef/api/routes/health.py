@@ -1,10 +1,14 @@
 """Health check endpoint."""
 
+import logging
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
 from bubbly_chef import __version__
 from bubbly_chef.api.deps import get_ai_manager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Health"])
 
@@ -24,6 +28,7 @@ class HealthResponse(BaseModel):
 @router.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
     """Health check — returns service status and AI provider availability."""
+    logger.info("GET /health")
     ai_manager = get_ai_manager()
     health = await ai_manager.health_check()
 

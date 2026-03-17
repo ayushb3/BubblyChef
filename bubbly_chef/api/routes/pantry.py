@@ -12,6 +12,10 @@ from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.repository.sqlite import get_repository
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/pantry", tags=["Pantry"])
+
 
 class CreatePantryItemRequest(BaseModel):
     name: str
@@ -29,11 +33,6 @@ class UpdatePantryItemRequest(BaseModel):
     category: FoodCategory | None = None
     storage_location: StorageLocation | None = None
     expiry_date: str | None = None
-
-
-logger = logging.getLogger(__name__)
-
-router = APIRouter(prefix="/pantry", tags=["Pantry"])
 
 
 class PantryListResponse(BaseModel):
@@ -68,6 +67,7 @@ async def list_pantry(
 
     Returns items with counts of expiring/expired items.
     """
+    logger.info("GET /pantry", extra={"category": category, "storage": storage, "search": search})
     repo = await get_repository()
     expiry = get_expiry_heuristics()
 
@@ -151,6 +151,7 @@ async def list_expiring_items(
 )
 async def create_pantry_item(body: CreatePantryItemRequest) -> PantryItem:
     """Create a new pantry item directly (no AI workflow)."""
+    logger.info("POST /pantry", extra={"item_name": body.name, "category": body.category.value})
     from datetime import date as date_type
 
     repo = await get_repository()
@@ -184,6 +185,8 @@ async def create_pantry_item(body: CreatePantryItemRequest) -> PantryItem:
 )
 async def update_pantry_item(item_id: UUID, body: UpdatePantryItemRequest) -> PantryItem:
     """Update an existing pantry item by ID."""
+    updated_fields = [k for k, v in body.model_dump().items() if v is not None]
+    logger.info("PUT /pantry/%s", item_id, extra={"fields": updated_fields})
     from datetime import date as date_type
 
     repo = await get_repository()
@@ -220,12 +223,14 @@ async def get_pantry_item(item_id: UUID) -> PantryItemResponse:
 
     Returns the item with expiry status information.
     """
+    logger.info("GET /pantry/%s", item_id)
     repo = await get_repository()
     expiry = get_expiry_heuristics()
 
     item = await repo.get_pantry_item(str(item_id))
 
     if not item:
+        logger.warning("Pantry item not found: %s", item_id)
         raise HTTPException(status_code=404, detail="Pantry item not found")
 
     return PantryItemResponse(
@@ -245,11 +250,13 @@ async def delete_pantry_item(item_id: UUID) -> dict[str, Any]:
 
     This is a direct mutation endpoint for manual item removal.
     """
+    logger.info("DELETE /pantry/%s", item_id)
     repo = await get_repository()
 
     deleted = await repo.delete_pantry_item(str(item_id))
 
     if not deleted:
+        logger.warning("Pantry item not found for deletion: %s", item_id)
         raise HTTPException(status_code=404, detail="Pantry item not found")
 
     return {"success": True, "deleted_id": str(item_id)}
