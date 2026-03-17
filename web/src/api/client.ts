@@ -62,7 +62,8 @@ async function fetchExpiringItems(days: number = 3): Promise<PantryItem[]> {
     `${API_BASE_URL}/pantry/expiring?days=${days}`
   );
   if (!response.ok) throw new Error('Failed to fetch expiring items');
-  return response.json();
+  const data: PantryListResponse = await response.json();
+  return data.items;
 }
 
 async function fetchPantryItem(id: string): Promise<PantryItem> {
