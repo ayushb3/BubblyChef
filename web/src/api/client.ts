@@ -23,6 +23,8 @@ import type {
   ProfileResponse,
   ChatRequest,
   ChatResponse,
+  ChatMode,
+  ConversationHistoryTurn,
 } from '../types';
 
 const API_BASE_URL = 'http://localhost:8888';
@@ -298,6 +300,39 @@ export function useRecipeSuggestions() {
   });
 }
 
+// ─── Mode-aware suggestions ─────────────────────────────────────────────────
+
+const STATIC_SUGGESTIONS: Record<Exclude<ChatMode, 'recipe'>, string[]> = {
+  chat: [
+    "What can I make with what I have?",
+    "I just bought milk, eggs, and cheese",
+    "How long does cooked chicken last?",
+    "What's expiring soon in my pantry?",
+  ],
+  learn: [
+    "How do I properly sear a steak?",
+    "What's the difference between baking soda and powder?",
+    "How do I make a roux?",
+    "What does 'deglaze' mean?",
+  ],
+};
+
+export function useModeSuggestions(mode: ChatMode) {
+  const recipeSuggestions = useRecipeSuggestions();
+
+  if (mode === 'recipe') {
+    return {
+      data: recipeSuggestions.data ?? [],
+      isLoading: recipeSuggestions.isLoading,
+    };
+  }
+
+  return {
+    data: STATIC_SUGGESTIONS[mode],
+    isLoading: false,
+  };
+}
+
 // User Profile API Functions
 async function fetchProfile(id: string): Promise<UserProfile> {
   const response = await fetch(`${API_BASE_URL}/profile/${id}`);
@@ -439,6 +474,66 @@ async function sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
 export function useChat() {
   return useMutation({
     mutationFn: sendChatMessage,
+  });
+}
+
+// ─── Conversation history ────────────────────────────────────────────────────
+
+async function fetchConversationHistory(
+  conversationId: string,
+  limit = 50,
+): Promise<ConversationHistoryTurn[]> {
+  const response = await fetch(
+    `${API_BASE_URL}/v1/conversations/${encodeURIComponent(conversationId)}/history?limit=${limit}`,
+  );
+  if (!response.ok) throw new Error('Failed to fetch conversation history');
+  return response.json();
+}
+
+export function useConversationHistory(conversationId: string | null) {
+  return useQuery({
+    queryKey: ['conversation-history', conversationId],
+    queryFn: () => fetchConversationHistory(conversationId!),
+    enabled: !!conversationId,
+    staleTime: Infinity, // history doesn't change from other sources
+    retry: false,
+  });
+}
+
+// ─── Workflow events (proposal approval) ────────────────────────────────────
+
+interface WorkflowEventRequest {
+  event_type: 'submit_review' | 'provide_clarification' | 'cancel';
+  decision?: 'approve' | 'approve_with_edits' | 'reject';
+  edits?: Record<string, unknown> | null;
+  clarification_response?: string | null;
+}
+
+async function submitWorkflowEvent(
+  workflowId: string,
+  event: WorkflowEventRequest,
+): Promise<ChatResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/workflows/${workflowId}/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(event),
+  });
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Workflow event failed: ${error}`);
+  }
+  return response.json();
+}
+
+export function useSubmitWorkflowEvent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workflowId, event }: { workflowId: string; event: WorkflowEventRequest }) =>
+      submitWorkflowEvent(workflowId, event),
+    onSuccess: () => {
+      // Pantry may have changed after approval
+      queryClient.invalidateQueries({ queryKey: ['pantry'] });
+    },
   });
 }
 

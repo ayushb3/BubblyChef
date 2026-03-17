@@ -128,25 +128,48 @@ async def chat(request: ChatRequest) -> ProposalEnvelope[Any]:
     - `next_action`: Hint for UI (NONE, REVIEW_PROPOSAL, REQUEST_RECEIPT_IMAGE, etc.)
     """
     start_time = datetime.now()
+    conversation_id = str(request.conversation_id) if request.conversation_id else None
 
     logger.info(
         "Chat request received",
         extra={
             "message_preview": request.message[:100],
             "message_length": len(request.message),
-            "conversation_id": str(request.conversation_id) if request.conversation_id else None,
+            "conversation_id": conversation_id,
             "mode": request.mode,
             "has_pantry_snapshot": request.pantry_snapshot is not None,
         },
     )
 
     try:
+        repo = await get_repository()
+
+        # Load conversation history for context
+        history: list[dict[str, Any]] = []
+        if conversation_id:
+            try:
+                history = await repo.get_history(conversation_id, limit=20)
+            except Exception as hist_err:
+                logger.warning(f"Failed to load conversation history: {hist_err}")
+
+        # Persist the user turn
+        if conversation_id:
+            try:
+                await repo.save_message(
+                    conversation_id=conversation_id,
+                    role="user",
+                    content=request.message,
+                )
+            except Exception as save_err:
+                logger.warning(f"Failed to save user message: {save_err}")
+
         # Run the chat workflow
         envelope = await run_chat_workflow(
             message=request.message,
-            conversation_id=str(request.conversation_id) if request.conversation_id else None,
+            conversation_id=conversation_id,
             mode=request.mode,
             pantry_snapshot=request.pantry_snapshot,
+            history=history,
         )
 
         # Store workflow state if it requires future resumption
@@ -156,17 +179,26 @@ async def chat(request: ChatRequest) -> ProposalEnvelope[Any]:
                 "request": request.model_dump(),
             }
 
+        # Persist the assistant turn
+        if conversation_id:
+            try:
+                await repo.save_message(
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=envelope.assistant_message,
+                    intent=envelope.intent.value,
+                )
+            except Exception as save_err:
+                logger.warning(f"Failed to save assistant message: {save_err}")
+
         # Log the interaction
         try:
-            repo = await get_repository()
             await repo.log_ingestion(
                 request_id=envelope.request_id,
                 intent=envelope.intent.value,
                 input_payload={
                     "message": request.message,
-                    "conversation_id": str(request.conversation_id)
-                    if request.conversation_id
-                    else None,
+                    "conversation_id": conversation_id,
                     "mode": request.mode,
                 },
                 proposal=envelope.proposal.model_dump() if envelope.proposal else None,
@@ -288,29 +320,61 @@ async def submit_workflow_event(
 
         elif event.event_type == "submit_review":
             if event.decision == "approve":
-                # Mark as ready to apply
-                # TODO: Actually apply the proposal to the database
                 logger.info(f"Proposal approved for workflow {workflow_id}")
 
-                # Clean up stored state
                 envelope_data = stored_state["envelope"]
                 del _workflow_states[workflow_id_str]
 
                 from bubbly_chef.config import settings
                 from bubbly_chef.models.base import ConfidenceScore, NextAction, WorkflowStatus
 
-                # Return updated envelope with completed status
+                # Apply pantry actions to the database
+                applied_count = 0
+                failed_count = 0
+                apply_errors: list[str] = []
+                proposal_data = envelope_data.get("proposal")
+                if proposal_data and envelope_data.get("intent") == "pantry_update":
+                    actions = proposal_data.get("actions", [])
+                    try:
+                        repo = await get_repository()
+                        (
+                            applied_count,
+                            failed_count,
+                            apply_errors,
+                        ) = await repo.apply_pantry_proposal(actions)
+                        logger.info(
+                            "Pantry proposal applied",
+                            extra={
+                                "workflow_id": workflow_id_str,
+                                "applied": applied_count,
+                                "failed": failed_count,
+                            },
+                        )
+                    except Exception as apply_err:
+                        logger.error(f"Failed to apply pantry proposal: {apply_err}", exc_info=True)
+                        apply_errors.append(str(apply_err))
+
+                success_msg = (
+                    f"Added {applied_count} item{'s' if applied_count != 1 else ''} to your pantry!"
+                    if applied_count > 0
+                    else "Proposal approved! Your pantry has been updated."
+                )
+                if failed_count > 0:
+                    n = failed_count
+                    success_msg += f" ({n} item{'s' if n != 1 else ''} could not be added.)"
+
                 return ProposalEnvelope(
                     request_id=envelope_data["request_id"],
                     workflow_id=workflow_id,
                     schema_version=settings.schema_version,
                     intent=Intent(envelope_data["intent"]),
                     proposal=envelope_data.get("proposal"),
-                    assistant_message="Proposal approved! Your pantry has been updated.",
+                    assistant_message=success_msg,
                     confidence=ConfidenceScore(**envelope_data.get("confidence", {"overall": 1.0})),
                     requires_review=False,
                     next_action=NextAction.NONE,
                     workflow_status=WorkflowStatus.COMPLETED,
+                    errors=apply_errors,
                 )
 
             elif event.decision == "approve_with_edits":
@@ -320,7 +384,6 @@ async def submit_workflow_event(
                         detail="edits field required for approve_with_edits decision",
                     )
 
-                # TODO: Apply edited proposal
                 logger.info(f"Proposal approved with edits for workflow {workflow_id}")
 
                 envelope_data = stored_state["envelope"]
@@ -329,17 +392,46 @@ async def submit_workflow_event(
                 from bubbly_chef.config import settings
                 from bubbly_chef.models.base import ConfidenceScore, NextAction, WorkflowStatus
 
+                # Apply the edited proposal (if it contains pantry actions)
+                applied_count = 0
+                failed_count = 0
+                apply_errors_edits: list[str] = []
+                if envelope_data.get("intent") == "pantry_update":
+                    actions = event.edits.get("actions", [])
+                    if actions:
+                        try:
+                            repo = await get_repository()
+                            (
+                                applied_count,
+                                failed_count,
+                                apply_errors_edits,
+                            ) = await repo.apply_pantry_proposal(actions)
+                        except Exception as apply_err:
+                            logger.error(
+                                f"Failed to apply edited proposal: {apply_err}",
+                                exc_info=True,
+                            )
+                            apply_errors_edits.append(str(apply_err))
+
+                success_msg = (
+                    f"Added {applied_count} item{'s' if applied_count != 1 else ''}"
+                    " to your pantry with your changes!"
+                    if applied_count > 0
+                    else "Proposal approved with your changes!"
+                )
+
                 return ProposalEnvelope(
                     request_id=envelope_data["request_id"],
                     workflow_id=workflow_id,
                     schema_version=settings.schema_version,
                     intent=Intent(envelope_data["intent"]),
-                    proposal=event.edits,  # Return edited proposal
-                    assistant_message="Proposal approved with your changes!",
+                    proposal=event.edits,
+                    assistant_message=success_msg,
                     confidence=ConfidenceScore(overall=1.0),
                     requires_review=False,
                     next_action=NextAction.NONE,
                     workflow_status=WorkflowStatus.COMPLETED,
+                    errors=apply_errors_edits,
                 )
 
             elif event.decision == "reject":
@@ -458,3 +550,23 @@ async def get_workflow_state(workflow_id: UUID) -> ProposalEnvelope[Any]:
         warnings=envelope_data.get("warnings", []),
         errors=envelope_data.get("errors", []),
     )
+
+
+@router.get(
+    "/conversations/{conversation_id}/history",
+    summary="Get conversation history",
+    responses={
+        200: {"description": "List of conversation turns, oldest first"},
+    },
+)
+async def get_conversation_history(
+    conversation_id: str,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """
+    Retrieve the stored message history for a conversation thread.
+
+    Returns turns oldest-first so the client can restore the UI on page reload.
+    """
+    repo = await get_repository()
+    return await repo.get_history(conversation_id, limit=limit)

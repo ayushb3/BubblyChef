@@ -146,7 +146,61 @@ GENERAL_CHAT_USER_PROMPT = """User: {text}
 Respond helpfully and concisely. Mention relevant app features if appropriate."""
 
 
-# =============================================================================
+# ─── Mode-specific system prompt prefixes ────────────────────────────────────
+
+MODE_SYSTEM_PROMPTS: dict[str, str] = {
+    "chat": "",  # default — no override
+    "text": "",  # legacy alias for chat
+    "voice": "",  # legacy alias for chat
+    "recipe": (
+        "You are in RECIPE MODE. The user wants recipe suggestions.\n"
+        "Always respond with a structured recipe when possible — include title, "
+        "ingredients with quantities, step-by-step instructions, prep/cook time, "
+        "and difficulty level.\n"
+        "Prioritize ingredients the user already has in their pantry.\n"
+        "If they ask something non-recipe, still help but gently steer back "
+        "toward cooking.\n\n"
+    ),
+    "learn": (
+        "You are in LEARN TO COOK MODE. The user wants to learn cooking skills.\n"
+        "Explain the 'why' behind techniques, not just the 'how'. Use analogies.\n"
+        "Break complex techniques into small, approachable steps.\n"
+        "Be encouraging and patient — assume the user is a beginner unless they "
+        "show otherwise.\n"
+        "Suggest practice exercises when appropriate.\n\n"
+    ),
+}
+
+
+def get_mode_prefix(state: WorkflowState) -> str:
+    """Return the system prompt prefix for the current chat mode."""
+    mode = state.get("input_mode", "chat")
+    return MODE_SYSTEM_PROMPTS.get(mode, "")
+
+
+def format_history_context(state: WorkflowState, max_turns: int = 10) -> str:
+    """Format recent conversation history for injection into LLM prompts.
+
+    Returns a compact text block like:
+        Previous conversation:
+        User: I bought milk
+        Assistant: Got it! I've noted 1 gallon of milk.
+        ...
+    or an empty string if there is no history.
+    """
+    history: list[dict[str, str]] = state.get("conversation_history") or []
+    if not history:
+        return ""
+
+    recent = history[-max_turns:]
+    lines = ["Previous conversation:"]
+    for turn in recent:
+        role = turn.get("role", "user").capitalize()
+        content = turn.get("content", "").strip()
+        if content:
+            lines.append(f"{role}: {content}")
+
+    return "\n".join(lines) + "\n\n"
 # Graph Nodes
 # =============================================================================
 
@@ -909,10 +963,14 @@ async def general_chat_response(state: WorkflowState) -> WorkflowState:
     except Exception:
         pass  # non-critical for general chat
 
+    mode_prefix = get_mode_prefix(state)
+    history_context = format_history_context(state)
     prompt = (
-        GENERAL_CHAT_SYSTEM_PROMPT
+        mode_prefix
+        + GENERAL_CHAT_SYSTEM_PROMPT
         + pantry_context
         + "\n\n"
+        + history_context
         + GENERAL_CHAT_USER_PROMPT.format(text=input_text)
     )
 
@@ -1012,11 +1070,13 @@ suggest ways to use them first.
 
 Keep responses friendly, concise, and practical. If the user asks \
 what they can make, give concrete suggestions from their pantry and \
-mention they can generate a full step-by-step recipe on the Recipes page."""
+mention they can switch to Recipe mode for a full step-by-step recipe."""
 
     ai_manager = get_ai_manager()
     user_prompt = f"\n\nUser: {input_text}\n\nRespond helpfully and concisely."
-    prompt = cooking_system + pantry_context + user_prompt
+    mode_prefix = get_mode_prefix(state)
+    history_context = format_history_context(state)
+    prompt = mode_prefix + cooking_system + pantry_context + "\n\n" + history_context + user_prompt
 
     try:
         result = await ai_manager.complete(prompt=prompt, temperature=0.7)
@@ -1192,6 +1252,7 @@ async def run_chat_workflow(
     conversation_id: str | None = None,
     mode: str = "text",
     pantry_snapshot: list[dict[str, Any]] | None = None,
+    history: list[dict[str, Any]] | None = None,
 ) -> ProposalEnvelope[Any]:
     """
     Run the chat router workflow and return a ProposalEnvelope.
@@ -1203,6 +1264,7 @@ async def run_chat_workflow(
         conversation_id: Optional conversation thread ID
         mode: "text" or "voice"
         pantry_snapshot: Optional current pantry for dedup
+        history: Prior conversation turns [{role, content, intent, created_at}]
 
     Returns:
         ProposalEnvelope with appropriate proposal type based on intent
@@ -1218,6 +1280,7 @@ async def run_chat_workflow(
         "input_type": "chat",
         "input_mode": mode,
         "pantry_snapshot": pantry_snapshot,
+        "conversation_history": history or [],
         "warnings": [],
         "errors": [],
     }

@@ -207,6 +207,10 @@ export interface ProfileResponse {
   profile: UserProfile;
 }
 
+// ─── Chat Mode ───────────────────────────────────────────────────────────────
+
+export type ChatMode = 'chat' | 'recipe' | 'learn';
+
 // ─── Chat / Conversational AI Types ───────────────────────────────────────────
 
 /**
@@ -295,7 +299,15 @@ export interface ChatResponse {
 export interface ChatRequest {
   message: string;
   conversation_id?: string | null;
-  mode?: string;
+  mode?: ChatMode;
+}
+
+/** A stored history turn from GET /v1/conversations/{id}/history. */
+export interface ConversationHistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+  intent: string | null;
+  created_at: string;
 }
 
 /** A single message in the UI conversation thread. */

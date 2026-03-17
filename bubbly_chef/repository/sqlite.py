@@ -92,6 +92,18 @@ class SQLiteRepository:
 
             CREATE INDEX IF NOT EXISTS idx_ingestion_request
                 ON ingestion_logs(request_id);
+
+            CREATE TABLE IF NOT EXISTS conversation_history (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+                content TEXT NOT NULL,
+                intent TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_conv_history_conversation
+                ON conversation_history(conversation_id, created_at);
         """
         )
 
@@ -638,6 +650,197 @@ class SQLiteRepository:
         if deleted:
             logger.debug(f"Deleted user profile: {profile_id}")
         return deleted
+
+    # =========================================================================
+    # Conversation history operations
+    # =========================================================================
+
+    async def save_message(
+        self,
+        conversation_id: str,
+        role: str,
+        content: str,
+        intent: str | None = None,
+    ) -> None:
+        """Persist a single message turn to conversation history."""
+        conn = self._get_conn()
+        await conn.execute(
+            """INSERT INTO conversation_history
+               (id, conversation_id, role, content, intent, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                str(uuid4()),
+                conversation_id,
+                role,
+                content,
+                intent,
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+        await conn.commit()
+        logger.debug(f"Saved {role} message for conversation {conversation_id}")
+
+    async def get_history(
+        self,
+        conversation_id: str,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Retrieve recent messages for a conversation, oldest-first."""
+        conn = self._get_conn()
+        async with conn.execute(
+            """SELECT role, content, intent, created_at
+               FROM conversation_history
+               WHERE conversation_id = ?
+               ORDER BY created_at ASC
+               LIMIT ?""",
+            (conversation_id, limit),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [
+                {
+                    "role": row["role"],
+                    "content": row["content"],
+                    "intent": row["intent"],
+                    "created_at": row["created_at"],
+                }
+                for row in rows
+            ]
+
+    # =========================================================================
+    # Proposal application
+    # =========================================================================
+
+    async def apply_pantry_proposal(
+        self,
+        actions: list[dict[str, Any]],
+    ) -> tuple[int, int, list[str]]:
+        """Apply a list of PantryUpsertAction dicts to the database.
+
+        Returns (applied_count, failed_count, error_messages).
+        """
+        applied = 0
+        failed = 0
+        errors: list[str] = []
+
+        for raw_action in actions:
+            try:
+                action_type = raw_action.get("action_type", "add")
+                item_data = raw_action.get("item", {})
+
+                if not item_data:
+                    errors.append("Action missing item data")
+                    failed += 1
+                    continue
+
+                name = item_data.get("name", "").strip()
+                if not name:
+                    errors.append("Item missing name")
+                    failed += 1
+                    continue
+
+                if action_type in ("add", "update"):
+                    # Try to find existing item by normalized name
+                    existing = await self.find_similar_item(name)
+
+                    # Build a PantryItem from the action data
+                    category_str = item_data.get("category", "other")
+                    try:
+                        category = FoodCategory(category_str)
+                    except ValueError:
+                        category = FoodCategory.OTHER
+
+                    location_str = (
+                        item_data.get("storage_location")
+                        or item_data.get("location", "pantry")
+                    )
+                    try:
+                        location = StorageLocation(location_str)
+                    except ValueError:
+                        location = StorageLocation.PANTRY
+
+                    quantity = float(item_data.get("quantity") or 1.0)
+                    unit = item_data.get("unit") or "item"
+                    expiry_date: date | None = None
+                    if item_data.get("expiry_date"):
+                        try:
+                            expiry_date = date.fromisoformat(item_data["expiry_date"])
+                        except (ValueError, TypeError):
+                            pass
+
+                    now = datetime.now(UTC)
+
+                    if existing and action_type == "update":
+                        await self.update_pantry_item(
+                            str(existing.id),
+                            {
+                                "quantity": quantity,
+                                "unit": unit,
+                                "category": category,
+                                "storage_location": location,
+                                "expiry_date": expiry_date,
+                                "updated_at": now,
+                            },
+                        )
+                    elif existing:
+                        # ADD to existing quantity
+                        await self.update_pantry_item(
+                            str(existing.id),
+                            {
+                                "quantity": existing.quantity + quantity,
+                                "updated_at": now.isoformat(),
+                            },
+                        )
+                    else:
+                        new_item = PantryItem(
+                            name=name,
+                            category=category,
+                            storage_location=location,
+                            quantity=quantity,
+                            unit=unit,
+                            expiry_date=expiry_date,
+                            created_at=now,
+                            updated_at=now,
+                        )
+                        await self.add_pantry_item(new_item)
+
+                    applied += 1
+
+                elif action_type in ("remove", "use"):
+                    existing = await self.find_similar_item(name)
+                    if existing is None:
+                        errors.append(f"Item not found for {action_type}: {name}")
+                        failed += 1
+                        continue
+
+                    if action_type == "remove":
+                        await self.delete_pantry_item(str(existing.id))
+                    else:  # use — deduct quantity
+                        use_qty = float(item_data.get("quantity") or existing.quantity)
+                        new_qty = max(0.0, existing.quantity - use_qty)
+                        if new_qty == 0.0:
+                            await self.delete_pantry_item(str(existing.id))
+                        else:
+                            await self.update_pantry_item(
+                                str(existing.id),
+                                {
+                                    "quantity": new_qty,
+                                    "updated_at": datetime.now(UTC).isoformat(),
+                                },
+                            )
+                    applied += 1
+
+                else:
+                    errors.append(f"Unknown action_type: {action_type}")
+                    failed += 1
+
+            except Exception as exc:
+                item_name = raw_action.get("item", {}).get("name", "?")
+                errors.append(f"Failed to apply action for '{item_name}': {exc}")
+                failed += 1
+                logger.warning(f"Error applying pantry action: {exc}", exc_info=True)
+
+        logger.info(f"Applied pantry proposal: {applied} succeeded, {failed} failed")
+        return applied, failed, errors
 
 
 # Singleton instance
