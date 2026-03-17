@@ -475,66 +475,71 @@ class TestReviewGate:
 
 class TestFullWorkflow:
     """Integration tests for the complete workflow."""
-    
+
+    @pytest.fixture(autouse=True)
+    def _mock_ai(self):
+        """Mock AI manager for all integration tests to prevent real API calls."""
+        mock_manager = AsyncMock()
+        mock_manager.complete.return_value = "I'm happy to help with your kitchen!"
+        with patch(
+            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            return_value=mock_manager,
+        ) as mock_get_mgr:
+            self._mock_manager = mock_manager
+            self._mock_get_mgr = mock_get_mgr
+            yield
+
     @pytest.mark.asyncio
     async def test_pantry_update_full_flow(self, mock_llm_parse_result):
         """Test complete pantry update flow with mocked LLM."""
-        
-        with patch("bubbly_chef.workflows.chat_ingest.get_ai_manager") as mock_get_mgr:
-            mock_manager = AsyncMock()
-            mock_manager.complete.return_value = mock_llm_parse_result
-            mock_get_mgr.return_value = mock_manager
-            
-            envelope = await run_chat_workflow(
-                message="I bought 2 gallons of milk and a dozen eggs"
-            )
-            
-            assert envelope.intent == Intent.PANTRY_UPDATE
-            assert envelope.proposal is not None
-            assert len(envelope.proposal.actions) == 2
-            assert envelope.requires_review is True  # Default below auto-apply
-            assert envelope.next_action == NextAction.REVIEW_PROPOSAL
-    
+        self._mock_manager.complete.return_value = mock_llm_parse_result
+
+        envelope = await run_chat_workflow(
+            message="I bought 2 gallons of milk and a dozen eggs"
+        )
+
+        assert envelope.intent == Intent.PANTRY_UPDATE
+        assert envelope.proposal is not None
+        assert len(envelope.proposal.actions) == 2
+        assert envelope.requires_review is True  # Default below auto-apply
+        assert envelope.next_action == NextAction.REVIEW_PROPOSAL
+
     @pytest.mark.asyncio
     async def test_receipt_request_flow(self):
         """Test receipt request triggers handoff."""
-        
+
         envelope = await run_chat_workflow(
             message="I want to scan a receipt"
         )
-        
+
         assert envelope.intent == Intent.RECEIPT_INGEST
         assert envelope.next_action == NextAction.REQUEST_RECEIPT_IMAGE
         assert envelope.proposal is not None
         assert hasattr(envelope.proposal, 'kind')
         assert envelope.proposal.kind.value == "receipt"
-    
+
     @pytest.mark.asyncio
     async def test_product_request_flow(self):
         """Test product request triggers handoff."""
-        
+
         envelope = await run_chat_workflow(
             message="Can you scan this barcode?"
         )
-        
+
         assert envelope.intent == Intent.PRODUCT_INGEST
         assert envelope.next_action == NextAction.REQUEST_PRODUCT_BARCODE
-    
+
     @pytest.mark.asyncio
     async def test_legacy_api_compatibility(self, mock_llm_parse_result):
         """Test that legacy run_chat_ingest still works."""
-        
-        with patch("bubbly_chef.workflows.chat_ingest.get_ai_manager") as mock_get_mgr:
-            mock_manager = AsyncMock()
-            mock_manager.complete.return_value = mock_llm_parse_result
-            mock_get_mgr.return_value = mock_manager
-            
-            envelope = await run_chat_ingest("I bought milk")
-            
-            # Legacy API should always return PantryProposal type
-            assert envelope.intent == Intent.PANTRY_UPDATE
-            assert envelope.proposal is not None
-            assert hasattr(envelope.proposal, 'actions')
+        self._mock_manager.complete.return_value = mock_llm_parse_result
+
+        envelope = await run_chat_ingest("I bought milk")
+
+        # Legacy API should always return PantryProposal type
+        assert envelope.intent == Intent.PANTRY_UPDATE
+        assert envelope.proposal is not None
+        assert hasattr(envelope.proposal, 'actions')
 
 
 # =============================================================================
@@ -543,13 +548,25 @@ class TestFullWorkflow:
 
 class TestOutputContract:
     """Test that output adheres to the defined contract."""
-    
+
+    @pytest.fixture(autouse=True)
+    def _mock_ai(self):
+        """Mock AI manager to prevent real API calls."""
+        mock_manager = AsyncMock()
+        mock_manager.complete.return_value = "Hello! I can help with your kitchen."
+        with patch(
+            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            return_value=mock_manager,
+        ):
+            self._mock_manager = mock_manager
+            yield
+
     @pytest.mark.asyncio
     async def test_envelope_has_required_fields(self):
         """Test that all required envelope fields are present."""
-        
+
         envelope = await run_chat_workflow(message="Hello")
-        
+
         # Check all required fields from the contract
         assert envelope.request_id is not None
         assert envelope.workflow_id is not None
@@ -561,22 +578,42 @@ class TestOutputContract:
         assert envelope.next_action is not None
         assert hasattr(envelope, 'warnings')
         assert hasattr(envelope, 'errors')
-    
+
     @pytest.mark.asyncio
     async def test_confidence_has_overall_score(self):
         """Test that confidence score has overall value."""
-        
+        parse_result = LLMParseResult(
+            items=[
+                LLMParsedItem(
+                    name="milk", quantity=1, unit="gallon",
+                    category="dairy", action="add", confidence=0.9,
+                ),
+            ],
+            confidence=0.9,
+        )
+        self._mock_manager.complete.return_value = parse_result
+
         envelope = await run_chat_workflow(message="I bought milk")
-        
+
         assert hasattr(envelope.confidence, 'overall')
         assert 0.0 <= envelope.confidence.overall <= 1.0
-    
+
     @pytest.mark.asyncio
     async def test_next_action_is_valid_enum(self):
         """Test that next_action is a valid NextAction enum."""
-        
+        parse_result = LLMParseResult(
+            items=[
+                LLMParsedItem(
+                    name="milk", quantity=1, unit="gallon",
+                    category="dairy", action="add", confidence=0.9,
+                ),
+            ],
+            confidence=0.9,
+        )
+        self._mock_manager.complete.return_value = parse_result
+
         envelope = await run_chat_workflow(message="I bought milk")
-        
+
         assert isinstance(envelope.next_action, NextAction)
 
 
@@ -586,32 +623,64 @@ class TestOutputContract:
 
 class TestEdgeCases:
     """Test edge cases and error handling."""
-    
+
+    @pytest.fixture(autouse=True)
+    def _mock_ai(self):
+        """Mock AI manager to prevent real API calls."""
+        mock_manager = AsyncMock()
+        mock_manager.complete.return_value = "I can help with that!"
+        with patch(
+            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            return_value=mock_manager,
+        ):
+            self._mock_manager = mock_manager
+            yield
+
     @pytest.mark.asyncio
     async def test_empty_message(self):
         """Test handling of empty message."""
-        
+
         envelope = await run_chat_workflow(message="")
-        
+
         # Should return general chat with error or low confidence
         assert envelope is not None
-    
+
     @pytest.mark.asyncio
     async def test_very_long_message(self):
         """Test handling of very long message."""
-        
+        parse_result = LLMParseResult(
+            items=[
+                LLMParsedItem(
+                    name="item0", quantity=1, unit="item",
+                    category="other", action="add", confidence=0.7,
+                ),
+            ],
+            confidence=0.7,
+        )
+        self._mock_manager.complete.return_value = parse_result
+
         long_message = "I bought " + ", ".join(["item" + str(i) for i in range(100)])
-        
+
         envelope = await run_chat_workflow(message=long_message)
-        
+
         assert envelope is not None
-    
+
     @pytest.mark.asyncio
     async def test_special_characters(self):
         """Test handling of special characters in message."""
-        
+        parse_result = LLMParseResult(
+            items=[
+                LLMParsedItem(
+                    name="milk", quantity=1, unit="item",
+                    category="dairy", action="add", confidence=0.8,
+                ),
+            ],
+            confidence=0.8,
+        )
+        self._mock_manager.complete.return_value = parse_result
+
         envelope = await run_chat_workflow(
             message="I bought milk! @#$% & eggs..."
         )
-        
+
         assert envelope is not None

@@ -384,9 +384,9 @@ class TestFlow4_GeneralChat:
 
         assert_envelope_structure(envelope)
 
-        # Verify intent — "dinner idea" keyword triggers cooking_help internally,
-        # but run_chat_workflow wraps it in create_general_chat_envelope which sets GENERAL_CHAT
-        assert envelope.intent == Intent.GENERAL_CHAT
+        # Verify intent — "dinner idea" keyword triggers cooking_help,
+        # and the intent is now correctly preserved through the envelope
+        assert envelope.intent == Intent.COOKING_HELP
 
         # Verify no proposal
         assert envelope.proposal is None

@@ -19,7 +19,7 @@ const categories: { value: Category; label: string; emoji: string }[] = [
   { value: 'meat', label: 'Meat', emoji: '🍖' },
   { value: 'seafood', label: 'Seafood', emoji: '🐟' },
   { value: 'frozen', label: 'Frozen', emoji: '❄️' },
-  { value: 'pantry', label: 'Pantry Staples', emoji: '🏠' },
+  { value: 'dry_goods', label: 'Pantry Staples', emoji: '🏠' },
   { value: 'beverages', label: 'Beverages', emoji: '🥤' },
   { value: 'condiments', label: 'Condiments', emoji: '🧂' },
   { value: 'bakery', label: 'Bakery', emoji: '🥖' },
