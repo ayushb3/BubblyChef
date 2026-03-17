@@ -1,12 +1,12 @@
 # BubblyChef TODO & Roadmap
 
-**Last Updated:** 2026-03-08
+**Last Updated:** 2026-03-16
 
 This document tracks current tasks, bugs, and future enhancements. See [docs/plans/roadmap.md](plans/roadmap.md) for the long-term product vision.
 
 ---
 
-## 🎯 Current Sprint (Phase 1C - Recipe Generation)
+## 🎯 Current Sprint (Phase 2 - Dashboard + Chat)
 
 ### ✅ Completed (Phase 1B)
 - [x] Backend pantry CRUD API
@@ -26,24 +26,29 @@ This document tracks current tasks, bugs, and future enhancements. See [docs/pla
 - [x] Recipe display with ingredient status indicators
 - [x] Session-based follow-up support ("make it spicier")
 
+### ✅ Completed (Phase 2 — partial)
+- [x] Dashboard page with expiring widget + quick actions
+- [x] Desktop sidebar layout
+- [x] Chat backend (`POST /v1/chat`) with intent classification workflow
+- [x] Workflow resumption system (`POST /v1/workflows/{id}/events`)
+- [x] Chat page (`/chat`) with message thread + sticky input
+- [x] Nav link to chat (sidebar + bottom nav)
+- [x] Frontend connected to `POST /v1/chat`
+- [x] Intent-specific response rendering (pantry proposal, recipe card, plain text, saved-recipe placeholder)
+- [x] Recent Activity widget pulls real pantry data
+
 ---
 
-## 🚧 In Progress
+## 🚧 In Progress (Phase 2 remaining)
 
-### Frontend Polish
-- [ ] Loading states and skeleton screens
-- [ ] Error boundary and error handling UI
-- [ ] Empty states with illustrations
-- [ ] Toast notifications for actions
-- [ ] Mobile responsiveness improvements
-- [ ] **Desktop layout optimization**
-  - Problem: On desktop, content is vertically contained like mobile with lots of horizontal whitespace
-  - Consider: Grid layout (2-3 columns), sidebar navigation, wider max-width
-  - Explore: Multi-column card grid, split view (list + detail), dashboard widgets
+### Known Gaps from Chat UI implementation
+- [ ] **Pantry-add approval doesn't write to DB** — Approve button shows local "Added!" only; needs to call `POST /v1/workflows/{id}/events` with `{event_type: "submit_review", decision: "approve"}` to actually persist
+- [ ] **No conversation persistence** — chat messages live in React state only, cleared on refresh; Phase 3 candidate for SQLite persistence
+- [ ] **BottomNav 6-item crowding** — now has 6 nav items; may be tight on narrow screens (< 320px), consider hiding labels on non-active items
+- [ ] **Markdown rendering in chat** — AI responses may contain markdown (bold, lists, code, headers); chat bubble renderer needs to parse and style `.md` syntax (e.g. use `react-markdown` or similar)
 
 ### Backend Improvements
 - [ ] Add pagination to pantry list endpoint
-- [ ] Implement search highlighting
 - [ ] Add bulk operations (delete multiple, update multiple)
 - [ ] Improve AI prompt for better receipt parsing accuracy
 - [ ] Add retry logic for AI provider failures
@@ -75,82 +80,38 @@ This document tracks current tasks, bugs, and future enhancements. See [docs/pla
 
 ---
 
-## 📋 Next Phase: Phase 1C - Recipes
-
-### Phase 1C: Remaining Tasks
-- [ ] **Recipe CRUD for saving recipes**
-  - Save AI-generated recipes
-  - Save imported recipes (URL, video, manual)
-  - Edit saved recipes
-  - Delete recipes
-  - Recipe collections/folders
-- [ ] Recipe list and detail pages
-- [ ] Recipe search and filtering
-- [ ] Recipe to shopping list converter
-- [ ] **Recipe consumption tracking**
-  - Deduct ingredients from pantry when cooking
-  - Handle unit conversions (dozen eggs → individual eggs)
-  - Partial consumption support (use 2 of 4 chicken breasts)
-  - History of cooked recipes
-
-### AI Features
-- [ ] Recipe extraction from URL (scraping traditional websites)
-- [ ] Recipe import from text/photo
-- [ ] Recipe suggestions based on pantry contents
-- [ ] Ingredient substitution recommendations
-
----
-
 ## 🔮 Future Phases
 
-### Phase 2: Dashboard & Chat (Q2 2026)
-- [ ] Dashboard home page with insights
-- [ ] Chat interface for natural language interactions
-- [ ] Intent router for chat commands
-- [ ] "I bought milk and eggs" → auto-add to pantry
-- [ ] "What should I cook tonight?" → recipe suggestions
-- [ ] **Chat-recipe integration**
-  - Chat can access saved recipe library
-  - Reference recipes by name ("that butter chicken recipe")
-  - Suggest saved recipes matching pantry
-  - "Make that TikTok recipe I saved" → retrieve and display
-- [ ] Shopping list generation from recipes
+### Phase 3: Recipe Library + Multimodal Ingestion (Q2–Q3 2026)
 
-### Phase 3: Recipe Library + Video Ingestion (Q3 2026)
-- [ ] Recipe collections and organization
-- [ ] Recipe search across all sources (generated, video, URL, manual)
-- [ ] **Video recipe ingestion system (MAJOR FEATURE)**
-  - [ ] TikTok API/parser integration
-  - [ ] Instagram Reels parser
-  - [ ] YouTube Shorts parser (YouTube Data API v3)
-  - [ ] Video download and processing pipeline
-  - [ ] Video transcription service (Whisper API, Rev.ai, or AssemblyAI)
-  - [ ] AI extraction of ingredients from transcription + video frames
-  - [ ] AI extraction of cooking steps with timestamps
-  - [ ] Thumbnail generation and storage
-  - [ ] Video metadata indexing (creator, duration, hashtags, caption)
-  - [ ] Link video recipes to pantry matching
-  - [ ] "Saved from TikTok" badge/indicator in UI
+The goal: save recipes from any source and surface them via chat. "Remember that matcha lemonade TikTok?" should work.
+
+- [ ] **Recipe CRUD** — save, edit, delete, search AI-generated recipes
+- [ ] **Shopping list** — generate missing ingredient list from any saved recipe
+- [ ] **URL ingestion** — scrape recipe websites, extract structured recipe
+- [ ] **Short-form video ingestion** (TikTok, Instagram Reels, YouTube Shorts)
+  - [ ] Video download + transcription pipeline (Whisper / AssemblyAI)
+  - [ ] AI extraction: ingredients, steps, metadata from transcript + frames
+  - [ ] Thumbnail + source metadata storage
+- [ ] **Long-form video ingestion** (YouTube)
+  - [ ] Same pipeline, timestamp-aware step extraction
+- [ ] **Recipe index** — unified search across all sources with source badges
+- [ ] **Saved-recipe-lookup intent** — chat surfaces saved recipes by name/description
+- [ ] **Side dish generation** — after main recipe, offer pantry-grounded side dishes
 - [ ] Better OCR accuracy for receipts
 - [ ] Ollama self-hosted AI support
 
-### Phase 4: Mobile PWA + Social (Q4 2026)
+### Phase 4: Mobile PWA (Q4 2026)
 - [ ] Progressive Web App (PWA) setup
 - [ ] Offline support
 - [ ] Push notifications for expiring items
 - [ ] Camera integration for receipt scanning
-- [ ] **In-app video playback for saved recipes**
-- [ ] Share recipes with friends
-- [ ] Video recipe commenting and ratings
 - [ ] Barcode scanning for products
 
 ### Phase 5: Advanced Features (2027+)
 - [ ] User accounts and authentication
 - [ ] Meal planning calendar
-- [ ] Nutrition tracking
 - [ ] Multi-user/household support
-- [ ] Social recipe sharing with video embeds
-- [ ] Recipe remix feature (edit video recipes)
 
 ---
 
@@ -215,12 +176,7 @@ This document tracks current tasks, bugs, and future enhancements. See [docs/pla
   - [ ] Ingredient quantity estimation from visual cues
 
 ### Integrations
-- [ ] Google Calendar integration for meal planning
-- [ ] Grocery delivery APIs (Instacart, Amazon Fresh)
-- [ ] Smart home integration (Alexa, Google Home)
-- [ ] Fitness apps (MyFitnessPal)
-- [ ] Recipe APIs (Spoonacular, Edamam)
-- [ ] **Video platform APIs**
+- [ ] **Video platform APIs** (Phase 3)
   - [ ] TikTok API for metadata and video access
   - [ ] Instagram Graph API for Reels
   - [ ] YouTube Data API v3 for Shorts
@@ -272,6 +228,8 @@ This document tracks current tasks, bugs, and future enhancements. See [docs/pla
 ## 📝 Notes
 
 ### Decision Log
+- **2026-03-16**: Pushed recipe-save + shopping-list to Phase 3; redefined Phase 3 as multimodal recipe ingestion (URL, TikTok, Reels, YouTube)
+- **2026-03-16**: Chat clarified as natural language intent router, not grocery conversation — intents: recipe-generate, pantry-add, cooking-question, saved-recipe-lookup
 - **2026-03-06**: Reorganized project structure, moved all docs to `docs/`
 - **2026-03-06**: Added comprehensive logging system with colored output
 - **2026-03-06**: Changed backend port from 8000 to 9000

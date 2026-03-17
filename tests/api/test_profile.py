@@ -33,7 +33,7 @@ class TestProfileEndpoints:
     async def test_create_profile_minimal(self, client: AsyncClient):
         """Test creating a profile with minimal required fields."""
         response = await client.post(
-            "/v1/profile",
+            "/profile",
             json={
                 "username": "minimaluser",
                 "email": "minimal@example.com",
@@ -51,7 +51,7 @@ class TestProfileEndpoints:
     async def test_create_profile_invalid_email(self, client: AsyncClient):
         """Test creating a profile with invalid email."""
         response = await client.post(
-            "/v1/profile",
+            "/profile",
             json={
                 "username": "testuser2",
                 "email": "not-an-email",
@@ -64,7 +64,7 @@ class TestProfileEndpoints:
         """Test creating a profile with duplicate username."""
         # Create first profile
         await client.post(
-            "/v1/profile",
+            "/profile",
             json={
                 "username": "duplicate",
                 "email": "first@example.com",
@@ -73,7 +73,7 @@ class TestProfileEndpoints:
 
         # Try to create with same username
         response = await client.post(
-            "/v1/profile",
+            "/profile",
             json={
                 "username": "duplicate",
                 "email": "second@example.com",
@@ -86,7 +86,7 @@ class TestProfileEndpoints:
         """Test creating a profile with duplicate email."""
         # Create first profile
         await client.post(
-            "/v1/profile",
+            "/profile",
             json={
                 "username": "user1",
                 "email": "same@example.com",
@@ -95,7 +95,7 @@ class TestProfileEndpoints:
 
         # Try to create with same email
         response = await client.post(
-            "/v1/profile",
+            "/profile",
             json={
                 "username": "user2",
                 "email": "same@example.com",
@@ -108,7 +108,7 @@ class TestProfileEndpoints:
         """Test getting a profile by ID."""
         # Create profile first
         create_response = await client.post(
-            "/v1/profile",
+            "/profile",
             json={
                 "username": "getuser",
                 "email": "get@example.com",
@@ -117,7 +117,7 @@ class TestProfileEndpoints:
         profile_id = create_response.json()["profile"]["id"]
 
         # Get profile by ID
-        response = await client.get(f"/v1/profile/{profile_id}")
+        response = await client.get(f"/profile/{profile_id}")
         assert response.status_code == 200
         data = response.json()
         assert data["profile"]["id"] == profile_id
@@ -127,7 +127,7 @@ class TestProfileEndpoints:
     async def test_get_profile_not_found(self, client: AsyncClient):
         """Test getting a non-existent profile."""
         fake_id = "00000000-0000-0000-0000-000000000000"
-        response = await client.get(f"/v1/profile/{fake_id}")
+        response = await client.get(f"/profile/{fake_id}")
         assert response.status_code == 404
 
     @pytest.mark.asyncio
@@ -135,7 +135,7 @@ class TestProfileEndpoints:
         """Test getting a profile by email."""
         # Create profile first
         await client.post(
-            "/v1/profile",
+            "/profile",
             json={
                 "username": "emailuser",
                 "email": "findbyme@example.com",
@@ -143,7 +143,7 @@ class TestProfileEndpoints:
         )
 
         # Get profile by email
-        response = await client.get("/v1/profile/email/findbyme@example.com")
+        response = await client.get("/profile/email/findbyme@example.com")
         assert response.status_code == 200
         data = response.json()
         assert data["profile"]["email"] == "findbyme@example.com"
@@ -153,7 +153,7 @@ class TestProfileEndpoints:
         """Test getting a profile by username."""
         # Create profile first
         await client.post(
-            "/v1/profile",
+            "/profile",
             json={
                 "username": "findme",
                 "email": "findme@example.com",
@@ -161,7 +161,7 @@ class TestProfileEndpoints:
         )
 
         # Get profile by username
-        response = await client.get("/v1/profile/username/findme")
+        response = await client.get("/profile/username/findme")
         assert response.status_code == 200
         data = response.json()
         assert data["profile"]["username"] == "findme"
@@ -171,7 +171,7 @@ class TestProfileEndpoints:
         """Test updating a profile."""
         # Create profile first
         create_response = await client.post(
-            "/v1/profile",
+            "/profile",
             json={
                 "username": "updateme",
                 "email": "update@example.com",
@@ -181,7 +181,7 @@ class TestProfileEndpoints:
 
         # Update profile
         response = await client.put(
-            f"/v1/profile/{profile_id}",
+            f"/profile/{profile_id}",
             json={
                 "display_name": "Updated Name",
                 "dietary_preferences": ["vegan", "gluten-free"],
@@ -198,7 +198,7 @@ class TestProfileEndpoints:
         """Test updating username."""
         # Create profile first
         create_response = await client.post(
-            "/v1/profile",
+            "/profile",
             json={
                 "username": "oldname",
                 "email": "changename@example.com",
@@ -208,7 +208,7 @@ class TestProfileEndpoints:
 
         # Update username
         response = await client.put(
-            f"/v1/profile/{profile_id}",
+            f"/profile/{profile_id}",
             json={"username": "newname"},
         )
         assert response.status_code == 200
@@ -220,7 +220,7 @@ class TestProfileEndpoints:
         """Test updating a non-existent profile."""
         fake_id = "00000000-0000-0000-0000-000000000000"
         response = await client.put(
-            f"/v1/profile/{fake_id}",
+            f"/profile/{fake_id}",
             json={"display_name": "Test"},
         )
         assert response.status_code == 404
@@ -230,7 +230,7 @@ class TestProfileEndpoints:
         """Test updating with empty request body returns unchanged profile."""
         # Create profile first
         create_response = await client.post(
-            "/v1/profile",
+            "/profile",
             json={
                 "username": "nochanges",
                 "email": "nochanges@example.com",
@@ -240,7 +240,7 @@ class TestProfileEndpoints:
         profile_id = create_response.json()["profile"]["id"]
 
         # Update with empty body
-        response = await client.put(f"/v1/profile/{profile_id}", json={})
+        response = await client.put(f"/profile/{profile_id}", json={})
         assert response.status_code == 200
         data = response.json()
         assert data["profile"]["display_name"] == "Original Name"
@@ -250,7 +250,7 @@ class TestProfileEndpoints:
         """Test deleting a profile."""
         # Create profile first
         create_response = await client.post(
-            "/v1/profile",
+            "/profile",
             json={
                 "username": "deleteme",
                 "email": "delete@example.com",
@@ -259,28 +259,28 @@ class TestProfileEndpoints:
         profile_id = create_response.json()["profile"]["id"]
 
         # Delete profile
-        response = await client.delete(f"/v1/profile/{profile_id}")
+        response = await client.delete(f"/profile/{profile_id}")
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
         assert data["deleted_id"] == profile_id
 
         # Verify profile is gone
-        get_response = await client.get(f"/v1/profile/{profile_id}")
+        get_response = await client.get(f"/profile/{profile_id}")
         assert get_response.status_code == 404
 
     @pytest.mark.asyncio
     async def test_delete_profile_not_found(self, client: AsyncClient):
         """Test deleting a non-existent profile."""
         fake_id = "00000000-0000-0000-0000-000000000000"
-        response = await client.delete(f"/v1/profile/{fake_id}")
+        response = await client.delete(f"/profile/{fake_id}")
         assert response.status_code == 404
 
     @pytest.mark.asyncio
     async def test_profile_dietary_preferences_array(self, client: AsyncClient):
         """Test that dietary preferences are properly stored as an array."""
         response = await client.post(
-            "/v1/profile",
+            "/profile",
             json={
                 "username": "foodie",
                 "email": "foodie@example.com",

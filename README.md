@@ -6,15 +6,16 @@ AI-first agentic workflow service for pantry and recipe management. This service
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        Mobile App (Future)                       │
-│                     (Expo/React Native UI)                       │
+│                     Web Frontend (React + TS)                    │
+│                     http://localhost:5173                        │
 └─────────────────────────┬───────────────────────────────────────┘
                           │ HTTP/REST
 ┌─────────────────────────▼───────────────────────────────────────┐
 │                     BubblyChef Service                           │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │                    FastAPI Endpoints                      │   │
-│  │  /health  /v1/ingest/*  /v1/pantry  /v1/recipes  /v1/apply│   │
+│  │  /health  /ingest/*  /pantry  /chat  /scan  /recipes     │   │
+│  │  /apply  /profile  /workflows/*                          │   │
 │  └──────────────────────────┬───────────────────────────────┘   │
 │                             │                                    │
 │  ┌──────────────────────────▼───────────────────────────────┐   │
@@ -31,9 +32,10 @@ AI-first agentic workflow service for pantry and recipe management. This service
 ┌─────────────────────────▼───────────────────────────────────────┐
 │                    External Services                             │
 │  ┌────────────────┐  ┌────────────────┐  ┌──────────────────┐   │
-│  │ Ollama (Local) │  │ SQLite (Local) │  │ OpenFoodFacts    │   │
-│  │ LLM Runtime    │  │ Data Store     │  │ (Stub for now)   │   │
-│  └────────────────┘  └────────────────┘  └──────────────────┘   │
+│  │Gemini (Default)│  │ SQLite (Local) │  │ OpenFoodFacts    │   │
+│  │  + Ollama      │  │ Data Store     │  │ (Stub for now)   │   │
+│  │  LLM Backends  │  └────────────────┘  └──────────────────┘   │
+│  └────────────────┘                                              │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -49,7 +51,15 @@ AI-first agentic workflow service for pantry and recipe management. This service
 
 ## Prerequisites
 
-### 1. Install Ollama
+### 1. Gemini API Key (Recommended — Free Tier)
+
+Get a free API key from [Google AI Studio](https://aistudio.google.com/) and set it in your `.env`:
+
+```bash
+BUBBLY_GEMINI_API_KEY=your-key-here
+```
+
+### 2. Install Ollama (Optional — Local Fallback)
 
 ```bash
 # macOS
@@ -90,39 +100,105 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
+### 4. Web Frontend (Optional)
+
+```bash
+# Requires Node.js 18+
+cd web && npm install
+```
+
 ## Running the Server
 
 ### Development Mode
 
 ```bash
-# From project root
-uvicorn bubbly_chef.api.app:app --reload --host 0.0.0.0 --port 8000
+# Backend (from project root)
+uvicorn bubbly_chef.api.app:app --reload --host 0.0.0.0 --port 8888
+
+# Frontend (in a separate terminal)
+cd web && npm run dev
+```
+
+Or use the helper scripts:
+
+```bash
+./scripts/start-backend.sh   # Backend on http://localhost:8888
+./scripts/start-frontend.sh  # Frontend on http://localhost:5173
 ```
 
 ### Production Mode
 
 ```bash
-uvicorn bubbly_chef.api.app:app --host 0.0.0.0 --port 8000 --workers 4
+uvicorn bubbly_chef.api.app:app --host 0.0.0.0 --port 8888 --workers 4
 ```
 
 ### Environment Variables
 
-Create a `.env` file or set environment variables:
+Copy the example file and fill in your API key:
 
 ```bash
-# .env
+cp .env.example .env
+```
+
+`.env.example` (full reference):
+
+```bash
+# BubblyChef Environment Configuration
+
+# =============================================================================
+# AI Providers (at least one required)
+# =============================================================================
+
+# Gemini (Recommended - Free Tier)
+# Get your key at: https://aistudio.google.com/
+BUBBLY_GEMINI_API_KEY=your-gemini-api-key-here
+
+# Ollama (Self-hosted - Optional)
+# Install: https://ollama.ai/
 BUBBLY_OLLAMA_BASE_URL=http://localhost:11434
 BUBBLY_OLLAMA_MODEL=llama3.2:3b
-BUBBLY_OLLAMA_TIMEOUT_SECONDS=60
+
+# =============================================================================
+# Application Settings
+# =============================================================================
+
+# Debug mode (set to true for verbose logging)
 BUBBLY_DEBUG=false
+
+# Database location
+BUBBLY_DATABASE_URL=sqlite+aiosqlite:///./bubbly_chef.db
+
+# CORS origins (frontend URLs)
+BUBBLY_CORS_ORIGINS=["http://localhost:5173", "http://localhost:3000"]
+
+# =============================================================================
+# Receipt Scanning
+# =============================================================================
+
+# Confidence thresholds
+BUBBLY_AUTO_ADD_CONFIDENCE_THRESHOLD=0.8
+BUBBLY_REVIEW_CONFIDENCE_THRESHOLD=0.5
+
+# =============================================================================
+# Logging
+# =============================================================================
+
+# Optional log file path (leave empty to log to console only)
+# BUBBLY_LOG_FILE=./logs/bubbly_chef.log
+
+# Enable request/response logging (default: true)
+BUBBLY_LOG_REQUESTS=true
 ```
 
 ## API Endpoints
 
+Base URL: `http://localhost:8888`  
+Interactive docs: `http://localhost:8888/docs`
+
 ### Health Check
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8888/health
 ```
 
 Response:
@@ -138,7 +214,7 @@ Response:
 
 ### Chat API (Main Conversational Interface)
 
-The `/v1/chat` endpoint is the primary conversational interface. It handles:
+The `/chat` endpoint is the primary conversational interface. It handles:
 
 - **Pantry updates**: "I bought milk and eggs"
 - **Receipt scan requests**: "I want to scan a receipt"
@@ -149,7 +225,7 @@ The `/v1/chat` endpoint is the primary conversational interface. It handles:
 #### Basic Usage
 
 ```bash
-curl -X POST http://localhost:8000/v1/chat \
+curl -X POST http://localhost:8888/chat \
   -H "Content-Type: application/json" \
   -d '{
     "message": "I bought 2 gallons of milk and a dozen eggs"
@@ -198,7 +274,7 @@ Response for pantry update:
 #### Receipt Scan Request
 
 ```bash
-curl -X POST http://localhost:8000/v1/chat \
+curl -X POST http://localhost:8888/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "I want to scan a receipt"}'
 ```
@@ -221,7 +297,7 @@ Response (handoff):
 #### General Chat
 
 ```bash
-curl -X POST http://localhost:8000/v1/chat \
+curl -X POST http://localhost:8888/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "How long does cheese last in the fridge?"}'
 ```
@@ -257,7 +333,7 @@ When a workflow requires human review, you can resume it:
 
 ```bash
 # Approve a proposal
-curl -X POST http://localhost:8000/v1/workflows/{workflow_id}/events \
+curl -X POST http://localhost:8888/workflows/{workflow_id}/events \
   -H "Content-Type: application/json" \
   -d '{
     "event_type": "submit_review",
@@ -265,7 +341,7 @@ curl -X POST http://localhost:8000/v1/workflows/{workflow_id}/events \
   }'
 
 # Approve with edits
-curl -X POST http://localhost:8000/v1/workflows/{workflow_id}/events \
+curl -X POST http://localhost:8888/workflows/{workflow_id}/events \
   -H "Content-Type: application/json" \
   -d '{
     "event_type": "submit_review",
@@ -274,7 +350,7 @@ curl -X POST http://localhost:8000/v1/workflows/{workflow_id}/events \
   }'
 
 # Reject
-curl -X POST http://localhost:8000/v1/workflows/{workflow_id}/events \
+curl -X POST http://localhost:8888/workflows/{workflow_id}/events \
   -H "Content-Type: application/json" \
   -d '{
     "event_type": "submit_review",
@@ -285,7 +361,7 @@ curl -X POST http://localhost:8000/v1/workflows/{workflow_id}/events \
 ### Chat Ingest (Legacy - Free-form text → Pantry Proposal)
 
 ```bash
-curl -X POST http://localhost:8000/v1/ingest/chat \
+curl -X POST http://localhost:8888/ingest/chat \
   -H "Content-Type: application/json" \
   -d '{
     "text": "I bought 2 gallons of milk, a dozen eggs, and 6 apples from the store"
@@ -331,7 +407,7 @@ Response:
 ### Receipt Ingest (OCR text → Pantry Proposal)
 
 ```bash
-curl -X POST http://localhost:8000/v1/ingest/receipt \
+curl -X POST http://localhost:8888/ingest/receipt \
   -H "Content-Type: application/json" \
   -d '{
     "ocr_text": "WHOLE FOODS MARKET\n2% MILK 1GAL  $4.99\nORGANIC EGGS DZ  $6.49\nBANANAS  $1.29\nTOTAL  $12.77",
@@ -344,7 +420,7 @@ curl -X POST http://localhost:8000/v1/ingest/receipt \
 
 ```bash
 # By barcode (uses OpenFoodFacts stub)
-curl -X POST http://localhost:8000/v1/ingest/product \
+curl -X POST http://localhost:8888/ingest/product \
   -H "Content-Type: application/json" \
   -d '{
     "barcode": "0012000001086",
@@ -353,7 +429,7 @@ curl -X POST http://localhost:8000/v1/ingest/product \
   }'
 
 # By description
-curl -X POST http://localhost:8000/v1/ingest/product \
+curl -X POST http://localhost:8888/ingest/product \
   -H "Content-Type: application/json" \
   -d '{
     "description": "Organic Greek Yogurt, Vanilla, 32oz",
@@ -362,11 +438,54 @@ curl -X POST http://localhost:8000/v1/ingest/product \
   }'
 ```
 
-### Recipe Ingest (URL/Text → Recipe Card Proposal)
+### Recipe Generation
+
+```bash
+# Generate a recipe from a prompt
+curl -X POST http://localhost:8888/recipes/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Quick chicken stir-fry with what I have",
+    "constraints": {
+      "max_time_minutes": 30,
+      "use_expiring": true
+    }
+  }'
+```
+
+Response:
+
+```json
+{
+  "recipe": {
+    "title": "Honey Garlic Chicken Stir-Fry",
+    "description": "A quick and delicious stir-fry...",
+    "prep_time_minutes": 10,
+    "cook_time_minutes": 15,
+    "servings": 4,
+    "ingredients": [...],
+    "instructions": [...]
+  },
+  "ingredients_status": [
+    { "ingredient_name": "chicken breast", "status": "have" },
+    { "ingredient_name": "soy sauce", "status": "missing" }
+  ],
+  "missing_count": 1,
+  "have_count": 5,
+  "pantry_match_score": 0.83
+}
+```
+
+```bash
+# Get recipe suggestions based on pantry
+curl http://localhost:8888/recipes/suggestions
+```
+
+### Recipe Ingest (Text/Transcript → Recipe Card Proposal)
 
 ```bash
 # From text/transcript
-curl -X POST http://localhost:8000/v1/recipes/ingest \
+curl -X POST http://localhost:8888/ingest/recipe \
   -H "Content-Type: application/json" \
   -d '{
     "text": "Classic Chocolate Chip Cookies\n\nIngredients:\n- 2 1/4 cups flour\n- 1 cup butter\n- 3/4 cup sugar\n- 2 eggs\n- 1 tsp vanilla\n- 2 cups chocolate chips\n\nInstructions:\n1. Cream butter and sugar\n2. Add eggs and vanilla\n3. Mix in flour\n4. Fold in chocolate chips\n5. Bake at 375°F for 9-11 minutes",
@@ -379,7 +498,7 @@ curl -X POST http://localhost:8000/v1/recipes/ingest \
 After the UI presents a proposal to the user and they approve it:
 
 ```bash
-curl -X POST http://localhost:8000/v1/apply \
+curl -X POST http://localhost:8888/apply \
   -H "Content-Type: application/json" \
   -d '{
     "request_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -416,32 +535,56 @@ Response:
 }
 ```
 
+### Receipt Scanning
+
+```bash
+# Check OCR availability
+curl http://localhost:8888/scan/ocr-status
+
+# Scan a receipt image (returns items for review)
+curl -X POST http://localhost:8888/scan/receipt \
+  -F "image=@receipt.jpg"
+
+# Optionally preprocess the image first for better OCR accuracy
+curl -X POST http://localhost:8888/scan/preprocess \
+  -F "image=@receipt.jpg" \
+  -F "mode=auto"
+
+# Confirm reviewed items (writes to database)
+curl -X POST http://localhost:8888/scan/confirm \
+  -H "Content-Type: application/json" \
+  -d '{"request_id": "...", "items": [...]}'
+
+# Undo a scan session
+curl -X POST http://localhost:8888/scan/undo/{request_id}
+```
+
 ### List Pantry
 
 ```bash
 # All items
-curl http://localhost:8000/v1/pantry
+curl http://localhost:8888/pantry
 
 # Filter by category
-curl "http://localhost:8000/v1/pantry?category=dairy"
+curl "http://localhost:8888/pantry?category=dairy"
 
 # Filter by storage
-curl "http://localhost:8000/v1/pantry?storage=fridge"
+curl "http://localhost:8888/pantry?storage=fridge"
 
 # Search by name
-curl "http://localhost:8000/v1/pantry?search=milk"
+curl "http://localhost:8888/pantry?search=milk"
 ```
 
 ### Get Single Pantry Item
 
 ```bash
-curl http://localhost:8000/v1/pantry/{item_id}
+curl http://localhost:8888/pantry/{item_id}
 ```
 
 ### Delete Pantry Item
 
 ```bash
-curl -X DELETE http://localhost:8000/v1/pantry/{item_id}
+curl -X DELETE http://localhost:8888/pantry/{item_id}
 ```
 
 ## Running Tests
@@ -467,37 +610,61 @@ bubbly_chef/
 ├── __init__.py
 ├── config.py                 # Settings and configuration
 ├── api/
-│   ├── __init__.py
 │   ├── app.py               # FastAPI application factory
+│   ├── deps.py              # Dependency injection
+│   ├── middleware.py        # Logging middleware
 │   └── routes/
-│       ├── __init__.py
 │       ├── health.py        # Health check endpoint
-│       ├── ingest.py        # AI ingest endpoints
-│       ├── pantry.py        # Pantry CRUD endpoints
-│       └── apply.py         # Apply proposals endpoint
+│       ├── chat.py          # Chat conversational interface
+│       ├── ingest.py        # AI ingest endpoints (chat/receipt/product/recipe)
+│       ├── pantry.py        # Pantry query endpoints
+│       ├── scan.py          # Receipt scanning (OCR + AI parsing)
+│       ├── recipes.py       # Recipe generation endpoints
+│       ├── apply.py         # Apply proposals endpoint
+│       └── profile.py       # User profile endpoints
+├── ai/
+│   ├── gemini.py            # Gemini API provider
+│   ├── ollama.py            # Ollama local provider
+│   ├── manager.py           # AI provider manager with fallback
+│   └── provider.py          # AIProvider protocol
 ├── models/
-│   ├── __init__.py
 │   ├── base.py              # ProposalEnvelope, base types
 │   ├── pantry.py            # PantryItem, PantryProposal
 │   ├── recipe.py            # RecipeCard, RecipeCardProposal
+│   ├── user.py              # UserProfile models
 │   └── requests.py          # Request/response models
+├── services/
+│   ├── ocr.py               # Tesseract OCR wrapper
+│   ├── receipt_parser.py    # AI-powered receipt parsing
+│   ├── recipe_generator.py  # AI recipe generation
+│   └── image_preprocessor.py # Image preprocessing for OCR
 ├── tools/
-│   ├── __init__.py
 │   ├── llm_client.py        # Ollama client with circuit breaker
 │   ├── normalizer.py        # Food name normalization
 │   ├── expiry.py            # Expiry date heuristics
 │   └── product_lookup.py    # OpenFoodFacts stub
+├── domain/
+│   ├── normalizer.py        # Food name normalization + categorization
+│   ├── expiry.py            # Expiry estimation
+│   └── defaults.py          # Smart quantity/unit defaults
 ├── repository/
-│   ├── __init__.py
 │   ├── base.py              # Repository interface
 │   └── sqlite.py            # SQLite implementation
 └── workflows/
-    ├── __init__.py
-    ├── state.py             # Shared workflow state
-    ├── chat_ingest.py       # Chat → Pantry workflow
-    ├── receipt_ingest.py    # Receipt → Pantry workflow
-    ├── product_ingest.py    # Product → Pantry workflow
-    └── recipe_ingest.py     # Recipe → RecipeCard workflow
+  ├── state.py             # Shared workflow state
+  ├── chat_ingest.py       # Chat → Pantry workflow
+  ├── receipt_ingest.py    # Receipt → Pantry workflow
+  ├── product_ingest.py    # Product → Pantry workflow
+  └── recipe_ingest.py     # Recipe → RecipeCard workflow
+
+web/                          # React + TypeScript frontend
+├── src/
+│   ├── api/client.ts        # API client + React Query hooks
+│   ├── pages/               # Dashboard, Pantry, Scan, Recipes, Profile
+│   ├── components/          # Reusable UI components
+│   └── types/index.ts       # Shared TypeScript types
+├── package.json
+└── vite.config.ts
 ```
 
 ## Workflow Details
@@ -519,7 +686,7 @@ Only the first node calls the LLM. All other nodes use deterministic logic.
 1. User speaks/types: "I bought milk and eggs"
            │
            ▼
-2. POST /v1/ingest/chat
+2. POST /ingest/chat
            │
            ▼
 3. LangGraph workflow generates ProposalEnvelope
@@ -532,7 +699,7 @@ Only the first node calls the LLM. All other nodes use deterministic logic.
    - User approves
            │
            ▼
-5. POST /v1/apply with approved proposal
+5. POST /apply with approved proposal
            │
            ▼
 6. Items added to pantry database
@@ -549,20 +716,20 @@ The app now supports user profiles with dietary preferences management:
 
 - **Profile Management**: Create, read, update, and delete user profiles
 - **Dietary Preferences**: Track dietary restrictions (vegetarian, vegan, gluten-free, etc.)
-- **API Integration**: RESTful endpoints at `/v1/profile/*`
+- **API Integration**: RESTful endpoints at `/profile/*`
 - **UI Component**: Profile page accessible via bottom navigation
 
 ### Profile Endpoints
 
 ```bash
 # Get profile by ID
-GET /v1/profile/:id
+GET /profile/:id
 
 # Get profile by email
-GET /v1/profile/email/:email
+GET /profile/email/:email
 
 # Create new profile
-POST /v1/profile
+POST /profile
 {
   "username": "foodlover",
   "email": "food@example.com",
@@ -570,26 +737,27 @@ POST /v1/profile
 }
 
 # Update profile
-PUT /v1/profile/:id
+PUT /profile/:id
 {
   "dietary_preferences": ["vegan", "gluten-free"]
 }
 
 # Delete profile
-DELETE /v1/profile/:id
+DELETE /profile/:id
 ```
 
 See `CLAUDE.md` for full API documentation and integration details.
 
 ## Future Enhancements
 
-- [ ] Real OCR integration (Tesseract/cloud OCR)
-- [ ] Real OpenFoodFacts API integration
+- [ ] Real OpenFoodFacts API integration (barcode scanning)
 - [ ] Recipe URL scraping with structured data extraction
+- [ ] Video recipe ingestion (TikTok, Instagram Reels, YouTube Shorts)
 - [ ] Pantry expiry notifications
 - [ ] Shopping list generation from recipes
+- [ ] Unit conversion system (e.g. dozen eggs → individual eggs)
 - [ ] Meal planning suggestions
-- [ ] Voice interface integration
+- [ ] Mobile app (React Native / Expo)
 
 ## License
 

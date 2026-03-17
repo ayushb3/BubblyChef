@@ -105,7 +105,7 @@ class TestScanEndpoints:
     @pytest.mark.asyncio
     async def test_ocr_status_endpoint(self, client: AsyncClient):
         """Test OCR status endpoint."""
-        response = await client.get("/api/scan/ocr-status")
+        response = await client.get("/scan/ocr-status")
         assert response.status_code == 200
         data = response.json()
         assert "available" in data
@@ -114,7 +114,7 @@ class TestScanEndpoints:
     async def test_scan_receipt_invalid_content_type(self, client: AsyncClient):
         """Test that non-image files are rejected."""
         response = await client.post(
-            "/api/scan/receipt",
+            "/scan/receipt",
             files={"image": ("test.txt", b"not an image", "text/plain")},
         )
         assert response.status_code == 400
@@ -124,7 +124,7 @@ class TestScanEndpoints:
     async def test_scan_receipt_empty_file(self, client: AsyncClient):
         """Test that empty files are rejected."""
         response = await client.post(
-            "/api/scan/receipt",
+            "/scan/receipt",
             files={"image": ("test.png", b"", "image/png")},
         )
         assert response.status_code == 400
@@ -134,7 +134,7 @@ class TestScanEndpoints:
     async def test_confirm_items(self, client: AsyncClient):
         """Test confirming reviewed items."""
         response = await client.post(
-            "/api/scan/confirm",
+            "/scan/confirm",
             json={
                 "request_id": "test-123",
                 "items": [
@@ -157,5 +157,5 @@ class TestScanEndpoints:
     @pytest.mark.asyncio
     async def test_undo_nonexistent_session(self, client: AsyncClient):
         """Test undoing a non-existent scan session."""
-        response = await client.post("/api/scan/undo/nonexistent-id")
+        response = await client.post("/scan/undo/nonexistent-id")
         assert response.status_code == 404
