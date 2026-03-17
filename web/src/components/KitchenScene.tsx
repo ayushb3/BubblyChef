@@ -12,7 +12,10 @@ interface KitchenSceneProps {
 
 const TWEEN_DURATION = 300; // ms
 const ZOOM_SCALE = 2.5;
+const MAX_ZONE_ITEMS = 56; // 7 rows x 8 cols within 520px canvas height
+const COUNTER_MAX_COLS = 8;
 
+// Shared immutable TextStyle singletons — do not mutate
 const LABEL_STYLE = new TextStyle({
   fontFamily: 'Nunito, sans-serif',
   fontSize: 10,
@@ -37,6 +40,19 @@ const EMPTY_STYLE = new TextStyle({
   align: 'center',
 });
 
+const QTY_STYLE = new TextStyle({
+  fontFamily: 'Nunito, sans-serif',
+  fontSize: 9,
+  fill: 0x888888,
+});
+
+const OVERFLOW_STYLE = new TextStyle({
+  fontFamily: 'Nunito, sans-serif',
+  fontSize: 11,
+  fill: 0x999999,
+  fontStyle: 'italic',
+});
+
 const ZONE_LABELS: Record<Location, string> = {
   fridge: 'Fridge',
   freezer: 'Freezer',
@@ -45,10 +61,10 @@ const ZONE_LABELS: Record<Location, string> = {
 };
 
 const ZONE_EMOJIS: Record<Location, string> = {
-  fridge: '🧊',
-  freezer: '❄️',
-  pantry: '🏠',
-  counter: '🍎',
+  fridge: '\u{1F9CA}',
+  freezer: '\u2744\uFE0F',
+  pantry: '\u{1F3E0}',
+  counter: '\u{1F34E}',
 };
 
 function easeOutCubic(t: number): number {
@@ -86,10 +102,12 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
   const onItemClickRef = useRef(onItemClick);
   onItemClickRef.current = onItemClick;
 
+  // Refs for stable access in PixiJS event handlers (avoids stale closures)
+  const zoomInRef = useRef<(app: Application, zone: ApplianceZone) => void>();
   const zoomOutRef = useRef<(app: Application) => void>();
 
   const buildZoneView = useCallback(
-    (app: Application, zone: ApplianceZone, zoneContainer: Container) => {
+    (_app: Application, zone: ApplianceZone, zoneContainer: Container) => {
       zoneContainer.removeChildren();
 
       const zoneItems = itemsRef.current.filter((i) => i.location === zone.location);
@@ -113,7 +131,7 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
       backBtn.eventMode = 'static';
       backBtn.cursor = 'pointer';
       backBtn.on('pointerdown', () => {
-        zoomOutRef.current?.(app);
+        if (appRef.current) zoomOutRef.current?.(appRef.current);
       });
       zoneContainer.addChild(backBtn);
 
@@ -131,14 +149,18 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
           text: `No items in ${ZONE_LABELS[zone.location].toLowerCase()} yet`,
           style: EMPTY_STYLE,
         });
-        emptyText.x = 400 - emptyText.width / 2;
+        // Use anchor for reliable centering (avoids pre-render .width = 0 issue)
+        emptyText.anchor.set(0.5, 0);
+        emptyText.x = 400;
         emptyText.y = 240;
         zoneContainer.addChild(emptyText);
         return;
       }
 
-      // Grid of item sprites
-      const cols = Math.min(zoneItems.length, 8);
+      // Grid of item sprites — cap to avoid canvas overflow
+      const visibleItems = zoneItems.slice(0, MAX_ZONE_ITEMS);
+      const overflow = zoneItems.length - visibleItems.length;
+      const cols = Math.min(visibleItems.length, 8);
       const spriteSize = 16;
       const cellW = 80;
       const cellH = 60;
@@ -146,7 +168,7 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
       const startX = Math.max(40, (800 - gridW) / 2);
       const startY = 70;
 
-      zoneItems.forEach((item, idx) => {
+      visibleItems.forEach((item, idx) => {
         const col = idx % cols;
         const row = Math.floor(idx / cols);
         const cx = startX + col * cellW;
@@ -165,12 +187,13 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
         dotG.circle(cx + (cellW + spriteSize) / 2 + 4, cy + 2, 3).fill(dotColor);
         itemContainer.addChild(dotG);
 
-        // Name label
+        // Name label — use anchor for centering (avoids pre-render .width = 0)
         const label = new Text({
           text: item.name.length > 12 ? item.name.slice(0, 11) + '\u2026' : item.name,
           style: LABEL_STYLE,
         });
-        label.x = cx + (cellW - label.width) / 2;
+        label.anchor.set(0.5, 0);
+        label.x = cx + cellW / 2;
         label.y = cy + spriteSize + 4;
         itemContainer.addChild(label);
 
@@ -178,13 +201,10 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
         if (item.quantity > 1) {
           const qtyText = new Text({
             text: `\u00d7${item.quantity}`,
-            style: new TextStyle({
-              fontFamily: 'Nunito, sans-serif',
-              fontSize: 9,
-              fill: 0x888888,
-            }),
+            style: QTY_STYLE,
           });
-          qtyText.x = cx + (cellW - qtyText.width) / 2;
+          qtyText.anchor.set(0.5, 0);
+          qtyText.x = cx + cellW / 2;
           qtyText.y = cy + spriteSize + 16;
           itemContainer.addChild(qtyText);
         }
@@ -208,6 +228,18 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
 
         zoneContainer.addChild(itemContainer);
       });
+
+      // Overflow indicator
+      if (overflow > 0) {
+        const moreText = new Text({
+          text: `+${overflow} more items`,
+          style: OVERFLOW_STYLE,
+        });
+        moreText.anchor.set(0.5, 0);
+        moreText.x = 400;
+        moreText.y = 490;
+        zoneContainer.addChild(moreText);
+      }
     },
     [],
   );
@@ -216,17 +248,16 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
     (app: Application, zone: ApplianceZone) => {
       const state = stateRef.current;
       if (state.tweening || state.zoomedZone) return;
+      if (!state.roomContainer || !state.zoneContainer) return;
 
       state.tweening = true;
       state.zoomedZone = zone.location;
 
       // Build zone detail view
-      if (state.zoneContainer) {
-        buildZoneView(app, zone, state.zoneContainer);
-      }
+      buildZoneView(app, zone, state.zoneContainer);
 
-      const room = state.roomContainer!;
-      const zoneC = state.zoneContainer!;
+      const room = state.roomContainer;
+      const zoneC = state.zoneContainer;
 
       // Calculate pivot to center on the clicked zone
       const pivotX = zone.x + zone.width / 2;
@@ -239,11 +270,12 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
       const startPosY = room.y;
 
       // Mobile uses 0.6 base scale; zoom relative to that
-      const targetScale = ZOOM_SCALE * (state.isMobile ? 0.6 : 1);
+      const mobileF = state.isMobile ? 0.6 : 1;
+      const targetScale = ZOOM_SCALE * mobileF;
       const targetPivotX = pivotX;
       const targetPivotY = pivotY;
-      const targetPosX = 400 * (state.isMobile ? 0.6 : 1);
-      const targetPosY = 260 * (state.isMobile ? 0.6 : 1);
+      const targetPosX = 400 * mobileF;
+      const targetPosY = 260 * mobileF;
 
       const startTime = performance.now();
 
@@ -277,11 +309,12 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
   const zoomOut = useCallback((app: Application) => {
     const state = stateRef.current;
     if (state.tweening || !state.zoomedZone) return;
+    if (!state.roomContainer || !state.zoneContainer) return;
 
     state.tweening = true;
 
-    const room = state.roomContainer!;
-    const zoneC = state.zoneContainer!;
+    const room = state.roomContainer;
+    const zoneC = state.zoneContainer;
 
     room.visible = true;
     room.alpha = 0;
@@ -327,7 +360,8 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
     app.ticker.add(tickerFn);
   }, []);
 
-  // Keep zoomOutRef current so buildZoneView's back button always works
+  // Keep refs current so PixiJS event handlers always call latest version
+  zoomInRef.current = zoomIn;
   zoomOutRef.current = zoomOut;
 
   // Init PixiJS app once on mount
@@ -341,24 +375,32 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
     const ch = Math.round(520 * scale);
 
     const app = new Application();
+    // Assign immediately so cleanup can always reach it
+    appRef.current = app;
     let destroyed = false;
 
     (async () => {
-      await app.init({
-        width: cw,
-        height: ch,
-        antialias: false,
-        resolution: 2,
-        autoDensity: true,
-        background: COLORS.wall,
-      });
-
-      if (destroyed) {
-        app.destroy(true);
+      try {
+        await app.init({
+          width: cw,
+          height: ch,
+          antialias: false,
+          resolution: 2,
+          autoDensity: true,
+          background: COLORS.wall,
+        });
+      } catch {
+        // WebGL unavailable or canvas creation blocked — fail gracefully
+        appRef.current = null;
         return;
       }
 
-      appRef.current = app;
+      if (destroyed) {
+        app.destroy(true);
+        appRef.current = null;
+        return;
+      }
+
       el.appendChild(app.canvas);
 
       app.canvas.style.width = '100%';
@@ -376,7 +418,7 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
       zoneContainer.visible = false;
       app.stage.addChild(zoneContainer);
 
-      // Container for counter item sprites (rebuilt when items change)
+      // Container for counter item sprites
       const counterSprites = new Container();
       roomContainer.addChild(counterSprites);
 
@@ -402,7 +444,7 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
       const { zones } = drawKitchenRoom(roomContainer, counts, isMobile);
       state.zones = zones;
 
-      // Make each appliance interactive
+      // Make each appliance interactive — use refs for stable callbacks
       for (const zone of zones) {
         zone.container.eventMode = 'static';
         zone.container.cursor = 'pointer';
@@ -415,7 +457,7 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
         });
 
         zone.container.on('pointerdown', () => {
-          zoomIn(app, zone);
+          if (appRef.current) zoomInRef.current?.(appRef.current, zone);
         });
       }
 
@@ -429,8 +471,8 @@ export default function KitchenScene({ items, onItemClick }: KitchenSceneProps) 
 
         counterItems.slice(0, 15).forEach((item, idx) => {
           const spriteContainer = new Container();
-          spriteContainer.x = startX + (idx % 15) * spacing;
-          spriteContainer.y = startY + Math.floor(idx / 15) * 24;
+          spriteContainer.x = startX + (idx % COUNTER_MAX_COLS) * spacing;
+          spriteContainer.y = startY + Math.floor(idx / COUNTER_MAX_COLS) * 24;
           spriteContainer.scale.set(0.8);
 
           const g = new Graphics();

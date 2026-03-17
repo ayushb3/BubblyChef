@@ -148,16 +148,17 @@ function drawCounter(container: Container, x: number, y: number, width: number):
 
 function addBadge(container: Container, x: number, y: number, count: number): void {
   const bg = new Graphics();
-  const text = new Text({ text: String(count), style: BADGE_STYLE });
-  const pad = 4;
-  const bw = Math.max(text.width + pad * 2, 20);
+  const bw = 20;
   const bh = 18;
 
   bg.roundRect(x, y, bw, bh, 9).fill(0xff9aa2);
   bg.roundRect(x, y, bw, bh, 9).stroke({ width: 1, color: 0xffffff, alpha: 0.8 });
 
-  text.x = x + (bw - text.width) / 2;
-  text.y = y + (bh - text.height) / 2;
+  // Use anchor for reliable centering (avoids pre-render .width = 0)
+  const text = new Text({ text: String(count), style: BADGE_STYLE });
+  text.anchor.set(0.5, 0.5);
+  text.x = x + bw / 2;
+  text.y = y + bh / 2;
 
   container.addChild(bg);
   container.addChild(text);
