@@ -91,8 +91,6 @@ NON_FOOD_KEYWORDS = {
     "cash",
     "credit",
     "debit",
-    "bag",
-    "bags",
     "coupon",
     "discount",
     "savings",
@@ -117,6 +115,10 @@ NON_FOOD_KEYWORDS = {
     "refund",
 }
 
+# Words that are only non-food when they appear alone or as a short descriptor
+# e.g. "BAG", "PLASTIC BAG" → non-food; "Organic Spinach Bag" → food
+NON_FOOD_STANDALONE = {"bag", "bags"}
+
 
 def is_likely_food(name: str) -> bool:
     """Check if item name is likely a food item."""
@@ -124,6 +126,11 @@ def is_likely_food(name: str) -> bool:
     for keyword in NON_FOOD_KEYWORDS:
         if keyword in name_lower:
             return False
+    # "bag/bags" are non-food when the whole name is just a bag descriptor
+    # (1-2 words ending in bag/bags, no actual food context)
+    words = name_lower.split()
+    if words and words[-1] in NON_FOOD_STANDALONE and len(words) <= 2:
+        return False
     # Must have at least 2 characters
     return len(name.strip()) >= 2
 
@@ -198,12 +205,8 @@ async def parse_receipt(
         # Estimate expiry
         expiry_days = estimate_expiry_days(name_normalized, category.value, location.value)
 
-        # Adjust confidence based on various factors
+        # Use AI confidence directly - it already reflects food item certainty
         confidence = ai_confidence
-
-        # Penalize if category couldn't be detected
-        if category == FoodCategory.OTHER:
-            confidence -= 0.1
 
         # Get quantity and unit from AI or use smart defaults
         quantity = item_data.get("quantity")
@@ -216,8 +219,6 @@ async def parse_receipt(
             )
             quantity = quantity if quantity is not None else default_qty
             unit = unit if unit is not None else default_unit
-            # Small confidence penalty for missing quantity (but we filled it in)
-            confidence -= 0.05
 
         # Clamp confidence
         confidence = max(0.0, min(1.0, confidence))

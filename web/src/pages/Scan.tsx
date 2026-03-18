@@ -1,12 +1,12 @@
 import { useState, useRef } from 'react';
-import { Camera, Upload, CheckCircle, AlertCircle, X, Loader2 } from 'lucide-react';
+import { Camera, Upload, CheckCircle, AlertCircle, X, Loader2, RotateCcw } from 'lucide-react';
 import {
   useUploadReceipt,
   useConfirmScanItems,
   useOcrStatus,
 } from '../api/client';
 
-type ScanState = 'upload' | 'processing' | 'results';
+type ScanState = 'upload' | 'processing' | 'results' | 'success';
 
 interface ScannedItem {
   id: string;
@@ -23,10 +23,13 @@ export function Scan() {
   const [readyToAddItems, setReadyToAddItems] = useState<ScannedItem[]>([]);
   const [needsReviewItems, setNeedsReviewItems] = useState<ScannedItem[]>([]);
   const [skippedItems, setSkippedItems] = useState<ScannedItem[]>([]);
+  const [dismissedItems, setDismissedItems] = useState<ScannedItem[]>([]);
   const [failedItems, setFailedItems] = useState<string[]>([]);
   const [requestId, setRequestId] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [addedCount, setAddedCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const needsReviewRefs = useRef<Map<string, { name: HTMLInputElement | null; quantity: HTMLInputElement | null; unit: HTMLInputElement | null }>>(new Map());
   const readyToAddRefs = useRef<Map<string, { name: HTMLInputElement | null; quantity: HTMLInputElement | null; unit: HTMLInputElement | null }>>(new Map());
@@ -36,75 +39,72 @@ export function Scan() {
   const confirmMutation = useConfirmScanItems();
   const { data: ocrStatus } = useOcrStatus();
 
+  const processFile = async (file: File) => {
+    setErrorMessage(null);
+    setWarnings([]);
+
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    setScanState('processing');
+
+    try {
+      const result = await uploadMutation.mutateAsync(file);
+
+      setRequestId(result.request_id);
+
+      setReadyToAddItems(
+        result.ready_to_add.map(item => ({
+          id: item.temp_id,
+          name: item.name,
+          quantity: item.quantity || 1,
+          unit: item.unit || 'item',
+          confidence: 'high' as const,
+          rawText: item.raw_text,
+        }))
+      );
+
+      setNeedsReviewItems(
+        result.needs_review.map(item => ({
+          id: item.temp_id,
+          name: item.name,
+          quantity: item.quantity || 1,
+          unit: item.unit || 'item',
+          confidence: getConfidenceLevel(item.confidence),
+          rawText: item.raw_text,
+        }))
+      );
+
+      setSkippedItems(
+        result.skipped.map(item => ({
+          id: item.temp_id,
+          name: item.name,
+          quantity: item.quantity || 1,
+          unit: item.unit || 'item',
+          confidence: getConfidenceLevel(item.confidence),
+          rawText: item.raw_text,
+        }))
+      );
+
+      if (result.warnings.length > 0) {
+        setWarnings(result.warnings);
+      }
+
+      setScanState('results');
+    } catch (error) {
+      console.error('Failed to process receipt:', error);
+      setScanState('upload');
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Failed to process receipt. Please try again.'
+      );
+    }
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type.startsWith('image/')) {
-      // Reset state
-      setErrorMessage(null);
-      setWarnings([]);
-
-      const url = URL.createObjectURL(file);
-      setPreviewUrl(url);
-
-      // Start processing
-      setScanState('processing');
-
-      try {
-        const result = await uploadMutation.mutateAsync(file);
-
-        // Store request ID for confirming items
-        setRequestId(result.request_id);
-
-        // Map ready-to-add items (high confidence, not in DB yet)
-        setReadyToAddItems(
-          result.ready_to_add.map(item => ({
-            id: item.temp_id,
-            name: item.name,
-            quantity: item.quantity || 1,
-            unit: item.unit || 'item',
-            confidence: 'high' as const,
-            rawText: item.raw_text,
-          }))
-        );
-
-        // Map needs-review items
-        setNeedsReviewItems(
-          result.needs_review.map(item => ({
-            id: item.temp_id,
-            name: item.name,
-            quantity: item.quantity || 1,
-            unit: item.unit || 'item',
-            confidence: getConfidenceLevel(item.confidence),
-            rawText: item.raw_text,
-          }))
-        );
-
-        // Map skipped items
-        setSkippedItems(
-          result.skipped.map(item => ({
-            id: item.temp_id,
-            name: item.name,
-            quantity: item.quantity || 1,
-            unit: item.unit || 'item',
-            confidence: getConfidenceLevel(item.confidence),
-            rawText: item.raw_text,
-          }))
-        );
-
-        if (result.warnings.length > 0) {
-          setWarnings(result.warnings);
-        }
-
-        setScanState('results');
-      } catch (error) {
-        console.error('Failed to process receipt:', error);
-        setScanState('upload');
-        setErrorMessage(
-          error instanceof Error
-            ? error.message
-            : 'Failed to process receipt. Please try again.'
-        );
-      }
+      await processFile(file);
     }
   };
 
@@ -118,69 +118,7 @@ export function Scan() {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
     if (file && file.type.startsWith('image/')) {
-      // Reset state
-      setErrorMessage(null);
-      setWarnings([]);
-
-      const url = URL.createObjectURL(file);
-      setPreviewUrl(url);
-
-      // Start processing
-      setScanState('processing');
-
-      try {
-        const result = await uploadMutation.mutateAsync(file);
-
-        setRequestId(result.request_id);
-
-        setReadyToAddItems(
-          result.ready_to_add.map(item => ({
-            id: item.temp_id,
-            name: item.name,
-            quantity: item.quantity || 1,
-            unit: item.unit || 'item',
-            confidence: 'high' as const,
-            rawText: item.raw_text,
-          }))
-        );
-
-        setNeedsReviewItems(
-          result.needs_review.map(item => ({
-            id: item.temp_id,
-            name: item.name,
-            quantity: item.quantity || 1,
-            unit: item.unit || 'item',
-            confidence: getConfidenceLevel(item.confidence),
-            rawText: item.raw_text,
-          }))
-        );
-
-        // Map skipped items
-        setSkippedItems(
-          result.skipped.map(item => ({
-            id: item.temp_id,
-            name: item.name,
-            quantity: item.quantity || 1,
-            unit: item.unit || 'item',
-            confidence: getConfidenceLevel(item.confidence),
-            rawText: item.raw_text,
-          }))
-        );
-
-        if (result.warnings.length > 0) {
-          setWarnings(result.warnings);
-        }
-
-        setScanState('results');
-      } catch (error) {
-        console.error('Failed to process receipt:', error);
-        setScanState('upload');
-        setErrorMessage(
-          error instanceof Error
-            ? error.message
-            : 'Failed to process receipt. Please try again.'
-        );
-      }
+      await processFile(file);
     }
   };
 
@@ -194,10 +132,13 @@ export function Scan() {
     setReadyToAddItems([]);
     setNeedsReviewItems([]);
     setSkippedItems([]);
+    setDismissedItems([]);
     setFailedItems([]);
     setRequestId(null);
     setWarnings([]);
     setErrorMessage(null);
+    setShowCancelConfirm(false);
+    setAddedCount(0);
     needsReviewRefs.current.clear();
     readyToAddRefs.current.clear();
     if (fileInputRef.current) {
@@ -205,9 +146,22 @@ export function Scan() {
     }
   };
 
-  const removeNeedsReviewItem = (id: string) => {
-    setNeedsReviewItems(items => items.filter(item => item.id !== id));
-    needsReviewRefs.current.delete(id);
+  // Dismiss an item (moves to dismissed instead of deleting)
+  const dismissItem = (item: ScannedItem, from: 'ready' | 'review') => {
+    if (from === 'ready') {
+      setReadyToAddItems(items => items.filter(i => i.id !== item.id));
+      readyToAddRefs.current.delete(item.id);
+    } else {
+      setNeedsReviewItems(items => items.filter(i => i.id !== item.id));
+      needsReviewRefs.current.delete(item.id);
+    }
+    setDismissedItems(prev => [...prev, item]);
+  };
+
+  // Restore a dismissed item back to needs-review
+  const restoreItem = (item: ScannedItem) => {
+    setDismissedItems(prev => prev.filter(i => i.id !== item.id));
+    setNeedsReviewItems(prev => [...prev, { ...item, confidence: item.confidence }]);
   };
 
   const moveToReview = (id: string) => {
@@ -218,11 +172,6 @@ export function Scan() {
     }
   };
 
-  const removeReadyToAddItem = (id: string) => {
-    setReadyToAddItems(items => items.filter(item => item.id !== id));
-    readyToAddRefs.current.delete(id);
-  };
-
   const addSelectedItems = async () => {
     if (!requestId) {
       handleReset();
@@ -230,10 +179,8 @@ export function Scan() {
     }
 
     try {
-      // Gather all items to add (both ready-to-add and needs-review)
       const allItemsToAdd = [];
 
-      // 1. Gather ready-to-add items with any edits
       for (const item of readyToAddItems) {
         const refs = readyToAddRefs.current.get(item.id);
         allItemsToAdd.push({
@@ -244,7 +191,6 @@ export function Scan() {
         });
       }
 
-      // 2. Gather needs-review items with any edits
       for (const item of needsReviewItems) {
         const refs = needsReviewRefs.current.get(item.id);
         allItemsToAdd.push({
@@ -255,7 +201,6 @@ export function Scan() {
         });
       }
 
-      // Add all items to pantry in one API call
       if (allItemsToAdd.length > 0) {
         const result = await confirmMutation.mutateAsync({
           requestId,
@@ -268,9 +213,18 @@ export function Scan() {
             `Added ${result.added.length} items, but ${result.failed.length} failed.`
           );
         }
+
+        setAddedCount(result.added.length);
       }
 
-      handleReset();
+      // Clear working state but show success screen
+      setReadyToAddItems([]);
+      setNeedsReviewItems([]);
+      setSkippedItems([]);
+      setDismissedItems([]);
+      needsReviewRefs.current.clear();
+      readyToAddRefs.current.clear();
+      setScanState('success');
     } catch (error) {
       console.error('Failed to save items:', error);
       setErrorMessage(
@@ -469,22 +423,94 @@ export function Scan() {
     );
   }
 
+  const totalToAdd = readyToAddItems.length + needsReviewItems.length;
+
+  // Success State
+  if (scanState === 'success') {
+    return (
+      <div className="p-4 pt-8 flex flex-col items-center justify-center min-h-[80vh]">
+        <div className="text-center space-y-6 max-w-sm">
+          <div className="w-24 h-24 mx-auto rounded-full bg-pastel-mint/20 flex items-center justify-center">
+            <CheckCircle className="text-pastel-mint" size={52} strokeWidth={2} />
+          </div>
+
+          <div>
+            <h2 className="text-2xl font-bold text-soft-charcoal mb-2">
+              Added to pantry! 🎉
+            </h2>
+            <p className="text-soft-charcoal/60">
+              {addedCount} item{addedCount !== 1 ? 's' : ''} saved successfully
+            </p>
+          </div>
+
+          {errorMessage && (
+            <div className="bg-pastel-peach/10 rounded-xl p-3 border border-pastel-peach/30 text-sm text-soft-charcoal/70">
+              {errorMessage}
+            </div>
+          )}
+
+          <div className="flex flex-col gap-3 pt-2">
+            <button
+              onClick={handleReset}
+              className="w-full px-6 py-3 bg-pastel-pink text-white font-semibold rounded-full shadow-soft hover:shadow-soft-lg transition-all active:scale-95"
+            >
+              Scan another receipt 📸
+            </button>
+            <a
+              href="/pantry"
+              className="w-full px-6 py-3 border border-pastel-mint/40 text-pastel-mint font-semibold rounded-full text-center hover:bg-pastel-mint/10 transition-all"
+            >
+              View pantry 🥦
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Results State
   return (
     <div className="p-4 pt-8 space-y-4 pb-32 lg:p-8 lg:pt-10 lg:pb-8">
+      {/* Cancel confirmation overlay */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-soft-charcoal/40 backdrop-blur-sm px-6">
+          <div className="bg-white rounded-2xl p-6 shadow-soft-lg w-full max-w-sm space-y-4">
+            <h3 className="text-lg font-bold text-soft-charcoal">Discard this scan?</h3>
+            <p className="text-sm text-soft-charcoal/60">
+              You have {totalToAdd} item{totalToAdd !== 1 ? 's' : ''} ready to add. If you leave now, none will be saved.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowCancelConfirm(false)}
+                className="flex-1 px-4 py-2.5 rounded-full border border-soft-charcoal/20 text-soft-charcoal font-semibold text-sm hover:bg-soft-charcoal/5 transition-all"
+              >
+                Keep reviewing
+              </button>
+              <button
+                onClick={handleReset}
+                className="flex-1 px-4 py-2.5 rounded-full bg-pastel-coral text-white font-semibold text-sm hover:opacity-90 transition-all"
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-soft-charcoal flex items-center gap-2">
-            Found {readyToAddItems.length + needsReviewItems.length} items! 🎉
+            Found {totalToAdd} items! 🎉
           </h1>
           <p className="text-soft-charcoal/60 text-sm mt-1">
             Review and add to your pantry
           </p>
         </div>
         <button
-          onClick={handleReset}
+          onClick={() => totalToAdd > 0 ? setShowCancelConfirm(true) : handleReset()}
           className="p-2 hover:bg-soft-charcoal/5 rounded-full transition-colors"
+          title="Close"
         >
           <X size={20} className="text-soft-charcoal/60" />
         </button>
@@ -500,6 +526,16 @@ export function Scan() {
                 <p key={i}>{warning}</p>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error Message (inline, during results) */}
+      {errorMessage && (
+        <div className="bg-pastel-coral/10 rounded-xl p-3 border border-pastel-coral/30">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="text-pastel-coral flex-shrink-0 mt-0.5" size={16} />
+            <p className="text-sm text-soft-charcoal">{errorMessage}</p>
           </div>
         </div>
       )}
@@ -559,10 +595,11 @@ export function Scan() {
                     </div>
                   </div>
                   <button
-                    onClick={() => removeReadyToAddItem(item.id)}
+                    onClick={() => dismissItem(item, 'ready')}
                     className="ml-2 p-1 hover:bg-soft-charcoal/5 rounded-full transition-colors"
+                    title="Dismiss (can undo)"
                   >
-                    <X size={16} className="text-soft-charcoal/60" />
+                    <X size={16} className="text-soft-charcoal/40" />
                   </button>
                 </div>
               </div>
@@ -634,10 +671,11 @@ export function Scan() {
                     )}
                   </div>
                   <button
-                    onClick={() => removeNeedsReviewItem(item.id)}
+                    onClick={() => dismissItem(item, 'review')}
                     className="ml-2 p-1 hover:bg-soft-charcoal/5 rounded-full transition-colors"
+                    title="Dismiss (can undo)"
                   >
-                    <X size={16} className="text-soft-charcoal/60" />
+                    <X size={16} className="text-soft-charcoal/40" />
                   </button>
                 </div>
               </div>
@@ -683,6 +721,38 @@ export function Scan() {
         </div>
       )}
 
+      {/* Dismissed Items Section — recoverable */}
+      {dismissedItems.length > 0 && (
+        <div className="bg-soft-charcoal/5 rounded-2xl p-4 border border-soft-charcoal/10">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold text-soft-charcoal/50 text-sm flex items-center gap-2">
+              <X size={16} className="text-soft-charcoal/30" />
+              Dismissed ({dismissedItems.length})
+            </h3>
+          </div>
+          <p className="text-xs text-soft-charcoal/40 mb-3">
+            Tap ↩ to restore any dismissed item.
+          </p>
+          <div className="space-y-1.5">
+            {dismissedItems.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between px-3 py-2 bg-white/60 rounded-xl"
+              >
+                <p className="text-sm text-soft-charcoal/50 line-through">{item.name}</p>
+                <button
+                  onClick={() => restoreItem(item)}
+                  className="ml-3 p-1.5 text-pastel-pink hover:bg-pastel-pink/10 rounded-full transition-all"
+                  title="Restore item"
+                >
+                  <RotateCcw size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Couldn't Read Section */}
       {failedItems.length > 0 && (
         <div className="bg-soft-charcoal/5 rounded-2xl p-4">
@@ -704,20 +774,20 @@ export function Scan() {
       <div className="fixed bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-cream via-cream to-transparent lg:static lg:bottom-auto lg:[background:none] lg:p-0 lg:pt-2">
         <div className="max-w-lg lg:max-w-5xl mx-auto flex gap-3">
           <button
-            onClick={handleReset}
+            onClick={() => totalToAdd > 0 ? setShowCancelConfirm(true) : handleReset()}
             className="px-6 py-3 text-soft-charcoal/60 font-semibold rounded-full hover:bg-soft-charcoal/5 transition-all"
           >
             Cancel
           </button>
-          {(readyToAddItems.length > 0 || needsReviewItems.length > 0) ? (
+          {totalToAdd > 0 ? (
             <button
               onClick={addSelectedItems}
               disabled={confirmMutation.isPending}
-              className="flex-1 px-6 py-3 bg-pastel-pink text-white font-semibold rounded-full shadow-soft hover:shadow-soft-lg transition-all active:scale-95 disabled:opacity-50"
+              className="flex-1 px-6 py-3 bg-pastel-coral text-white font-bold rounded-full shadow-soft hover:shadow-soft-lg hover:opacity-90 transition-all active:scale-95 disabled:opacity-50"
             >
               {confirmMutation.isPending
                 ? 'Adding...'
-                : `Add ${readyToAddItems.length + needsReviewItems.length} Items to Pantry`}
+                : `Add ${totalToAdd} Item${totalToAdd !== 1 ? 's' : ''} to Pantry`}
             </button>
           ) : (
             <button
