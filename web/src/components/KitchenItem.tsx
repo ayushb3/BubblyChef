@@ -50,15 +50,29 @@ function KitchenItemIcon({ item }: { item: PantryItem }) {
 }
 
 export function KitchenItem({ item, position, onClick, draggable, onDragStart }: KitchenItemProps) {
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragStart = (e: React.DragEvent) => {
+    setIsDragging(true);
+    onDragStart?.(e);
+  };
+
+  const handleDragEnd = () => {
+    setIsDragging(false);
+  };
+
   return (
     <motion.button
-      className="absolute flex flex-col items-center gap-0.5 cursor-pointer"
+      className={`absolute flex flex-col items-center gap-0.5 transition-opacity ${
+        draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+      } ${isDragging ? 'opacity-40' : ''}`}
       style={{ top: position.top, left: position.left }}
       whileHover={{ scale: 1.15, y: -2 }}
       whileTap={{ scale: 0.95 }}
       onClick={onClick}
       draggable={draggable}
-      onDragStart={onDragStart}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
     >
       <KitchenItemIcon item={item} />
 

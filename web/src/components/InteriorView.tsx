@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import type { PantryItem, Location } from '../types';
@@ -109,15 +109,25 @@ const INTERIOR_CONFIGS: Record<Location, InteriorConfig> = {
 export function InteriorView({ location, items, onItemClick, onBack, onSlotChange }: InteriorViewProps) {
   const config = INTERIOR_CONFIGS[location];
   const visibleItems = items.slice(0, config.maxItems);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
   }, []);
 
+  const handleDragEnter = useCallback(() => setIsDragOver(true), []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    // Only leave if actually leaving the drop zone (not entering a child)
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  }, []);
+
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
+      setIsDragOver(false);
       const itemId = e.dataTransfer.getData('text/plain');
       if (!itemId) return;
 
@@ -161,8 +171,12 @@ export function InteriorView({ location, items, onItemClick, onBack, onSlotChang
 
       {/* Items placed on shelves/surfaces — drop zone */}
       <div
-        className="absolute inset-0"
+        className={`absolute inset-0 transition-all duration-150 ${
+          isDragOver ? 'ring-2 ring-pastel-pink/60 ring-inset bg-pastel-pink/5' : ''
+        }`}
         onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
         {visibleItems.map((item, idx) => (
