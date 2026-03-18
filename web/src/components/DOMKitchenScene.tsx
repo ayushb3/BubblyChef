@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useQueryClient } from '@tanstack/react-query';
 import type { CSSProperties } from 'react';
 import type { PantryItem, PantryListResponse, Location } from '../types';
-import { useDecorations, updateSlotIndex } from '../api/client';
+import { useDecorations, updateSlotIndex, updateItemLocation } from '../api/client';
 import { InteriorView } from './InteriorView';
 
 interface DOMKitchenSceneProps {
@@ -100,11 +100,7 @@ export default function DOMKitchenScene({ items, onItemClick }: DOMKitchenSceneP
       });
       // Persist to backend
       try {
-        await fetch(`http://localhost:8888/pantry/${itemId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ storage_location: newLocation }),
-        });
+        await updateItemLocation(itemId, newLocation);
       } catch {
         // Will reset on next reload
       }

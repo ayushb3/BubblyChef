@@ -583,6 +583,17 @@ export async function updateSlotIndex(
   });
 }
 
+export async function updateItemLocation(
+  itemId: string,
+  storageLocation: string,
+): Promise<void> {
+  await fetch(`${API_BASE_URL}/pantry/${itemId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ storage_location: storageLocation }),
+  });
+}
+
 // ─── AI Health ────────────────────────────────────────────────────────────────
 
 async function fetchAIHealth(): Promise<{ ai_available: boolean; ai_providers: { name: string; available: boolean }[] }> {
