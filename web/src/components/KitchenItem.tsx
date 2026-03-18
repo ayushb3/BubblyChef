@@ -6,6 +6,8 @@ interface KitchenItemProps {
   item: PantryItem;
   position: { top: string; left: string };
   onClick: () => void;
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
 }
 
 const CATEGORY_EMOJI: Record<string, string> = {
@@ -47,7 +49,7 @@ function KitchenItemIcon({ item }: { item: PantryItem }) {
   );
 }
 
-export function KitchenItem({ item, position, onClick }: KitchenItemProps) {
+export function KitchenItem({ item, position, onClick, draggable, onDragStart }: KitchenItemProps) {
   return (
     <motion.button
       className="absolute flex flex-col items-center gap-0.5 cursor-pointer"
@@ -55,6 +57,8 @@ export function KitchenItem({ item, position, onClick }: KitchenItemProps) {
       whileHover={{ scale: 1.15, y: -2 }}
       whileTap={{ scale: 0.95 }}
       onClick={onClick}
+      draggable={draggable}
+      onDragStart={onDragStart}
     >
       <KitchenItemIcon item={item} />
 

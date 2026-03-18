@@ -25,6 +25,7 @@ import type {
   ChatResponse,
   ChatMode,
   ConversationHistoryTurn,
+  Decoration,
 } from '../types';
 
 const API_BASE_URL = 'http://localhost:8888';
@@ -552,6 +553,33 @@ export function useRecentActivity(limit: number = 5) {
     queryKey: ['pantry', 'recent-activity', limit],
     queryFn: () => fetchRecentActivity(limit),
     staleTime: 1000 * 60, // 1 minute
+  });
+}
+
+// ─── Kitchen Decorations ──────────────────────────────────────────────────────
+
+async function fetchDecorations(): Promise<Decoration[]> {
+  const response = await fetch(`${API_BASE_URL}/decorations`);
+  if (!response.ok) throw new Error('Failed to fetch decorations');
+  return response.json();
+}
+
+export function useDecorations() {
+  return useQuery<Decoration[]>({
+    queryKey: ['decorations'],
+    queryFn: fetchDecorations,
+    staleTime: 30_000,
+  });
+}
+
+// ─── Kitchen Slot Persistence ─────────────────────────────────────────────────
+
+export async function updateSlotIndex(
+  itemId: string,
+  slotIndex: number,
+): Promise<void> {
+  await fetch(`${API_BASE_URL}/pantry/${itemId}/slot?slot_index=${slotIndex}`, {
+    method: 'PATCH',
   });
 }
 

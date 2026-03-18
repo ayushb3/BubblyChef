@@ -312,6 +312,13 @@ export interface ConversationHistoryTurn {
   created_at: string;
 }
 
+// ─── Kitchen Decorations ──────────────────────────────────────────────────────
+
+export interface Decoration {
+  name: string;
+  unlocked: boolean;
+}
+
 /** A single message in the UI conversation thread. */
 export interface ChatMessage {
   id: string;

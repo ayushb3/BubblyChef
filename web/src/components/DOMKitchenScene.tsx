@@ -1,7 +1,9 @@
 import { useState, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useQueryClient } from '@tanstack/react-query';
 import type { CSSProperties } from 'react';
-import type { PantryItem, Location } from '../types';
+import type { PantryItem, PantryListResponse, Location } from '../types';
+import { useDecorations, updateSlotIndex } from '../api/client';
 import { InteriorView } from './InteriorView';
 
 interface DOMKitchenSceneProps {
@@ -36,10 +38,20 @@ const APPLIANCE_POSITIONS: Record<Location, CSSProperties> = {
   counter: { top: '51%',  left: '25%',   width: '50%',  height: '50%', zIndex: 3 },
 };
 
+/** Decoration overlay positions (percentage-based on the 800×520 room) */
+const DECORATION_POSITIONS: Record<string, CSSProperties> = {
+  flower_pot:  { bottom: '2%', left: '3%',  width: '8%' },
+  cactus:      { top: '38%',   left: '54%', width: '6%' },
+  herb_garden: { top: '37%',   left: '19%', width: '10%' },
+};
+
 const LOCATIONS: Location[] = ['fridge', 'pantry', 'freezer', 'counter'];
 
 export default function DOMKitchenScene({ items, onItemClick }: DOMKitchenSceneProps) {
   const [zoomedZone, setZoomedZone] = useState<Location | null>(null);
+  const queryClient = useQueryClient();
+  const { data: decorations } = useDecorations();
+  const unlockedDecos = decorations?.filter((d) => d.unlocked) ?? [];
 
   const counts = useMemo(() => {
     const c: Record<Location, number> = { fridge: 0, freezer: 0, pantry: 0, counter: 0 };
@@ -50,6 +62,28 @@ export default function DOMKitchenScene({ items, onItemClick }: DOMKitchenSceneP
   const zoneItems = useMemo(
     () => (zoomedZone ? items.filter((i) => i.location === zoomedZone) : []),
     [items, zoomedZone],
+  );
+
+  const handleSlotChange = useCallback(
+    async (itemId: string, newSlotIndex: number) => {
+      // Optimistic: update React Query cache immediately
+      queryClient.setQueryData<PantryListResponse>(['pantry', {}], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          items: old.items.map((it) =>
+            it.id === itemId ? { ...it, slot_index: newSlotIndex } : it
+          ),
+        };
+      });
+      // Persist to backend (non-critical — silently ignore failures)
+      try {
+        await updateSlotIndex(itemId, newSlotIndex);
+      } catch {
+        // Position will reset on next reload
+      }
+    },
+    [queryClient],
   );
 
   return (
@@ -85,6 +119,23 @@ export default function DOMKitchenScene({ items, onItemClick }: DOMKitchenSceneP
                   onClick={() => setZoomedZone(loc)}
                 />
               ))}
+
+              {/* Decoration overlays (unlocked milestones) */}
+              {unlockedDecos.map((deco) => (
+                <img
+                  key={deco.name}
+                  src={`/kitchen/decorations/${deco.name}.png`}
+                  alt={deco.name}
+                  className="absolute pointer-events-none z-10"
+                  style={{
+                    imageRendering: 'pixelated',
+                    ...DECORATION_POSITIONS[deco.name],
+                  }}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              ))}
             </motion.div>
           ) : (
             <InteriorView
@@ -93,6 +144,7 @@ export default function DOMKitchenScene({ items, onItemClick }: DOMKitchenSceneP
               items={zoneItems}
               onItemClick={onItemClick}
               onBack={() => setZoomedZone(null)}
+              onSlotChange={handleSlotChange}
             />
           )}
         </AnimatePresence>

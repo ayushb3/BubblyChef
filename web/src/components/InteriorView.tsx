@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import type { PantryItem, Location } from '../types';
@@ -8,6 +9,7 @@ interface InteriorViewProps {
   items: PantryItem[];
   onItemClick: (item: PantryItem) => void;
   onBack: () => void;
+  onSlotChange: (itemId: string, newSlotIndex: number) => void;
 }
 
 const ZONE_LABELS: Record<Location, string> = {
@@ -26,6 +28,8 @@ const ZONE_EMOJIS: Record<Location, string> = {
 
 interface InteriorConfig {
   maxItems: number;
+  cols: number;
+  rows: number;
   emptyHint: string;
   fallbackBg: string;
   getItemPosition: (idx: number, total: number) => { top: string; left: string };
@@ -34,6 +38,8 @@ interface InteriorConfig {
 const INTERIOR_CONFIGS: Record<Location, InteriorConfig> = {
   fridge: {
     maxItems: 32,
+    cols: 8,
+    rows: 4,
     emptyHint: 'Your fridge is empty!\nAdd items to see them here',
     fallbackBg: '#e8f4fa',
     getItemPosition: (idx) => {
@@ -47,6 +53,8 @@ const INTERIOR_CONFIGS: Record<Location, InteriorConfig> = {
   },
   freezer: {
     maxItems: 24,
+    cols: 6,
+    rows: 4,
     emptyHint: 'Nothing in the freezer\nAdd frozen items to stock up',
     fallbackBg: '#d8e8f5',
     getItemPosition: (idx) => {
@@ -65,6 +73,8 @@ const INTERIOR_CONFIGS: Record<Location, InteriorConfig> = {
   },
   pantry: {
     maxItems: 40,
+    cols: 8,
+    rows: 5,
     emptyHint: 'Pantry shelves are bare!\nScan a receipt to fill them',
     fallbackBg: '#fff5e8',
     getItemPosition: (idx) => {
@@ -78,6 +88,8 @@ const INTERIOR_CONFIGS: Record<Location, InteriorConfig> = {
   },
   counter: {
     maxItems: 24,
+    cols: 8,
+    rows: 3,
     emptyHint: 'Counter is clear\nItems on the counter show here',
     fallbackBg: '#e8dcc8',
     getItemPosition: (idx) => {
@@ -94,9 +106,31 @@ const INTERIOR_CONFIGS: Record<Location, InteriorConfig> = {
   },
 };
 
-export function InteriorView({ location, items, onItemClick, onBack }: InteriorViewProps) {
+export function InteriorView({ location, items, onItemClick, onBack, onSlotChange }: InteriorViewProps) {
   const config = INTERIOR_CONFIGS[location];
   const visibleItems = items.slice(0, config.maxItems);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const itemId = e.dataTransfer.getData('text/plain');
+      if (!itemId) return;
+
+      const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+      const relX = (e.clientX - rect.left) / rect.width;
+      const relY = (e.clientY - rect.top) / rect.height;
+      const col = Math.min(Math.floor(relX * config.cols), config.cols - 1);
+      const row = Math.min(Math.floor(relY * config.rows), config.rows - 1);
+      const newSlotIndex = row * config.cols + col;
+      onSlotChange(itemId, newSlotIndex);
+    },
+    [onSlotChange, config.cols, config.rows],
+  );
 
   return (
     <motion.div
@@ -125,14 +159,23 @@ export function InteriorView({ location, items, onItemClick, onBack }: InteriorV
       {/* Interior decorative details (CSS-only, per location) */}
       <InteriorDecoration location={location} />
 
-      {/* Items placed on shelves/surfaces */}
-      <div className="absolute inset-0">
+      {/* Items placed on shelves/surfaces — drop zone */}
+      <div
+        className="absolute inset-0"
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
         {visibleItems.map((item, idx) => (
           <KitchenItem
             key={item.id}
             item={item}
-            position={config.getItemPosition(idx, visibleItems.length)}
+            position={config.getItemPosition(item.slot_index ?? idx, visibleItems.length)}
             onClick={() => onItemClick(item)}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData('text/plain', item.id);
+              e.dataTransfer.effectAllowed = 'move';
+            }}
           />
         ))}
       </div>
