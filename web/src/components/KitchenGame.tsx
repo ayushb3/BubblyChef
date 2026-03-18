@@ -39,6 +39,8 @@ class KitchenScene extends Phaser.Scene {
   private onSlotChange: (itemId: string, slotIndex: number, location: Location) => void = () => {};
   private itemSprites: Map<string, Phaser.GameObjects.Container> = new Map();
   private dragTarget: Phaser.GameObjects.Container | null = null;
+  private sceneReady = false;
+  private pendingItems: PantryItem[] | null = null;
 
   constructor() {
     super({ key: 'KitchenScene' });
@@ -160,6 +162,15 @@ class KitchenScene extends Phaser.Scene {
         this.onSlotChange(itemId, slotIndex, newLocation);
       }
     );
+
+    // Mark scene ready and flush any items that arrived before create() fired
+    this.sceneReady = true;
+    if (this.pendingItems !== null) {
+      this.updateItems(this.pendingItems);
+      this.pendingItems = null;
+    } else {
+      this.updateItems(this.items);
+    }
   }
 
   private createItemSprite(item: PantryItem, x: number, y: number): Phaser.GameObjects.Container {
@@ -223,6 +234,11 @@ class KitchenScene extends Phaser.Scene {
   }
 
   updateItems(items: PantryItem[]) {
+    if (!this.sceneReady) {
+      // create() hasn't fired yet — queue for later
+      this.pendingItems = items;
+      return;
+    }
     this.items = items;
     // Clear and rebuild — simple approach
     for (const [, sprite] of this.itemSprites) {
