@@ -116,7 +116,17 @@ def create_app() -> FastAPI:
         )
 
     # Register routers
-    from bubbly_chef.api.routes import apply, chat, health, ingest, pantry, profile, recipes, scan
+    from bubbly_chef.api.routes import (  # noqa: E402
+        apply,
+        chat,
+        health,
+        icons,
+        ingest,
+        pantry,
+        profile,
+        recipes,
+        scan,
+    )
 
     app.include_router(health.router)
     app.include_router(ingest.router)
@@ -126,6 +136,7 @@ def create_app() -> FastAPI:
     app.include_router(recipes.router)
     app.include_router(scan.router)
     app.include_router(profile.router)
+    app.include_router(icons.router)
 
     return app
 

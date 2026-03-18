@@ -70,7 +70,7 @@ class TestEstimateExpiryDays:
 
     def test_pantry_staples_long_shelf_life(self):
         """Test that pantry staples have long shelf life."""
-        days = estimate_expiry_days("rice", "pantry", "pantry")
+        days = estimate_expiry_days("rice", "dry_goods", "pantry")
         assert days == 365
 
 

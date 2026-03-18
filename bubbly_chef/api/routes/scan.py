@@ -4,7 +4,7 @@ import uuid
 from datetime import date, timedelta
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from bubbly_chef.api.deps import get_ai_manager
@@ -273,7 +273,7 @@ async def scan_receipt(
 
 @router.post("/confirm", response_model=ConfirmItemsResponse)
 async def confirm_items(
-    request: ConfirmItemsRequest, background_tasks: BackgroundTasks
+    request: ConfirmItemsRequest
 ) -> ConfirmItemsResponse:
     """
     Confirm reviewed items and add them to pantry.
@@ -305,14 +305,6 @@ async def confirm_items(
 
             saved = await repo.add_pantry_item(pantry_item)
             added.append(saved)
-
-            # Queue sprite generation for new item names
-            from bubbly_chef.domain.normalizer import normalize_food_name
-            normalized_name = normalize_food_name(saved.name)
-            existing_sprite = await repo.get_sprite(normalized_name)
-            if existing_sprite is None:
-                from bubbly_chef.api.routes.sprites import _generate_and_save
-                background_tasks.add_task(_generate_and_save, normalized_name)
 
         except Exception as e:
             logger.error(

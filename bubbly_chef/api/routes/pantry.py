@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
@@ -150,7 +150,7 @@ async def list_expiring_items(
     summary="Create a pantry item",
 )
 async def create_pantry_item(
-    body: CreatePantryItemRequest, background_tasks: BackgroundTasks
+    body: CreatePantryItemRequest
 ) -> PantryItem:
     """Create a new pantry item directly (no AI workflow)."""
     logger.info("POST /pantry", extra={"item_name": body.name, "category": body.category.value})
@@ -178,14 +178,6 @@ async def create_pantry_item(
         estimated_expiry=estimated or body.expiry_date is None,
     )
     saved = await repo.add_pantry_item(item)
-
-    # Queue sprite generation if no sprite exists for this item yet
-    from bubbly_chef.domain.normalizer import normalize_food_name
-    normalized_name = normalize_food_name(saved.name)
-    existing_sprite = await repo.get_sprite(normalized_name)
-    if existing_sprite is None:
-        from bubbly_chef.api.routes.sprites import _generate_and_save
-        background_tasks.add_task(_generate_and_save, normalized_name)
 
     return saved
 

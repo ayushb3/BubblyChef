@@ -41,7 +41,8 @@ class TestNormalizeFoodName:
     def test_unknown_item_passthrough(self):
         """Test that unknown items pass through cleaned."""
         assert normalize_food_name("dragon fruit") == "dragon fruit"
-        assert normalize_food_name("QUINOA") == "quinoa"
+        # quinoa is now in the USDA catalog, so it normalizes to 'quinoa flour'
+        assert normalize_food_name("QUINOA") == "quinoa flour"
 
     def test_empty_string(self):
         """Test empty string handling."""

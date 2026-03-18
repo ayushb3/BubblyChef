@@ -7,6 +7,23 @@ import { usePantryViewStore } from '../store/pantryViewStore';
 import { categoryEmojis } from '../constants/categories';
 import type { PantryItem } from '../types';
 
+/** Show Fluent Emoji icon for a pantry item, falling back to category emoji. */
+function PantryItemIcon({ item }: { item: PantryItem }) {
+  const [useEmoji, setUseEmoji] = useState(false);
+  const fallback = categoryEmojis[item.category] || '📦';
+  const iconUrl = `/api/icons/${encodeURIComponent(item.name.toLowerCase().trim())}`;
+
+  if (useEmoji) return <span className="text-3xl">{fallback}</span>;
+  return (
+    <img
+      src={iconUrl}
+      alt={item.name}
+      className="w-10 h-10"
+      onError={() => setUseEmoji(true)}
+    />
+  );
+}
+
 const locationFilters = [
   { value: '', label: 'All', emoji: '📋' },
   { value: 'fridge', label: 'Fridge', emoji: '🧊' },
@@ -145,9 +162,7 @@ export function Pantry() {
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-3 flex-1">
-                      <span className="text-3xl">
-                        {categoryEmojis[item.category] || '📦'}
-                      </span>
+                      <PantryItemIcon item={item} />
                       <div className="flex-1 min-w-0">
                         <h3 className="font-bold text-soft-charcoal text-lg leading-tight">
                           {item.name}
