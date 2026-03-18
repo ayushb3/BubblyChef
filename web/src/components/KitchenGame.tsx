@@ -66,12 +66,9 @@ class KitchenScene extends Phaser.Scene {
         this.load.image(key, `/api/icons/${encodeURIComponent(item.name.toLowerCase().trim())}`);
       }
     }
-    // Load kitchen background if available
+    // Load kitchen background if available (silently skipped if file missing)
     this.load.image('kitchen_bg', '/kitchen/room/background.png');
-    // Load decoration sprites
-    this.load.image('deco_flower_pot', '/kitchen/decorations/flower_pot.png');
-    this.load.image('deco_cactus', '/kitchen/decorations/cactus.png');
-    this.load.image('deco_herb_garden', '/kitchen/decorations/herb_garden.png');
+    // Decoration sprites are loaded on-demand when/if the files exist
   }
 
   create() {
@@ -210,9 +207,9 @@ class KitchenScene extends Phaser.Scene {
     }).setOrigin(0.5, 0);
     container.add(label);
 
-    // Make interactive
-    this.input.setDraggable(container);
+    // Make interactive — setInteractive must come before setDraggable
     container.setInteractive();
+    this.input.setDraggable(container);
 
     container.on('pointerover', () => {
       this.tweens.add({ targets: container, scaleX: 1.15, scaleY: 1.15, duration: 100 });
