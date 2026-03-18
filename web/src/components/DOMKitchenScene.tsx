@@ -136,6 +136,9 @@ export default function DOMKitchenScene({ items, onItemClick }: DOMKitchenSceneP
                   }}
                 />
               ))}
+
+              {/* Milestone progress bar */}
+              <MilestoneProgress totalItems={items.length} />
             </motion.div>
           ) : (
             <InteriorView
@@ -396,4 +399,57 @@ function ApplianceFallback({ location }: { location: Location }) {
         </div>
       );
   }
+}
+
+/** Milestones: item count → decoration name → emoji */
+const MILESTONES = [
+  { count: 5,  name: 'flower_pot',  emoji: '🌸', label: 'Flower Pot' },
+  { count: 10, name: 'cactus',      emoji: '🌵', label: 'Cactus' },
+  { count: 20, name: 'herb_garden', emoji: '🌿', label: 'Herb Garden' },
+];
+
+/** Compact progress bar showing milestone unlock progress */
+function MilestoneProgress({ totalItems }: { totalItems: number }) {
+  const nextMilestone = MILESTONES.find((m) => totalItems < m.count);
+  const maxCount = MILESTONES[MILESTONES.length - 1].count;
+  const progressPct = Math.min((totalItems / maxCount) * 100, 100);
+
+  return (
+    <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 bg-white/85 backdrop-blur-sm rounded-full px-3 py-1.5 flex items-center gap-2 shadow-sm border border-gray-100/50">
+      {/* Milestone dots */}
+      <div className="flex items-center gap-1">
+        {MILESTONES.map((m) => {
+          const unlocked = totalItems >= m.count;
+          return (
+            <div
+              key={m.name}
+              className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] transition-all ${
+                unlocked
+                  ? 'bg-pastel-mint scale-110'
+                  : 'bg-gray-100 grayscale opacity-60'
+              }`}
+              title={unlocked ? `${m.label} unlocked!` : `${m.label} — add ${m.count - totalItems} more items`}
+            >
+              {m.emoji}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Progress bar */}
+      <div className="w-16 h-1.5 bg-gray-200/60 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-pastel-pink rounded-full transition-all duration-500"
+          style={{ width: `${progressPct}%` }}
+        />
+      </div>
+
+      {/* Next unlock hint */}
+      <span className="text-[9px] text-soft-charcoal/70 whitespace-nowrap">
+        {nextMilestone
+          ? `${nextMilestone.emoji} ${totalItems}/${nextMilestone.count}`
+          : 'All unlocked!'}
+      </span>
+    </div>
+  );
 }
