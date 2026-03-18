@@ -315,6 +315,10 @@ async def confirm_items(
             )
             failed.append(f"{item.name}: {str(e)}")
 
+    if added:
+        from bubbly_chef.api.routes.decorations import run_milestone_check
+        await run_milestone_check(repo)
+
     return ConfirmItemsResponse(added=added, failed=failed)
 
 

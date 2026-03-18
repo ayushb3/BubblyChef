@@ -66,6 +66,7 @@ class PantryItem(BaseModel):
         default=False, description="True if expiry_date was estimated, not from label"
     )
     notes: str | None = Field(default=None)
+    slot_index: int | None = Field(default=None, description="Kitchen scene slot position index")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

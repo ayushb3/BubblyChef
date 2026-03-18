@@ -119,6 +119,7 @@ def create_app() -> FastAPI:
     from bubbly_chef.api.routes import (  # noqa: E402
         apply,
         chat,
+        decorations,
         health,
         icons,
         ingest,
@@ -137,6 +138,7 @@ def create_app() -> FastAPI:
     app.include_router(scan.router)
     app.include_router(profile.router)
     app.include_router(icons.router)
+    app.include_router(decorations.router)
 
     return app
 

@@ -179,6 +179,10 @@ async def create_pantry_item(
     )
     saved = await repo.add_pantry_item(item)
 
+    # Check milestone decorations after adding an item (fire-and-forget style)
+    from bubbly_chef.api.routes.decorations import run_milestone_check
+    await run_milestone_check(repo)
+
     return saved
 
 
@@ -242,6 +246,23 @@ async def get_pantry_item(item_id: UUID) -> PantryItemResponse:
         expiry_status=expiry.get_expiry_status(item.expiry_date),
         days_until_expiry=expiry.days_until_expiry(item.expiry_date),
     )
+
+
+@router.patch(
+    "/{item_id}/slot",
+    response_model=PantryItem,
+    summary="Update kitchen scene slot for a pantry item",
+)
+async def update_pantry_item_slot(item_id: UUID, slot_index: int | None = None) -> PantryItem:
+    """Update the kitchen scene slot_index for a pantry item."""
+    logger.info("PATCH /pantry/%s/slot slot_index=%s", item_id, slot_index)
+    repo = await get_repository()
+
+    existing = await repo.get_pantry_item(str(item_id))
+    if not existing:
+        raise HTTPException(status_code=404, detail="Pantry item not found")
+
+    return await repo.update_pantry_item(str(item_id), {"slot_index": slot_index})
 
 
 @router.delete(

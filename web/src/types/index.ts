@@ -29,6 +29,8 @@ export interface PantryItem {
   days_until_expiry: number | null;
   is_expired: boolean;
   is_expiring_soon: boolean;
+  // Kitchen scene
+  slot_index?: number | null;
 }
 
 export interface CreatePantryItem {

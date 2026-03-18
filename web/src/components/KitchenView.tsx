@@ -2,7 +2,10 @@ import { useState } from 'react';
 import { usePantryItems } from '../api/client';
 import { AddItemModal } from './AddItemModal';
 import DOMKitchenScene from './DOMKitchenScene';
+import { KitchenGame } from './KitchenGame';
 import type { PantryItem } from '../types';
+
+const USE_PHASER = import.meta.env.VITE_KITCHEN_V2 === 'true';
 
 export function KitchenView() {
   const [editingItem, setEditingItem] = useState<PantryItem | null>(null);
@@ -29,10 +32,11 @@ export function KitchenView() {
 
   return (
     <div className="relative w-full">
-      <DOMKitchenScene
-        items={data?.items ?? []}
-        onItemClick={handleItemClick}
-      />
+      {USE_PHASER ? (
+        <KitchenGame items={data?.items ?? []} onItemClick={handleItemClick} />
+      ) : (
+        <DOMKitchenScene items={data?.items ?? []} onItemClick={handleItemClick} />
+      )}
       <AddItemModal
         isOpen={isAddModalOpen}
         onClose={handleCloseModal}

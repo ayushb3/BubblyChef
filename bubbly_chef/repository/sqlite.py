@@ -43,6 +43,7 @@ class SQLiteRepository:
                 quantity REAL NOT NULL DEFAULT 1.0,
                 unit TEXT NOT NULL DEFAULT 'item',
                 expiry_date TEXT,
+                slot_index INTEGER,
                 added_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -104,8 +105,26 @@ class SQLiteRepository:
 
             CREATE INDEX IF NOT EXISTS idx_conv_history_conversation
                 ON conversation_history(conversation_id, created_at);
+
+            CREATE TABLE IF NOT EXISTS decorations (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                decoration_type TEXT NOT NULL DEFAULT 'plant',
+                unlocked_at TEXT,
+                milestone TEXT
+            );
         """
         )
+
+        # Migrations for existing databases
+        try:
+            await self._connection.execute(
+                "ALTER TABLE pantry_items ADD COLUMN slot_index INTEGER"
+            )
+            await self._connection.commit()
+            logger.info("Migration: added slot_index column to pantry_items")
+        except Exception:
+            pass  # Column already exists (new DBs have it from CREATE TABLE above)
 
         await self._connection.commit()
         logger.info(f"Database initialized at {self.db_path}")
@@ -136,6 +155,7 @@ class SQLiteRepository:
             quantity=row["quantity"],
             unit=row["unit"],
             expiry_date=(date.fromisoformat(row["expiry_date"]) if row["expiry_date"] else None),
+            slot_index=row["slot_index"] if "slot_index" in row.keys() else None,
             created_at=datetime.fromisoformat(row["added_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
@@ -214,8 +234,8 @@ class SQLiteRepository:
         await conn.execute(
             """INSERT INTO pantry_items
                (id, name, name_normalized, category, location, quantity, unit,
-                expiry_date, added_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                expiry_date, slot_index, added_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 str(item.id),
                 item.name,
@@ -225,6 +245,7 @@ class SQLiteRepository:
                 item.quantity,
                 item.unit,
                 item.expiry_date.isoformat() if item.expiry_date else None,
+                item.slot_index,
                 item.created_at.isoformat(),
                 item.updated_at.isoformat(),
             ),
@@ -316,6 +337,63 @@ class SQLiteRepository:
         if deleted:
             logger.debug(f"Deleted pantry item: {item_id}")
         return deleted
+
+    async def count_pantry_items(self) -> int:
+        """Return total number of pantry items."""
+        conn = self._get_conn()
+        async with conn.execute("SELECT COUNT(*) FROM pantry_items") as cursor:
+            row = await cursor.fetchone()
+            return int(row[0]) if row else 0
+
+    # =========================================================================
+    # Decoration operations
+    # =========================================================================
+
+    async def get_all_decorations(self) -> list[dict[str, object]]:
+        """Return all decorations with unlock status."""
+        conn = self._get_conn()
+        async with conn.execute(
+            "SELECT id, name, decoration_type, unlocked_at, milestone"
+            " FROM decorations ORDER BY name"
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "decoration_type": row["decoration_type"],
+                    "unlocked_at": row["unlocked_at"],
+                    "milestone": row["milestone"],
+                    "unlocked": row["unlocked_at"] is not None,
+                }
+                for row in rows
+            ]
+
+    async def unlock_decoration(self, name: str) -> bool:
+        """Unlock a decoration by name. Returns True if newly unlocked."""
+        conn = self._get_conn()
+        # Insert if not exists
+        await conn.execute(
+            """INSERT OR IGNORE INTO decorations (id, name, decoration_type, milestone)
+               VALUES (?, ?, 'plant', NULL)""",
+            (str(uuid4()), name),
+        )
+        # Only update if not already unlocked
+        cursor = await conn.execute(
+            "UPDATE decorations SET unlocked_at = ? WHERE name = ? AND unlocked_at IS NULL",
+            (datetime.now(UTC).isoformat(), name),
+        )
+        await conn.commit()
+        return cursor.rowcount > 0
+
+    async def is_decoration_unlocked(self, name: str) -> bool:
+        """Check if a decoration is already unlocked."""
+        conn = self._get_conn()
+        async with conn.execute(
+            "SELECT unlocked_at FROM decorations WHERE name = ?", (name,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row is not None and row["unlocked_at"] is not None
 
     async def find_similar_item(self, name: str) -> PantryItem | None:
         """Find a pantry item with similar name (for dedup)."""
