@@ -86,6 +86,32 @@ export default function DOMKitchenScene({ items, onItemClick }: DOMKitchenSceneP
     [queryClient],
   );
 
+  const handleLocationChange = useCallback(
+    async (itemId: string, newLocation: Location) => {
+      // Optimistic: update React Query cache immediately
+      queryClient.setQueryData<PantryListResponse>(['pantry', {}], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          items: old.items.map((it) =>
+            it.id === itemId ? { ...it, location: newLocation, slot_index: null } : it
+          ),
+        };
+      });
+      // Persist to backend
+      try {
+        await fetch(`http://localhost:8888/pantry/${itemId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storage_location: newLocation }),
+        });
+      } catch {
+        // Will reset on next reload
+      }
+    },
+    [queryClient],
+  );
+
   return (
     <div className="flex justify-center">
       <div
@@ -148,6 +174,7 @@ export default function DOMKitchenScene({ items, onItemClick }: DOMKitchenSceneP
               onItemClick={onItemClick}
               onBack={() => setZoomedZone(null)}
               onSlotChange={handleSlotChange}
+              onLocationChange={handleLocationChange}
             />
           )}
         </AnimatePresence>

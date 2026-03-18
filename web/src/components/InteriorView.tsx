@@ -10,6 +10,7 @@ interface InteriorViewProps {
   onItemClick: (item: PantryItem) => void;
   onBack: () => void;
   onSlotChange: (itemId: string, newSlotIndex: number) => void;
+  onLocationChange: (itemId: string, newLocation: Location) => void;
 }
 
 const ZONE_LABELS: Record<Location, string> = {
@@ -106,7 +107,7 @@ const INTERIOR_CONFIGS: Record<Location, InteriorConfig> = {
   },
 };
 
-export function InteriorView({ location, items, onItemClick, onBack, onSlotChange }: InteriorViewProps) {
+export function InteriorView({ location, items, onItemClick, onBack, onSlotChange, onLocationChange }: InteriorViewProps) {
   const config = INTERIOR_CONFIGS[location];
   const visibleItems = items.slice(0, config.maxItems);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -218,6 +219,9 @@ export function InteriorView({ location, items, onItemClick, onBack, onSlotChang
           {ZONE_EMOJIS[location]} {ZONE_LABELS[location]}
         </span>
       </div>
+
+      {/* Move-to-zone drop targets (visible during drag) */}
+      <MoveToZoneTray currentLocation={location} onLocationChange={onLocationChange} />
     </motion.div>
   );
 }
@@ -313,4 +317,65 @@ function InteriorDecoration({ location }: { location: Location }) {
         </div>
       );
   }
+}
+
+const ALL_LOCATIONS: Location[] = ['fridge', 'freezer', 'pantry', 'counter'];
+
+/** Bottom tray with drop targets to move items between zones */
+function MoveToZoneTray({
+  currentLocation,
+  onLocationChange,
+}: {
+  currentLocation: Location;
+  onLocationChange: (itemId: string, newLocation: Location) => void;
+}) {
+  const otherLocations = ALL_LOCATIONS.filter((l) => l !== currentLocation);
+
+  return (
+    <div className="absolute bottom-2 right-3 z-10 flex gap-1.5">
+      {otherLocations.map((loc) => (
+        <ZoneDropTarget key={loc} location={loc} onLocationChange={onLocationChange} />
+      ))}
+    </div>
+  );
+}
+
+/** A single drop target button for moving items to a zone */
+function ZoneDropTarget({
+  location,
+  onLocationChange,
+}: {
+  location: Location;
+  onLocationChange: (itemId: string, newLocation: Location) => void;
+}) {
+  const [isOver, setIsOver] = useState(false);
+
+  return (
+    <div
+      className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-all border ${
+        isOver
+          ? 'bg-pastel-pink/30 border-pastel-pink scale-110 shadow-md'
+          : 'bg-white/70 border-gray-200/50 opacity-60 hover:opacity-100'
+      }`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      }}
+      onDragEnter={() => setIsOver(true)}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          setIsOver(false);
+        }
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setIsOver(false);
+        const itemId = e.dataTransfer.getData('text/plain');
+        if (itemId) onLocationChange(itemId, location);
+      }}
+    >
+      <span>{ZONE_EMOJIS[location]}</span>
+      <span className="text-soft-charcoal">{ZONE_LABELS[location]}</span>
+    </div>
+  );
 }
