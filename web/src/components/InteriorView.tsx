@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { motion } from 'framer-motion';
+import { useCallback, useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import type { PantryItem, Location } from '../types';
 import { KitchenItem } from './KitchenItem';
@@ -204,6 +204,9 @@ export function InteriorView({ location, items, onItemClick, onBack, onSlotChang
         </div>
       )}
 
+      {/* First-visit drag hint */}
+      {items.length > 0 && <DragHint />}
+
       {/* Back button */}
       <button
         onClick={onBack}
@@ -223,6 +226,47 @@ export function InteriorView({ location, items, onItemClick, onBack, onSlotChang
       {/* Move-to-zone drop targets (visible during drag) */}
       <MoveToZoneTray currentLocation={location} onLocationChange={onLocationChange} />
     </motion.div>
+  );
+}
+
+const DRAG_HINT_KEY = 'bubbly_kitchen_drag_hint_dismissed';
+
+/** One-time hint explaining drag-to-organize */
+function DragHint() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (!localStorage.getItem(DRAG_HINT_KEY)) {
+      setVisible(true);
+    }
+  }, []);
+
+  const dismiss = () => {
+    setVisible(false);
+    localStorage.setItem(DRAG_HINT_KEY, '1');
+  };
+
+  return (
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          className="absolute top-12 right-3 z-20 bg-white/90 backdrop-blur-sm rounded-xl px-3 py-2 shadow-md border border-pastel-pink/30 flex items-center gap-2 max-w-[200px]"
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ delay: 0.5 }}
+        >
+          <span className="text-sm">Drag items to reorganize or move them between zones</span>
+          <button
+            onClick={dismiss}
+            className="shrink-0 w-5 h-5 rounded-full bg-gray-200/60 text-gray-500 text-[10px] flex items-center justify-center hover:bg-gray-300/60 cursor-pointer"
+            aria-label="Dismiss hint"
+          >
+            &times;
+          </button>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
