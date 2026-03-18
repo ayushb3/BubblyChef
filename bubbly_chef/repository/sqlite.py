@@ -275,7 +275,7 @@ class SQLiteRepository:
                 """UPDATE pantry_items SET
                    name = ?, name_normalized = ?, category = ?,
                    location = ?, quantity = ?, unit = ?,
-                   expiry_date = ?, updated_at = ?
+                   expiry_date = ?, updated_at = ?, slot_index = ?
                    WHERE id = ?""",
                 (
                     item.name,
@@ -286,6 +286,7 @@ class SQLiteRepository:
                     item.unit,
                     item.expiry_date.isoformat() if item.expiry_date else None,
                     item.updated_at.isoformat(),
+                    item.slot_index,
                     item_id,
                 ),
             )

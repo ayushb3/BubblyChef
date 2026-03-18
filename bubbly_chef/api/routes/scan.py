@@ -285,9 +285,7 @@ async def confirm_items(
         "POST /scan/confirm",
         extra={"request_id": request.request_id, "item_count": len(request.items)},
     )
-    _pending_scans.get(request.request_id)
-
-    # Even if session expired, we can still add items
+    # Session lookup is intentionally skipped: even if expired, we still add items
     repo = await get_repository()
     added = []
     failed = []
@@ -316,8 +314,11 @@ async def confirm_items(
             failed.append(f"{item.name}: {str(e)}")
 
     if added:
-        from bubbly_chef.api.routes.decorations import run_milestone_check
-        await run_milestone_check(repo)
+        try:
+            from bubbly_chef.api.routes.decorations import run_milestone_check
+            await run_milestone_check(repo)
+        except Exception:
+            logger.warning("Milestone check failed after scan confirm", exc_info=True)
 
     return ConfirmItemsResponse(added=added, failed=failed)
 

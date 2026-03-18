@@ -148,16 +148,13 @@ class KitchenScene extends Phaser.Scene {
         const zone = ZONES[newLocation];
         if (!zone) return;
 
-        // Snap to next available slot in target zone
-        const count = Object.values(ZONES)
-          .filter((_, i) => Object.keys(ZONES)[i] === newLocation)
-          .length;
-
-        const existingInZone = this.items.filter((it) => it.location === newLocation).length;
+        // Snap to next available slot in target zone (exclude the item being moved)
+        const existingInZone = this.items.filter(
+          (it) => it.location === newLocation && it.id !== itemId
+        ).length;
         const col = existingInZone % ITEM_COLS;
         const row = Math.floor(existingInZone / ITEM_COLS);
         obj.setPosition(zone.x + 20 + col * (ITEM_SIZE + 8), zone.y + 30 + row * (ITEM_SIZE + 16));
-        void count;
 
         const slotIndex = existingInZone;
         this.onSlotChange(itemId, slotIndex, newLocation);

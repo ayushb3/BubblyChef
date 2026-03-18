@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from bubbly_chef.repository.sqlite import SQLiteRepository, get_repository
 
@@ -42,18 +42,6 @@ async def list_decorations() -> list[dict[str, Any]]:
     return await repo.get_all_decorations()
 
 
-@router.post(
-    "/{name}/unlock",
-    summary="Unlock a kitchen decoration",
-)
-async def unlock_decoration(name: str) -> dict[str, Any]:
-    """Unlock a decoration by name. Returns whether it was newly unlocked."""
-    logger.info("POST /decorations/%s/unlock", name)
-    repo = await get_repository()
-    newly_unlocked = await repo.unlock_decoration(name)
-    return {"name": name, "newly_unlocked": newly_unlocked}
-
-
 @router.get("/milestone-check", summary="Check milestone and auto-unlock")
 async def milestone_check() -> dict[str, Any]:
     """Check pantry count against milestones and unlock appropriate decorations."""
@@ -62,3 +50,20 @@ async def milestone_check() -> dict[str, Any]:
     count = await repo.count_pantry_items()
     unlocked = await run_milestone_check(repo)
     return {"pantry_count": count, "newly_unlocked": unlocked}
+
+
+KNOWN_DECORATIONS = {name for _, name in MILESTONES}
+
+
+@router.post(
+    "/{name}/unlock",
+    summary="Unlock a kitchen decoration",
+)
+async def unlock_decoration(name: str) -> dict[str, Any]:
+    """Unlock a decoration by name. Returns whether it was newly unlocked."""
+    if name not in KNOWN_DECORATIONS:
+        raise HTTPException(status_code=404, detail=f"Unknown decoration: {name}")
+    logger.info("POST /decorations/%s/unlock", name)
+    repo = await get_repository()
+    newly_unlocked = await repo.unlock_decoration(name)
+    return {"name": name, "newly_unlocked": newly_unlocked}

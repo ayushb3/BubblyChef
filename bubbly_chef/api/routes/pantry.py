@@ -179,9 +179,12 @@ async def create_pantry_item(
     )
     saved = await repo.add_pantry_item(item)
 
-    # Check milestone decorations after adding an item (fire-and-forget style)
-    from bubbly_chef.api.routes.decorations import run_milestone_check
-    await run_milestone_check(repo)
+    # Check milestone decorations after adding an item (best-effort, never fail the request)
+    try:
+        from bubbly_chef.api.routes.decorations import run_milestone_check
+        await run_milestone_check(repo)
+    except Exception:
+        logger.warning("Milestone check failed after item creation", exc_info=True)
 
     return saved
 
