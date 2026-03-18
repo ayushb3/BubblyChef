@@ -32,10 +32,10 @@ const ZONE_FALLBACK_BG: Record<Location, string> = {
  * counter (foreground along back wall above floor line).
  */
 const APPLIANCE_POSITIONS: Record<Location, CSSProperties> = {
-  pantry:  { top: '45%',   left: '18%',   width: '35%',  height: '35%', zIndex: 2 },
-  fridge:  { top: '40%',   left: '40%',  width: '40%',  height: '40%', zIndex: 2 },
-  freezer: { top: '40%',   left: '58%',  width: '40%',  height: '40%', zIndex: 2 },
-  counter: { top: '51%',  left: '25%',   width: '50%',  height: '50%', zIndex: 3 },
+  pantry:  { top: '42%',   left: '5%',    width: '30%',  height: '40%', zIndex: 2 },
+  fridge:  { top: '35%',   left: '38%',   width: '20%',  height: '45%', zIndex: 2 },
+  freezer: { top: '35%',   left: '58%',   width: '20%',  height: '45%', zIndex: 2 },
+  counter: { top: '68%',   left: '15%',   width: '55%',  height: '30%', zIndex: 3 },
 };
 
 /** Decoration overlay positions (percentage-based on the 800×520 room) */
@@ -251,7 +251,7 @@ function ApplianceButton({
         <img
           src={`/kitchen/appliances/${location === 'pantry' ? 'pantry-shelf' : location}.png`}
           alt=""
-          className="absolute inset-0 w-full h-full object-contain image-pixelated"
+          className="absolute inset-0 w-full h-full object-contain image-pixelated pointer-events-none"
           onLoad={handlePngLoad}
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = 'none';
