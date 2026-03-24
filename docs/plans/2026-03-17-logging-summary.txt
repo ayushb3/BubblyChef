@@ -1,0 +1,152 @@
+================================================================================
+                    BUBBLYEF LOGGING AUDIT - SUMMARY
+                              2026-03-17
+================================================================================
+
+SCOPE: All route files + logger setup + frontend error handling
+
+FILES ANALYZED:
+  Backend:
+    - bubbly_chef/logger.py (88 lines)
+    - bubbly_chef/api/app.py (112 lines)
+    - bubbly_chef/api/middleware.py (51 lines)
+    - 8 route files in bubbly_chef/api/routes/
+
+  Frontend:
+    - web/src/api/client.ts (479 lines)
+
+================================================================================
+                            OVERALL RATING
+================================================================================
+
+Logging Foundation:    SOLID
+Logger Setup:         GOOD (but not explicitly called)
+Middleware:           EXISTS (but not registered)
+Route Coverage:       INCONSISTENT
+Frontend:             MINIMAL
+Global Error Handler: MISSING
+
+Overall: GOOD FOUNDATION, EXECUTION GAPS
+
+================================================================================
+                          ROUTE SCORECARD
+================================================================================
+
+health.py       | ❌ ❌ ❌ ❌ ❌ | No logging (acceptable for trivial endpoints)
+pantry.py       | ⚠️  ⚠️  ❌ ❌ ⚠️  | 2 logs; missing mutation logging
+scan.py         | ✅ ⚠️  ✅ ❌ ⚠️  | 6 logs; gap at line 295
+recipes.py      | ✅ ✅ ✅ ❌ ✅ | 13+ logs; BEST EXAMPLE
+profile.py      | ✅ ⚠️  ✅ ❌ ⚠️  | 5 logs; missing GET logging
+chat.py         | ✅ ✅ ✅ ❌ ✅ | 8+ logs; GOOD EXAMPLE
+ingest.py       | ✅ ⚠️  ✅ ❌ ⚠️  | 4 handlers; good consistency
+apply.py        | ✅ ⚠️  ✅ ❌ ⚠️  | 7+ logs; no timing
+
+Legend:
+  [1] Logger import present
+  [2] Request entry logged
+  [3] Error handling with logging
+  [4] Structured context (extra={})
+  [5] Request exit/timing logged
+
+================================================================================
+                         CRITICAL FINDINGS
+================================================================================
+
+1. UNDOCUMENTED EXCEPTIONS (scan.py:295)
+   Location: confirm_items() exception handler
+   Issue: Exception silently swallowed, no logger.error() call
+   Severity: HIGH - Data loss risk
+   Fix: Add logger.error(f"Failed to add item {item.name}: {e}")
+
+2. UNREGISTERED MIDDLEWARE (app.py:86-93)
+   Location: CORS middleware registered; LoggingMiddleware NOT registered
+   Issue: Request/response logging disabled
+   Severity: MEDIUM - Loss of visibility
+   Fix: app.add_middleware(LoggingMiddleware) in create_app()
+
+3. REDUNDANT LOGGING SETUP (app.py:16-19)
+   Location: logging.basicConfig() called at module level
+   Issue: setup_logging() defined but never called; basicConfig() interferes
+   Severity: LOW - Setup inconsistency
+   Fix: Call setup_logging() explicitly in lifespan
+
+4. MISSING MUTATION LOGS (pantry.py)
+   Location: POST, PUT, DELETE endpoints
+   Issue: No logging on create/update/delete operations
+   Severity: MEDIUM - Audit trail missing
+   Fix: Add logger.info() on entry to each endpoint
+
+5. INCONSISTENT LOGGING (profile.py)
+   Location: GET endpoints have no logs; mutations do
+   Issue: Inconsistent visibility
+   Severity: LOW - Debugging inconvenience
+   Fix: Either add GET logs or accept minimal logging for reads
+
+6. NO GLOBAL EXCEPTION HANDLER
+   Location: app.py
+   Issue: Unhandled exceptions may not be logged properly
+   Severity: MEDIUM - Lost error context
+   Fix: Add @app.exception_handler(Exception) middleware
+
+7. MINIMAL FRONTEND LOGGING (web/src/api/client.ts)
+   Location: All error handlers use generic "Failed to..."
+   Issue: No HTTP status codes, no error details logged
+   Severity: LOW - Debugging difficulty
+   Fix: Log response.status and response.text in error handlers
+
+================================================================================
+                         GOOD PATTERNS FOUND
+================================================================================
+
+recipes.py (lines 74-82):
+  - Structured logging with extra={}
+  - Request metadata (prompt preview, constraints)
+  - Field truncation to prevent over-logging
+  - Boolean flags for optional fields
+  STATUS: USE AS TEMPLATE
+
+chat.py (lines 179-192):
+  - Comprehensive workflow logging
+  - Timing measurements (elapsed_seconds)
+  - Count aggregates (warnings_count, errors_count)
+  - Workflow correlation (workflow_id)
+  STATUS: USE AS TEMPLATE
+
+scan.py (lines 136-154):
+  - Good error context logging
+  - Exceptions logged before raising HTTPException
+  - Preprocessing success/failure tracked
+  STATUS: MOSTLY GOOD (except line 295 gap)
+
+================================================================================
+                           NEXT STEPS
+================================================================================
+
+HIGH PRIORITY (do first):
+  1. Fix scan.py:295 (add logger.error)
+  2. Register LoggingMiddleware in app.py
+  3. Add entry logs to pantry.py POST/PUT/DELETE
+  4. Add global exception handler
+
+MEDIUM PRIORITY (do next):
+  5. Standardize to extra={} structured logging
+  6. Add timing to all complex operations
+  7. Update frontend client.ts error handling
+
+LOW PRIORITY (nice to have):
+  8. Add database operation logging
+  9. Add AI call logging
+  10. Implement request_id context variables
+
+================================================================================
+                        DOCUMENTATION
+================================================================================
+
+Generated files:
+  - 2026-03-17-logging-audit.md (17 KB) - FULL AUDIT REPORT
+  - 2026-03-17-logging-quick-reference.md (6 KB) - PATTERNS & EXAMPLES
+  - 2026-03-17-logging-summary.txt - THIS FILE
+
+All files in: /Users/I589687/Documents/Personal/BubblyChef/docs/plans/
+
+================================================================================

@@ -71,8 +71,8 @@ export function KitchenItem({ item, position, onClick, draggable, onDragStart }:
       whileTap={{ scale: 0.95 }}
       onClick={onClick}
       draggable={draggable}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
+      onDragStart={handleDragStart as any}
+      onDragEnd={handleDragEnd as any}
     >
       <KitchenItemIcon item={item} />
 

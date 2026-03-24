@@ -309,8 +309,8 @@ export function Scan() {
           name: refs?.name?.value || item.name,
           quantity: Number(refs?.quantity?.value || item.quantity),
           unit: refs?.unit?.value || item.unit,
-          category: item.category,
-          storage_location: refs?.location?.value || item.location,
+          category: item.category as any,
+          storage_location: (refs?.location?.value || item.location) as any,
           expiry_date: refs?.expiry?.value || item.expiryDate || undefined,
         });
       }
@@ -322,8 +322,8 @@ export function Scan() {
           name: refs?.name?.value || item.name,
           quantity: Number(refs?.quantity?.value || item.quantity),
           unit: refs?.unit?.value || item.unit,
-          category: item.category,
-          storage_location: refs?.location?.value || item.location,
+          category: item.category as any,
+          storage_location: (refs?.location?.value || item.location) as any,
           expiry_date: refs?.expiry?.value || item.expiryDate || undefined,
         });
       }
