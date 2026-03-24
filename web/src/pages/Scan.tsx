@@ -336,7 +336,7 @@ export function Scan() {
       <div className="p-4 pt-8 space-y-6 min-h-screen lg:p-8 lg:pt-10 dark:bg-night-base">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold text-soft-charcoal dark:text-night-text flex items-center gap-2">
+          <h1 className="text-display font-extrabold text-deep-pink dark:text-night-pink flex items-center gap-2">
             Scan Receipt 📸
           </h1>
           <p className="text-soft-charcoal/60 dark:text-night-secondary mt-1">

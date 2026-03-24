@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field
 
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.config import settings
-from bubbly_chef.domain.normalizer import normalize_to_library
+from bubbly_chef.domain.expiry import get_default_location
+from bubbly_chef.domain.normalizer import normalize_to_library, normalize_unit
 from bubbly_chef.logger import get_logger
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.repository.sqlite import get_repository
@@ -296,12 +297,18 @@ async def confirm_items(
             # Normalize name against food library canonical entries
             normalized_name = normalize_to_library(item.name)
 
+            # Use category-based location default; item.location may still be PANTRY
+            # if the client didn't update it, so always derive from category as fallback
+            inferred_location = get_default_location(item.category.value)
+            location = StorageLocation(inferred_location)
+            unit = normalize_unit(item.unit or "item")
+
             pantry_item = PantryItem(
                 name=normalized_name,
                 category=item.category,
-                storage_location=item.location,
+                storage_location=location,
                 quantity=item.quantity,
-                unit=item.unit,
+                unit=unit,
                 expiry_date=item.expiry_date,
             )
 

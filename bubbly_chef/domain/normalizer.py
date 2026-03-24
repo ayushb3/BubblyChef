@@ -325,3 +325,22 @@ def normalize_to_library(name: str) -> str:
         pass
 
     return name
+
+
+_UNIT_ALIASES: dict[str, str] = {
+    "pound": "lb", "pounds": "lb",
+    "ounce": "oz", "ounces": "oz",
+    "kilogram": "kg", "kilograms": "kg",
+    "gram": "g", "grams": "g",
+    "liter": "L", "liters": "L",
+    "milliliter": "ml", "milliliters": "ml",
+    "piece": "item", "pieces": "item",
+    "each": "item",
+}
+
+
+def normalize_unit(unit: str) -> str:
+    """Normalize unit string to canonical form."""
+    if not unit:
+        return "item"
+    return _UNIT_ALIASES.get(unit.lower().strip(), unit.lower().strip())

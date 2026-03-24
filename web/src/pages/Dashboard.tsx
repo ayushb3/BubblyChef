@@ -1,10 +1,12 @@
 import { Camera, Plus, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useExpiringItems, useRecentActivity } from '../api/client';
-import { categoryEmojis } from '../constants/categories';
 import { ExpiryBadge } from '../components/ExpiryBadge';
 import { ListItemSkeleton } from '../components/Skeleton';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { PantryItemIcon } from '../components/PantryItemIcon';
+
+const titleCase = (s: string) => s.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
 const GREETINGS = {
   morning: [
@@ -157,12 +159,10 @@ export function Dashboard() {
                     onKeyDown={(e) => { if (e.key === 'Enter') navigate('/pantry'); }}
                   >
                     <div className="flex items-center gap-3">
-                      <span className="text-2xl" role="img" aria-label={item.category}>
-                        {categoryEmojis[item.category] ?? '📦'}
-                      </span>
+                      <PantryItemIcon item={item} />
                       <div>
                         <p className="text-base font-semibold text-soft-charcoal dark:text-night-text">
-                          {item.name}
+                          {titleCase(item.name)}
                         </p>
                         <p className="text-sm text-soft-charcoal dark:text-night-secondary opacity-70">
                           {item.quantity} {item.unit}
@@ -235,12 +235,10 @@ export function Dashboard() {
                 {recentItems.map((item, idx) => (
                   <div key={item.id}>
                     <div className="flex items-center gap-3">
-                      <span className="text-xl" role="img" aria-label={item.category}>
-                        {categoryEmojis[item.category] ?? '📦'}
-                      </span>
+                      <PantryItemIcon item={item} />
                       <div className="flex-1">
                         <p className="text-base font-semibold text-soft-charcoal dark:text-night-text">
-                          Added {item.name}
+                          Added {titleCase(item.name)}
                         </p>
                         <p className="text-xs text-soft-charcoal dark:text-night-secondary opacity-60">
                           {getRelativeTime(item.added_at)}
@@ -264,7 +262,7 @@ export function Dashboard() {
           </div>
 
           {/* Tip of the Day — full width on desktop */}
-          <TipOfTheDay expiringItem={expiringItems?.[0]?.name ?? null} onTryNow={() => navigate('/chat?mode=recipe')} />
+          <TipOfTheDay expiringItem={expiringItems?.[0]?.name ? titleCase(expiringItems[0].name) : null} onTryNow={() => navigate('/chat?mode=recipe')} />
 
         </div>
       </section>

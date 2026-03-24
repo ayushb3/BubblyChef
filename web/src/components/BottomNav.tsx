@@ -28,7 +28,7 @@ export function BottomNav() {
               className="flex flex-col items-center justify-center gap-1 py-2 transition-all active:scale-95"
               aria-current={isActive ? 'page' : undefined}
             >
-              <div className="w-10 h-10 -mt-2 rounded-full bg-deep-pink flex items-center justify-center shadow-soft-lg">
+              <div className="w-9 h-9 -mt-1 rounded-full bg-deep-pink flex items-center justify-center shadow-soft-lg">
                 <Icon size={22} strokeWidth={2.5} className="text-white" />
               </div>
               <span className={`text-xs mt-0.5 ${isActive ? 'text-deep-pink font-bold' : 'text-soft-charcoal dark:text-night-secondary opacity-60'}`}>

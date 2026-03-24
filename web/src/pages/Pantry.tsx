@@ -1,28 +1,13 @@
 import { useState } from 'react';
 import { Plus, Search } from 'lucide-react';
-import { usePantryItems, API_BASE_URL } from '../api/client';
+import { usePantryItems } from '../api/client';
 import { AddItemModal } from '../components/AddItemModal';
 import { ExpiryBadge } from '../components/ExpiryBadge';
 import { CardSkeleton } from '../components/CardSkeleton';
-import { categoryEmojis } from '../constants/categories';
+import { PantryItemIcon } from '../components/PantryItemIcon';
 import type { PantryItem } from '../types';
 
-/** Show icon for a pantry item. The /api/icons endpoint handles all fallback tiers. */
-function PantryItemIcon({ item }: { item: PantryItem }) {
-  const [useEmoji, setUseEmoji] = useState(false);
-  const fallback = categoryEmojis[item.category] || '📦';
-  const iconUrl = `${API_BASE_URL}/api/icons/${encodeURIComponent(item.name.toLowerCase().trim())}`;
-
-  if (useEmoji) return <span className="text-4xl">{fallback}</span>;
-  return (
-    <img
-      src={iconUrl}
-      alt={item.name}
-      className="w-10 h-10"
-      onError={() => setUseEmoji(true)}
-    />
-  );
-}
+const titleCase = (s: string) => s.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
 type LocationFilter = '' | 'fridge' | 'freezer' | 'pantry' | 'counter';
 
@@ -194,10 +179,10 @@ export function Pantry() {
               <div className="flex flex-col items-center text-center gap-2">
                 <PantryItemIcon item={item} />
                 <span className="text-sm font-bold text-soft-charcoal dark:text-night-text leading-tight line-clamp-2 w-full text-center">
-                  {item.name}
+                  {titleCase(item.name)}
                 </span>
                 <span className="text-xs text-soft-charcoal dark:text-night-secondary opacity-60">
-                  {item.quantity} {item.unit}
+                  {item.quantity} {item.unit.charAt(0).toUpperCase() + item.unit.slice(1)}
                 </span>
                 <ExpiryBadge daysUntilExpiry={item.days_until_expiry} />
               </div>

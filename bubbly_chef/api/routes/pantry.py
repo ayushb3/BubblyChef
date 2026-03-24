@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.repository.sqlite import get_repository
+from bubbly_chef.domain.expiry import get_default_location
+from bubbly_chef.domain.normalizer import normalize_unit
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 
 logger = logging.getLogger(__name__)
@@ -159,6 +161,15 @@ async def create_pantry_item(
     repo = await get_repository()
     expiry = get_expiry_heuristics()
 
+    # Apply smart location default: if client sent the plain PANTRY default,
+    # use category-based default instead (fridge for meat/dairy/produce, etc.)
+    location = body.storage_location
+    if location == StorageLocation.PANTRY:
+        inferred = get_default_location(body.category.value)
+        location = StorageLocation(inferred)
+
+    unit = normalize_unit(body.unit)
+
     expiry_date: date_type | None = None
     estimated = False
     if body.expiry_date:
@@ -170,15 +181,15 @@ async def create_pantry_item(
             )
     else:
         expiry_date, estimated = expiry.estimate_expiry(
-            body.category, body.storage_location, body.name
+            body.category, location, body.name
         )
 
     item = PantryItem(
         name=body.name,
         category=body.category,
-        storage_location=body.storage_location,
+        storage_location=location,
         quantity=body.quantity,
-        unit=body.unit,
+        unit=unit,
         expiry_date=expiry_date,
         estimated_expiry=estimated or body.expiry_date is None,
     )

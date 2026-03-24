@@ -22,7 +22,13 @@ export function ExpiryBadge({ daysUntilExpiry }: ExpiryBadgeProps) {
     label = days === 1 ? 'Tomorrow' : `${days} days`;
   } else {
     className = 'bg-pastel-mint text-soft-charcoal dark:bg-night-mint dark:text-white';
-    label = `${days} days`;
+    if (days > 365) {
+      label = '1 yr+';
+    } else if (days > 180) {
+      label = `${Math.round(days / 30)} mo`;
+    } else {
+      label = `${days} days`;
+    }
   }
 
   return (
