@@ -6,11 +6,39 @@ import { ExpiryBadge } from '../components/ExpiryBadge';
 import { ListItemSkeleton } from '../components/Skeleton';
 import { ThemeToggle } from '../components/ThemeToggle';
 
-const getGreeting = (): string => {
+const GREETINGS = {
+  morning: [
+    'Good morning! ☀️',
+    'Rise and shine! 🌅',
+    'Morning, chef! 🍳',
+    "Good morning! Let's cook something great ✨",
+  ],
+  afternoon: [
+    'Good afternoon! 🌤️',
+    'Hey there, hungry? 😋',
+    "Afternoon! What's cooking? 🥘",
+    'Good afternoon, chef! 👨‍🍳',
+  ],
+  evening: [
+    'Good evening! 🌙',
+    'Evening, chef! 🍽️',
+    "What's for dinner? 🌟",
+    'Good evening! Time to cook 🕯️',
+  ],
+  night: [
+    'Burning the midnight oil? 🌙',
+    'Late night snack time? 🦉',
+    'Night owl mode 🌙✨',
+  ],
+} as const;
+
+const getGreetingMessage = (): string => {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
+  const key: keyof typeof GREETINGS =
+    hour < 5 ? 'night' : hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : hour < 22 ? 'evening' : 'night';
+  const list = GREETINGS[key];
+  const idx = (new Date().getDay() * 3 + hour) % list.length;
+  return list[idx];
 };
 
 const getRelativeTime = (dateStr: string): string => {
@@ -79,25 +107,16 @@ export function Dashboard() {
               BubblyChef
             </h1>
             <p className="text-sm text-soft-charcoal dark:text-night-secondary opacity-70">
-              {getGreeting()}! 🍳
+              {getGreetingMessage()}
             </p>
           </div>
         </div>
         <ThemeToggle />
       </header>
 
-      {/* Dark mode greeting hero — shown only in dark mode */}
-      <div className="hidden dark:block mx-4 mt-2 bg-night-surface rounded-2xl p-4 lg:hidden">
-        <p className="text-night-text font-bold text-lg">
-          Hi, Foodie! 👋✨
-          {/* TODO: replace with user profile name when available */}
-        </p>
-        <p className="text-night-secondary text-sm mt-1">{getGreeting()} — what are we cooking today?</p>
-      </div>
-
       {/* Desktop greeting row */}
       <div className="hidden lg:flex items-center justify-between pt-8 px-8 pb-2">
-        <p className="text-xl text-soft-charcoal dark:text-night-text opacity-70">{getGreeting()}! 🍳</p>
+        <p className="text-xl text-soft-charcoal dark:text-night-text opacity-70">{getGreetingMessage()}</p>
         <ThemeToggle />
       </div>
 

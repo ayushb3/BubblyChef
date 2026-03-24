@@ -133,22 +133,22 @@ export function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-lg lg:max-w-xl bg-white rounded-t-3xl sm:rounded-3xl shadow-soft-lg max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full max-w-lg lg:max-w-xl bg-white dark:bg-night-surface rounded-t-3xl sm:rounded-3xl shadow-soft-lg max-h-[90vh] overflow-y-auto">
         {/* Drag Handle */}
         <div className="flex justify-center pt-3 pb-1 sm:hidden">
-          <div className="w-12 h-1.5 bg-soft-charcoal/20 rounded-full" />
+          <div className="w-12 h-1.5 bg-soft-charcoal/20 dark:bg-night-border rounded-full" />
         </div>
 
         {/* Header */}
         <div className="flex items-center justify-between p-6 pb-4">
-          <h2 className="text-2xl font-bold text-soft-charcoal">
+          <h2 className="text-2xl font-bold text-soft-charcoal dark:text-night-text">
             {editItem ? 'Edit Item' : 'Add Item'} ✨
           </h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-soft-charcoal/5 rounded-full transition-colors"
+            className="p-2 hover:bg-soft-charcoal/5 dark:hover:bg-white/5 rounded-full transition-colors"
           >
-            <X size={24} className="text-soft-charcoal/60" />
+            <X size={24} className="text-soft-charcoal/60 dark:text-night-secondary" />
           </button>
         </div>
 
@@ -156,7 +156,7 @@ export function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
         <form onSubmit={handleSubmit} className="px-6 pb-6 space-y-5">
           {/* Item Name */}
           <div>
-            <label className="block text-sm font-semibold text-soft-charcoal mb-2">
+            <label className="block text-sm font-semibold text-soft-charcoal dark:text-night-text mb-2">
               What did you get? 🛒
             </label>
             <input
@@ -165,13 +165,13 @@ export function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Milk, Chicken breast..."
               required
-              className="w-full px-4 py-3 rounded-xl border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all"
+              className="w-full px-4 py-3 rounded-xl border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all dark:bg-night-raised dark:border-night-border dark:text-night-text dark:placeholder-night-secondary"
             />
           </div>
 
           {/* Quantity & Unit */}
           <div>
-            <label className="block text-sm font-semibold text-soft-charcoal mb-2">
+            <label className="block text-sm font-semibold text-soft-charcoal dark:text-night-text mb-2">
               How much?
             </label>
             <div className="flex gap-3">
@@ -181,12 +181,12 @@ export function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
                 onChange={(e) => setQuantity(e.target.value)}
                 min="0"
                 step="0.1"
-                className="w-2/5 px-4 py-3 rounded-xl border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all"
+                className="w-2/5 px-4 py-3 rounded-xl border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all dark:bg-night-raised dark:border-night-border dark:text-night-text"
               />
               <select
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
-                className="flex-1 px-4 py-3 rounded-xl border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all bg-white"
+                className="flex-1 px-4 py-3 rounded-xl border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all bg-white dark:bg-night-raised dark:border-night-border dark:text-night-text"
               >
                 {units.map((u) => (
                   <option key={u} value={u}>
@@ -199,13 +199,13 @@ export function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
 
           {/* Category */}
           <div>
-            <label className="block text-sm font-semibold text-soft-charcoal mb-2">
+            <label className="block text-sm font-semibold text-soft-charcoal dark:text-night-text mb-2">
               Category 📦
             </label>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value as Category)}
-              className="w-full px-4 py-3 rounded-xl border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all bg-white"
+              className="w-full px-4 py-3 rounded-xl border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all bg-white dark:bg-night-raised dark:border-night-border dark:text-night-text"
             >
               {categories.map((cat) => (
                 <option key={cat.value} value={cat.value}>
@@ -217,7 +217,7 @@ export function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
 
           {/* Storage Location */}
           <div>
-            <label className="block text-sm font-semibold text-soft-charcoal mb-2">
+            <label className="block text-sm font-semibold text-soft-charcoal dark:text-night-text mb-2">
               Where does it go?
             </label>
             <div className="grid grid-cols-4 gap-2">
@@ -228,8 +228,8 @@ export function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
                   onClick={() => setLocation(loc.value)}
                   className={`flex flex-col items-center gap-1 p-3 rounded-xl transition-all ${
                     location === loc.value
-                      ? 'bg-pastel-mint text-soft-charcoal shadow-soft'
-                      : 'bg-white border border-pastel-pink/20 text-soft-charcoal/60 hover:border-pastel-pink/40'
+                      ? 'bg-pastel-mint text-soft-charcoal shadow-soft dark:bg-deep-mint/30 dark:text-night-text'
+                      : 'bg-white border border-pastel-pink/20 text-soft-charcoal/60 hover:border-pastel-pink/40 dark:bg-night-raised dark:border-night-border dark:text-night-secondary dark:hover:border-night-border/80'
                   }`}
                 >
                   <span className="text-2xl">{loc.emoji}</span>
@@ -241,16 +241,16 @@ export function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
 
           {/* Expiry Date */}
           <div>
-            <label className="block text-sm font-semibold text-soft-charcoal mb-2">
+            <label className="block text-sm font-semibold text-soft-charcoal dark:text-night-text mb-2">
               Best by 📅
             </label>
             <input
               type="date"
               value={expiryDate}
               onChange={(e) => setExpiryDate(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all"
+              className="w-full px-4 py-3 rounded-xl border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all dark:bg-night-raised dark:border-night-border dark:text-night-text"
             />
-            <p className="text-xs text-soft-charcoal/50 mt-1">
+            <p className="text-xs text-soft-charcoal/50 dark:text-night-secondary mt-1">
               💡 Leave blank to auto-estimate
             </p>
           </div>
@@ -270,7 +270,7 @@ export function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
             <button
               type="button"
               onClick={onClose}
-              className="px-6 py-3 text-soft-charcoal/60 font-semibold rounded-full hover:bg-soft-charcoal/5 transition-all"
+              className="px-6 py-3 text-soft-charcoal/60 dark:text-night-secondary font-semibold rounded-full hover:bg-soft-charcoal/5 dark:hover:bg-white/5 transition-all"
             >
               Cancel
             </button>

@@ -209,7 +209,7 @@ export function Pantry() {
       {/* FAB */}
       <button
         onClick={() => setIsAddModalOpen(true)}
-        className="fixed bottom-20 right-4 w-14 h-14 rounded-full bg-deep-pink text-white shadow-soft-lg hover:bg-[#D4607A] hover:shadow-soft-xl active:scale-95 active:shadow-soft transition-all flex items-center justify-center z-40"
+        className="fixed bottom-20 right-4 w-14 h-14 rounded-full bg-deep-pink dark:bg-night-pink text-white shadow-soft-lg hover:opacity-90 hover:shadow-soft-xl active:scale-95 active:shadow-soft transition-all flex items-center justify-center z-40 focus-visible:ring-2 focus-visible:ring-deep-pink/50 focus-visible:ring-offset-2"
         aria-label="Add pantry item"
       >
         <Plus size={24} strokeWidth={2.5} />

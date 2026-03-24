@@ -260,13 +260,13 @@ export function Scan() {
   // Upload State
   if (scanState === 'upload') {
     return (
-      <div className="p-4 pt-8 space-y-6 lg:p-8 lg:pt-10">
+      <div className="p-4 pt-8 space-y-6 min-h-screen lg:p-8 lg:pt-10 dark:bg-night-base">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold text-soft-charcoal flex items-center gap-2">
+          <h1 className="text-3xl font-bold text-soft-charcoal dark:text-night-text flex items-center gap-2">
             Scan Receipt 📸
           </h1>
-          <p className="text-soft-charcoal/60 mt-1">
+          <p className="text-soft-charcoal/60 dark:text-night-secondary mt-1">
             Add groceries in seconds!
           </p>
         </div>
@@ -276,7 +276,7 @@ export function Scan() {
           <div className="bg-pastel-coral/10 rounded-xl p-4 border border-pastel-coral/30">
             <div className="flex items-start gap-2">
               <AlertCircle className="text-pastel-coral flex-shrink-0 mt-0.5" size={18} />
-              <p className="text-sm text-soft-charcoal">{errorMessage}</p>
+              <p className="text-sm text-soft-charcoal dark:text-night-text">{errorMessage}</p>
             </div>
           </div>
         )}
@@ -284,7 +284,7 @@ export function Scan() {
         {/* OCR Status Warning */}
         {ocrStatus && !ocrStatus.available && (
           <div className="bg-pastel-coral/10 rounded-xl p-3 border border-pastel-coral/30">
-            <p className="text-sm text-soft-charcoal/70">
+            <p className="text-sm text-soft-charcoal/70 dark:text-night-secondary">
               ⚠️ OCR service unavailable. {ocrStatus.message}
             </p>
           </div>
@@ -295,7 +295,7 @@ export function Scan() {
           onClick={() => fileInputRef.current?.click()}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
-          className="relative bg-white rounded-2xl p-8 border-2 border-dashed border-pastel-pink/40 hover:border-pastel-pink hover:bg-pastel-pink/5 transition-all cursor-pointer"
+          className="relative bg-white rounded-2xl p-8 border-2 border-dashed border-pastel-pink/40 hover:border-pastel-pink hover:bg-pastel-pink/5 transition-all cursor-pointer dark:bg-night-surface dark:border-night-border dark:hover:bg-night-raised"
         >
           <input
             ref={fileInputRef}
@@ -311,15 +311,15 @@ export function Scan() {
             </div>
 
             <div>
-              <p className="text-lg font-semibold text-soft-charcoal mb-1">
+              <p className="text-lg font-semibold text-soft-charcoal dark:text-night-text mb-1">
                 Drop your receipt here
               </p>
-              <p className="text-soft-charcoal/60 text-sm">
+              <p className="text-soft-charcoal/60 dark:text-night-secondary text-sm">
                 or tap to upload 📷
               </p>
             </div>
 
-            <div className="flex items-center gap-2 text-xs text-soft-charcoal/40">
+            <div className="flex items-center gap-2 text-xs text-soft-charcoal/40 dark:text-night-secondary/60">
               <Upload size={14} />
               <span>PNG, JPG, or HEIC</span>
             </div>
@@ -336,11 +336,11 @@ export function Scan() {
         </div>
 
         {/* Tips Section */}
-        <div className="bg-white rounded-2xl p-5 shadow-soft">
-          <h3 className="font-bold text-soft-charcoal mb-3 flex items-center gap-2">
+        <div className="bg-white rounded-2xl p-5 shadow-soft dark:bg-night-surface">
+          <h3 className="font-bold text-soft-charcoal dark:text-night-text mb-3 flex items-center gap-2">
             💡 Tips for best results:
           </h3>
-          <ul className="space-y-2 text-sm text-soft-charcoal/70">
+          <ul className="space-y-2 text-sm text-soft-charcoal/70 dark:text-night-secondary">
             <li className="flex items-start gap-2">
               <span className="text-pastel-mint">•</span>
               <span>Flatten the receipt on a solid surface</span>
@@ -366,7 +366,7 @@ export function Scan() {
   // Processing State
   if (scanState === 'processing') {
     return (
-      <div className="p-4 pt-8 flex flex-col items-center justify-center min-h-[80vh]">
+      <div className="p-4 pt-8 flex flex-col items-center justify-center min-h-[80vh] dark:bg-night-base">
         <div className="text-center space-y-6 max-w-sm">
           {/* Preview */}
           {previewUrl && (
@@ -376,13 +376,13 @@ export function Scan() {
                 alt="Receipt preview"
                 className="w-full h-full object-cover opacity-50"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent dark:from-night-base dark:via-transparent dark:to-transparent" />
             </div>
           )}
 
           {/* Loading Animation */}
           <div className="relative">
-            <div className="w-20 h-20 mx-auto rounded-full bg-pastel-pink/10 flex items-center justify-center mb-4">
+            <div className="w-20 h-20 mx-auto rounded-full bg-pastel-pink/10 flex items-center justify-center mb-4 dark:bg-night-pink/20">
               <Loader2 className="text-pastel-pink animate-spin" size={40} strokeWidth={2.5} />
             </div>
 
@@ -395,16 +395,16 @@ export function Scan() {
           </div>
 
           <div>
-            <h2 className="text-2xl font-bold text-soft-charcoal mb-2">
+            <h2 className="text-2xl font-bold text-soft-charcoal dark:text-night-text mb-2">
               Reading your receipt... 🔍
             </h2>
-            <p className="text-soft-charcoal/60">
+            <p className="text-soft-charcoal/60 dark:text-night-secondary">
               This might take a moment
             </p>
           </div>
 
           {/* Progress Steps */}
-          <div className="space-y-2 text-sm text-left bg-white rounded-xl p-4 shadow-soft">
+          <div className="space-y-2 text-sm text-left bg-white rounded-xl p-4 shadow-soft dark:bg-night-surface">
             <div className="flex items-center gap-2 text-pastel-mint">
               <CheckCircle size={16} />
               <span>Image uploaded</span>
@@ -413,7 +413,7 @@ export function Scan() {
               <Loader2 size={16} className="animate-spin" />
               <span>Extracting text...</span>
             </div>
-            <div className="flex items-center gap-2 text-soft-charcoal/30">
+            <div className="flex items-center gap-2 text-soft-charcoal/30 dark:text-night-secondary/40">
               <div className="w-4 h-4 rounded-full border-2 border-soft-charcoal/30" />
               <span>Identifying items</span>
             </div>
@@ -428,7 +428,7 @@ export function Scan() {
   // Success State
   if (scanState === 'success') {
     return (
-      <div className="p-4 pt-8 flex flex-col items-center justify-center min-h-[80vh]">
+      <div className="p-4 pt-8 flex flex-col items-center justify-center min-h-[80vh] dark:bg-night-base">
         <div className="text-center space-y-6 max-w-sm">
           <div className="w-24 h-24 mx-auto rounded-full bg-pastel-mint/20 flex items-center justify-center">
             <CheckCircle className="text-pastel-mint" size={52} strokeWidth={2} />
