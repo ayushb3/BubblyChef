@@ -13,9 +13,27 @@ Bubbly Chef is a **recipe assistant grounded in your actual pantry**. Core exper
 
 ---
 
-## Current Phase: 2 — Dashboard + Chat
+## Current Phase: 3 — Recipe Library + Multimodal Ingestion
 
-### Phase 2 Exit Criteria
+### Phase 2 Exit Criteria — ✅ COMPLETE (2026-03-17)
+
+All gates passed: pytest, mypy --strict, ruff, tsc --noEmit, dashboard-renders, chat-ui, chat-routes, coverage ≥80%.
+
+---
+
+### Phase K1 Exit Criteria — ✅ COMPLETE (2026-03-17)
+
+`GET /api/icons/{name}` live, 304-entry food catalog, pantry grid using icon API, HF generation removed.
+
+---
+
+### Phase K2B Exit Criteria — ✅ COMPLETE (2026-03-18)
+
+DOM kitchen scene with drag-and-drop, cross-zone moves, milestone unlocks. Phaser removed.
+
+---
+
+### Phase 3 Exit Criteria
 
 | Gate | Check | Weight |
 |------|-------|--------|
@@ -23,10 +41,10 @@ Bubbly Chef is a **recipe assistant grounded in your actual pantry**. Core exper
 | type-check | `mypy bubbly_chef/ --strict` passes | 3 |
 | lint | `ruff check bubbly_chef/` passes | 3 |
 | frontend-types | `cd web && npx tsc --noEmit` passes | 2 |
-| dashboard-renders | Dashboard renders expiring widget + quick actions; Recent Activity pulls from real DB (not hardcoded) | 4 |
-| chat-ui | Chat page exists with input + message thread; routes to `/chat` in nav | 4 |
-| chat-routes | Chat intent router correctly classifies: `recipe-generate` / `pantry-add` / `cooking-question` / `saved-recipe-lookup` | 4 |
-| coverage | `pytest --cov=bubbly_chef` ≥ 80% on core modules | 2 |
+| recipe-crud | Save/edit/delete/search recipes works end-to-end | 4 |
+| shopping-list | Generate missing ingredient list from saved recipe | 3 |
+| url-ingest | URL → structured recipe card works for common recipe sites | 4 |
+| recipe-index | Unified search across all recipe sources with source badges | 3 |
 
 ---
 
@@ -93,22 +111,11 @@ See `docs/plans/2026-03-17-kitchen-phase-plan.md` for full spec.
 
 ---
 
-### Phase K2: Phaser Kitchen Game Scene
+### ~~Phase K2: Phaser Kitchen Game Scene~~ → Completed as K2B (DOM Kitchen)
 
-Replace the DOM kitchen scene with a Phaser 3 game scene supporting drag-and-drop item placement, progression/decoration unlocks, and expiry animations.
+DOM-native kitchen scene replaces the Phaser plan. Drag-and-drop item placement, cross-zone moves (fridge/freezer/pantry/counter), milestone decoration unlocks, all without a canvas game engine.
 
-**Exit gates:**
-- Phaser scene mounts without console errors; items load in correct locations
-- Drag-and-drop: item snaps to slot, position persists across reload (`slot_index` in DB)
-- At least one decoration unlocks after triggering a milestone (5 pantry items)
-- Feature flag `VITE_KITCHEN_V2=true` enables Phaser scene; DOM scene still works without flag
-- `tsc --noEmit` passes
-
-**Key deliverables:** `KitchenGame.tsx`, Tiled `.tmj` maps, food icon texture atlas, `decorations` backend routes + DB table, item slot persistence
-
-**Depends on:** Phase K1 (icon atlas reused as Phaser spritesheet)
-
-See `docs/plans/2026-03-17-kitchen-phase-plan.md` for full spec.
+**Status: ✅ Complete — Phaser removed, DOM kitchen live**
 
 ---
 
@@ -151,4 +158,4 @@ The core goal: users can save recipes from any source — website URL, TikTok/Re
 
 ---
 
-*Last updated: 2026-03-17 — Added Phase K1 (Fluent Emoji icons) and Phase K2 (Phaser kitchen game) to Backlog Phases; struck through resolved tech debt item*
+*Last updated: 2026-03-24 — Phase 2, K1, K2B marked complete; Phase 3 exit criteria added; K2 Phaser plan superseded by DOM kitchen (K2B)*

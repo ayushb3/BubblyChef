@@ -1,6 +1,109 @@
 # BubblyChef TODO & Roadmap
 
-**Last Updated:** 2026-03-16
+**Last Updated:** 2026-03-24
+
+This document tracks current tasks, bugs, and future enhancements. See [docs/ROADMAP.md](ROADMAP.md) for the long-term product vision.
+
+---
+
+## ✅ Completed
+
+### Phase 1 (Foundation + Core Features)
+- [x] Backend pantry CRUD API
+- [x] Frontend pantry management UI
+- [x] Receipt scanning with Tesseract OCR
+- [x] AI-powered receipt parsing (Gemini)
+- [x] Receipt review & confirmation flow
+- [x] Comprehensive logging system
+- [x] Recipe generation API + UI
+- [x] Pantry-grounded AI prompting
+
+### Phase 2 — Dashboard + Chat
+- [x] Dashboard page with expiring widget + quick actions
+- [x] Desktop sidebar layout
+- [x] Chat backend (`POST /v1/chat`) with intent classification workflow
+- [x] Chat page (`/chat`) with message thread + sticky input
+- [x] Frontend connected to `POST /v1/chat`
+- [x] Intent-specific response rendering (pantry proposal, recipe card, plain text)
+- [x] Recent Activity widget pulls real pantry data
+- [x] Proposal approval wired to DB
+- [x] Conversation history (backend + frontend)
+
+### Phase K1 — Fluent Emoji Icon System
+- [x] 304-entry food catalog (`bubbly_chef/domain/pantry_catalog.json`)
+- [x] `GET /api/icons/{name}` with category fallback
+- [x] Pantry grid uses icon API
+- [x] HF background generation removed
+
+### Phase K2B — DOM Kitchen Scene
+- [x] DOM-based kitchen room + interior views
+- [x] Drag-and-drop item placement (HTML5 native, slot_index persisted)
+- [x] Cross-zone drag between fridge/freezer/pantry/counter
+- [x] Milestone progress bar + decoration unlock system
+- [x] Phaser dependency removed
+
+---
+
+## 🚧 Active / Next Up
+
+### Backend
+- [ ] Add pagination to pantry list endpoint
+- [ ] Unit conversion system (dozen eggs → individual eggs)
+- [ ] Database migrations (Alembic)
+- [ ] Rate limiting for AI provider calls
+
+### Frontend
+- [ ] Markdown rendering in chat bubbles (`react-markdown`)
+- [ ] End-to-end testing (Playwright)
+- [ ] Accessibility improvements (ARIA labels, keyboard nav)
+
+---
+
+## 🐛 Known Bugs
+
+### High Priority
+- [ ] Receipt parsing sometimes confuses prices with quantities
+- [ ] Long item names overflow in mobile view
+- [ ] Expiry date estimation for produce can be inaccurate
+
+### Low Priority
+- [ ] Bottom nav doesn't stay fixed on iOS Safari
+- [ ] Some emojis don't render on older devices
+
+---
+
+## 🔮 Future Phases
+
+### Phase 3: Recipe Library + Multimodal Ingestion (Q2–Q3 2026)
+- [ ] Recipe CRUD — save, edit, delete, search recipes
+- [ ] Shopping list from missing ingredients
+- [ ] URL ingestion — scrape recipe websites
+- [ ] Short-form video ingestion (TikTok, Reels, YouTube Shorts)
+- [ ] Long-form video ingestion (YouTube)
+- [ ] Recipe index with source badges (🎵 TikTok, 📺 YouTube, 🔗 URL, ✨ AI)
+- [ ] Saved-recipe-lookup chat intent
+
+### Phase 4: Mobile PWA (Q4 2026)
+- [ ] Progressive Web App (PWA) setup
+- [ ] Offline support
+- [ ] Push notifications for expiring items
+- [ ] Camera integration for receipt scanning
+
+### Phase 5: Advanced Features (2027+)
+- [ ] User accounts and authentication
+- [ ] Meal planning calendar
+- [ ] Multi-user/household support
+
+---
+
+## 📝 Decision Log
+
+- **2026-03-24**: Replaced Phaser (K2) with DOM-native kitchen scene (K2B) — simpler, no canvas library conflicts
+- **2026-03-17**: Built 304-entry USDA-backed food catalog for icons + categorization (K1)
+- **2026-03-17**: Rewrote expiry.py with `dry_goods`/`canned` keys, dropped stale `pantry` key
+- **2026-03-16**: Chat clarified as intent router — intents: recipe-generate, pantry-add, cooking-question, saved-recipe-lookup
+- **2026-03-16**: Pushed recipe-save + shopping-list to Phase 3; redefined Phase 3 as multimodal recipe ingestion
+
 
 This document tracks current tasks, bugs, and future enhancements. See [docs/plans/roadmap.md](plans/roadmap.md) for the long-term product vision.
 

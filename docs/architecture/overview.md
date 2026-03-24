@@ -49,80 +49,69 @@
 ```
 bubbly_chef/
 ├── api/
-│   ├── __init__.py
-│   ├── app.py              # FastAPI app factory
-│   ├── deps.py             # Dependency injection
+│   ├── app.py               # FastAPI app factory, lifespan, middleware
 │   └── routes/
-│       ├── __init__.py
-│       ├── health.py       # Health check
-│       ├── pantry.py       # Pantry CRUD
-│       ├── scan.py         # Receipt scanning
-│       ├── recipes.py      # Recipe generation
-│       └── chat.py         # Chat orchestrator (Phase 2)
+│       ├── health.py        # Health check
+│       ├── pantry.py        # Pantry CRUD
+│       ├── scan.py          # Receipt scanning (OCR + AI)
+│       ├── recipes.py       # Recipe generation
+│       ├── chat.py          # Chat orchestrator
+│       ├── ingest.py        # AI ingest endpoints
+│       ├── apply.py         # Apply proposals to DB
+│       ├── profile.py       # User profile
+│       ├── icons.py         # Fluent emoji icon API
+│       └── decorations.py   # Kitchen scene decorations
 │
 ├── ai/
-│   ├── __init__.py
-│   ├── provider.py         # Base AIProvider protocol
-│   ├── manager.py          # AIManager (provider selection)
-│   ├── gemini.py           # Gemini free tier
-│   ├── ollama.py           # Self-hosted Ollama
-│   └── tools/
-│       ├── __init__.py
-│       ├── expiry.py       # Expiry lookup tool
-│       └── pantry.py       # Pantry search tool
+│   ├── provider.py          # AIProvider protocol
+│   ├── manager.py           # AIManager (provider selection + fallback)
+│   ├── gemini.py            # Gemini free tier
+│   └── ollama.py            # Self-hosted Ollama
+│
+├── workflows/               # LangGraph state machines
+│   ├── state.py
+│   ├── chat_ingest.py       # Chat → intent routing
+│   ├── receipt_ingest.py    # Receipt → pantry
+│   ├── product_ingest.py    # Product → pantry
+│   └── recipe_ingest.py     # Recipe text → recipe card
 │
 ├── domain/
-│   ├── __init__.py
-│   ├── pantry.py           # Pantry business logic
-│   ├── normalizer.py       # Food name normalization
-│   ├── expiry.py           # Expiry defaults + logic
-│   └── receipt.py          # Receipt parsing logic
+│   ├── normalizer.py        # Food name normalization + categorization
+│   ├── expiry.py            # Expiry date heuristics
+│   ├── defaults.py          # Smart quantity/unit defaults
+│   ├── icon_map.py          # Name → emoji/icon mapping
+│   └── pantry_catalog.json  # 304-entry USDA-backed food catalog
 │
 ├── models/
-│   ├── __init__.py
-│   ├── pantry.py           # PantryItem, Category, Location
-│   ├── recipe.py           # Recipe, Ingredient
-│   └── scan.py             # ScanResult, ParsedItem
+│   ├── pantry.py            # PantryItem, Category, Location
+│   ├── recipes.py           # RecipeCard
+│   ├── user.py              # UserProfile
+│   └── proposals.py         # ProposalEnvelope
+│
+├── services/
+│   ├── ocr.py               # Tesseract OCR wrapper
+│   ├── receipt_parser.py    # AI-powered receipt parsing
+│   └── image_preprocessor.py
+│
+├── tools/
+│   ├── llm_client.py        # Ollama client
+│   ├── normalizer.py        # Normalization utilities
+│   ├── expiry.py            # Expiry tools
+│   └── product_lookup.py    # Product lookup
 │
 ├── repository/
-│   ├── __init__.py
-│   ├── base.py             # Repository protocol
-│   └── sqlite.py           # SQLite implementation
+│   ├── base.py              # Repository protocol
+│   └── sqlite.py            # SQLite implementation (all DB access here)
 │
-├── config.py               # Settings from env vars
-└── main.py                 # Entry point
+└── config.py                # Settings from env vars
 
-web/
-├── src/
-│   ├── api/                # API client
-│   │   └── client.ts
-│   ├── components/
-│   │   ├── ui/             # Shared UI components
-│   │   ├── pantry/         # Pantry-specific components
-│   │   ├── scan/           # Scan-specific components
-│   │   └── recipes/        # Recipe-specific components
-│   ├── pages/
-│   │   ├── Dashboard.tsx
-│   │   ├── Pantry.tsx
-│   │   ├── Scan.tsx
-│   │   ├── Recipes.tsx
-│   │   └── Chat.tsx        # Phase 2
-│   ├── hooks/              # Custom React hooks
-│   ├── stores/             # Zustand stores
-│   ├── types/              # TypeScript types
-│   ├── App.tsx
-│   └── main.tsx
-├── index.html
-├── package.json
-├── tailwind.config.js
-├── tsconfig.json
-└── vite.config.ts
-
-tests/
-├── api/                    # API route tests
-├── domain/                 # Domain logic tests
-├── ai/                     # AI provider tests (mocked)
-└── conftest.py
+web/src/
+├── api/client.ts            # API client + React Query hooks
+├── pages/                   # Dashboard, Pantry, Scan, Chat, Profile
+├── components/
+│   ├── kitchen/             # DOMKitchenScene, InteriorView, KitchenItem
+│   └── ...                  # Shared UI components
+└── types/index.ts
 ```
 
 ---
@@ -410,39 +399,19 @@ class Settings(BaseSettings):
 
 ---
 
-## What's Reusable From Current Codebase
-
-| File | Keep? | Notes |
-|------|-------|-------|
-| `tools/normalizer.py` | ✅ Yes | Good synonym mapping, useful |
-| `tools/expiry.py` | ✅ Yes | Refactor to support tool interface |
-| `repository/sqlite.py` | ✅ Partial | Keep pattern, simplify schema |
-| `models/pantry.py` | ✅ Partial | Simplify, remove proposal stuff |
-| `api/app.py` | ✅ Yes | FastAPI factory is fine |
-| `workflows/*.py` | ❌ No | Over-engineered, rebuild simpler |
-| `models/base.py` | ❌ No | ProposalEnvelope not needed |
-| `tools/llm_client.py` | ❌ No | Replace with AI Provider abstraction |
-
----
-
 ## Testing Strategy
 
 ```
 tests/
-├── api/
-│   ├── test_pantry.py      # CRUD endpoints
-│   ├── test_scan.py        # Receipt parsing
-│   └── test_recipes.py     # Recipe generation
-├── domain/
-│   ├── test_normalizer.py  # Keep existing tests
-│   ├── test_expiry.py      # Keep existing tests
-│   └── test_receipt.py     # Parsing logic
-├── ai/
-│   └── test_providers.py   # Mocked provider tests
-└── conftest.py             # Shared fixtures
+├── api/                    # API route tests
+├── domain/                 # Domain logic tests
+├── ai/                     # AI provider tests (mocked)
+├── workflows/              # LangGraph workflow tests
+└── conftest.py             # Shared fixtures, temp SQLite DB
 ```
 
 **Testing approach:**
 - Mock AI providers for deterministic tests
 - Test domain logic independently
-- Integration tests for critical flows
+- Async test client via `ASGITransport` + `AsyncClient`
+- Coverage target: ≥ 80% on core modules

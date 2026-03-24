@@ -2,7 +2,7 @@
 
 [![Demo Video](https://img.youtube.com/vi/0r-LrfWgBrk/maxresdefault.jpg)](https://youtu.be/0r-LrfWgBrk)
 
-AI-first agentic workflow service for pantry and recipe management. This service powers the intelligence behind a mobile app, handling receipt parsing, product scanning, chat-based pantry updates, and recipe extraction.
+A Sanrio-inspired pantry + recipe assistant. Scan receipts, manage your pantry, generate AI recipes, chat about cooking, and explore your kitchen scene.
 
 ## Architecture Overview
 
@@ -34,8 +34,8 @@ AI-first agentic workflow service for pantry and recipe management. This service
 ┌─────────────────────────▼───────────────────────────────────────┐
 │                    External Services                             │
 │  ┌────────────────┐  ┌────────────────┐  ┌──────────────────┐   │
-│  │Gemini (Default)│  │ SQLite (Local) │  │ OpenFoodFacts    │   │
-│  │  + Ollama      │  │ Data Store     │  │ (Stub for now)   │   │
+│  │Gemini (Default)│  │ SQLite (Local) │  │  Food Catalog    │   │
+│  │  + Ollama      │  │ Data Store     │  │  (304 entries)   │   │
 │  │  LLM Backends  │  └────────────────┘  └──────────────────┘   │
 │  └────────────────┘                                              │
 └─────────────────────────────────────────────────────────────────┘
@@ -76,17 +76,17 @@ brew install ollama
 # Start Ollama service
 ollama serve
 
-# In another terminal, pull the model
-ollama pull llama3.2:3b
+# In another terminal, pull the recommended model
+ollama pull llama3.1:8b
 ```
 
-The default model is `llama3.2:3b` which provides a good balance of speed and quality. You can use other models by setting the `BUBBLY_OLLAMA_MODEL` environment variable.
+The default model is `llama3.1:8b` which provides a good balance of speed and quality. You can use other models by setting the `BUBBLY_OLLAMA_MODEL` environment variable.
 
 Alternative models:
 
-- `llama3.2:1b` - Faster, less accurate
-- `llama3.2:8b` - More accurate, slower
-- `mistral:7b` - Good alternative
+- `llama3.2:3b` - Faster, less accurate
+- `qwen2.5:32b` - More capable, requires 20GB+ RAM
+- `deepseek-r1:32b` - Best for reasoning tasks
 
 ### 3. Python Environment
 
@@ -158,7 +158,7 @@ BUBBLY_GEMINI_API_KEY=your-gemini-api-key-here
 # Ollama (Self-hosted - Optional)
 # Install: https://ollama.ai/
 BUBBLY_OLLAMA_BASE_URL=http://localhost:11434
-BUBBLY_OLLAMA_MODEL=llama3.2:3b
+BUBBLY_OLLAMA_MODEL=llama3.1:8b
 
 # =============================================================================
 # Application Settings
@@ -759,7 +759,9 @@ See `CLAUDE.md` for full API documentation and integration details.
 - [ ] Shopping list generation from recipes
 - [ ] Unit conversion system (e.g. dozen eggs → individual eggs)
 - [ ] Meal planning suggestions
-- [ ] Mobile app (React Native / Expo)
+- [ ] Mobile PWA (Progressive Web App)
+- [ ] Database migrations (Alembic)
+- [ ] Multi-user support with authentication
 
 ## License
 
