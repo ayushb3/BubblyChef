@@ -76,36 +76,36 @@ export function Pantry() {
       {/* Sticky header */}
       <div className="sticky top-0 z-10 bg-cream dark:bg-night-base">
         {/* Title row */}
-        <div className="flex items-center justify-between px-4 pt-4 pb-2">
+        <div className="flex items-center justify-between px-5 pt-6 pb-3">
           <h1 className="text-display font-extrabold text-deep-pink dark:text-deep-pink">
             My Pantry
           </h1>
-          <div className="flex items-center gap-2">
-            <Search size={20} className="text-soft-charcoal dark:text-night-secondary opacity-60" />
-            <img
-              src="/mascot/bubbles-happy.png"
-              alt="Bubbles the chef"
-              className="w-8 h-8 rounded-full"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+          <img
+            src="/mascot/bubbles-happy.png"
+            alt="Bubbles the chef"
+            className="w-8 h-8 rounded-full"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+          />
+        </div>
+
+        {/* Search bar */}
+        <div className="px-5 pb-3">
+          <div className="relative">
+            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-soft-charcoal dark:text-night-secondary opacity-50 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search items..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 rounded-pill border border-border-input bg-white dark:bg-night-surface dark:border-night-border dark:text-night-text dark:placeholder-night-secondary shadow-soft focus:outline-none focus:border-deep-pink focus:shadow-soft-lg transition-shadow text-base"
+              aria-label="Search pantry items"
             />
           </div>
         </div>
 
-        {/* Search bar */}
-        <div className="px-4 pb-2">
-          <input
-            type="text"
-            placeholder="Search items..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full px-4 py-3 rounded-pill border border-border-input bg-white dark:bg-night-surface dark:border-night-border dark:text-night-text dark:placeholder-night-secondary shadow-soft focus:outline-none focus:border-deep-pink focus:shadow-soft-lg transition-shadow text-base"
-            aria-label="Search pantry items"
-          />
-        </div>
-
         {/* Filter chips */}
         <div
-          className="flex gap-2 overflow-x-auto px-4 pb-3 hide-scrollbar"
+          className="flex gap-2 overflow-x-auto px-5 pb-4 hide-scrollbar"
           role="group"
           aria-label="Filter by location"
         >
