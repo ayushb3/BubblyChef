@@ -96,7 +96,7 @@ export function Dashboard() {
     <div className="min-h-screen bg-cream dark:bg-night-base pb-20 lg:pb-0">
 
       {/* Mobile header */}
-      <header className="lg:hidden pt-4 px-4 pb-2 flex items-center justify-between">
+      <header className="lg:hidden pt-6 px-5 pb-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <img
             src="/mascot/bubbles-happy.png"
@@ -108,7 +108,7 @@ export function Dashboard() {
             <h1 className="text-display font-extrabold text-soft-charcoal dark:text-night-text leading-tight">
               BubblyChef
             </h1>
-            <p className="text-sm text-soft-charcoal dark:text-night-secondary opacity-70">
+            <p className="text-sm text-deep-pink dark:text-night-pink font-semibold">
               {getGreetingMessage()}
             </p>
           </div>
@@ -117,8 +117,8 @@ export function Dashboard() {
       </header>
 
       {/* Desktop greeting row */}
-      <div className="hidden lg:flex items-center justify-between pt-8 px-8 pb-2">
-        <p className="text-xl text-soft-charcoal dark:text-night-text opacity-70">{getGreetingMessage()}</p>
+      <div className="hidden lg:flex items-center justify-between pt-6 px-8 pb-3">
+        <p className="text-display font-extrabold text-deep-pink dark:text-night-pink">{getGreetingMessage()}</p>
         <ThemeToggle />
       </div>
 
@@ -129,11 +129,14 @@ export function Dashboard() {
         <div className="lg:grid lg:grid-cols-2 lg:gap-6 space-y-6 lg:space-y-0">
 
           {/* Use Soon card */}
-          <div className="bg-white dark:bg-night-surface rounded-2xl p-5 shadow-soft">
+          <div className="bg-white dark:bg-night-surface rounded-2xl overflow-hidden shadow-soft">
+            {/* Coloured top accent bar */}
+            <div className="h-1.5 bg-gradient-to-r from-pastel-coral via-pastel-peach to-pastel-pink" />
+            <div className="p-5">
             <div className="flex items-center justify-between gap-2 mb-4">
-              <div className="flex items-center gap-2">
-                <span className="text-2xl" role="img" aria-label="worried face">🥺</span>
-                <h2 className="text-xl font-bold text-soft-charcoal dark:text-night-text">Use Soon!</h2>
+              <div>
+                <h2 className="text-xl font-extrabold text-soft-charcoal dark:text-night-text leading-none">Use Soon</h2>
+                <p className="text-xs text-soft-charcoal/50 dark:text-night-secondary mt-0.5">Expires within 7 days</p>
               </div>
               <button
                 onClick={() => navigate('/pantry')}
@@ -180,6 +183,7 @@ export function Dashboard() {
                 <p className="text-sm text-soft-charcoal dark:text-night-secondary opacity-70">Nothing expiring soon.</p>
               </div>
             )}
+            </div>
           </div>
 
           {/* Quick Actions card */}

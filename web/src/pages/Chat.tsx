@@ -778,7 +778,7 @@ export function Chat() {
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)] lg:h-screen bg-cream dark:bg-night-base">
       {/* Header */}
-      <header className="px-4 pt-6 pb-3 lg:px-8 lg:pt-8 border-b border-border-subtle dark:border-night-border bg-cream dark:bg-night-base shrink-0">
+      <header className="px-5 pt-6 pb-3 lg:px-8 lg:pt-6 border-b border-border-subtle dark:border-night-border bg-cream dark:bg-night-base shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <img
@@ -787,10 +787,10 @@ export function Chat() {
               className="w-7 h-7 rounded-full"
               onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
             />
-            <h1 className="text-xl font-bold text-soft-charcoal dark:text-night-text">Bubbles</h1>
+            <h1 className="text-display font-extrabold text-deep-pink dark:text-night-pink">Bubbles</h1>
           </div>
         </div>
-        <div className="flex items-center justify-between mt-2">
+        <div className="flex items-center justify-between mt-1">
           <p className="text-xs text-soft-charcoal dark:text-night-secondary opacity-50">
             {config.subtitle}
           </p>

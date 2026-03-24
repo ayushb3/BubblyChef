@@ -333,7 +333,7 @@ export function Scan() {
   // Upload State
   if (scanState === 'upload') {
     return (
-      <div className="p-4 pt-8 space-y-6 min-h-screen lg:p-8 lg:pt-10 dark:bg-night-base">
+      <div className="px-5 pt-6 pb-4 space-y-6 min-h-screen lg:px-8 lg:pt-6 dark:bg-night-base">
         {/* Header */}
         <div>
           <h1 className="text-display font-extrabold text-deep-pink dark:text-night-pink flex items-center gap-2">
