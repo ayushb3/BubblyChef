@@ -1,10 +1,12 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Camera, Upload, CheckCircle, AlertCircle, X, Loader2, RotateCcw } from 'lucide-react';
 import {
   useUploadReceipt,
   useConfirmScanItems,
   useOcrStatus,
+  useFoodSearch,
 } from '../api/client';
+import type { FoodSearchResult } from '../types';
 
 type ScanState = 'upload' | 'processing' | 'results' | 'success';
 
@@ -41,6 +43,91 @@ type ItemRefs = {
   expiry: HTMLInputElement | null;
   location: HTMLSelectElement | null;
 };
+
+/** Typeahead name input — debounces queries to GET /api/foods/search */
+function FoodNameTypeahead({
+  defaultValue,
+  borderColor,
+  inputRef,
+  onSelect,
+}: {
+  defaultValue: string;
+  borderColor: 'mint' | 'pink';
+  inputRef: (el: HTMLInputElement | null) => void;
+  onSelect: (result: FoodSearchResult) => void;
+}) {
+  const [query, setQuery] = useState(defaultValue);
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const localInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Debounce the query by 200ms
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query), 200);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const { data: results } = useFoodSearch(debouncedQuery, 6);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const handleSelect = useCallback((result: FoodSearchResult) => {
+    setQuery(result.canonical);
+    setOpen(false);
+    // Update the underlying input value so refs pick it up
+    if (localInputRef.current) {
+      localInputRef.current.value = result.canonical;
+    }
+    onSelect(result);
+  }, [onSelect]);
+
+  const bc = borderColor === 'mint' ? 'pastel-mint' : 'pastel-pink';
+
+  return (
+    <div ref={wrapperRef} className="relative flex-1">
+      <input
+        ref={(el) => {
+          localInputRef.current = el;
+          inputRef(el);
+        }}
+        type="text"
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => { if (query.trim().length >= 1) setOpen(true); }}
+        className={`w-full px-3 py-2 rounded-lg border border-${bc}/20 focus:outline-none focus:border-${bc} focus:ring-2 focus:ring-${bc}/20 transition-all text-sm font-semibold dark:bg-night-raised dark:border-night-border dark:text-night-text`}
+      />
+      {open && results && results.length > 0 && (
+        <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white dark:bg-night-surface rounded-xl shadow-soft-lg border border-soft-charcoal/10 dark:border-night-border overflow-hidden max-h-56 overflow-y-auto">
+          {results.map((r) => (
+            <button
+              key={r.canonical}
+              type="button"
+              onClick={() => handleSelect(r)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-pastel-pink/10 dark:hover:bg-night-raised transition-colors text-sm"
+            >
+              <span className="text-base flex-shrink-0">{r.emoji}</span>
+              <span className="font-medium text-soft-charcoal dark:text-night-text">{r.canonical}</span>
+              <span className="ml-auto text-xs text-soft-charcoal/40 dark:text-night-secondary/60">{r.category}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function Scan() {
   const [scanState, setScanState] = useState<ScanState>('upload');
@@ -600,17 +687,30 @@ export function Scan() {
                   <div className="flex-1 space-y-2">
                     <div className="flex items-center gap-2">
                       <CheckCircle className="text-pastel-mint flex-shrink-0" size={18} />
-                      <input
-                        ref={(el) => {
+                      <FoodNameTypeahead
+                        defaultValue={item.name}
+                        borderColor="mint"
+                        inputRef={(el) => {
                           if (!readyToAddRefs.current.has(item.id)) {
                             readyToAddRefs.current.set(item.id, { name: null, quantity: null, unit: null, expiry: null, location: null });
                           }
                           const refs = readyToAddRefs.current.get(item.id);
                           if (refs) refs.name = el;
                         }}
-                        type="text"
-                        defaultValue={item.name}
-                        className="flex-1 px-3 py-2 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint focus:ring-2 focus:ring-pastel-mint/20 transition-all text-sm font-semibold dark:bg-night-raised dark:border-night-border dark:text-night-text"
+                        onSelect={(result) => {
+                          const refs = readyToAddRefs.current.get(item.id);
+                          if (refs?.unit && result.valid_units.length > 0) {
+                            refs.unit.value = result.valid_units[0];
+                          }
+                          if (refs?.expiry && result.expiry_days) {
+                            const d = new Date();
+                            d.setDate(d.getDate() + result.expiry_days);
+                            refs.expiry.value = d.toISOString().split('T')[0];
+                          }
+                          if (refs?.location && result.default_location) {
+                            refs.location.value = result.default_location;
+                          }
+                        }}
                       />
                     </div>
                     <div className="flex gap-2 ml-7">
@@ -691,18 +791,30 @@ export function Scan() {
                 <div className="flex items-start justify-between">
                   <div className="flex-1 space-y-2">
                     <div className="flex items-center gap-2">
-                      <input
-                        ref={(el) => {
+                      <FoodNameTypeahead
+                        defaultValue={item.name}
+                        borderColor="pink"
+                        inputRef={(el) => {
                           if (!needsReviewRefs.current.has(item.id)) {
                             needsReviewRefs.current.set(item.id, { name: null, quantity: null, unit: null, expiry: null, location: null });
                           }
                           const refs = needsReviewRefs.current.get(item.id);
                           if (refs) refs.name = el;
                         }}
-                        type="text"
-                        defaultValue={item.name}
-                        placeholder="Item name"
-                        className="flex-1 px-3 py-2 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
+                        onSelect={(result) => {
+                          const refs = needsReviewRefs.current.get(item.id);
+                          if (refs?.unit && result.valid_units.length > 0) {
+                            refs.unit.value = result.valid_units[0];
+                          }
+                          if (refs?.expiry && result.expiry_days) {
+                            const d = new Date();
+                            d.setDate(d.getDate() + result.expiry_days);
+                            refs.expiry.value = d.toISOString().split('T')[0];
+                          }
+                          if (refs?.location && result.default_location) {
+                            refs.location.value = result.default_location;
+                          }
+                        }}
                       />
                       <span className={`px-2 py-1 rounded-full text-xs ${getConfidenceBadge(item.confidence)}`}>
                         {getConfidenceText(item.confidence)}

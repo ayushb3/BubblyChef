@@ -1,0 +1,9615 @@
+[
+  {
+    "canonical": "acorn squash",
+    "category": "produce",
+    "emoji": "🎃",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "agave nectar",
+    "category": "condiments",
+    "emoji": "🌵",
+    "synonyms": [
+      "agave syrup"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "alfredo sauce",
+    "category": "condiments",
+    "emoji": "🥛",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "all-purpose flour",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [
+      "flour",
+      "ap flour",
+      "white flour",
+      "all purpose flour"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "almond butter",
+    "category": "condiments",
+    "emoji": "🥜",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "almond extract",
+    "category": "dry_goods",
+    "emoji": "🥜",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "almond milk",
+    "category": "beverages",
+    "emoji": "🥛",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 10,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "almonds",
+    "category": "snacks",
+    "emoji": "🥜",
+    "synonyms": [
+      "raw almonds",
+      "roasted almonds"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "american cheese",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "american singles",
+      "cheese slices"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "anaheim pepper",
+    "category": "produce",
+    "emoji": "🌶️",
+    "synonyms": [
+      "anaheim"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "anchovies",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "anchovy paste",
+    "category": "condiments",
+    "emoji": "🐟",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "andouille sausage",
+    "category": "meat",
+    "emoji": "🌭",
+    "synonyms": [
+      "andouille"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "angel hair",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [
+      "angel hair pasta",
+      "capellini"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "animal crackers",
+    "category": "snacks",
+    "emoji": "🍪",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "apple",
+    "category": "produce",
+    "emoji": "🍎",
+    "synonyms": [
+      "apples",
+      "red apple",
+      "green apple",
+      "gala apple",
+      "fuji apple",
+      "granny smith"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": "icon-apple"
+  },
+  {
+    "canonical": "apple cider vinegar",
+    "category": "condiments",
+    "emoji": "🫗",
+    "synonyms": [
+      "acv"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "applesauce",
+    "category": "canned",
+    "emoji": "🍎",
+    "synonyms": [
+      "apple sauce"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 21,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "apricot",
+    "category": "produce",
+    "emoji": "🍑",
+    "synonyms": [
+      "apricots"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "arborio rice",
+    "category": "dry_goods",
+    "emoji": "🍚",
+    "synonyms": [
+      "risotto rice"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "artichoke",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "artichokes"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "artichoke hearts",
+    "category": "canned",
+    "emoji": "🥬",
+    "synonyms": [
+      "canned artichoke hearts"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "arugula",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "rocket"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "asparagus",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "asparagus spears"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "avocado",
+    "category": "produce",
+    "emoji": "🥑",
+    "synonyms": [
+      "avocados",
+      "ripe avocado"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 4,
+    "default_location": "fridge",
+    "icon_slug": "icon-avocado"
+  },
+  {
+    "canonical": "bacon",
+    "category": "meat",
+    "emoji": "🥓",
+    "synonyms": [
+      "bacon strips",
+      "turkey bacon"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "bagels",
+    "category": "bakery",
+    "emoji": "🥯",
+    "synonyms": [
+      "bagel",
+      "plain bagel"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "baguette",
+    "category": "bakery",
+    "emoji": "🥖",
+    "synonyms": [
+      "french bread"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "baking powder",
+    "category": "dry_goods",
+    "emoji": "🧂",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "baking soda",
+    "category": "dry_goods",
+    "emoji": "🧂",
+    "synonyms": [
+      "bicarbonate of soda"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "balsamic vinegar",
+    "category": "condiments",
+    "emoji": "🫗",
+    "synonyms": [
+      "balsamic"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "bamboo shoots",
+    "category": "canned",
+    "emoji": "🎍",
+    "synonyms": [
+      "canned bamboo shoots"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "banana",
+    "category": "produce",
+    "emoji": "🍌",
+    "synonyms": [
+      "bananas"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 5,
+    "default_location": "fridge",
+    "icon_slug": "icon-banana"
+  },
+  {
+    "canonical": "banana bread",
+    "category": "bakery",
+    "emoji": "🍌",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "barley",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [
+      "pearl barley"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "basil",
+    "category": "produce",
+    "emoji": "🌿",
+    "synonyms": [
+      "fresh basil",
+      "sweet basil"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "bay leaves",
+    "category": "dry_goods",
+    "emoji": "🍃",
+    "synonyms": [
+      "bay leaf"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "bbq sauce",
+    "category": "condiments",
+    "emoji": "🍖",
+    "synonyms": [
+      "barbecue sauce"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "bean sprouts",
+    "category": "produce",
+    "emoji": "🌱",
+    "synonyms": [
+      "mung bean sprouts"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "beef broth",
+    "category": "canned",
+    "emoji": "🍲",
+    "synonyms": [
+      "beef stock"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "beef jerky",
+    "category": "snacks",
+    "emoji": "🥩",
+    "synonyms": [
+      "jerky"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "beef sticks",
+    "category": "snacks",
+    "emoji": "🥩",
+    "synonyms": [
+      "slim jim"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "beer",
+    "category": "beverages",
+    "emoji": "🍺",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "beet",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "beets",
+      "beetroot"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "bell pepper",
+    "category": "produce",
+    "emoji": "🫑",
+    "synonyms": [
+      "bell peppers",
+      "red pepper",
+      "green pepper",
+      "yellow pepper"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": "icon-bell-pepper"
+  },
+  {
+    "canonical": "biscuit mix",
+    "category": "dry_goods",
+    "emoji": "🍞",
+    "synonyms": [
+      "bisquick"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "black beans",
+    "category": "canned",
+    "emoji": "🫘",
+    "synonyms": [
+      "canned black beans"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "black pepper",
+    "category": "dry_goods",
+    "emoji": "🌶️",
+    "synonyms": [
+      "pepper",
+      "ground pepper",
+      "peppercorn"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "blue cheese",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "bleu cheese",
+      "gorgonzola"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "blueberry",
+    "category": "produce",
+    "emoji": "🫐",
+    "synonyms": [
+      "blueberries"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "bok choy",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "baby bok choy"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "bologna",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "baloney"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "bow tie pasta",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [
+      "farfalle"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "bratwurst",
+    "category": "meat",
+    "emoji": "🌭",
+    "synonyms": [
+      "brats"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "brazil nuts",
+    "category": "snacks",
+    "emoji": "🥜",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "bread",
+    "category": "bakery",
+    "emoji": "🍞",
+    "synonyms": [
+      "loaf of bread",
+      "white bread",
+      "wheat bread",
+      "sourdough"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 7,
+    "default_location": "counter",
+    "icon_slug": "icon-bread"
+  },
+  {
+    "canonical": "bread flour",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 7,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "breadcrumbs",
+    "category": "dry_goods",
+    "emoji": "🍞",
+    "synonyms": [
+      "panko",
+      "italian breadcrumbs"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 7,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "brie",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "brie cheese"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "brioche",
+    "category": "bakery",
+    "emoji": "🍞",
+    "synonyms": [
+      "brioche buns"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "brisket",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "beef brisket"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "broccoli",
+    "category": "produce",
+    "emoji": "🥦",
+    "synonyms": [
+      "broccoli florets"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": "icon-broccoli"
+  },
+  {
+    "canonical": "brown rice",
+    "category": "dry_goods",
+    "emoji": "🍚",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "brown sugar",
+    "category": "dry_goods",
+    "emoji": "🍬",
+    "synonyms": [
+      "light brown sugar",
+      "dark brown sugar"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "brownie mix",
+    "category": "dry_goods",
+    "emoji": "🍫",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "brussels sprouts",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "brussel sprouts"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "buckwheat",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [
+      "kasha"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "buffalo sauce",
+    "category": "condiments",
+    "emoji": "🍗",
+    "synonyms": [
+      "wing sauce"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "bulgur",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [
+      "bulgur wheat"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "butter",
+    "category": "dairy",
+    "emoji": "🧈",
+    "synonyms": [
+      "unsalted butter",
+      "salted butter"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": "icon-butter"
+  },
+  {
+    "canonical": "buttermilk",
+    "category": "dairy",
+    "emoji": "🥛",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 10,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "butternut squash",
+    "category": "produce",
+    "emoji": "🎃",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cabbage",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "green cabbage",
+      "red cabbage",
+      "napa cabbage"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cake",
+    "category": "bakery",
+    "emoji": "🍰",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": "icon-cake"
+  },
+  {
+    "canonical": "cake mix",
+    "category": "dry_goods",
+    "emoji": "🎂",
+    "synonyms": [
+      "box cake mix"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "canned beans",
+    "category": "canned",
+    "emoji": "🫘",
+    "synonyms": [
+      "beans"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "canned corn",
+    "category": "canned",
+    "emoji": "🌽",
+    "synonyms": [
+      "cream corn"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "canned green beans",
+    "category": "canned",
+    "emoji": "🥬",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "canned mandarin oranges",
+    "category": "canned",
+    "emoji": "🍊",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 14,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "canned mushrooms",
+    "category": "canned",
+    "emoji": "🍄",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 5,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "canned peaches",
+    "category": "canned",
+    "emoji": "🍑",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "canned peas",
+    "category": "canned",
+    "emoji": "🥬",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "canned pineapple",
+    "category": "canned",
+    "emoji": "🍍",
+    "synonyms": [
+      "pineapple chunks"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 21,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "canned pumpkin",
+    "category": "canned",
+    "emoji": "🎃",
+    "synonyms": [
+      "pumpkin puree"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "canned salmon",
+    "category": "canned",
+    "emoji": "🐟",
+    "synonyms": [
+      "salmon can"
+    ],
+    "valid_units": [
+      "can",
+      "count"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "canned tomatoes",
+    "category": "canned",
+    "emoji": "🍅",
+    "synonyms": [
+      "diced tomatoes",
+      "crushed tomatoes",
+      "whole tomatoes"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "canned tuna",
+    "category": "canned",
+    "emoji": "🐟",
+    "synonyms": [
+      "tuna can",
+      "chunk light tuna"
+    ],
+    "valid_units": [
+      "can",
+      "count"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cannellini beans",
+    "category": "canned",
+    "emoji": "🫘",
+    "synonyms": [
+      "white kidney beans"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cantaloupe",
+    "category": "produce",
+    "emoji": "🍈",
+    "synonyms": [
+      "cantaloupes",
+      "melon"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "capers",
+    "category": "condiments",
+    "emoji": "🌿",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "carrot",
+    "category": "produce",
+    "emoji": "🥕",
+    "synonyms": [
+      "carrots",
+      "baby carrots"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": "icon-carrot"
+  },
+  {
+    "canonical": "cashews",
+    "category": "snacks",
+    "emoji": "🥜",
+    "synonyms": [
+      "raw cashews",
+      "roasted cashews"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "catfish",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [
+      "catfish fillet"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cauliflower",
+    "category": "produce",
+    "emoji": "🥦",
+    "synonyms": [
+      "cauliflower florets"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "celery",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "celery stalks"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": "icon-celery"
+  },
+  {
+    "canonical": "cereal",
+    "category": "dry_goods",
+    "emoji": "🥣",
+    "synonyms": [
+      "breakfast cereal"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "chai",
+    "category": "beverages",
+    "emoji": "🫖",
+    "synonyms": [
+      "chai tea"
+    ],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cheddar",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "cheddar cheese",
+      "sharp cheddar",
+      "mild cheddar"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cheese",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "cheddar",
+      "american cheese",
+      "swiss"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": "icon-cheese"
+  },
+  {
+    "canonical": "cheese puffs",
+    "category": "snacks",
+    "emoji": "🧀",
+    "synonyms": [
+      "cheetos"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 21,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cherry",
+    "category": "produce",
+    "emoji": "🍒",
+    "synonyms": [
+      "cherries",
+      "sweet cherries"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "chia seeds",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "chicken breast",
+    "category": "meat",
+    "emoji": "🍗",
+    "synonyms": [
+      "chicken breasts",
+      "boneless chicken"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "chicken broth",
+    "category": "canned",
+    "emoji": "🍲",
+    "synonyms": [
+      "chicken stock",
+      "chicken bone broth"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 2,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "chicken drumsticks",
+    "category": "meat",
+    "emoji": "🍗",
+    "synonyms": [
+      "drumsticks"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "chicken thighs",
+    "category": "meat",
+    "emoji": "🍗",
+    "synonyms": [
+      "bone-in thighs"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "chicken wings",
+    "category": "meat",
+    "emoji": "🍗",
+    "synonyms": [
+      "wings",
+      "buffalo wings"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "chickpeas",
+    "category": "canned",
+    "emoji": "🫘",
+    "synonyms": [
+      "garbanzo beans",
+      "canned chickpeas"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": "icon-chickpeas"
+  },
+  {
+    "canonical": "chili garlic sauce",
+    "category": "condiments",
+    "emoji": "🌶️",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "chili powder",
+    "category": "dry_goods",
+    "emoji": "🌶️",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "chimichurri",
+    "category": "condiments",
+    "emoji": "🌿",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "chipotle in adobo",
+    "category": "canned",
+    "emoji": "🌶️",
+    "synonyms": [
+      "chipotle peppers"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "chips",
+    "category": "snacks",
+    "emoji": "🍟",
+    "synonyms": [
+      "potato chips",
+      "tortilla chips"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "chives",
+    "category": "produce",
+    "emoji": "🌿",
+    "synonyms": [
+      "fresh chives"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "chocolate",
+    "category": "snacks",
+    "emoji": "🍫",
+    "synonyms": [
+      "dark chocolate",
+      "milk chocolate"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": "icon-chocolate"
+  },
+  {
+    "canonical": "chocolate chips",
+    "category": "dry_goods",
+    "emoji": "🍫",
+    "synonyms": [
+      "semi sweet chips",
+      "dark chocolate chips"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "chorizo",
+    "category": "meat",
+    "emoji": "🌭",
+    "synonyms": [
+      "spanish chorizo",
+      "mexican chorizo"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ciabatta",
+    "category": "bakery",
+    "emoji": "🍞",
+    "synonyms": [
+      "ciabatta bread"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cilantro",
+    "category": "produce",
+    "emoji": "🌿",
+    "synonyms": [
+      "fresh cilantro",
+      "coriander"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cinnamon",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [
+      "ground cinnamon"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "clams",
+    "category": "seafood",
+    "emoji": "🐚",
+    "synonyms": [
+      "littleneck clams"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cocktail sauce",
+    "category": "condiments",
+    "emoji": "🦐",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cocoa powder",
+    "category": "dry_goods",
+    "emoji": "🍫",
+    "synonyms": [
+      "unsweetened cocoa"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "coconut",
+    "category": "produce",
+    "emoji": "🥥",
+    "synonyms": [
+      "fresh coconut"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "coconut cream",
+    "category": "canned",
+    "emoji": "🥥",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 14,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "coconut flakes",
+    "category": "dry_goods",
+    "emoji": "🥥",
+    "synonyms": [
+      "shredded coconut",
+      "desiccated coconut"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "coconut milk",
+    "category": "canned",
+    "emoji": "🥥",
+    "synonyms": [
+      "canned coconut milk"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 10,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "coconut oil",
+    "category": "condiments",
+    "emoji": "🫒",
+    "synonyms": [
+      "virgin coconut oil"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "coconut water",
+    "category": "beverages",
+    "emoji": "🥥",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cod",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [
+      "cod fillet",
+      "pacific cod"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "coffee",
+    "category": "beverages",
+    "emoji": "☕",
+    "synonyms": [
+      "ground coffee",
+      "coffee beans"
+    ],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "colby jack",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "colby jack cheese"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "collard greens",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "collards"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "condensed milk",
+    "category": "dairy",
+    "emoji": "🥛",
+    "synonyms": [
+      "sweetened condensed milk"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 10,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "condensed tomato soup",
+    "category": "canned",
+    "emoji": "🍲",
+    "synonyms": [
+      "tomato soup"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cookies",
+    "category": "snacks",
+    "emoji": "🍪",
+    "synonyms": [
+      "cookie",
+      "chocolate chip cookies"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": "icon-cookie"
+  },
+  {
+    "canonical": "cooking wine",
+    "category": "condiments",
+    "emoji": "🍷",
+    "synonyms": [
+      "sherry"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "corn",
+    "category": "produce",
+    "emoji": "🌽",
+    "synonyms": [
+      "sweet corn",
+      "corn on the cob"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": "icon-corn"
+  },
+  {
+    "canonical": "corn syrup",
+    "category": "dry_goods",
+    "emoji": "🌽",
+    "synonyms": [
+      "light corn syrup"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cornbread",
+    "category": "bakery",
+    "emoji": "🌽",
+    "synonyms": [
+      "corn bread"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 7,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "corned beef",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cornflakes",
+    "category": "dry_goods",
+    "emoji": "🍚",
+    "synonyms": [
+      "corn flakes"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cornish hen",
+    "category": "meat",
+    "emoji": "🐔",
+    "synonyms": [
+      "cornish game hen"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cornmeal",
+    "category": "dry_goods",
+    "emoji": "🌽",
+    "synonyms": [
+      "polenta"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cornstarch",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [
+      "corn starch"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cotija",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "cotija cheese"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cottage cheese",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "couscous",
+    "category": "dry_goods",
+    "emoji": "🍚",
+    "synonyms": [
+      "pearl couscous",
+      "israeli couscous"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "crab",
+    "category": "seafood",
+    "emoji": "🦀",
+    "synonyms": [
+      "crab meat",
+      "king crab"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "crackers",
+    "category": "snacks",
+    "emoji": "🧀",
+    "synonyms": [
+      "saltines",
+      "ritz crackers"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cranberries",
+    "category": "produce",
+    "emoji": "🍇",
+    "synonyms": [
+      "fresh cranberries"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cranberry juice",
+    "category": "beverages",
+    "emoji": "🍇",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cranberry sauce",
+    "category": "canned",
+    "emoji": "🍇",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "crawfish",
+    "category": "seafood",
+    "emoji": "🦞",
+    "synonyms": [
+      "crayfish",
+      "crawdad"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cream",
+    "category": "dairy",
+    "emoji": "🥛",
+    "synonyms": [
+      "light cream"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cream cheese",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "philly cream cheese"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cream of chicken soup",
+    "category": "canned",
+    "emoji": "🍲",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 14,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cream of mushroom soup",
+    "category": "canned",
+    "emoji": "🍲",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 14,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "croissant",
+    "category": "bakery",
+    "emoji": "🥐",
+    "synonyms": [
+      "croissants"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "cucumber",
+    "category": "produce",
+    "emoji": "🥒",
+    "synonyms": [
+      "cucumbers",
+      "english cucumber"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": "icon-cucumber"
+  },
+  {
+    "canonical": "cumin",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [
+      "ground cumin"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "curry paste",
+    "category": "condiments",
+    "emoji": "🍛",
+    "synonyms": [
+      "red curry paste",
+      "green curry paste"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "daikon",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "daikon radish"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "delicata squash",
+    "category": "produce",
+    "emoji": "🎃",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "dijon mustard",
+    "category": "condiments",
+    "emoji": "🥘",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "dill",
+    "category": "produce",
+    "emoji": "🌿",
+    "synonyms": [
+      "fresh dill"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "dinner rolls",
+    "category": "bakery",
+    "emoji": "🍞",
+    "synonyms": [
+      "rolls"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "donuts",
+    "category": "bakery",
+    "emoji": "🍩",
+    "synonyms": [
+      "doughnuts"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "dragon fruit",
+    "category": "produce",
+    "emoji": "🥭",
+    "synonyms": [
+      "pitaya"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "dried apricots",
+    "category": "snacks",
+    "emoji": "🍑",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "dried cranberries",
+    "category": "snacks",
+    "emoji": "🍇",
+    "synonyms": [
+      "craisins"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "dried dates",
+    "category": "snacks",
+    "emoji": "🌴",
+    "synonyms": [
+      "medjool dates",
+      "dates"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "dried fruit",
+    "category": "snacks",
+    "emoji": "🍇",
+    "synonyms": [
+      "mixed dried fruit"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "dried mango",
+    "category": "snacks",
+    "emoji": "🥭",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "duck",
+    "category": "meat",
+    "emoji": "🦆",
+    "synonyms": [
+      "duck breast"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "edamame",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "soybeans"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "egg noodles",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "egg whites",
+    "category": "dairy",
+    "emoji": "🥚",
+    "synonyms": [
+      "liquid egg whites"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "eggnog",
+    "category": "dairy",
+    "emoji": "🥛",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "eggplant",
+    "category": "produce",
+    "emoji": "🍆",
+    "synonyms": [
+      "aubergine"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "eggs",
+    "category": "dairy",
+    "emoji": "🥚",
+    "synonyms": [
+      "egg",
+      "large eggs",
+      "dozen eggs",
+      "free range eggs"
+    ],
+    "valid_units": [
+      "dozen",
+      "count"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": "icon-egg"
+  },
+  {
+    "canonical": "enchilada sauce",
+    "category": "canned",
+    "emoji": "🌮",
+    "synonyms": [
+      "red enchilada sauce",
+      "green enchilada sauce"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "endive",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "belgian endive"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "energy drink",
+    "category": "beverages",
+    "emoji": "🥤",
+    "synonyms": [
+      "red bull",
+      "monster"
+    ],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "english muffins",
+    "category": "bakery",
+    "emoji": "🍞",
+    "synonyms": [
+      "english muffin"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "evaporated coconut milk",
+    "category": "canned",
+    "emoji": "🥥",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 10,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "evaporated milk",
+    "category": "dairy",
+    "emoji": "🥛",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 10,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "farro",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "fennel",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "fennel bulb"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "feta",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "feta cheese",
+      "crumbled feta"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "fettuccine",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "fig",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "figs",
+      "fresh figs"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "filet mignon",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "beef tenderloin"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "fish sauce",
+    "category": "condiments",
+    "emoji": "🐟",
+    "synonyms": [
+      "nam pla"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "fish sticks",
+    "category": "frozen",
+    "emoji": "🐟",
+    "synonyms": [
+      "fish fingers"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "flax seeds",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [
+      "flaxseed",
+      "ground flax"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "focaccia",
+    "category": "bakery",
+    "emoji": "🍞",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "food coloring",
+    "category": "dry_goods",
+    "emoji": "🌈",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen bread dough",
+    "category": "frozen",
+    "emoji": "🍞",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 7,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen broccoli",
+    "category": "frozen",
+    "emoji": "🥦",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen burritos",
+    "category": "frozen",
+    "emoji": "🌯",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen chicken",
+    "category": "frozen",
+    "emoji": "🍗",
+    "synonyms": [
+      "frozen chicken breasts",
+      "frozen chicken tenders"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen corn",
+    "category": "frozen",
+    "emoji": "🌽",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen dumplings",
+    "category": "frozen",
+    "emoji": "🥟",
+    "synonyms": [
+      "gyoza",
+      "potstickers"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen edamame",
+    "category": "frozen",
+    "emoji": "🥬",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen fish fillets",
+    "category": "frozen",
+    "emoji": "🐟",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen fries",
+    "category": "frozen",
+    "emoji": "🍟",
+    "synonyms": [
+      "french fries",
+      "frozen french fries"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen fruit",
+    "category": "frozen",
+    "emoji": "❄️",
+    "synonyms": [
+      "frozen berries",
+      "frozen mixed fruit"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen meatballs",
+    "category": "frozen",
+    "emoji": "🍖",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen peas",
+    "category": "frozen",
+    "emoji": "🥬",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen pie crust",
+    "category": "frozen",
+    "emoji": "🥧",
+    "synonyms": [
+      "pie shell"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen pizza",
+    "category": "frozen",
+    "emoji": "🍕",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen puff pastry",
+    "category": "frozen",
+    "emoji": "🥐",
+    "synonyms": [
+      "puff pastry"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen shrimp",
+    "category": "frozen",
+    "emoji": "🦐",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen spinach",
+    "category": "frozen",
+    "emoji": "🥬",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 5,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen vegetables",
+    "category": "frozen",
+    "emoji": "❄️",
+    "synonyms": [
+      "frozen veggies",
+      "frozen mixed vegetables"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "frozen waffles",
+    "category": "frozen",
+    "emoji": "🧇",
+    "synonyms": [
+      "eggo waffles"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 90,
+    "default_location": "freezer",
+    "icon_slug": null
+  },
+  {
+    "canonical": "fruit snacks",
+    "category": "snacks",
+    "emoji": "🍓",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "garlic",
+    "category": "produce",
+    "emoji": "🧄",
+    "synonyms": [
+      "garlic cloves",
+      "fresh garlic"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": "icon-garlic"
+  },
+  {
+    "canonical": "garlic powder",
+    "category": "dry_goods",
+    "emoji": "🧄",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 30,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "gelatin",
+    "category": "dry_goods",
+    "emoji": "🍬",
+    "synonyms": [
+      "unflavored gelatin"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ghee",
+    "category": "dairy",
+    "emoji": "🧈",
+    "synonyms": [
+      "clarified butter"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ginger root",
+    "category": "produce",
+    "emoji": "🧁",
+    "synonyms": [
+      "ginger",
+      "fresh ginger"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "gnocchi",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [
+      "potato gnocchi"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "goat cheese",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "chevre"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "gochujang",
+    "category": "condiments",
+    "emoji": "🌶️",
+    "synonyms": [
+      "korean chili paste"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "goldfish crackers",
+    "category": "snacks",
+    "emoji": "🐟",
+    "synonyms": [
+      "goldfish"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "gouda",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "gouda cheese",
+      "smoked gouda"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "graham crackers",
+    "category": "snacks",
+    "emoji": "🍪",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "granola",
+    "category": "dry_goods",
+    "emoji": "🍚",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "granola bars",
+    "category": "snacks",
+    "emoji": "🍫",
+    "synonyms": [
+      "protein bars",
+      "energy bars"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "grape",
+    "category": "produce",
+    "emoji": "🍇",
+    "synonyms": [
+      "grapes",
+      "red grapes",
+      "green grapes"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "grape juice",
+    "category": "beverages",
+    "emoji": "🍇",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "green beans",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "string beans",
+      "snap beans"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "green chiles",
+    "category": "canned",
+    "emoji": "🌶️",
+    "synonyms": [
+      "diced green chiles"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ground beef",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "beef mince",
+      "hamburger meat"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ground chicken",
+    "category": "meat",
+    "emoji": "🍗",
+    "synonyms": [],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ground lamb",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "lamb mince"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ground pork",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "pork mince"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ground turkey",
+    "category": "meat",
+    "emoji": "🦃",
+    "synonyms": [
+      "turkey mince"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "grouper",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "gruyere",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "gruyere cheese"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "guava",
+    "category": "produce",
+    "emoji": "🥭",
+    "synonyms": [
+      "guavas"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "gummy bears",
+    "category": "snacks",
+    "emoji": "🐻",
+    "synonyms": [
+      "gummies"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "habanero",
+    "category": "produce",
+    "emoji": "🌶️",
+    "synonyms": [
+      "habanero pepper"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "half and half",
+    "category": "dairy",
+    "emoji": "🥛",
+    "synonyms": [
+      "half & half"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "halibut",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [
+      "halibut fillet"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ham",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "sliced ham",
+      "deli ham",
+      "honey ham"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "hamburger buns",
+    "category": "bakery",
+    "emoji": "🍞",
+    "synonyms": [
+      "burger buns"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "harissa",
+    "category": "condiments",
+    "emoji": "🌶️",
+    "synonyms": [
+      "harissa paste"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "havarti",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "havarti cheese"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "hazelnuts",
+    "category": "snacks",
+    "emoji": "🥜",
+    "synonyms": [
+      "filberts"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "hearts of palm",
+    "category": "canned",
+    "emoji": "🌴",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "heavy cream",
+    "category": "dairy",
+    "emoji": "🥛",
+    "synonyms": [
+      "whipping cream",
+      "heavy whipping cream"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "hemp seeds",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [
+      "hemp hearts"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "hoisin sauce",
+    "category": "condiments",
+    "emoji": "🥘",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "honey",
+    "category": "condiments",
+    "emoji": "🍯",
+    "synonyms": [
+      "raw honey",
+      "local honey"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": "icon-honey"
+  },
+  {
+    "canonical": "horseradish",
+    "category": "condiments",
+    "emoji": "🥬",
+    "synonyms": [
+      "prepared horseradish"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "hot chocolate mix",
+    "category": "beverages",
+    "emoji": "🍵",
+    "synonyms": [
+      "cocoa mix"
+    ],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "hot dog buns",
+    "category": "bakery",
+    "emoji": "🍞",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "hot dogs",
+    "category": "meat",
+    "emoji": "🌭",
+    "synonyms": [
+      "frankfurters",
+      "wieners"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "hot sauce",
+    "category": "condiments",
+    "emoji": "🌶️",
+    "synonyms": [
+      "tabasco",
+      "sriracha",
+      "frank's red hot"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "hummus",
+    "category": "condiments",
+    "emoji": "🥘",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ice cream",
+    "category": "frozen",
+    "emoji": "🍨",
+    "synonyms": [
+      "vanilla ice cream"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 14,
+    "default_location": "freezer",
+    "icon_slug": "icon-ice-cream"
+  },
+  {
+    "canonical": "iced tea",
+    "category": "beverages",
+    "emoji": "🫖",
+    "synonyms": [
+      "sweet tea"
+    ],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "instant oatmeal",
+    "category": "dry_goods",
+    "emoji": "🥣",
+    "synonyms": [
+      "oatmeal packets"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "instant yeast",
+    "category": "dry_goods",
+    "emoji": "🍞",
+    "synonyms": [
+      "yeast",
+      "active dry yeast"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "italian dressing",
+    "category": "condiments",
+    "emoji": "🥗",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "italian seasoning",
+    "category": "dry_goods",
+    "emoji": "🌿",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "jalapeno",
+    "category": "produce",
+    "emoji": "🌶️",
+    "synonyms": [
+      "jalapenos",
+      "jalapeno pepper"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "jam",
+    "category": "condiments",
+    "emoji": "🍓",
+    "synonyms": [
+      "strawberry jam",
+      "fruit preserves"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "jelly",
+    "category": "condiments",
+    "emoji": "🍓",
+    "synonyms": [
+      "grape jelly"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "jicama",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "juice",
+    "category": "beverages",
+    "emoji": "🧃",
+    "synonyms": [
+      "orange juice",
+      "apple juice"
+    ],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "kale",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "curly kale",
+      "lacinato kale"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "kefir",
+    "category": "dairy",
+    "emoji": "🥛",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ketchup",
+    "category": "condiments",
+    "emoji": "🥘",
+    "synonyms": [
+      "catsup",
+      "tomato ketchup"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": "icon-ketchup"
+  },
+  {
+    "canonical": "kidney beans",
+    "category": "canned",
+    "emoji": "🫘",
+    "synonyms": [
+      "canned kidney beans",
+      "red kidney beans"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "kielbasa",
+    "category": "meat",
+    "emoji": "🌭",
+    "synonyms": [
+      "polish sausage"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "kiwi",
+    "category": "produce",
+    "emoji": "🥝",
+    "synonyms": [
+      "kiwis",
+      "kiwifruit"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "kombucha",
+    "category": "beverages",
+    "emoji": "🫖",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "lamb chops",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "lamb loin chops"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "lamb leg",
+    "category": "meat",
+    "emoji": "🍖",
+    "synonyms": [
+      "leg of lamb"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "lamb shank",
+    "category": "meat",
+    "emoji": "🍖",
+    "synonyms": [
+      "lamb shanks"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "lasagna noodles",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [
+      "lasagna sheets"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "leek",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "leeks"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "lemon",
+    "category": "produce",
+    "emoji": "🍋",
+    "synonyms": [
+      "lemons",
+      "fresh lemon"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": "icon-lemon"
+  },
+  {
+    "canonical": "lemonade",
+    "category": "beverages",
+    "emoji": "🍋",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "lemongrass",
+    "category": "produce",
+    "emoji": "🌿",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "lentils",
+    "category": "dry_goods",
+    "emoji": "🫘",
+    "synonyms": [
+      "red lentils",
+      "green lentils",
+      "brown lentils"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": "icon-lentils"
+  },
+  {
+    "canonical": "lettuce",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "romaine",
+      "iceberg lettuce",
+      "mixed greens"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 5,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "lime",
+    "category": "produce",
+    "emoji": "🍋",
+    "synonyms": [
+      "limes",
+      "fresh lime"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "linguine",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "liver",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "chicken liver",
+      "beef liver"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "lobster",
+    "category": "seafood",
+    "emoji": "🦞",
+    "synonyms": [
+      "lobster tail"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "lychee",
+    "category": "produce",
+    "emoji": "🥭",
+    "synonyms": [
+      "lychees",
+      "litchi"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "macadamia nuts",
+    "category": "snacks",
+    "emoji": "🥜",
+    "synonyms": [
+      "macadamias"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "macaroni",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [
+      "elbow macaroni"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "mahi mahi",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [
+      "dolphinfish"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "mango",
+    "category": "produce",
+    "emoji": "🥭",
+    "synonyms": [
+      "mangoes",
+      "mangos"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "mango chutney",
+    "category": "condiments",
+    "emoji": "🥭",
+    "synonyms": [
+      "chutney"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "maple syrup",
+    "category": "condiments",
+    "emoji": "🍁",
+    "synonyms": [
+      "pure maple syrup"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "marshmallows",
+    "category": "snacks",
+    "emoji": "☁️",
+    "synonyms": [
+      "mini marshmallows"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "mascarpone",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "mascarpone cheese"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "matcha",
+    "category": "beverages",
+    "emoji": "🍵",
+    "synonyms": [
+      "matcha powder"
+    ],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "mayonnaise",
+    "category": "condiments",
+    "emoji": "🥘",
+    "synonyms": [
+      "mayo"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "milk",
+    "category": "dairy",
+    "emoji": "🥛",
+    "synonyms": [
+      "whole milk",
+      "2% milk",
+      "skim milk",
+      "1% milk"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 10,
+    "default_location": "fridge",
+    "icon_slug": "icon-milk"
+  },
+  {
+    "canonical": "millet",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "mint",
+    "category": "produce",
+    "emoji": "🌿",
+    "synonyms": [
+      "fresh mint",
+      "spearmint",
+      "peppermint"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "mirin",
+    "category": "condiments",
+    "emoji": "🍶",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "miso paste",
+    "category": "condiments",
+    "emoji": "🍲",
+    "synonyms": [
+      "miso",
+      "white miso"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "mixed nuts",
+    "category": "snacks",
+    "emoji": "🥜",
+    "synonyms": [
+      "nut mix"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "molasses",
+    "category": "dry_goods",
+    "emoji": "🍯",
+    "synonyms": [
+      "blackstrap molasses"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "mozzarella",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "mozzarella cheese",
+      "fresh mozzarella"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "muenster",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "muenster cheese"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "muffin mix",
+    "category": "dry_goods",
+    "emoji": "🧁",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "muffins",
+    "category": "bakery",
+    "emoji": "🧁",
+    "synonyms": [
+      "blueberry muffins"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "mushroom",
+    "category": "produce",
+    "emoji": "🍄",
+    "synonyms": [
+      "mushrooms",
+      "button mushroom",
+      "cremini",
+      "portobello"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 5,
+    "default_location": "fridge",
+    "icon_slug": "icon-mushroom"
+  },
+  {
+    "canonical": "mussels",
+    "category": "seafood",
+    "emoji": "🐚",
+    "synonyms": [],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "mustard",
+    "category": "condiments",
+    "emoji": "🥘",
+    "synonyms": [
+      "yellow mustard",
+      "dijon mustard"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": "icon-mustard"
+  },
+  {
+    "canonical": "mustard greens",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "naan",
+    "category": "bakery",
+    "emoji": "🍞",
+    "synonyms": [
+      "naan bread"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "navy beans",
+    "category": "canned",
+    "emoji": "🫘",
+    "synonyms": [
+      "white beans",
+      "great northern beans"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "nectarine",
+    "category": "produce",
+    "emoji": "🍑",
+    "synonyms": [
+      "nectarines"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "nutella",
+    "category": "condiments",
+    "emoji": "🍫",
+    "synonyms": [
+      "hazelnut spread",
+      "chocolate hazelnut spread"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "oat milk",
+    "category": "beverages",
+    "emoji": "🥛",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 10,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "oats",
+    "category": "dry_goods",
+    "emoji": "🍚",
+    "synonyms": [
+      "rolled oats",
+      "oatmeal",
+      "old fashioned oats"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "octopus",
+    "category": "seafood",
+    "emoji": "🐙",
+    "synonyms": [],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "okra",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "olive oil",
+    "category": "condiments",
+    "emoji": "🫒",
+    "synonyms": [
+      "extra virgin olive oil",
+      "evoo"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": "icon-olive-oil"
+  },
+  {
+    "canonical": "olives",
+    "category": "canned",
+    "emoji": "🫒",
+    "synonyms": [
+      "black olives",
+      "green olives",
+      "kalamata olives"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "onion",
+    "category": "produce",
+    "emoji": "🧅",
+    "synonyms": [
+      "onions",
+      "yellow onion",
+      "red onion",
+      "white onion"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": "icon-onion"
+  },
+  {
+    "canonical": "onion powder",
+    "category": "dry_goods",
+    "emoji": "🧅",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 30,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "orange",
+    "category": "produce",
+    "emoji": "🍊",
+    "synonyms": [
+      "oranges",
+      "navel orange"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": "icon-orange"
+  },
+  {
+    "canonical": "oregano",
+    "category": "dry_goods",
+    "emoji": "🌿",
+    "synonyms": [
+      "dried oregano"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "orzo",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "oyster sauce",
+    "category": "condiments",
+    "emoji": "🦪",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "oysters",
+    "category": "seafood",
+    "emoji": "🦪",
+    "synonyms": [],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pancake mix",
+    "category": "dry_goods",
+    "emoji": "🥞",
+    "synonyms": [
+      "pancake batter"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "papaya",
+    "category": "produce",
+    "emoji": "🥭",
+    "synonyms": [
+      "papayas"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "paprika",
+    "category": "dry_goods",
+    "emoji": "🌶️",
+    "synonyms": [
+      "smoked paprika"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "parmesan",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "parmesan cheese",
+      "parmigiano reggiano"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "parsley",
+    "category": "produce",
+    "emoji": "🌿",
+    "synonyms": [
+      "fresh parsley",
+      "flat leaf parsley"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "parsnip",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "parsnips"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "passion fruit",
+    "category": "produce",
+    "emoji": "🥭",
+    "synonyms": [
+      "passionfruit"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pasta",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [
+      "dried pasta"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": "icon-pasta"
+  },
+  {
+    "canonical": "peach",
+    "category": "produce",
+    "emoji": "🍑",
+    "synonyms": [
+      "peaches"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "peanut butter",
+    "category": "condiments",
+    "emoji": "🥜",
+    "synonyms": [
+      "pb",
+      "creamy peanut butter",
+      "crunchy peanut butter"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "peanuts",
+    "category": "snacks",
+    "emoji": "🥜",
+    "synonyms": [
+      "roasted peanuts"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pear",
+    "category": "produce",
+    "emoji": "🍐",
+    "synonyms": [
+      "pears"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "peas",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "green peas",
+      "snap peas",
+      "snow peas"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": "icon-peas"
+  },
+  {
+    "canonical": "pecans",
+    "category": "snacks",
+    "emoji": "🥜",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "penne",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [
+      "penne rigate"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pepper jack",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "pepper jack cheese"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pepperoni",
+    "category": "meat",
+    "emoji": "🍕",
+    "synonyms": [],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "persimmon",
+    "category": "produce",
+    "emoji": "🥭",
+    "synonyms": [
+      "persimmons"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pesto",
+    "category": "condiments",
+    "emoji": "🌿",
+    "synonyms": [
+      "basil pesto"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pickles",
+    "category": "condiments",
+    "emoji": "🥒",
+    "synonyms": [
+      "dill pickles"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pie",
+    "category": "bakery",
+    "emoji": "🥧",
+    "synonyms": [
+      "apple pie"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pine nuts",
+    "category": "snacks",
+    "emoji": "🥜",
+    "synonyms": [
+      "pignoli"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pineapple",
+    "category": "produce",
+    "emoji": "🍍",
+    "synonyms": [
+      "pineapples"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pinto beans",
+    "category": "canned",
+    "emoji": "🫘",
+    "synonyms": [
+      "canned pinto beans"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pistachios",
+    "category": "snacks",
+    "emoji": "🥜",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pita bread",
+    "category": "bakery",
+    "emoji": "🍞",
+    "synonyms": [
+      "pita"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 7,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "plantain",
+    "category": "produce",
+    "emoji": "🍌",
+    "synonyms": [
+      "plantains"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "plum",
+    "category": "produce",
+    "emoji": "🍑",
+    "synonyms": [
+      "plums"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "poblano pepper",
+    "category": "produce",
+    "emoji": "🌶️",
+    "synonyms": [
+      "poblano"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pomegranate",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "pomegranates"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ponzu",
+    "category": "condiments",
+    "emoji": "🍋",
+    "synonyms": [
+      "ponzu sauce"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "popcorn",
+    "category": "snacks",
+    "emoji": "🍿",
+    "synonyms": [
+      "microwave popcorn"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "poppy seeds",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pork belly",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pork chops",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "pork loin chops"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pork loin",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "pork loin roast"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pork shoulder",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "pork butt",
+      "boston butt"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pork tenderloin",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "potato",
+    "category": "produce",
+    "emoji": "🥔",
+    "synonyms": [
+      "potatoes",
+      "russet potato",
+      "yukon gold",
+      "red potato"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": "icon-potato"
+  },
+  {
+    "canonical": "powdered sugar",
+    "category": "dry_goods",
+    "emoji": "🍬",
+    "synonyms": [
+      "confectioners sugar",
+      "icing sugar"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pretzels",
+    "category": "snacks",
+    "emoji": "🥨",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "prosciutto",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "protein powder",
+    "category": "dry_goods",
+    "emoji": "💪",
+    "synonyms": [
+      "whey protein"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "provolone",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "provolone cheese"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pumpkin",
+    "category": "produce",
+    "emoji": "🎃",
+    "synonyms": [
+      "sugar pumpkin"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "pumpkin seeds",
+    "category": "snacks",
+    "emoji": "🎃",
+    "synonyms": [
+      "pepitas"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "queso fresco",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "quinoa",
+    "category": "dry_goods",
+    "emoji": "🍚",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "radicchio",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "radish",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "radishes"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "raisins",
+    "category": "snacks",
+    "emoji": "🍇",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ramen noodles",
+    "category": "dry_goods",
+    "emoji": "🍜",
+    "synonyms": [
+      "instant ramen"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ranch dressing",
+    "category": "condiments",
+    "emoji": "🥗",
+    "synonyms": [
+      "ranch"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "raspberry",
+    "category": "produce",
+    "emoji": "🍇",
+    "synonyms": [
+      "raspberries"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ravioli",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [
+      "cheese ravioli"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "red pepper flakes",
+    "category": "dry_goods",
+    "emoji": "🌶️",
+    "synonyms": [
+      "crushed red pepper"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "red snapper",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [
+      "snapper"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "refried beans",
+    "category": "canned",
+    "emoji": "🫘",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "relish",
+    "category": "condiments",
+    "emoji": "🥒",
+    "synonyms": [
+      "sweet relish",
+      "pickle relish"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ribeye",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "ribeye steak",
+      "rib eye"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ribs",
+    "category": "meat",
+    "emoji": "🍖",
+    "synonyms": [
+      "baby back ribs",
+      "spare ribs",
+      "pork ribs"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "rice",
+    "category": "dry_goods",
+    "emoji": "🍚",
+    "synonyms": [
+      "white rice",
+      "jasmine rice",
+      "basmati rice"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": "icon-rice"
+  },
+  {
+    "canonical": "rice cakes",
+    "category": "snacks",
+    "emoji": "🍚",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "rice noodles",
+    "category": "dry_goods",
+    "emoji": "🍜",
+    "synonyms": [
+      "pad thai noodles",
+      "vermicelli"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "rice vinegar",
+    "category": "condiments",
+    "emoji": "🫗",
+    "synonyms": [
+      "rice wine vinegar"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "ricotta",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "ricotta cheese"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "rigatoni",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "roasted red peppers",
+    "category": "canned",
+    "emoji": "🫑",
+    "synonyms": [
+      "jarred roasted peppers"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "rosemary",
+    "category": "produce",
+    "emoji": "🌿",
+    "synonyms": [
+      "fresh rosemary"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "rotini",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [
+      "fusilli"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "rutabaga",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "swede"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "rye bread",
+    "category": "bakery",
+    "emoji": "🍞",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 7,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sage",
+    "category": "produce",
+    "emoji": "🌿",
+    "synonyms": [
+      "fresh sage"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "salami",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "genoa salami"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "salmon",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [
+      "salmon fillet",
+      "atlantic salmon"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": "icon-salmon"
+  },
+  {
+    "canonical": "salsa",
+    "category": "condiments",
+    "emoji": "🫘",
+    "synonyms": [
+      "pico de gallo",
+      "tomato salsa"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "salt",
+    "category": "dry_goods",
+    "emoji": "🧂",
+    "synonyms": [
+      "table salt",
+      "kosher salt",
+      "sea salt"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sambal",
+    "category": "condiments",
+    "emoji": "🌶️",
+    "synonyms": [
+      "sambal oelek"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sardines",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [
+      "canned sardines"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sausage",
+    "category": "meat",
+    "emoji": "🌭",
+    "synonyms": [
+      "sausages",
+      "breakfast sausage",
+      "italian sausage"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "scallions",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "green onions",
+      "spring onions"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "scallops",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [
+      "sea scallops",
+      "bay scallops"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "scones",
+    "category": "bakery",
+    "emoji": "🧁",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sea bass",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [
+      "bass",
+      "branzino"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "serrano pepper",
+    "category": "produce",
+    "emoji": "🌶️",
+    "synonyms": [
+      "serrano"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sesame oil",
+    "category": "condiments",
+    "emoji": "🫒",
+    "synonyms": [
+      "toasted sesame oil"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sesame seeds",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "shallot",
+    "category": "produce",
+    "emoji": "🧅",
+    "synonyms": [
+      "shallots"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "shrimp",
+    "category": "seafood",
+    "emoji": "🦐",
+    "synonyms": [
+      "prawns",
+      "jumbo shrimp"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": "icon-shrimp"
+  },
+  {
+    "canonical": "sirloin",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "sirloin steak",
+      "top sirloin"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "smoked salmon",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [
+      "lox"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "soba noodles",
+    "category": "dry_goods",
+    "emoji": "🍜",
+    "synonyms": [
+      "buckwheat noodles"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "soda",
+    "category": "beverages",
+    "emoji": "🥤",
+    "synonyms": [
+      "cola",
+      "soft drink",
+      "coke",
+      "pepsi"
+    ],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sour cream",
+    "category": "dairy",
+    "emoji": "🥛",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sourdough bread",
+    "category": "bakery",
+    "emoji": "🍞",
+    "synonyms": [
+      "sourdough"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 7,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "soy milk",
+    "category": "beverages",
+    "emoji": "🥛",
+    "synonyms": [
+      "soymilk"
+    ],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 10,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "soy sauce",
+    "category": "condiments",
+    "emoji": "🥘",
+    "synonyms": [
+      "shoyu",
+      "tamari"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": "icon-soy-sauce"
+  },
+  {
+    "canonical": "spaghetti",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "spaghetti squash",
+    "category": "produce",
+    "emoji": "🎃",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sparkling water",
+    "category": "beverages",
+    "emoji": "💧",
+    "synonyms": [
+      "seltzer",
+      "club soda",
+      "sparkling"
+    ],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "spinach",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "baby spinach",
+      "fresh spinach"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 5,
+    "default_location": "fridge",
+    "icon_slug": "icon-spinach"
+  },
+  {
+    "canonical": "sports drink",
+    "category": "beverages",
+    "emoji": "🥤",
+    "synonyms": [
+      "gatorade",
+      "electrolyte drink"
+    ],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sprinkles",
+    "category": "dry_goods",
+    "emoji": "🎂",
+    "synonyms": [
+      "jimmies"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "squid",
+    "category": "seafood",
+    "emoji": "🦑",
+    "synonyms": [
+      "calamari"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sriracha",
+    "category": "condiments",
+    "emoji": "🌶️",
+    "synonyms": [
+      "rooster sauce"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "starfruit",
+    "category": "produce",
+    "emoji": "🥭",
+    "synonyms": [
+      "carambola"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "steak",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "beef steak"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "steak sauce",
+    "category": "condiments",
+    "emoji": "🥩",
+    "synonyms": [
+      "a1 sauce"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "strawberry",
+    "category": "produce",
+    "emoji": "🍓",
+    "synonyms": [
+      "strawberries"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": "icon-strawberry"
+  },
+  {
+    "canonical": "string cheese",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "cheese sticks"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sugar",
+    "category": "dry_goods",
+    "emoji": "🍬",
+    "synonyms": [
+      "white sugar",
+      "granulated sugar"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": "icon-sugar"
+  },
+  {
+    "canonical": "sun dried tomatoes",
+    "category": "condiments",
+    "emoji": "🍅",
+    "synonyms": [
+      "sundried tomatoes"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sunflower seeds",
+    "category": "snacks",
+    "emoji": "🌻",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sushi rice",
+    "category": "dry_goods",
+    "emoji": "🍚",
+    "synonyms": [
+      "calrose rice"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sweet chili sauce",
+    "category": "condiments",
+    "emoji": "🌶️",
+    "synonyms": [
+      "thai sweet chili"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sweet potato",
+    "category": "produce",
+    "emoji": "🍠",
+    "synonyms": [
+      "sweet potatoes",
+      "yam",
+      "yams"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "sweetened condensed coconut milk",
+    "category": "canned",
+    "emoji": "🥥",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 10,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "swiss chard",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "chard",
+      "rainbow chard"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "swiss cheese",
+    "category": "dairy",
+    "emoji": "🧀",
+    "synonyms": [
+      "swiss"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 21,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "swordfish",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [
+      "swordfish steak"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "taco seasoning",
+    "category": "dry_goods",
+    "emoji": "🌮",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "tahini",
+    "category": "condiments",
+    "emoji": "🥜",
+    "synonyms": [
+      "sesame paste"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "tarragon",
+    "category": "produce",
+    "emoji": "🌿",
+    "synonyms": [
+      "fresh tarragon"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "tartar sauce",
+    "category": "condiments",
+    "emoji": "🐟",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "tea",
+    "category": "beverages",
+    "emoji": "🫖",
+    "synonyms": [
+      "tea bags",
+      "green tea",
+      "black tea"
+    ],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "tempeh",
+    "category": "produce",
+    "emoji": "🥘",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "teriyaki sauce",
+    "category": "condiments",
+    "emoji": "🍣",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "thyme",
+    "category": "produce",
+    "emoji": "🌿",
+    "synonyms": [
+      "fresh thyme"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "tilapia",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [
+      "tilapia fillet"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "tofu",
+    "category": "produce",
+    "emoji": "🥘",
+    "synonyms": [
+      "firm tofu",
+      "silken tofu",
+      "extra firm tofu"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": "icon-tofu"
+  },
+  {
+    "canonical": "tomatillo",
+    "category": "produce",
+    "emoji": "🍅",
+    "synonyms": [
+      "tomatillos"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "tomato",
+    "category": "produce",
+    "emoji": "🍅",
+    "synonyms": [
+      "tomatoes",
+      "roma tomato",
+      "cherry tomatoes",
+      "grape tomatoes"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": "icon-tomato"
+  },
+  {
+    "canonical": "tomato juice",
+    "category": "beverages",
+    "emoji": "🍅",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "tomato paste",
+    "category": "canned",
+    "emoji": "🍅",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "tomato sauce",
+    "category": "canned",
+    "emoji": "🍅",
+    "synonyms": [
+      "marinara",
+      "pasta sauce"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "tonic water",
+    "category": "beverages",
+    "emoji": "💧",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "tortellini",
+    "category": "dry_goods",
+    "emoji": "🍝",
+    "synonyms": [
+      "cheese tortellini"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "tortillas",
+    "category": "bakery",
+    "emoji": "🫔",
+    "synonyms": [
+      "flour tortillas",
+      "corn tortillas",
+      "wraps"
+    ],
+    "valid_units": [
+      "count",
+      "loaf",
+      "slice",
+      "package",
+      "bag"
+    ],
+    "expiry_days": 5,
+    "default_location": "counter",
+    "icon_slug": null
+  },
+  {
+    "canonical": "trail mix",
+    "category": "snacks",
+    "emoji": "🥜",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "trout",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [
+      "rainbow trout"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "tuna",
+    "category": "seafood",
+    "emoji": "🐟",
+    "synonyms": [
+      "tuna steak",
+      "ahi tuna"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "can",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": "icon-tuna"
+  },
+  {
+    "canonical": "turkey breast",
+    "category": "meat",
+    "emoji": "🦃",
+    "synonyms": [
+      "deli turkey",
+      "sliced turkey"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "turmeric",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [
+      "ground turmeric"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "turnip",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [
+      "turnips"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "turnip greens",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "udon noodles",
+    "category": "dry_goods",
+    "emoji": "🍜",
+    "synonyms": [
+      "udon"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "vanilla extract",
+    "category": "dry_goods",
+    "emoji": "🍬",
+    "synonyms": [
+      "vanilla",
+      "pure vanilla"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "veal",
+    "category": "meat",
+    "emoji": "🥩",
+    "synonyms": [
+      "veal cutlet"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 3,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "vegetable broth",
+    "category": "canned",
+    "emoji": "🍲",
+    "synonyms": [
+      "vegetable stock",
+      "veggie broth"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "vegetable juice",
+    "category": "beverages",
+    "emoji": "🥬",
+    "synonyms": [
+      "v8"
+    ],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "vegetable oil",
+    "category": "condiments",
+    "emoji": "🫒",
+    "synonyms": [
+      "canola oil",
+      "cooking oil"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "walnuts",
+    "category": "snacks",
+    "emoji": "🥜",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "bag",
+      "box",
+      "package"
+    ],
+    "expiry_days": 60,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "wasabi",
+    "category": "condiments",
+    "emoji": "🌿",
+    "synonyms": [
+      "wasabi paste"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "water",
+    "category": "beverages",
+    "emoji": "💧",
+    "synonyms": [
+      "bottled water"
+    ],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "water chestnuts",
+    "category": "canned",
+    "emoji": "🌰",
+    "synonyms": [
+      "sliced water chestnuts"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "can",
+      "jar"
+    ],
+    "expiry_days": 730,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "watercress",
+    "category": "produce",
+    "emoji": "🥬",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "watermelon",
+    "category": "produce",
+    "emoji": "🍉",
+    "synonyms": [
+      "watermelons"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "whipped cream",
+    "category": "dairy",
+    "emoji": "🥛",
+    "synonyms": [
+      "cool whip"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "white vinegar",
+    "category": "condiments",
+    "emoji": "🫗",
+    "synonyms": [
+      "distilled vinegar"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "whole chicken",
+    "category": "meat",
+    "emoji": "🍗",
+    "synonyms": [
+      "roasting chicken"
+    ],
+    "valid_units": [
+      "lb",
+      "oz",
+      "count",
+      "package"
+    ],
+    "expiry_days": 2,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "whole wheat flour",
+    "category": "dry_goods",
+    "emoji": "🌾",
+    "synonyms": [
+      "wheat flour"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "wild rice",
+    "category": "dry_goods",
+    "emoji": "🍚",
+    "synonyms": [],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "bag",
+      "box",
+      "can",
+      "jar",
+      "package"
+    ],
+    "expiry_days": 365,
+    "default_location": "pantry",
+    "icon_slug": null
+  },
+  {
+    "canonical": "wine",
+    "category": "beverages",
+    "emoji": "🍷",
+    "synonyms": [
+      "red wine",
+      "white wine"
+    ],
+    "valid_units": [
+      "count",
+      "gallon",
+      "quart",
+      "pint",
+      "fl oz",
+      "liter",
+      "ml",
+      "bottle",
+      "can"
+    ],
+    "expiry_days": 30,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "worcestershire sauce",
+    "category": "condiments",
+    "emoji": "🫗",
+    "synonyms": [
+      "worcestershire"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "bottle",
+      "jar",
+      "tbsp",
+      "tsp"
+    ],
+    "expiry_days": 180,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "yellow squash",
+    "category": "produce",
+    "emoji": "🎃",
+    "synonyms": [
+      "summer squash"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "yogurt",
+    "category": "dairy",
+    "emoji": "🥛",
+    "synonyms": [
+      "greek yogurt",
+      "plain yogurt",
+      "vanilla yogurt"
+    ],
+    "valid_units": [
+      "count",
+      "oz",
+      "lb",
+      "container",
+      "gallon",
+      "quart",
+      "pint",
+      "cup"
+    ],
+    "expiry_days": 14,
+    "default_location": "fridge",
+    "icon_slug": "icon-yogurt"
+  },
+  {
+    "canonical": "yuca",
+    "category": "produce",
+    "emoji": "🥔",
+    "synonyms": [
+      "cassava"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  },
+  {
+    "canonical": "zucchini",
+    "category": "produce",
+    "emoji": "🥒",
+    "synonyms": [
+      "zucchinis",
+      "courgette"
+    ],
+    "valid_units": [
+      "count",
+      "lb",
+      "oz",
+      "bunch",
+      "bag",
+      "container"
+    ],
+    "expiry_days": 7,
+    "default_location": "fridge",
+    "icon_slug": null
+  }
+]

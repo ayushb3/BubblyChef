@@ -27,6 +27,7 @@ import type {
   ConversationHistoryTurn,
   Decoration,
   StreamEvent,
+  FoodSearchResult,
 } from '../types';
 
 export const API_BASE_URL = 'http://localhost:8888';
@@ -262,6 +263,27 @@ export function useOcrStatus() {
     queryKey: ['ocr-status'],
     queryFn: checkOcrStatus,
     staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+// Food Library Search API
+async function searchFoods(
+  query: string,
+  limit: number = 8,
+): Promise<FoodSearchResult[]> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  const response = await fetch(`${API_BASE_URL}/api/foods/search?${params}`);
+  if (!response.ok) throw new Error('Failed to search foods');
+  return response.json();
+}
+
+export function useFoodSearch(query: string, limit: number = 6) {
+  return useQuery({
+    queryKey: ['food-search', query, limit],
+    queryFn: () => searchFoods(query, limit),
+    enabled: query.trim().length >= 1,
+    staleTime: 1000 * 60 * 5, // 5 minutes — library doesn't change
+    placeholderData: (prev) => prev,
   });
 }
 
