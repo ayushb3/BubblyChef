@@ -430,15 +430,15 @@ export function Scan() {
     return (
       <div className="p-4 pt-8 flex flex-col items-center justify-center min-h-[80vh] dark:bg-night-base">
         <div className="text-center space-y-6 max-w-sm">
-          <div className="w-24 h-24 mx-auto rounded-full bg-pastel-mint/20 flex items-center justify-center">
+          <div className="w-24 h-24 mx-auto rounded-full bg-pastel-mint/20 flex items-center justify-center dark:bg-night-mint/20">
             <CheckCircle className="text-pastel-mint" size={52} strokeWidth={2} />
           </div>
 
           <div>
-            <h2 className="text-2xl font-bold text-soft-charcoal mb-2">
+            <h2 className="text-2xl font-bold text-soft-charcoal dark:text-night-text mb-2">
               Added to pantry! 🎉
             </h2>
-            <p className="text-soft-charcoal/60">
+            <p className="text-soft-charcoal/60 dark:text-night-secondary">
               {addedCount} item{addedCount !== 1 ? 's' : ''} saved successfully
             </p>
           </div>
@@ -470,19 +470,19 @@ export function Scan() {
 
   // Results State
   return (
-    <div className="p-4 pt-8 space-y-4 pb-32 lg:p-8 lg:pt-10 lg:pb-8">
+    <div className="p-4 pt-8 space-y-4 pb-32 lg:p-8 lg:pt-10 lg:pb-8 dark:bg-night-base">
       {/* Cancel confirmation overlay */}
       {showCancelConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-soft-charcoal/40 backdrop-blur-sm px-6">
-          <div className="bg-white rounded-2xl p-6 shadow-soft-lg w-full max-w-sm space-y-4">
-            <h3 className="text-lg font-bold text-soft-charcoal">Discard this scan?</h3>
-            <p className="text-sm text-soft-charcoal/60">
+          <div className="bg-white rounded-2xl p-6 shadow-soft-lg w-full max-w-sm space-y-4 dark:bg-night-surface">
+            <h3 className="text-lg font-bold text-soft-charcoal dark:text-night-text">Discard this scan?</h3>
+            <p className="text-sm text-soft-charcoal/60 dark:text-night-secondary">
               You have {totalToAdd} item{totalToAdd !== 1 ? 's' : ''} ready to add. If you leave now, none will be saved.
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowCancelConfirm(false)}
-                className="flex-1 px-4 py-2.5 rounded-full border border-soft-charcoal/20 text-soft-charcoal font-semibold text-sm hover:bg-soft-charcoal/5 transition-all"
+                className="flex-1 px-4 py-2.5 rounded-full border border-soft-charcoal/20 text-soft-charcoal font-semibold text-sm hover:bg-soft-charcoal/5 transition-all dark:border-night-border dark:text-night-text"
               >
                 Keep reviewing
               </button>
@@ -500,10 +500,10 @@ export function Scan() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-soft-charcoal flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-soft-charcoal dark:text-night-text flex items-center gap-2">
             Found {totalToAdd} items! 🎉
           </h1>
-          <p className="text-soft-charcoal/60 text-sm mt-1">
+          <p className="text-soft-charcoal/60 dark:text-night-secondary text-sm mt-1">
             Review and add to your pantry
           </p>
         </div>
@@ -512,7 +512,7 @@ export function Scan() {
           className="p-2 hover:bg-soft-charcoal/5 rounded-full transition-colors"
           title="Close"
         >
-          <X size={20} className="text-soft-charcoal/60" />
+          <X size={20} className="text-soft-charcoal/60 dark:text-night-secondary" />
         </button>
       </div>
 
@@ -521,7 +521,7 @@ export function Scan() {
         <div className="bg-pastel-peach/10 rounded-xl p-3 border border-pastel-peach/30">
           <div className="flex items-start gap-2">
             <AlertCircle className="text-pastel-peach flex-shrink-0 mt-0.5" size={16} />
-            <div className="text-sm text-soft-charcoal/70 space-y-1">
+            <div className="text-sm text-soft-charcoal/70 dark:text-night-secondary space-y-1">
               {warnings.map((warning, i) => (
                 <p key={i}>{warning}</p>
               ))}
@@ -535,7 +535,7 @@ export function Scan() {
         <div className="bg-pastel-coral/10 rounded-xl p-3 border border-pastel-coral/30">
           <div className="flex items-start gap-2">
             <AlertCircle className="text-pastel-coral flex-shrink-0 mt-0.5" size={16} />
-            <p className="text-sm text-soft-charcoal">{errorMessage}</p>
+            <p className="text-sm text-soft-charcoal dark:text-night-text">{errorMessage}</p>
           </div>
         </div>
       )}
@@ -544,7 +544,7 @@ export function Scan() {
       {readyToAddItems.length > 0 && (
         <div className="bg-pastel-mint/10 rounded-2xl p-4 border border-pastel-mint/30">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-bold text-soft-charcoal flex items-center gap-2">
+            <h3 className="font-bold text-soft-charcoal dark:text-night-text flex items-center gap-2">
               <CheckCircle className="text-pastel-mint" size={20} />
               Ready to Add ({readyToAddItems.length})
             </h3>
@@ -554,7 +554,7 @@ export function Scan() {
             {readyToAddItems.map((item) => (
               <div
                 key={item.id}
-                className="bg-white rounded-xl p-3"
+                className="bg-white rounded-xl p-3 dark:bg-night-raised"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1 space-y-2">
@@ -570,7 +570,7 @@ export function Scan() {
                         }}
                         type="text"
                         defaultValue={item.name}
-                        className="flex-1 px-3 py-2 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint focus:ring-2 focus:ring-pastel-mint/20 transition-all text-sm font-semibold"
+                        className="flex-1 px-3 py-2 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint focus:ring-2 focus:ring-pastel-mint/20 transition-all text-sm font-semibold dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       />
                     </div>
                     <div className="flex gap-2 ml-7">
@@ -581,7 +581,7 @@ export function Scan() {
                         }}
                         type="number"
                         defaultValue={item.quantity}
-                        className="w-20 px-3 py-1.5 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint focus:ring-2 focus:ring-pastel-mint/20 transition-all text-sm"
+                        className="w-20 px-3 py-1.5 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint focus:ring-2 focus:ring-pastel-mint/20 transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       />
                       <input
                         ref={(el) => {
@@ -590,7 +590,7 @@ export function Scan() {
                         }}
                         type="text"
                         defaultValue={item.unit}
-                        className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint focus:ring-2 focus:ring-pastel-mint/20 transition-all text-sm"
+                        className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint focus:ring-2 focus:ring-pastel-mint/20 transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       />
                     </div>
                   </div>
@@ -612,7 +612,7 @@ export function Scan() {
       {needsReviewItems.length > 0 && (
         <div className="bg-pastel-peach/10 rounded-2xl p-4 border border-pastel-peach/30">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-bold text-soft-charcoal flex items-center gap-2">
+            <h3 className="font-bold text-soft-charcoal dark:text-night-text flex items-center gap-2">
               <AlertCircle className="text-pastel-peach" size={20} />
               Please Check ({needsReviewItems.length})
             </h3>
@@ -622,7 +622,7 @@ export function Scan() {
             {needsReviewItems.map((item) => (
               <div
                 key={item.id}
-                className="bg-white rounded-xl p-3 space-y-2"
+                className="bg-white rounded-xl p-3 space-y-2 dark:bg-night-raised"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1 space-y-2">
@@ -638,7 +638,7 @@ export function Scan() {
                         type="text"
                         defaultValue={item.name}
                         placeholder="Item name"
-                        className="flex-1 px-3 py-2 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all text-sm"
+                        className="flex-1 px-3 py-2 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       />
                       <span className={`px-2 py-1 rounded-full text-xs ${getConfidenceBadge(item.confidence)}`}>
                         {getConfidenceText(item.confidence)}
@@ -652,7 +652,7 @@ export function Scan() {
                         }}
                         type="number"
                         defaultValue={item.quantity}
-                        className="w-20 px-3 py-1.5 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all text-sm"
+                        className="w-20 px-3 py-1.5 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       />
                       <input
                         ref={(el) => {
@@ -661,11 +661,11 @@ export function Scan() {
                         }}
                         type="text"
                         defaultValue={item.unit}
-                        className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all text-sm"
+                        className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       />
                     </div>
                     {item.rawText && (
-                      <p className="text-xs text-soft-charcoal/40">
+                      <p className="text-xs text-soft-charcoal/40 dark:text-night-secondary/60">
                         Original: {item.rawText}
                       </p>
                     )}
@@ -686,14 +686,14 @@ export function Scan() {
 
       {/* Skipped Items Section */}
       {skippedItems.length > 0 && (
-        <div className="bg-soft-charcoal/5 rounded-2xl p-4 border border-soft-charcoal/20">
+        <div className="bg-soft-charcoal/5 rounded-2xl p-4 border border-soft-charcoal/20 dark:bg-night-raised/50 dark:border-night-border">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-bold text-soft-charcoal flex items-center gap-2">
+            <h3 className="font-bold text-soft-charcoal dark:text-night-text flex items-center gap-2">
               <AlertCircle className="text-soft-charcoal/60" size={20} />
               Skipped ({skippedItems.length})
             </h3>
           </div>
-          <p className="text-xs text-soft-charcoal/60 mb-3">
+          <p className="text-xs text-soft-charcoal/60 dark:text-night-secondary mb-3">
             These items had very low confidence. Review and add manually if needed.
           </p>
 
@@ -701,11 +701,11 @@ export function Scan() {
             {skippedItems.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center justify-between p-3 bg-white rounded-xl"
+                className="flex items-center justify-between p-3 bg-white rounded-xl dark:bg-night-raised"
               >
                 <div className="flex-1">
-                  <p className="font-medium text-soft-charcoal text-sm">{item.name}</p>
-                  <p className="text-xs text-soft-charcoal/40">
+                  <p className="font-medium text-soft-charcoal dark:text-night-text text-sm">{item.name}</p>
+                  <p className="text-xs text-soft-charcoal/40 dark:text-night-secondary/60">
                     Original: {item.rawText}
                   </p>
                 </div>
@@ -723,23 +723,23 @@ export function Scan() {
 
       {/* Dismissed Items Section — recoverable */}
       {dismissedItems.length > 0 && (
-        <div className="bg-soft-charcoal/5 rounded-2xl p-4 border border-soft-charcoal/10">
+        <div className="bg-soft-charcoal/5 rounded-2xl p-4 border border-soft-charcoal/10 dark:bg-night-raised/50 dark:border-night-border">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold text-soft-charcoal/50 text-sm flex items-center gap-2">
+            <h3 className="font-semibold text-soft-charcoal/50 dark:text-night-secondary text-sm flex items-center gap-2">
               <X size={16} className="text-soft-charcoal/30" />
               Dismissed ({dismissedItems.length})
             </h3>
           </div>
-          <p className="text-xs text-soft-charcoal/40 mb-3">
+          <p className="text-xs text-soft-charcoal/40 dark:text-night-secondary/60 mb-3">
             Tap ↩ to restore any dismissed item.
           </p>
           <div className="space-y-1.5">
             {dismissedItems.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center justify-between px-3 py-2 bg-white/60 rounded-xl"
+                className="flex items-center justify-between px-3 py-2 bg-white/60 rounded-xl dark:bg-night-raised/60"
               >
-                <p className="text-sm text-soft-charcoal/50 line-through">{item.name}</p>
+                <p className="text-sm text-soft-charcoal/50 dark:text-night-secondary line-through">{item.name}</p>
                 <button
                   onClick={() => restoreItem(item)}
                   className="ml-3 p-1.5 text-pastel-pink hover:bg-pastel-pink/10 rounded-full transition-all"
@@ -755,14 +755,14 @@ export function Scan() {
 
       {/* Couldn't Read Section */}
       {failedItems.length > 0 && (
-        <div className="bg-soft-charcoal/5 rounded-2xl p-4">
-          <h3 className="font-bold text-soft-charcoal flex items-center gap-2 mb-3">
+        <div className="bg-soft-charcoal/5 rounded-2xl p-4 dark:bg-night-raised/50">
+          <h3 className="font-bold text-soft-charcoal dark:text-night-text flex items-center gap-2 mb-3">
             <X className="text-soft-charcoal/40" size={20} />
             Couldn't read ({failedItems.length})
           </h3>
           <div className="space-y-2">
             {failedItems.map((text, i) => (
-              <p key={i} className="text-sm text-soft-charcoal/50 font-mono">
+              <p key={i} className="text-sm text-soft-charcoal/50 dark:text-night-secondary font-mono">
                 {text}
               </p>
             ))}
@@ -771,11 +771,11 @@ export function Scan() {
       )}
 
       {/* Action Buttons */}
-      <div className="fixed bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-cream via-cream to-transparent lg:static lg:bottom-auto lg:[background:none] lg:p-0 lg:pt-2">
+      <div className="fixed bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-cream via-cream to-transparent lg:static lg:bottom-auto lg:[background:none] lg:p-0 lg:pt-2 dark:from-night-base dark:via-night-base dark:to-transparent">
         <div className="max-w-lg lg:max-w-5xl mx-auto flex gap-3">
           <button
             onClick={() => totalToAdd > 0 ? setShowCancelConfirm(true) : handleReset()}
-            className="px-6 py-3 text-soft-charcoal/60 font-semibold rounded-full hover:bg-soft-charcoal/5 transition-all"
+            className="px-6 py-3 text-soft-charcoal/60 dark:text-night-secondary font-semibold rounded-full hover:bg-soft-charcoal/5 transition-all"
           >
             Cancel
           </button>
