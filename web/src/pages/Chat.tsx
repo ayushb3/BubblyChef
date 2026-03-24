@@ -12,7 +12,7 @@ import {
   Users,
   RefreshCw,
 } from 'lucide-react';
-import { useChat, useAIHealth, useModeSuggestions, useConversationHistory, useSubmitWorkflowEvent } from '../api/client';
+import { useAIHealth, useModeSuggestions, useConversationHistory, useSubmitWorkflowEvent, streamChatMessage } from '../api/client';
 import type {
   ChatMessage,
   ChatResponse,
@@ -390,9 +390,38 @@ function FullRecipeCard({ recipe, onTryAnother }: {
   );
 }
 
+// ─── Mode-switch pill ─────────────────────────────────────────────────────────
+
+/** Tappable pill suggesting a mode switch */
+function ModeSwitchPill({
+  suggestedMode,
+  onSwitch,
+}: {
+  suggestedMode: ChatMode;
+  onSwitch: (mode: ChatMode, message: string) => void;
+}) {
+  const config = MODE_CONFIG[suggestedMode];
+  const Icon = config.icon;
+  const contextMessages: Record<ChatMode, string> = {
+    recipe: 'Find me a recipe using my pantry!',
+    learn: 'Teach me a cooking technique!',
+    chat: "Let's chat about food!",
+  };
+
+  return (
+    <button
+      onClick={() => onSwitch(suggestedMode, contextMessages[suggestedMode])}
+      className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-pastel-lavender text-soft-charcoal hover:shadow-soft active:scale-95 transition-all"
+    >
+      <Icon size={14} />
+      Switch to {config.label} mode
+    </button>
+  );
+}
+
 // ─── Message bubble ────────────────────────────────────────────────────────────
 
-function MessageBubble({ msg, mode, onProposalApprove, onProposalReject, onTryAnother, onCookIt, proposalState }: {
+function MessageBubble({ msg, mode, onProposalApprove, onProposalReject, onTryAnother, onCookIt, proposalState, onModeSwitch }: {
   msg: ChatMessage;
   mode: ChatMode;
   onProposalApprove: (msgId: string) => void;
@@ -400,6 +429,7 @@ function MessageBubble({ msg, mode, onProposalApprove, onProposalReject, onTryAn
   onTryAnother: () => void;
   onCookIt: (title: string) => void;
   proposalState: Record<string, boolean | null>;
+  onModeSwitch: (mode: ChatMode, message: string) => void;
 }) {
   const isUser = msg.role === 'user';
 
@@ -455,10 +485,30 @@ function MessageBubble({ msg, mode, onProposalApprove, onProposalReject, onTryAn
               : 'bg-white shadow-soft text-soft-charcoal rounded-2xl rounded-bl-sm dark:bg-night-surface dark:text-night-text'
           }`}
         >
-          {isUser ? msg.content : <Suspense fallback={msg.content}><Markdown>{msg.content}</Markdown></Suspense>}
+          {isUser ? (
+            msg.content
+          ) : (
+            <>
+              <Suspense fallback={msg.content}>
+                <Markdown>{msg.content || ' '}</Markdown>
+              </Suspense>
+              {!msg.response && msg.content !== '' && (
+                <span
+                  className="inline-block w-1.5 h-4 ml-0.5 bg-soft-charcoal dark:bg-night-text rounded-sm align-middle animate-pulse"
+                />
+              )}
+            </>
+          )}
         </div>
 
         {renderProposal()}
+
+        {!isUser && msg.response?.suggested_mode && (
+          <ModeSwitchPill
+            suggestedMode={msg.response.suggested_mode as ChatMode}
+            onSwitch={onModeSwitch}
+          />
+        )}
 
         <span className="text-xs text-soft-charcoal opacity-40 dark:text-night-secondary mt-1 px-1">
           {formatRelativeTime(msg.timestamp)}
@@ -531,7 +581,9 @@ export function Chat() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const { mutate: sendChat, isPending } = useChat();
+  const [isStreaming, setIsStreaming] = useState(false);
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const isPending = isStreaming;
   const { mutate: submitWorkflowEvent } = useSubmitWorkflowEvent();
   const { data: aiHealth } = useAIHealth();
   const aiUnavailable = aiHealth !== undefined && !aiHealth.ai_available;
@@ -575,7 +627,7 @@ export function Chat() {
 
   const handleSend = useCallback((text?: string) => {
     const messageText = (text ?? input).trim();
-    if (!messageText || isPending) return;
+    if (!messageText || isStreaming) return;
 
     const userMsg: ChatMessage = {
       id: generateId(),
@@ -584,55 +636,93 @@ export function Chat() {
       timestamp: new Date(),
     };
 
+    const assistantMsgId = generateId();
+
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
+    setIsStreaming(true);
 
-    sendChat(
+    // Create placeholder assistant message (content will fill via streaming)
+    const placeholderMsg: ChatMessage = {
+      id: assistantMsgId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, placeholderMsg]);
+
+    const abortController = new AbortController();
+    streamAbortRef.current = abortController;
+
+    streamChatMessage(
       { message: messageText, conversation_id: conversationId, mode },
-      {
-        onSuccess: (response: ChatResponse) => {
-          let content = response.assistant_message || '';
+      // onToken -- append each token to the placeholder message
+      (token: string) => {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMsgId
+              ? { ...msg, content: msg.content + token }
+              : msg,
+          ),
+        );
+      },
+      // onDone -- attach the full response envelope
+      (response: ChatResponse) => {
+        setIsStreaming(false);
+        streamAbortRef.current = null;
 
-          if (
-            response.intent === 'recipe_ingest_request' ||
-            (response.intent === 'general_chat' &&
-              messageText.toLowerCase().includes('saved recipe'))
-          ) {
-            content =
-              "Recipe library coming in Phase 3! For now, try asking me to generate a recipe.";
-          }
+        let content = response.assistant_message || '';
+        if (
+          response.intent === 'recipe_ingest_request' ||
+          (response.intent === 'general_chat' &&
+            messageText.toLowerCase().includes('saved recipe'))
+        ) {
+          content =
+            'Recipe library coming in Phase 3! For now, try asking me to generate a recipe.';
+        }
+        if (!content) {
+          content = "I'm not sure how to help with that. Try asking about recipes or groceries!";
+        }
 
-          if (!content) {
-            content = "I'm not sure how to help with that. Try asking about recipes or groceries!";
-          }
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMsgId
+              ? {
+                  ...msg,
+                  // Keep streamed content if we got tokens, otherwise use envelope message
+                  content: msg.content || content,
+                  intent: response.intent,
+                  response,
+                }
+              : msg,
+          ),
+        );
 
-          const assistantMsgId = generateId();
-          const assistantMsg: ChatMessage = {
-            id: assistantMsgId,
-            role: 'assistant',
-            content,
-            intent: response.intent,
-            timestamp: new Date(),
-            response,
-          };
-          setMessages((prev) => [...prev, assistantMsg]);
-          // Store workflow_id so approval can call the right endpoint
-          if (response.workflow_id && response.requires_review) {
-            setMessageWorkflowIds((prev) => ({ ...prev, [assistantMsgId]: response.workflow_id }));
-          }
-        },
-        onError: (err: Error) => {
-          const errorMsg: ChatMessage = {
-            id: generateId(),
-            role: 'assistant',
-            content: `Oops! Something went wrong (${err.message}). Please try again!`,
-            timestamp: new Date(),
-          };
-          setMessages((prev) => [...prev, errorMsg]);
-        },
-      }
+        if (response.workflow_id && response.requires_review) {
+          setMessageWorkflowIds((prev) => ({
+            ...prev,
+            [assistantMsgId]: response.workflow_id,
+          }));
+        }
+      },
+      // onError
+      (err: Error) => {
+        setIsStreaming(false);
+        streamAbortRef.current = null;
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMsgId
+              ? {
+                  ...msg,
+                  content: `Oops! Something went wrong (${err.message}). Please try again!`,
+                }
+              : msg,
+          ),
+        );
+      },
+      abortController.signal,
     );
-  }, [input, isPending, sendChat, conversationId, mode]);
+  }, [input, isStreaming, conversationId, mode]);
 
   const handleTryAnother = useCallback(() => {
     handleSend('Give me a different recipe');
@@ -641,6 +731,12 @@ export function Chat() {
   const handleCookIt = useCallback((title: string) => {
     handleSend(`How do I cook ${title}?`);
   }, [handleSend]);
+
+  const handleModeSwitch = useCallback((newMode: ChatMode, contextMsg: string) => {
+    handleModeChange(newMode);
+    // Use setTimeout to ensure mode change completes before sending
+    setTimeout(() => handleSend(contextMsg), 50);
+  }, [handleModeChange, handleSend]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -737,11 +833,12 @@ export function Chat() {
                 onTryAnother={handleTryAnother}
                 onCookIt={handleCookIt}
                 proposalState={proposalState}
+                onModeSwitch={handleModeSwitch}
               />
             ))}
 
-            {/* AI thinking state */}
-            {isPending && (
+            {/* AI thinking state -- only show when streaming hasn't produced tokens yet */}
+            {isStreaming && messages.length > 0 && messages[messages.length - 1].content === '' && (
               <div className="flex items-end gap-2 mb-4">
                 <img
                   src="/mascot/bubbles-thinking.png"

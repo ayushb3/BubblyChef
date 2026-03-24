@@ -26,6 +26,7 @@ import type {
   ChatMode,
   ConversationHistoryTurn,
   Decoration,
+  StreamEvent,
 } from '../types';
 
 export const API_BASE_URL = 'http://localhost:8888';
@@ -476,6 +477,86 @@ export function useChat() {
   return useMutation({
     mutationFn: sendChatMessage,
   });
+}
+
+// ─── Streaming Chat API ─────────────────────────────────────────────────────
+
+/**
+ * Stream chat messages via SSE from POST /v1/chat/stream.
+ *
+ * Parses SSE events and dispatches to the appropriate callback:
+ * - onToken: called for each text chunk as it arrives
+ * - onDone: called once with the full ChatResponse envelope
+ * - onError: called if the stream or parsing fails
+ */
+export async function streamChatMessage(
+  request: ChatRequest,
+  onToken: (token: string) => void,
+  onDone: (response: ChatResponse) => void,
+  onError: (error: Error) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/v1/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+      signal,
+    });
+  } catch (err) {
+    onError(err instanceof Error ? err : new Error(String(err)));
+    return;
+  }
+
+  if (!response.ok || !response.body) {
+    onError(new Error(`Stream request failed: ${response.status}`));
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      // Keep the last potentially incomplete line in the buffer
+      buffer = lines.pop() ?? '';
+
+      let currentEventType = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          currentEventType = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          const jsonStr = line.slice(6);
+          try {
+            const parsed = JSON.parse(jsonStr) as StreamEvent;
+            if (parsed.type === 'token' || currentEventType === 'token') {
+              onToken((parsed as { content: string }).content ?? '');
+            } else if (parsed.type === 'envelope' || currentEventType === 'envelope') {
+              onDone((parsed as { data: ChatResponse }).data);
+            } else if (parsed.type === 'error' || currentEventType === 'error') {
+              onError(new Error((parsed as { message: string }).message ?? 'Stream error'));
+              return;
+            }
+            // 'done' event is informational; envelope follows it
+          } catch {
+            // Skip unparseable lines
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if ((err as DOMException)?.name === 'AbortError') return;
+    onError(err instanceof Error ? err : new Error(String(err)));
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 // ─── Conversation history ────────────────────────────────────────────────────

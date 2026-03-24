@@ -5,6 +5,7 @@ Supports structured output generation with Pydantic models.
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from typing import TypeVar
 
 from pydantic import BaseModel
@@ -40,6 +41,21 @@ class AIProvider(ABC):
             Parsed Pydantic model if schema provided, otherwise raw string
         """
         ...
+
+    async def stream_complete(
+        self,
+        prompt: str,
+        temperature: float = 0.7,
+    ) -> AsyncIterator[str]:
+        """
+        Stream text tokens. No structured output — streaming is only for free-text.
+
+        Default implementation: calls complete() and yields the full response as one chunk.
+        Providers can override this with true streaming support.
+        """
+        result = await self.complete(prompt=prompt, temperature=temperature)
+        text = result if isinstance(result, str) else str(result)
+        yield text
 
     @abstractmethod
     async def is_available(self) -> bool:

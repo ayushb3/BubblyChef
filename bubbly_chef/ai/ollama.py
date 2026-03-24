@@ -4,12 +4,16 @@ Ollama provider for self-hosted local LLM inference.
 """
 
 import json
+import logging
+from collections.abc import AsyncIterator
 from typing import TypeVar
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
 from .provider import AIProvider, ProviderUnavailableError, StructuredOutputError
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -114,6 +118,47 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             raise StructuredOutputError(f"Failed to parse JSON: {text}") from e
         except ValidationError as e:
             raise StructuredOutputError(f"Schema validation failed: {e}") from e
+
+    async def stream_complete(
+        self,
+        prompt: str,
+        temperature: float = 0.7,
+    ) -> AsyncIterator[str]:
+        """Stream tokens using Ollama streaming API."""
+        url = f"{self.base_url}/api/generate"
+
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": True,
+            "options": {
+                "temperature": temperature,
+            },
+        }
+
+        try:
+            async with self._client.stream("POST", url, json=payload) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    try:
+                        data = json.loads(line)
+                        token = data.get("response", "")
+                        if token:
+                            yield token
+                        if data.get("done", False):
+                            break
+                    except json.JSONDecodeError:
+                        continue
+        except (httpx.HTTPStatusError, httpx.RequestError) as e:
+            logger.warning(
+                "Ollama streaming failed, falling back to non-streaming",
+                extra={"error": str(e)},
+            )
+            result = await self.complete(prompt=prompt, temperature=temperature)
+            text = result if isinstance(result, str) else str(result)
+            yield text
 
     async def is_available(self) -> bool:
         """Check if Ollama server is reachable and model is available."""

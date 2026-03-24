@@ -294,6 +294,7 @@ export interface ChatResponse {
   warnings: string[];
   errors: string[];
   workflow_status: string;
+  suggested_mode?: ChatMode | null;
   created_at: string;
 }
 
@@ -311,6 +312,29 @@ export interface ConversationHistoryTurn {
   intent: string | null;
   created_at: string;
 }
+
+// ─── SSE Stream Events from POST /v1/chat/stream ─────────────────────────────
+
+export interface StreamTokenEvent {
+  type: 'token';
+  content: string;
+}
+export interface StreamDoneEvent {
+  type: 'done';
+}
+export interface StreamEnvelopeEvent {
+  type: 'envelope';
+  data: ChatResponse;
+}
+export interface StreamErrorEvent {
+  type: 'error';
+  message: string;
+}
+export type StreamEvent =
+  | StreamTokenEvent
+  | StreamDoneEvent
+  | StreamEnvelopeEvent
+  | StreamErrorEvent;
 
 // ─── Kitchen Decorations ──────────────────────────────────────────────────────
 

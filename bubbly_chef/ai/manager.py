@@ -4,6 +4,7 @@ Manages AI provider selection and fallback logic.
 """
 
 import logging
+from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any, TypeVar
 
@@ -154,6 +155,47 @@ class AIManager:
             },
         )
         raise NoProviderAvailableError(f"All providers failed. Errors: {errors}")
+
+    async def stream_complete(
+        self,
+        prompt: str,
+        temperature: float = 0.7,
+    ) -> AsyncIterator[str]:
+        """
+        Stream text tokens using the best available provider.
+
+        Tries each provider in order, falling back on failure.
+        """
+        errors: list[str] = []
+
+        for provider in self.providers:
+            try:
+                if not await provider.is_available():
+                    errors.append(f"{provider.name}: not available")
+                    continue
+
+                logger.info(
+                    "AI stream starting",
+                    extra={"provider": provider.name, "prompt_length": len(prompt)},
+                )
+
+                async for token in provider.stream_complete(
+                    prompt=prompt, temperature=temperature
+                ):
+                    yield token
+                return
+
+            except Exception as e:
+                logger.warning(
+                    "AI stream failed, trying next provider",
+                    extra={"provider": provider.name, "error": str(e)},
+                )
+                errors.append(f"{provider.name}: {e}")
+                continue
+
+        raise NoProviderAvailableError(
+            f"All providers failed for streaming. Errors: {errors}"
+        )
 
     @property
     def current_provider(self) -> AIProvider | None:

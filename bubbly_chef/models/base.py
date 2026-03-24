@@ -123,6 +123,10 @@ class ProposalEnvelope(BaseModel, Generic[T]):
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata for debugging/logging"
     )
+    suggested_mode: str | None = Field(
+        default=None,
+        description="Suggested chat mode switch (e.g. 'recipe', 'learn')",
+    )
 
     model_config = ConfigDict(json_schema_extra={
         "example": {

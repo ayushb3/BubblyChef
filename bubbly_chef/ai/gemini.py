@@ -5,6 +5,7 @@ Google Gemini provider using the free tier API.
 
 import json
 import logging
+from collections.abc import AsyncIterator
 from typing import Any, TypeVar
 
 import httpx
@@ -128,6 +129,55 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             raise StructuredOutputError(f"Failed to parse JSON: {text}") from e
         except ValidationError as e:
             raise StructuredOutputError(f"Schema validation failed: {e}") from e
+
+    async def stream_complete(
+        self,
+        prompt: str,
+        temperature: float = 0.7,
+    ) -> AsyncIterator[str]:
+        """Stream tokens using Gemini streamGenerateContent SSE endpoint."""
+        url = f"{self.BASE_URL}/models/{self.model}:streamGenerateContent"
+
+        generation_config: dict[str, Any] = {
+            "temperature": temperature,
+            "topP": 0.95,
+            "topK": 40,
+        }
+
+        payload: dict[str, Any] = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": generation_config,
+        }
+
+        try:
+            async with self._client.stream(
+                "POST",
+                url,
+                json=payload,
+                params={"key": self.api_key, "alt": "sse"},
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    json_str = line[6:]  # strip 'data: ' prefix
+                    if not json_str.strip():
+                        continue
+                    try:
+                        chunk_data = json.loads(json_str)
+                        text = chunk_data["candidates"][0]["content"]["parts"][0]["text"]
+                        yield text
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        continue
+        except (httpx.HTTPStatusError, httpx.RequestError) as e:
+            logger.warning(
+                "Gemini streaming failed, falling back to non-streaming",
+                extra={"error": str(e)},
+            )
+            # Fallback: use non-streaming complete and yield full response
+            result = await self.complete(prompt=prompt, temperature=temperature)
+            text = result if isinstance(result, str) else str(result)
+            yield text
 
     async def is_available(self) -> bool:
         """Check if Gemini API is reachable."""

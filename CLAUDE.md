@@ -237,6 +237,28 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 
 ---
 
+## Agentic Team Workflow
+
+**When the user reports an issue or requests a feature:**
+
+1. **Triage** — Claude reads the issue, gathers just enough context to describe it clearly (what's broken, what's wanted, which files are likely involved)
+2. **Create a PM task** — Spawn a `pm` agent via the Agent tool with the triage summary. The PM will:
+   - Research the codebase in depth
+   - Write a detailed implementation plan (what to change, file-by-file)
+   - Spawn `dev1`, `dev2`, and/or `designer` agents as needed
+   - Coordinate implementation and verify completion
+3. **Claude stays as coordinator** — Claude monitors the team, answers questions, and relays final results to the user
+
+**Agent roles:**
+- `pm` — Plans, decomposes, coordinates. Reads codebase + spawns devs. Owns the task list.
+- `dev1` — Backend/Python: FastAPI routes, services, workflows, repository, domain
+- `dev2` — Frontend/TypeScript: React pages, components, Tailwind, client hooks
+- `designer` — UX QA, dark mode review, visual consistency checks
+
+**DO NOT** implement features directly when the user reports an issue — always triage → PM → agent team unless the fix is a single-line change.
+
+---
+
 ## Environment Variables
 
 ```bash

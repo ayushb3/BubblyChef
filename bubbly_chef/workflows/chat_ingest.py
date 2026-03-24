@@ -15,6 +15,7 @@ Architecture:
 """
 
 import logging
+from collections.abc import AsyncIterator
 from datetime import date
 from typing import Any
 from uuid import uuid4
@@ -176,6 +177,26 @@ def get_mode_prefix(state: WorkflowState) -> str:
     """Return the system prompt prefix for the current chat mode."""
     mode = state.get("input_mode", "chat")
     return MODE_SYSTEM_PROMPTS.get(mode, "")
+
+
+# ─── Mode-switch detection ────────────────────────────────────────────────────
+
+MODE_SWITCH_PATTERNS: dict[str, list[str]] = {
+    "recipe": ["switch to recipe mode", "recipe mode", "try recipe mode"],
+    "learn": ["switch to learn mode", "learn mode", "learning mode", "try learn mode"],
+    "chat": ["switch to chat mode", "chat mode", "general chat"],
+}
+
+
+def detect_mode_suggestion(text: str, current_mode: str) -> str | None:
+    """Detect if the assistant message suggests switching to a different chat mode."""
+    text_lower = text.lower()
+    for mode, patterns in MODE_SWITCH_PATTERNS.items():
+        if mode == current_mode:
+            continue
+        if any(p in text_lower for p in patterns):
+            return mode
+    return None
 
 
 def format_history_context(state: WorkflowState, max_turns: int = 10) -> str:
@@ -980,6 +1001,8 @@ async def general_chat_response(state: WorkflowState) -> WorkflowState:
             result if isinstance(result, str) else getattr(result, "response", str(result))
         )
 
+        suggested_mode = detect_mode_suggestion(response_text, state.get("input_mode", "chat"))
+
         return {
             **state,
             "intent": Intent.GENERAL_CHAT.value,
@@ -989,6 +1012,7 @@ async def general_chat_response(state: WorkflowState) -> WorkflowState:
             "requires_review": False,
             "confidence": 1.0,
             "workflow_status": WorkflowStatus.COMPLETED.value,
+            "suggested_mode": suggested_mode,
         }
 
     except NoProviderAvailableError:
@@ -1084,6 +1108,8 @@ mention they can switch to Recipe mode for a full step-by-step recipe."""
             result if isinstance(result, str) else getattr(result, "response", str(result))
         )
 
+        suggested_mode = detect_mode_suggestion(response_text, state.get("input_mode", "chat"))
+
         return {
             **state,
             "intent": Intent.COOKING_HELP.value,
@@ -1093,6 +1119,7 @@ mention they can switch to Recipe mode for a full step-by-step recipe."""
             "requires_review": False,
             "confidence": 1.0,
             "workflow_status": WorkflowStatus.COMPLETED.value,
+            "suggested_mode": suggested_mode,
         }
 
     except NoProviderAvailableError:
@@ -1351,13 +1378,239 @@ async def run_chat_workflow(
         )
 
     else:  # general_chat or cooking_help — both return plain text envelope
-        return create_general_chat_envelope(
+        envelope = create_general_chat_envelope(
             assistant_message=final_state.get("assistant_message", "I'm here to help!"),
             intent=Intent(intent),
             request_id=final_state.get("request_id"),
             workflow_id=final_state.get("workflow_id"),
             conversation_id=final_state.get("conversation_id"),
         )
+        envelope.suggested_mode = final_state.get("suggested_mode")
+        return envelope
+
+
+# =============================================================================
+# Streaming API
+# =============================================================================
+
+
+def _build_envelope_from_state(
+    final_state: dict[str, Any],
+    message: str,
+    conversation_id: str | None,
+) -> "ProposalEnvelope[Any]":
+    """Build the appropriate ProposalEnvelope from final workflow state."""
+    intent = final_state.get("intent", Intent.GENERAL_CHAT.value)
+
+    if intent == Intent.PANTRY_UPDATE.value:
+        proposal = final_state.get("proposal")
+        if proposal is None:
+            proposal = PantryProposal(actions=[], source_text=message)
+        envelope: ProposalEnvelope[Any] = create_pantry_envelope(
+            proposal=proposal,
+            confidence=final_state.get("confidence", 0.0),
+            field_confidences=final_state.get("field_confidences", {}),
+            warnings=final_state.get("warnings", []),
+            errors=final_state.get("errors", []),
+            assistant_message=final_state.get("assistant_message", ""),
+            next_action=NextAction(final_state.get("next_action", NextAction.NONE.value)),
+            request_id=final_state.get("request_id"),
+            workflow_id=final_state.get("workflow_id"),
+            conversation_id=final_state.get("conversation_id"),
+            clarifying_questions=final_state.get("clarifying_questions", []),
+            per_item_confidences=final_state.get("per_item_confidences", []),
+        )
+    elif intent == Intent.RECEIPT_INGEST.value:
+        envelope = create_handoff_envelope(
+            handoff_kind=HandoffKind.RECEIPT,
+            assistant_message=final_state.get("assistant_message", ""),
+            next_action=NextAction.REQUEST_RECEIPT_IMAGE,
+            instructions="Upload a photo of your receipt or paste the text.",
+            required_inputs=["receipt_image"],
+            optional_inputs=["store_name", "purchase_date"],
+            request_id=final_state.get("request_id"),
+            workflow_id=final_state.get("workflow_id"),
+            conversation_id=final_state.get("conversation_id"),
+        )
+    elif intent == Intent.PRODUCT_INGEST.value:
+        envelope = create_handoff_envelope(
+            handoff_kind=HandoffKind.PRODUCT,
+            assistant_message=final_state.get("assistant_message", ""),
+            next_action=NextAction.REQUEST_PRODUCT_BARCODE,
+            instructions="Scan the product barcode or take a photo.",
+            required_inputs=["barcode"],
+            optional_inputs=["product_photo", "description"],
+            request_id=final_state.get("request_id"),
+            workflow_id=final_state.get("workflow_id"),
+            conversation_id=final_state.get("conversation_id"),
+        )
+    elif intent == Intent.RECIPE_INGEST.value:
+        envelope = create_handoff_envelope(
+            handoff_kind=HandoffKind.RECIPE,
+            assistant_message=final_state.get("assistant_message", ""),
+            next_action=NextAction.REQUEST_RECIPE_TEXT,
+            instructions="Share the recipe URL or paste the recipe text.",
+            required_inputs=["recipe_url", "recipe_text"],
+            optional_inputs=["title"],
+            request_id=final_state.get("request_id"),
+            workflow_id=final_state.get("workflow_id"),
+            conversation_id=final_state.get("conversation_id"),
+        )
+    else:
+        envelope = create_general_chat_envelope(
+            assistant_message=final_state.get("assistant_message", "I'm here to help!"),
+            intent=Intent(intent),
+            request_id=final_state.get("request_id"),
+            workflow_id=final_state.get("workflow_id"),
+            conversation_id=final_state.get("conversation_id"),
+        )
+
+    envelope.suggested_mode = final_state.get("suggested_mode")
+    return envelope
+
+
+async def run_chat_workflow_streaming(
+    message: str,
+    conversation_id: str | None = None,
+    mode: str = "text",
+    pantry_snapshot: list[dict[str, Any]] | None = None,
+    history: list[dict[str, Any]] | None = None,
+) -> AsyncIterator[str]:
+    """
+    Streaming variant of run_chat_workflow.
+
+    For streamable intents (general_chat, cooking_help): streams tokens then
+    yields a final envelope JSON.  For all other intents: runs the full
+    LangGraph workflow and yields the envelope as a single chunk.
+
+    Yields JSON-encoded strings, each representing an SSE event payload:
+      {"type": "token", "content": "..."}
+      {"type": "done"}
+      {"type": "envelope", "data": {...}}
+    """
+    import json as _json
+
+    graph = get_chat_router_graph()
+
+    initial_state: WorkflowState = {
+        "request_id": str(uuid4()),
+        "workflow_id": str(uuid4()),
+        "conversation_id": conversation_id,
+        "input_text": message,
+        "input_type": "chat",
+        "input_mode": mode,
+        "pantry_snapshot": pantry_snapshot,
+        "conversation_history": history or [],
+        "warnings": [],
+        "errors": [],
+    }
+
+    # Run initialization + intent classification (fast, deterministic)
+    init_state = initialize_state(initial_state)
+    classified_state = await classify_intent(init_state)
+    intent = classified_state.get("intent", Intent.GENERAL_CHAT.value)
+
+    # Only stream for free-text intents
+    streamable_intents = {Intent.GENERAL_CHAT.value, Intent.COOKING_HELP.value}
+
+    if intent not in streamable_intents:
+        # Non-streamable: run full workflow, yield single envelope
+        final_state = await graph.ainvoke(initial_state)
+        env = _build_envelope_from_state(final_state, message, conversation_id)
+        yield _json.dumps({"type": "envelope", "data": env.model_dump(mode="json")})
+        return
+
+    # ── Streamable intent: build prompt and stream tokens ──
+    ai_manager = get_ai_manager()
+
+    # Build the same prompt the node functions would use
+    pantry_context = ""
+    try:
+        repo = await get_repository()
+        items = await repo.get_all_pantry_items()
+        if items:
+            if intent == Intent.COOKING_HELP.value:
+                expiring = [
+                    it for it in items
+                    if it.expiry_date and (it.expiry_date - date.today()).days <= 3
+                ]
+                pantry_lines = [f"- {it.name} ({it.quantity} {it.unit})" for it in items]
+                pantry_context = (
+                    f"\n\nThe user's pantry currently has {len(items)} items:\n"
+                    + "\n".join(pantry_lines[:30])
+                )
+                if len(items) > 30:
+                    pantry_context += f"\n... and {len(items) - 30} more items"
+                if expiring:
+                    exp_names = ", ".join(it.name for it in expiring)
+                    pantry_context += f"\n\nEXPIRING SOON (use first!): {exp_names}"
+            else:
+                names = [it.name for it in items[:20]]
+                pantry_context = (
+                    f"\n\nThe user has {len(items)} pantry items"
+                    f" including: {', '.join(names)}."
+                )
+    except Exception:
+        pass  # non-critical
+
+    mode_prefix = get_mode_prefix(classified_state)
+    history_context = format_history_context(classified_state)
+
+    if intent == Intent.COOKING_HELP.value:
+        system = (
+            "You are a friendly cooking assistant for BubblyChef, "
+            "a pantry-aware recipe app.\n\n"
+            "Help the user with:\n"
+            "- Cooking techniques and how-to questions\n"
+            "- Meal ideas and recipe suggestions based on what they have\n"
+            "- Ingredient substitutions\n"
+            "- Food storage tips\n"
+            "- General culinary advice\n\n"
+            "When suggesting meals or recipes, prioritize ingredients the user "
+            "already has in their pantry (listed below). If items are expiring soon, "
+            "suggest ways to use them first.\n\n"
+            "Keep responses friendly, concise, and practical."
+        )
+        user_prompt = f"\n\nUser: {message}\n\nRespond helpfully and concisely."
+    else:
+        system = GENERAL_CHAT_SYSTEM_PROMPT
+        user_prompt = GENERAL_CHAT_USER_PROMPT.format(text=message)
+
+    prompt = mode_prefix + system + pantry_context + "\n\n" + history_context + user_prompt
+
+    # Stream tokens
+    collected_text = ""
+
+    try:
+        async for token in ai_manager.stream_complete(prompt=prompt, temperature=0.7):
+            collected_text += token
+            yield _json.dumps({"type": "token", "content": token})
+    except NoProviderAvailableError:
+        collected_text = (
+            "No AI provider is configured. "
+            "Please add a Gemini API key or start Ollama."
+        )
+        yield _json.dumps({"type": "token", "content": collected_text})
+    except Exception as e:
+        logger.error(f"Streaming error: {e}")
+        collected_text = "Sorry, I ran into an error. Please try again."
+        yield _json.dumps({"type": "token", "content": collected_text})
+
+    # Detect mode suggestion from collected text
+    suggested_mode = detect_mode_suggestion(collected_text, mode)
+
+    # Build final envelope
+    envelope = create_general_chat_envelope(
+        assistant_message=collected_text,
+        intent=Intent(intent),
+        request_id=classified_state.get("request_id"),
+        workflow_id=classified_state.get("workflow_id"),
+        conversation_id=conversation_id,
+    )
+    envelope.suggested_mode = suggested_mode
+
+    yield _json.dumps({"type": "done"})
+    yield _json.dumps({"type": "envelope", "data": envelope.model_dump(mode="json")})
 
 
 # =============================================================================
