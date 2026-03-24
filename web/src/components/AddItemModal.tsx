@@ -5,7 +5,8 @@ import {
   useUpdatePantryItem,
   useDeletePantryItem,
 } from '../api/client';
-import type { PantryItem, Category, Location } from '../types';
+import { FoodNameTypeahead } from './FoodNameTypeahead';
+import type { PantryItem, Category, Location, FoodSearchResult } from '../types';
 
 interface AddItemModalProps {
   isOpen: boolean;
@@ -35,17 +36,10 @@ const locations: { value: Location; label: string; emoji: string }[] = [
 ];
 
 const units = [
-  'item',
-  'lb',
-  'oz',
-  'g',
-  'kg',
-  'ml',
-  'L',
-  'gallon',
-  'cup',
-  'bunch',
-  'package',
+  'item', 'count', 'lb', 'oz', 'kg', 'g',
+  'dozen', 'bunch', 'gallon', 'quart', 'pint', 'fl oz', 'liter', 'ml',
+  'package', 'bag', 'box', 'can', 'jar', 'bottle', 'container',
+  'loaf', 'slice', 'cup', 'tbsp', 'tsp',
 ];
 
 export function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
@@ -59,6 +53,24 @@ export function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
   const createMutation = useCreatePantryItem();
   const updateMutation = useUpdatePantryItem();
   const deleteMutation = useDeletePantryItem();
+
+  // When food typeahead selects a result, auto-populate related fields
+  const handleFoodSelect = (result: FoodSearchResult) => {
+    // Auto-set unit to the first valid unit for this food
+    if (result.valid_units.length > 0) {
+      setUnit(result.valid_units[0]);
+    }
+    // Auto-set category
+    setCategory(result.category);
+    // Auto-set location
+    setLocation(result.default_location);
+    // Auto-set expiry date based on category defaults
+    if (result.expiry_days > 0) {
+      const future = new Date();
+      future.setDate(future.getDate() + result.expiry_days);
+      setExpiryDate(future.toISOString().split('T')[0]);
+    }
+  };
 
   useEffect(() => {
     if (editItem) {
@@ -159,13 +171,12 @@ export function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
             <label className="block text-sm font-semibold text-soft-charcoal dark:text-night-text mb-2">
               What did you get? 🛒
             </label>
-            <input
-              type="text"
+            <FoodNameTypeahead
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={setName}
+              borderColor="pink"
+              onSelect={handleFoodSelect}
               placeholder="e.g., Milk, Chicken breast..."
-              required
-              className="w-full px-4 py-3 rounded-xl border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all dark:bg-night-raised dark:border-night-border dark:text-night-text dark:placeholder-night-secondary"
             />
           </div>
 
