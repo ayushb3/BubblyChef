@@ -272,7 +272,9 @@ function RecipeCard({ recipe, onCookIt }: { recipe: ChatRecipeData; onCookIt?: (
       )}
     </div>
   );
-} — shown in recipe mode with instructions, ingredients, tips */
+}
+
+/** Shown in recipe mode with instructions, ingredients, tips */
 function FullRecipeCard({ recipe, onTryAnother }: {
   recipe: ChatRecipeData;
   onTryAnother: () => void;

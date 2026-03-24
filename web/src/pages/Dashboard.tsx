@@ -57,7 +57,7 @@ function TipOfTheDay({ expiringItem, onTryNow }: { expiringItem: string | null; 
   );
 }
 
-
+export function Dashboard() {
   const navigate = useNavigate();
   const { data: expiringItems, isLoading } = useExpiringItems(7);
   const { data: recentItems, isLoading: isLoadingRecent } = useRecentActivity(5);
