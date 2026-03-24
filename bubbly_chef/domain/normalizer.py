@@ -1,6 +1,10 @@
 """Food name normalization utilities."""
 
+from __future__ import annotations
+
+import json
 import re
+from pathlib import Path
 
 from bubbly_chef.domain.catalog import categorize as catalog_categorize
 from bubbly_chef.domain.catalog import lookup as catalog_lookup
@@ -255,3 +259,69 @@ def detect_category(name: str) -> str | None:
 
     # Fall back to catalog lookup for items not covered by keywords
     return catalog_categorize(name)
+
+
+# ---------------------------------------------------------------------------
+# Food-library normalization (fuzzy match against food_library.json canonicals)
+# ---------------------------------------------------------------------------
+
+_FOOD_LIBRARY_PATH = Path(__file__).resolve().parent.parent / "data" / "food_library.json"
+
+_food_library_canonicals: list[str] | None = None
+
+
+def _load_food_library_canonicals() -> list[str]:
+    """Load canonical names from food_library.json, caching at module level."""
+    global _food_library_canonicals
+    if _food_library_canonicals is not None:
+        return _food_library_canonicals
+
+    if not _FOOD_LIBRARY_PATH.is_file():
+        _food_library_canonicals = []
+        return _food_library_canonicals
+
+    try:
+        with open(_FOOD_LIBRARY_PATH) as f:
+            entries: list[dict[str, object]] = json.load(f)
+        _food_library_canonicals = [
+            str(e["canonical"]) for e in entries if "canonical" in e
+        ]
+    except (json.JSONDecodeError, OSError):
+        _food_library_canonicals = []
+
+    return _food_library_canonicals
+
+
+def normalize_to_library(name: str) -> str:
+    """
+    Normalize a food name against the food library's canonical entries.
+
+    Uses rapidfuzz WRatio with a score cutoff of 75 to find the best
+    canonical match.  Returns the canonical name if a match is found,
+    otherwise returns the original name unchanged.
+    """
+    if not name or not name.strip():
+        return name
+
+    canonicals = _load_food_library_canonicals()
+    if not canonicals:
+        return name
+
+    query = name.strip().lower()
+
+    try:
+        from rapidfuzz import process
+        from rapidfuzz.fuzz import WRatio
+
+        match = process.extractOne(
+            query,
+            canonicals,
+            scorer=WRatio,
+            score_cutoff=75,
+        )
+        if match is not None:
+            return str(match[0])
+    except ImportError:
+        pass
+
+    return name

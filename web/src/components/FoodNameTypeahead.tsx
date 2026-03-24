@@ -2,6 +2,16 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useFoodSearch } from '../api/client';
 import type { FoodSearchResult } from '../types';
 
+/** Title-case a string: capitalize first letter of each word. */
+function titleCase(s: string): string {
+  return s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+/** Format a category slug for display: replace underscores, title-case. */
+function formatCategory(cat: string): string {
+  return titleCase(cat.replace(/_/g, ' '));
+}
+
 interface FoodNameTypeaheadProps {
   value: string;
   onChange: (value: string) => void;
@@ -51,11 +61,12 @@ export function FoodNameTypeahead({
   }, []);
 
   const handleSelect = useCallback((result: FoodSearchResult) => {
-    onChange(result.canonical);
+    const displayName = titleCase(result.canonical);
+    onChange(displayName);
     setOpen(false);
     // Update the underlying input value so refs pick it up
     if (localInputRef.current) {
-      localInputRef.current.value = result.canonical;
+      localInputRef.current.value = displayName;
     }
     onSelect?.(result);
   }, [onChange, onSelect]);
@@ -89,8 +100,8 @@ export function FoodNameTypeahead({
               className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-pastel-pink/10 dark:hover:bg-night-raised transition-colors text-sm"
             >
               <span className="text-base flex-shrink-0">{r.emoji}</span>
-              <span className="font-medium text-soft-charcoal dark:text-night-text">{r.canonical}</span>
-              <span className="ml-auto text-xs text-soft-charcoal/40 dark:text-night-secondary/60">{r.category}</span>
+              <span className="font-medium text-soft-charcoal dark:text-night-text">{titleCase(r.canonical)}</span>
+              <span className="ml-auto text-xs text-soft-charcoal/40 dark:text-night-secondary/60">{formatCategory(r.category)}</span>
             </button>
           ))}
         </div>

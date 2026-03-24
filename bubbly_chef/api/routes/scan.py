@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.config import settings
+from bubbly_chef.domain.normalizer import normalize_to_library
 from bubbly_chef.logger import get_logger
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.repository.sqlite import get_repository
@@ -292,8 +293,11 @@ async def confirm_items(
 
     for item in request.items:
         try:
+            # Normalize name against food library canonical entries
+            normalized_name = normalize_to_library(item.name)
+
             pantry_item = PantryItem(
-                name=item.name,
+                name=normalized_name,
                 category=item.category,
                 storage_location=item.location,
                 quantity=item.quantity,
