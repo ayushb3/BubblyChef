@@ -1,5 +1,7 @@
 # BubblyChef 🍳
 
+[![Demo Video](https://img.youtube.com/vi/0r-LrfWgBrk/maxresdefault.jpg)](https://youtu.be/0r-LrfWgBrk)
+
 AI-first agentic workflow service for pantry and recipe management. This service powers the intelligence behind a mobile app, handling receipt parsing, product scanning, chat-based pantry updates, and recipe extraction.
 
 ## Architecture Overview
