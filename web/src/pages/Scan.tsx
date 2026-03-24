@@ -8,6 +8,20 @@ import {
 
 type ScanState = 'upload' | 'processing' | 'results' | 'success';
 
+const UNIT_OPTIONS = [
+  'item', 'count', 'lb', 'oz', 'kg', 'g',
+  'dozen', 'bunch', 'gallon', 'quart', 'pint', 'fl oz', 'liter', 'ml',
+  'package', 'bag', 'box', 'can', 'jar', 'bottle', 'container',
+  'loaf', 'slice', 'cup', 'tbsp', 'tsp',
+];
+
+const LOCATION_OPTIONS: { value: string; label: string; emoji: string }[] = [
+  { value: 'fridge',  label: 'Fridge',  emoji: '🧊' },
+  { value: 'freezer', label: 'Freezer', emoji: '❄️' },
+  { value: 'pantry',  label: 'Pantry',  emoji: '🏠' },
+  { value: 'counter', label: 'Counter', emoji: '🍎' },
+];
+
 interface ScannedItem {
   id: string;
   name: string;
@@ -15,7 +29,18 @@ interface ScannedItem {
   unit: string;
   confidence: 'high' | 'medium' | 'low';
   rawText?: string;
+  expiryDate: string | null;
+  location: string;
+  category: string;
 }
+
+type ItemRefs = {
+  name: HTMLInputElement | null;
+  quantity: HTMLInputElement | null;
+  unit: HTMLSelectElement | null;
+  expiry: HTMLInputElement | null;
+  location: HTMLSelectElement | null;
+};
 
 export function Scan() {
   const [scanState, setScanState] = useState<ScanState>('upload');
@@ -31,8 +56,8 @@ export function Scan() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [addedCount, setAddedCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const needsReviewRefs = useRef<Map<string, { name: HTMLInputElement | null; quantity: HTMLInputElement | null; unit: HTMLInputElement | null }>>(new Map());
-  const readyToAddRefs = useRef<Map<string, { name: HTMLInputElement | null; quantity: HTMLInputElement | null; unit: HTMLInputElement | null }>>(new Map());
+  const needsReviewRefs = useRef<Map<string, ItemRefs>>(new Map());
+  const readyToAddRefs = useRef<Map<string, ItemRefs>>(new Map());
 
   // API hooks
   const uploadMutation = useUploadReceipt();
@@ -60,6 +85,9 @@ export function Scan() {
           unit: item.unit || 'item',
           confidence: 'high' as const,
           rawText: item.raw_text,
+          expiryDate: item.expiry_date ?? null,
+          location: item.location ?? 'pantry',
+          category: item.category ?? 'other',
         }))
       );
 
@@ -71,6 +99,9 @@ export function Scan() {
           unit: item.unit || 'item',
           confidence: getConfidenceLevel(item.confidence),
           rawText: item.raw_text,
+          expiryDate: item.expiry_date ?? null,
+          location: item.location ?? 'pantry',
+          category: item.category ?? 'other',
         }))
       );
 
@@ -82,6 +113,9 @@ export function Scan() {
           unit: item.unit || 'item',
           confidence: getConfidenceLevel(item.confidence),
           rawText: item.raw_text,
+          expiryDate: item.expiry_date ?? null,
+          location: item.location ?? 'pantry',
+          category: item.category ?? 'other',
         }))
       );
 
@@ -188,6 +222,9 @@ export function Scan() {
           name: refs?.name?.value || item.name,
           quantity: Number(refs?.quantity?.value || item.quantity),
           unit: refs?.unit?.value || item.unit,
+          category: item.category,
+          storage_location: refs?.location?.value || item.location,
+          expiry_date: refs?.expiry?.value || item.expiryDate || undefined,
         });
       }
 
@@ -198,6 +235,9 @@ export function Scan() {
           name: refs?.name?.value || item.name,
           quantity: Number(refs?.quantity?.value || item.quantity),
           unit: refs?.unit?.value || item.unit,
+          category: item.category,
+          storage_location: refs?.location?.value || item.location,
+          expiry_date: refs?.expiry?.value || item.expiryDate || undefined,
         });
       }
 
@@ -563,7 +603,7 @@ export function Scan() {
                       <input
                         ref={(el) => {
                           if (!readyToAddRefs.current.has(item.id)) {
-                            readyToAddRefs.current.set(item.id, { name: null, quantity: null, unit: null });
+                            readyToAddRefs.current.set(item.id, { name: null, quantity: null, unit: null, expiry: null, location: null });
                           }
                           const refs = readyToAddRefs.current.get(item.id);
                           if (refs) refs.name = el;
@@ -583,15 +623,39 @@ export function Scan() {
                         defaultValue={item.quantity}
                         className="w-20 px-3 py-1.5 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint focus:ring-2 focus:ring-pastel-mint/20 transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       />
-                      <input
+                      <select
                         ref={(el) => {
                           const refs = readyToAddRefs.current.get(item.id);
                           if (refs) refs.unit = el;
                         }}
-                        type="text"
-                        defaultValue={item.unit}
-                        className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint focus:ring-2 focus:ring-pastel-mint/20 transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
+                        defaultValue={UNIT_OPTIONS.includes(item.unit) ? item.unit : 'item'}
+                        className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
+                      >
+                        {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex gap-2 ml-7">
+                      <input
+                        ref={(el) => {
+                          const refs = readyToAddRefs.current.get(item.id);
+                          if (refs) refs.expiry = el;
+                        }}
+                        type="date"
+                        defaultValue={item.expiryDate ?? ''}
+                        className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       />
+                      <select
+                        ref={(el) => {
+                          const refs = readyToAddRefs.current.get(item.id);
+                          if (refs) refs.location = el;
+                        }}
+                        defaultValue={item.location}
+                        className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
+                      >
+                        {LOCATION_OPTIONS.map(l => (
+                          <option key={l.value} value={l.value}>{l.emoji} {l.label}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                   <button
@@ -630,7 +694,7 @@ export function Scan() {
                       <input
                         ref={(el) => {
                           if (!needsReviewRefs.current.has(item.id)) {
-                            needsReviewRefs.current.set(item.id, { name: null, quantity: null, unit: null });
+                            needsReviewRefs.current.set(item.id, { name: null, quantity: null, unit: null, expiry: null, location: null });
                           }
                           const refs = needsReviewRefs.current.get(item.id);
                           if (refs) refs.name = el;
@@ -654,15 +718,39 @@ export function Scan() {
                         defaultValue={item.quantity}
                         className="w-20 px-3 py-1.5 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       />
-                      <input
+                      <select
                         ref={(el) => {
                           const refs = needsReviewRefs.current.get(item.id);
                           if (refs) refs.unit = el;
                         }}
-                        type="text"
-                        defaultValue={item.unit}
-                        className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
+                        defaultValue={UNIT_OPTIONS.includes(item.unit) ? item.unit : 'item'}
+                        className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
+                      >
+                        {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        ref={(el) => {
+                          const refs = needsReviewRefs.current.get(item.id);
+                          if (refs) refs.expiry = el;
+                        }}
+                        type="date"
+                        defaultValue={item.expiryDate ?? ''}
+                        className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       />
+                      <select
+                        ref={(el) => {
+                          const refs = needsReviewRefs.current.get(item.id);
+                          if (refs) refs.location = el;
+                        }}
+                        defaultValue={item.location}
+                        className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
+                      >
+                        {LOCATION_OPTIONS.map(l => (
+                          <option key={l.value} value={l.value}>{l.emoji} {l.label}</option>
+                        ))}
+                      </select>
                     </div>
                     {item.rawText && (
                       <p className="text-xs text-soft-charcoal/40 dark:text-night-secondary/60">

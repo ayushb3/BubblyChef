@@ -81,8 +81,18 @@ export interface ParsedItemResponse {
   unit: string | null;
   category: Category;
   location: Location;
-  expiry_days: number | null;
+  expiry_date: string | null;
   confidence: number; // 0.0 to 1.0
+}
+
+export interface FoodSearchResult {
+  canonical: string;
+  category: Category;
+  icon_slug: string | null;
+  valid_units: string[];
+  expiry_days: number;
+  default_location: Location;
+  emoji: string;
 }
 
 export interface ConfirmItem {
