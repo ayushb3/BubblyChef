@@ -88,6 +88,64 @@ class ImagePreprocessor:
             logger.error(f"Image preprocessing failed: {e}")
             raise ValueError(f"Failed to preprocess image: {str(e)}") from e
 
+    def _crop_receipt(self, image: Image.Image) -> Image.Image:
+        """
+        Detect and crop the receipt from the background.
+
+        Looks for the largest bright rectangular region (the receipt paper)
+        and crops to it. Falls back to the original image if detection fails.
+        """
+        try:
+            # Work at reduced resolution for speed
+            scale = 0.25
+            small = image.convert("L").resize(
+                (int(image.width * scale), int(image.height * scale)),
+                Image.Resampling.LANCZOS,
+            )
+            np_small = np.array(small)
+
+            # Threshold to isolate bright regions (the receipt paper)
+            bright_threshold = np.percentile(np_small, 60)
+            binary = (np_small > bright_threshold).astype(np.uint8) * 255
+
+            # Find bounding box of the largest bright connected region via row/col projections
+            row_sums = binary.sum(axis=1)
+            col_sums = binary.sum(axis=0)
+
+            # Find rows/cols with significant bright content (>30% of max)
+            row_thresh = row_sums.max() * 0.30
+            col_thresh = col_sums.max() * 0.30
+
+            bright_rows = np.where(row_sums > row_thresh)[0]
+            bright_cols = np.where(col_sums > col_thresh)[0]
+
+            if len(bright_rows) == 0 or len(bright_cols) == 0:
+                return image
+
+            # Scale back to original coordinates with a small margin
+            inv_scale = 1.0 / scale
+            top = max(0, int(bright_rows[0] * inv_scale) - 20)
+            bottom = min(image.height, int(bright_rows[-1] * inv_scale) + 20)
+            left = max(0, int(bright_cols[0] * inv_scale) - 20)
+            right = min(image.width, int(bright_cols[-1] * inv_scale) + 20)
+
+            # Only crop if the result covers at least 30% of the original
+            crop_area = (right - left) * (bottom - top)
+            orig_area = image.width * image.height
+            if crop_area < orig_area * 0.30:
+                logger.debug("Receipt crop area too small, skipping crop")
+                return image
+
+            cropped = image.crop((left, top, right, bottom))
+            logger.info(
+                f"Cropped receipt: original={image.size} → cropped=({left},{top},{right},{bottom})"
+            )
+            return cropped
+
+        except Exception as e:
+            logger.warning(f"Receipt crop failed: {e}, using full image")
+            return image
+
     async def _preprocess_auto(self, image: Image.Image) -> Image.Image:
         """
         Automatic preprocessing based on image characteristics.
@@ -97,6 +155,9 @@ class ImagePreprocessor:
         # Convert to RGB for analysis
         if image.mode not in ("RGB", "L"):
             image = image.convert("RGB")
+
+        # Always attempt to crop the receipt from the background first
+        image = self._crop_receipt(image)
 
         # Calculate image statistics
         grayscale = image.convert("L")
@@ -154,6 +215,9 @@ class ImagePreprocessor:
         5. Deskewing (rotation correction)
         6. Binarization (adaptive thresholding)
         """
+        # Crop receipt from background before other processing
+        image = self._crop_receipt(image)
+
         # Convert to grayscale
         if image.mode != "L":
             image = image.convert("L")

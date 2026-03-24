@@ -36,12 +36,7 @@ from bubbly_chef.models.recipe import (
 from bubbly_chef.models.requests import (
     ApplyRequest,
     ApplyResponse,
-    ChatIngestRequest,
     ChatRequest,
-    ProductIngestRequest,
-    ReceiptIngestRequest,
-    RecipeIngestRequest,
-    WorkflowEventRequest,
 )
 
 __all__ = [
@@ -75,12 +70,7 @@ __all__ = [
     "RecipeCard",
     "RecipeCardProposal",
     # Requests
-    "ChatIngestRequest",
-    "ReceiptIngestRequest",
-    "ProductIngestRequest",
-    "RecipeIngestRequest",
     "ApplyRequest",
     "ApplyResponse",
     "ChatRequest",
-    "WorkflowEventRequest",
 ]

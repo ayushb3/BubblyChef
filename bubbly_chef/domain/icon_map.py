@@ -7,6 +7,74 @@ To regenerate: python3 scripts/download_fluent_emoji.py
 
 from __future__ import annotations
 
+# Kawaii PNG icons — served from web/public/icons/food/icon-{filename}
+# Keys are lowercase item names (matched against normalize_food_name output).
+# Values are just the filename (without path prefix).
+CUSTOM_ICONS: dict[str, str] = {
+    # Fruits
+    "strawberry": "icon-strawberry.png",
+    "strawberries": "icon-strawberry.png",
+    "apple": "icon-apple.png",
+    "banana": "icon-banana.png",
+    "lemon": "icon-lemon.png",
+    "orange": "icon-orange.png",
+    "avocado": "icon-avocado.png",
+    # Vegetables
+    "carrot": "icon-carrot.png",
+    "tomato": "icon-tomato.png",
+    "broccoli": "icon-broccoli.png",
+    "spinach": "icon-spinach.png",
+    "mushroom": "icon-mushroom.png",
+    "corn": "icon-corn.png",
+    "peas": "icon-peas.png",
+    "cucumber": "icon-cucumber.png",
+    "bell pepper": "icon-bell-pepper.png",
+    "celery": "icon-celery.png",
+    "garlic": "icon-garlic.png",
+    "potato": "icon-potato.png",
+    "onion": "icon-onion.png",
+    # Dairy
+    "milk": "icon-milk.png",
+    "whole milk": "icon-milk.png",
+    "cheese": "icon-cheese.png",
+    "butter": "icon-butter.png",
+    "yogurt": "icon-yogurt.png",
+    "egg": "icon-egg.png",
+    "eggs": "icon-egg.png",
+    # Proteins
+    "chicken": "icon-chicken.png",
+    "beef": "icon-beef.png",
+    "salmon": "icon-salmon.png",
+    "tuna": "icon-tuna.png",
+    "shrimp": "icon-shrimp.png",
+    "tofu": "icon-tofu.png",
+    "beans": "icon-beans.png",
+    "lentils": "icon-lentils.png",
+    "chickpeas": "icon-chickpeas.png",
+    # Grains / Dry Goods
+    "bread": "icon-bread.png",
+    "rice": "icon-rice.png",
+    "pasta": "icon-pasta.png",
+    "flour": "icon-flour.png",
+    "sugar": "icon-sugar.png",
+    # Condiments
+    "olive oil": "icon-olive-oil.png",
+    "soy sauce": "icon-soy-sauce.png",
+    "ketchup": "icon-ketchup.png",
+    "mustard": "icon-mustard.png",
+    "honey": "icon-honey.png",
+    "vinegar": "icon-vinegar.png",
+    # Beverages
+    "juice": "icon-juice-carton.png",
+    "orange juice": "icon-juice-carton.png",
+    # Snacks / Sweets
+    "ice cream": "icon-ice-cream.png",
+    "chocolate": "icon-chocolate.png",
+    "cake": "icon-cake.png",
+    "cookie": "icon-cookie.png",
+    "cookies": "icon-cookie.png",
+}
+
 # Generated from pantry_catalog.json
 # Format: canonical_name → fluent_slug (matches filename without .png)
 FOOD_ICON_MAP: dict[str, str] = {

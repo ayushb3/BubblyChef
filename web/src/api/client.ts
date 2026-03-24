@@ -28,7 +28,7 @@ import type {
   Decoration,
 } from '../types';
 
-const API_BASE_URL = 'http://localhost:8888';
+export const API_BASE_URL = 'http://localhost:8888';
 
 // Query client setup
 export const queryClient = new QueryClient({
@@ -48,7 +48,7 @@ async function fetchPantryItems(params?: {
 }): Promise<PantryListResponse> {
   const searchParams = new URLSearchParams();
   if (params?.category) searchParams.append('category', params.category);
-  if (params?.location) searchParams.append('location', params.location);
+  if (params?.location) searchParams.append('storage', params.location);
   if (params?.search) searchParams.append('search', params.search);
 
   const url = `${API_BASE_URL}/pantry${

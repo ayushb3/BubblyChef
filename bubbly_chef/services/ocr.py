@@ -64,9 +64,9 @@ class TesseractOCR(OCRService):
             image = image.convert("RGB")
 
         # Extract text
-        # Use --psm 6 for uniform block of text (good for receipts)
-        # Use -l eng for English
-        text: str = pytesseract.image_to_string(image, config="--psm 6 -l eng")
+        # Use --psm 4 (single column of variable-size text) — handles receipts on
+        # complex backgrounds better than psm 6 (uniform block) which misses partial columns
+        text: str = pytesseract.image_to_string(image, config="--psm 4 -l eng")
 
         return text.strip()
 

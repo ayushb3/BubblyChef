@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.repository.sqlite import get_repository
@@ -18,8 +18,8 @@ router = APIRouter(prefix="/pantry", tags=["Pantry"])
 
 
 class CreatePantryItemRequest(BaseModel):
-    name: str
-    quantity: float = 1.0
+    name: str = Field(min_length=1, max_length=200)
+    quantity: float = Field(default=1.0, ge=0, le=1_000_000)
     unit: str = "item"
     category: FoodCategory = FoodCategory.OTHER
     storage_location: StorageLocation = StorageLocation.PANTRY
@@ -162,7 +162,12 @@ async def create_pantry_item(
     expiry_date: date_type | None = None
     estimated = False
     if body.expiry_date:
-        expiry_date = date_type.fromisoformat(body.expiry_date)
+        try:
+            expiry_date = date_type.fromisoformat(body.expiry_date)
+        except ValueError:
+            raise HTTPException(
+                status_code=422, detail="Invalid expiry_date format. Use YYYY-MM-DD."
+            )
     else:
         expiry_date, estimated = expiry.estimate_expiry(
             body.category, body.storage_location, body.name
@@ -218,7 +223,12 @@ async def update_pantry_item(item_id: UUID, body: UpdatePantryItemRequest) -> Pa
     if body.storage_location is not None:
         updates["storage_location"] = body.storage_location
     if body.expiry_date is not None:
-        updates["expiry_date"] = date_type.fromisoformat(body.expiry_date)
+        try:
+            updates["expiry_date"] = date_type.fromisoformat(body.expiry_date)
+        except ValueError:
+            raise HTTPException(
+                status_code=422, detail="Invalid expiry_date format. Use YYYY-MM-DD."
+            )
 
     return await repo.update_pantry_item(str(item_id), updates)
 

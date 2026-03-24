@@ -122,7 +122,6 @@ def create_app() -> FastAPI:
         decorations,
         health,
         icons,
-        ingest,
         pantry,
         profile,
         recipes,
@@ -130,7 +129,6 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health.router)
-    app.include_router(ingest.router)
     app.include_router(pantry.router)
     app.include_router(apply.router)
     app.include_router(chat.router)

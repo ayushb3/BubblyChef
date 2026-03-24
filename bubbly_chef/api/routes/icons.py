@@ -1,6 +1,7 @@
-"""Icon serving endpoint with 3-tier fallback.
+"""Icon serving endpoint with 4-tier fallback.
 
 GET /api/icons/{name}
+  Tier 0: Kawaii PNG from web/public/icons/food/icon-{slug}.png → FileResponse 200
   Tier 1: Fluent Emoji PNG for exact/fuzzy match  → FileResponse 200
   Tier 2: Fluent Emoji PNG for item's category    → FileResponse 200
   Tier 3: JSON {"emoji": "📦", "category": "other"} → JSONResponse 200
@@ -16,7 +17,7 @@ from fastapi import APIRouter
 from fastapi.responses import FileResponse, JSONResponse
 
 from bubbly_chef.domain.catalog import categorize
-from bubbly_chef.domain.icon_map import CATEGORY_EMOJI_MAP, CATEGORY_ICON_MAP, FOOD_ICON_MAP
+from bubbly_chef.domain.icon_map import CATEGORY_EMOJI_MAP, CATEGORY_ICON_MAP, CUSTOM_ICONS, FOOD_ICON_MAP
 from bubbly_chef.domain.normalizer import normalize_food_name
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,18 @@ router = APIRouter(prefix="/api/icons", tags=["icons"])
 # Three parents up = project root
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 FLUENT_DIR = _PROJECT_ROOT / "web" / "public" / "food-icons" / "fluent"
+KAWAII_DIR = _PROJECT_ROOT / "web" / "public" / "icons" / "food"
+
+
+def _serve_kawaii(filename: str) -> FileResponse | None:
+    """Return a FileResponse for a kawaii PNG if the file exists, else None."""
+    png = KAWAII_DIR / filename
+    try:
+        if png.exists():
+            return FileResponse(str(png), media_type="image/png")
+    except OSError:
+        pass
+    return None
 
 
 def _serve_png(slug: str) -> FileResponse | None:
@@ -47,6 +60,13 @@ async def get_icon(name: str) -> FileResponse | JSONResponse:
         return JSONResponse({"emoji": "📦", "category": "other"})
 
     normalized = normalize_food_name(name)
+
+    # Tier 0: local kawaii PNG
+    kawaii_filename = CUSTOM_ICONS.get(normalized)
+    if kawaii_filename:
+        response = _serve_kawaii(kawaii_filename)
+        if response is not None:
+            return response
 
     # Tier 1: exact slug match in FOOD_ICON_MAP
     slug = FOOD_ICON_MAP.get(normalized)

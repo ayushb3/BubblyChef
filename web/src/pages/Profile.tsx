@@ -1,16 +1,16 @@
 import { useState } from 'react';
 import { Mail, AtSign, Edit2, Save, X } from 'lucide-react';
-import { useProfile, useUpdateProfile } from '../api/client';
+import { useProfileByUsername, useUpdateProfile } from '../api/client';
 import type { UpdateUserProfileRequest } from '../types';
 
-// Mock profile ID for now (in real app, would come from auth context)
-const MOCK_PROFILE_ID = 'demo-user-id';
+// Default username for single-user app (profile auto-discovered by username)
+const DEFAULT_USERNAME = 'testuser';
 
 export function Profile() {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<UpdateUserProfileRequest>({});
 
-  const { data: profile, isLoading, error } = useProfile(MOCK_PROFILE_ID);
+  const { data: profile, isLoading, error } = useProfileByUsername(DEFAULT_USERNAME);
   const updateProfileMutation = useUpdateProfile();
 
   const handleEdit = () => {
@@ -32,9 +32,10 @@ export function Profile() {
   };
 
   const handleSave = async () => {
+    if (!profile) return;
     try {
       await updateProfileMutation.mutateAsync({
-        id: MOCK_PROFILE_ID,
+        id: profile.id,
         profile: formData,
       });
       setIsEditing(false);
