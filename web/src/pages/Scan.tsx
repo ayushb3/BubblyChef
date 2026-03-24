@@ -39,9 +39,6 @@ interface ScannedItem {
 type ItemRefs = {
   name: HTMLInputElement | null;
   quantity: HTMLInputElement | null;
-  unit: HTMLSelectElement | null;
-  expiry: HTMLInputElement | null;
-  location: HTMLSelectElement | null;
 };
 
 /**
@@ -89,6 +86,11 @@ export function Scan() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const needsReviewRefs = useRef<Map<string, ItemRefs>>(new Map());
   const readyToAddRefs = useRef<Map<string, ItemRefs>>(new Map());
+
+  const updateReadyItem = (id: string, patch: Partial<ScannedItem>) =>
+    setReadyToAddItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
+  const updateReviewItem = (id: string, patch: Partial<ScannedItem>) =>
+    setNeedsReviewItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
 
   // API hooks
   const uploadMutation = useUploadReceipt();
@@ -252,10 +254,10 @@ export function Scan() {
           temp_id: item.id,
           name: refs?.name?.value || item.name,
           quantity: Number(refs?.quantity?.value || item.quantity),
-          unit: refs?.unit?.value || item.unit,
+          unit: item.unit,
           category: item.category as any,
-          storage_location: (refs?.location?.value || item.location) as any,
-          expiry_date: refs?.expiry?.value || item.expiryDate || undefined,
+          storage_location: item.location as any,
+          expiry_date: item.expiryDate || undefined,
         });
       }
 
@@ -265,10 +267,10 @@ export function Scan() {
           temp_id: item.id,
           name: refs?.name?.value || item.name,
           quantity: Number(refs?.quantity?.value || item.quantity),
-          unit: refs?.unit?.value || item.unit,
+          unit: item.unit,
           category: item.category as any,
-          storage_location: (refs?.location?.value || item.location) as any,
-          expiry_date: refs?.expiry?.value || item.expiryDate || undefined,
+          storage_location: item.location as any,
+          expiry_date: item.expiryDate || undefined,
         });
       }
 
@@ -636,24 +638,21 @@ export function Scan() {
                         borderColor="mint"
                         inputRef={(el) => {
                           if (!readyToAddRefs.current.has(item.id)) {
-                            readyToAddRefs.current.set(item.id, { name: null, quantity: null, unit: null, expiry: null, location: null });
+                            readyToAddRefs.current.set(item.id, { name: null, quantity: null });
                           }
                           const refs = readyToAddRefs.current.get(item.id);
                           if (refs) refs.name = el;
                         }}
                         onSelect={(result) => {
-                          const refs = readyToAddRefs.current.get(item.id);
-                          if (refs?.unit && result.valid_units.length > 0) {
-                            refs.unit.value = result.valid_units[0];
-                          }
-                          if (refs?.expiry && result.expiry_days) {
+                          if (result.valid_units.length > 0)
+                            updateReadyItem(item.id, { unit: result.valid_units[0] });
+                          if (result.expiry_days > 0) {
                             const d = new Date();
                             d.setDate(d.getDate() + result.expiry_days);
-                            refs.expiry.value = d.toISOString().split('T')[0];
+                            updateReadyItem(item.id, { expiryDate: d.toISOString().split('T')[0] });
                           }
-                          if (refs?.location && result.default_location) {
-                            refs.location.value = result.default_location;
-                          }
+                          if (result.default_location)
+                            updateReadyItem(item.id, { location: result.default_location });
                         }}
                       />
                     </div>
@@ -668,38 +667,37 @@ export function Scan() {
                         className="w-20 px-3 py-1.5 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint focus:ring-2 focus:ring-pastel-mint/20 transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       />
                       <select
-                        ref={(el) => {
-                          const refs = readyToAddRefs.current.get(item.id);
-                          if (refs) refs.unit = el;
-                        }}
-                        defaultValue={UNIT_OPTIONS.includes(item.unit) ? item.unit : 'item'}
+                        value={UNIT_OPTIONS.includes(item.unit) ? item.unit : 'item'}
+                        onChange={e => updateReadyItem(item.id, { unit: e.target.value })}
                         className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       >
                         {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
                       </select>
                     </div>
-                    <div className="flex gap-2 ml-7">
+                    <div className="flex flex-col gap-1.5 ml-7">
                       <input
-                        ref={(el) => {
-                          const refs = readyToAddRefs.current.get(item.id);
-                          if (refs) refs.expiry = el;
-                        }}
                         type="date"
-                        defaultValue={item.expiryDate ?? ''}
+                        value={item.expiryDate ?? ''}
+                        onChange={e => updateReadyItem(item.id, { expiryDate: e.target.value || null })}
                         className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       />
-                      <select
-                        ref={(el) => {
-                          const refs = readyToAddRefs.current.get(item.id);
-                          if (refs) refs.location = el;
-                        }}
-                        defaultValue={item.location}
-                        className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-mint/20 focus:outline-none focus:border-pastel-mint transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
-                      >
-                        {LOCATION_OPTIONS.map(l => (
-                          <option key={l.value} value={l.value}>{l.emoji} {l.label}</option>
+                      <div className="flex gap-1.5">
+                        {LOCATION_OPTIONS.map(loc => (
+                          <button
+                            key={loc.value}
+                            type="button"
+                            onClick={() => updateReadyItem(item.id, { location: loc.value })}
+                            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all ${
+                              item.location === loc.value
+                                ? 'bg-pastel-mint text-soft-charcoal shadow-soft dark:bg-deep-mint/30 dark:text-night-text'
+                                : 'bg-white border border-pastel-pink/20 text-soft-charcoal/60 dark:bg-night-raised dark:border-night-border dark:text-night-secondary'
+                            }`}
+                          >
+                            <span>{loc.emoji}</span>
+                            <span>{loc.label}</span>
+                          </button>
                         ))}
-                      </select>
+                      </div>
                     </div>
                   </div>
                   <button
@@ -740,24 +738,21 @@ export function Scan() {
                         borderColor="pink"
                         inputRef={(el) => {
                           if (!needsReviewRefs.current.has(item.id)) {
-                            needsReviewRefs.current.set(item.id, { name: null, quantity: null, unit: null, expiry: null, location: null });
+                            needsReviewRefs.current.set(item.id, { name: null, quantity: null });
                           }
                           const refs = needsReviewRefs.current.get(item.id);
                           if (refs) refs.name = el;
                         }}
                         onSelect={(result) => {
-                          const refs = needsReviewRefs.current.get(item.id);
-                          if (refs?.unit && result.valid_units.length > 0) {
-                            refs.unit.value = result.valid_units[0];
-                          }
-                          if (refs?.expiry && result.expiry_days) {
+                          if (result.valid_units.length > 0)
+                            updateReviewItem(item.id, { unit: result.valid_units[0] });
+                          if (result.expiry_days > 0) {
                             const d = new Date();
                             d.setDate(d.getDate() + result.expiry_days);
-                            refs.expiry.value = d.toISOString().split('T')[0];
+                            updateReviewItem(item.id, { expiryDate: d.toISOString().split('T')[0] });
                           }
-                          if (refs?.location && result.default_location) {
-                            refs.location.value = result.default_location;
-                          }
+                          if (result.default_location)
+                            updateReviewItem(item.id, { location: result.default_location });
                         }}
                       />
                       <span className={`px-2 py-1 rounded-full text-xs ${getConfidenceBadge(item.confidence)}`}>
@@ -775,38 +770,37 @@ export function Scan() {
                         className="w-20 px-3 py-1.5 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink focus:ring-2 focus:ring-pastel-pink/20 transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       />
                       <select
-                        ref={(el) => {
-                          const refs = needsReviewRefs.current.get(item.id);
-                          if (refs) refs.unit = el;
-                        }}
-                        defaultValue={UNIT_OPTIONS.includes(item.unit) ? item.unit : 'item'}
+                        value={UNIT_OPTIONS.includes(item.unit) ? item.unit : 'item'}
+                        onChange={e => updateReviewItem(item.id, { unit: e.target.value })}
                         className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       >
                         {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
                       </select>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-1.5">
                       <input
-                        ref={(el) => {
-                          const refs = needsReviewRefs.current.get(item.id);
-                          if (refs) refs.expiry = el;
-                        }}
                         type="date"
-                        defaultValue={item.expiryDate ?? ''}
+                        value={item.expiryDate ?? ''}
+                        onChange={e => updateReviewItem(item.id, { expiryDate: e.target.value || null })}
                         className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
                       />
-                      <select
-                        ref={(el) => {
-                          const refs = needsReviewRefs.current.get(item.id);
-                          if (refs) refs.location = el;
-                        }}
-                        defaultValue={item.location}
-                        className="flex-1 px-3 py-1.5 rounded-lg border border-pastel-pink/20 focus:outline-none focus:border-pastel-pink transition-all text-sm dark:bg-night-raised dark:border-night-border dark:text-night-text"
-                      >
-                        {LOCATION_OPTIONS.map(l => (
-                          <option key={l.value} value={l.value}>{l.emoji} {l.label}</option>
+                      <div className="flex gap-1.5">
+                        {LOCATION_OPTIONS.map(loc => (
+                          <button
+                            key={loc.value}
+                            type="button"
+                            onClick={() => updateReviewItem(item.id, { location: loc.value })}
+                            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all ${
+                              item.location === loc.value
+                                ? 'bg-pastel-mint text-soft-charcoal shadow-soft dark:bg-deep-mint/30 dark:text-night-text'
+                                : 'bg-white border border-pastel-pink/20 text-soft-charcoal/60 dark:bg-night-raised dark:border-night-border dark:text-night-secondary'
+                            }`}
+                          >
+                            <span>{loc.emoji}</span>
+                            <span>{loc.label}</span>
+                          </button>
                         ))}
-                      </select>
+                      </div>
                     </div>
                     {item.rawText && (
                       <p className="text-xs text-soft-charcoal/40 dark:text-night-secondary/60">
