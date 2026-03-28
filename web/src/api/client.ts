@@ -511,6 +511,8 @@ export function useChat() {
  * - onDone: called once with the full ChatResponse envelope
  * - onError: called if the stream or parsing fails
  */
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 export async function streamChatMessage(
   request: ChatRequest,
   onToken: (token: string) => void,
@@ -560,6 +562,7 @@ export async function streamChatMessage(
             const parsed = JSON.parse(jsonStr) as StreamEvent;
             if (parsed.type === 'token' || currentEventType === 'token') {
               onToken((parsed as { content: string }).content ?? '');
+              await sleep(20);
             } else if (parsed.type === 'envelope' || currentEventType === 'envelope') {
               onDone((parsed as { data: ChatResponse }).data);
             } else if (parsed.type === 'error' || currentEventType === 'error') {

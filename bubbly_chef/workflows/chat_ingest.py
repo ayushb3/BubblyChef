@@ -315,7 +315,8 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
     has_url = any(p in text_lower for p in url_patterns)
 
     # Recipe ingest indicators (saving/importing a recipe)
-    recipe_ingest_keywords = ["save recipe", "import recipe", "add recipe", "store recipe"]
+    recipe_ingest_keywords = ["save recipe", "import recipe", "add recipe", "store recipe",
+                              "save this recipe", "import this recipe", "save that recipe"]
     if any(kw in text_lower for kw in recipe_ingest_keywords) or has_url:
         return {
             **state,

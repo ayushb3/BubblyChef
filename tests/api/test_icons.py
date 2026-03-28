@@ -20,8 +20,9 @@ class TestGetIcon:
     @pytest.mark.asyncio
     async def test_falls_back_to_emoji_json_when_no_png(self, client: AsyncClient) -> None:
         """Tier 3: returns JSON with emoji+category when no PNG available."""
-        # Patch FLUENT_DIR to a non-existent path so all file checks fail
-        with patch("bubbly_chef.api.routes.icons.FLUENT_DIR", Path("/nonexistent/dir")):
+        # Patch both PNG dirs to non-existent paths so all file checks fail
+        with patch("bubbly_chef.api.routes.icons.FLUENT_DIR", Path("/nonexistent/dir")), \
+             patch("bubbly_chef.api.routes.icons.KAWAII_DIR", Path("/nonexistent/kawaii")):
             response = await client.get("/api/icons/unknownxyz123")
         assert response.status_code == 200
         data = response.json()
@@ -31,7 +32,8 @@ class TestGetIcon:
     @pytest.mark.asyncio
     async def test_tier3_emoji_json_structure(self, client: AsyncClient) -> None:
         """Tier-3 response has emoji and category fields with sensible values."""
-        with patch("bubbly_chef.api.routes.icons.FLUENT_DIR", Path("/nonexistent/dir")):
+        with patch("bubbly_chef.api.routes.icons.FLUENT_DIR", Path("/nonexistent/dir")), \
+             patch("bubbly_chef.api.routes.icons.KAWAII_DIR", Path("/nonexistent/kawaii")):
             response = await client.get("/api/icons/milk")
         assert response.status_code == 200
         data = response.json()

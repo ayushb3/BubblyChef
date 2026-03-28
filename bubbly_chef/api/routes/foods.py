@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
@@ -30,10 +31,10 @@ class FoodSearchResult(BaseModel):
 
 
 # Module-level cache: loaded once on first request.
-_library: list[dict] | None = None
+_library: list[dict[str, Any]] | None = None
 
 
-def _load_library() -> list[dict]:
+def _load_library() -> list[dict[str, Any]]:
     """Load food_library.json, caching for subsequent calls."""
     global _library
     if _library is not None:
@@ -55,7 +56,7 @@ def _load_library() -> list[dict]:
     return _library
 
 
-def _to_result(entry: dict) -> FoodSearchResult:
+def _to_result(entry: dict[str, Any]) -> FoodSearchResult:
     return FoodSearchResult(
         canonical=entry["canonical"],
         category=entry["category"],
@@ -88,8 +89,8 @@ async def search_foods(
         return [_to_result(e) for e in library[:limit]]
 
     # Phase 1: Exact prefix matches
-    prefix_matches: list[dict] = []
-    remaining: list[dict] = []
+    prefix_matches: list[dict[str, Any]] = []
+    remaining: list[dict[str, Any]] = []
 
     for entry in library:
         canonical = entry["canonical"].lower()
@@ -103,7 +104,7 @@ async def search_foods(
         return [_to_result(e) for e in prefix_matches[:limit]]
 
     # Phase 2: Fuzzy matches on remaining entries
-    fuzzy_matches: list[tuple[float, dict]] = []
+    fuzzy_matches: list[tuple[float, dict[str, Any]]] = []
     try:
         from rapidfuzz.fuzz import WRatio
     except ImportError:

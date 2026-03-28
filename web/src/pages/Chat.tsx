@@ -11,6 +11,7 @@ import {
   Clock,
   Users,
   RefreshCw,
+  SquarePen,
 } from 'lucide-react';
 import { useAIHealth, useModeSuggestions, useConversationHistory, useSubmitWorkflowEvent, streamChatMessage } from '../api/client';
 import type {
@@ -617,6 +618,14 @@ export function Chat() {
     setSearchParams({ mode: newMode }, { replace: true });
   }, [setSearchParams]);
 
+  const handleNewChat = useCallback(() => {
+    setMessages([]);
+    setConversationId(generateConversationId());
+    setProposalState({});
+    setMessageWorkflowIds({});
+    historyLoaded.current = false;
+  }, []);
+
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
@@ -789,6 +798,13 @@ export function Chat() {
             />
             <h1 className="text-display font-extrabold text-deep-pink dark:text-night-pink">Bubbles</h1>
           </div>
+          <button
+            onClick={handleNewChat}
+            aria-label="New chat"
+            className="w-9 h-9 rounded-full flex items-center justify-center text-soft-charcoal dark:text-night-secondary hover:bg-pastel-pink dark:hover:bg-night-raised active:scale-95 transition-all"
+          >
+            <SquarePen size={18} />
+          </button>
         </div>
         <div className="flex items-center justify-between mt-1">
           <p className="text-xs text-soft-charcoal dark:text-night-secondary opacity-50">
@@ -823,7 +839,7 @@ export function Chat() {
           />
         ) : (
           <>
-            {messages.map((msg) => (
+            {messages.filter((msg) => !(msg.role === 'assistant' && msg.content === '' && isStreaming)).map((msg) => (
               <MessageBubble
                 key={msg.id}
                 msg={msg}

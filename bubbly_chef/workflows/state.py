@@ -112,6 +112,7 @@ class WorkflowState(TypedDict, total=False):
     # ==========================================================================
     workflow_status: str  # WorkflowStatus enum value
     should_interrupt: bool
+    suggested_mode: str | None  # Mode switch hint for the frontend
 
 
 class LLMParsedItem(BaseModel):

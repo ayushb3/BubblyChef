@@ -152,7 +152,7 @@ class TestScanEndpoints:
         assert response.status_code == 200
         data = response.json()
         assert len(data["added"]) == 1
-        assert data["added"][0]["name"] == "Apples"
+        assert data["added"][0]["name"] == "apple"
 
     @pytest.mark.asyncio
     async def test_undo_nonexistent_session(self, client: AsyncClient):

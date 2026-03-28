@@ -17,7 +17,12 @@ from fastapi import APIRouter
 from fastapi.responses import FileResponse, JSONResponse
 
 from bubbly_chef.domain.catalog import categorize
-from bubbly_chef.domain.icon_map import CATEGORY_EMOJI_MAP, CATEGORY_ICON_MAP, CUSTOM_ICONS, FOOD_ICON_MAP
+from bubbly_chef.domain.icon_map import (
+    CATEGORY_EMOJI_MAP,
+    CATEGORY_ICON_MAP,
+    CUSTOM_ICONS,
+    FOOD_ICON_MAP,
+)
 from bubbly_chef.domain.normalizer import normalize_food_name
 
 logger = logging.getLogger(__name__)

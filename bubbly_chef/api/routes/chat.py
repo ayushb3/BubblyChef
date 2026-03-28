@@ -10,6 +10,7 @@ and route appropriately.
 
 import json
 import logging
+from collections.abc import AsyncGenerator
 from datetime import datetime
 from typing import Any
 
@@ -285,7 +286,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
         except Exception as hist_err:
             logger.warning(f"Failed to load conversation history: {hist_err}")
 
-    async def event_generator():  # type: ignore[return]
+    async def event_generator() -> AsyncGenerator[str, None]:
         """Generate SSE events from the streaming workflow."""
         assistant_message = ""
         envelope_data: dict[str, Any] | None = None

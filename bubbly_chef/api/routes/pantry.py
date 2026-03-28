@@ -8,10 +8,10 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
-from bubbly_chef.repository.sqlite import get_repository
 from bubbly_chef.domain.expiry import get_default_location
 from bubbly_chef.domain.normalizer import normalize_unit
+from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
+from bubbly_chef.repository.sqlite import get_repository
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 
 logger = logging.getLogger(__name__)
