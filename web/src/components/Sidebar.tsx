@@ -1,11 +1,12 @@
-import { Home, LayoutGrid, Camera, MessageCircle } from 'lucide-react';
+import { Home, LayoutGrid, Camera, MessageCircle, BookOpen } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
 const navItems = [
-  { path: '/',       icon: Home,         label: 'Dashboard' },
-  { path: '/pantry', icon: LayoutGrid,    label: 'Pantry'    },
-  { path: '/scan',   icon: Camera,        label: 'Scan'      },
-  { path: '/chat',   icon: MessageCircle, label: 'Chat'      },
+  { path: '/',        icon: Home,          label: 'Dashboard' },
+  { path: '/pantry',  icon: LayoutGrid,    label: 'Pantry'    },
+  { path: '/scan',    icon: Camera,        label: 'Scan'      },
+  { path: '/recipes', icon: BookOpen,      label: 'Recipes'   },
+  { path: '/chat',    icon: MessageCircle, label: 'Chat'      },
 ];
 
 export function Sidebar() {
@@ -27,7 +28,9 @@ export function Sidebar() {
       {/* Nav links */}
       <nav className="flex flex-col gap-1" aria-label="Main navigation">
         {navItems.map(({ path, icon: Icon, label }) => {
-          const isActive = location.pathname === path || (path === '/chat' && location.pathname.startsWith('/chat'));
+          const isActive = location.pathname === path
+            || (path === '/chat' && location.pathname.startsWith('/chat'))
+            || (path === '/recipes' && location.pathname.startsWith('/recipes'));
           return (
             <Link
               key={path}

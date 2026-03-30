@@ -16,6 +16,7 @@ class Intent(StrEnum):
     PRODUCT_INGEST = "product_ingest_request"
     RECIPE_INGEST = "recipe_ingest_request"
     RECIPE_CARD = "recipe_card"
+    RECIPE_BRAINSTORM = "recipe_brainstorm"
     COOKING_HELP = "cooking_help"  # Questions about cooking, meal ideas (not ingest)
     GENERAL_CHAT = "general_chat"
 
@@ -34,6 +35,7 @@ class NextAction(StrEnum):
     REQUEST_RECIPE_TEXT = "request_recipe_text"  # Prompt for recipe URL/text
     REQUEST_CLARIFICATION = "request_clarification"  # Need user to clarify something
     REVIEW_PROPOSAL = "review_proposal"  # Show proposal for user review/edit
+    PICK_RECIPE = "pick_recipe"  # Hint that user should pick a brainstorm option
 
 
 class WorkflowStatus(StrEnum):
@@ -126,6 +128,10 @@ class ProposalEnvelope(BaseModel, Generic[T]):
     suggested_mode: str | None = Field(
         default=None,
         description="Suggested chat mode switch (e.g. 'recipe', 'learn')",
+    )
+    suggested_action: str | None = Field(
+        default=None,
+        description="Suggested next user action (e.g. 'pick_recipe'). For future pill support.",
     )
 
     model_config = ConfigDict(json_schema_extra={

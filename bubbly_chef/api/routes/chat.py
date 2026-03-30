@@ -317,7 +317,12 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             return
 
         # Persist assistant message
-        if conversation_id and assistant_message:
+        # Use envelope message as fallback so non-streaming paths (brainstorm, recipe_card)
+        # are also saved — critical for detect_brainstorm_followup to work correctly.
+        save_content = assistant_message or (
+            envelope_data.get("assistant_message", "") if envelope_data else ""
+        )
+        if conversation_id and save_content:
             try:
                 repo = await get_repository()
                 intent_str = (
@@ -325,10 +330,14 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                     if envelope_data
                     else "general_chat"
                 )
+                logger.info(
+                    "Saving assistant message",
+                    extra={"intent": intent_str, "content_length": len(save_content)},
+                )
                 await repo.save_message(
                     conversation_id=conversation_id,
                     role="assistant",
-                    content=assistant_message,
+                    content=save_content,
                     intent=intent_str,
                 )
             except Exception as save_err:

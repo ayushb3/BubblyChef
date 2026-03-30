@@ -1,11 +1,12 @@
-import { Home, LayoutGrid, Camera, MessageCircle } from 'lucide-react';
+import { Home, LayoutGrid, Camera, MessageCircle, BookOpen } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
 const navItems = [
-  { path: '/',       icon: Home,          label: 'Dashboard', isScan: false },
-  { path: '/pantry', icon: LayoutGrid,    label: 'Pantry',    isScan: false },
-  { path: '/scan',   icon: Camera,        label: 'Scan',      isScan: true  },
-  { path: '/chat',   icon: MessageCircle, label: 'Chat',      isScan: false },
+  { path: '/',        icon: Home,          label: 'Dashboard', isScan: false },
+  { path: '/pantry',  icon: LayoutGrid,    label: 'Pantry',    isScan: false },
+  { path: '/scan',    icon: Camera,        label: 'Scan',      isScan: true  },
+  { path: '/recipes', icon: BookOpen,      label: 'Recipes',   isScan: false },
+  { path: '/chat',    icon: MessageCircle, label: 'Chat',      isScan: false },
 ];
 
 export function BottomNav() {
@@ -14,13 +15,15 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Main navigation"
-      className="fixed bottom-0 left-0 right-0 bg-white dark:bg-night-base border-t border-border-subtle dark:border-night-border h-16 z-50 grid grid-cols-4"
+      className="fixed bottom-0 left-0 right-0 bg-white dark:bg-night-base border-t border-border-subtle dark:border-night-border h-16 z-50 grid grid-cols-5"
     >
       {navItems.map(({ path, icon: Icon, label, isScan }) => {
-        const isActive = location.pathname === path || (path === '/chat' && location.pathname.startsWith('/chat'));
+        const isActive =
+          location.pathname === path ||
+          (path === '/chat' && location.pathname.startsWith('/chat')) ||
+          (path === '/recipes' && location.pathname.startsWith('/recipes'));
 
         if (isScan) {
-          // Scan tab: raised pink circle (primary action pattern)
           return (
             <Link
               key={path}

@@ -12,8 +12,10 @@ import {
   Users,
   RefreshCw,
   SquarePen,
+  BookmarkPlus,
+  Check,
 } from 'lucide-react';
-import { useAIHealth, useModeSuggestions, useConversationHistory, useSubmitWorkflowEvent, streamChatMessage } from '../api/client';
+import { useAIHealth, useModeSuggestions, useConversationHistory, useSubmitWorkflowEvent, streamChatMessage, saveRecipeToLibrary } from '../api/client';
 import type {
   ChatMessage,
   ChatResponse,
@@ -285,6 +287,7 @@ function FullRecipeCard({ recipe, onTryAnother }: {
   const totalTime = recipe.total_time_minutes ?? (computedTime > 0 ? computedTime : null);
   const ingredients = recipe.ingredients ?? [];
   const instructions = recipe.instructions ?? [];
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   return (
     <div className="mt-3 space-y-3">
@@ -327,15 +330,40 @@ function FullRecipeCard({ recipe, onTryAnother }: {
           <div className="p-4 border-b border-border-subtle">
             <h3 className="font-bold text-soft-charcoal mb-3">Ingredients</h3>
             <div className="space-y-2">
-              {ingredients.map((ing, i) => (
-                <div key={i} className="flex items-start gap-2 text-sm">
-                  <span className="text-deep-pink mt-0.5">•</span>
-                  <span className="text-soft-charcoal">
-                    {ing.quantity != null && ing.unit ? `${ing.quantity} ${ing.unit} ` : ''}
-                    <span className="font-medium">{ing.name}</span>
-                  </span>
-                </div>
-              ))}
+              {ingredients.map((ing, i) => {
+                const avail = recipe.ingredient_availability?.find(
+                  (a) => a.name.toLowerCase() === ing.name.toLowerCase(),
+                );
+                return (
+                  <div key={i} className="flex items-start gap-2 text-sm">
+                    {avail ? (
+                      <span
+                        className={`mt-0.5 w-4 text-center font-bold shrink-0 ${
+                          avail.status === 'have'
+                            ? 'text-deep-mint'
+                            : avail.status === 'missing'
+                            ? 'text-deep-coral'
+                            : 'text-deep-peach'
+                        }`}
+                        aria-label={avail.status}
+                      >
+                        {avail.status === 'have' ? '✓' : avail.status === 'missing' ? '✗' : '~'}
+                      </span>
+                    ) : (
+                      <span className="text-deep-pink mt-0.5">•</span>
+                    )}
+                    <span className="text-soft-charcoal">
+                      {ing.quantity != null && ing.unit ? `${ing.quantity} ${ing.unit} ` : ''}
+                      <span className="font-medium">{ing.name}</span>
+                      {avail?.substitute_note && (
+                        <span className="block text-xs text-soft-charcoal opacity-50 mt-0.5">
+                          {avail.substitute_note}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -382,6 +410,52 @@ function FullRecipeCard({ recipe, onTryAnother }: {
       >
         <RefreshCw size={18} />
         Try Another Recipe
+      </button>
+
+      {/* Save to Library button */}
+      <button
+        disabled={saveState === 'saving' || saveState === 'saved'}
+        onClick={() => {
+          if (saveState === 'saving' || saveState === 'saved') return;
+          setSaveState('saving');
+          saveRecipeToLibrary({
+            title: recipe.title ?? 'Untitled Recipe',
+            description: recipe.description,
+            ingredients: ingredients.map((ing) => ({
+              name: ing.name,
+              quantity: ing.quantity ?? null,
+              unit: ing.unit ?? null,
+            })),
+            instructions,
+            cuisine: recipe.cuisine,
+            meal_type: recipe.meal_type,
+            dietary_tags: recipe.dietary_tags,
+            difficulty: recipe.difficulty,
+            prep_time_minutes: recipe.prep_time_minutes,
+            cook_time_minutes: recipe.cook_time_minutes,
+            total_time_minutes: totalTime,
+            servings: recipe.servings,
+          })
+            .then(() => setSaveState('saved'))
+            .catch(() => setSaveState('error'));
+        }}
+        className={`w-full py-3 rounded-pill font-semibold text-sm shadow-soft transition-all active:scale-95 flex items-center justify-center gap-2 ${
+          saveState === 'saved'
+            ? 'bg-deep-mint text-white cursor-default'
+            : saveState === 'error'
+            ? 'bg-deep-coral text-white'
+            : 'bg-white border-2 border-deep-mint text-deep-mint hover:shadow-soft-lg disabled:opacity-50'
+        }`}
+      >
+        {saveState === 'saving' ? (
+          <Loader2 size={16} className="animate-spin" />
+        ) : saveState === 'saved' ? (
+          <><Check size={16} /> Saved to Library</>
+        ) : saveState === 'error' ? (
+          'Save failed — tap to retry'
+        ) : (
+          <><BookmarkPlus size={16} /> Save to Library</>
+        )}
       </button>
 
       <p className="text-center text-xs text-soft-charcoal opacity-40">
@@ -451,15 +525,27 @@ function MessageBubble({ msg, mode, onProposalApprove, onProposalReject, onTryAn
     }
 
     if (intent === 'recipe_card' && proposal) {
+      // Backend wraps the recipe in { recipe: {...}, pantry_match_score, ... }
+      // ingredient_availability lives in envelope.metadata (separate from proposal).
+      // Unwrap to get the flat ChatRecipeData shape the components expect.
+      const raw = proposal as Record<string, unknown>;
+      const ingredientAvailability = (
+        msg.response?.metadata?.ingredient_availability ?? raw.ingredient_availability
+      ) as ChatRecipeData['ingredient_availability'] | undefined;
+
+      const recipeData: ChatRecipeData = raw.recipe
+        ? { ...(raw.recipe as ChatRecipeData), ingredient_availability: ingredientAvailability }
+        : (proposal as ChatRecipeData);
+
       if (mode === 'recipe') {
         return (
           <FullRecipeCard
-            recipe={proposal as ChatRecipeData}
+            recipe={recipeData}
             onTryAnother={onTryAnother}
           />
         );
       }
-      return <RecipeCard recipe={proposal as ChatRecipeData} onCookIt={onCookIt} />;
+      return <RecipeCard recipe={recipeData} onCookIt={onCookIt} />;
     }
 
     return null;

@@ -7,6 +7,8 @@ import { Pantry } from './pages/Pantry';
 import { Scan } from './pages/Scan';
 import { Profile } from './pages/Profile';
 import { Chat } from './pages/Chat';
+import { Recipes } from './pages/Recipes';
+import { RecipeDetail } from './pages/RecipeDetail';
 import { useThemeInit } from './components/ThemeToggle';
 
 function App() {
@@ -19,7 +21,8 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/pantry" element={<Pantry />} />
             <Route path="/scan" element={<Scan />} />
-            <Route path="/recipes" element={<Navigate to="/chat?mode=recipe" replace />} />
+            <Route path="/recipes" element={<Recipes />} />
+            <Route path="/recipes/:id" element={<RecipeDetail />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="*" element={<Navigate to="/" replace />} />

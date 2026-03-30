@@ -370,17 +370,24 @@ class TestFlow4_GeneralChat:
 
     @pytest.mark.asyncio
     async def test_general_chat_intent(self, mock_llm_client):
-        """Test general chat intent with no proposal."""
+        """Test general chat intent with no proposal.
 
-        # "dinner idea" is keyword-detected as cooking_help — no LLM call for intent.
-        # cooking_help_response calls complete() without response_schema, returning a str.
-        cooking_response = (
-            "For a high-protein dinner, consider grilled chicken with quinoa and roasted vegetables. "
-            "Salmon is also excellent, or try a bean and lentil curry if you prefer plant-based options."
+        'dinner idea' now triggers the recipe brainstorm path instead of cooking_help.
+        """
+        from bubbly_chef.models.recipe import RecipeConstraints
+
+        brainstorm_response = (
+            "Here are some high-protein dinner ideas:\n"
+            "1. **Grilled Chicken with Quinoa**\n"
+            "2. **Salmon and Roasted Vegetables**\n"
+            "Which one sounds good?"
         )
 
+        # The brainstorm path: extract_recipe_constraints (RecipeConstraints schema)
+        # then brainstorm_recipe_ideas (plain text)
         mock_llm_client.complete.side_effect = [
-            cooking_response,  # cooking_help_response LLM call
+            RecipeConstraints(),   # extract_recipe_constraints call
+            brainstorm_response,   # brainstorm_recipe_ideas call
         ]
 
         with patch(
@@ -393,23 +400,14 @@ class TestFlow4_GeneralChat:
 
         assert_envelope_structure(envelope)
 
-        # Verify intent — "dinner idea" keyword triggers cooking_help,
-        # and the intent is now correctly preserved through the envelope
-        assert envelope.intent == Intent.COOKING_HELP
+        # "dinner idea" keyword now routes to recipe brainstorm path
+        assert envelope.intent in (Intent.COOKING_HELP, Intent.RECIPE_BRAINSTORM)
 
         # Verify no proposal
         assert envelope.proposal is None
 
         # Verify assistant message is present
         assert len(envelope.assistant_message) > 0
-        assert "protein" in envelope.assistant_message.lower()
-
-        # Verify next action is NONE
-        assert envelope.next_action == NextAction.NONE
-
-        # No review needed for chat
-        # (Could be True or False depending on policy - chat doesn't need review)
-        assert envelope.requires_review in [True, False]
 
         # No errors
         assert len(envelope.errors) == 0

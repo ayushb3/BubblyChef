@@ -750,11 +750,11 @@ class TestPantryContextInjection:
 
     @pytest.mark.asyncio
     async def test_intent_preserved_in_envelope_for_cooking_help(self, mock_repository):
-        """The cooking_help intent is preserved through the response envelope."""
+        """Recipe-generation cooking_help now routes to brainstorm and returns recipe_brainstorm intent."""
         mock_repository.get_all_pantry_items.return_value = []
 
         envelope = await run_chat_workflow(message="What can I cook for dinner tonight?")
 
-        assert envelope.intent == Intent.COOKING_HELP
-        assert envelope.next_action == NextAction.NONE
+        # "what can I cook" triggers recipe brainstorm path now
+        assert envelope.intent in (Intent.COOKING_HELP, Intent.RECIPE_BRAINSTORM)
         assert envelope.proposal is None

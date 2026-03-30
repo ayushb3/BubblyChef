@@ -81,7 +81,12 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS middleware for mobile app
+    # Request/response logging middleware (added first = wrapped outermost by CORS)
+    from bubbly_chef.api.middleware import LoggingMiddleware
+
+    app.add_middleware(LoggingMiddleware)
+
+    # CORS middleware for mobile app (added last = runs first, handles OPTIONS preflights)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -89,11 +94,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # Request/response logging middleware
-    from bubbly_chef.api.middleware import LoggingMiddleware
-
-    app.add_middleware(LoggingMiddleware)
 
     # Global exception handler — catches unhandled errors and logs them
     @app.exception_handler(Exception)

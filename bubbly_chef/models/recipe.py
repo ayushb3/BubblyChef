@@ -1,6 +1,7 @@
 """Recipe-related Pydantic models."""
 
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -54,6 +55,14 @@ class RecipeCard(BaseModel):
         default=None, description="Difficulty level (easy, medium, hard)"
     )
 
+    # Source metadata
+    source_type: str = Field(
+        default="chat", description="How the recipe was added: chat/url/manual"
+    )
+    source_title: str | None = Field(default=None, description="Human-readable source label")
+    thumbnail_url: str | None = Field(default=None, description="Recipe thumbnail image URL")
+    is_draft: bool = Field(default=False, description="Draft — not yet confirmed by user")
+
     # Notes
     tips: list[str] = Field(default_factory=list, description="Cooking tips")
     notes: str | None = Field(default=None, description="Additional notes")
@@ -61,6 +70,28 @@ class RecipeCard(BaseModel):
     # Timestamps
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class RecipeConstraints(BaseModel):
+    """Extracted from user message via small structured LLM call."""
+
+    cuisine: str | None = None
+    mood: str | None = None
+    dietary: list[str] = Field(default_factory=list)
+    max_time_minutes: int | None = None
+    servings: int | None = None
+    skill_level: str | None = None
+    excluded_ingredients: list[str] = Field(default_factory=list)
+    preferred_ingredients: list[str] = Field(default_factory=list)
+
+
+class IngredientAvailability(BaseModel):
+    """Per-ingredient pantry match status for a grounded recipe."""
+
+    name: str
+    status: Literal["have", "missing", "substitute"]
+    pantry_item_name: str | None = None
+    substitute_note: str | None = None
 
 
 class RecipeCardProposal(BaseModel):

@@ -1,9 +1,10 @@
 """Recipe generation endpoints."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from bubbly_chef.api.deps import get_ai_manager
@@ -215,3 +216,99 @@ async def get_recipe_suggestions() -> list[str]:
             "Easy pasta dish",
             "Comfort food for tonight",
         ]
+
+
+# =============================================================================
+# Recipe Library CRUD
+# =============================================================================
+
+
+class RefineRecipeRequest(BaseModel):
+    """Request to refine an existing recipe via AI."""
+
+    instruction: str = Field(description="What to change, e.g. 'make it vegetarian'")
+
+
+@router.get("", response_model=list[RecipeCard])
+async def list_recipes(
+    search: str | None = Query(default=None, description="Full-text search on title/description"),
+    cuisine: str | None = Query(default=None, description="Filter by cuisine"),
+    max_time: int | None = Query(default=None, description="Max total_time_minutes"),
+    is_draft: bool | None = Query(
+        default=None, description="Filter drafts (true) or final (false)"
+    ),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> list[RecipeCard]:
+    """List saved recipes with optional filters."""
+    repo = await get_repository()
+    return await repo.get_all_recipes(
+        search=search,
+        cuisine=cuisine,
+        max_time=max_time,
+        is_draft=is_draft,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/{recipe_id}", response_model=RecipeCard)
+async def get_recipe(recipe_id: UUID) -> RecipeCard:
+    """Get a single saved recipe by ID."""
+    repo = await get_repository()
+    recipe = await repo.get_recipe(recipe_id)
+    if recipe is None:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    return recipe
+
+
+@router.delete("/{recipe_id}", status_code=204)
+async def delete_recipe(recipe_id: UUID) -> None:
+    """Delete a saved recipe."""
+    repo = await get_repository()
+    deleted = await repo.delete_recipe(recipe_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+
+@router.post("/{recipe_id}/refine", response_model=RecipeCard)
+async def refine_recipe(recipe_id: UUID, request: RefineRecipeRequest) -> RecipeCard:
+    """
+    Refine an existing saved recipe via AI instruction.
+
+    Examples:
+    - "make it vegetarian"
+    - "reduce cook time to 20 minutes"
+    - "add more protein"
+    """
+    repo = await get_repository()
+    recipe = await repo.get_recipe(recipe_id)
+    if recipe is None:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    ai_manager = get_ai_manager()
+
+    prompt = (
+        f"Refine this recipe: '{recipe.title}'.\n"
+        f"Current description: {recipe.description or 'N/A'}\n"
+        f"Ingredients: {', '.join(i.name for i in recipe.ingredients)}\n\n"
+        f"User instruction: {request.instruction}\n\n"
+        "Return a complete updated recipe as JSON matching the RecipeCard schema. "
+        "Keep the same id. Only change what is necessary per the instruction."
+    )
+
+    try:
+        updated = await ai_manager.complete(prompt, RecipeCard)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI refinement failed: {e}") from e
+
+    if not isinstance(updated, RecipeCard):
+        raise HTTPException(status_code=500, detail="AI did not return a valid recipe")
+
+    # Preserve identity fields
+    updated.id = recipe.id
+    updated.created_at = recipe.created_at
+    updated.updated_at = datetime.now(UTC)
+
+    await repo.update_recipe(updated)
+    return updated

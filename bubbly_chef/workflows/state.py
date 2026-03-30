@@ -74,12 +74,22 @@ class WorkflowState(TypedDict, total=False):
     # Final Actions & Proposals
     # ==========================================================================
     actions: list[PantryUpsertAction]
-    proposal: PantryProposal | HandoffProposal | None
+    proposal: PantryProposal | HandoffProposal | RecipeCardProposal | None
 
     # ==========================================================================
     # Recipe-specific
     # ==========================================================================
     recipe: RecipeCard | None
+
+    # ==========================================================================
+    # Recipe Grounding (brainstorm + grounded generation)
+    # ==========================================================================
+    recipe_constraints: dict[str, Any] | None
+    scored_pantry_items: list[dict[str, Any]]
+    brainstorm_ideas: list[str]
+    selected_recipe_name: str | None
+    web_search_result: dict[str, Any] | None
+    ingredient_availability: list[dict[str, Any]]
 
     # ==========================================================================
     # Response Fields
@@ -113,6 +123,7 @@ class WorkflowState(TypedDict, total=False):
     workflow_status: str  # WorkflowStatus enum value
     should_interrupt: bool
     suggested_mode: str | None  # Mode switch hint for the frontend
+    suggested_action: str | None  # Next action hint (e.g. 'pick_recipe')
 
 
 class LLMParsedItem(BaseModel):

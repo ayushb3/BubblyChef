@@ -126,6 +126,24 @@ class SQLiteRepository:
         except Exception:
             pass  # Column already exists (new DBs have it from CREATE TABLE above)
 
+        # Recipe table migrations — idempotent (catches OperationalError on re-run)
+        _recipe_migrations = [
+            "ALTER TABLE recipes ADD COLUMN difficulty TEXT",
+            "ALTER TABLE recipes ADD COLUMN source_type TEXT DEFAULT 'chat'",
+            "ALTER TABLE recipes ADD COLUMN source_title TEXT",
+            "ALTER TABLE recipes ADD COLUMN thumbnail_url TEXT",
+            "ALTER TABLE recipes ADD COLUMN is_draft INTEGER DEFAULT 0",
+            "ALTER TABLE recipes ADD COLUMN total_time_minutes INTEGER",
+            "ALTER TABLE recipes ADD COLUMN cuisine TEXT",
+            "ALTER TABLE recipes ADD COLUMN meal_type TEXT",
+        ]
+        for migration in _recipe_migrations:
+            try:
+                await self._connection.execute(migration)
+                await self._connection.commit()
+            except Exception:
+                pass  # Column already exists
+
         await self._connection.commit()
         logger.info(f"Database initialized at {self.db_path}")
 
@@ -420,6 +438,20 @@ class SQLiteRepository:
         instructions = json.loads(row["instructions"]) if row["instructions"] else []
         tags = json.loads(row["tags"]) if row["tags"] else []
 
+        keys = row.keys()
+
+        def _str(name: str) -> str | None:
+            val = row[name] if name in keys else None
+            return str(val) if val is not None else None
+
+        def _int(name: str) -> int | None:
+            val = row[name] if name in keys else None
+            return int(val) if val is not None else None
+
+        def _bool(name: str) -> bool:
+            val = row[name] if name in keys else None
+            return bool(val) if val is not None else False
+
         return RecipeCard(
             id=UUID(row["id"]),
             title=row["title"],
@@ -428,9 +460,17 @@ class SQLiteRepository:
             instructions=instructions,
             prep_time_minutes=row["prep_time_minutes"],
             cook_time_minutes=row["cook_time_minutes"],
+            total_time_minutes=_int("total_time_minutes"),
             servings=row["servings"],
             source_url=row["source_url"],
             dietary_tags=tags,
+            cuisine=_str("cuisine"),
+            meal_type=_str("meal_type"),
+            difficulty=_str("difficulty"),
+            source_type=_str("source_type") or "chat",
+            source_title=_str("source_title"),
+            thumbnail_url=_str("thumbnail_url"),
+            is_draft=_bool("is_draft"),
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
@@ -446,30 +486,60 @@ class SQLiteRepository:
                 return self._row_to_recipe(row)
         return None
 
-    async def get_all_recipes(self) -> list[RecipeCard]:
-        """Get all recipes."""
+    async def get_all_recipes(
+        self,
+        search: str | None = None,
+        cuisine: str | None = None,
+        max_time: int | None = None,
+        is_draft: bool | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[RecipeCard]:
+        """Get recipes with optional filtering and pagination."""
         conn = self._get_conn()
-        async with conn.execute(
-            "SELECT * FROM recipes ORDER BY created_at DESC"
-        ) as cursor:
+
+        conditions: list[str] = []
+        params: list[Any] = []
+
+        if search:
+            conditions.append("(title LIKE ? OR description LIKE ?)")
+            params.extend([f"%{search}%", f"%{search}%"])
+        if cuisine:
+            conditions.append("cuisine = ?")
+            params.append(cuisine)
+        if max_time is not None:
+            conditions.append(
+                "(total_time_minutes IS NOT NULL AND total_time_minutes <= ?)"
+            )
+            params.append(max_time)
+        if is_draft is not None:
+            conditions.append("is_draft = ?")
+            params.append(1 if is_draft else 0)
+
+        query = "SELECT * FROM recipes"
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        async with conn.execute(query, params) as cursor:
             rows = await cursor.fetchall()
             return [self._row_to_recipe(row) for row in rows]
 
     async def add_recipe(self, recipe: RecipeCard) -> RecipeCard:
         """Add a new recipe."""
         conn = self._get_conn()
-        ingredients_json = json.dumps(
-            [ing.model_dump() for ing in recipe.ingredients]
-        )
+        ingredients_json = json.dumps([ing.model_dump() for ing in recipe.ingredients])
         instructions_json = json.dumps(recipe.instructions)
         tags_json = json.dumps(recipe.dietary_tags)
 
         await conn.execute(
             """INSERT INTO recipes
                (id, title, description, ingredients, instructions,
-                prep_time_minutes, cook_time_minutes, servings,
-                source_url, tags, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                prep_time_minutes, cook_time_minutes, total_time_minutes, servings,
+                source_url, tags, difficulty, source_type, source_title,
+                thumbnail_url, is_draft, cuisine, meal_type, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 str(recipe.id),
                 recipe.title,
@@ -478,9 +548,17 @@ class SQLiteRepository:
                 instructions_json,
                 recipe.prep_time_minutes,
                 recipe.cook_time_minutes,
+                recipe.total_time_minutes,
                 recipe.servings,
                 recipe.source_url,
                 tags_json,
+                recipe.difficulty,
+                recipe.source_type,
+                recipe.source_title,
+                recipe.thumbnail_url,
+                1 if recipe.is_draft else 0,
+                recipe.cuisine,
+                recipe.meal_type,
                 recipe.created_at.isoformat(),
                 recipe.updated_at.isoformat(),
             ),
@@ -492,9 +570,7 @@ class SQLiteRepository:
     async def update_recipe(self, recipe: RecipeCard) -> RecipeCard:
         """Update an existing recipe."""
         conn = self._get_conn()
-        ingredients_json = json.dumps(
-            [ing.model_dump() for ing in recipe.ingredients]
-        )
+        ingredients_json = json.dumps([ing.model_dump() for ing in recipe.ingredients])
         instructions_json = json.dumps(recipe.instructions)
         tags_json = json.dumps(recipe.dietary_tags)
 
@@ -502,8 +578,10 @@ class SQLiteRepository:
             """UPDATE recipes SET
                title = ?, description = ?, ingredients = ?,
                instructions = ?, prep_time_minutes = ?,
-               cook_time_minutes = ?, servings = ?,
-               source_url = ?, tags = ?, updated_at = ?
+               cook_time_minutes = ?, total_time_minutes = ?, servings = ?,
+               source_url = ?, tags = ?, difficulty = ?, source_type = ?,
+               source_title = ?, thumbnail_url = ?, is_draft = ?,
+               cuisine = ?, meal_type = ?, updated_at = ?
                WHERE id = ?""",
             (
                 recipe.title,
@@ -512,9 +590,17 @@ class SQLiteRepository:
                 instructions_json,
                 recipe.prep_time_minutes,
                 recipe.cook_time_minutes,
+                recipe.total_time_minutes,
                 recipe.servings,
                 recipe.source_url,
                 tags_json,
+                recipe.difficulty,
+                recipe.source_type,
+                recipe.source_title,
+                recipe.thumbnail_url,
+                1 if recipe.is_draft else 0,
+                recipe.cuisine,
+                recipe.meal_type,
                 recipe.updated_at.isoformat(),
                 str(recipe.id),
             ),

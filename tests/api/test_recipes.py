@@ -2,6 +2,7 @@
 
 import pytest
 from datetime import date, timedelta
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import AsyncClient
 
@@ -310,3 +311,269 @@ class TestRecipeValidation:
                 json={"prompt": long_prompt},
             )
             assert response.status_code == 200
+
+
+# =============================================================================
+# Recipe Library CRUD tests
+# =============================================================================
+
+
+def _make_recipe(**kwargs: Any) -> RecipeCard:
+    """Helper: build a minimal RecipeCard."""
+    defaults: dict[str, Any] = {
+        "title": "Test Recipe",
+        "description": "A tasty dish",
+        "ingredients": [],
+        "instructions": ["Step 1"],
+        "source_type": "chat",
+    }
+    defaults.update(kwargs)
+    return RecipeCard(**defaults)
+
+
+class TestRecipeLibraryList:
+    """Tests for GET /recipes"""
+
+    @pytest.mark.asyncio
+    async def test_list_empty(self, client: AsyncClient) -> None:
+        """Returns empty list when no recipes saved."""
+        response = await client.get("/recipes")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    @pytest.mark.asyncio
+    async def test_list_returns_saved_recipe(self, client: AsyncClient) -> None:
+        """Saved recipe appears in list."""
+        import bubbly_chef.repository.sqlite as sqlite_mod
+
+        repo = sqlite_mod._repository
+        assert repo is not None
+        recipe = _make_recipe(title="Pasta Carbonara", cuisine="Italian")
+        await repo.add_recipe(recipe)
+
+        response = await client.get("/recipes")
+        assert response.status_code == 200
+        data = response.json()
+        titles = [r["title"] for r in data]
+        assert "Pasta Carbonara" in titles
+
+    @pytest.mark.asyncio
+    async def test_list_filter_by_search(self, client: AsyncClient) -> None:
+        """Search filter returns only matching recipes."""
+        import bubbly_chef.repository.sqlite as sqlite_mod
+
+        repo = sqlite_mod._repository
+        assert repo is not None
+        await repo.add_recipe(_make_recipe(title="Chicken Tikka"))
+        await repo.add_recipe(_make_recipe(title="Beef Stew"))
+
+        response = await client.get("/recipes?search=tikka")
+        assert response.status_code == 200
+        data = response.json()
+        assert all("tikka" in r["title"].lower() for r in data)
+
+    @pytest.mark.asyncio
+    async def test_list_filter_by_cuisine(self, client: AsyncClient) -> None:
+        """Cuisine filter excludes non-matching recipes."""
+        import bubbly_chef.repository.sqlite as sqlite_mod
+
+        repo = sqlite_mod._repository
+        assert repo is not None
+        await repo.add_recipe(_make_recipe(title="Tacos", cuisine="Mexican"))
+        await repo.add_recipe(_make_recipe(title="Ramen", cuisine="Japanese"))
+
+        response = await client.get("/recipes?cuisine=Mexican")
+        assert response.status_code == 200
+        data = response.json()
+        assert all(r["cuisine"] == "Mexican" for r in data)
+
+    @pytest.mark.asyncio
+    async def test_list_filter_drafts(self, client: AsyncClient) -> None:
+        """is_draft filter returns only drafts."""
+        import bubbly_chef.repository.sqlite as sqlite_mod
+
+        repo = sqlite_mod._repository
+        assert repo is not None
+        await repo.add_recipe(_make_recipe(title="Draft Recipe", is_draft=True))
+        await repo.add_recipe(_make_recipe(title="Final Recipe", is_draft=False))
+
+        response = await client.get("/recipes?is_draft=true")
+        assert response.status_code == 200
+        data = response.json()
+        assert all(r["is_draft"] is True for r in data)
+
+    @pytest.mark.asyncio
+    async def test_list_pagination(self, client: AsyncClient) -> None:
+        """limit/offset pagination works."""
+        import bubbly_chef.repository.sqlite as sqlite_mod
+
+        repo = sqlite_mod._repository
+        assert repo is not None
+        for i in range(5):
+            await repo.add_recipe(_make_recipe(title=f"Recipe {i}"))
+
+        r1 = await client.get("/recipes?limit=3&offset=0")
+        r2 = await client.get("/recipes?limit=3&offset=3")
+        assert r1.status_code == 200
+        assert r2.status_code == 200
+        ids1 = {r["id"] for r in r1.json()}
+        ids2 = {r["id"] for r in r2.json()}
+        assert ids1.isdisjoint(ids2)
+
+
+class TestRecipeLibraryGet:
+    """Tests for GET /recipes/{recipe_id}"""
+
+    @pytest.mark.asyncio
+    async def test_get_existing_recipe(self, client: AsyncClient) -> None:
+        """Returns recipe when it exists."""
+        import bubbly_chef.repository.sqlite as sqlite_mod
+
+        repo = sqlite_mod._repository
+        assert repo is not None
+        recipe = _make_recipe(title="Spaghetti Bolognese")
+        await repo.add_recipe(recipe)
+
+        response = await client.get(f"/recipes/{recipe.id}")
+        assert response.status_code == 200
+        assert response.json()["title"] == "Spaghetti Bolognese"
+
+    @pytest.mark.asyncio
+    async def test_get_missing_recipe_404(self, client: AsyncClient) -> None:
+        """Returns 404 for unknown recipe ID."""
+        import uuid
+
+        response = await client.get(f"/recipes/{uuid.uuid4()}")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_get_recipe_preserves_new_fields(self, client: AsyncClient) -> None:
+        """New fields round-trip through DB correctly."""
+        import bubbly_chef.repository.sqlite as sqlite_mod
+
+        repo = sqlite_mod._repository
+        assert repo is not None
+        recipe = _make_recipe(
+            title="Croissant",
+            cuisine="French",
+            source_type="url",
+            source_title="Bon Appétit",
+            is_draft=True,
+            difficulty="hard",
+        )
+        await repo.add_recipe(recipe)
+
+        response = await client.get(f"/recipes/{recipe.id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["cuisine"] == "French"
+        assert data["source_type"] == "url"
+        assert data["source_title"] == "Bon Appétit"
+        assert data["is_draft"] is True
+        assert data["difficulty"] == "hard"
+
+
+class TestRecipeLibraryDelete:
+    """Tests for DELETE /recipes/{recipe_id}"""
+
+    @pytest.mark.asyncio
+    async def test_delete_existing_recipe(self, client: AsyncClient) -> None:
+        """Deletes recipe and returns 204."""
+        import bubbly_chef.repository.sqlite as sqlite_mod
+
+        repo = sqlite_mod._repository
+        assert repo is not None
+        recipe = _make_recipe(title="To Delete")
+        await repo.add_recipe(recipe)
+
+        response = await client.delete(f"/recipes/{recipe.id}")
+        assert response.status_code == 204
+
+        # Verify gone
+        response2 = await client.get(f"/recipes/{recipe.id}")
+        assert response2.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_delete_missing_recipe_404(self, client: AsyncClient) -> None:
+        """Returns 404 when deleting non-existent recipe."""
+        import uuid
+
+        response = await client.delete(f"/recipes/{uuid.uuid4()}")
+        assert response.status_code == 404
+
+
+class TestRecipeLibraryRefine:
+    """Tests for POST /recipes/{recipe_id}/refine"""
+
+    @pytest.mark.asyncio
+    async def test_refine_recipe_success(self, client: AsyncClient) -> None:
+        """Refine updates the recipe and returns it."""
+        import bubbly_chef.repository.sqlite as sqlite_mod
+
+        repo = sqlite_mod._repository
+        assert repo is not None
+        original = _make_recipe(
+            title="Chicken Soup",
+            ingredients=[
+                Ingredient(name="chicken", quantity=1.0, unit="lb"),
+                Ingredient(name="carrots", quantity=2.0, unit="whole"),
+            ],
+            instructions=["Boil chicken", "Add carrots"],
+        )
+        await repo.add_recipe(original)
+
+        refined = _make_recipe(
+            title="Vegetarian Soup",
+            ingredients=[
+                Ingredient(name="tofu", quantity=1.0, unit="block"),
+                Ingredient(name="carrots", quantity=2.0, unit="whole"),
+            ],
+            instructions=["Boil tofu", "Add carrots"],
+        )
+        refined.id = original.id  # same id returned by AI mock
+
+        with patch("bubbly_chef.api.routes.recipes.get_ai_manager") as mock_get_ai:
+            mock_manager = MagicMock()
+            mock_manager.complete = AsyncMock(return_value=refined)
+            mock_get_ai.return_value = mock_manager
+
+            response = await client.post(
+                f"/recipes/{original.id}/refine",
+                json={"instruction": "make it vegetarian"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["title"] == "Vegetarian Soup"
+            assert data["id"] == str(original.id)
+
+    @pytest.mark.asyncio
+    async def test_refine_missing_recipe_404(self, client: AsyncClient) -> None:
+        """Returns 404 when refining non-existent recipe."""
+        import uuid
+
+        response = await client.post(
+            f"/recipes/{uuid.uuid4()}/refine",
+            json={"instruction": "make it healthier"},
+        )
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_refine_ai_failure_500(self, client: AsyncClient) -> None:
+        """Returns 500 when AI call fails."""
+        import bubbly_chef.repository.sqlite as sqlite_mod
+
+        repo = sqlite_mod._repository
+        assert repo is not None
+        recipe = _make_recipe(title="Simple Dish")
+        await repo.add_recipe(recipe)
+
+        with patch("bubbly_chef.api.routes.recipes.get_ai_manager") as mock_get_ai:
+            mock_manager = MagicMock()
+            mock_manager.complete = AsyncMock(side_effect=Exception("provider down"))
+            mock_get_ai.return_value = mock_manager
+
+            response = await client.post(
+                f"/recipes/{recipe.id}/refine",
+                json={"instruction": "make it spicier"},
+            )
+            assert response.status_code == 500
