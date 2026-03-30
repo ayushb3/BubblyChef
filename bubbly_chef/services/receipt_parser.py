@@ -139,46 +139,36 @@ async def parse_receipt(
     ocr_text: str,
     ai_manager: AIManager,
 ) -> ReceiptParseResult:
-    """
-    Parse receipt OCR text into structured items using AI.
-
-    Args:
-        ocr_text: Raw text from OCR
-        ai_manager: AI manager for LLM calls
-
-    Returns:
-        Parsed items with confidence scores
-    """
-    warnings = []
-
+    """Parse receipt OCR text into structured items using AI."""
     if not ocr_text.strip():
         return ReceiptParseResult(items=[], warnings=["Receipt appears to be empty or unreadable"])
 
-    # Call AI to parse the receipt
     prompt = RECEIPT_PARSE_PROMPT.format(receipt_text=ocr_text)
 
     try:
         result = await ai_manager.complete(
             prompt=prompt,
             response_schema=LLMReceiptOutput,
-            temperature=0.3,  # Lower temperature for more consistent parsing
+            temperature=0.3,
         )
     except Exception as e:
         return ReceiptParseResult(items=[], warnings=[f"AI parsing failed: {str(e)}"])
 
-    # Process each item
-    parsed_items = []
-
     if isinstance(result, str):
         return ReceiptParseResult(
             items=[],
-            warnings=[
-                f"AI returned raw text instead of structured output: "
-                f"{result[:100]}"
-            ],
+            warnings=[f"AI returned raw text instead of structured output: {result[:100]}"],
         )
 
-    for item_data in result.items:
+    return parse_receipt_items(result)
+
+
+def parse_receipt_items(llm_output: LLMReceiptOutput) -> ReceiptParseResult:
+    """Convert LLMReceiptOutput (from either OCR+LLM or vision) into a ReceiptParseResult."""
+    warnings: list[str] = []
+    parsed_items = []
+
+    for item_data in llm_output.items:
         name = item_data.get("name", "").strip()
 
         if not name:

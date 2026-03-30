@@ -156,6 +156,74 @@ class AIManager:
         )
         raise NoProviderAvailableError(f"All providers failed. Errors: {errors}")
 
+    async def vision_complete(
+        self,
+        prompt: str,
+        image_bytes: bytes,
+        mime_type: str = "image/jpeg",
+        response_schema: type[T] | None = None,
+        temperature: float = 0.3,
+    ) -> T | str:
+        """
+        Generate a completion from an image + text prompt.
+
+        Tries vision-capable providers in order, falls back gracefully.
+
+        Raises:
+            NoProviderAvailableError: If no vision-capable provider is available.
+        """
+        errors: list[str] = []
+        start_time = datetime.now()
+
+        for provider in self.providers:
+            if not provider.supports_vision:
+                continue
+            try:
+                if not await provider.is_available():
+                    errors.append(f"{provider.name}: not available")
+                    continue
+
+                logger.info(
+                    "AI vision request starting",
+                    extra={
+                        "provider": provider.name,
+                        "image_bytes": len(image_bytes),
+                        "has_schema": response_schema is not None,
+                    },
+                )
+
+                result = await provider.vision_complete(
+                    prompt=prompt,
+                    image_bytes=image_bytes,
+                    mime_type=mime_type,
+                    response_schema=response_schema,
+                    temperature=temperature,
+                )
+                self._current_provider = provider
+
+                elapsed = (datetime.now() - start_time).total_seconds()
+                logger.info(
+                    "AI vision request completed",
+                    extra={"provider": provider.name, "elapsed_seconds": elapsed},
+                )
+                return result
+
+            except ProviderUnavailableError as e:
+                errors.append(f"{provider.name}: {e}")
+                continue
+            except Exception as e:
+                logger.error(
+                    "AI vision request failed",
+                    extra={"provider": provider.name, "error": str(e)},
+                    exc_info=True,
+                )
+                errors.append(f"{provider.name}: {e}")
+                continue
+
+        raise NoProviderAvailableError(
+            f"No vision-capable provider available. Errors: {errors}"
+        )
+
     async def stream_complete(
         self,
         prompt: str,

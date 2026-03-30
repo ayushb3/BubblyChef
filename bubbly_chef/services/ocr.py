@@ -49,24 +49,29 @@ class TesseractOCR(OCRService):
         return self._available
 
     async def extract_text(self, image_data: bytes) -> str:
-        """Extract text using Tesseract."""
+        """Extract text using Tesseract, run in a thread pool to avoid blocking the event loop."""
         if not self.is_available():
             raise RuntimeError("Tesseract is not available")
+
+        import asyncio
 
         import pytesseract
         from PIL import Image
 
-        # Load image from bytes
+        # Load and convert image synchronously (cheap, stays on calling thread)
         image: Image.Image = Image.open(io.BytesIO(image_data))
-
-        # Convert to RGB if necessary (Tesseract works best with RGB)
         if image.mode != "RGB":
             image = image.convert("RGB")
 
-        # Extract text
+        # Tesseract is CPU-bound and synchronous — run in thread pool so the
+        # event loop is not blocked during the OCR call (typically 5–30s).
         # Use --psm 4 (single column of variable-size text) — handles receipts on
         # complex backgrounds better than psm 6 (uniform block) which misses partial columns
-        text: str = pytesseract.image_to_string(image, config="--psm 4 -l eng")
+        loop = asyncio.get_running_loop()
+        text: str = await loop.run_in_executor(
+            None,
+            lambda: pytesseract.image_to_string(image, config="--psm 4 -l eng"),
+        )
 
         return text.strip()
 

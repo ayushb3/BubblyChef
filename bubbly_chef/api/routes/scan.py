@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+from bubbly_chef.ai import AIManager
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.config import settings
 from bubbly_chef.domain.expiry import get_default_location
@@ -15,8 +16,7 @@ from bubbly_chef.logger import get_logger
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.repository.sqlite import get_repository
 from bubbly_chef.services.image_preprocessor import PreprocessMode, get_image_preprocessor
-from bubbly_chef.services.ocr import get_ocr_service
-from bubbly_chef.services.receipt_parser import ParsedReceiptItem, parse_receipt
+from bubbly_chef.services.receipt_parser import ParsedReceiptItem, ReceiptParseResult
 
 logger = get_logger(__name__)
 
@@ -93,6 +93,76 @@ class UndoResponse(BaseModel):
     removed_ids: list[str]
 
 
+VISION_RECEIPT_PROMPT = (
+    "You are a grocery receipt parser. Look at this receipt image and extract all food items.\n\n"
+    "RULES:\n"
+    "1. Only extract FOOD items — ignore bags, tax, totals, discounts, loyalty points, store info\n"
+    "2. IGNORE PRICES — numbers with decimals after item names are prices, not quantities\n"
+    "3. Only extract quantity if explicitly part of the product "
+    '(e.g. "2X Milk", "12pk eggs", "1lb bananas")\n'
+    "4. Expand abbreviations: ORG=Organic, GAL=Gallon, DZ=Dozen, PK=Pack, LB=Pound, OZ=Ounce\n"
+    "5. Clean item names — remove PLU codes, asterisks, store codes\n"
+    "6. If quantity is ambiguous, return null\n\n"
+    "For each food item return:\n"
+    "- name: clean item name without quantity\n"
+    "- quantity: number only if clearly part of the product name, else null\n"
+    "- unit: unit only if clearly specified (gallon, lb, oz, pk, dozen), else null\n"
+    "- confidence: 0.0-1.0 confidence this is a valid food item\n\n"
+    'Return JSON with an "items" array.'
+)
+
+
+async def _parse_receipt_vision(
+    image_data: bytes,
+    content_type: str,
+    ai_manager: AIManager,
+) -> ReceiptParseResult:
+    """Parse a receipt image directly with a vision LLM — no OCR step."""
+    from bubbly_chef.services.receipt_parser import LLMReceiptOutput, parse_receipt_items
+
+    mime_type = content_type if content_type.startswith("image/") else "image/jpeg"
+    result = await ai_manager.vision_complete(
+        prompt=VISION_RECEIPT_PROMPT,
+        image_bytes=image_data,
+        mime_type=mime_type,
+        response_schema=LLMReceiptOutput,
+        temperature=0.2,
+    )
+    if not isinstance(result, LLMReceiptOutput):
+        raise ValueError(f"Vision model returned unexpected type: {type(result)}")
+    return parse_receipt_items(result)
+
+
+async def _parse_receipt_ocr(
+    image_data: bytes,
+    ai_manager: AIManager,
+) -> ReceiptParseResult:
+    """Parse a receipt via Tesseract OCR + LLM text parsing (legacy path)."""
+    from bubbly_chef.services.ocr import get_ocr_service
+    from bubbly_chef.services.receipt_parser import parse_receipt
+
+    ocr = get_ocr_service()
+    if not ocr.is_available():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "OCR service unavailable (Tesseract not installed) "
+                "and no vision provider found."
+            ),
+        )
+    try:
+        ocr_text = await ocr.extract_text(image_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OCR failed: {e}") from e
+
+    if not ocr_text.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Could not extract any text from the image. Try a clearer photo.",
+        )
+    return await parse_receipt(ocr_text, ai_manager)
+
+
 @router.post("/receipt", response_model=ScanReceiptResponse)
 async def scan_receipt(
     image: UploadFile = File(..., description="Receipt image (PNG, JPEG)"),
@@ -148,30 +218,20 @@ async def scan_receipt(
             logger.warning(f"Preprocessing failed, using original image: {e}")
             # Continue with original image if preprocessing fails
 
-    # Get OCR service
-    ocr = get_ocr_service()
-
-    if not ocr.is_available():
-        raise HTTPException(
-            status_code=503, detail="OCR service is not available. Please install Tesseract."
-        )
-
-    # Extract text from image
-    try:
-        ocr_text = await ocr.extract_text(image_data)
-    except Exception as e:
-        logger.error(f"OCR failed: {e}")
-        raise HTTPException(status_code=500, detail=f"OCR failed: {str(e)}")
-
-    if not ocr_text.strip():
-        raise HTTPException(
-            status_code=400,
-            detail="Could not extract any text from the image. Try a clearer photo.",
-        )
-
-    # Parse receipt with AI
+    # Parse receipt — try vision first (skip Tesseract entirely), fall back to OCR
     ai_manager = get_ai_manager()
-    parse_result = await parse_receipt(ocr_text, ai_manager)
+    vision_providers = [p for p in ai_manager.providers if p.supports_vision]
+
+    if vision_providers:
+        try:
+            mime = image.content_type or "image/jpeg"
+            parse_result = await _parse_receipt_vision(image_data, mime, ai_manager)
+            logger.info("Receipt parsed via vision (no OCR)")
+        except Exception as e:
+            logger.warning(f"Vision parsing failed, falling back to OCR: {e}")
+            parse_result = await _parse_receipt_ocr(image_data, ai_manager)
+    else:
+        parse_result = await _parse_receipt_ocr(image_data, ai_manager)
 
     # Split into ready-to-add, needs-review, and skipped
     auto_add_threshold = settings.auto_add_confidence_threshold
@@ -371,6 +431,7 @@ async def undo_auto_added(request_id: str) -> UndoResponse:
 @router.get("/ocr-status")
 async def ocr_status() -> dict[str, Any]:
     """Check if OCR service is available."""
+    from bubbly_chef.services.ocr import get_ocr_service
     logger.info("GET /scan/ocr-status")
     ocr = get_ocr_service()
     available = ocr.is_available()

@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # Gemini LLM
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.0-flash-exp"
+    gemini_model: str = "gemini-2.5-flash-preview-04-17"
     gemini_timeout_seconds: float = 60.0
 
     # Ollama LLM

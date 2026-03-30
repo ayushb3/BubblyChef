@@ -42,6 +42,27 @@ class AIProvider(ABC):
         """
         ...
 
+    async def vision_complete(
+        self,
+        prompt: str,
+        image_bytes: bytes,
+        mime_type: str = "image/jpeg",
+        response_schema: type[T] | None = None,
+        temperature: float = 0.3,
+    ) -> T | str:
+        """
+        Generate a completion from an image + text prompt.
+
+        Default: raises NotImplementedError — providers that support vision override this.
+        Callers should check supports_vision before calling.
+        """
+        raise NotImplementedError(f"{self.name} does not support vision")
+
+    @property
+    def supports_vision(self) -> bool:
+        """Whether this provider supports image input."""
+        return False
+
     async def stream_complete(
         self,
         prompt: str,

@@ -3,6 +3,7 @@
 Google Gemini provider using the free tier API.
 """
 
+import base64
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -113,6 +114,96 @@ Return ONLY the JSON, no markdown formatting or extra text."""
         # Parse structured output
         try:
             # Clean up the response (remove markdown code blocks if present)
+            cleaned = text.strip()
+            if cleaned.startswith("```json"):
+                cleaned = cleaned[7:]
+            if cleaned.startswith("```"):
+                cleaned = cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+
+            parsed = json.loads(cleaned)
+            result: T = response_schema.model_validate(parsed)
+            return result
+        except json.JSONDecodeError as e:
+            raise StructuredOutputError(f"Failed to parse JSON: {text}") from e
+        except ValidationError as e:
+            raise StructuredOutputError(f"Schema validation failed: {e}") from e
+
+    @property
+    def supports_vision(self) -> bool:
+        return True
+
+    async def vision_complete(
+        self,
+        prompt: str,
+        image_bytes: bytes,
+        mime_type: str = "image/jpeg",
+        response_schema: type[T] | None = None,
+        temperature: float = 0.3,
+    ) -> T | str:
+        """Generate a completion from an image + text prompt using Gemini vision."""
+        url = f"{self.BASE_URL}/models/{self.model}:generateContent"
+
+        full_prompt = prompt
+        if response_schema:
+            schema_json = json.dumps(response_schema.model_json_schema(), indent=2)
+            full_prompt = f"""{prompt}
+
+Respond with valid JSON matching this schema:
+```json
+{schema_json}
+```
+
+Return ONLY the JSON, no markdown formatting or extra text."""
+
+        generation_config: dict[str, Any] = {
+            "temperature": temperature,
+            "topP": 0.95,
+            "topK": 40,
+        }
+        if response_schema:
+            generation_config["responseMimeType"] = "application/json"
+
+        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+        payload: dict[str, Any] = {
+            "contents": [
+                {
+                    "parts": [
+                        {"inline_data": {"mime_type": mime_type, "data": image_b64}},
+                        {"text": full_prompt},
+                    ]
+                }
+            ],
+            "generationConfig": generation_config,
+        }
+
+        try:
+            response = await self._client.post(
+                url,
+                json=payload,
+                params={"key": self.api_key},
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                raise ProviderUnavailableError("Gemini rate limit exceeded") from e
+            raise ProviderUnavailableError(f"Gemini API error: {e}") from e
+        except httpx.RequestError as e:
+            raise ProviderUnavailableError(f"Gemini connection error: {e}") from e
+
+        data = response.json()
+        try:
+            text = data["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError) as e:
+            raise StructuredOutputError(f"Unexpected Gemini response format: {data}") from e
+
+        if not response_schema:
+            return str(text)
+
+        try:
             cleaned = text.strip()
             if cleaned.startswith("```json"):
                 cleaned = cleaned[7:]
