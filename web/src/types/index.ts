@@ -236,7 +236,8 @@ export type ChatIntent =
   | 'recipe_ingest_request'
   | 'recipe_card'
   | 'cooking_help'
-  | 'general_chat';
+  | 'general_chat'
+  | 'recipe_brainstorm';
 
 /**
  * Next action hint from backend — tells the UI what to render next.
@@ -248,7 +249,8 @@ export type ChatNextAction =
   | 'request_product_photos'
   | 'request_recipe_text'
   | 'request_clarification'
-  | 'review_proposal';
+  | 'review_proposal'
+  | 'pick_recipe';
 
 /** A single pantry action item inside a PantryProposal. */
 export interface PantryProposalItem {
@@ -281,11 +283,27 @@ export interface ChatRecipeData {
   total_time_minutes?: number | null;
   difficulty?: string | null;
   servings?: number | null;
-  ingredients?: Array<{ name: string; quantity?: number | null; unit?: string | null }>;
+  ingredients?: Array<{
+    name: string;
+    quantity?: number | null;
+    unit?: string | null;
+    ingredient_availability?: Array<{
+      name: string;
+      status: 'have' | 'missing' | 'substitute';
+      pantry_item_name?: string | null;
+      substitute_note?: string | null;
+    }>;
+  }>;
   instructions?: string[];
   cuisine?: string | null;
   meal_type?: string | null;
   dietary_tags?: string[];
+  ingredient_availability?: Array<{
+    name: string;
+    status: 'have' | 'missing' | 'substitute';
+    pantry_item_name?: string | null;
+    substitute_note?: string | null;
+  }>;
 }
 
 /** The full ChatResponse shape — mirrors ProposalEnvelope from the backend. */
@@ -305,7 +323,9 @@ export interface ChatResponse {
   errors: string[];
   workflow_status: string;
   suggested_mode?: ChatMode | null;
+  suggested_action?: string | null;
   created_at: string;
+  metadata?: Record<string, unknown> | null;
 }
 
 /** Request body for POST /v1/chat. */
@@ -345,6 +365,47 @@ export type StreamEvent =
   | StreamDoneEvent
   | StreamEnvelopeEvent
   | StreamErrorEvent;
+
+// ─── Recipe Library Types ──────────────────────────────────────────────────────
+
+export interface RecipeLibraryItem {
+  id: string; // UUID from backend
+  title: string;
+  description?: string;
+  cuisine?: string;
+  meal_type?: string;
+  dietary_tags: string[];
+  difficulty?: string;
+  total_time_minutes?: number;
+  thumbnail_url?: string;
+  is_draft: boolean;
+  source_type?: string;
+  source_title?: string;
+  created_at: string;
+}
+
+export interface RecipeDetailType extends RecipeLibraryItem {
+  ingredients: Array<{ name: string; amount?: string; unit?: string; notes?: string }>;
+  instructions: string[];
+  servings?: number;
+  prep_time_minutes?: number;
+  cook_time_minutes?: number;
+}
+
+export interface SaveRecipeRequest {
+  title: string;
+  description?: string | null;
+  ingredients?: Array<{ name: string; quantity?: number | null; unit?: string | null }>;
+  instructions?: string[];
+  cuisine?: string | null;
+  meal_type?: string | null;
+  dietary_tags?: string[];
+  difficulty?: string | null;
+  prep_time_minutes?: number | null;
+  cook_time_minutes?: number | null;
+  total_time_minutes?: number | null;
+  servings?: number | null;
+}
 
 // ─── Kitchen Decorations ──────────────────────────────────────────────────────
 

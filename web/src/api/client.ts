@@ -28,6 +28,9 @@ import type {
   Decoration,
   StreamEvent,
   FoodSearchResult,
+  RecipeLibraryItem,
+  RecipeDetailType,
+  SaveRecipeRequest,
 } from '../types';
 
 export const API_BASE_URL = 'http://localhost:8888';
@@ -714,5 +717,124 @@ export function useAIHealth() {
     queryFn: fetchAIHealth,
     staleTime: 1000 * 30, // 30 seconds
     retry: false,
+  });
+}
+
+// ─── Recipe Library API ───────────────────────────────────────────────────────
+
+async function fetchRecipeLibrary(params?: {
+  search?: string;
+  cuisine?: string;
+  meal_type?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<RecipeLibraryItem[]> {
+  const sp = new URLSearchParams();
+  if (params?.search) sp.append('search', params.search);
+  if (params?.cuisine) sp.append('cuisine', params.cuisine);
+  if (params?.meal_type) sp.append('meal_type', params.meal_type);
+  if (params?.limit != null) sp.append('limit', String(params.limit));
+  if (params?.offset != null) sp.append('offset', String(params.offset));
+  const url = `${API_BASE_URL}/recipes${sp.toString() ? `?${sp}` : ''}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Failed to fetch recipe library');
+  return res.json();
+}
+
+async function fetchRecipeDetail(id: string): Promise<RecipeDetailType> {
+  const res = await fetch(`${API_BASE_URL}/recipes/${id}`);
+  if (!res.ok) throw new Error('Failed to fetch recipe');
+  return res.json();
+}
+
+export async function saveRecipeToLibrary(recipe: SaveRecipeRequest): Promise<RecipeLibraryItem> {
+  const res = await fetch(`${API_BASE_URL}/recipes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(recipe),
+  });
+  if (!res.ok) throw new Error('Failed to save recipe');
+  return res.json();
+}
+
+async function updateRecipeInLibrary(id: string, data: Partial<SaveRecipeRequest>): Promise<RecipeDetailType> {
+  const res = await fetch(`${API_BASE_URL}/recipes/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to update recipe');
+  return res.json();
+}
+
+async function deleteRecipeFromLibrary(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/recipes/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete recipe');
+}
+
+export async function refineRecipe(id: string, prompt: string): Promise<RecipeDetailType> {
+  const res = await fetch(`${API_BASE_URL}/recipes/${id}/refine`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ instruction: prompt }),
+  });
+  if (!res.ok) throw new Error('Failed to refine recipe');
+  return res.json();
+}
+
+export function useRecipes(params?: {
+  search?: string;
+  cuisine?: string;
+  meal_type?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  return useQuery({
+    queryKey: ['recipes', params],
+    queryFn: () => fetchRecipeLibrary(params),
+    staleTime: 1000 * 60,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useRecipe(id: string | null) {
+  return useQuery({
+    queryKey: ['recipes', id],
+    queryFn: () => fetchRecipeDetail(id!),
+    enabled: id != null,
+  });
+}
+
+export function useSaveRecipe() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: saveRecipeToLibrary,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['recipes'] }),
+  });
+}
+
+export function useUpdateRecipe() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<SaveRecipeRequest> }) =>
+      updateRecipeInLibrary(id, data),
+    onSuccess: (_result, { id }) => {
+      qc.invalidateQueries({ queryKey: ['recipes', id] });
+      qc.invalidateQueries({ queryKey: ['recipes'] });
+    },
+  });
+}
+
+export function useDeleteRecipe() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: deleteRecipeFromLibrary,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['recipes'] }),
+  });
+}
+
+export function useRefineRecipe() {
+  return useMutation({
+    mutationFn: ({ id, prompt }: { id: string; prompt: string }) => refineRecipe(id, prompt),
   });
 }
