@@ -10,6 +10,7 @@ import pytest
 from bubbly_chef.models.base import Intent, NextAction
 from bubbly_chef.models.recipe import RecipeConstraints
 from bubbly_chef.workflows.recipe.nodes import (
+    _default_meal_type,
     brainstorm_recipe_ideas,
     detect_brainstorm_followup,
     extract_recipe_constraints,
@@ -81,7 +82,7 @@ async def test_extract_constraints_dietary() -> None:
 
 @pytest.mark.asyncio
 async def test_extract_constraints_empty() -> None:
-    """'what can I make?' -> empty constraints"""
+    """'what can I make?' -> empty constraints except time-of-day meal_type"""
     mock_result = RecipeConstraints()
     with patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager") as mock_get_mgr:
         mock_mgr = AsyncMock()
@@ -94,11 +95,13 @@ async def test_extract_constraints_empty() -> None:
     constraints = result["recipe_constraints"]
     assert constraints["cuisine"] is None
     assert constraints["dietary"] == []
+    # meal_type gets a time-of-day default
+    assert constraints["meal_type"] is not None
 
 
 @pytest.mark.asyncio
 async def test_extract_constraints_graceful_failure() -> None:
-    """AI failure -> empty constraints, no crash."""
+    """AI failure -> empty constraints with only time-of-day meal_type default, no crash."""
     with patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager") as mock_get_mgr:
         mock_mgr = AsyncMock()
         mock_mgr.complete.side_effect = RuntimeError("provider unavailable")
@@ -107,7 +110,10 @@ async def test_extract_constraints_graceful_failure() -> None:
         state: dict[str, Any] = {"input_text": "make me something", "errors": []}
         result = await extract_recipe_constraints(state)  # type: ignore[arg-type]
 
-    assert result["recipe_constraints"] == {}
+    constraints = result["recipe_constraints"]
+    # Only meal_type should be set (from time-of-day default)
+    assert "meal_type" in constraints
+    assert constraints.get("cuisine") is None
 
 
 # ---------------------------------------------------------------------------
@@ -136,15 +142,15 @@ def test_score_cuisine_match() -> None:
 
 
 def test_score_excluded_ingredients() -> None:
-    """Excluded items get score -100 and sort last."""
+    """Excluded items are filtered out of the ranked results."""
     items = [
         _make_pantry_item("peanuts", days_until_expiry=60),
         _make_pantry_item("chicken", days_until_expiry=2),
     ]
     scored = score_and_rank(items, {"excluded_ingredients": ["peanuts"]})
     assert scored[0]["name"] == "chicken"
-    peanut_entry = next(s for s in scored if s["name"] == "peanuts")
-    assert peanut_entry["_score"] == -100
+    # Peanuts should be completely removed (not just scored low)
+    assert not any(s["name"] == "peanuts" for s in scored)
 
 
 def test_score_preferred_ingredients() -> None:
@@ -433,3 +439,146 @@ async def test_grounded_recipe_has_availability() -> None:
     avail = result["ingredient_availability"]
     assert any(a["name"] == "egg" and a["status"] == "have" for a in avail)
     assert any(a["name"] == "truffle oil" and a["status"] == "missing" for a in avail)
+
+
+# ---------------------------------------------------------------------------
+# 9. Non-numeric quantity handling
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_grounded_recipe_non_numeric_quantity() -> None:
+    """'to taste' as quantity doesn't crash — stored as preparation note."""
+    llm_result = LLMRecipeResult(
+        title="Seasoned Rice",
+        ingredients=[
+            {"name": "rice", "quantity": 2, "unit": "cup"},
+            {"name": "salt", "quantity": "to taste", "unit": ""},
+            {"name": "pepper", "quantity": "a pinch", "unit": ""},
+        ],
+        instructions=["Cook rice", "Season"],
+        confidence=0.85,
+    )
+    with patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager") as mock_get_mgr, \
+         patch("bubbly_chef.workflows.recipe.nodes.get_repository") as mock_repo:
+        mock_mgr = AsyncMock()
+        mock_mgr.complete.return_value = llm_result
+        mock_get_mgr.return_value = mock_mgr
+        mock_repo_inst = AsyncMock()
+        mock_repo_inst.get_all_pantry_items.return_value = []
+        mock_repo.return_value = mock_repo_inst
+
+        state: dict[str, Any] = {
+            "selected_recipe_name": "Seasoned Rice",
+            "recipe_constraints": {},
+            "scored_pantry_items": [],
+            "web_search_result": None,
+            "errors": [],
+            "warnings": [],
+            "request_id": str(uuid4()),
+            "workflow_id": str(uuid4()),
+        }
+        result = await generate_grounded_recipe(state)  # type: ignore[arg-type]
+
+    assert result["intent"] == Intent.RECIPE_CARD.value
+    proposal = result["proposal"]
+    recipe = proposal.recipe
+    salt = next(i for i in recipe.ingredients if i.name == "salt")
+    assert salt.quantity is None
+    assert salt.preparation is not None
+    assert "to taste" in salt.preparation
+
+    pepper = next(i for i in recipe.ingredients if i.name == "pepper")
+    assert pepper.quantity is None
+    assert "a pinch" in (pepper.preparation or "")
+
+
+# ---------------------------------------------------------------------------
+# 10. Time-of-day meal type defaulting
+# ---------------------------------------------------------------------------
+
+
+from datetime import datetime
+
+
+@pytest.mark.parametrize(
+    "hour,expected",
+    [
+        (6, "breakfast"),
+        (9, "breakfast"),
+        (12, "lunch"),
+        (15, "snack"),
+        (18, "dinner"),
+        (20, "dinner"),
+        (23, "late-night snack"),
+        (3, "late-night snack"),
+    ],
+)
+def test_default_meal_type_by_hour(hour: int, expected: str) -> None:
+    """_default_meal_type returns correct meal for each time bracket."""
+    with patch(
+        "bubbly_chef.workflows.recipe.nodes.datetime"
+    ) as mock_dt:
+        mock_dt.now.return_value = datetime(2026, 3, 31, hour, 0, 0)
+        assert _default_meal_type() == expected
+
+
+@pytest.mark.asyncio
+async def test_extract_constraints_defaults_meal_type() -> None:
+    """When LLM returns no meal_type, it gets defaulted from time of day."""
+    mock_result = RecipeConstraints(cuisine="Italian")
+    with patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager") as mock_get_mgr, \
+         patch("bubbly_chef.workflows.recipe.nodes.datetime") as mock_dt:
+        mock_mgr = AsyncMock()
+        mock_mgr.complete.return_value = mock_result
+        mock_get_mgr.return_value = mock_mgr
+        mock_dt.now.return_value = datetime(2026, 3, 31, 19, 0, 0)  # 7pm
+
+        state: dict[str, Any] = {"input_text": "give me a recipe", "errors": []}
+        result = await extract_recipe_constraints(state)  # type: ignore[arg-type]
+
+    assert result["recipe_constraints"]["cuisine"] == "Italian"
+    assert result["recipe_constraints"]["meal_type"] == "dinner"
+
+
+@pytest.mark.asyncio
+async def test_extract_constraints_preserves_explicit_meal_type() -> None:
+    """When LLM extracts a meal_type, the time-of-day default is NOT applied."""
+    mock_result = RecipeConstraints(meal_type="breakfast")
+    with patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager") as mock_get_mgr, \
+         patch("bubbly_chef.workflows.recipe.nodes.datetime") as mock_dt:
+        mock_mgr = AsyncMock()
+        mock_mgr.complete.return_value = mock_result
+        mock_get_mgr.return_value = mock_mgr
+        mock_dt.now.return_value = datetime(2026, 3, 31, 19, 0, 0)  # 7pm
+
+        state: dict[str, Any] = {"input_text": "breakfast ideas", "errors": []}
+        result = await extract_recipe_constraints(state)  # type: ignore[arg-type]
+
+    assert result["recipe_constraints"]["meal_type"] == "breakfast"
+
+
+@pytest.mark.asyncio
+async def test_brainstorm_prompt_includes_meal_type() -> None:
+    """brainstorm_recipe_ideas includes meal_type in the LLM prompt."""
+    brainstorm_text = "1. **Garlic Pasta** 2. **Chicken Stir Fry**\nWhich sounds good?"
+    with patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager") as mock_get_mgr:
+        mock_mgr = AsyncMock()
+        mock_mgr.complete.return_value = brainstorm_text
+        mock_get_mgr.return_value = mock_mgr
+
+        state: dict[str, Any] = {
+            "input_text": "give me a recipe",
+            "scored_pantry_items": [],
+            "recipe_constraints": {"meal_type": "dinner", "cuisine": None},
+            "conversation_history": [],
+            "errors": [],
+            "warnings": [],
+            "input_mode": "chat",
+        }
+        await brainstorm_recipe_ideas(state)  # type: ignore[arg-type]
+
+    # Verify the prompt sent to the LLM contains the meal type
+    call_kwargs = mock_mgr.complete.call_args
+    prompt = call_kwargs.kwargs.get("prompt") or call_kwargs.args[0]
+    assert "Meal type: dinner" in prompt

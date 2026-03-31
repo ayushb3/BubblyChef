@@ -62,7 +62,7 @@ class LLMIntentResult(BaseModel):
         description=(
             "One of: pantry_update, receipt_ingest_request,"
             " product_ingest_request, recipe_ingest_request,"
-            " general_chat"
+            " recipe_generation, cooking_help, general_chat"
         )
     )
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)

@@ -231,6 +231,7 @@ export type ChatIntent =
   | 'product_ingest_request'
   | 'recipe_ingest_request'
   | 'recipe_card'
+  | 'recipe_generation'
   | 'cooking_help'
   | 'general_chat'
   | 'recipe_brainstorm';

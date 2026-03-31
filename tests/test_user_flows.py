@@ -438,8 +438,8 @@ class TestFlow4_GeneralChat:
 
         assert_envelope_structure(envelope)
 
-        # "dinner idea" keyword now routes to recipe brainstorm path
-        assert envelope.intent in (Intent.COOKING_HELP, Intent.RECIPE_BRAINSTORM)
+        # "dinner idea" keyword now routes to recipe generation → brainstorm pipeline
+        assert envelope.intent in (Intent.RECIPE_GENERATION, Intent.RECIPE_BRAINSTORM)
 
         # Verify no proposal
         assert envelope.proposal is None

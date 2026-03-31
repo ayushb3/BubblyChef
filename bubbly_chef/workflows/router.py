@@ -62,7 +62,6 @@ from bubbly_chef.workflows.recipe.nodes import (
     extract_recipe_constraints,
     extract_selected_recipe,
     generate_grounded_recipe,
-    is_recipe_generation_request,
     research_recipe,
     score_pantry_ingredients,
 )
@@ -93,14 +92,19 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     "photographing a product, or looking up a specific product\n"
     "- recipe_ingest_request: User wants to SAVE, IMPORT, or STORE a "
     "recipe from a URL or text (must have save/import intent)\n"
-    "- cooking_help: User asking about cooking, recipes, meal ideas, "
-    "food storage, ingredient substitutions, what they can make, "
-    "or ANY food/kitchen-related question\n"
+    "- recipe_generation: User wants a recipe MADE for them — "
+    "meal ideas, dinner suggestions, 'give me a recipe', "
+    "'recipe for X', 'what's for dinner'\n"
+    "- cooking_help: User asking HOW-TO questions about cooking — "
+    "techniques, food storage, substitutions, temperatures, "
+    "cooking times (NOT recipe requests)\n"
     "- general_chat: ONLY for messages truly unrelated to food, cooking, "
     "or the kitchen (e.g. greetings, app questions, small talk)\n\n"
-    "IMPORTANT: When in doubt between cooking_help and general_chat, "
-    "prefer cooking_help. Any question about food, ingredients, meals, "
-    "or cooking should be cooking_help.\n\n"
+    "IMPORTANT: Distinguish recipe_generation from cooking_help:\n"
+    "- 'give me a pasta recipe' → recipe_generation\n"
+    "- 'how do I cook pasta?' → cooking_help\n"
+    "- 'dinner ideas' → recipe_generation\n"
+    "- 'how long does chicken last?' → cooking_help\n\n"
     "Be accurate. Look for key indicators:\n"
     '- "bought", "got", "purchased", "used", "consumed", "threw away",'
     ' "add", "remove" -> pantry_update\n'
@@ -110,9 +114,10 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     ' "what\'s this product" -> product_ingest_request\n'
     '- "save recipe", "import recipe", "add this recipe",'
     " has URL -> recipe_ingest_request\n"
-    '- "what can I make", "recipe for", "dinner ideas", "how to cook",'
-    ' "meal ideas", "food storage", "how long does X last",'
-    ' "substitute for", "what should I eat" -> cooking_help\n'
+    '- "give me a recipe", "recipe for", "dinner ideas", "meal ideas",'
+    ' "make me something", "suggest a meal" -> recipe_generation\n'
+    '- "how to cook", "how long does X last", "substitute for",'
+    ' "food storage", "what temperature" -> cooking_help\n'
     "- Everything else -> general_chat"
 )
 
@@ -170,27 +175,33 @@ async def load_session(state: WorkflowState) -> WorkflowState:
     """
     conversation_id = state.get("conversation_id")
     if not conversation_id:
+        logger.debug("No conversation_id — skipping session load")
         return {**state, "session": None, "session_mode": None}
 
     try:
         repo = await get_repository()
         session = await repo.get_or_create_session(conversation_id)
+        logger.debug(
+            f"Session loaded: conversation={conversation_id}, "
+            f"mode={session.active_mode.value}, updated_at={session.updated_at}"
+        )
 
         # Staleness check: reset if idle too long
         if not session.is_default():
             age = datetime.now(UTC) - session.updated_at
             if age > timedelta(minutes=SESSION_STALE_MINUTES):
+                stale_min = age.total_seconds() / 60
                 logger.info(
-                    "Session stale, resetting to default",
-                    extra={
-                        "conversation_id": conversation_id,
-                        "stale_minutes": age.total_seconds() / 60,
-                        "old_mode": session.active_mode,
-                    },
+                    f"Session stale ({stale_min:.0f}m idle), resetting: "
+                    f"{session.active_mode.value} → default"
                 )
                 session = session.reset()
                 await repo.update_session(session)
 
+        logger.info(
+            f"Session loaded: mode={session.active_mode.value}, "
+            f"conversation={conversation_id}"
+        )
         return {
             **state,
             "session": session.model_dump(mode="json"),
@@ -219,14 +230,16 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
 
     # ── R2: Mode-aware routing ──
     session_mode = state.get("session_mode")
+    logger.debug(
+        f"classify_intent: text='{input_text[:80]}', session_mode={session_mode}"
+    )
     if session_mode and session_mode != SessionMode.DEFAULT.value:
         text_lower = input_text.strip().lower()
 
         # Exit phrase breaks out of any active mode
         if text_lower in EXIT_PHRASES:
             logger.info(
-                "User exited session mode",
-                extra={"mode": session_mode, "phrase": text_lower},
+                f"Session exit: phrase='{text_lower}', exiting mode={session_mode}"
             )
             return {
                 **state,
@@ -246,13 +259,45 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
         }
         forced_intent = mode_intent_map.get(session_mode)
         if forced_intent:
-            # For recipe_exploring, check if this is a selection
+            logger.info(
+                f"Session mode override: {session_mode} → intent={forced_intent}"
+            )
+            # For recipe_exploring, check if this is a selection or modification
             if session_mode == SessionMode.RECIPE_EXPLORING.value:
+                # Detect recipe modification phrases like "no bacon",
+                # "less salt", "make it spicier", "without cheese"
+                modification_prefixes = (
+                    "no ", "less ", "more ", "without ", "add ",
+                    "make it ", "swap ", "replace ", "substitute ",
+                    "change ", "remove the ", "skip the ", "drop the ",
+                )
+                is_modification = any(
+                    text_lower.startswith(p) for p in modification_prefixes
+                )
+                if is_modification:
+                    logger.info(
+                        f"Recipe modification detected in RECIPE_EXPLORING: "
+                        f"'{input_text[:60]}'"
+                    )
+                    return {
+                        **state,
+                        "intent": Intent.RECIPE_CARD.value,
+                        "intent_confidence": 0.95,
+                        "intent_reasoning": (
+                            "Recipe modification follow-up (session mode)"
+                        ),
+                        "detected_entities": [],
+                        "selected_recipe_name": input_text,
+                    }
+
                 selected_name = extract_selected_recipe(
                     input_text,
                     state.get("conversation_history") or [],
                 )
                 if selected_name:
+                    logger.info(
+                        f"Recipe selected from session: '{selected_name}'"
+                    )
                     return {
                         **state,
                         "intent": Intent.RECIPE_CARD.value,
@@ -276,6 +321,10 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             input_text,
             state.get("conversation_history") or [],
         )
+        logger.info(
+            f"Intent classified: recipe_card "
+            f"(source=brainstorm_followup, selected='{selected_name}')"
+        )
         return {
             **state,
             "intent": Intent.RECIPE_CARD.value,
@@ -297,6 +346,7 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
         "receipt photo",
     ]
     if any(kw in text_lower for kw in receipt_keywords):
+        logger.info("Intent classified: receipt_ingest (source=keyword, match=receipt)")
         return {
             **state,
             "intent": Intent.RECEIPT_INGEST.value,
@@ -314,6 +364,7 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
         "look up this product",
     ]
     if any(kw in text_lower for kw in product_keywords):
+        logger.info("Intent classified: product_ingest (source=keyword, match=product)")
         return {
             **state,
             "intent": Intent.PRODUCT_INGEST.value,
@@ -338,6 +389,7 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
     recipe_ingest_keywords = ["save recipe", "import recipe", "add recipe", "store recipe",
                               "save this recipe", "import this recipe", "save that recipe"]
     if any(kw in text_lower for kw in recipe_ingest_keywords) or has_url:
+        logger.info(f"Intent classified: recipe_ingest (source=keyword, has_url={has_url})")
         return {
             **state,
             "intent": Intent.RECIPE_INGEST.value,
@@ -346,40 +398,129 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "detected_entities": ["recipe"],
         }
 
-    # Cooking help indicators (asking for ideas, not saving)
-    cooking_help_keywords = [
+    # Recipe brainstorm indicators — MUST be checked BEFORE recipe_generation
+    # These are open-ended "what can I make?" style questions
+    recipe_brainstorm_keywords = [
         "what can i make",
         "what can i cook",
+        "what should i make",
+        "what should i cook",
+        "what to make",
+        "what to cook",
+        "suggest a recipe",
+        "recipe ideas",
+        "recipe suggestions",
+        "with what i have",
+    ]
+    matched_brainstorm = next(
+        (kw for kw in recipe_brainstorm_keywords if kw in text_lower), None
+    )
+    if matched_brainstorm:
+        logger.info(
+            f"Intent classified: recipe_brainstorm "
+            f"(source=keyword, match='{matched_brainstorm}')"
+        )
+        return {
+            **state,
+            "intent": Intent.RECIPE_BRAINSTORM.value,
+            "intent_confidence": 0.92,
+            "intent_reasoning": (
+                f"User asking for recipe brainstorm (matched '{matched_brainstorm}')"
+            ),
+            "detected_entities": [],
+        }
+
+    # Recipe generation indicators — user wants a concrete recipe produced
+    recipe_generation_keywords = [
         "dinner idea",
         "lunch idea",
         "meal idea",
         "recipe for",
-        "how to cook",
-        "what should i make",
         "suggest a meal",
         "recipes with",
-        "use my",
-        "with what i have",
         "what's for dinner",
+        "give me a recipe",
+        "make me a recipe",
+        "i want a recipe",
+        "can you make",
+        "cook me",
+        "make me something",
+        "make me a",
+        "cook something",
+        "i'm craving",
+        "i feel like eating",
+        "something with",
+        "make for dinner",
+        "make for lunch",
+        "quick dinner",
+        "quick lunch",
+        "quick meal",
+        "easy dinner",
+        "easy meal",
+        "simple dinner",
+        "simple meal",
+        "healthy dinner",
+        "healthy meal",
+        "surprise me",
+        "something to eat",
     ]
-    if any(kw in text_lower for kw in cooking_help_keywords):
+    matched_generation = next(
+        (kw for kw in recipe_generation_keywords if kw in text_lower), None
+    )
+    if matched_generation:
+        logger.info(
+            f"Intent classified: recipe_generation "
+            f"(source=keyword, match='{matched_generation}')"
+        )
+        return {
+            **state,
+            "intent": Intent.RECIPE_GENERATION.value,
+            "intent_confidence": 0.90,
+            "intent_reasoning": (
+                f"User wants a recipe generated (matched '{matched_generation}')"
+            ),
+            "detected_entities": [],
+        }
+
+    # Generic "recipe" keyword - if no import/save verbs, user wants generation
+    if "recipe" in text_lower and not any(
+        v in text_lower for v in ["save", "import", "add", "store"]
+    ):
+        logger.info("Intent classified: recipe_generation (source=keyword, match='recipe' generic)")
+        return {
+            **state,
+            "intent": Intent.RECIPE_GENERATION.value,
+            "intent_confidence": 0.85,
+            "intent_reasoning": "Recipe request without import intent",
+            "detected_entities": [],
+        }
+
+    # Cooking help indicators (advice only: how-to, substitutions, storage)
+    cooking_help_keywords = [
+        "how to cook",
+        "how long does",
+        "substitute for",
+        "how do i",
+        "cooking tip",
+        "food storage",
+        "use my",
+        "can i freeze",
+        "is it safe",
+        "what temperature",
+    ]
+    matched_cooking = next(
+        (kw for kw in cooking_help_keywords if kw in text_lower), None
+    )
+    if matched_cooking:
+        logger.info(
+            f"Intent classified: cooking_help "
+            f"(source=keyword, match='{matched_cooking}')"
+        )
         return {
             **state,
             "intent": Intent.COOKING_HELP.value,
             "intent_confidence": 0.90,
-            "intent_reasoning": "User asking for cooking suggestions",
-            "detected_entities": [],
-        }
-
-    # Generic "recipe" keyword - if no import/save verbs, assume cooking_help
-    if "recipe" in text_lower and not any(
-        v in text_lower for v in ["save", "import", "add", "store"]
-    ):
-        return {
-            **state,
-            "intent": Intent.COOKING_HELP.value,
-            "intent_confidence": 0.85,
-            "intent_reasoning": "Recipe question without import intent",
+            "intent_reasoning": f"User asking for cooking help (matched '{matched_cooking}')",
             "detected_entities": [],
         }
 
@@ -397,12 +538,19 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
         "add to pantry",
         "remove from pantry",
     ]
-    if any(kw in text_lower for kw in pantry_keywords):
+    matched_pantry = next(
+        (kw for kw in pantry_keywords if kw in text_lower), None
+    )
+    if matched_pantry:
+        logger.info(
+            f"Intent classified: pantry_update "
+            f"(source=keyword, match='{matched_pantry}')"
+        )
         return {
             **state,
             "intent": Intent.PANTRY_UPDATE.value,
             "intent_confidence": 0.90,
-            "intent_reasoning": "Contains pantry action keywords",
+            "intent_reasoning": f"Contains pantry action keywords (matched '{matched_pantry}')",
             "detected_entities": [],  # Will be filled by parse step
         }
 
@@ -435,12 +583,17 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "receipt_ingest_request": Intent.RECEIPT_INGEST.value,
             "product_ingest_request": Intent.PRODUCT_INGEST.value,
             "recipe_ingest_request": Intent.RECIPE_INGEST.value,
+            "recipe_generation": Intent.RECIPE_GENERATION.value,
             "cooking_help": Intent.COOKING_HELP.value,
             "general_chat": Intent.GENERAL_CHAT.value,
         }
 
         intent = intent_mapping.get(result.intent.lower(), Intent.GENERAL_CHAT.value)
-        logger.info(f"Intent classified: {intent} (confidence: {result.confidence})")
+        logger.info(
+            f"Intent classified: {intent} "
+            f"(source=llm, confidence={result.confidence}, llm_intent={result.intent})"
+        )
+        logger.debug(f"LLM reasoning: {result.reasoning}, entities: {result.entities}")
 
         return {
             **state,
@@ -488,9 +641,11 @@ def route_by_intent(state: WorkflowState) -> str:
     elif intent == Intent.RECIPE_INGEST.value:
         return "build_handoff_recipe"
     elif intent == Intent.COOKING_HELP.value:
-        if is_recipe_generation_request(state):
-            return "extract_recipe_constraints"
         return "cooking_help_response"
+    elif intent == Intent.RECIPE_GENERATION.value:
+        return "extract_recipe_constraints"
+    elif intent == Intent.RECIPE_BRAINSTORM.value:
+        return "extract_recipe_constraints"
     elif intent == Intent.RECIPE_CARD.value:
         if state.get("selected_recipe_name"):
             return "research_recipe"
@@ -570,24 +725,32 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
         repo = await get_repository()
         session = await repo.get_or_create_session(conversation_id)
         intent = state.get("intent", Intent.GENERAL_CHAT.value)
+        old_mode = session.active_mode.value
 
         # Handle explicit exit
         if state.get("_exit_mode"):
             session = session.reset()
             await repo.update_session(session)
+            logger.info(f"Session reset (exit phrase): {old_mode} → default")
             return state
 
         # Mode transition rules
-        if intent == Intent.RECIPE_BRAINSTORM.value:
+        if intent in (Intent.RECIPE_BRAINSTORM.value, Intent.RECIPE_GENERATION.value):
             session.active_mode = SessionMode.RECIPE_EXPLORING
             session.metadata["brainstorm_ideas"] = state.get("brainstorm_ideas", [])
 
         elif intent == Intent.RECIPE_CARD.value:
             proposal = state.get("proposal")
             if proposal is not None:
-                session.active_mode = SessionMode.DEFAULT
+                # Stay in RECIPE_EXPLORING so follow-ups like "no bacon"
+                # or "make it spicier" are treated as recipe refinements
+                # rather than falling through to LLM (which misclassifies
+                # them as pantry_update).
+                session.active_mode = SessionMode.RECIPE_EXPLORING
                 session.pinned_recipe_id = None
-                session.metadata = {}
+                session.metadata["last_recipe_title"] = getattr(
+                    getattr(proposal, "recipe", None), "title", None
+                )
             # else: stay in current mode
 
         elif intent == Intent.PANTRY_UPDATE.value:
@@ -597,8 +760,30 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 session.active_mode = SessionMode.DEFAULT
                 session.pending_proposal = None
 
-        # general_chat / cooking_help don't change mode
-        # (if in cooking mode, stay in cooking mode)
+        elif intent == Intent.COOKING_HELP.value:
+            # Belt-and-suspenders: if brainstorm_ideas exist in state,
+            # the brainstorm pipeline ran even though intent was COOKING_HELP.
+            # Transition to RECIPE_EXPLORING so follow-ups work.
+            if state.get("brainstorm_ideas"):
+                session.active_mode = SessionMode.RECIPE_EXPLORING
+                session.metadata["brainstorm_ideas"] = state.get("brainstorm_ideas", [])
+                logger.info(
+                    f"Session transition (brainstorm fallback): "
+                    f"{old_mode} → recipe_exploring "
+                    "(intent=cooking_help but brainstorm_ideas present)"
+                )
+
+        # general_chat / cooking_help (without brainstorm) don't change mode
+
+        new_mode = session.active_mode.value
+        if new_mode != old_mode:
+            logger.info(
+                f"Session transition: {old_mode} → {new_mode} (intent={intent})"
+            )
+        else:
+            logger.debug(
+                f"Session unchanged: mode={old_mode}, intent={intent}"
+            )
 
         await repo.update_session(session)
     except Exception as e:
@@ -1034,24 +1219,24 @@ async def run_chat_workflow_streaming(
     input_mode = mode  # alias used below
 
     logger.info(
-        "Stream: intent classified",
-        extra={
-            "intent": intent,
-            "confidence": classified_state.get("intent_confidence"),
-            "reasoning": classified_state.get("intent_reasoning"),
-            "mode": input_mode,
-            "message_preview": message[:80],
-        },
+        f"Stream: intent={intent}, confidence={classified_state.get('intent_confidence')}, "
+        f"reasoning={classified_state.get('intent_reasoning')}, mode={input_mode}"
+    )
+    logger.debug(
+        f"Stream context: session_mode={classified_state.get('session_mode')}, "
+        f"message='{message[:80]}'"
     )
 
-    # Only stream for free-text intents
+    # Only stream for free-text intents.
+    # RECIPE_BRAINSTORM must NOT be streamed — it needs the full pipeline
+    # (constraint extraction → pantry scoring → brainstorm generation)
+    # to produce structured brainstorm_ideas and transition to RECIPE_EXPLORING.
     streamable_intents = {
         Intent.GENERAL_CHAT.value,
         Intent.COOKING_HELP.value,
-        Intent.RECIPE_BRAINSTORM.value,
     }
     if intent == Intent.COOKING_HELP.value and input_mode == "recipe":
-        intent = Intent.COOKING_HELP.value  # keep intent but force non-streamable path
+        intent = Intent.RECIPE_GENERATION.value
         logger.info("Recipe mode: routing cooking_help through grounded recipe generation")
         final_state = await graph.ainvoke(initial_state)
         env = _build_envelope_from_state(final_state, message, conversation_id)
@@ -1153,6 +1338,10 @@ async def run_chat_workflow_streaming(
         }
     )
     await update_session_node(stream_final_state)
+    logger.debug(
+        f"Stream session updated: intent={intent}, "
+        f"response_length={len(collected_text)}"
+    )
 
     # Build final envelope
     envelope = create_general_chat_envelope(
