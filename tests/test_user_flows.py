@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import date, timedelta
 from uuid import UUID
 
-from bubbly_chef.workflows.chat_ingest import run_chat_workflow
+from bubbly_chef.workflows.router import run_chat_workflow
 from bubbly_chef.workflows.state import (
     LLMParseResult,
     LLMParsedItem,
@@ -42,7 +42,9 @@ def mock_repository():
     """Prevent workflow nodes from hitting the real DB."""
     repo_mock = AsyncMock()
     repo_mock.get_all_pantry_items.return_value = []
-    with patch("bubbly_chef.workflows.chat_ingest.get_repository", return_value=repo_mock):
+    with patch("bubbly_chef.workflows.router.get_repository", return_value=repo_mock), \
+         patch("bubbly_chef.workflows.chat.nodes.get_repository", return_value=repo_mock), \
+         patch("bubbly_chef.workflows.recipe.nodes.get_repository", return_value=repo_mock):
         yield repo_mock
 
 
@@ -146,7 +148,16 @@ class TestFlow1_SimplePantryAdd:
         ]
 
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.recipe.nodes.get_ai_manager",
             return_value=mock_llm_client,
         ):
             envelope = await run_chat_workflow("I bought milk and a dozen eggs.")
@@ -251,7 +262,16 @@ class TestFlow2_PantryConsume:
         ]
 
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.recipe.nodes.get_ai_manager",
             return_value=mock_llm_client,
         ):
             envelope = await run_chat_workflow("I used half my milk and 2 eggs.")
@@ -329,7 +349,16 @@ class TestFlow3_AmbiguousItem:
         ]
 
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.recipe.nodes.get_ai_manager",
             return_value=mock_llm_client,
         ):
             envelope = await run_chat_workflow("Add salsa.")
@@ -391,7 +420,16 @@ class TestFlow4_GeneralChat:
         ]
 
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.recipe.nodes.get_ai_manager",
             return_value=mock_llm_client,
         ):
             envelope = await run_chat_workflow(
@@ -437,7 +475,16 @@ class TestFlow5_ReceiptIngest:
         ]
 
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.recipe.nodes.get_ai_manager",
             return_value=mock_llm_client,
         ):
             envelope = await run_chat_workflow("I scanned a receipt, add it.")
@@ -489,7 +536,16 @@ class TestFlow6_ProductScan:
         ]
 
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.recipe.nodes.get_ai_manager",
             return_value=mock_llm_client,
         ):
             envelope = await run_chat_workflow("Can you scan this barcode for me?")
@@ -540,7 +596,16 @@ class TestFlow7_RecipeIngest:
         ]
 
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.recipe.nodes.get_ai_manager",
             return_value=mock_llm_client,
         ):
             envelope = await run_chat_workflow(
@@ -612,7 +677,16 @@ class TestFlow8_MixedMessage:
         ]
 
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.recipe.nodes.get_ai_manager",
             return_value=mock_llm_client,
         ):
             # Use message that triggers "bought" keyword before any cooking_help keyword
@@ -679,7 +753,16 @@ class TestFlow9_Correction:
         ]
 
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.recipe.nodes.get_ai_manager",
             return_value=mock_llm_client,
         ):
             envelope = await run_chat_workflow("Actually not eggs—make that yogurt.")
@@ -713,7 +796,16 @@ class TestErrorHandling:
         mock_llm_client.complete.return_value = "I'm here to help with your pantry!"
 
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.recipe.nodes.get_ai_manager",
             return_value=mock_llm_client,
         ):
             envelope = await run_chat_workflow("")
@@ -732,7 +824,16 @@ class TestErrorHandling:
         mock_llm_client.complete.side_effect = NoProviderAvailableError("Connection timeout")
 
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.recipe.nodes.get_ai_manager",
             return_value=mock_llm_client,
         ):
             envelope = await run_chat_workflow("I bought milk")
@@ -783,7 +884,16 @@ class TestStableKeys:
         ]
 
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.recipe.nodes.get_ai_manager",
             return_value=mock_llm_client,
         ):
             # Run twice to verify keys are the same
@@ -833,7 +943,16 @@ class TestRoutingCorrectness:
         ]
 
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.recipe.nodes.get_ai_manager",
             return_value=mock_llm_client,
         ):
             envelope = await run_chat_workflow("Upload receipt")
@@ -864,7 +983,16 @@ class TestRoutingCorrectness:
         ]
 
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_llm_client,
+        ), patch(
+            "bubbly_chef.workflows.recipe.nodes.get_ai_manager",
             return_value=mock_llm_client,
         ):
             envelope = await run_chat_workflow("Hello")

@@ -3,7 +3,7 @@
 from typing import Any
 
 # Lazy imports to avoid circular dependencies.
-# Use: from bubbly_chef.workflows.chat_ingest import run_chat_workflow
+# Use: from bubbly_chef.workflows.router import run_chat_workflow
 
 __all__ = [
     "run_chat_workflow",
@@ -27,7 +27,7 @@ def __getattr__(name: str) -> Any:  # noqa: N807
         "build_chat_router_graph",
         "run_chat_ingest",
     ):
-        from bubbly_chef.workflows.chat_ingest import (  # noqa: F401
+        from bubbly_chef.workflows.router import (  # noqa: F401
             build_chat_router_graph,
             get_chat_router_graph,
             run_chat_ingest,

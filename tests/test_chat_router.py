@@ -17,19 +17,21 @@ from uuid import uuid4
 
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
 from bubbly_chef.models.pantry import ActionType, FoodCategory
-from bubbly_chef.workflows.chat_ingest import (
+from bubbly_chef.workflows.router import (
     run_chat_workflow,
     run_chat_ingest,
     classify_intent,
     route_by_intent,
-    normalize_items,
-    apply_expiry_heuristics,
-    create_actions,
-    review_gate,
     build_handoff_receipt,
     build_handoff_product,
     build_handoff_recipe,
     initialize_state,
+)
+from bubbly_chef.workflows.pantry.nodes import (
+    normalize_items,
+    apply_expiry_heuristics,
+    create_actions,
+    review_gate,
 )
 from bubbly_chef.workflows.state import (
     WorkflowState,
@@ -44,7 +46,8 @@ def mock_repository():
     """Prevent workflow nodes from hitting the real DB."""
     repo_mock = AsyncMock()
     repo_mock.get_all_pantry_items.return_value = []
-    with patch("bubbly_chef.workflows.chat_ingest.get_repository", return_value=repo_mock), \
+    with patch("bubbly_chef.workflows.router.get_repository", return_value=repo_mock), \
+         patch("bubbly_chef.workflows.chat.nodes.get_repository", return_value=repo_mock), \
          patch("bubbly_chef.workflows.recipe.nodes.get_repository", return_value=repo_mock):
         yield repo_mock
 
@@ -492,9 +495,12 @@ class TestFullWorkflow:
         mock_manager = AsyncMock()
         mock_manager.complete.return_value = "I'm happy to help with your kitchen!"
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
             return_value=mock_manager,
         ) as mock_get_mgr, patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
+            return_value=mock_manager,
+        ), patch(
             "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
             return_value=mock_manager,
         ):
@@ -568,7 +574,10 @@ class TestOutputContract:
         mock_manager = AsyncMock()
         mock_manager.complete.return_value = "Hello! I can help with your kitchen."
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_manager,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
             return_value=mock_manager,
         ), patch(
             "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
@@ -646,7 +655,10 @@ class TestEdgeCases:
         mock_manager = AsyncMock()
         mock_manager.complete.return_value = "I can help with that!"
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_manager,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
             return_value=mock_manager,
         ), patch(
             "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
@@ -718,7 +730,10 @@ class TestPantryContextInjection:
         mock_manager = AsyncMock()
         mock_manager.complete.return_value = "Here are some recipe ideas based on your pantry."
         with patch(
-            "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            "bubbly_chef.workflows.router.get_ai_manager",
+            return_value=mock_manager,
+        ), patch(
+            "bubbly_chef.workflows.chat.nodes.get_ai_manager",
             return_value=mock_manager,
         ), patch(
             "bubbly_chef.workflows.pantry.nodes.get_ai_manager",

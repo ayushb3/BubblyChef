@@ -20,7 +20,7 @@ from fastapi.responses import StreamingResponse
 from bubbly_chef.models.base import ProposalEnvelope
 from bubbly_chef.models.requests import ChatRequest
 from bubbly_chef.repository.sqlite import get_repository
-from bubbly_chef.workflows.chat_ingest import run_chat_workflow, run_chat_workflow_streaming
+from bubbly_chef.workflows.router import run_chat_workflow, run_chat_workflow_streaming
 
 logger = logging.getLogger(__name__)
 

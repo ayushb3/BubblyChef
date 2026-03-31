@@ -19,8 +19,10 @@ class TestChatEndpoint:
         repo_mock.get_conversation_history.return_value = []
 
         with (
-            patch("bubbly_chef.workflows.chat_ingest.get_ai_manager", return_value=mock_manager),
-            patch("bubbly_chef.workflows.chat_ingest.get_repository", return_value=repo_mock),
+            patch("bubbly_chef.workflows.router.get_ai_manager", return_value=mock_manager),
+            patch("bubbly_chef.workflows.chat.nodes.get_ai_manager", return_value=mock_manager),
+            patch("bubbly_chef.workflows.pantry.nodes.get_ai_manager", return_value=mock_manager),
+            patch("bubbly_chef.workflows.router.get_repository", return_value=repo_mock),
             patch("bubbly_chef.api.routes.chat.get_repository", return_value=repo_mock),
         ):
             response = await client.post(
@@ -43,7 +45,7 @@ class TestChatEndpoint:
         repo_mock.get_conversation_history.return_value = []
 
         with (
-            patch("bubbly_chef.workflows.chat_ingest.get_repository", return_value=repo_mock),
+            patch("bubbly_chef.workflows.router.get_repository", return_value=repo_mock),
             patch("bubbly_chef.api.routes.chat.get_repository", return_value=repo_mock),
         ):
             response = await client.post(
@@ -73,8 +75,10 @@ class TestChatEndpoint:
         repo_mock.get_conversation_history.return_value = []
 
         with (
-            patch("bubbly_chef.workflows.chat_ingest.get_ai_manager", return_value=mock_manager),
-            patch("bubbly_chef.workflows.chat_ingest.get_repository", return_value=repo_mock),
+            patch("bubbly_chef.workflows.router.get_ai_manager", return_value=mock_manager),
+            patch("bubbly_chef.workflows.chat.nodes.get_ai_manager", return_value=mock_manager),
+            patch("bubbly_chef.workflows.pantry.nodes.get_ai_manager", return_value=mock_manager),
+            patch("bubbly_chef.workflows.router.get_repository", return_value=repo_mock),
             patch("bubbly_chef.api.routes.chat.get_repository", return_value=repo_mock),
         ):
             response = await client.post(
@@ -98,8 +102,10 @@ class TestChatEndpoint:
         repo_mock.get_conversation_history.return_value = []
 
         with (
-            patch("bubbly_chef.workflows.chat_ingest.get_ai_manager", return_value=mock_manager),
-            patch("bubbly_chef.workflows.chat_ingest.get_repository", return_value=repo_mock),
+            patch("bubbly_chef.workflows.router.get_ai_manager", return_value=mock_manager),
+            patch("bubbly_chef.workflows.chat.nodes.get_ai_manager", return_value=mock_manager),
+            patch("bubbly_chef.workflows.pantry.nodes.get_ai_manager", return_value=mock_manager),
+            patch("bubbly_chef.workflows.router.get_repository", return_value=repo_mock),
             patch("bubbly_chef.api.routes.chat.get_repository", return_value=repo_mock),
         ):
             response = await client.post("/v1/chat", json={"message": "Hello"})
