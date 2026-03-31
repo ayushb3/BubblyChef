@@ -1,11 +1,14 @@
 """Abstract repository interface."""
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.models.recipe import RecipeCard
+
+if TYPE_CHECKING:
+    from bubbly_chef.models.session import ConversationSession
 
 
 class Repository(ABC):
@@ -105,4 +108,17 @@ class Repository(ABC):
     @abstractmethod
     async def get_ingestion_log(self, request_id: UUID) -> dict[str, Any] | None:
         """Get an ingestion log by request ID."""
+        pass
+
+    # Session operations
+    @abstractmethod
+    async def get_or_create_session(self, conversation_id: str) -> "ConversationSession":
+        """Get existing session or create a default one."""
+        pass
+
+    @abstractmethod
+    async def update_session(
+        self, session: "ConversationSession"
+    ) -> "ConversationSession":
+        """Persist session state changes."""
         pass

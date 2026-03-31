@@ -10,7 +10,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from .provider import AIProvider, ProviderUnavailableError
+from .provider import AIProvider, ProviderUnavailableError, StructuredOutputError
 
 logger = logging.getLogger(__name__)
 
@@ -77,13 +77,13 @@ class AIManager:
         """
         errors = []
         start_time = datetime.now()
+        max_structured_retries = 2
 
         for provider in self.providers:
             try:
                 if not await provider.is_available():
                     logger.warning(
-                        "AI provider not available, skipping",
-                        extra={"provider": provider.name},
+                        f"AI provider [{provider.name}] not available, skipping"
                     )
                     errors.append(
                         f"{provider.name}: not available (check credentials/model/connection)"
@@ -91,56 +91,63 @@ class AIManager:
                     continue
 
                 logger.info(
-                    "AI request starting",
-                    extra={
-                        "provider": provider.name,
-                        "prompt_length": len(prompt),
-                        "has_schema": response_schema is not None,
-                        "temperature": temperature,
-                    },
+                    f"AI request starting on [{provider.name}] "
+                    f"(prompt_len={len(prompt)}, schema={response_schema is not None})"
                 )
 
-                result = await provider.complete(
-                    prompt=prompt,
-                    response_schema=response_schema,
-                    temperature=temperature,
-                )
-                self._current_provider = provider
+                current_prompt = prompt
+                last_structured_error: StructuredOutputError | None = None
+                total_attempts = 1 + (max_structured_retries if response_schema else 0)
 
-                elapsed = (datetime.now() - start_time).total_seconds()
-                logger.info(
-                    "AI request completed",
-                    extra={
-                        "provider": provider.name,
-                        "elapsed_seconds": elapsed,
-                        "response_type": type(result).__name__,
-                    },
-                )
+                for attempt in range(total_attempts):
+                    try:
+                        result = await provider.complete(
+                            prompt=current_prompt,
+                            response_schema=response_schema,
+                            temperature=temperature,
+                        )
+                        self._current_provider = provider
 
-                return result
+                        elapsed = (datetime.now() - start_time).total_seconds()
+                        logger.info(
+                            f"AI request completed on [{provider.name}] "
+                            f"in {elapsed:.2f}s → {type(result).__name__}"
+                        )
+
+                        return result
+
+                    except StructuredOutputError as e:
+                        last_structured_error = e
+                        if attempt < max_structured_retries and response_schema is not None:
+                            logger.warning(
+                                f"[{provider.name}] structured output validation failed "
+                                f"(attempt {attempt + 1}): {e}"
+                            )
+                            current_prompt = (
+                                prompt
+                                + "\n\n[RETRY: Your previous response had a validation"
+                                f" error: {e}. "
+                                "Please fix and return valid JSON matching the schema.]"
+                            )
+                            continue
+                        raise
+
+                if last_structured_error:
+                    raise last_structured_error
 
             except ProviderUnavailableError as e:
                 elapsed = (datetime.now() - start_time).total_seconds()
                 logger.warning(
-                    "AI provider failed, trying next",
-                    extra={
-                        "provider": provider.name,
-                        "error": str(e),
-                        "elapsed_seconds": elapsed,
-                    },
+                    f"AI provider [{provider.name}] failed after {elapsed:.2f}s: {e} "
+                    "— trying next"
                 )
                 errors.append(f"{provider.name}: {e}")
                 continue
             except Exception as e:
                 elapsed = (datetime.now() - start_time).total_seconds()
                 logger.error(
-                    "AI request failed with unexpected error",
-                    extra={
-                        "provider": provider.name,
-                        "error": str(e),
-                        "error_type": type(e).__name__,
-                        "elapsed_seconds": elapsed,
-                    },
+                    f"AI provider [{provider.name}] unexpected {type(e).__name__} "
+                    f"after {elapsed:.2f}s: {e}",
                     exc_info=True,
                 )
                 errors.append(f"{provider.name}: {e}")
@@ -148,11 +155,7 @@ class AIManager:
 
         elapsed = (datetime.now() - start_time).total_seconds()
         logger.error(
-            "All AI providers failed",
-            extra={
-                "elapsed_seconds": elapsed,
-                "errors": errors,
-            },
+            f"All AI providers failed after {elapsed:.2f}s: {errors}"
         )
         raise NoProviderAvailableError(f"All providers failed. Errors: {errors}")
 
@@ -184,12 +187,8 @@ class AIManager:
                     continue
 
                 logger.info(
-                    "AI vision request starting",
-                    extra={
-                        "provider": provider.name,
-                        "image_bytes": len(image_bytes),
-                        "has_schema": response_schema is not None,
-                    },
+                    f"AI vision request starting on [{provider.name}] "
+                    f"(image_bytes={len(image_bytes)}, schema={response_schema is not None})"
                 )
 
                 result = await provider.vision_complete(
@@ -203,8 +202,7 @@ class AIManager:
 
                 elapsed = (datetime.now() - start_time).total_seconds()
                 logger.info(
-                    "AI vision request completed",
-                    extra={"provider": provider.name, "elapsed_seconds": elapsed},
+                    f"AI vision request completed on [{provider.name}] in {elapsed:.2f}s"
                 )
                 return result
 
@@ -213,8 +211,7 @@ class AIManager:
                 continue
             except Exception as e:
                 logger.error(
-                    "AI vision request failed",
-                    extra={"provider": provider.name, "error": str(e)},
+                    f"AI vision [{provider.name}] unexpected error: {e}",
                     exc_info=True,
                 )
                 errors.append(f"{provider.name}: {e}")
@@ -243,8 +240,7 @@ class AIManager:
                     continue
 
                 logger.info(
-                    "AI stream starting",
-                    extra={"provider": provider.name, "prompt_length": len(prompt)},
+                    f"AI stream starting on [{provider.name}] (prompt_len={len(prompt)})"
                 )
 
                 async for token in provider.stream_complete(
@@ -255,8 +251,8 @@ class AIManager:
 
             except Exception as e:
                 logger.warning(
-                    "AI stream failed, trying next provider",
-                    extra={"provider": provider.name, "error": str(e)},
+                    f"AI stream [{provider.name}] failed: {type(e).__name__}: {e} "
+                    "— trying next provider"
                 )
                 errors.append(f"{provider.name}: {e}")
                 continue

@@ -213,7 +213,7 @@ export function Dashboard() {
               </button>
 
               <button
-                onClick={() => navigate('/chat?mode=recipe')}
+                onClick={() => navigate('/chat')}
                 className="flex flex-col items-center gap-2 p-4 bg-pastel-lavender dark:bg-night-lavender rounded-2xl hover:shadow-soft transition-all active:scale-95 min-h-[44px]"
               >
                 <Sparkles className="text-deep-lavender dark:text-white" size={28} strokeWidth={2} />
@@ -266,7 +266,7 @@ export function Dashboard() {
           </div>
 
           {/* Tip of the Day — full width on desktop */}
-          <TipOfTheDay expiringItem={expiringItems?.[0]?.name ? titleCase(expiringItems[0].name) : null} onTryNow={() => navigate('/chat?mode=recipe')} />
+          <TipOfTheDay expiringItem={expiringItems?.[0]?.name ? titleCase(expiringItems[0].name) : null} onTryNow={() => navigate('/chat')} />
 
         </div>
       </section>

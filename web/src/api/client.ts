@@ -23,7 +23,6 @@ import type {
   ProfileResponse,
   ChatRequest,
   ChatResponse,
-  ChatMode,
   ConversationHistoryTurn,
   Decoration,
   StreamEvent,
@@ -327,37 +326,17 @@ export function useRecipeSuggestions() {
   });
 }
 
-// ─── Mode-aware suggestions ─────────────────────────────────────────────────
+// ─── Chat suggestions ─────────────────────────────────────────────────────────
 
-const STATIC_SUGGESTIONS: Record<Exclude<ChatMode, 'recipe'>, string[]> = {
-  chat: [
-    "What can I make with what I have?",
-    "I just bought milk, eggs, and cheese",
-    "How long does cooked chicken last?",
-    "What's expiring soon in my pantry?",
-  ],
-  learn: [
-    "How do I properly sear a steak?",
-    "What's the difference between baking soda and powder?",
-    "How do I make a roux?",
-    "What does 'deglaze' mean?",
-  ],
-};
+const CHAT_SUGGESTIONS = [
+  "What can I make with what I have?",
+  "I just bought milk, eggs, and cheese",
+  "How long does cooked chicken last?",
+  "What's expiring soon in my pantry?",
+];
 
-export function useModeSuggestions(mode: ChatMode) {
-  const recipeSuggestions = useRecipeSuggestions();
-
-  if (mode === 'recipe') {
-    return {
-      data: recipeSuggestions.data ?? [],
-      isLoading: recipeSuggestions.isLoading,
-    };
-  }
-
-  return {
-    data: STATIC_SUGGESTIONS[mode],
-    isLoading: false,
-  };
+export function useChatSuggestions() {
+  return { data: CHAT_SUGGESTIONS, isLoading: false };
 }
 
 // User Profile API Functions

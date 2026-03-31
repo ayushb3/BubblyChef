@@ -219,10 +219,6 @@ export interface ProfileResponse {
   profile: UserProfile;
 }
 
-// ─── Chat Mode ───────────────────────────────────────────────────────────────
-
-export type ChatMode = 'chat' | 'recipe' | 'learn';
-
 // ─── Chat / Conversational AI Types ───────────────────────────────────────────
 
 /**
@@ -322,7 +318,6 @@ export interface ChatResponse {
   warnings: string[];
   errors: string[];
   workflow_status: string;
-  suggested_mode?: ChatMode | null;
   suggested_action?: string | null;
   created_at: string;
   metadata?: Record<string, unknown> | null;
@@ -332,7 +327,6 @@ export interface ChatResponse {
 export interface ChatRequest {
   message: string;
   conversation_id?: string | null;
-  mode?: ChatMode;
 }
 
 /** A stored history turn from GET /v1/conversations/{id}/history. */

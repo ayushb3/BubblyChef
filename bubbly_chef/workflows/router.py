@@ -16,7 +16,7 @@ Architecture:
 
 import logging
 from collections.abc import AsyncIterator
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -36,6 +36,7 @@ from bubbly_chef.models.pantry import (
 )
 from bubbly_chef.models.proposals import HandoffKind
 from bubbly_chef.models.recipe import RecipeCardProposal
+from bubbly_chef.models.session import SessionMode
 from bubbly_chef.repository.sqlite import get_repository
 from bubbly_chef.workflows.chat.nodes import (
     GENERAL_CHAT_SYSTEM_PROMPT,
@@ -151,6 +152,55 @@ def initialize_state(state: WorkflowState) -> WorkflowState:
     }
 
 
+# Session staleness threshold (reset to default if idle too long)
+SESSION_STALE_MINUTES = 30
+
+# Exit phrases that break out of any non-default session mode
+EXIT_PHRASES = {
+    "exit", "stop", "quit", "cancel", "go back", "never mind", "nevermind",
+    "done", "back", "end", "leave",
+}
+
+
+async def load_session(state: WorkflowState) -> WorkflowState:
+    """
+    Node: Load or create the conversation session.
+
+    If session is stale (>30 min since last update), reset to default.
+    """
+    conversation_id = state.get("conversation_id")
+    if not conversation_id:
+        return {**state, "session": None, "session_mode": None}
+
+    try:
+        repo = await get_repository()
+        session = await repo.get_or_create_session(conversation_id)
+
+        # Staleness check: reset if idle too long
+        if not session.is_default():
+            age = datetime.now(UTC) - session.updated_at
+            if age > timedelta(minutes=SESSION_STALE_MINUTES):
+                logger.info(
+                    "Session stale, resetting to default",
+                    extra={
+                        "conversation_id": conversation_id,
+                        "stale_minutes": age.total_seconds() / 60,
+                        "old_mode": session.active_mode,
+                    },
+                )
+                session = session.reset()
+                await repo.update_session(session)
+
+        return {
+            **state,
+            "session": session.model_dump(mode="json"),
+            "session_mode": session.active_mode.value,
+        }
+    except Exception as e:
+        logger.warning(f"Failed to load session: {e}")
+        return {**state, "session": None, "session_mode": None}
+
+
 async def classify_intent(state: WorkflowState) -> WorkflowState:
     """
     Node: Use LLM to classify user intent.
@@ -166,6 +216,59 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "intent_confidence": 0.0,
             "errors": state.get("errors", []) + ["Empty input text"],
         }
+
+    # ── R2: Mode-aware routing ──
+    session_mode = state.get("session_mode")
+    if session_mode and session_mode != SessionMode.DEFAULT.value:
+        text_lower = input_text.strip().lower()
+
+        # Exit phrase breaks out of any active mode
+        if text_lower in EXIT_PHRASES:
+            logger.info(
+                "User exited session mode",
+                extra={"mode": session_mode, "phrase": text_lower},
+            )
+            return {
+                **state,
+                "intent": Intent.GENERAL_CHAT.value,
+                "intent_confidence": 1.0,
+                "intent_reasoning": f"User exited {session_mode} mode",
+                "detected_entities": [],
+                "_exit_mode": True,
+            }
+
+        # Route based on active mode
+        mode_intent_map: dict[str, str] = {
+            SessionMode.COOKING.value: Intent.COOKING_HELP.value,
+            SessionMode.RECIPE_EXPLORING.value: Intent.RECIPE_BRAINSTORM.value,
+            SessionMode.INGESTING.value: Intent.PANTRY_UPDATE.value,
+            SessionMode.PANTRY_EDITING.value: Intent.PANTRY_UPDATE.value,
+        }
+        forced_intent = mode_intent_map.get(session_mode)
+        if forced_intent:
+            # For recipe_exploring, check if this is a selection
+            if session_mode == SessionMode.RECIPE_EXPLORING.value:
+                selected_name = extract_selected_recipe(
+                    input_text,
+                    state.get("conversation_history") or [],
+                )
+                if selected_name:
+                    return {
+                        **state,
+                        "intent": Intent.RECIPE_CARD.value,
+                        "intent_confidence": 0.95,
+                        "intent_reasoning": "Recipe selected from brainstorm (session mode)",
+                        "detected_entities": [],
+                        "selected_recipe_name": selected_name,
+                    }
+
+            return {
+                **state,
+                "intent": forced_intent,
+                "intent_confidence": 0.95,
+                "intent_reasoning": f"Continued from active {session_mode} session",
+                "detected_entities": [],
+            }
 
     # Check for brainstorm follow-up FIRST (before any keyword matching)
     if detect_brainstorm_followup(state):
@@ -453,6 +556,55 @@ def build_handoff_recipe(state: WorkflowState) -> WorkflowState:
     }
 
 
+async def update_session_node(state: WorkflowState) -> WorkflowState:
+    """
+    Node: Update session mode based on workflow outcome.
+
+    Runs before END on every path. Implements mode transition logic.
+    """
+    conversation_id = state.get("conversation_id")
+    if not conversation_id:
+        return state
+
+    try:
+        repo = await get_repository()
+        session = await repo.get_or_create_session(conversation_id)
+        intent = state.get("intent", Intent.GENERAL_CHAT.value)
+
+        # Handle explicit exit
+        if state.get("_exit_mode"):
+            session = session.reset()
+            await repo.update_session(session)
+            return state
+
+        # Mode transition rules
+        if intent == Intent.RECIPE_BRAINSTORM.value:
+            session.active_mode = SessionMode.RECIPE_EXPLORING
+            session.metadata["brainstorm_ideas"] = state.get("brainstorm_ideas", [])
+
+        elif intent == Intent.RECIPE_CARD.value:
+            proposal = state.get("proposal")
+            if proposal is not None:
+                session.active_mode = SessionMode.DEFAULT
+                session.pinned_recipe_id = None
+                session.metadata = {}
+            # else: stay in current mode
+
+        elif intent == Intent.PANTRY_UPDATE.value:
+            if state.get("requires_review"):
+                session.active_mode = SessionMode.INGESTING
+            else:
+                session.active_mode = SessionMode.DEFAULT
+                session.pending_proposal = None
+
+        # general_chat / cooking_help don't change mode
+        # (if in cooking mode, stay in cooking mode)
+
+        await repo.update_session(session)
+    except Exception as e:
+        logger.warning(f"Failed to update session: {e}")
+
+    return state
 
 
 # =============================================================================
@@ -478,6 +630,7 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
 
     # Add all nodes
     workflow.add_node("initialize", initialize_state)
+    workflow.add_node("load_session", load_session)
     workflow.add_node("classify_intent", classify_intent)
 
     # Pantry update path
@@ -509,11 +662,15 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
     workflow.add_node("research_recipe", research_recipe)
     workflow.add_node("generate_grounded_recipe", generate_grounded_recipe)
 
+    # Session update (converge point before END)
+    workflow.add_node("update_session", update_session_node)
+
     # Set entry point
     workflow.set_entry_point("initialize")
 
-    # Define edges
-    workflow.add_edge("initialize", "classify_intent")
+    # Define edges: initialize → load_session → classify_intent
+    workflow.add_edge("initialize", "load_session")
+    workflow.add_edge("load_session", "classify_intent")
 
     # Conditional routing from classify_intent
     workflow.add_conditional_edges(
@@ -538,27 +695,30 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
     workflow.add_edge("dedup_check", "create_actions")
     workflow.add_edge("create_actions", "review_gate")
     workflow.add_edge("review_gate", "finalize_pantry")
-    workflow.add_edge("finalize_pantry", END)
+    workflow.add_edge("finalize_pantry", "update_session")
 
-    # Handoff paths go directly to END
-    workflow.add_edge("build_handoff_receipt", END)
-    workflow.add_edge("build_handoff_product", END)
-    workflow.add_edge("build_handoff_recipe", END)
+    # Handoff paths → update_session → END
+    workflow.add_edge("build_handoff_receipt", "update_session")
+    workflow.add_edge("build_handoff_product", "update_session")
+    workflow.add_edge("build_handoff_recipe", "update_session")
 
-    # General chat goes to END
-    workflow.add_edge("general_chat_response", END)
+    # General chat → update_session → END
+    workflow.add_edge("general_chat_response", "update_session")
 
-    # Cooking help goes to END
-    workflow.add_edge("cooking_help_response", END)
+    # Cooking help → update_session → END
+    workflow.add_edge("cooking_help_response", "update_session")
 
-    # Brainstorm path edges
+    # Brainstorm path → update_session → END
     workflow.add_edge("extract_recipe_constraints", "score_pantry")
     workflow.add_edge("score_pantry", "brainstorm_recipes")
-    workflow.add_edge("brainstorm_recipes", END)
+    workflow.add_edge("brainstorm_recipes", "update_session")
 
-    # Grounded generation path edges
+    # Grounded generation path → update_session → END
     workflow.add_edge("research_recipe", "generate_grounded_recipe")
-    workflow.add_edge("generate_grounded_recipe", END)
+    workflow.add_edge("generate_grounded_recipe", "update_session")
+
+    # Single converge point
+    workflow.add_edge("update_session", END)
 
     return workflow
 
@@ -866,9 +1026,10 @@ async def run_chat_workflow_streaming(
         "errors": [],
     }
 
-    # Run initialization + intent classification (fast, deterministic)
+    # Run initialization + session load + intent classification
     init_state = initialize_state(initial_state)
-    classified_state = await classify_intent(init_state)
+    session_state = await load_session(init_state)
+    classified_state = await classify_intent(session_state)
     intent = classified_state.get("intent", Intent.GENERAL_CHAT.value)
     input_mode = mode  # alias used below
 
@@ -982,6 +1143,16 @@ async def run_chat_workflow_streaming(
 
     # Detect mode suggestion from collected text
     suggested_mode = detect_mode_suggestion(collected_text, mode)
+
+    # Update session state after streaming
+    stream_final_state = WorkflowState(
+        **{
+            **classified_state,
+            "intent": intent,
+            "assistant_message": collected_text,
+        }
+    )
+    await update_session_node(stream_final_state)
 
     # Build final envelope
     envelope = create_general_chat_envelope(

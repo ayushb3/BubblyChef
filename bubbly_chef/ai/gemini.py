@@ -27,7 +27,7 @@ class GeminiProvider(AIProvider):
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-1.5-flash",
+        model: str = "gemini-2.5-flash",
         timeout: float = 60.0,
     ):
         """
@@ -35,7 +35,7 @@ class GeminiProvider(AIProvider):
 
         Args:
             api_key: Google AI API key
-            model: Model to use (gemini-1.5-flash recommended for free tier)
+            model: Model to use (gemini-2.5-flash recommended for free tier)
             timeout: Request timeout in seconds
         """
         self.api_key = api_key
@@ -94,11 +94,18 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
+            error_body = e.response.text[:500] if hasattr(e.response, "text") else str(e)
             if e.response.status_code == 429:
-                raise ProviderUnavailableError("Gemini rate limit exceeded") from e
-            raise ProviderUnavailableError(f"Gemini API error: {e}") from e
+                raise ProviderUnavailableError(
+                    f"Gemini [{self.model}] rate limit 429: {error_body}"
+                ) from e
+            raise ProviderUnavailableError(
+                f"Gemini [{self.model}] API error {e.response.status_code}: {error_body}"
+            ) from e
         except httpx.RequestError as e:
-            raise ProviderUnavailableError(f"Gemini connection error: {e}") from e
+            raise ProviderUnavailableError(
+                f"Gemini [{self.model}] connection error: {e}"
+            ) from e
 
         # Parse response
         data = response.json()
@@ -188,11 +195,19 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
+            error_body = e.response.text[:500] if hasattr(e.response, "text") else str(e)
             if e.response.status_code == 429:
-                raise ProviderUnavailableError("Gemini rate limit exceeded") from e
-            raise ProviderUnavailableError(f"Gemini API error: {e}") from e
+                raise ProviderUnavailableError(
+                    f"Gemini [{self.model}] vision rate limit 429: {error_body}"
+                ) from e
+            raise ProviderUnavailableError(
+                f"Gemini [{self.model}] vision API error {e.response.status_code}: "
+                f"{error_body}"
+            ) from e
         except httpx.RequestError as e:
-            raise ProviderUnavailableError(f"Gemini connection error: {e}") from e
+            raise ProviderUnavailableError(
+                f"Gemini [{self.model}] vision connection error: {e}"
+            ) from e
 
         data = response.json()
         try:
@@ -260,18 +275,40 @@ Return ONLY the JSON, no markdown formatting or extra text."""
                         yield text
                     except (json.JSONDecodeError, KeyError, IndexError):
                         continue
-        except (httpx.HTTPStatusError, httpx.RequestError) as e:
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                error_body = e.response.text[:500] if hasattr(e.response, "text") else str(e)
+                logger.warning(
+                    f"Gemini [{self.model}] stream hit 429 rate limit, cascading: "
+                    f"{error_body[:200]}"
+                )
+                raise ProviderUnavailableError(
+                    f"Gemini stream rate limit exceeded: {error_body}"
+                ) from e
+            # Non-429 HTTP errors: fallback to non-streaming on same model
             logger.warning(
-                "Gemini streaming failed, falling back to non-streaming",
-                extra={"error": str(e)},
+                f"Gemini [{self.model}] stream failed "
+                f"(status={e.response.status_code}), falling back to non-streaming"
             )
-            # Fallback: use non-streaming complete and yield full response
+            result = await self.complete(prompt=prompt, temperature=temperature)
+            text = result if isinstance(result, str) else str(result)
+            yield text
+        except httpx.RequestError as e:
+            logger.warning(
+                f"Gemini [{self.model}] stream connection error, "
+                f"falling back to non-streaming: {e}"
+            )
             result = await self.complete(prompt=prompt, temperature=temperature)
             text = result if isinstance(result, str) else str(result)
             yield text
 
     async def is_available(self) -> bool:
-        """Check if Gemini API is reachable."""
+        """Check if Gemini API is reachable.
+
+        Returns True on 200 and 429 (rate-limited but reachable) so the
+        manager lets complete()/stream_complete() run and cascade on
+        ProviderUnavailableError instead of silently skipping the provider.
+        """
         try:
             url = f"{self.BASE_URL}/models/{self.model}"
             response = await self._client.get(
@@ -280,15 +317,22 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             )
             if response.status_code == 200:
                 return True
+            if response.status_code == 429:
+                # Rate-limited but API key and model are valid — let the
+                # caller attempt the request so the manager can cascade.
+                logger.info(
+                    f"Gemini [{self.model}] availability check got 429 (rate-limited), "
+                    "treating as available for cascade"
+                )
+                return True
             logger.warning(
-                "Gemini availability check failed",
-                extra={"status_code": response.status_code, "model": self.model},
+                f"Gemini [{self.model}] availability check failed "
+                f"(status={response.status_code})"
             )
             return False
         except httpx.RequestError as e:
             logger.warning(
-                "Gemini availability check failed: connection error",
-                extra={"error": str(e)},
+                f"Gemini [{self.model}] availability check connection error: {e}"
             )
             return False
 

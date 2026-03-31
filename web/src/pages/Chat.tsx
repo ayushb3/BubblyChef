@@ -1,13 +1,9 @@
 import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { useSearchParams } from 'react-router-dom';
 const Markdown = lazy(() => import('react-markdown'));
 import {
   Send,
   Loader2,
   AlertTriangle,
-  MessageCircle,
-  Sparkles,
-  BookOpen,
   Clock,
   Users,
   RefreshCw,
@@ -15,13 +11,12 @@ import {
   BookmarkPlus,
   Check,
 } from 'lucide-react';
-import { useAIHealth, useModeSuggestions, useConversationHistory, useSubmitWorkflowEvent, streamChatMessage, saveRecipeToLibrary } from '../api/client';
+import { useAIHealth, useChatSuggestions, useConversationHistory, useSubmitWorkflowEvent, streamChatMessage, saveRecipeToLibrary } from '../api/client';
 import type {
   ChatMessage,
   ChatResponse,
   PantryProposalData,
   ChatRecipeData,
-  ChatMode,
 } from '../types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -49,81 +44,11 @@ function formatRelativeTime(date: Date): string {
   return `${Math.floor(diffHr / 24)}d ago`;
 }
 
-// ─── Mode config ──────────────────────────────────────────────────────────────
-
-const MODE_CONFIG: Record<ChatMode, {
-  label: string;
-  icon: typeof MessageCircle;
-  title: string;
-  subtitle: string;
-  placeholder: string;
-  emptyTitle: string;
-  emptyDescription: string;
-}> = {
-  chat: {
-    label: 'Chat',
-    icon: MessageCircle,
-    title: 'Chat with BubblyChef',
-    subtitle: 'Your AI kitchen assistant',
-    placeholder: 'Ask me anything about your kitchen\u2026',
-    emptyTitle: "Hi! I'm your kitchen assistant",
-    emptyDescription: 'Ask me about recipes, add groceries, or get cooking tips!',
-  },
-  recipe: {
-    label: 'Recipe',
-    icon: Sparkles,
-    title: 'Recipe Magic',
-    subtitle: 'Tell me what you want to cook!',
-    placeholder: 'What would you like to make?',
-    emptyTitle: 'Ready to cook?',
-    emptyDescription: "Tell me what you'd like to make and I'll create a recipe from your pantry!",
-  },
-  learn: {
-    label: 'Learn',
-    icon: BookOpen,
-    title: 'Learn to Cook',
-    subtitle: 'Level up your kitchen skills',
-    placeholder: 'Ask me about cooking techniques\u2026',
-    emptyTitle: 'Kitchen school is in session',
-    emptyDescription: 'Ask about techniques, substitutions, food science, and more!',
-  },
-};
-
 const DIFFICULTY_COLORS: Record<string, string> = {
   easy: 'bg-pastel-mint text-soft-charcoal',
   medium: 'bg-pastel-peach text-soft-charcoal',
   hard: 'bg-pastel-coral text-white',
 };
-
-// ─── Mode selector ────────────────────────────────────────────────────────────
-
-function ModeSelector({ mode, onChange }: { mode: ChatMode; onChange: (m: ChatMode) => void }) {
-  const modes: ChatMode[] = ['chat', 'recipe', 'learn'];
-
-  return (
-    <div className="flex gap-1 bg-cream dark:bg-night-raised rounded-full p-1">
-      {modes.map((m) => {
-        const config = MODE_CONFIG[m];
-        const Icon = config.icon;
-        const isActive = m === mode;
-        return (
-          <button
-            key={m}
-            onClick={() => onChange(m)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 ${
-              isActive
-                ? 'bg-white dark:bg-night-surface shadow-soft text-soft-charcoal dark:text-night-text'
-                : 'text-soft-charcoal dark:text-night-secondary opacity-60 hover:opacity-80'
-            }`}
-          >
-            <Icon size={14} strokeWidth={isActive ? 2.5 : 2} />
-            {config.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 // ─── Intent-specific rendering ────────────────────────────────────────────────
 
@@ -202,82 +127,7 @@ function PantryProposalCard({ proposal, onApprove, onReject, approved }: {
   );
 }
 
-/** Compact recipe card — shown in chat/learn modes */
-function RecipeCard({ recipe, onCookIt }: { recipe: ChatRecipeData; onCookIt?: (title: string) => void }) {
-  const topIngredients = (recipe.ingredients ?? []).slice(0, 3);
-  const computedTime =
-    (recipe.prep_time_minutes ?? 0) + (recipe.cook_time_minutes ?? 0);
-  const totalTime = recipe.total_time_minutes ?? (computedTime > 0 ? computedTime : null);
-
-  return (
-    <div className="mt-3 rounded-2xl bg-pastel-peach border border-deep-peach p-4 space-y-3">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="font-bold text-soft-charcoal text-base">
-            {recipe.title ?? 'Recipe'}
-          </p>
-          {recipe.description && (
-            <p className="text-xs text-soft-charcoal opacity-60 mt-1 line-clamp-2">
-              {recipe.description}
-            </p>
-          )}
-        </div>
-        {recipe.difficulty && (
-          <span className={`px-2 py-1 rounded-full text-xs font-semibold shrink-0 capitalize ${DIFFICULTY_COLORS[recipe.difficulty] ?? 'bg-pastel-peach text-soft-charcoal'}`}>
-            {recipe.difficulty}
-          </span>
-        )}
-      </div>
-
-      <div className="flex gap-3 text-xs text-soft-charcoal opacity-70">
-        {totalTime != null && totalTime > 0 && (
-          <span>{totalTime} min</span>
-        )}
-        {recipe.servings != null && (
-          <span>{recipe.servings} servings</span>
-        )}
-        {recipe.cuisine && (
-          <span>{recipe.cuisine}</span>
-        )}
-      </div>
-
-      {topIngredients.length > 0 && (
-        <div>
-          <p className="text-xs font-bold text-soft-charcoal opacity-60 mb-1 uppercase tracking-wide">
-            Key ingredients
-          </p>
-          <div className="flex flex-wrap gap-1">
-            {topIngredients.map((ing, i) => (
-              <span
-                key={i}
-                className="px-2 py-0.5 rounded-full bg-white border border-deep-peach text-xs text-soft-charcoal"
-              >
-                {ing.name}
-                {ing.quantity != null ? ` · ${ing.quantity}${ing.unit ? ' ' + ing.unit : ''}` : ''}
-              </span>
-            ))}
-            {(recipe.ingredients ?? []).length > 3 && (
-              <span className="px-2 py-0.5 rounded-full bg-white text-xs text-soft-charcoal opacity-50">
-                +{(recipe.ingredients ?? []).length - 3} more
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-
-      {onCookIt && (
-        <button
-          onClick={() => onCookIt(recipe.title ?? 'this recipe')}
-          className="w-full py-2.5 rounded-pill bg-deep-pink text-white text-sm font-bold shadow-soft hover:bg-[#D4607A] hover:shadow-soft-lg active:scale-95 active:shadow-none transition-all min-h-[44px]"
-        >
-          Cook It! 🍳
-        </button>
-      )}
-    </div>
-  );
-}
-
-/** Shown in recipe mode with instructions, ingredients, tips */
+/** Full recipe card with instructions, ingredients, tips */
 function FullRecipeCard({ recipe, onTryAnother }: {
   recipe: ChatRecipeData;
   onTryAnother: () => void;
@@ -465,46 +315,14 @@ function FullRecipeCard({ recipe, onTryAnother }: {
   );
 }
 
-// ─── Mode-switch pill ─────────────────────────────────────────────────────────
-
-/** Tappable pill suggesting a mode switch */
-function ModeSwitchPill({
-  suggestedMode,
-  onSwitch,
-}: {
-  suggestedMode: ChatMode;
-  onSwitch: (mode: ChatMode, message: string) => void;
-}) {
-  const config = MODE_CONFIG[suggestedMode];
-  const Icon = config.icon;
-  const contextMessages: Record<ChatMode, string> = {
-    recipe: 'Find me a recipe using my pantry!',
-    learn: 'Teach me a cooking technique!',
-    chat: "Let's chat about food!",
-  };
-
-  return (
-    <button
-      onClick={() => onSwitch(suggestedMode, contextMessages[suggestedMode])}
-      className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-pastel-lavender text-soft-charcoal hover:shadow-soft active:scale-95 transition-all"
-    >
-      <Icon size={14} />
-      Switch to {config.label} mode
-    </button>
-  );
-}
-
 // ─── Message bubble ────────────────────────────────────────────────────────────
 
-function MessageBubble({ msg, mode, onProposalApprove, onProposalReject, onTryAnother, onCookIt, proposalState, onModeSwitch }: {
+function MessageBubble({ msg, onProposalApprove, onProposalReject, onTryAnother, proposalState }: {
   msg: ChatMessage;
-  mode: ChatMode;
   onProposalApprove: (msgId: string) => void;
   onProposalReject: (msgId: string) => void;
   onTryAnother: () => void;
-  onCookIt: (title: string) => void;
   proposalState: Record<string, boolean | null>;
-  onModeSwitch: (mode: ChatMode, message: string) => void;
 }) {
   const isUser = msg.role === 'user';
 
@@ -525,9 +343,6 @@ function MessageBubble({ msg, mode, onProposalApprove, onProposalReject, onTryAn
     }
 
     if (intent === 'recipe_card' && proposal) {
-      // Backend wraps the recipe in { recipe: {...}, pantry_match_score, ... }
-      // ingredient_availability lives in envelope.metadata (separate from proposal).
-      // Unwrap to get the flat ChatRecipeData shape the components expect.
       const raw = proposal as Record<string, unknown>;
       const ingredientAvailability = (
         msg.response?.metadata?.ingredient_availability ?? raw.ingredient_availability
@@ -537,15 +352,12 @@ function MessageBubble({ msg, mode, onProposalApprove, onProposalReject, onTryAn
         ? { ...(raw.recipe as ChatRecipeData), ingredient_availability: ingredientAvailability }
         : (proposal as ChatRecipeData);
 
-      if (mode === 'recipe') {
-        return (
-          <FullRecipeCard
-            recipe={recipeData}
-            onTryAnother={onTryAnother}
-          />
-        );
-      }
-      return <RecipeCard recipe={recipeData} onCookIt={onCookIt} />;
+      return (
+        <FullRecipeCard
+          recipe={recipeData}
+          onTryAnother={onTryAnother}
+        />
+      );
     }
 
     return null;
@@ -590,13 +402,6 @@ function MessageBubble({ msg, mode, onProposalApprove, onProposalReject, onTryAn
 
         {renderProposal()}
 
-        {!isUser && msg.response?.suggested_mode && (
-          <ModeSwitchPill
-            suggestedMode={msg.response.suggested_mode as ChatMode}
-            onSwitch={onModeSwitch}
-          />
-        )}
-
         <span className="text-xs text-soft-charcoal opacity-40 dark:text-night-secondary mt-1 px-1">
           {formatRelativeTime(msg.timestamp)}
         </span>
@@ -607,13 +412,10 @@ function MessageBubble({ msg, mode, onProposalApprove, onProposalReject, onTryAn
 
 // ─── Empty state ───────────────────────────────────────────────────────────────
 
-function EmptyState({ mode, suggestions, onSuggestion }: {
-  mode: ChatMode;
+function EmptyState({ suggestions, onSuggestion }: {
   suggestions: string[];
   onSuggestion: (text: string) => void;
 }) {
-  const config = MODE_CONFIG[mode];
-
   return (
     <div className="flex flex-col items-center justify-center h-full py-12 px-4 text-center">
       <img
@@ -626,10 +428,10 @@ function EmptyState({ mode, suggestions, onSuggestion }: {
         }}
       />
       <h2 className="text-xl font-bold text-soft-charcoal dark:text-night-text mb-2">
-        {config.emptyTitle}
+        Hi! I'm your kitchen assistant
       </h2>
       <p className="text-soft-charcoal dark:text-night-secondary opacity-60 text-sm mb-6 max-w-xs">
-        {config.emptyDescription}
+        Ask me about recipes, add groceries, or get cooking tips!
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-sm">
         {suggestions.map((s) => (
@@ -648,21 +450,11 @@ function EmptyState({ mode, suggestions, onSuggestion }: {
 
 // ─── Chat page ────────────────────────────────────────────────────────────────
 
-function isValidMode(value: string | null): value is ChatMode {
-  return value === 'chat' || value === 'recipe' || value === 'learn';
-}
-
 export function Chat() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const initialMode = isValidMode(searchParams.get('mode')) ? searchParams.get('mode') as ChatMode : 'chat';
-
-  const [mode, setMode] = useState<ChatMode>(initialMode);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
-  // Stable conversation ID for this session — changes only on mode change
   const [conversationId, setConversationId] = useState<string>(() => generateConversationId());
   const [proposalState, setProposalState] = useState<Record<string, boolean | null>>({});
-  // Track workflow_id per message so we can call the approve endpoint
   const [messageWorkflowIds, setMessageWorkflowIds] = useState<Record<string, string>>({});
   const historyLoaded = useRef(false);
 
@@ -674,7 +466,7 @@ export function Chat() {
   const { mutate: submitWorkflowEvent } = useSubmitWorkflowEvent();
   const { data: aiHealth } = useAIHealth();
   const aiUnavailable = aiHealth !== undefined && !aiHealth.ai_available;
-  const { data: suggestions } = useModeSuggestions(mode);
+  const { data: suggestions } = useChatSuggestions();
 
   // Load prior conversation history on first mount
   const { data: storedHistory } = useConversationHistory(conversationId);
@@ -690,19 +482,6 @@ export function Chat() {
     }));
     setMessages(restored);
   }, [storedHistory]);
-
-  const config = MODE_CONFIG[mode];
-
-  const handleModeChange = useCallback((newMode: ChatMode) => {
-    setMode(newMode);
-    setMessages([]);
-    setConversationId(generateConversationId());
-    setProposalState({});
-    setMessageWorkflowIds({});
-    setInput('');
-    historyLoaded.current = false;
-    setSearchParams({ mode: newMode }, { replace: true });
-  }, [setSearchParams]);
 
   const handleNewChat = useCallback(() => {
     setMessages([]);
@@ -750,7 +529,7 @@ export function Chat() {
     streamAbortRef.current = abortController;
 
     streamChatMessage(
-      { message: messageText, conversation_id: conversationId, mode },
+      { message: messageText, conversation_id: conversationId },
       // onToken -- append each token to the placeholder message
       (token: string) => {
         setMessages((prev) =>
@@ -817,21 +596,11 @@ export function Chat() {
       },
       abortController.signal,
     );
-  }, [input, isStreaming, conversationId, mode]);
+  }, [input, isStreaming, conversationId]);
 
   const handleTryAnother = useCallback(() => {
     handleSend('Give me a different recipe');
   }, [handleSend]);
-
-  const handleCookIt = useCallback((title: string) => {
-    handleSend(`How do I cook ${title}?`);
-  }, [handleSend]);
-
-  const handleModeSwitch = useCallback((newMode: ChatMode, contextMsg: string) => {
-    handleModeChange(newMode);
-    // Use setTimeout to ensure mode change completes before sending
-    setTimeout(() => handleSend(contextMsg), 50);
-  }, [handleModeChange, handleSend]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -892,12 +661,9 @@ export function Chat() {
             <SquarePen size={18} />
           </button>
         </div>
-        <div className="flex items-center justify-between mt-1">
-          <p className="text-xs text-soft-charcoal dark:text-night-secondary opacity-50">
-            {config.subtitle}
-          </p>
-          <ModeSelector mode={mode} onChange={handleModeChange} />
-        </div>
+        <p className="text-xs text-soft-charcoal dark:text-night-secondary opacity-50 mt-1">
+          Your AI kitchen assistant
+        </p>
       </header>
 
       {/* AI unavailable warning */}
@@ -919,7 +685,6 @@ export function Chat() {
       >
         {messages.length === 0 ? (
           <EmptyState
-            mode={mode}
             suggestions={suggestions ?? []}
             onSuggestion={(s) => handleSend(s)}
           />
@@ -929,13 +694,10 @@ export function Chat() {
               <MessageBubble
                 key={msg.id}
                 msg={msg}
-                mode={mode}
                 onProposalApprove={handleProposalApprove}
                 onProposalReject={handleProposalReject}
                 onTryAnother={handleTryAnother}
-                onCookIt={handleCookIt}
                 proposalState={proposalState}
-                onModeSwitch={handleModeSwitch}
               />
             ))}
 
@@ -977,7 +739,7 @@ export function Chat() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={config.placeholder}
+            placeholder="Ask me anything about your kitchen…"
             disabled={isPending}
             className="flex-1 bg-transparent text-base text-soft-charcoal dark:text-night-text placeholder-soft-charcoal dark:placeholder-night-secondary placeholder-opacity-40 resize-none outline-none leading-relaxed max-h-32 disabled:opacity-50"
             style={{ minHeight: '24px' }}

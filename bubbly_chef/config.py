@@ -24,7 +24,11 @@ class Settings(BaseSettings):
 
     # Gemini LLM
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash-preview-04-17"
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_fallback_models: list[str] = [
+        "gemini-3.1-flash-lite-preview",  # 500 RPD free tier
+        "gemini-2.5-flash-lite",  # 20 RPD free tier
+    ]
     gemini_timeout_seconds: float = 60.0
 
     # Ollama LLM

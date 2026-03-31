@@ -299,6 +299,9 @@ def normalize_to_library(name: str) -> str:
     Uses rapidfuzz WRatio with a score cutoff of 75 to find the best
     canonical match.  Returns the canonical name if a match is found,
     otherwise returns the original name unchanged.
+
+    For multi-word queries, extracts the top candidates and prefers ones
+    that appear as whole words in the query (avoiding "applewood" → "apple").
     """
     if not name or not name.strip():
         return name
@@ -308,19 +311,34 @@ def normalize_to_library(name: str) -> str:
         return name
 
     query = name.strip().lower()
+    query_words = set(query.split())
 
     try:
         from rapidfuzz import process
         from rapidfuzz.fuzz import WRatio
 
-        match = process.extractOne(
+        results = process.extract(
             query,
             canonicals,
             scorer=WRatio,
             score_cutoff=75,
+            limit=5,
         )
-        if match is not None:
-            return str(match[0])
+        if not results:
+            return name
+
+        # Prefer candidates that appear as whole words in the query
+        # e.g. for "bacon applewood uncured", prefer "bacon" over "apple"
+        for matched_name, score, _idx in results:
+            match_words = set(matched_name.split())
+            if match_words & query_words:  # at least one word overlaps exactly
+                return str(matched_name)
+
+        # Fallback: use top match but guard against short false positives
+        top_name, top_score, _ = results[0]
+        if len(query_words) >= 3 and len(top_name.split()) == 1 and top_score < 90:
+            return name  # reject weak short match
+        return str(top_name)
     except ImportError:
         pass
 

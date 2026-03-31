@@ -77,9 +77,11 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             },
         }
 
-        # Ollama supports JSON mode with format parameter
+        # Ollama supports structured output via format=<json-schema> (Ollama ≥0.3)
+        # Passing the full schema forces the model to emit conforming JSON rather than
+        # echoing back the schema definition (a common failure mode with small models).
         if response_schema:
-            payload["format"] = "json"
+            payload["format"] = response_schema.model_json_schema()
 
         try:
             response = await self._client.post(url, json=payload)
@@ -113,6 +115,15 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             cleaned = cleaned.strip()
 
             parsed = json.loads(cleaned)
+
+            # Guard: detect when the model echoed back the schema definition instead of
+            # filling it in (common failure mode with small local models).
+            if isinstance(parsed, dict) and "properties" in parsed and "type" in parsed:
+                raise StructuredOutputError(
+                    "Model returned the JSON schema definition instead of data. "
+                    "Try a larger model or simplify the schema."
+                )
+
             return response_schema.model_validate(parsed)
         except json.JSONDecodeError as e:
             raise StructuredOutputError(f"Failed to parse JSON: {text}") from e

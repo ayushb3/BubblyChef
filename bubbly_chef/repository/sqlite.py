@@ -11,6 +11,7 @@ import aiosqlite
 
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.models.recipe import Ingredient, RecipeCard
+from bubbly_chef.models.session import ConversationSession, SessionMode
 from bubbly_chef.models.user import UserProfile
 
 logger = logging.getLogger(__name__)
@@ -113,6 +114,19 @@ class SQLiteRepository:
                 unlocked_at TEXT,
                 milestone TEXT
             );
+
+            CREATE TABLE IF NOT EXISTS conversation_sessions (
+                conversation_id TEXT PRIMARY KEY,
+                active_mode TEXT NOT NULL DEFAULT 'default',
+                pinned_recipe_id TEXT,
+                pending_proposal TEXT,
+                metadata TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_session_mode
+                ON conversation_sessions(active_mode);
         """
         )
 
@@ -874,6 +888,85 @@ class SQLiteRepository:
     # =========================================================================
     # Proposal application
     # =========================================================================
+
+    # =========================================================================
+    # Session operations (R2)
+    # =========================================================================
+
+    def _row_to_session(self, row: aiosqlite.Row) -> ConversationSession:
+        """Convert a database row to a ConversationSession."""
+        return ConversationSession(
+            conversation_id=row["conversation_id"],
+            active_mode=SessionMode(row["active_mode"]),
+            pinned_recipe_id=row["pinned_recipe_id"],
+            pending_proposal=json.loads(row["pending_proposal"])
+            if row["pending_proposal"]
+            else None,
+            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    async def get_or_create_session(
+        self, conversation_id: str
+    ) -> ConversationSession:
+        """Get existing session or create a default one."""
+        conn = self._get_conn()
+        async with conn.execute(
+            "SELECT * FROM conversation_sessions WHERE conversation_id = ?",
+            (conversation_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return self._row_to_session(row)
+
+        # Create default session
+        now = datetime.now(UTC).isoformat()
+        await conn.execute(
+            """INSERT INTO conversation_sessions
+               (conversation_id, active_mode, pinned_recipe_id,
+                pending_proposal, metadata, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                conversation_id,
+                SessionMode.DEFAULT.value,
+                None,
+                None,
+                "{}",
+                now,
+                now,
+            ),
+        )
+        await conn.commit()
+        return ConversationSession(
+            conversation_id=conversation_id,
+            created_at=datetime.fromisoformat(now),
+            updated_at=datetime.fromisoformat(now),
+        )
+
+    async def update_session(
+        self, session: ConversationSession
+    ) -> ConversationSession:
+        """Persist session state changes."""
+        conn = self._get_conn()
+        now = datetime.now(UTC)
+        session.updated_at = now
+        await conn.execute(
+            """UPDATE conversation_sessions
+               SET active_mode = ?, pinned_recipe_id = ?,
+                   pending_proposal = ?, metadata = ?, updated_at = ?
+               WHERE conversation_id = ?""",
+            (
+                session.active_mode.value,
+                session.pinned_recipe_id,
+                json.dumps(session.pending_proposal) if session.pending_proposal else None,
+                json.dumps(session.metadata),
+                now.isoformat(),
+                session.conversation_id,
+            ),
+        )
+        await conn.commit()
+        return session
 
     async def apply_pantry_proposal(
         self,

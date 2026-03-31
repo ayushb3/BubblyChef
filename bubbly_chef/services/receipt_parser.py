@@ -8,7 +8,11 @@ from pydantic import BaseModel, Field
 from bubbly_chef.ai import AIManager
 from bubbly_chef.domain.defaults import get_default_quantity_and_unit
 from bubbly_chef.domain.expiry import estimate_expiry_days, get_default_location
-from bubbly_chef.domain.normalizer import detect_category, normalize_food_name
+from bubbly_chef.domain.normalizer import (
+    detect_category,
+    normalize_food_name,
+    normalize_to_library,
+)
 from bubbly_chef.models.pantry import FoodCategory, StorageLocation
 
 
@@ -182,10 +186,14 @@ def parse_receipt_items(llm_output: LLMReceiptOutput) -> ReceiptParseResult:
         # Get raw confidence from AI
         ai_confidence = item_data.get("confidence", 0.7)
 
-        # Normalize the name
-        name_normalized = normalize_food_name(name)
+        # Title-case for display (receipts often come in ALL CAPS)
+        display_name = name.title()
 
-        # Detect category
+        # Normalize: first basic cleanup, then try fuzzy match against food library
+        name_basic = normalize_food_name(name)
+        name_normalized = normalize_to_library(name_basic)
+
+        # Detect category from the normalized name
         detected_cat = detect_category(name_normalized)
         category = FoodCategory(detected_cat) if detected_cat else FoodCategory.OTHER
 
@@ -215,7 +223,7 @@ def parse_receipt_items(llm_output: LLMReceiptOutput) -> ReceiptParseResult:
 
         parsed_item = ParsedReceiptItem(
             raw_text=name,  # Store original name as raw_text
-            name=name,
+            name=display_name,
             name_normalized=name_normalized,
             quantity=quantity,
             unit=unit,
