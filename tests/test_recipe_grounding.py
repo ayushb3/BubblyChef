@@ -9,7 +9,7 @@ import pytest
 
 from bubbly_chef.models.base import Intent, NextAction
 from bubbly_chef.models.recipe import RecipeConstraints
-from bubbly_chef.workflows.chat_ingest import (
+from bubbly_chef.workflows.recipe.nodes import (
     brainstorm_recipe_ideas,
     detect_brainstorm_followup,
     extract_recipe_constraints,
@@ -53,7 +53,7 @@ def _brainstorm_history(content: str) -> list[dict[str, Any]]:
 async def test_extract_constraints_cuisine() -> None:
     """'I'm feeling Chinese food' -> cuisine='Chinese'"""
     mock_result = RecipeConstraints(cuisine="Chinese")
-    with patch("bubbly_chef.workflows.chat_ingest.get_ai_manager") as mock_get_mgr:
+    with patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager") as mock_get_mgr:
         mock_mgr = AsyncMock()
         mock_mgr.complete.return_value = mock_result
         mock_get_mgr.return_value = mock_mgr
@@ -68,7 +68,7 @@ async def test_extract_constraints_cuisine() -> None:
 async def test_extract_constraints_dietary() -> None:
     """'something vegetarian' -> dietary=['vegetarian']"""
     mock_result = RecipeConstraints(dietary=["vegetarian"])
-    with patch("bubbly_chef.workflows.chat_ingest.get_ai_manager") as mock_get_mgr:
+    with patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager") as mock_get_mgr:
         mock_mgr = AsyncMock()
         mock_mgr.complete.return_value = mock_result
         mock_get_mgr.return_value = mock_mgr
@@ -83,7 +83,7 @@ async def test_extract_constraints_dietary() -> None:
 async def test_extract_constraints_empty() -> None:
     """'what can I make?' -> empty constraints"""
     mock_result = RecipeConstraints()
-    with patch("bubbly_chef.workflows.chat_ingest.get_ai_manager") as mock_get_mgr:
+    with patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager") as mock_get_mgr:
         mock_mgr = AsyncMock()
         mock_mgr.complete.return_value = mock_result
         mock_get_mgr.return_value = mock_mgr
@@ -99,7 +99,7 @@ async def test_extract_constraints_empty() -> None:
 @pytest.mark.asyncio
 async def test_extract_constraints_graceful_failure() -> None:
     """AI failure -> empty constraints, no crash."""
-    with patch("bubbly_chef.workflows.chat_ingest.get_ai_manager") as mock_get_mgr:
+    with patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager") as mock_get_mgr:
         mock_mgr = AsyncMock()
         mock_mgr.complete.side_effect = RuntimeError("provider unavailable")
         mock_get_mgr.return_value = mock_mgr
@@ -289,7 +289,7 @@ async def test_search_recipe_graceful_failure() -> None:
 @pytest.mark.asyncio
 async def test_research_recipe_node_graceful_failure() -> None:
     """research_recipe node: when search fails, state.web_search_result is None."""
-    with patch("bubbly_chef.workflows.chat_ingest.search_recipe", return_value=None):
+    with patch("bubbly_chef.workflows.recipe.nodes.search_recipe", return_value=None):
         state: dict[str, Any] = {
             "selected_recipe_name": "Egg Fried Rice",
             "recipe_constraints": {},
@@ -312,7 +312,7 @@ async def test_brainstorm_intent_is_recipe_brainstorm() -> None:
         "Here are some ideas:\n1. **Garlic Fried Rice**\n2. **Egg Drop Soup**\n"
         "Which one sounds good?"
     )
-    with patch("bubbly_chef.workflows.chat_ingest.get_ai_manager") as mock_get_mgr:
+    with patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager") as mock_get_mgr:
         mock_mgr = AsyncMock()
         mock_mgr.complete.return_value = brainstorm_text
         mock_get_mgr.return_value = mock_mgr
@@ -335,7 +335,7 @@ async def test_brainstorm_intent_is_recipe_brainstorm() -> None:
 async def test_brainstorm_returns_recipe_names() -> None:
     """brainstorm_recipe_ideas extracts bold recipe names into brainstorm_ideas."""
     brainstorm_text = "1. **Egg Fried Rice** 2. **Stir-Fried Tofu**\nWhich sounds good?"
-    with patch("bubbly_chef.workflows.chat_ingest.get_ai_manager") as mock_get_mgr:
+    with patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager") as mock_get_mgr:
         mock_mgr = AsyncMock()
         mock_mgr.complete.return_value = brainstorm_text
         mock_get_mgr.return_value = mock_mgr
@@ -369,8 +369,8 @@ async def test_grounded_recipe_intent_is_recipe_card() -> None:
         instructions=["Beat eggs", "Fry with rice"],
         confidence=0.85,
     )
-    with patch("bubbly_chef.workflows.chat_ingest.get_ai_manager") as mock_get_mgr, \
-         patch("bubbly_chef.workflows.chat_ingest.get_repository") as mock_repo:
+    with patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager") as mock_get_mgr, \
+         patch("bubbly_chef.workflows.recipe.nodes.get_repository") as mock_repo:
         mock_mgr = AsyncMock()
         mock_mgr.complete.return_value = llm_result
         mock_get_mgr.return_value = mock_mgr
@@ -407,8 +407,8 @@ async def test_grounded_recipe_has_availability() -> None:
         instructions=["Beat eggs", "Fry"],
         confidence=0.85,
     )
-    with patch("bubbly_chef.workflows.chat_ingest.get_ai_manager") as mock_get_mgr, \
-         patch("bubbly_chef.workflows.chat_ingest.get_repository") as mock_repo:
+    with patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager") as mock_get_mgr, \
+         patch("bubbly_chef.workflows.recipe.nodes.get_repository") as mock_repo:
         mock_mgr = AsyncMock()
         mock_mgr.complete.return_value = llm_result
         mock_get_mgr.return_value = mock_mgr

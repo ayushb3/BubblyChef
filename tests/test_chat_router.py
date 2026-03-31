@@ -44,7 +44,8 @@ def mock_repository():
     """Prevent workflow nodes from hitting the real DB."""
     repo_mock = AsyncMock()
     repo_mock.get_all_pantry_items.return_value = []
-    with patch("bubbly_chef.workflows.chat_ingest.get_repository", return_value=repo_mock):
+    with patch("bubbly_chef.workflows.chat_ingest.get_repository", return_value=repo_mock), \
+         patch("bubbly_chef.workflows.recipe.nodes.get_repository", return_value=repo_mock):
         yield repo_mock
 
 
@@ -493,7 +494,10 @@ class TestFullWorkflow:
         with patch(
             "bubbly_chef.workflows.chat_ingest.get_ai_manager",
             return_value=mock_manager,
-        ) as mock_get_mgr:
+        ) as mock_get_mgr, patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_manager,
+        ):
             self._mock_manager = mock_manager
             self._mock_get_mgr = mock_get_mgr
             yield
@@ -565,6 +569,9 @@ class TestOutputContract:
         mock_manager.complete.return_value = "Hello! I can help with your kitchen."
         with patch(
             "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            return_value=mock_manager,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
             return_value=mock_manager,
         ):
             self._mock_manager = mock_manager
@@ -641,6 +648,9 @@ class TestEdgeCases:
         with patch(
             "bubbly_chef.workflows.chat_ingest.get_ai_manager",
             return_value=mock_manager,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+            return_value=mock_manager,
         ):
             self._mock_manager = mock_manager
             yield
@@ -709,6 +719,9 @@ class TestPantryContextInjection:
         mock_manager.complete.return_value = "Here are some recipe ideas based on your pantry."
         with patch(
             "bubbly_chef.workflows.chat_ingest.get_ai_manager",
+            return_value=mock_manager,
+        ), patch(
+            "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
             return_value=mock_manager,
         ):
             self._mock_manager = mock_manager
