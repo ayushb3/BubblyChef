@@ -328,17 +328,6 @@ export function useRecipeSuggestions() {
 
 // ─── Chat suggestions ─────────────────────────────────────────────────────────
 
-const CHAT_SUGGESTIONS = [
-  "What can I make with what I have?",
-  "I just bought milk, eggs, and cheese",
-  "How long does cooked chicken last?",
-  "What's expiring soon in my pantry?",
-];
-
-export function useChatSuggestions() {
-  return { data: CHAT_SUGGESTIONS, isLoading: false };
-}
-
 // User Profile API Functions
 async function fetchProfile(id: string): Promise<UserProfile> {
   const response = await fetch(`${API_BASE_URL}/profile/${id}`);

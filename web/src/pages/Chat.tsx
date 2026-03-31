@@ -11,7 +11,7 @@ import {
   BookmarkPlus,
   Check,
 } from 'lucide-react';
-import { useAIHealth, useChatSuggestions, useConversationHistory, useSubmitWorkflowEvent, streamChatMessage, saveRecipeToLibrary } from '../api/client';
+import { useAIHealth, useRecipeSuggestions, useConversationHistory, useSubmitWorkflowEvent, streamChatMessage, saveRecipeToLibrary } from '../api/client';
 import type {
   ChatMessage,
   ChatResponse,
@@ -466,7 +466,7 @@ export function Chat() {
   const { mutate: submitWorkflowEvent } = useSubmitWorkflowEvent();
   const { data: aiHealth } = useAIHealth();
   const aiUnavailable = aiHealth !== undefined && !aiHealth.ai_available;
-  const { data: suggestions } = useChatSuggestions();
+  const { data: suggestions } = useRecipeSuggestions();
 
   // Load prior conversation history on first mount
   const { data: storedHistory } = useConversationHistory(conversationId);

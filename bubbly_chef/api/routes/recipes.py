@@ -183,9 +183,9 @@ async def get_recipe_suggestions() -> list[str]:
             "Easy weeknight meal",
         ]
 
-        # Fill up to 5 suggestions
+        # Fill up to 4 suggestions (even number for 2-column grid)
         for s in generic:
-            if len(suggestions) >= 5:
+            if len(suggestions) >= 4:
                 break
             if s not in suggestions:
                 suggestions.append(s)
@@ -193,13 +193,13 @@ async def get_recipe_suggestions() -> list[str]:
         logger.info(
             "Recipe suggestions generated",
             extra={
-                "suggestions_count": len(suggestions[:5]),
+                "suggestions_count": len(suggestions[:4]),
                 "pantry_items_count": len(pantry_items),
                 "expiring_count": len(expiring),
             },
         )
 
-        return suggestions[:5]
+        return suggestions[:4]
 
     except Exception as e:
         logger.error(
@@ -214,13 +214,66 @@ async def get_recipe_suggestions() -> list[str]:
             "Something with chicken",
             "Healthy vegetarian meal",
             "Easy pasta dish",
-            "Comfort food for tonight",
         ]
 
 
 # =============================================================================
 # Recipe Library CRUD
 # =============================================================================
+
+
+class SaveRecipeRequest(BaseModel):
+    """Request to save a recipe to the library."""
+
+    title: str = Field(description="Recipe title")
+    description: str | None = None
+    ingredients: list[dict[str, Any]] | None = None
+    instructions: list[str] | None = None
+    cuisine: str | None = None
+    meal_type: str | None = None
+    dietary_tags: list[str] | None = None
+    difficulty: str | None = None
+    prep_time_minutes: int | None = None
+    cook_time_minutes: int | None = None
+    total_time_minutes: int | None = None
+    servings: int | None = None
+
+
+@router.post("", response_model=RecipeCard, status_code=201)
+async def save_recipe(request: SaveRecipeRequest) -> RecipeCard:
+    """Save a recipe to the library."""
+    from bubbly_chef.models.recipe import Ingredient
+
+    ingredients: list[Ingredient] = []
+    for ing in request.ingredients or []:
+        ingredients.append(
+            Ingredient(
+                name=ing.get("name", ""),
+                quantity=ing.get("quantity"),
+                unit=ing.get("unit"),
+            )
+        )
+
+    recipe = RecipeCard(
+        title=request.title,
+        description=request.description,
+        ingredients=ingredients,
+        instructions=request.instructions or [],
+        cuisine=request.cuisine,
+        meal_type=request.meal_type,
+        dietary_tags=request.dietary_tags or [],
+        difficulty=request.difficulty,
+        prep_time_minutes=request.prep_time_minutes,
+        cook_time_minutes=request.cook_time_minutes,
+        total_time_minutes=request.total_time_minutes,
+        servings=request.servings,
+        source_type="manual",
+    )
+
+    repo = await get_repository()
+    saved = await repo.add_recipe(recipe)
+    logger.info(f"Recipe saved: {saved.title} ({saved.id})")
+    return saved
 
 
 class RefineRecipeRequest(BaseModel):
@@ -269,6 +322,56 @@ async def delete_recipe(recipe_id: UUID) -> None:
     deleted = await repo.delete_recipe(recipe_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Recipe not found")
+
+
+@router.put("/{recipe_id}", response_model=RecipeCard)
+async def update_recipe_endpoint(
+    recipe_id: UUID, request: SaveRecipeRequest
+) -> RecipeCard:
+    """Update an existing saved recipe."""
+    from bubbly_chef.models.recipe import Ingredient
+
+    repo = await get_repository()
+    existing = await repo.get_recipe(recipe_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    if request.title:
+        existing.title = request.title
+    if request.description is not None:
+        existing.description = request.description
+    if request.ingredients is not None:
+        existing.ingredients = [
+            Ingredient(
+                name=ing.get("name", ""),
+                quantity=ing.get("quantity"),
+                unit=ing.get("unit"),
+            )
+            for ing in request.ingredients
+        ]
+    if request.instructions is not None:
+        existing.instructions = request.instructions
+    if request.cuisine is not None:
+        existing.cuisine = request.cuisine
+    if request.meal_type is not None:
+        existing.meal_type = request.meal_type
+    if request.dietary_tags is not None:
+        existing.dietary_tags = request.dietary_tags
+    if request.difficulty is not None:
+        existing.difficulty = request.difficulty
+    if request.prep_time_minutes is not None:
+        existing.prep_time_minutes = request.prep_time_minutes
+    if request.cook_time_minutes is not None:
+        existing.cook_time_minutes = request.cook_time_minutes
+    if request.total_time_minutes is not None:
+        existing.total_time_minutes = request.total_time_minutes
+    if request.servings is not None:
+        existing.servings = request.servings
+
+    existing.updated_at = datetime.now(UTC)
+    updated = await repo.update_recipe(existing)
+    logger.info(f"Recipe updated: {updated.title} ({updated.id})")
+    return updated
 
 
 @router.post("/{recipe_id}/refine", response_model=RecipeCard)

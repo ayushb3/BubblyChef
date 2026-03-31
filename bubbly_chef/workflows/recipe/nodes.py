@@ -9,7 +9,7 @@ and grounded recipe generation.
 import json as _json
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from bubbly_chef.ai.manager import NoProviderAvailableError
@@ -97,9 +97,10 @@ CUISINE_INGREDIENTS: dict[str, set[str]] = {
 
 RECIPE_CONSTRAINTS_SYSTEM_PROMPT = (
     "Extract cooking constraints from the user's message. "
-    "Return structured data: cuisine preference, mood/style, dietary restrictions, "
-    "time limit, servings, skill level, and any ingredients they specifically want "
-    "to include or exclude. If a field is not mentioned, leave it as null/empty."
+    "Return structured data: cuisine preference, meal_type (breakfast/lunch/dinner/snack), "
+    "mood/style, dietary restrictions, time limit, servings, skill level, "
+    "and any ingredients they specifically want to include or exclude. "
+    "If a field is not mentioned, leave it as null/empty."
 )
 
 BRAINSTORM_SYSTEM_PROMPT = """\
@@ -110,6 +111,8 @@ Rules:
 - Each idea should be a recipe name (2-5 words), not a full recipe
 - Prioritize ingredients marked as expiring soon
 - Match the cuisine/mood if specified
+- ALL suggestions must be for the same meal type — if meal_type is specified, \
+every idea must fit that meal (don't mix breakfast and dinner)
 - Only suggest recipes that can realistically be made with 60%+ of the listed ingredients
 - Format: conversational text with **bold** recipe names in a numbered list
 - End with a prompt like "Which one sounds good?" or "Want me to make any of these?"\
@@ -125,7 +128,13 @@ Context: {context}
 
 Generate a full recipe with:
 - title, description
-- ingredients list with quantities/units
+- ingredients: a list of objects, each with keys:
+    "name" (ingredient name, e.g. "chicken breast"),
+    "quantity" (numeric amount, e.g. 2),
+    "unit" (measurement unit, e.g. "cups", "medium", "tablespoon"),
+    "preparation" (optional prep note, e.g. "diced"),
+    "optional" (boolean, default false),
+    "substitutes" (list of substitute ingredient names, default [])
 - step-by-step instructions
 - prep_time_minutes, cook_time_minutes, total_time_minutes
 - difficulty (easy/medium/hard)
@@ -296,12 +305,29 @@ def score_and_rank(
         scored.append({**item, "_score": score})
 
     scored.sort(key=lambda x: x.get("_score", 0), reverse=True)
+    # Filter out excluded items (negative score)
+    scored = [s for s in scored if s.get("_score", 0) >= 0]
     return scored[:15]
 
 
 # =============================================================================
 # Recipe Grounding — Workflow Nodes
 # =============================================================================
+
+
+def _default_meal_type() -> str:
+    """Infer meal type from current time of day."""
+    hour = datetime.now().hour
+    if 5 <= hour < 10:
+        return "breakfast"
+    elif 10 <= hour < 14:
+        return "lunch"
+    elif 14 <= hour < 17:
+        return "snack"
+    elif 17 <= hour < 21:
+        return "dinner"
+    else:
+        return "late-night snack"
 
 
 async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
@@ -323,6 +349,11 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
     except Exception as e:
         logger.warning("Constraint extraction failed (using empty constraints): %s", e)
         constraints = {}
+
+    # Default meal_type from time of day when user didn't specify
+    if not constraints.get("meal_type"):
+        constraints["meal_type"] = _default_meal_type()
+        logger.info("Defaulted meal_type=%s from time of day", constraints["meal_type"])
 
     return {
         **state,
@@ -419,6 +450,8 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         pantry_context = "\nNo pantry items available — suggest general recipes."
 
     constraints_str = ""
+    if constraints.get("meal_type"):
+        constraints_str += f"\nMeal type: {constraints['meal_type']}"
     if constraints.get("cuisine"):
         constraints_str += f"\nCuisine preference: {constraints['cuisine']}"
     if constraints.get("mood"):
@@ -560,13 +593,32 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
     # Build RecipeCard from LLM result
     ingredients_list: list[Ingredient] = []
     for ing_dict in llm_result.ingredients:
+        if isinstance(ing_dict, str):
+            # LLM returned a plain string instead of a dict — use it as name
+            ingredients_list.append(Ingredient(name=ing_dict))
+            continue
         if isinstance(ing_dict, dict):
+            raw_qty = ing_dict.get("quantity")
+            qty: float | None = None
+            extra_note: str | None = None
+            if raw_qty is not None:
+                try:
+                    qty = float(raw_qty)
+                except (ValueError, TypeError):
+                    # LLM returned non-numeric quantity like "to taste"
+                    extra_note = str(raw_qty)
+
+            prep = ing_dict.get("preparation") or ""
+            if extra_note:
+                prep = f"{extra_note}, {prep}" if prep else extra_note
+
+            name = ing_dict.get("name") or ing_dict.get("ingredient") or ""
             ingredients_list.append(
                 Ingredient(
-                    name=ing_dict.get("name", ""),
-                    quantity=ing_dict.get("quantity"),
+                    name=name,
+                    quantity=qty,
                     unit=ing_dict.get("unit"),
-                    preparation=ing_dict.get("preparation"),
+                    preparation=prep or None,
                     optional=ing_dict.get("optional", False),
                     substitutes=ing_dict.get("substitutes", []),
                 )
