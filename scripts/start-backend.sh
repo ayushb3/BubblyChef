@@ -39,13 +39,21 @@ if ! python -c "import fastapi" 2>/dev/null; then
     echo ""
 fi
 
+# Choose log level
+echo -e "Log level: [1] info (default)  [2] debug"
+read -rp "Choice [1/2]: " log_choice
+case "$log_choice" in
+    2) LOG_LEVEL="debug" ;;
+    *) LOG_LEVEL="info" ;;
+esac
+
 # Start backend
 cd "$PROJECT_ROOT"
-echo -e "${GREEN}Starting backend server...${NC}"
+echo -e "${GREEN}Starting backend server (log-level: ${LOG_LEVEL})...${NC}"
 echo -e "   Backend:  http://localhost:8888"
 echo -e "   API Docs: http://localhost:8888/docs"
 echo ""
 echo -e "Press Ctrl+C to stop."
 echo ""
 
-uvicorn bubbly_chef.api.app:app --reload --host 0.0.0.0 --port 8888
+uvicorn bubbly_chef.api.app:app --reload --host 0.0.0.0 --port 8888 --log-level "$LOG_LEVEL"
