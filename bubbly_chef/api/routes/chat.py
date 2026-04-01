@@ -127,14 +127,12 @@ async def chat(request: ChatRequest) -> ProposalEnvelope[Any]:
     conversation_id = str(request.conversation_id) if request.conversation_id else None
 
     logger.info(
-        "Chat request received",
-        extra={
-            "message_preview": request.message[:100],
-            "message_length": len(request.message),
-            "conversation_id": conversation_id,
-            "mode": request.mode,
-            "has_pantry_snapshot": request.pantry_snapshot is not None,
-        },
+        f"Chat request: message_length={len(request.message)}, "
+        f"conversation_id={conversation_id}, mode={request.mode}"
+    )
+    logger.debug(
+        f"Chat request detail: message='{request.message[:100]}', "
+        f"has_pantry_snapshot={request.pantry_snapshot is not None}"
     )
 
     try:
@@ -198,18 +196,15 @@ async def chat(request: ChatRequest) -> ProposalEnvelope[Any]:
 
         elapsed = (datetime.now() - start_time).total_seconds()
         logger.info(
-            "Chat workflow completed",
-            extra={
-                "intent": envelope.intent.value,
-                "requires_review": envelope.requires_review,
-                "next_action": envelope.next_action.value,
-                "confidence": envelope.confidence.overall,
-                "has_proposal": envelope.proposal is not None,
-                "workflow_id": str(envelope.workflow_id),
-                "elapsed_seconds": elapsed,
-                "warnings_count": len(envelope.warnings) if envelope.warnings else 0,
-                "errors_count": len(envelope.errors) if envelope.errors else 0,
-            },
+            f"Chat completed: intent={envelope.intent.value}, "
+            f"confidence={envelope.confidence.overall:.2f}, "
+            f"next_action={envelope.next_action.value}, elapsed={elapsed:.2f}s"
+        )
+        logger.debug(
+            f"Chat detail: requires_review={envelope.requires_review}, "
+            f"has_proposal={envelope.proposal is not None}, "
+            f"workflow_id={envelope.workflow_id}, "
+            f"warnings={len(envelope.warnings or [])}, errors={len(envelope.errors or [])}"
         )
 
         return envelope
@@ -217,13 +212,7 @@ async def chat(request: ChatRequest) -> ProposalEnvelope[Any]:
     except Exception as e:
         elapsed = (datetime.now() - start_time).total_seconds()
         logger.error(
-            "Chat workflow failed",
-            extra={
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "elapsed_seconds": elapsed,
-                "message_preview": request.message[:100],
-            },
+            f"Chat failed: error={type(e).__name__}: {e}, elapsed={elapsed:.2f}s",
             exc_info=True,
         )
         raise HTTPException(
@@ -257,13 +246,9 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
     conversation_id = str(request.conversation_id) if request.conversation_id else None
 
     logger.info(
-        "Chat stream request received",
-        extra={
-            "message_preview": request.message[:100],
-            "conversation_id": conversation_id,
-            "mode": request.mode,
-        },
+        f"Chat stream request: conversation_id={conversation_id}, mode={request.mode}"
     )
+    logger.debug(f"Chat stream detail: message='{request.message[:100]}'")
 
     # Persist user message
     if conversation_id:
@@ -331,8 +316,8 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                     else "general_chat"
                 )
                 logger.info(
-                    "Saving assistant message",
-                    extra={"intent": intent_str, "content_length": len(save_content)},
+                    f"Saving assistant message: intent={intent_str}, "
+                    f"content_length={len(save_content)}"
                 )
                 await repo.save_message(
                     conversation_id=conversation_id,
