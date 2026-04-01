@@ -3,17 +3,17 @@
 ## 5 commands for 90% of work
 
 ```
-/status               → where am I? what's ready?
-/rpi "goal"           → full cycle: research + plan + implement + validate
+describe goal         → Claude enters plan mode → approve → agents implement
 /vibe recent          → is this code shippable?
-/plan "goal"          → break into issues, then /crank to execute
-/evolve               → run overnight against GOALS.md fitness gates
+"run gates + fix"     → autonomous improvement loop
+"save handoff"        → persist context for next session
 ```
 
 ## Session start
 
 ```bash
-/status               # loads context, shows current work
+# Just describe what you want — Claude reads MEMORY.md + ROADMAP.md automatically
+"what's the current state of the project?"
 ```
 
 ## After writing code
@@ -21,22 +21,28 @@
 ```bash
 /vibe recent          # validate changes before committing
 git commit -m "..."   # commit clean diff
-/retro --quick "what I learned"   # feed the knowledge flywheel
+"save to memory: [what we decided and why]"
 ```
 
 ## Start a new feature
 
-```bash
-/rpi "describe what you want to build"
-# → research → plan [approval] → parallel implementation → validate
-# You review diff, then commit
+```
+"implement [feature] — here's the spec: docs/plans/my-feature.md"
+→ Claude creates task tree → assigns dev1/dev2/designer → they execute in parallel
+→ You review diff, then commit
+```
+
+## Run quality gates autonomously
+
+```
+"run pytest + mypy + ruff + tsc, fix any failures, keep going until all green"
 ```
 
 ## Key files
 
 | File | Purpose |
 |------|---------|
-| `GOALS.md` | Fitness gates — `/evolve` runs until these pass |
-| `.agents/` | Knowledge store — auto-injected each session |
+| `ROADMAP.md` | Current phase, open issues, success criteria |
+| `MEMORY.md` | Auto-loaded decisions and lessons |
 | `docs/WORKFLOW.md` | Full workflow reference |
-| `docs/AGENTOPS.md` | Complete command reference |
+| `docs/guides/testing.md` | Test patterns |

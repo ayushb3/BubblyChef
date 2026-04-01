@@ -1,140 +1,161 @@
-# BubblyChef Workflow — AgentOps
+# BubblyChef — Working with Claude Code
 
-> AgentOps is the primary workflow. Use `/rpi` for features, `/vibe` before commits, `/status` to orient.
+> How to get the most out of Claude Code for feature work, bug fixes, and autonomous improvement loops.
 
 ---
 
-## The One Command That Does Everything
+## Orientation
 
 ```bash
-/rpi "describe your goal"
+/status          # where am I, what's changed, what's next
 ```
 
-This runs the full cycle: research → plan → implement → validate → learnings captured. You review the diff and commit.
+Read `ROADMAP.md` for current phase + open issues. `MEMORY.md` is auto-loaded each session.
 
 ---
 
-## When to Use What
+## Workflows
 
-| Situation | Command |
-|-----------|---------|
-| Start a new feature or fix | `/rpi "goal"` |
-| Understand the codebase first | `/research "topic"` |
-| Break work into trackable issues | `/plan "goal"` then `/crank` |
-| Review code before committing | `/vibe recent` |
-| Validate a plan before coding | `/pre-mortem` |
-| Where am I / what's ready? | `/status` |
-| Multi-model code review | `/council` |
-| Run overnight against goals | `/evolve` |
-| Save state before ending session | `/handoff` |
-| Where was I after context loss? | `/recover` |
+### Quick fix / small change
+```
+describe the bug or change → Claude implements → /vibe recent → commit
+```
+
+### Feature (multi-file)
+```
+describe the feature
+  → Claude enters plan mode → you review + approve
+  → agent team implements in parallel
+  → run quality gates → commit
+```
+Claude's built-in agent roles handle the split:
+- **pm** — reads codebase, decomposes into tasks, coordinates
+- **dev1** — backend/Python (FastAPI, LangGraph, repository)
+- **dev2** — frontend/TypeScript (React, Tailwind, hooks)
+- **designer** — UX review, visual consistency
+
+### Spec-driven autonomous implementation
+When you have a thorough design doc (e.g. `docs/plans/my-feature.md`):
+
+1. Write the spec with clear acceptance criteria per task
+2. Tell Claude: *"Implement the spec at docs/plans/my-feature.md autonomously"*
+3. Claude creates a task tree with dependencies, assigns agents, they execute
+4. No back-and-forth — agents read the spec, implement, run tests, mark done
+5. You review the diff and commit
+
+The spec is the decision layer. The more complete it is, the less Claude needs to ask.
+
+### Autonomous improvement loop (replaces `/evolve`)
+To run until all quality gates pass:
+
+```
+"Run pytest + mypy + ruff + tsc. For each failure, create a task and fix it.
+ Keep going until all gates are green."
+```
+
+Claude will:
+1. Run the quality gates
+2. Create tasks for each failure
+3. Assign dev1/dev2 as appropriate
+4. Fix → re-run → repeat until clean
+
+You can also kick this off on a schedule:
+```
+"Every morning at 9am, run quality gates and create tasks for any failures"
+→ Claude sets up a durable cron job
+```
 
 ---
 
-## Session Patterns
+## Quality Gates
 
-### Quick task (bug fix, small change)
-```
-/implement "description"
-/vibe recent
-git commit
-```
-
-### Full feature
-```
-/rpi "feature goal"
-→ reviews research → plan → approves → crank runs → vibe → commit
-```
-
-### Autonomous overnight
-```
-ao goals measure        ← check which gates fail
-/evolve                 ← runs RPI cycles against GOALS.md until gates pass
-```
-
----
-
-## The AgentOps Loop
-
-```
-You describe a goal
-      │
-      ▼
-/rpi runs automatically:
-  1. Research  — explores codebase, injects past learnings from .agents/
-  2. Plan      — decomposes into issues with waves [approval gate]
-  3. Crank     — parallel agents implement each issue
-  4. Validate  — /vibe quality check + /post-mortem extracts learnings
-      │
-      ▼
-You review the diff → git commit
-```
-
-Knowledge from every session flows into `.agents/` and is automatically injected at the start of the next one.
-
----
-
-## Knowledge Flywheel
+Run these before any commit:
 
 ```bash
-ao lookup --query "topic"     # search past decisions
-ao metrics health             # is flywheel above escape velocity?
-ao goals measure              # which GOALS.md gates pass/fail
+pytest --tb=no -q                  # all tests pass
+mypy bubbly_chef/ --strict         # no type errors
+ruff check bubbly_chef/            # no lint errors
+cd web && npx tsc --noEmit         # TypeScript clean
 ```
 
-**What fills it:** `/retro --quick "insight"` during session, `/post-mortem` after features.
-
-**What uses it:** Every session start (automatic hook), every `/crank` worker before implementing.
+One command:
+```bash
+pytest --tb=no -q && mypy bubbly_chef/ --strict && ruff check bubbly_chef/ && cd web && npx tsc --noEmit
+```
 
 ---
 
-## File Reference
+## Validation
 
-| File | Purpose |
-|------|---------|
-| `CLAUDE.md` | Architecture, stack, patterns — loaded every session |
-| `GOALS.md` | Fitness gates — `/evolve` runs until these pass |
-| `docs/AGENTOPS.md` | Full AgentOps command reference |
-| `docs/ROADMAP.md` | Product vision and phase plan |
-| `.agents/` | Knowledge store — learnings, research, council verdicts |
+```
+/vibe recent     # review changed code before committing
+```
+
+This runs a multi-perspective code review on your recent changes: correctness, security, maintainability.
+
+---
+
+## Knowledge / Memory
+
+Decisions, lessons, and project state persist in `.claude/agent-memory/` (auto-loaded via `MEMORY.md`).
+
+Key commands:
+```bash
+# Tell Claude to remember something
+"remember that [X] — save it to memory"
+
+# Ask Claude to recall context
+"check memory for anything relevant to [topic]"
+```
+
+After finishing a session with significant decisions:
+```
+"save a handoff note to memory capturing what we decided and why"
+```
 
 ---
 
 ## Recovery
 
 ```bash
-git diff                  # see what changed
-git checkout .            # discard agent changes
-git reset --hard <hash>   # revert to a commit
-/recover                  # restore AgentOps context after compaction
-/handoff                  # save session state before ending
+git diff                    # see what changed
+git checkout .              # discard agent changes
+git reset --hard <hash>     # revert to a commit
+```
+
+If context is lost mid-session:
+```
+"recover context — check MEMORY.md, git log, and ROADMAP.md"
 ```
 
 ---
 
-## Legacy Scripts (Manual Fallback)
+## What Was Removed
 
-The original three-agent scripts still work if you need manual control:
+AgentOps (`/rpi`, `/crank`, `/evolve`, `ao` CLI) was the previous workflow layer.
 
-```bash
-scripts/dev-agent.sh    # launch Dev agent against a task
-scripts/qa-agent.sh     # launch QA agent for verification
-scripts/new-sprint.sh   # archive old sprint, start fresh
-```
-
-For all normal work, use `/rpi` instead.
+**What replaced what:**
+| Old | New |
+|---|---|
+| `/rpi "goal"` | Describe goal → plan mode → agent team |
+| `/crank` | Claude task tree + parallel agents (automatic) |
+| `/evolve` | "Run gates autonomously until green" prompt |
+| `/vibe` | `/vibe recent` (still works — it's a native skill) |
+| `/handoff` | "Save handoff note to memory" |
+| `ao lookup` | "Check memory for [topic]" |
+| `.agents/` knowledge | `.claude/agent-memory/` + `MEMORY.md` |
 
 ---
 
 ## Common Failure Patterns
 
 | Pattern | Stop sign |
-|---------|-----------|
-| Fix spiral | >3 fix attempts → stop, revert, restart |
-| Context amnesia | Re-introducing old bugs → use `/handoff` between sessions |
-| Tests passing lie | Green suite, broken feature → run manual smoke test |
-| Silent deletion | "Cleanup" removes edge-case handling → check git history |
+|---|---|
+| Fix spiral | >3 fix attempts on same thing → stop, revert, ask |
+| Context amnesia | Re-introducing old bugs → check MEMORY.md first |
+| Tests passing lie | Green suite, broken feature → add a smoke test |
+| Silent deletion | "Cleanup" removes edge-case handling → check git diff |
 
 ---
 
-_Last updated: 2026-03-16_
+_Last updated: 2026-03-31_

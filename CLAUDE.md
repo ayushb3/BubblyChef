@@ -22,13 +22,13 @@ mypy bubbly_chef/ --strict                             # type check
 |---|---|
 | Backend | Python 3.11+ + FastAPI (port 8888) |
 | Frontend | React 18 + TypeScript + Vite (port 5173) |
-| Database | SQLite (aiosqlite, async) |
+| Database | SQLite (aiosqlite, async) + Alembic migrations |
 | AI | Gemini API (free tier) + Ollama (self-hosted fallback) |
 | AI Orchestration | LangGraph workflows (chat, receipt, product, recipe ingest) |
 | OCR | Tesseract |
 | State (frontend) | Zustand (client) + React Query (server state) |
 | Styling | Tailwind CSS v4 + Framer Motion |
-| Version | 0.1.0 — Phase 2 in progress (Dashboard + Chat + Kitchen Scene) |
+| Version | 0.1.0 — Phase 2 complete, Phase 3 next |
 
 ---
 
@@ -66,10 +66,12 @@ bubbly_chef/
 │                            # health.py, ingest.py, apply.py, icons.py, decorations.py
 ├── ai/                      # provider.py, manager.py, gemini.py, ollama.py
 ├── workflows/               # LangGraph: chat_ingest.py, receipt_ingest.py,
-│                            #            product_ingest.py, recipe_ingest.py, state.py
+│                            #   product_ingest.py, recipe_ingest.py, state.py
+│                            #   recipe/ package: nodes.py (grounding + constraint extraction)
 ├── tools/                   # llm_client.py, expiry.py, normalizer.py, product_lookup.py
 ├── services/                # ocr.py, receipt_parser.py, image_preprocessor.py
-├── domain/                  # normalizer.py, expiry.py, defaults.py, icon_map.py
+├── domain/                  # normalizer.py, expiry.py, defaults.py, icon_map.py,
+│                            # catalog.py (304-entry USDA food catalog)
 ├── models/                  # pantry.py, user.py, recipes.py, proposals.py
 ├── repository/              # base.py, sqlite.py
 ├── config.py
@@ -105,6 +107,7 @@ GET  /health | /health/ai
 # Pantry
 GET|POST|PUT|DELETE  /pantry
 GET  /pantry/expiring?days=3
+PATCH /pantry/{id}/slot
 
 # Scan (OCR + receipt parsing)
 GET  /scan/ocr-status
@@ -160,10 +163,23 @@ Nothing auto-adds without explicit user confirm.
 ```
 POST /v1/chat → chat_ingest workflow
 → classify intent → route to sub-workflow:
-  recipe-generate     → pantry-aware recipe suggestions
+  recipe-generate     → pantry-aware recipe suggestions (grounding workflow)
   pantry-add          → add items via chat
   cooking-question    → general AI cooking advice
   saved-recipe-lookup → query saved recipes
+```
+
+### Recipe Grounding Workflow (implemented Phase 2)
+```
+classify_intent → [recipe-generate]
+  ↓
+gather_pantry_context       # fetch items + expiring
+  ↓
+extract_constraints         # LLM: cuisine, time budget, dietary, skill level → RecipeConstraints
+  ↓
+score_and_rank              # deterministic: rank by expiry urgency + constraint match
+  ↓
+generate_grounded_response  # LLM with structured context, not raw pantry dump
 ```
 
 ### AI Provider Fallback
@@ -173,27 +189,18 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 
 ---
 
-## Current Phase: 2 — Dashboard + Chat + Kitchen Scene
+## Current State: Phase 2 Complete
 
-**What's done:**
-- Phase 1 complete: pantry CRUD, receipt scanning, recipe generation
-- Dashboard with expiring items widget, quick actions, recent activity
-- Chat interface with LangGraph intent router (4 intents)
-- DOM-based kitchen scene with drag-and-drop across zones (fridge/freezer/pantry/counter)
-- Milestone progress bar + decoration unlock system
-- Cross-zone drag with ghost preview and drop zone glow
+**Done:**
+- Phase 1: pantry CRUD, receipt scanning, recipe generation, Alembic migrations
+- Phase 2: dashboard, chat + intent router, DOM kitchen scene, milestone decorations
+- Recipe grounding workflow with constraint extraction + expiry-ranked scoring
+- Chat UX: new chat button, markdown rendering, streaming, conversation history
+- 304-entry USDA food catalog for category/emoji lookup
+- 454+ tests passing, mypy strict clean, ruff clean, tsc clean
 
-**Phase 2 exit gates** (see `GOALS.md`):
-- `pytest` passes, `mypy --strict` passes, `ruff` clean, `tsc --noEmit` passes
-- Dashboard renders expiring widget + real DB activity (not hardcoded)
-- Chat UI routes work, intent classification correct
-- 80% coverage on core modules
-
-**Next phases** (see `GOALS.md`):
-- Phase K1: Fluent Emoji icon system
-- Phase K2: Phaser kitchen game scene (depends on K1)
-- Phase 3: Recipe Library + multimodal ingestion (URL, TikTok, YouTube)
-- Phase 4: Mobile PWA
+**Next: Phase 3 — Recipe Library + Multimodal Ingestion**
+See `ROADMAP.md` for plan, open issues, and success criteria.
 
 ---
 
@@ -229,33 +236,32 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 - React Query for server state, Zustand for client state
 - All API calls through `web/src/api/client.ts`
 
-**Workflow:**
-- Use `/rpi "goal"` for features — full research → plan → implement → validate cycle
-- Use `/vibe recent` before committing
-- Use `/status` to orient at session start
-- Run `ao goals measure` to check phase fitness gates
-
 ---
 
-## Agentic Team Workflow
+## Working with Claude Code
 
-**When the user reports an issue or requests a feature:**
+**Session orientation:** Read `ROADMAP.md` for current phase + open issues. `MEMORY.md` is auto-loaded each session with accumulated context.
 
-1. **Triage** — Claude reads the issue, gathers just enough context to describe it clearly (what's broken, what's wanted, which files are likely involved)
-2. **Create a PM task** — Spawn a `pm` agent via the Agent tool with the triage summary. The PM will:
-   - Research the codebase in depth
-   - Write a detailed implementation plan (what to change, file-by-file)
-   - Spawn `dev1`, `dev2`, and/or `designer` agents as needed
-   - Coordinate implementation and verify completion
-3. **Claude stays as coordinator** — Claude monitors the team, answers questions, and relays final results to the user
+**For non-trivial features:**
+1. Triage — read the relevant code, identify files affected
+2. Describe the goal; Claude enters plan mode → approve the plan
+3. Agent team implements in parallel: `pm` coordinates, `dev1` (backend), `dev2` (frontend), `designer` (UX QA)
+4. Run quality gates before committing: `pytest`, `mypy --strict`, `ruff`, `tsc --noEmit`
 
-**Agent roles:**
-- `pm` — Plans, decomposes, coordinates. Reads codebase + spawns devs. Owns the task list.
-- `dev1` — Backend/Python: FastAPI routes, services, workflows, repository, domain
-- `dev2` — Frontend/TypeScript: React pages, components, Tailwind, client hooks
-- `designer` — UX QA, dark mode review, visual consistency checks
+**For spec-driven autonomous work:**
+- Write a thorough design doc in `docs/plans/` with clear acceptance criteria per task
+- Tell Claude: *"Implement the spec at docs/plans/my-feature.md autonomously"*
+- Agents read the spec, implement, run gates, mark tasks done — no back-and-forth
+- Review the diff and commit
 
-**DO NOT** implement features directly when the user reports an issue — always triage → PM → agent team unless the fix is a single-line change.
+**Autonomous improvement loop:**
+```
+"Run pytest + mypy + ruff + tsc. Fix any failures. Keep going until all green."
+```
+
+**Persistent memory:** Key decisions and lessons live in `.claude/agent-memory/` (auto-loaded via `MEMORY.md`). At session end: *"save a handoff note to memory"*
+
+See `docs/WORKFLOW.md` for the full workflow reference.
 
 ---
 
@@ -274,29 +280,13 @@ BUBBLY_CORS_ORIGINS=["http://localhost:5173"]
 
 ## Known Limitations / Tech Debt
 
-- No unit conversion (can't deduct "3 eggs" from "1 dozen eggs")
+- No unit conversion (can't deduct "3 eggs" from "1 dozen eggs") — issue #6
 - Single-user, no auth
-- SQLite only (no migrations — Alembic needed before Phase 3)
 - Receipt quality dependent on image quality
-- No rate limiting on AI provider calls
-- Pagination missing from pantry list endpoint
+- No rate limiting on AI provider calls — issue #8
+- Pagination missing from pantry list endpoint — issue #5
+- iOS Safari bottom nav bug — issue #4
 
 ---
 
-## AgentOps
-
-Knowledge compounds via `.agents/`. Prior research, plans, learnings, and handoffs are all there.
-
-```bash
-ao lookup --query "topic"   # search past learnings
-ao metrics health           # flywheel health
-ao goals measure            # check fitness gates
-/status                     # orient at session start
-/rpi "goal"                 # start a new feature
-/vibe                       # validate before committing
-/handoff                    # save state at session end
-```
-
----
-
-*Last updated: 2026-03-23*
+*Last updated: 2026-03-31*
