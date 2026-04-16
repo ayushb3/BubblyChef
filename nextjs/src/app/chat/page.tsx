@@ -267,7 +267,10 @@ function MessageRenderer({
     (intent === 'recipe_card' || intent === 'recipe_generation') &&
     message.response?.proposal
   ) {
-    const recipe = message.response.proposal as ChatRecipeData
+    const rawProposal = message.response.proposal as { recipe?: ChatRecipeData } | ChatRecipeData
+    const recipe = (rawProposal && 'recipe' in rawProposal && rawProposal.recipe)
+      ? rawProposal.recipe
+      : rawProposal as ChatRecipeData
     return (
       <div className="flex flex-col gap-2 items-start">
         {message.content && (
