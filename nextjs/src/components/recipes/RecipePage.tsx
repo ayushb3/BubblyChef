@@ -28,6 +28,7 @@ export interface Recipe {
   is_draft?: boolean
   cuisine?: string | null
   meal_type?: string | null
+  is_favorite?: boolean
   created_at?: string
 }
 

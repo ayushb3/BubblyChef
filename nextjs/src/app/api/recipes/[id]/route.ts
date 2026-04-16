@@ -39,6 +39,7 @@ export async function PUT(
     'prep_time_minutes', 'cook_time_minutes', 'total_time_minutes',
     'servings', 'source_url', 'tags', 'difficulty', 'source_type',
     'source_title', 'thumbnail_url', 'is_draft', 'cuisine', 'meal_type',
+    'is_favorite',
   ]
   for (const field of fields) {
     if (body[field] !== undefined) updates[field] = body[field]
