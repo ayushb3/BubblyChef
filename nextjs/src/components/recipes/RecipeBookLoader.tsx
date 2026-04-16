@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import RecipeList from '@/components/recipes/RecipeList'
+import RecipeBook from '@/components/recipes/RecipeBook'
 import { type Recipe } from '@/components/recipes/RecipePage'
 
 export default function RecipeBookLoader() {
@@ -31,5 +31,5 @@ export default function RecipeBookLoader() {
     )
   }
 
-  return <RecipeList recipes={recipes} />
+  return <RecipeBook recipes={recipes} />
 }
