@@ -7,8 +7,10 @@ import { type Recipe } from '@/components/recipes/RecipePage'
 export default function RecipeBookLoader() {
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
+    setLoading(true)
     fetch('/api/recipes')
       .then((r) => r.json())
       .then((data) => {
@@ -18,7 +20,7 @@ export default function RecipeBookLoader() {
         setRecipes([])
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, [refreshKey])
 
   if (loading) {
     return (
@@ -31,5 +33,5 @@ export default function RecipeBookLoader() {
     )
   }
 
-  return <RecipeBook recipes={recipes} />
+  return <RecipeBook recipes={recipes} onMutate={() => setRefreshKey(k => k + 1)} />
 }
