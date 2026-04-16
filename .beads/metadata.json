@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "BubblyChef",
+  "project_id": "43e7252f-5297-4358-b57d-7cd2394da12b"
+}
