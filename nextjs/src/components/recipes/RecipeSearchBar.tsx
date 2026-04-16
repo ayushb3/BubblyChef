@@ -8,7 +8,7 @@ interface RecipeSearchBarProps {
   isSearching?: boolean
 }
 
-export default function RecipeSearchBar({ onSearch, isSearching = false }: RecipeSearchBarProps) {
+export default function RecipeSearchBar({ onSearch }: RecipeSearchBarProps) {
   const [value, setValue] = useState('')
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -28,26 +28,12 @@ export default function RecipeSearchBar({ onSearch, isSearching = false }: Recip
         type="text"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="Search your recipes... 🔍"
+        placeholder="Search your recipes..."
         className="w-full py-2.5 pl-4 pr-10 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:outline-none focus:border-[var(--color-accent)] transition-colors text-sm font-[Nunito,sans-serif]"
       />
 
-      <AnimatePresence>
-        {isSearching && (
-          <motion.span
-            key="searching"
-            className="absolute right-8 text-base select-none"
-            animate={{ y: [0, -4, 0] }}
-            transition={{ duration: 0.6, repeat: Infinity, ease: 'easeInOut' }}
-            exit={{ opacity: 0 }}
-          >
-            🔍
-          </motion.span>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {value && !isSearching && (
+      <AnimatePresence mode="wait">
+        {value ? (
           <motion.button
             key="clear"
             initial={{ opacity: 0, scale: 0.7 }}
@@ -60,6 +46,10 @@ export default function RecipeSearchBar({ onSearch, isSearching = false }: Recip
           >
             ×
           </motion.button>
+        ) : (
+          <span key="icon" className="absolute right-3 text-base text-[var(--color-muted)] select-none pointer-events-none">
+            🔍
+          </span>
         )}
       </AnimatePresence>
     </div>

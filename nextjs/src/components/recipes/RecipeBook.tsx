@@ -20,7 +20,6 @@ function MetaChip({ label }: { label: string }) {
 
 export default function RecipeBook({ recipes }: RecipeBookProps) {
   const [search, setSearch] = useState('')
-  const [isSearching, setIsSearching] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(
     recipes.length > 0 ? recipes[0].id : null,
@@ -36,9 +35,7 @@ export default function RecipeBook({ recipes }: RecipeBookProps) {
   const selectedRecipe = recipes.find((r) => r.id === selectedId) ?? filteredRecipes[0] ?? null
 
   const handleSearch = useCallback((q: string) => {
-    setIsSearching(true)
     setSearch(q)
-    setTimeout(() => setIsSearching(false), 400)
   }, [])
 
   const handleSelect = (id: string) => {
@@ -55,7 +52,7 @@ export default function RecipeBook({ recipes }: RecipeBookProps) {
   return (
     <div className="w-full max-w-md mx-auto px-2 flex flex-col gap-3">
       {/* Search */}
-      <RecipeSearchBar onSearch={handleSearch} isSearching={isSearching} />
+      <RecipeSearchBar onSearch={handleSearch} />
 
       {/* Book container */}
       <div
