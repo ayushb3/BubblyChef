@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import RecipeDetail, { type Recipe } from './RecipePage'
 import RecipeSearchBar from './RecipeSearchBar'
@@ -8,6 +8,19 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 
 interface RecipeBookProps {
   recipes: Recipe[]
+}
+
+function scoreRecipe(r: Recipe, q: string): number {
+  const lq = q.toLowerCase()
+  let score = 0
+  const title = r.title.toLowerCase()
+  if (title.startsWith(lq)) score += 3
+  else if (title.includes(lq)) score += 2
+  if (r.tags?.some((t) => t.toLowerCase().includes(lq))) score += 1
+  if (r.cuisine?.toLowerCase().includes(lq)) score += 1
+  if (r.meal_type?.toLowerCase().includes(lq)) score += 1
+  if ((r.description ?? '').toLowerCase().includes(lq)) score += 0.5
+  return score
 }
 
 function MetaChip({ label }: { label: string }) {
@@ -25,12 +38,23 @@ export default function RecipeBook({ recipes }: RecipeBookProps) {
     recipes.length > 0 ? recipes[0].id : null,
   )
 
-  const filteredRecipes = recipes.filter(
-    (r) =>
-      !search ||
-      r.title.toLowerCase().includes(search.toLowerCase()) ||
-      (r.description ?? '').toLowerCase().includes(search.toLowerCase()),
+  const filteredRecipes = useMemo(
+    () =>
+      search
+        ? recipes
+            .map((r) => ({ r, score: scoreRecipe(r, search) }))
+            .filter(({ score }) => score > 0)
+            .sort((a, b) => b.score - a.score)
+            .map(({ r }) => r)
+        : recipes,
+    [recipes, search],
   )
+
+  useEffect(() => {
+    if (search.trim() && filteredRecipes.length > 0) {
+      setSelectedId(filteredRecipes[0].id)
+    }
+  }, [search, filteredRecipes])
 
   const selectedRecipe = recipes.find((r) => r.id === selectedId) ?? filteredRecipes[0] ?? null
 
