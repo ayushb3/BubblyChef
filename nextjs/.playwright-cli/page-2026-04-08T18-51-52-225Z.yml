@@ -1,0 +1,126 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e32]:
+      - generic [ref=e33]:
+        - img "Bubbles" [ref=e34]
+        - generic [ref=e35]:
+          - heading "Good morning! ☀️" [level=1] [ref=e36]
+          - paragraph [ref=e37]: Welcome back, test!
+      - generic [ref=e38]:
+        - generic [ref=e39]:
+          - heading "Use Soon 🔥" [level=2] [ref=e40]
+          - link "View All" [ref=e41] [cursor=pointer]:
+            - /url: /pantry
+        - generic [ref=e42]:
+          - generic [ref=e43]:
+            - generic [ref=e44]:
+              - paragraph [ref=e45]: Chicken Breast
+              - paragraph [ref=e46]: 2 item
+            - generic [ref=e47]: 1d left
+          - generic [ref=e48]:
+            - generic [ref=e49]:
+              - paragraph [ref=e50]: Spinach
+              - paragraph [ref=e51]: 1 bag
+            - generic [ref=e52]: 1d left
+          - generic [ref=e53]:
+            - generic [ref=e54]:
+              - paragraph [ref=e55]: Eggs
+              - paragraph [ref=e56]: 6 item
+            - generic [ref=e57]: 2d left
+          - generic [ref=e58]:
+            - generic [ref=e59]:
+              - paragraph [ref=e60]: Tomatoes
+              - paragraph [ref=e61]: 4 item
+            - generic [ref=e62]: 3d left
+          - generic [ref=e63]:
+            - generic [ref=e64]:
+              - paragraph [ref=e65]: Milk
+              - paragraph [ref=e66]: 1 litre
+            - generic [ref=e67]: 4d left
+          - generic [ref=e68]:
+            - generic [ref=e69]:
+              - paragraph [ref=e70]: Greek Yogurt
+              - paragraph [ref=e71]: 500 g
+            - generic [ref=e72]: 6d left
+      - generic [ref=e73]:
+        - heading "Quick Actions" [level=2] [ref=e74]
+        - generic [ref=e75]:
+          - link "📷 Scan Receipt" [ref=e77] [cursor=pointer]:
+            - /url: /scan
+            - generic [ref=e78]:
+              - generic [ref=e80]: 📷
+              - paragraph [ref=e81]: Scan
+              - paragraph [ref=e82]: Receipt
+          - link "✏️ Add Item" [ref=e84] [cursor=pointer]:
+            - /url: /pantry
+            - generic [ref=e85]:
+              - generic [ref=e87]: ✏️
+              - paragraph [ref=e88]: Add
+              - paragraph [ref=e89]: Item
+          - link "✨ Get Recipe" [ref=e91] [cursor=pointer]:
+            - /url: /chat?mode=recipe
+            - generic [ref=e92]:
+              - generic [ref=e94]: ✨
+              - paragraph [ref=e95]: Get
+              - paragraph [ref=e96]: Recipe
+      - generic [ref=e97]:
+        - link "🧺 Pantry Manage your items" [ref=e99] [cursor=pointer]:
+          - /url: /pantry
+          - generic [ref=e100]:
+            - generic [ref=e102]: 🧺
+            - generic [ref=e103]:
+              - paragraph [ref=e104]: Pantry
+              - paragraph [ref=e105]: Manage your items
+        - link "📷 Scan Add from receipt" [ref=e107] [cursor=pointer]:
+          - /url: /scan
+          - generic [ref=e108]:
+            - generic [ref=e110]: 📷
+            - generic [ref=e111]:
+              - paragraph [ref=e112]: Scan
+              - paragraph [ref=e113]: Add from receipt
+        - link "📖 Recipes Your recipe book" [ref=e115] [cursor=pointer]:
+          - /url: /recipes
+          - generic [ref=e116]:
+            - generic [ref=e118]: 📖
+            - generic [ref=e119]:
+              - paragraph [ref=e120]: Recipes
+              - paragraph [ref=e121]: Your recipe book
+        - link "💬 Chat Ask Chef Bubbly" [ref=e123] [cursor=pointer]:
+          - /url: /chat
+          - generic [ref=e124]:
+            - generic [ref=e126]: 💬
+            - generic [ref=e127]:
+              - paragraph [ref=e128]: Chat
+              - paragraph [ref=e129]: Ask Chef Bubbly
+      - generic [ref=e131]:
+        - generic [ref=e132]:
+          - paragraph [ref=e133]: Tip of the day
+          - paragraph [ref=e134]: Toast your spices in a dry pan for 30 seconds before using. The aroma difference is huge.
+          - link "Try it →" [ref=e135] [cursor=pointer]:
+            - /url: /chat
+        - img "Bubbles happy" [ref=e138]
+  - button "Open Next.js Dev Tools" [ref=e27] [cursor=pointer]:
+    - img [ref=e28]
+  - alert [ref=e31]
+  - navigation [ref=e139]:
+    - generic [ref=e140]:
+      - link "🏠 Home" [ref=e141] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e142]: 🏠
+        - generic [ref=e144]: Home
+      - link "🧺 Pantry" [ref=e145] [cursor=pointer]:
+        - /url: /pantry
+        - generic [ref=e146]: 🧺
+        - generic [ref=e148]: Pantry
+      - link "📷 Scan" [ref=e149] [cursor=pointer]:
+        - /url: /scan
+        - generic [ref=e150]: 📷
+        - generic [ref=e152]: Scan
+      - link "📖 Recipes" [ref=e153] [cursor=pointer]:
+        - /url: /recipes
+        - generic [ref=e154]: 📖
+        - generic [ref=e156]: Recipes
+      - link "💬 Chat" [ref=e157] [cursor=pointer]:
+        - /url: /chat
+        - generic [ref=e158]: 💬
+        - generic [ref=e160]: Chat

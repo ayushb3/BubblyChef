@@ -1,0 +1,22 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e7]: 👨‍🍳
+        - heading "BubblyChef" [level=1] [ref=e8]
+        - paragraph [ref=e9]: Your kawaii kitchen companion ✨
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - generic [ref=e12]: Email
+          - textbox "Email" [ref=e13]:
+            - /placeholder: you@email.com
+        - generic [ref=e14]:
+          - generic [ref=e15]: Password
+          - textbox "Password" [ref=e16]:
+            - /placeholder: Min 6 characters
+        - button "Sign In" [ref=e17]
+      - paragraph [ref=e18]:
+        - text: Don't have an account?
+        - button "Sign Up" [ref=e19]
+  - button "Open Next.js Dev Tools" [ref=e25] [cursor=pointer]:
+    - img [ref=e26]

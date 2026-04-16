@@ -53,7 +53,16 @@ async def chat_stream(
         f"Chat stream: user={user_id}, conversation_id={conversation_id}, mode={request.mode}"
     )
 
-    # Persist user message before streaming
+    # Load conversation history for context BEFORE saving user message
+    history: list[dict[str, Any]] = []
+    if conversation_id:
+        try:
+            repo = await get_repository()
+            history = await repo.get_history(user_id=user_id, conversation_id=conversation_id)
+        except Exception as hist_err:
+            logger.warning(f"Failed to load conversation history: {hist_err}")
+
+    # Persist user message after loading history (avoids duplicate in LLM context)
     if conversation_id:
         try:
             repo = await get_repository()
@@ -65,15 +74,6 @@ async def chat_stream(
             )
         except Exception as save_err:
             logger.warning(f"Failed to save user message: {save_err}")
-
-    # Load conversation history for context
-    history: list[dict[str, Any]] = []
-    if conversation_id:
-        try:
-            repo = await get_repository()
-            history = await repo.get_history(user_id=user_id, conversation_id=conversation_id)
-        except Exception as hist_err:
-            logger.warning(f"Failed to load conversation history: {hist_err}")
 
     async def event_generator() -> AsyncGenerator[str, None]:
         """Wrap workflow streaming output as SSE events."""
@@ -89,6 +89,7 @@ async def chat_stream(
                 mode=request.mode,
                 pantry_snapshot=request.pantry_snapshot,
                 history=history,
+                user_id=user_id,
             ):
                 parsed = json.loads(chunk_json)
                 event_type = parsed.get("type", "token")
@@ -186,6 +187,7 @@ async def chat_non_streaming(
             mode=request.mode,
             pantry_snapshot=request.pantry_snapshot,
             history=history,
+            user_id=user_id,
         ):
             parsed = json.loads(chunk_json)
             event_type = parsed.get("type", "token")

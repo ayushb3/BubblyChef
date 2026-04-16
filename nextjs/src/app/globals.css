@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: #FFF0F5;
+  --color-foreground: #5C4A5A;
+  --font-sans: var(--font-nunito);
+  --font-mono: var(--font-geist-mono);
+}
+
+@layer base {
+  :root {
+    /* Kawaii design tokens */
+    --color-bg: #FFF0F5;
+    --color-primary: #FFB7C5;
+    --color-accent: #B5D5F5;
+    --color-text: #5C4A5A;
+    --color-surface: #FFFAFC;
+    --color-border: #F2D6E0;
+    --color-muted: #9B8A93;
+    --color-primary-dark: #FF8FAB;
+    --color-accent-dark: #7EC8F0;
+  }
+
+  body {
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: Nunito, sans-serif;
+  }
+}
+
+/* Chowder-style textile/fabric panel — subtle woven crosshatch texture */
+.chowder-panel {
+  background-color: var(--color-primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Crect width='12' height='12' fill='none'/%3E%3Cline x1='0' y1='0' x2='12' y2='0' stroke='%23ffffff' stroke-width='0.8' stroke-opacity='0.15'/%3E%3Cline x1='0' y1='6' x2='12' y2='6' stroke='%23B5D5F5' stroke-width='0.6' stroke-opacity='0.12'/%3E%3Cline x1='0' y1='0' x2='0' y2='12' stroke='%23ffffff' stroke-width='0.8' stroke-opacity='0.15'/%3E%3Cline x1='6' y1='0' x2='6' y2='12' stroke='%23FFB7C5' stroke-width='0.6' stroke-opacity='0.12'/%3E%3Cline x1='0' y1='0' x2='12' y2='12' stroke='%23ffffff' stroke-width='0.4' stroke-opacity='0.08'/%3E%3Cline x1='12' y1='0' x2='0' y2='12' stroke='%23ffffff' stroke-width='0.4' stroke-opacity='0.08'/%3E%3C/svg%3E");
+  background-size: 12px 12px;
+}

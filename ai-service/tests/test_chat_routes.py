@@ -195,7 +195,7 @@ async def test_chat_stream_yields_tokens(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_chat_stream_requires_auth(app) -> None:
-    """POST /v1/chat/stream without auth header returns 422 (missing required header)."""
+    """POST /v1/chat/stream without auth header returns 401."""
     app.dependency_overrides.clear()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -204,8 +204,7 @@ async def test_chat_stream_requires_auth(app) -> None:
             json={"message": "Hello"},
         )
 
-    # FastAPI returns 422 when a required Header(...) parameter is absent
-    assert response.status_code == 422
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -230,13 +229,13 @@ async def test_chat_history_returns_messages(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_chat_history_requires_auth(app) -> None:
-    """GET /v1/chat/history/{id} without auth header returns 422."""
+    """GET /v1/chat/history/{id} without auth header returns 401."""
     app.dependency_overrides.clear()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get(f"/v1/chat/history/{TEST_CONV_ID}")
 
-    assert response.status_code == 422
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio

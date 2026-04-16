@@ -1,0 +1,305 @@
+'use client'
+
+import { useState, useEffect, useRef } from 'react'
+import { AnimatePresence } from 'framer-motion'
+import SpringButton from '@/components/ui/SpringButton'
+import BubblesMascot from '@/components/ui/BubblesMascot'
+import MessageBubble from '@/components/chat/MessageBubble'
+import TypingIndicator from '@/components/chat/TypingIndicator'
+import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
+import PantryProposalCard from '@/components/chat/PantryProposalCard'
+import { useChat } from '@/hooks/useChat'
+import { checkAIHealth } from '@/lib/api/chat'
+import type { ChatMessage, ChatRecipeData, PantryProposalData } from '@/types/chat'
+
+const SUGGESTIONS = [
+  'What can I make tonight? 🌙',
+  'Quick weeknight dinner ⚡',
+  'Use my expiring items 🍅',
+  'Help me meal prep 📦',
+]
+
+export default function ChatPage() {
+  const {
+    messages,
+    isStreaming,
+    proposalStates,
+    sendMessage,
+    cancelStream,
+    startNewChat,
+    approveProposal,
+    rejectProposal,
+  } = useChat()
+
+  const [input, setInput] = useState('')
+  const [aiAvailable, setAiAvailable] = useState(true)
+  const [saveStates, setSaveStates] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({})
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Check AI health on mount
+  useEffect(() => {
+    checkAIHealth()
+      .then((h) => setAiAvailable(h.ai_available))
+      .catch(() => setAiAvailable(false))
+  }, [])
+
+  // Auto-scroll on new messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, isStreaming])
+
+  // Mascot state
+  const mascotState = isStreaming ? 'thinking' : 'happy'
+
+  const handleSend = () => {
+    const text = input.trim()
+    if (!text) return
+    setInput('')
+    sendMessage(text)
+  }
+
+  const handleSuggestionClick = (suggestion: string) => {
+    setInput('')
+    sendMessage(suggestion)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
+  const handleSaveRecipe = async (msgId: string, recipe: ChatRecipeData) => {
+    setSaveStates((prev) => ({ ...prev, [msgId]: 'saving' }))
+    try {
+      const res = await fetch('/api/recipes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: recipe.title,
+          description: recipe.description,
+          ingredients: recipe.ingredients,
+          instructions: recipe.instructions,
+          cuisine: recipe.cuisine,
+          meal_type: recipe.meal_type,
+          dietary_tags: recipe.dietary_tags,
+          difficulty: recipe.difficulty,
+          prep_time_minutes: recipe.prep_time_minutes,
+          cook_time_minutes: recipe.cook_time_minutes,
+          total_time_minutes: recipe.total_time_minutes,
+          servings: recipe.servings,
+        }),
+      })
+      setSaveStates((prev) => ({ ...prev, [msgId]: res.ok ? 'saved' : 'error' }))
+    } catch {
+      setSaveStates((prev) => ({ ...prev, [msgId]: 'error' }))
+    }
+  }
+
+  const handleTryAnother = () => {
+    sendMessage('Give me a different recipe')
+  }
+
+  // Determine if the typing indicator should show
+  // (streaming has started but no content yet on the last assistant message)
+  const lastMsg = messages[messages.length - 1]
+  const showTypingIndicator =
+    isStreaming && lastMsg?.role === 'assistant' && !lastMsg.content
+
+  const hasMessages = messages.length > 0
+
+  return (
+    <div className="flex flex-col h-screen pb-20">
+      {/* Header */}
+      <div className="p-4 pb-3 flex items-center gap-3 flex-shrink-0 border-b border-[var(--color-border)]">
+        <BubblesMascot state={mascotState} size={36} animate={isStreaming} />
+        <div className="flex-1 min-w-0">
+          <h1 className="text-lg font-extrabold text-[var(--color-text)] leading-tight">
+            Bubbles 💬
+          </h1>
+          <p className="text-xs text-[var(--color-muted)]">Your AI kitchen assistant</p>
+        </div>
+        {hasMessages && (
+          <button
+            type="button"
+            onClick={startNewChat}
+            className="text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-primary)]/10 px-3 py-1.5 rounded-full hover:bg-[var(--color-primary)]/20 transition-colors"
+          >
+            New Chat
+          </button>
+        )}
+      </div>
+
+      {/* AI unavailable warning */}
+      {!aiAvailable && (
+        <div className="mx-4 mt-3 px-4 py-2.5 bg-[#FFF3E4] border border-[#FFD4A3] rounded-xl flex items-center gap-2 text-sm">
+          <span>⚠️</span>
+          <span className="text-[#8B5E2B]">
+            AI is unavailable. Check your Gemini API key or start Ollama.
+          </span>
+        </div>
+      )}
+
+      {/* Messages area */}
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {hasMessages ? (
+          <div className="flex flex-col gap-3">
+            {messages.map((msg, index) => (
+              <MessageRenderer
+                key={msg.id}
+                message={msg}
+                isLastAssistant={
+                  isStreaming &&
+                  msg.role === 'assistant' &&
+                  index === messages.length - 1
+                }
+                proposalState={proposalStates[msg.id]}
+                saveState={saveStates[msg.id] ?? 'idle'}
+                onApprove={() => approveProposal(msg.id)}
+                onReject={() => rejectProposal(msg.id)}
+                onSave={(recipe) => handleSaveRecipe(msg.id, recipe)}
+                onTryAnother={handleTryAnother}
+              />
+            ))}
+
+            <AnimatePresence>
+              {showTypingIndicator && <TypingIndicator />}
+            </AnimatePresence>
+
+            <div ref={messagesEndRef} />
+          </div>
+        ) : (
+          /* Empty state */
+          <div className="flex flex-col items-center justify-center h-full text-center pb-8">
+            <div className="mb-4">
+              <BubblesMascot state="happy" size={120} />
+            </div>
+            <p className="font-semibold text-[var(--color-text)] mb-1">
+              Hi! I&apos;m Bubbles, your kitchen assistant! ✨
+            </p>
+            <p className="text-sm text-[var(--color-muted)] mb-6">
+              Ask me about recipes, cooking tips, or managing your pantry.
+            </p>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => handleSuggestionClick(s)}
+                  className="bg-[var(--color-primary)]/10 text-[var(--color-text)] text-sm font-medium px-4 py-2 rounded-full border border-[var(--color-border)] hover:bg-[var(--color-primary)]/20 transition-colors"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Input bar — fixed above BottomNav */}
+      <div className="fixed bottom-20 left-0 right-0 bg-[var(--color-surface)] border-t border-[var(--color-border)] p-3 flex gap-2">
+        <input
+          ref={inputRef}
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask Bubbles anything..."
+          disabled={isStreaming}
+          className="flex-1 rounded-full px-4 py-2.5 border border-[var(--color-border)] bg-white text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] text-sm placeholder:text-[var(--color-muted)] disabled:opacity-50"
+        />
+        {isStreaming ? (
+          <SpringButton
+            onClick={cancelStream}
+            className="bg-[var(--color-muted)] text-white font-semibold px-4 py-2.5 rounded-full"
+          >
+            Stop
+          </SpringButton>
+        ) : (
+          <SpringButton
+            onClick={handleSend}
+            className="bg-[var(--color-primary)] text-white font-semibold px-4 py-2.5 rounded-full disabled:opacity-50"
+            disabled={!input.trim()}
+          >
+            Send
+          </SpringButton>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Message Renderer ─────────────────────────────────────────────────────────
+
+interface MessageRendererProps {
+  message: ChatMessage
+  isLastAssistant: boolean
+  proposalState?: 'pending' | 'approved' | 'rejected'
+  saveState: 'idle' | 'saving' | 'saved' | 'error'
+  onApprove: () => void
+  onReject: () => void
+  onSave: (recipe: ChatRecipeData) => void
+  onTryAnother: () => void
+}
+
+function MessageRenderer({
+  message,
+  isLastAssistant,
+  proposalState,
+  saveState,
+  onApprove,
+  onReject,
+  onSave,
+  onTryAnother,
+}: MessageRendererProps) {
+  // User messages — simple bubble
+  if (message.role === 'user') {
+    return <MessageBubble message={message} />
+  }
+
+  const intent = message.intent ?? message.response?.intent
+
+  // Recipe card intent
+  if (
+    (intent === 'recipe_card' || intent === 'recipe_generation') &&
+    message.response?.proposal
+  ) {
+    const recipe = message.response.proposal as ChatRecipeData
+    return (
+      <div className="flex flex-col gap-2 items-start">
+        {message.content && (
+          <MessageBubble message={message} isStreaming={isLastAssistant} />
+        )}
+        <ChatRecipeCard
+          recipe={recipe}
+          onSave={() => onSave(recipe)}
+          onTryAnother={onTryAnother}
+          saveState={saveState}
+        />
+      </div>
+    )
+  }
+
+  // Pantry proposal intent
+  if (intent === 'pantry_update' && message.response?.proposal) {
+    const proposal = message.response.proposal as PantryProposalData
+    return (
+      <div className="flex flex-col gap-2 items-start">
+        {message.content && (
+          <MessageBubble message={message} isStreaming={isLastAssistant} />
+        )}
+        <PantryProposalCard
+          proposal={proposal}
+          onApprove={onApprove}
+          onReject={onReject}
+          state={proposalState ?? 'pending'}
+        />
+      </div>
+    )
+  }
+
+  // Default: text message with markdown
+  return <MessageBubble message={message} isStreaming={isLastAssistant} />
+}

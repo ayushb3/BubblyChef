@@ -1,0 +1,75 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - main [ref=e32]:
+      - generic [ref=e33]:
+        - generic [ref=e35]:
+          - img "Bubbles happy" [ref=e38]
+          - generic [ref=e41]:
+            - text: Good afternoon! 🌤️ How's it going,
+            - strong [ref=e42]: test
+            - text: "?"
+        - generic [ref=e44]:
+          - img "Bubbles surprised" [ref=e47]
+          - generic [ref=e48]:
+            - generic [ref=e49]:
+              - text: Heads up! Your
+              - strong [ref=e50]: Chicken Breast
+              - text: expires tomorrow! Want me to find a quick recipe using it?
+            - generic [ref=e51]:
+              - link "Yes please! ✨" [ref=e52] [cursor=pointer]:
+                - /url: /chat?mode=recipe
+              - button "Not now" [ref=e53]
+        - generic [ref=e55]:
+          - img "Bubbles happy" [ref=e58]
+          - generic [ref=e60]:
+            - text: You have
+            - strong [ref=e61]: 14 items
+            - text: in your pantry and
+            - strong [ref=e62]: "6"
+            - text: expiring this week. Let's use some up! 💪
+        - generic [ref=e64]:
+          - img "Bubbles happy" [ref=e67]
+          - generic [ref=e68]:
+            - generic [ref=e69]:
+              - text: How about
+              - strong [ref=e70]: Greek Yogurt Parfait
+              - text: tonight? Only 3 minutes!
+            - generic [ref=e71]:
+              - link "Open recipe 📖" [ref=e72] [cursor=pointer]:
+                - /url: /recipes
+              - link "Something else" [ref=e73] [cursor=pointer]:
+                - /url: /chat?mode=recipe
+        - generic [ref=e75]:
+          - img "Bubbles thinking" [ref=e78]
+          - generic [ref=e79]:
+            - generic [ref=e80]:
+              - text: 💡
+              - strong [ref=e81]: "Tip:"
+              - text: Toast your spices in a dry pan for 30 seconds before using. The aroma difference is huge.
+            - link "Tell me more" [ref=e83] [cursor=pointer]:
+              - /url: /chat
+  - button "Open Next.js Dev Tools" [ref=e27] [cursor=pointer]:
+    - img [ref=e28]
+  - alert [ref=e31]
+  - navigation [ref=e84]:
+    - generic [ref=e85]:
+      - link "🏠 Home" [ref=e86] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e87]: 🏠
+        - generic [ref=e89]: Home
+      - link "🧺 Pantry" [ref=e90] [cursor=pointer]:
+        - /url: /pantry
+        - generic [ref=e91]: 🧺
+        - generic [ref=e93]: Pantry
+      - link "📷 Scan" [ref=e94] [cursor=pointer]:
+        - /url: /scan
+        - generic [ref=e95]: 📷
+        - generic [ref=e97]: Scan
+      - link "📖 Recipes" [ref=e98] [cursor=pointer]:
+        - /url: /recipes
+        - generic [ref=e99]: 📖
+        - generic [ref=e101]: Recipes
+      - link "💬 Chat" [ref=e102] [cursor=pointer]:
+        - /url: /chat
+        - generic [ref=e103]: 💬
+        - generic [ref=e105]: Chat

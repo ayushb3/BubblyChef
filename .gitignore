@@ -57,4 +57,4 @@ Thumbs.db
 # AgentOps session artifacts (auto-added by ao init)
 .agents/
 
-.playwright-cli/*
+**/.playwright-cli/

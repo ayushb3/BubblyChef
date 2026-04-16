@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from bubbly_chef.api.routes import chat
+from bubbly_chef.api.routes import chat, recipes_ai, scan, workflows
 from bubbly_chef.config import settings
 from bubbly_chef.repository.supabase_repo import get_repository
 
@@ -62,14 +62,24 @@ def create_app() -> FastAPI:
 
     # Health check
     @app.get("/health/ai")
-    async def health() -> dict[str, str]:
-        return {"status": "ok", "service": "ai-microservice"}
+    async def health() -> dict:
+        providers = []
+        if settings.gemini_api_key:
+            providers.append({"name": "gemini", "available": True})
+        if settings.ollama_base_url:
+            providers.append({"name": "ollama", "available": True})
+        return {
+            "status": "ok",
+            "service": "ai-microservice",
+            "ai_available": len(providers) > 0,
+            "providers": providers,
+        }
 
     # AI routes
     app.include_router(chat.router)
-    # app.include_router(scan.router)
-    # app.include_router(recipes_ai.router)
-    # app.include_router(workflows.router)
+    app.include_router(scan.router)
+    app.include_router(recipes_ai.router)
+    app.include_router(workflows.router)
 
     return app
 
