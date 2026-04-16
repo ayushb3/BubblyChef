@@ -86,7 +86,7 @@ export default function ChatPage() {
           instructions: recipe.instructions,
           cuisine: recipe.cuisine,
           meal_type: recipe.meal_type,
-          dietary_tags: recipe.dietary_tags,
+          tags: [...new Set([...(recipe.dietary_tags ?? []), ...(recipe as { tags?: string[] }).tags ?? []])],
           difficulty: recipe.difficulty,
           prep_time_minutes: recipe.prep_time_minutes,
           cook_time_minutes: recipe.cook_time_minutes,
