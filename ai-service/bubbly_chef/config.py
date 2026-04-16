@@ -19,6 +19,8 @@ class Settings(BaseSettings):
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"
+    ollama_timeout_seconds: int = 120
+    ollama_max_retries: int = 2
 
     # CORS
     cors_origins: list[str] = ["http://localhost:3000", "capacitor://localhost"]
@@ -26,6 +28,11 @@ class Settings(BaseSettings):
     # Confidence thresholds
     auto_add_confidence_threshold: float = 0.8
     review_confidence_threshold: float = 0.5
+
+    @property
+    def auto_apply_confidence_threshold(self) -> float:
+        """Alias used by ingest workflows."""
+        return self.auto_add_confidence_threshold
 
     # Schema
     schema_version: str = "1.0.0"

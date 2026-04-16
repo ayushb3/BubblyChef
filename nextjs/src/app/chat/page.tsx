@@ -3,7 +3,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
+import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
+import RotatingPlaceholder from '@/components/chat/RotatingPlaceholder'
 import MessageBubble from '@/components/chat/MessageBubble'
 import TypingIndicator from '@/components/chat/TypingIndicator'
 import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
@@ -113,24 +115,21 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col h-screen pb-20">
       {/* Header */}
-      <div className="p-4 pb-3 flex items-center gap-3 flex-shrink-0 border-b border-[var(--color-border)]">
-        <BubblesMascot state={mascotState} size={36} animate={isStreaming} />
-        <div className="flex-1 min-w-0">
-          <h1 className="text-lg font-extrabold text-[var(--color-text)] leading-tight">
-            Bubbles 💬
-          </h1>
-          <p className="text-xs text-[var(--color-muted)]">Your AI kitchen assistant</p>
-        </div>
-        {hasMessages && (
-          <button
-            type="button"
-            onClick={startNewChat}
-            className="text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-primary)]/10 px-3 py-1.5 rounded-full hover:bg-[var(--color-primary)]/20 transition-colors"
-          >
-            New Chat
-          </button>
-        )}
-      </div>
+      <BubblesHeader
+        mascotState={mascotState}
+        mascotAnimate={isStreaming}
+        rightSlot={
+          hasMessages ? (
+            <button
+              type="button"
+              onClick={startNewChat}
+              className="text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-primary)]/10 px-3 py-1.5 rounded-full hover:bg-[var(--color-primary)]/20 transition-colors"
+            >
+              New Chat
+            </button>
+          ) : undefined
+        }
+      />
 
       {/* AI unavailable warning */}
       {!aiAvailable && (
@@ -200,16 +199,18 @@ export default function ChatPage() {
 
       {/* Input bar — fixed above BottomNav */}
       <div className="fixed bottom-20 left-0 right-0 bg-[var(--color-surface)] border-t border-[var(--color-border)] p-3 flex gap-2">
-        <input
-          ref={inputRef}
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask Bubbles anything..."
-          disabled={isStreaming}
-          className="flex-1 rounded-full px-4 py-2.5 border border-[var(--color-border)] bg-white text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] text-sm placeholder:text-[var(--color-muted)] disabled:opacity-50"
-        />
+        <div className="flex-1 relative">
+          <input
+            ref={inputRef}
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={isStreaming}
+            className="w-full rounded-full px-4 py-2.5 border border-[var(--color-border)] bg-white text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] text-sm disabled:opacity-50"
+          />
+          <RotatingPlaceholder visible={!input && !isStreaming && !hasMessages} />
+        </div>
         {isStreaming ? (
           <SpringButton
             onClick={cancelStream}
@@ -270,7 +271,7 @@ function MessageRenderer({
     return (
       <div className="flex flex-col gap-2 items-start">
         {message.content && (
-          <MessageBubble message={message} isStreaming={isLastAssistant} />
+          <MessageBubble message={message} />
         )}
         <ChatRecipeCard
           recipe={recipe}
@@ -288,7 +289,7 @@ function MessageRenderer({
     return (
       <div className="flex flex-col gap-2 items-start">
         {message.content && (
-          <MessageBubble message={message} isStreaming={isLastAssistant} />
+          <MessageBubble message={message} />
         )}
         <PantryProposalCard
           proposal={proposal}
@@ -300,6 +301,7 @@ function MessageRenderer({
     )
   }
 
-  // Default: text message with markdown
-  return <MessageBubble message={message} isStreaming={isLastAssistant} />
+  // Default: text message with markdown (skip empty streaming messages — typing indicator handles those)
+  if (!message.content && isLastAssistant) return null
+  return <MessageBubble message={message} />
 }

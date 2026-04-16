@@ -3,12 +3,12 @@
 import io
 from typing import Literal
 
+import logging
+
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
-from bubbly_chef.logger import get_logger
-
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 PreprocessMode = Literal["auto", "light", "aggressive"]

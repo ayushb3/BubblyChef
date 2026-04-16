@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
+import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import FadeInView from '@/components/ui/FadeInView'
 import SpringButton from '@/components/ui/SpringButton'
@@ -76,8 +77,9 @@ export default function ScanPage() {
   }
 
   return (
-    <div className="p-6 max-w-md mx-auto pb-24">
-      <h1 className="text-2xl font-extrabold text-[var(--color-text)] mb-6">Scan a Receipt 📷</h1>
+    <div className="min-h-screen pb-24">
+      <BubblesHeader />
+      <div className="p-6 pt-4 max-w-md mx-auto">
 
       {error && (
         <FadeInView>
@@ -238,6 +240,7 @@ export default function ScanPage() {
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </div>
   )
 }

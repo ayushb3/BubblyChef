@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import BubblesHeader from '@/components/layout/BubblesHeader'
 import HeroHome from '@/components/dashboard/HeroHome'
 
 export default async function HomePage() {
@@ -10,8 +11,11 @@ export default async function HomePage() {
     user?.user_metadata?.username ?? user?.email?.split('@')[0] ?? 'friend'
 
   return (
-    <main className="min-h-screen pb-24 px-4 pt-8 max-w-lg mx-auto">
-      <HeroHome displayName={displayName} />
+    <main className="min-h-screen pb-24">
+      <BubblesHeader showSubtitle />
+      <div className="px-4 pt-4 max-w-lg mx-auto">
+        <HeroHome displayName={displayName} />
+      </div>
     </main>
   )
 }

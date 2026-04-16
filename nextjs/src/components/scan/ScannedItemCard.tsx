@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import type { ScannedItem } from '@/types/scan'
+import { getFoodEmoji } from '@/lib/food-emoji'
 
 const CATEGORIES = [
   'produce',
@@ -72,14 +73,17 @@ export default function ScannedItemCard({
       </span>
 
       {/* Name field */}
-      <input
-        type="text"
-        aria-label="Item name"
-        value={item.name}
-        onChange={(e) => update('name', e.target.value)}
-        className="w-full text-sm font-semibold text-[var(--color-text)] bg-transparent border-b border-[var(--color-border)] focus:border-[var(--color-primary)] outline-none pb-1 mb-3 transition-colors"
-        placeholder="Item name"
-      />
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-lg flex-shrink-0">{getFoodEmoji(item.name, item.category)}</span>
+        <input
+          type="text"
+          aria-label="Item name"
+          value={item.name}
+          onChange={(e) => update('name', e.target.value)}
+          className="flex-1 text-sm font-semibold text-[var(--color-text)] bg-transparent border-b border-[var(--color-border)] focus:border-[var(--color-primary)] outline-none pb-1 transition-colors"
+          placeholder="Item name"
+        />
+      </div>
 
       {/* Quantity + Unit row */}
       <div className="flex gap-2 mb-2">

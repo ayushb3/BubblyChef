@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from langgraph.graph import END, StateGraph
 
+from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.config import settings
 from bubbly_chef.models.base import ProposalEnvelope
 from bubbly_chef.models.pantry import (
@@ -19,8 +20,8 @@ from bubbly_chef.models.pantry import (
     PantryProposal,
     PantryUpsertAction,
 )
+from bubbly_chef.domain.normalizer import normalize_to_base_unit
 from bubbly_chef.tools.expiry import get_expiry_heuristics
-from bubbly_chef.tools.llm_client import LLMError, get_ollama_client
 from bubbly_chef.tools.normalizer import get_normalizer
 from bubbly_chef.workflows.state import (
     LLMParseResult,
@@ -96,34 +97,25 @@ async def parse_receipt_llm(state: WorkflowState) -> WorkflowState:
             "confidence": 0.0,
         }
 
-    llm = get_ollama_client()
-    prompt = RECEIPT_PARSE_USER_PROMPT_TEMPLATE.format(text=input_text)
+    llm = get_ai_manager()
+    prompt = (
+        RECEIPT_PARSE_SYSTEM_PROMPT + "\n\n"
+        + RECEIPT_PARSE_USER_PROMPT_TEMPLATE.format(text=input_text)
+    )
 
     try:
-        result, error = await llm.generate_structured(
+        result = await llm.complete(
             prompt=prompt,
-            response_model=LLMParseResult,
-            system_prompt=RECEIPT_PARSE_SYSTEM_PROMPT,
+            response_schema=LLMParseResult,
             temperature=0.1,
         )
 
-        if error:
-            logger.warning(f"LLM parse error: {error}")
+        if not isinstance(result, LLMParseResult):
             return {
                 **state,
                 "parsed_items": [],
-                "parse_error": error,
-                "errors": state.get("errors", []) + [f"LLM parse failed: {error}"],
-                "confidence": 0.0,
-                "requires_review": True,
-            }
-
-        if result is None:
-            return {
-                **state,
-                "parsed_items": [],
-                "parse_error": "No result from LLM",
-                "errors": state.get("errors", []) + ["No result from LLM"],
+                "parse_error": "LLM returned non-structured response",
+                "errors": state.get("errors", []) + ["LLM returned non-structured response"],
                 "confidence": 0.0,
                 "requires_review": True,
             }
@@ -149,7 +141,7 @@ async def parse_receipt_llm(state: WorkflowState) -> WorkflowState:
             "confidence": adjusted_confidence,
         }
 
-    except LLMError as e:
+    except Exception as e:
         logger.error(f"LLM error: {e}")
         return {
             **state,
@@ -267,6 +259,14 @@ def normalize_receipt_items(state: WorkflowState) -> WorkflowState:
             "estimated_expiry": is_estimated,
             "purchase_date": date.today().isoformat(),
         }
+
+        # Unit normalization (dual-store: display unit + base unit)
+        qty = item.get("quantity", 1.0)
+        unit = item.get("unit", "item")
+        base_qty, base_unit = normalize_to_base_unit(normalized_name, qty, unit, category.value)
+        normalized_item["quantity_base"] = base_qty
+        normalized_item["unit_base"] = base_unit
+
         normalized.append(normalized_item)
 
     return {
@@ -294,6 +294,8 @@ def create_receipt_actions(state: WorkflowState) -> WorkflowState:
             storage_location=item_data.get("storage_location", "pantry"),
             quantity=item_data.get("quantity", 1.0),
             unit=item_data.get("unit", "item"),
+            quantity_base=item_data.get("quantity_base"),
+            unit_base=item_data.get("unit_base"),
             purchase_date=date.fromisoformat(item_data["purchase_date"])
             if item_data.get("purchase_date")
             else None,

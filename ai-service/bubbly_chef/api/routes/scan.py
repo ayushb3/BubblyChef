@@ -76,22 +76,23 @@ async def scan_receipt(
 
         result = await run_receipt_ingest(ocr_text=ocr_text)
 
-        # Extract items from the proposal envelope
-        proposal = result.get("proposal", {}) if isinstance(result, dict) else {}
-        actions = proposal.get("actions", []) if isinstance(proposal, dict) else []
+        # Extract items from the proposal envelope (Pydantic model)
+        proposal = result.proposal
+        actions = proposal.actions if proposal else []
 
         # Categorize by confidence
         ready = []
         review = []
         skipped = []
         for action in actions:
-            confidence = float(action.get("confidence", 0.5))
+            confidence = action.confidence
+            pantry_item = action.item
             item = {
-                "name": action.get("name", ""),
-                "quantity": action.get("quantity", 1),
-                "unit": action.get("unit", "item"),
-                "category": action.get("category", "other"),
-                "location": action.get("location", "pantry"),
+                "name": pantry_item.name,
+                "quantity": pantry_item.quantity,
+                "unit": pantry_item.unit,
+                "category": pantry_item.category.value if hasattr(pantry_item.category, "value") else str(pantry_item.category),
+                "location": pantry_item.storage_location or "pantry",
                 "confidence": confidence,
             }
             if confidence >= 0.8:

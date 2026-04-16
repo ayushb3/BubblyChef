@@ -5,8 +5,10 @@ import { motion } from 'framer-motion'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import SpringButton from '@/components/ui/SpringButton'
 import FadeInView from '@/components/ui/FadeInView'
+import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import AddItemModal from '@/components/pantry/AddItemModal'
+import { getFoodEmoji } from '@/lib/food-emoji'
 
 interface PantryItem {
   id: string
@@ -104,15 +106,13 @@ export default function PantryPage() {
   return (
     <div className="min-h-screen pb-24">
       {/* Header */}
-      <div className="p-6 pb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <BubblesMascot state="happy" size={32} animate={false} />
-          <h1 className="text-2xl font-extrabold text-[var(--color-text)]">My Pantry 🧺</h1>
-        </div>
-        <span className="bg-[var(--color-primary)] text-white text-xs font-semibold px-3 py-1 rounded-full">
-          {allItems.length} item{allItems.length !== 1 ? 's' : ''}
-        </span>
-      </div>
+      <BubblesHeader
+        rightSlot={
+          <span className="bg-[var(--color-primary)] text-white text-xs font-semibold px-3 py-1 rounded-full">
+            {allItems.length} item{allItems.length !== 1 ? 's' : ''}
+          </span>
+        }
+      />
 
       {/* Search bar */}
       <div className="px-6 mb-3">
@@ -190,7 +190,7 @@ export default function PantryPage() {
                         transition={{ delay: i * 0.04, duration: 0.25 }}
                       >
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-lg">{CATEGORY_EMOJI[item.category] ?? '📦'}</span>
+                          <span className="text-lg">{getFoodEmoji(item.name, item.category)}</span>
                           <span className="font-semibold text-sm text-[var(--color-text)] truncate">
                             {item.name}
                           </span>

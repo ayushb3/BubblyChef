@@ -3,13 +3,33 @@
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
+import {
+  House,
+  Archive,
+  ChatCircle,
+  BookOpen,
+  Camera,
+} from '@phosphor-icons/react/dist/ssr'
+import type { ComponentType } from 'react'
 
-const tabs = [
-  { href: '/', emoji: '🏠', label: 'Home' },
-  { href: '/pantry', emoji: '🧺', label: 'Pantry' },
-  { href: '/scan', emoji: '📷', label: 'Scan' },
-  { href: '/recipes', emoji: '📖', label: 'Recipes' },
-  { href: '/chat', emoji: '💬', label: 'Chat' },
+interface IconProps {
+  size?: number
+  weight?: 'fill' | 'regular'
+  className?: string
+}
+
+interface TabDef {
+  href: string
+  icon: ComponentType<IconProps>
+  label: string
+}
+
+const tabs: TabDef[] = [
+  { href: '/', icon: House, label: 'Home' },
+  { href: '/pantry', icon: Archive, label: 'Pantry' },
+  { href: '/chat', icon: ChatCircle, label: 'Chat' },
+  { href: '/recipes', icon: BookOpen, label: 'Recipes' },
+  { href: '/scan', icon: Camera, label: 'Scan' },
 ]
 
 export default function BottomNav() {
@@ -26,19 +46,23 @@ export default function BottomNav() {
           const isActive = tab.href === '/'
             ? pathname === '/'
             : pathname.startsWith(tab.href)
+          const Icon = tab.icon
           return (
             <Link
               key={tab.href}
               href={tab.href}
               className="flex-1 flex flex-col items-center py-2 pb-4 gap-0.5"
             >
-              <motion.span
-                className="text-2xl leading-none"
+              <motion.div
                 animate={isActive ? { scale: [1, 1.2, 1] } : { scale: 1 }}
                 transition={isActive ? { type: 'tween', duration: 0.3, ease: 'easeInOut' } : {}}
               >
-                {tab.emoji}
-              </motion.span>
+                <Icon
+                  size={24}
+                  weight="fill"
+                  className={isActive ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}
+                />
+              </motion.div>
               {isActive && (
                 <motion.div
                   layoutId="nav-indicator"

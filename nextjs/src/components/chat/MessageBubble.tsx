@@ -7,18 +7,9 @@ import type { ChatMessage } from '@/types/chat'
 
 interface MessageBubbleProps {
   message: ChatMessage
-  isStreaming?: boolean
 }
 
-function formatTime(date: Date): string {
-  return new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  }).format(date)
-}
-
-export default function MessageBubble({ message, isStreaming = false }: MessageBubbleProps) {
+export default function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user'
 
   return (
@@ -43,15 +34,9 @@ export default function MessageBubble({ message, isStreaming = false }: MessageB
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {message.content}
             </ReactMarkdown>
-            {isStreaming && (
-              <span className="inline-block w-0.5 h-4 bg-[var(--color-muted)] animate-pulse ml-0.5 align-text-bottom" />
-            )}
           </div>
         )}
       </div>
-      <span className="text-xs text-[var(--color-muted)] px-1">
-        {formatTime(message.timestamp)}
-      </span>
     </motion.div>
   )
 }
