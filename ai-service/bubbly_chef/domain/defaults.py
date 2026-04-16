@@ -67,6 +67,61 @@ DEFAULT_QUANTITIES: dict[str, dict[str, Any]] = {
     "default": {"quantity": 1, "unit": "item"},
 }
 
+# Canonical base unit per ingredient — drives normalization target
+# Units: "count" | "ml" | "g"
+INGREDIENT_CANONICAL_UNIT: dict[str, str] = {
+    # Countable
+    "eggs": "count",
+    "egg": "count",
+    # Liquids → ml
+    "milk": "ml",
+    "cream": "ml",
+    "buttermilk": "ml",
+    "olive oil": "ml",
+    "vegetable oil": "ml",
+    "water": "ml",
+    "broth": "ml",
+    "stock": "ml",
+    "wine": "ml",
+    "vinegar": "ml",
+    "lemon juice": "ml",
+    "lime juice": "ml",
+    "honey": "ml",
+    "maple syrup": "ml",
+    # Solids/dry goods → g
+    "butter": "g",
+    "flour": "g",
+    "sugar": "g",
+    "brown sugar": "g",
+    "powdered sugar": "g",
+    "salt": "g",
+    "baking powder": "g",
+    "baking soda": "g",
+    "cocoa powder": "g",
+    "matcha": "g",
+    "cheese": "g",
+    "cream cheese": "g",
+    "chocolate": "g",
+    "rice": "g",
+    "pasta": "g",
+    "oats": "g",
+    "breadcrumbs": "g",
+    "cornstarch": "g",
+    "yeast": "g",
+}
+
+# Default canonical unit for unmapped items by category
+CATEGORY_CANONICAL_UNIT: dict[str, str] = {
+    "dairy": "g",
+    "produce": "g",
+    "meat": "g",
+    "seafood": "g",
+    "dry_goods": "g",
+    "beverages": "ml",
+    "condiments": "ml",
+    "other": "count",
+}
+
 
 def get_default_quantity_and_unit(name: str, category: str) -> tuple[float, str]:
     """

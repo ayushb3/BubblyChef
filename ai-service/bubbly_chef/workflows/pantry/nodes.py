@@ -13,6 +13,7 @@ from uuid import uuid4
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.config import settings
+from bubbly_chef.domain.normalizer import normalize_to_base_unit
 from bubbly_chef.models.base import NextAction, WorkflowStatus
 from bubbly_chef.models.pantry import (
     ActionType,
@@ -197,6 +198,22 @@ def normalize_items(state: WorkflowState) -> WorkflowState:
             "category": category.value,
             "confidence": item_confidence,
         }
+
+        # Compute base unit quantities for math operations (dual-store)
+        qty_base, unit_base = normalize_to_base_unit(
+            name=normalized_name,
+            quantity=float(item.get("quantity", 1.0)),
+            unit=str(item.get("unit", "item")),
+            category=category.value,
+        )
+        # F6: guard before assignment — mypy strict requires None check
+        if qty_base is not None:
+            normalized_item["quantity_base"] = qty_base
+            normalized_item["unit_base"] = unit_base
+        else:
+            normalized_item["quantity_base"] = None
+            normalized_item["unit_base"] = None
+
         normalized.append(normalized_item)
 
         if normalized_name != original_name:
@@ -327,6 +344,8 @@ def create_actions(state: WorkflowState) -> WorkflowState:
             storage_location=item_data.get("storage_location", "pantry"),
             quantity=item_data.get("quantity", 1.0),
             unit=item_data.get("unit", "item"),
+            quantity_base=item_data.get("quantity_base"),
+            unit_base=item_data.get("unit_base"),
             purchase_date=date.fromisoformat(item_data["purchase_date"])
             if item_data.get("purchase_date")
             else None,

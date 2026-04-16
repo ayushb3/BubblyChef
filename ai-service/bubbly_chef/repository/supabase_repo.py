@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 from supabase import Client, create_client
 
 from bubbly_chef.config import settings
+from bubbly_chef.domain.normalizer import normalize_to_base_unit
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.models.recipe import RecipeCard
 from bubbly_chef.models.session import ConversationSession, SessionMode
@@ -55,6 +56,8 @@ class SupabaseRepository:
             storage_location=StorageLocation(row.get("location", "pantry")),
             quantity=float(row.get("quantity", 1.0)),
             unit=row.get("unit", "item"),
+            quantity_base=float(row["quantity_base"]) if row.get("quantity_base") is not None else None,
+            unit_base=row.get("unit_base"),
             expiry_date=expiry,
             slot_index=row.get("slot_index"),
             created_at=datetime.fromisoformat(row["added_at"])
@@ -117,6 +120,8 @@ class SupabaseRepository:
             else str(item.storage_location),
             "quantity": float(item.quantity),
             "unit": item.unit,
+            "quantity_base": float(item.quantity_base) if item.quantity_base is not None else None,
+            "unit_base": item.unit_base,
             "expiry_date": item.expiry_date.isoformat() if item.expiry_date else None,
             "slot_index": item.slot_index,
         }
@@ -184,10 +189,24 @@ class SupabaseRepository:
                         new_qty = float(existing.quantity) + float(
                             action.get("quantity", 1)
                         )
+                        # F2/F7: recalculate base units on merge — don't leave quantity_base stale
+                        _qty_base, _unit_base = normalize_to_base_unit(
+                            name=name,
+                            quantity=new_qty,
+                            unit=action.get("unit", existing.unit),
+                            category=action.get("category", existing.category.value),
+                        )
                         await self.update_pantry_item(
-                            user_id, str(existing.id), {"quantity": new_qty}
+                            user_id,
+                            str(existing.id),
+                            {
+                                "quantity": new_qty,
+                                "quantity_base": _qty_base,
+                                "unit_base": _unit_base,
+                            },
                         )
                     else:
+                        # F5: pass quantity_base and unit_base to PantryItem constructor
                         item = PantryItem(
                             name=name,
                             category=FoodCategory(action.get("category", "other")),
@@ -196,6 +215,8 @@ class SupabaseRepository:
                             ),
                             quantity=float(action.get("quantity", 1)),
                             unit=action.get("unit", "item"),
+                            quantity_base=action.get("quantity_base"),
+                            unit_base=action.get("unit_base"),
                             expiry_date=None,
                         )
                         await self.add_pantry_item(user_id, item)

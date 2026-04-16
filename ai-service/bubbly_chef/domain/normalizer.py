@@ -350,10 +350,22 @@ _UNIT_ALIASES: dict[str, str] = {
     "ounce": "oz", "ounces": "oz",
     "kilogram": "kg", "kilograms": "kg",
     "gram": "g", "grams": "g",
-    "liter": "L", "liters": "L",
-    "milliliter": "ml", "milliliters": "ml",
+    "liter": "l", "liters": "l", "litre": "l", "litres": "l",  # lowercase l — matches _TO_ML
+    "milliliter": "ml", "milliliters": "ml", "millilitre": "ml", "millilitres": "ml",
     "piece": "item", "pieces": "item",
     "each": "item",
+    # Culinary units
+    "dozen": "dozen",
+    "stick": "stick",
+    "cup": "cup", "cups": "cup",
+    "tbsp": "tbsp", "tablespoon": "tbsp", "tablespoons": "tbsp",
+    "tsp": "tsp", "teaspoon": "tsp", "teaspoons": "tsp",
+    "fl oz": "fl oz", "fluid ounce": "fl oz", "fluid ounces": "fl oz",
+    "gallon": "gallon", "gallons": "gallon", "gal": "gallon",
+    "quart": "quart", "quarts": "quart", "qt": "quart",
+    "pint": "pint", "pints": "pint", "pt": "pint",
+    "count": "count", "ct": "count",
+    "item": "count", "items": "count",
 }
 
 
@@ -362,3 +374,86 @@ def normalize_unit(unit: str) -> str:
     if not unit:
         return "item"
     return _UNIT_ALIASES.get(unit.lower().strip(), unit.lower().strip())
+
+
+# ── Unit → ml conversions ──────────────────────────────────────────────────
+_TO_ML: dict[str, float] = {
+    "ml": 1.0,
+    "l": 1000.0,
+    "cup": 240.0,
+    "tbsp": 15.0,
+    "tsp": 5.0,
+    "fl oz": 29.57,
+    "pint": 473.0,
+    "quart": 946.0,
+    "gallon": 3785.0,
+}
+
+# ── Unit → grams conversions ───────────────────────────────────────────────
+# NOTE: "cup" is intentionally absent — cup→g is ingredient-specific
+# (1 cup flour ≈ 125g, 1 cup butter = 227g). Requires density data out of scope here.
+# Cup→ml is available via _TO_ML for volume-target ingredients.
+_TO_G: dict[str, float] = {
+    "g": 1.0,
+    "kg": 1000.0,
+    "lb": 453.59,
+    "oz": 28.35,
+    "stick": 113.0,   # 1 stick butter = 113g = 8 tbsp
+}
+
+# ── Unit → count conversions ───────────────────────────────────────────────
+_TO_COUNT: dict[str, float] = {
+    "count": 1.0,
+    "item": 1.0,
+    "dozen": 12.0,
+}
+
+
+def normalize_to_base_unit(
+    name: str,
+    quantity: float,
+    unit: str,
+    category: str = "other",
+) -> tuple[float, str] | tuple[None, None]:
+    """Convert (quantity, unit) to (quantity_base, unit_base) for a named ingredient.
+
+    Returns (None, None) if conversion is not possible (unknown unit or cross-dimension).
+
+    Examples:
+        normalize_to_base_unit("eggs", 1.0, "dozen")   -> (12.0, "count")
+        normalize_to_base_unit("butter", 1.0, "stick") -> (113.0, "g")
+        normalize_to_base_unit("milk", 2.0, "cup")     -> (480.0, "ml")
+        normalize_to_base_unit("matcha", 30.0, "g")    -> (30.0, "g")
+        normalize_to_base_unit("sugar", 3.0, "tbsp")   -> (None, None)  # cross-dimension
+    """
+    from bubbly_chef.domain.defaults import (
+        CATEGORY_CANONICAL_UNIT,
+        INGREDIENT_CANONICAL_UNIT,
+    )
+
+    canonical_unit = normalize_unit(unit)
+    name_lower = name.lower().strip()
+
+    # Determine target base unit from ingredient registry, fall back to category
+    target_unit = INGREDIENT_CANONICAL_UNIT.get(
+        name_lower, CATEGORY_CANONICAL_UNIT.get(category, "count")
+    )
+
+    # Same unit — no conversion needed
+    if canonical_unit == target_unit:
+        return quantity, target_unit
+
+    # count conversions
+    if target_unit == "count" and canonical_unit in _TO_COUNT:
+        return quantity * _TO_COUNT[canonical_unit], "count"
+
+    # ml conversions
+    if target_unit == "ml" and canonical_unit in _TO_ML:
+        return quantity * _TO_ML[canonical_unit], "ml"
+
+    # g conversions
+    if target_unit == "g" and canonical_unit in _TO_G:
+        return quantity * _TO_G[canonical_unit], "g"
+
+    # Cross-dimension (e.g. tbsp→g) requires density data — out of scope
+    return None, None

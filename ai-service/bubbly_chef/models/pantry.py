@@ -58,6 +58,14 @@ class PantryItem(BaseModel):
     storage_location: StorageLocation = Field(default=StorageLocation.PANTRY)
     quantity: float = Field(default=1.0, ge=0)
     unit: str = Field(default="item", description="Unit of measurement")
+    quantity_base: float | None = Field(
+        default=None,
+        description="Normalized quantity in base unit (e.g. 12 for '1 dozen eggs')",
+    )
+    unit_base: str | None = Field(
+        default=None,
+        description="Canonical base unit: count | ml | g",
+    )
     brand: str | None = Field(default=None)
     barcode: str | None = Field(default=None, description="EAN/UPC barcode if available")
     purchase_date: date | None = Field(default=None)
