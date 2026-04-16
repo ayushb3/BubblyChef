@@ -5,9 +5,12 @@ import { motion, AnimatePresence } from 'framer-motion'
 import RecipeDetail, { type Recipe } from './RecipePage'
 import RecipeSearchBar from './RecipeSearchBar'
 import BubblesMascot from '@/components/ui/BubblesMascot'
+import RecipeEditModal from './RecipeEditModal'
+import RecipeDeleteConfirm from './RecipeDeleteConfirm'
 
 interface RecipeBookProps {
   recipes: Recipe[]
+  onMutate?: () => void
 }
 
 function scoreRecipe(r: Recipe, q: string): number {
@@ -31,12 +34,15 @@ function MetaChip({ label }: { label: string }) {
   )
 }
 
-export default function RecipeBook({ recipes }: RecipeBookProps) {
+export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const [search, setSearch] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(
     recipes.length > 0 ? recipes[0].id : null,
   )
+  const [editOpen, setEditOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [mutating, setMutating] = useState(false)
 
   const filteredRecipes = useMemo(
     () =>
@@ -65,6 +71,39 @@ export default function RecipeBook({ recipes }: RecipeBookProps) {
   const handleSelect = (id: string) => {
     setSelectedId(id)
     setSidebarOpen(false)
+  }
+
+  const handleFavorite = async () => {
+    if (!selectedRecipe) return
+    const newVal = !selectedRecipe.is_favorite
+    const res = await fetch(`/api/recipes/${selectedRecipe.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_favorite: newVal }),
+    })
+    if (res.ok) onMutate?.()
+  }
+
+  const handleEditSave = async (updates: Partial<Recipe>) => {
+    setMutating(true)
+    await fetch(`/api/recipes/${selectedRecipe!.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    })
+    setMutating(false)
+    setEditOpen(false)
+    onMutate?.()
+  }
+
+  const handleDeleteConfirm = async () => {
+    setMutating(true)
+    const nextRecipe = filteredRecipes.find((r) => r.id !== selectedRecipe?.id) ?? null
+    await fetch(`/api/recipes/${selectedRecipe!.id}`, { method: 'DELETE' })
+    setMutating(false)
+    setDeleteOpen(false)
+    setSelectedId(nextRecipe?.id ?? null)
+    onMutate?.()
   }
 
   const totalTime = selectedRecipe?.total_time_minutes
@@ -228,6 +267,44 @@ export default function RecipeBook({ recipes }: RecipeBookProps) {
                   <MetaChip label={`Serves ${selectedRecipe.servings}`} />
                 )}
               </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={handleFavorite}
+                  className="text-lg leading-none px-1 hover:scale-110 transition-transform"
+                  aria-label={selectedRecipe.is_favorite ? 'Unfavorite' : 'Favorite'}
+                  title={selectedRecipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+                >
+                  {selectedRecipe.is_favorite ? '❤️' : '🤍'}
+                </button>
+                <button
+                  onClick={() => setEditOpen(true)}
+                  className="text-lg leading-none px-1 hover:scale-110 transition-transform"
+                  aria-label="Edit recipe"
+                  title="Edit recipe"
+                >
+                  ✏️
+                </button>
+                <button
+                  onClick={() => setDeleteOpen(true)}
+                  className="text-lg leading-none px-1 hover:scale-110 transition-transform"
+                  aria-label="Delete recipe"
+                  title="Delete recipe"
+                >
+                  🗑️
+                </button>
+              </div>
+
+              {/* Delete confirm strip */}
+              {deleteOpen && (
+                <RecipeDeleteConfirm
+                  recipeTitle={selectedRecipe.title}
+                  onConfirm={handleDeleteConfirm}
+                  onCancel={() => setDeleteOpen(false)}
+                  deleting={mutating}
+                />
+              )}
             </div>
 
             {/* Divider */}
@@ -261,6 +338,15 @@ export default function RecipeBook({ recipes }: RecipeBookProps) {
           </div>
         )}
       </div>
+
+      {/* Edit modal */}
+      {editOpen && selectedRecipe && (
+        <RecipeEditModal
+          recipe={selectedRecipe}
+          onSave={handleEditSave}
+          onClose={() => setEditOpen(false)}
+        />
+      )}
     </div>
   )
 }
