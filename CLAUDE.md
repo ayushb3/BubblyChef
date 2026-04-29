@@ -7,11 +7,19 @@
 ## Quick Start
 
 ```bash
-uvicorn bubbly_chef.api.app:app --reload --port 8888   # backend
-cd web && npm run dev                                   # frontend → http://localhost:5173
-pytest                                                  # tests
-ruff check bubbly_chef/                                 # lint
-mypy bubbly_chef/ --strict                             # type check
+# Frontend (http://localhost:3000)
+cd nextjs && npm run dev
+
+# AI microservice (http://localhost:8888)
+cd ai-service && uvicorn bubbly_chef.main:app --reload --port 8888
+
+# Tests (AI microservice)
+cd ai-service && pytest
+cd ai-service && ruff check bubbly_chef/
+cd ai-service && mypy bubbly_chef/ --strict
+
+# TypeScript check
+cd nextjs && npx tsc --noEmit
 ```
 
 ---
@@ -20,37 +28,37 @@ mypy bubbly_chef/ --strict                             # type check
 
 | Layer | Tech |
 |---|---|
-| Backend | Python 3.11+ + FastAPI (port 8888) |
-| Frontend | React 18 + TypeScript + Vite (port 5173) |
-| Database | SQLite (aiosqlite, async) + Alembic migrations |
-| AI | Gemini API (free tier) + Ollama (self-hosted fallback) |
-| AI Orchestration | LangGraph workflows (chat, receipt, product, recipe ingest) |
-| OCR | Tesseract |
-| State (frontend) | Zustand (client) + React Query (server state) |
-| Styling | Tailwind CSS v4 + Framer Motion |
-| Version | 0.1.0 — Phase 2 complete, Phase 3 next |
+| Frontend + CRUD | Next.js 14 (App Router), React, TypeScript, Tailwind CSS v4 (port 3000) |
+| Auth + Database | Supabase (Postgres 15 + Row Level Security) |
+| AI Microservice | FastAPI + LangGraph + Gemini API + Ollama fallback + Tesseract (port 8888) |
+| State (frontend) | React Query (server state), Zustand (client state) |
+| Styling | Tailwind CSS v4 + Framer Motion, Nunito font |
+| Deployment | Vercel (frontend) + Railway (AI microservice) |
 
 ---
 
 ## Architecture
 
 ```
-Frontend (React + TypeScript)
-    └── React Query + Fetch → HTTP/REST
-Backend (FastAPI)
-    └── Routes (thin) → Services (business logic) → Repository (SQLite)
-                     → Workflows (LangGraph state machines for complex AI ops)
-                     → AI Manager → GeminiProvider | OllamaProvider
-                     → Domain (normalize, expiry, defaults, icon mapping)
-                     → Tools (LLM client, expiry, normalizer, product lookup)
-                     → OCR Service (Tesseract)
+Browser
+  │
+  ├── Next.js API routes (/api/*)    →  Supabase Postgres (RLS per user)
+  │   pantry, recipes, profile,
+  │   decorations, foods
+  │
+  └── AI Microservice (port 8888)   →  Supabase (service_role key)
+      chat, scan, recipe generation
+      LangGraph workflows
+      Gemini → Ollama fallback
+      Tesseract OCR
 ```
 
 **Key patterns:**
+- **Two API surfaces** — CRUD goes through Next.js routes (same-origin); AI ops go direct to microservice. Never mix.
 - **AI Provider Abstraction** — `AIManager` picks first available provider. Never call Gemini SDK directly.
-- **Repository Pattern** — All DB access via `SQLiteRepository`. All methods are `async/await`.
-- **LangGraph Workflows** — Complex multi-step AI ops (chat intent routing, receipt parsing, recipe ingestion) live in `workflows/`, not in routes or services.
-- **Services layer** — Business logic lives in `services/`, routes stay thin.
+- **Repository Pattern** — All DB access via `SupabaseRepository` in `ai-service/`. Every method takes `user_id` as first param.
+- **LangGraph Workflows** — Complex multi-step AI ops live in `ai-service/bubbly_chef/workflows/`, not in routes.
+- **Proposal pattern** — AI workflows return `ProposalEnvelope` with confidence scores. Nothing writes to DB without user confirmation.
 - **React Query** — Server state only. Avoid `useState` for fetched data.
 - **Structured AI output** — Always use Pydantic response schemas, never parse raw strings.
 
@@ -59,29 +67,44 @@ Backend (FastAPI)
 ## Project Structure
 
 ```
-bubbly_chef/
-├── api/
-│   ├── app.py               # FastAPI app, lifespan, middleware, router registration
-│   └── routes/              # pantry.py, scan.py, recipes.py, chat.py, profile.py,
-│                            # health.py, ingest.py, apply.py, icons.py, decorations.py
-├── ai/                      # provider.py, manager.py, gemini.py, ollama.py
-├── workflows/               # LangGraph: chat_ingest.py, receipt_ingest.py,
-│                            #   product_ingest.py, recipe_ingest.py, state.py
-│                            #   recipe/ package: nodes.py (grounding + constraint extraction)
-├── tools/                   # llm_client.py, expiry.py, normalizer.py, product_lookup.py
-├── services/                # ocr.py, receipt_parser.py, image_preprocessor.py
-├── domain/                  # normalizer.py, expiry.py, defaults.py, icon_map.py,
-│                            # catalog.py (304-entry USDA food catalog)
-├── models/                  # pantry.py, user.py, recipes.py, proposals.py
-├── repository/              # base.py, sqlite.py
-├── config.py
-└── logger.py
-
-web/src/
-├── api/client.ts            # API client + React Query hooks
-├── pages/                   # Dashboard, Pantry, Scan, Chat, Profile
-├── components/              # Shared UI components + Kitchen scene
-└── types/index.ts
+BubblyChef/
+├── nextjs/                          # Next.js app (frontend + CRUD API)
+│   └── src/
+│       ├── app/
+│       │   ├── layout.tsx           # Root layout
+│       │   ├── page.tsx             # Dashboard
+│       │   ├── login/page.tsx       # Auth (sign in / sign up)
+│       │   ├── recipes/page.tsx     # Recipe library
+│       │   ├── pantry/page.tsx
+│       │   ├── scan/page.tsx
+│       │   ├── chat/page.tsx
+│       │   └── api/                 # CRUD route handlers
+│       │       ├── pantry/          # GET/POST, expiring/, [id]/, [id]/slot/
+│       │       ├── recipes/         # GET/POST, [id]/
+│       │       ├── profile/         # POST, [id]/, email/[email]/, username/[username]/
+│       │       ├── decorations/     # GET
+│       │       └── foods/search/    # GET
+│       ├── components/              # React components
+│       └── lib/
+│           ├── supabase/            # client.ts, server.ts, middleware.ts
+│           ├── api/client.ts        # API client + React Query hooks
+│           ├── pantry-helpers.ts    # Computed fields (expiry, is_expired, etc.)
+│           └── response-helpers.ts  # requireAuth(), errorResponse()
+│
+├── ai-service/                      # FastAPI AI microservice
+│   └── bubbly_chef/
+│       ├── main.py                  # FastAPI app (AI endpoints only)
+│       ├── api/auth.py              # JWT validation (get_current_user_id)
+│       ├── workflows/               # LangGraph: chat_ingest, receipt_ingest, recipe/nodes
+│       ├── ai/                      # manager.py, gemini.py, ollama.py, provider.py
+│       ├── services/                # ocr.py, receipt_parser.py, image_preprocessor.py
+│       ├── domain/                  # normalizer.py, expiry.py, catalog.py (304 entries)
+│       ├── models/                  # pantry.py, recipes.py, proposals.py
+│       └── repository/supabase_repo.py  # SupabaseRepository (30+ methods, service_role)
+│
+├── supabase/migrations/             # SQL migrations (schema + RLS policies)
+├── bubbly_chef/                     # [LEGACY] Original monolith — reference only
+└── docs/                            # Architecture, setup, plans
 ```
 
 ---
@@ -90,59 +113,66 @@ web/src/
 
 | Path | Page | Notes |
 |---|---|---|
-| `/` | Dashboard | Expiring items widget, quick actions, recent activity |
+| `/` | Dashboard | Expiring items widget, quick actions |
 | `/pantry` | Pantry | Browse/manage all items |
 | `/scan` | Scan | Receipt OCR upload + review flow |
-| `/chat` | Chat | AI assistant — recipe mode (`?mode=recipe`) or general |
-| `/chat?mode=recipe` | Chat (recipe mode) | `/recipes` redirects here |
+| `/recipes` | Recipe library | Search, save, edit, favourite |
+| `/chat` | Chat | AI assistant — general or recipe mode |
 | `/profile` | Profile | User settings, dietary preferences |
+| `/login` | Auth | Sign in / sign up (Supabase) |
 
 ---
 
 ## API Endpoints
 
+### Next.js CRUD routes (`/api/*`)
+
 ```
-GET  /health | /health/ai
-
 # Pantry
-GET|POST|PUT|DELETE  /pantry
-GET  /pantry/expiring?days=3
-PATCH /pantry/{id}/slot
-
-# Scan (OCR + receipt parsing)
-GET  /scan/ocr-status
-POST /scan/preprocess
-POST /scan/receipt            # OCR + AI parse (preprocess: bool, preprocess_mode: auto|light|aggressive)
-POST /scan/confirm            # write confirmed items to DB
-
-# Chat (intent router → LangGraph)
-POST /v1/chat                 # intent: recipe-generate | pantry-add | cooking-question | saved-recipe-lookup
-GET  /v1/chat/history
-GET  /v1/chat/intents
-
-# Ingest workflows (LangGraph)
-POST /ingest/chat
-POST /ingest/receipt
-POST /ingest/product
-POST /ingest/recipe
-
-# Apply (proposal system)
-POST /apply
+GET|POST          /api/pantry
+GET               /api/pantry/expiring
+GET|PUT|DELETE    /api/pantry/[id]
+PATCH             /api/pantry/[id]/slot
 
 # Recipes
-POST /recipes/generate
-GET  /recipes/suggestions
-
-# Icons (Fluent emoji fallback)
-GET  /api/icons/{name}
-
-# Decorations (kitchen scene milestones)
-GET  /decorations
-GET  /decorations/milestone-check
-POST /decorations
+GET|POST          /api/recipes
+GET|PUT|DELETE    /api/recipes/[id]
 
 # Profile
-GET|POST|PUT|DELETE  /profile
+POST              /api/profile
+GET|PUT|DELETE    /api/profile/[id]
+GET               /api/profile/email/[email]
+GET               /api/profile/username/[username]
+
+# Misc
+GET               /api/decorations
+GET               /api/foods/search
+```
+
+### AI microservice routes (`http://localhost:8888`)
+
+```
+GET   /health | /health/ai
+
+# Chat (LangGraph intent router)
+POST  /v1/chat
+GET   /v1/chat/history
+
+# Scan (OCR + AI parse)
+GET   /scan/ocr-status
+POST  /scan/preprocess
+POST  /scan/receipt
+POST  /scan/confirm
+
+# Recipe generation
+POST  /recipes/generate
+GET   /recipes/suggestions
+
+# Ingest workflows
+POST  /ingest/chat | /ingest/receipt | /ingest/product | /ingest/recipe
+
+# Apply proposal (human-reviewed → DB)
+POST  /apply
 ```
 
 ---
@@ -169,13 +199,13 @@ POST /v1/chat → chat_ingest workflow
   saved-recipe-lookup → query saved recipes
 ```
 
-### Recipe Grounding Workflow (implemented Phase 2)
+### Recipe Grounding Workflow
 ```
 classify_intent → [recipe-generate]
   ↓
 gather_pantry_context       # fetch items + expiring
   ↓
-extract_constraints         # LLM: cuisine, time budget, dietary, skill level → RecipeConstraints
+extract_constraints         # LLM → RecipeConstraints (cuisine, time, dietary, skill)
   ↓
 score_and_rank              # deterministic: rank by expiry urgency + constraint match
   ↓
@@ -189,17 +219,14 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 
 ---
 
-## Current State: Phase 2 Complete
+## Current State
 
 **Done:**
-- Phase 1: pantry CRUD, receipt scanning, recipe generation, Alembic migrations
-- Phase 2: dashboard, chat + intent router, DOM kitchen scene, milestone decorations
-- Recipe grounding workflow with constraint extraction + expiry-ranked scoring
-- Chat UX: new chat button, markdown rendering, streaming, conversation history
-- 304-entry USDA food catalog for category/emoji lookup
-- 454+ tests passing, mypy strict clean, ruff clean, tsc clean
+- Phase 1 + 2: pantry CRUD, receipt scanning, recipe generation, chat intent router, DOM kitchen scene, milestone decorations, 454+ tests
+- Migration: Next.js + Supabase + FastAPI AI microservice (three-tier)
+- Recipe library UI: save, search, edit, delete, favourite
 
-**Next: Phase 3 — Recipe Library + Multimodal Ingestion**
+**Next: Phase 3 — Component Migration + Multimodal Ingestion**
 See `ROADMAP.md` for plan, open issues, and success criteria.
 
 ---
@@ -221,75 +248,77 @@ See `ROADMAP.md` for plan, open issues, and success criteria.
 
 ## Dev Guidelines
 
-**Python:**
+**Python (ai-service/):**
 - `ruff` (line length 100), `mypy` strict, `pytest` for tests
 - Type hints on all public functions
 - `raise ... from e` to preserve stack traces
 - Never bare `except:` — always specify exception type
 - All AI calls through `AIManager`, never direct SDK calls
-- All DB access through `repository/sqlite.py`
+- All DB access through `ai-service/bubbly_chef/repository/supabase_repo.py`
 - Business logic in `services/` or `workflows/`, routes stay thin
 
-**TypeScript:**
+**TypeScript (nextjs/):**
 - Strict mode, functional components + hooks only
 - Tailwind only (no custom CSS files)
 - React Query for server state, Zustand for client state
-- All API calls through `web/src/api/client.ts`
+- All API calls through `nextjs/src/lib/api/client.ts`
+- Every API route calls `requireAuth()` — never access DB without extracting user
 
 ---
 
 ## Working with Claude Code
 
-**Session orientation:** Read `ROADMAP.md` for current phase + open issues. `MEMORY.md` is auto-loaded each session with accumulated context.
+**Session orientation:** Read `ROADMAP.md` for current phase + open issues.
 
 **For non-trivial features:**
 1. Triage — read the relevant code, identify files affected
 2. Describe the goal; Claude enters plan mode → approve the plan
-3. Agent team implements in parallel: `pm` coordinates, `dev1` (backend), `dev2` (frontend), `designer` (UX QA)
-4. Run quality gates before committing: `pytest`, `mypy --strict`, `ruff`, `tsc --noEmit`
+3. Agent team implements in parallel: `dev1` (AI service/backend), `dev2` (Next.js/frontend)
+4. Run quality gates before committing: `cd ai-service && pytest && ruff check bubbly_chef/ && mypy bubbly_chef/ --strict` + `cd nextjs && npx tsc --noEmit`
 
 **For spec-driven autonomous work:**
-- Write a thorough design doc in `docs/plans/` with clear acceptance criteria per task
+- Write a design doc in `docs/plans/` with clear acceptance criteria
 - Tell Claude: *"Implement the spec at docs/plans/my-feature.md autonomously"*
-- Agents read the spec, implement, run gates, mark tasks done — no back-and-forth
-- Review the diff and commit
-
-**Autonomous improvement loop:**
-```
-"Run pytest + mypy + ruff + tsc. Fix any failures. Keep going until all green."
-```
-
-**Persistent memory:** Key decisions and lessons live in `.claude/agent-memory/` (auto-loaded via `MEMORY.md`). At session end: *"save a handoff note to memory"*
-
-See `docs/WORKFLOW.md` for the full workflow reference.
 
 ---
 
 ## Environment Variables
 
+### nextjs/.env.local
 ```bash
-BUBBLY_GEMINI_API_KEY=...                        # required
-BUBBLY_OLLAMA_BASE_URL=...                       # optional, default: http://localhost:11434
-BUBBLY_DATABASE_URL=sqlite+aiosqlite:///./bubbly_chef.db
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+NEXT_PUBLIC_AI_SERVICE_URL=http://localhost:8888
+```
+
+### ai-service/.env
+```bash
+BUBBLY_SUPABASE_URL=...
+BUBBLY_SUPABASE_SERVICE_ROLE_KEY=...
+BUBBLY_SUPABASE_JWT_SECRET=...
+BUBBLY_GEMINI_API_KEY=...
+BUBBLY_OLLAMA_BASE_URL=http://localhost:11434   # optional
 BUBBLY_AUTO_ADD_CONFIDENCE_THRESHOLD=0.8
 BUBBLY_REVIEW_CONFIDENCE_THRESHOLD=0.5
-BUBBLY_CORS_ORIGINS=["http://localhost:5173"]
+BUBBLY_CORS_ORIGINS=["http://localhost:3000"]
 ```
 
 ---
 
 ## Known Limitations / Tech Debt
 
-- No unit conversion (can't deduct "3 eggs" from "1 dozen eggs") — issue #6
-- Single-user, no auth
-- Receipt quality dependent on image quality
+- Component migration incomplete — Pantry, Scan, Chat pages still in old `web/` Vite app
 - No rate limiting on AI provider calls — issue #8
-- Pagination missing from pantry list endpoint — issue #5
+- Pagination missing from pantry list — issue #5
+- No unit conversion (can't deduct "3 eggs" from "1 dozen eggs") — issue #6
+- `mutating` state in RecipeBook — buttons not yet `disabled={mutating}`
+- No error feedback on failed recipe mutations
 - iOS Safari bottom nav bug — issue #4
 
 ---
 
-*Last updated: 2026-03-31*
+*Last updated: 2026-04-29*
 
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
