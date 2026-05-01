@@ -4,11 +4,9 @@ Replaces SQLiteRepository. Uses supabase-py with the service_role key
 (bypasses RLS) and takes user_id as a parameter on every method.
 """
 
-import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID, uuid4
 
 from supabase import Client, create_client
 
@@ -290,7 +288,7 @@ class SupabaseRepository:
             "source_type": recipe.source_type or "chat",
             "is_draft": recipe.is_draft if hasattr(recipe, "is_draft") else False,
         }
-        result = self.client.table("recipes").insert(data).execute()
+        self.client.table("recipes").insert(data).execute()
         return recipe  # Return as-is; ID comes from Supabase
 
     async def get_recipe(self, user_id: str, recipe_id: str) -> RecipeCard | None:
