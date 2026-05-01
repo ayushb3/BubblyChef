@@ -7,6 +7,7 @@ import RecipeSearchBar from './RecipeSearchBar'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import RecipeEditModal from './RecipeEditModal'
 import RecipeDeleteConfirm from './RecipeDeleteConfirm'
+import RecipeImportModal from './RecipeImportModal'
 
 interface RecipeBookProps {
   recipes: Recipe[]
@@ -42,6 +43,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   )
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [mutating, setMutating] = useState(false)
 
   const filteredRecipes = useMemo(
@@ -96,6 +98,22 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     onMutate?.()
   }
 
+  const handleImported = async (extracted: Partial<Recipe>) => {
+    setImportOpen(false)
+    setMutating(true)
+    const res = await fetch('/api/recipes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...extracted, source_type: 'url' }),
+    })
+    setMutating(false)
+    if (res.ok) {
+      const saved = await res.json()
+      onMutate?.()
+      setSelectedId(saved.id ?? null)
+    }
+  }
+
   const handleDeleteConfirm = async () => {
     setMutating(true)
     const nextRecipe = filteredRecipes.find((r) => r.id !== selectedRecipe?.id) ?? null
@@ -114,8 +132,21 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
 
   return (
     <div className="w-full max-w-md mx-auto px-2 flex flex-col gap-3">
-      {/* Search */}
-      <RecipeSearchBar onSearch={handleSearch} />
+      {/* Search + Import */}
+      <div className="flex gap-2 items-center">
+        <div className="flex-1">
+          <RecipeSearchBar onSearch={handleSearch} />
+        </div>
+        <button
+          onClick={() => setImportOpen(true)}
+          className="flex-shrink-0 px-3 py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
+          style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+          title="Import recipe from URL"
+          aria-label="Import recipe from URL"
+        >
+          🔗 Import
+        </button>
+      </div>
 
       {/* Book container */}
       <div
@@ -345,6 +376,13 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
           recipe={selectedRecipe}
           onSave={handleEditSave}
           onClose={() => setEditOpen(false)}
+        />
+      )}
+
+      {importOpen && (
+        <RecipeImportModal
+          onImported={handleImported}
+          onClose={() => setImportOpen(false)}
         />
       )}
     </div>
