@@ -9,7 +9,8 @@ This is the domain glossary for BubblyChef. Refer to this when building features
 ### Recipe
 A structured instruction for preparing food. Has ingredients, steps, cuisine, dietary tags, and metadata.
 
-- **Fields**: name, description, ingredients (list), steps (list), cuisine, prep_time, cook_time, servings, dietary_tags, source_url, source_platform, user_id
+- **Fields**: name, description, ingredients (list), steps (list), cuisine, prep_time, cook_time, servings, dietary_tags, source_url, source_type, source_title, thumbnail_url, user_id
+- **source_type values**: `chat` (AI-generated in session) | `url` (recipe website import) | `video` (TikTok/YouTube/Reels) | `manual` (user-typed). `scan` is not valid — scanning produces PantryItems, never Recipes.
 - **States**: draft, saved, favorited
 - **Constraints**: Can be grounded in pantry (uses available ingredients + expiring items)
 - **Related**: RecipeConstraints (user preferences), ProposalEnvelope (AI-generated with confidence)
@@ -69,6 +70,17 @@ The process of anchoring recipe generation in the user's actual pantry to ensure
 **Key insight**: LLM receives structured context, not raw data. Prevents hallucinated ingredients.
 
 ---
+
+### URL Recipe Import
+A feature that lets users paste a recipe URL and import it into their library as a RecipeCardProposal.
+
+- **Entry point**: "Import" button/modal on the `/recipes` page
+- **Parser**: `services/url_recipe_importer.py` — `async def import_from_url(url, user_id, ai_manager) -> RecipeCardProposal`
+- **Extraction strategy**: `recipe-scrapers` for known sites (~300 supported); LLM fallback for unknowns
+- **Review flow**: Returns `ProposalEnvelope` — user reviews/edits extracted fields before confirming to DB
+- **Error handling**: Hard errors with classified failure reason — `not_a_recipe`, `paywalled`, `fetch_failed`, `invalid_url`. Error message shown in modal; user can try a different URL. Contextual LLM-generated reason text is a future enhancement.
+- **Confidence thresholds**: Same as scan — ≥0.8 ready, 0.5–0.8 needs review, <0.5 treated as hard error
+- _Avoid_: "scrape", "crawl" — use "import" or "extract"
 
 ## AI Workflows Architecture
 

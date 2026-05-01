@@ -57,7 +57,7 @@ class RecipeCard(BaseModel):
 
     # Source metadata
     source_type: str = Field(
-        default="chat", description="How the recipe was added: chat/url/manual"
+        default="chat", description="How the recipe was added: chat | url | video | manual"
     )
     source_title: str | None = Field(default=None, description="Human-readable source label")
     thumbnail_url: str | None = Field(default=None, description="Recipe thumbnail image URL")
