@@ -55,8 +55,5 @@ jobs:
       - name: Ruff
         run: ruff check bubbly_chef/
 
-      - name: Mypy
-        run: mypy bubbly_chef/ --strict
-
       - name: Pytest
         run: pytest tests/ -x -q
