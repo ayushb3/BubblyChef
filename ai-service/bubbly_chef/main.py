@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from bubbly_chef.api.routes import chat, recipes_ai, scan, workflows
+from bubbly_chef.api.routes import chat, ingest, recipes_ai, scan, workflows
 from bubbly_chef.config import settings
 from bubbly_chef.repository.supabase_repo import get_repository
 
@@ -80,6 +80,7 @@ def create_app() -> FastAPI:
     app.include_router(scan.router)
     app.include_router(recipes_ai.router)
     app.include_router(workflows.router)
+    app.include_router(ingest.router)
 
     return app
 
