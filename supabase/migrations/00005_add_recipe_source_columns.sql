@@ -1,0 +1,2 @@
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS source_url TEXT;
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS source_platform TEXT;

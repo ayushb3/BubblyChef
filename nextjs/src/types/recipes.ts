@@ -41,6 +41,8 @@ export interface GeneratedRecipe {
   dietary_tags?: string[]
   difficulty?: string | null
   tips?: string[]
+  source_url?: string | null
+  source_platform?: string | null
 }
 
 export interface GenerateRecipeResponse {
