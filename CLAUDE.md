@@ -318,6 +318,22 @@ BUBBLY_CORS_ORIGINS=["http://localhost:3000"]
 
 ---
 
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues at https://github.com/ayushb3/BubblyChef. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default mattpocock vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — `CONTEXT.md` at repo root, `docs/adr/` for architectural decisions. See `docs/agents/domain.md`.
+
+---
+
 *Last updated: 2026-04-29*
 
 
