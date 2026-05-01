@@ -147,7 +147,7 @@ async def ingest_recipe_from_url(url: str) -> RecipeCard:
     2. recipe-scrapers with supported_only=False (unknown sites with Schema.org markup)
     3. AI extraction from raw HTML via AIManager
     """
-    # ── Tier 1 & 2: scraper (strict, then wild) ───────────────────────────
+    # ── Tier 1: scraper strict (known sites) ─────────────────────────────
     # scrape_me fetches HTML internally; on failure we fall through.
     try:
         scraper = scrape_me(url)
@@ -158,11 +158,12 @@ async def ingest_recipe_from_url(url: str) -> RecipeCard:
             f"recipe-scrapers strict failed ({type(e).__name__}: {e}), trying wild_mode"
         )
 
-    # Tier 2: use scrape_html with supported_only=False so we handle unknown
-    # sites that expose Schema.org markup.
+    # ── Fetch HTML once — reused by Tiers 2 and 3 ────────────────────────
+    html = await httpx_get(url)
+
+    # ── Tier 2: scrape_html with supported_only=False (Schema.org fallback) ──
     try:
-        html_for_scraper = await httpx_get(url)
-        scraper = scrape_html(html_for_scraper, org_url=url, supported_only=False)
+        scraper = scrape_html(html, org_url=url, supported_only=False)
         logger.info(f"recipe-scrapers (supported_only=False) succeeded for {url}")
         return _scraper_to_recipe_card(scraper, url)
     except Exception as e:
@@ -173,7 +174,6 @@ async def ingest_recipe_from_url(url: str) -> RecipeCard:
 
     # ── Tier 3: AI extraction from raw HTML ───────────────────────────────
     logger.info(f"Attempting AI extraction for {url}")
-    html = await httpx_get(url)
     html_snippet = html[:8000]
 
     prompt = _AI_EXTRACTION_PROMPT.format(source_url=url, html=html_snippet)
