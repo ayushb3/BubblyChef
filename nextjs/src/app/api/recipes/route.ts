@@ -60,6 +60,7 @@ export async function POST(request: Request) {
       total_time_minutes: body.total_time_minutes,
       servings: body.servings,
       source_url: body.source_url,
+      source_platform: body.source_platform,
       tags: [...new Set([...(body.tags || []), ...(body.dietary_tags || [])])],
       difficulty: body.difficulty,
       source_type: body.source_type || 'chat',
