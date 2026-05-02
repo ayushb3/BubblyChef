@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { type Recipe } from './RecipePage'
 
 interface RecipeImportModalProps {
-  onImported: (recipe: Partial<Recipe>) => void
+  onImported: (recipe: Partial<Recipe>, sourceUrl: string) => void
   onClose: () => void
 }
 
@@ -61,7 +61,7 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
       const raw = await res.json()
       // AI service wraps in { recipe: ... } envelope
       const recipe: Partial<Recipe> = 'recipe' in raw ? raw.recipe : raw
-      onImported(recipe)
+      onImported(recipe, trimmed)
     } catch {
       setErrorMsg(ERROR_MESSAGES.fetch_failed)
       setState('error')
