@@ -42,17 +42,9 @@ async def httpx_get(url: str) -> str:
 
 
 def get_ai_manager() -> Any:  # noqa: ANN401
-    """Return the configured AIManager. Extracted so tests can patch it."""
-    from bubbly_chef.ai.manager import AIManager
-    from bubbly_chef.ai.provider import AIProvider
-    from bubbly_chef.config import settings
-
-    providers: list[AIProvider] = []
-    if settings.gemini_api_key:
-        from bubbly_chef.ai.gemini import GeminiProvider
-
-        providers.append(GeminiProvider(api_key=settings.gemini_api_key))
-    return AIManager(providers=providers)
+    """Return the singleton AIManager from deps."""
+    from bubbly_chef.api.deps import get_ai_manager as _get
+    return _get()
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +124,28 @@ HTML (truncated to first 8000 chars):
 {html}
 """
 
+_AI_NO_FETCH_PROMPT = """\
+Extract the recipe at the URL below. The page could not be fetched directly, so use your
+training knowledge of this specific recipe page to fill in details accurately.
+
+Return a JSON object with these fields:
+- title: string (required)
+- description: string or null
+- ingredients: list of objects with "name" (required), "quantity" (float|null), \
+"unit" (str|null), "preparation" (str|null), "optional" (bool), "substitutes" (list[str])
+- instructions: list of strings, each a single step
+- prep_time_minutes: integer or null
+- cook_time_minutes: integer or null
+- total_time_minutes: integer or null
+- servings: integer or null
+- cuisine: string or null
+- dietary_tags: list of strings
+- source_type: "url"
+- source_url: "{source_url}"
+
+URL: {source_url}
+"""
+
 
 # ---------------------------------------------------------------------------
 # Main extraction function
@@ -183,18 +197,11 @@ async def ingest_recipe_from_url(url: str) -> RecipeCard:
             )
 
     # ── Tier 3: AI extraction ─────────────────────────────────────────────
-    # If we have HTML, extract from it. If the site blocked us, ask Gemini
-    # to recall the recipe from its training data using the URL as context.
     logger.info(f"Attempting AI extraction for {url}")
     if html is not None:
         prompt = _AI_EXTRACTION_PROMPT.format(source_url=url, html=html[:8000])
     else:
-        prompt = (
-            f"Extract the recipe from this URL: {url}\n\n"
-            "The page could not be fetched directly. Use your knowledge of this recipe "
-            "to fill in the details as accurately as possible.\n\n"
-            + _AI_EXTRACTION_PROMPT.split("HTML")[0].replace("{source_url}", url).replace("{html}", "")
-        )
+        prompt = _AI_NO_FETCH_PROMPT.format(source_url=url)
     ai_manager = get_ai_manager()
     result = await ai_manager.complete(prompt=prompt, response_schema=RecipeCard)
 

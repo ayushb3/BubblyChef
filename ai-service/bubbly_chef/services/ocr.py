@@ -37,6 +37,14 @@ class GeminiOCR(OCRService):
     async def extract_text(self, image_data: bytes) -> str:
         from bubbly_chef.api.deps import get_ai_manager
 
+        # Detect MIME type from magic bytes
+        if image_data[:8] == b'\x89PNG\r\n\x1a\n':
+            mime_type = "image/png"
+        elif image_data[:4] == b'RIFF' or image_data[:4] == b'WEBP':
+            mime_type = "image/webp"
+        else:
+            mime_type = "image/jpeg"
+
         manager = get_ai_manager()
         result = await manager.vision_complete(
             prompt=(
@@ -44,7 +52,7 @@ class GeminiOCR(OCRService):
                 "Preserve line breaks. Return only the raw text, no commentary."
             ),
             image_bytes=image_data,
-            mime_type="image/jpeg",
+            mime_type=mime_type,
         )
         return str(result).strip()
 
