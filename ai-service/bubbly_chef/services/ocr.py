@@ -1,6 +1,5 @@
 """OCR service abstraction."""
 
-import io
 from abc import ABC, abstractmethod
 
 
@@ -26,54 +25,28 @@ class OCRService(ABC):
         ...
 
 
-class TesseractOCR(OCRService):
-    """Tesseract OCR implementation (local, free)."""
-
-    def __init__(self) -> None:
-        self._available: bool | None = None
+class GeminiOCR(OCRService):
+    """OCR via Gemini vision — no system dependencies required."""
 
     def is_available(self) -> bool:
-        """Check if Tesseract is installed."""
-        if self._available is not None:
-            return self._available
+        from bubbly_chef.api.deps import get_ai_manager
 
-        try:
-            import pytesseract  # type: ignore[import-untyped]
-
-            # Try to get version to verify it's working
-            pytesseract.get_tesseract_version()
-            self._available = True
-        except Exception:
-            self._available = False
-
-        return self._available
+        manager = get_ai_manager()
+        return any(p.supports_vision for p in manager.providers)
 
     async def extract_text(self, image_data: bytes) -> str:
-        """Extract text using Tesseract, run in a thread pool to avoid blocking the event loop."""
-        if not self.is_available():
-            raise RuntimeError("Tesseract is not available")
+        from bubbly_chef.api.deps import get_ai_manager
 
-        import asyncio
-
-        import pytesseract
-        from PIL import Image
-
-        # Load and convert image synchronously (cheap, stays on calling thread)
-        image: Image.Image = Image.open(io.BytesIO(image_data))
-        if image.mode != "RGB":
-            image = image.convert("RGB")
-
-        # Tesseract is CPU-bound and synchronous — run in thread pool so the
-        # event loop is not blocked during the OCR call (typically 5–30s).
-        # Use --psm 4 (single column of variable-size text) — handles receipts on
-        # complex backgrounds better than psm 6 (uniform block) which misses partial columns
-        loop = asyncio.get_running_loop()
-        text: str = await loop.run_in_executor(
-            None,
-            lambda: pytesseract.image_to_string(image, config="--psm 4 -l eng"),
+        manager = get_ai_manager()
+        result = await manager.vision_complete(
+            prompt=(
+                "Extract all text from this receipt image exactly as it appears. "
+                "Preserve line breaks. Return only the raw text, no commentary."
+            ),
+            image_bytes=image_data,
+            mime_type="image/jpeg",
         )
-
-        return text.strip()
+        return str(result).strip()
 
 
 class MockOCR(OCRService):
@@ -97,7 +70,7 @@ def get_ocr_service() -> OCRService:
     """Get the OCR service instance."""
     global _ocr_service
     if _ocr_service is None:
-        _ocr_service = TesseractOCR()
+        _ocr_service = GeminiOCR()
     return _ocr_service
 
 

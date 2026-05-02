@@ -44,6 +44,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [importDraft, setImportDraft] = useState<Partial<Recipe> | null>(null)
   const [mutating, setMutating] = useState(false)
 
   const filteredRecipes = useMemo(
@@ -98,15 +99,44 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     onMutate?.()
   }
 
-  const handleImported = async (extracted: Partial<Recipe>) => {
+  const handleImported = (extracted: Partial<Recipe>, sourceUrl: string) => {
+    let platform: string | null = null
+    try {
+      const hostname = new URL(sourceUrl).hostname.replace(/^www\./, '')
+      const PLATFORM_NAMES: Record<string, string> = {
+        'allrecipes.com': 'AllRecipes',
+        'food.com': 'Food.com',
+        'foodnetwork.com': 'Food Network',
+        'bbcgoodfood.com': 'BBC Good Food',
+        'seriouseats.com': 'Serious Eats',
+        'bonappetit.com': 'Bon Appétit',
+        'epicurious.com': 'Epicurious',
+        'delish.com': 'Delish',
+        'tasty.co': 'Tasty',
+        'cooking.nytimes.com': 'NYT Cooking',
+        'skinnytaste.com': 'Skinnytaste',
+        'halfbakedharvest.com': 'Half Baked Harvest',
+        'thekitchn.com': 'The Kitchn',
+        'simplyrecipes.com': 'Simply Recipes',
+        'smittenkitchen.com': 'Smitten Kitchen',
+      }
+      platform = PLATFORM_NAMES[hostname] ?? hostname
+    } catch {
+      // malformed URL — leave platform null
+    }
     setImportOpen(false)
+    setImportDraft({ ...extracted, source_url: sourceUrl, source_platform: platform })
+  }
+
+  const handleImportSave = async (updates: Partial<Recipe>) => {
     setMutating(true)
     const res = await fetch('/api/recipes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...extracted, source_type: 'url' }),
+      body: JSON.stringify({ ...importDraft, ...updates, source_type: 'url' }),
     })
     setMutating(false)
+    setImportDraft(null)
     if (res.ok) {
       const saved = await res.json()
       onMutate?.()
@@ -383,6 +413,15 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         <RecipeImportModal
           onImported={handleImported}
           onClose={() => setImportOpen(false)}
+        />
+      )}
+
+      {/* Import confirmation — review/edit extracted recipe before saving */}
+      {importDraft && (
+        <RecipeEditModal
+          recipe={{ id: '', user_id: '', created_at: '', ...importDraft } as Recipe}
+          onSave={handleImportSave}
+          onClose={() => setImportDraft(null)}
         />
       )}
     </div>

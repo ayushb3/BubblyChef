@@ -62,7 +62,7 @@ export default function RecipeDetail({ recipe }: RecipeDetailProps) {
             className="font-extrabold text-base"
             style={{ lineHeight: `${LINE_HEIGHT}px`, fontFamily: 'Nunito, sans-serif' }}
           >
-            Ingredients ✏️
+            Ingredients
           </h3>
           <ul>
             {recipe.ingredients.map((ing, i) => {
@@ -118,7 +118,7 @@ export default function RecipeDetail({ recipe }: RecipeDetailProps) {
             className="font-extrabold text-base"
             style={{ lineHeight: `${LINE_HEIGHT}px`, fontFamily: 'Nunito, sans-serif' }}
           >
-            Method 📝
+            Method
           </h3>
           <ol>
             {recipe.instructions.map((step, i) => {
