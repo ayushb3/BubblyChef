@@ -61,6 +61,10 @@ def create_app() -> FastAPI:
     )
 
     # Health check
+    @app.get("/health")
+    async def health_root() -> dict:
+        return {"status": "ok"}
+
     @app.get("/health/ai")
     async def health() -> dict:
         providers = []
