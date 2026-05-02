@@ -159,24 +159,42 @@ async def ingest_recipe_from_url(url: str) -> RecipeCard:
         )
 
     # ── Fetch HTML once — reused by Tiers 2 and 3 ────────────────────────
-    html = await httpx_get(url)
-
-    # ── Tier 2: scrape_html with supported_only=False (Schema.org fallback) ──
+    html: str | None = None
     try:
-        scraper = scrape_html(html, org_url=url, supported_only=False)
-        logger.info(f"recipe-scrapers (supported_only=False) succeeded for {url}")
-        return _scraper_to_recipe_card(scraper, url)
-    except Exception as e:
-        logger.info(
-            f"recipe-scrapers wild fallback failed ({type(e).__name__}: {e}), "
-            "falling to AI"
+        html = await httpx_get(url)
+    except httpx.HTTPStatusError as e:
+        logger.warning(
+            f"HTTP {e.response.status_code} fetching {url} — skipping scraper tiers, "
+            "falling directly to AI extraction"
         )
+    except Exception as e:
+        logger.warning(f"Failed to fetch {url}: {e} — falling directly to AI extraction")
 
-    # ── Tier 3: AI extraction from raw HTML ───────────────────────────────
+    if html is not None:
+        # ── Tier 2: scrape_html with supported_only=False (Schema.org fallback) ──
+        try:
+            scraper = scrape_html(html, org_url=url, supported_only=False)
+            logger.info(f"recipe-scrapers (supported_only=False) succeeded for {url}")
+            return _scraper_to_recipe_card(scraper, url)
+        except Exception as e:
+            logger.info(
+                f"recipe-scrapers wild fallback failed ({type(e).__name__}: {e}), "
+                "falling to AI"
+            )
+
+    # ── Tier 3: AI extraction ─────────────────────────────────────────────
+    # If we have HTML, extract from it. If the site blocked us, ask Gemini
+    # to recall the recipe from its training data using the URL as context.
     logger.info(f"Attempting AI extraction for {url}")
-    html_snippet = html[:8000]
-
-    prompt = _AI_EXTRACTION_PROMPT.format(source_url=url, html=html_snippet)
+    if html is not None:
+        prompt = _AI_EXTRACTION_PROMPT.format(source_url=url, html=html[:8000])
+    else:
+        prompt = (
+            f"Extract the recipe from this URL: {url}\n\n"
+            "The page could not be fetched directly. Use your knowledge of this recipe "
+            "to fill in the details as accurately as possible.\n\n"
+            + _AI_EXTRACTION_PROMPT.split("HTML")[0].replace("{source_url}", url).replace("{html}", "")
+        )
     ai_manager = get_ai_manager()
     result = await ai_manager.complete(prompt=prompt, response_schema=RecipeCard)
 
