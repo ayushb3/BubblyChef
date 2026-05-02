@@ -7,6 +7,36 @@
 
 import type { ScanResult, ConfirmedItem } from '@/types/scan'
 
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024 // 4MB — stay under Vercel's 4.5MB limit
+
+/**
+ * Resize image to stay under the upload limit.
+ * Scales down progressively until the file is small enough.
+ */
+async function compressImage(file: File): Promise<File> {
+  if (file.size <= MAX_UPLOAD_BYTES) return file
+
+  return new Promise((resolve) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const canvas = document.createElement('canvas')
+      // Scale down proportionally until estimated size is under limit
+      const scale = Math.sqrt(MAX_UPLOAD_BYTES / file.size) * 0.9
+      canvas.width = Math.round(img.width * scale)
+      canvas.height = Math.round(img.height * scale)
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+      canvas.toBlob(
+        (blob) => resolve(new File([blob!], file.name, { type: 'image/jpeg' })),
+        'image/jpeg',
+        0.85,
+      )
+    }
+    img.src = url
+  })
+}
+
 /**
  * Upload a receipt image for OCR + AI parsing.
  */
@@ -15,7 +45,7 @@ export async function uploadReceipt(
   options?: { preprocess?: boolean; preprocess_mode?: string },
 ): Promise<ScanResult> {
   const formData = new FormData()
-  formData.append('file', file)
+  formData.append('file', await compressImage(file))
   if (options?.preprocess !== undefined) {
     formData.append('preprocess', String(options.preprocess))
   }
