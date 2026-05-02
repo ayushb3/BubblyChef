@@ -7,6 +7,7 @@ import RecipeSearchBar from './RecipeSearchBar'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import RecipeEditModal from './RecipeEditModal'
 import RecipeDeleteConfirm from './RecipeDeleteConfirm'
+import RecipeImportModal from './RecipeImportModal'
 
 interface RecipeBookProps {
   recipes: Recipe[]
@@ -42,6 +43,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   )
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importDraft, setImportDraft] = useState<Partial<Recipe> | null>(null)
   const [mutating, setMutating] = useState(false)
 
   const filteredRecipes = useMemo(
@@ -96,6 +99,51 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     onMutate?.()
   }
 
+  const handleImported = (extracted: Partial<Recipe>, sourceUrl: string) => {
+    let platform: string | null = null
+    try {
+      const hostname = new URL(sourceUrl).hostname.replace(/^www\./, '')
+      const PLATFORM_NAMES: Record<string, string> = {
+        'allrecipes.com': 'AllRecipes',
+        'food.com': 'Food.com',
+        'foodnetwork.com': 'Food Network',
+        'bbcgoodfood.com': 'BBC Good Food',
+        'seriouseats.com': 'Serious Eats',
+        'bonappetit.com': 'Bon Appétit',
+        'epicurious.com': 'Epicurious',
+        'delish.com': 'Delish',
+        'tasty.co': 'Tasty',
+        'cooking.nytimes.com': 'NYT Cooking',
+        'skinnytaste.com': 'Skinnytaste',
+        'halfbakedharvest.com': 'Half Baked Harvest',
+        'thekitchn.com': 'The Kitchn',
+        'simplyrecipes.com': 'Simply Recipes',
+        'smittenkitchen.com': 'Smitten Kitchen',
+      }
+      platform = PLATFORM_NAMES[hostname] ?? hostname
+    } catch {
+      // malformed URL — leave platform null
+    }
+    setImportOpen(false)
+    setImportDraft({ ...extracted, source_url: sourceUrl, source_platform: platform })
+  }
+
+  const handleImportSave = async (updates: Partial<Recipe>) => {
+    setMutating(true)
+    const res = await fetch('/api/recipes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...importDraft, ...updates, source_type: 'url' }),
+    })
+    setMutating(false)
+    setImportDraft(null)
+    if (res.ok) {
+      const saved = await res.json()
+      onMutate?.()
+      setSelectedId(saved.id ?? null)
+    }
+  }
+
   const handleDeleteConfirm = async () => {
     setMutating(true)
     const nextRecipe = filteredRecipes.find((r) => r.id !== selectedRecipe?.id) ?? null
@@ -114,8 +162,21 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
 
   return (
     <div className="w-full max-w-md mx-auto px-2 flex flex-col gap-3">
-      {/* Search */}
-      <RecipeSearchBar onSearch={handleSearch} />
+      {/* Search + Import */}
+      <div className="flex gap-2 items-center">
+        <div className="flex-1">
+          <RecipeSearchBar onSearch={handleSearch} />
+        </div>
+        <button
+          onClick={() => setImportOpen(true)}
+          className="flex-shrink-0 px-3 py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
+          style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+          title="Import recipe from URL"
+          aria-label="Import recipe from URL"
+        >
+          🔗 Import
+        </button>
+      </div>
 
       {/* Book container */}
       <div
@@ -345,6 +406,22 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
           recipe={selectedRecipe}
           onSave={handleEditSave}
           onClose={() => setEditOpen(false)}
+        />
+      )}
+
+      {importOpen && (
+        <RecipeImportModal
+          onImported={handleImported}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
+
+      {/* Import confirmation — review/edit extracted recipe before saving */}
+      {importDraft && (
+        <RecipeEditModal
+          recipe={{ id: '', user_id: '', created_at: '', ...importDraft } as Recipe}
+          onSave={handleImportSave}
+          onClose={() => setImportDraft(null)}
         />
       )}
     </div>

@@ -193,4 +193,4 @@ Pantry accepts units: oz, g, ml, l, cup, tsp, tbsp, count. Recipe generation use
 
 ---
 
-*Last updated: 2026-04-29*
+*Last updated: 2026-05-02*

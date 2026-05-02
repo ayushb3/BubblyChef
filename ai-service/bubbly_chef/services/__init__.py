@@ -1,11 +1,11 @@
 """Services module."""
 
-from .ocr import MockOCR, OCRService, TesseractOCR, get_ocr_service, set_ocr_service
+from .ocr import GeminiOCR, MockOCR, OCRService, get_ocr_service, set_ocr_service
 from .receipt_parser import ParsedReceiptItem, ReceiptParseResult, parse_receipt
 
 __all__ = [
     "OCRService",
-    "TesseractOCR",
+    "GeminiOCR",
     "MockOCR",
     "get_ocr_service",
     "set_ocr_service",

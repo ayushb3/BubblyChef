@@ -2,7 +2,13 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { type Recipe } from './RecipePage'
+import { type Recipe, type Ingredient } from './RecipePage'
+
+const toIngStr = (i: string | Ingredient): string =>
+  typeof i === 'string' ? i : [i.quantity, i.unit, i.name].filter(Boolean).join(' ')
+
+const toStepStr = (s: string | { text?: string; step?: string }): string =>
+  typeof s === 'string' ? s : (s.text ?? s.step ?? '')
 
 interface RecipeEditModalProps {
   recipe: Recipe
@@ -14,7 +20,27 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
   const [title, setTitle] = useState(recipe.title)
   const [description, setDescription] = useState(recipe.description ?? '')
   const [tags, setTags] = useState((recipe.tags ?? []).join(', '))
+  const [ingredients, setIngredients] = useState<string[]>(
+    (recipe.ingredients ?? []).map(toIngStr)
+  )
+  const [instructions, setInstructions] = useState<string[]>(
+    (recipe.instructions ?? []).map(toStepStr)
+  )
   const [saving, setSaving] = useState(false)
+
+  const updateItem = (
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    index: number,
+    value: string
+  ) => setter(prev => prev.map((v, i) => (i === index ? value : v)))
+
+  const removeItem = (
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    index: number
+  ) => setter(prev => prev.filter((_, i) => i !== index))
+
+  const addItem = (setter: React.Dispatch<React.SetStateAction<string[]>>) =>
+    setter(prev => [...prev, ''])
 
   const handleSave = async () => {
     setSaving(true)
@@ -22,10 +48,9 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
       await onSave({
         title,
         description,
-        tags: tags
-          .split(',')
-          .map((t) => t.trim())
-          .filter(Boolean),
+        tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+        ingredients: ingredients.filter(Boolean),
+        instructions: instructions.filter(Boolean),
       })
     } finally {
       setSaving(false)
@@ -86,7 +111,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
           </div>
 
           {/* Body */}
-          <div className="px-5 py-4 space-y-4">
+          <div className="px-5 py-4 space-y-4 overflow-y-auto" style={{ maxHeight: '60vh' }}>
             {/* Title */}
             <div>
               <label
@@ -152,6 +177,98 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
                   fontFamily: 'Nunito, sans-serif',
                 }}
               />
+            </div>
+
+            {/* Ingredients */}
+            <div>
+              <label
+                className="text-xs font-semibold block mb-1"
+                style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+              >
+                Ingredients
+              </label>
+              <div className="space-y-1.5">
+                {ingredients.map((item, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <input
+                      type="text"
+                      value={item}
+                      onChange={(e) => updateItem(setIngredients, i, e.target.value)}
+                      className="flex-1 rounded-xl px-3 py-2 text-sm outline-none border focus:border-[var(--color-primary)]"
+                      style={{
+                        background: 'var(--color-bg)',
+                        border: '1.5px solid var(--color-border)',
+                        color: 'var(--color-text)',
+                        fontFamily: 'Nunito, sans-serif',
+                      }}
+                    />
+                    <button
+                      onClick={() => removeItem(setIngredients, i)}
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-xs hover:opacity-70 flex-shrink-0"
+                      style={{ background: 'var(--color-bg)', color: 'var(--color-muted)', border: '1.5px solid var(--color-border)' }}
+                      aria-label="Remove ingredient"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={() => addItem(setIngredients)}
+                  className="text-xs font-bold px-3 py-1.5 rounded-full"
+                  style={{ color: 'var(--color-primary)', background: 'var(--color-bg)', border: '1.5px solid var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+                >
+                  + Add ingredient
+                </button>
+              </div>
+            </div>
+
+            {/* Instructions */}
+            <div>
+              <label
+                className="text-xs font-semibold block mb-1"
+                style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+              >
+                Instructions
+              </label>
+              <div className="space-y-1.5">
+                {instructions.map((step, i) => (
+                  <div key={i} className="flex gap-2 items-start">
+                    <span
+                      className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-2"
+                      style={{ background: 'var(--color-primary)', color: '#fff', fontFamily: 'Nunito, sans-serif' }}
+                    >
+                      {i + 1}
+                    </span>
+                    <textarea
+                      value={step}
+                      onChange={(e) => updateItem(setInstructions, i, e.target.value)}
+                      rows={2}
+                      className="flex-1 rounded-xl px-3 py-2 text-sm outline-none resize-none border focus:border-[var(--color-primary)]"
+                      style={{
+                        background: 'var(--color-bg)',
+                        border: '1.5px solid var(--color-border)',
+                        color: 'var(--color-text)',
+                        fontFamily: 'Nunito, sans-serif',
+                      }}
+                    />
+                    <button
+                      onClick={() => removeItem(setInstructions, i)}
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-xs hover:opacity-70 flex-shrink-0 mt-1"
+                      style={{ background: 'var(--color-bg)', color: 'var(--color-muted)', border: '1.5px solid var(--color-border)' }}
+                      aria-label="Remove step"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={() => addItem(setInstructions)}
+                  className="text-xs font-bold px-3 py-1.5 rounded-full"
+                  style={{ color: 'var(--color-primary)', background: 'var(--color-bg)', border: '1.5px solid var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+                >
+                  + Add step
+                </button>
+              </div>
             </div>
           </div>
 

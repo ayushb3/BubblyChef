@@ -20,6 +20,7 @@ export interface Recipe {
   total_time_minutes?: number | null
   servings?: number | null
   source_url?: string | null
+  source_platform?: string | null
   tags?: string[]
   difficulty?: string | null
   source_type?: string
@@ -61,7 +62,7 @@ export default function RecipeDetail({ recipe }: RecipeDetailProps) {
             className="font-extrabold text-base"
             style={{ lineHeight: `${LINE_HEIGHT}px`, fontFamily: 'Nunito, sans-serif' }}
           >
-            Ingredients ✏️
+            Ingredients
           </h3>
           <ul>
             {recipe.ingredients.map((ing, i) => {
@@ -90,6 +91,26 @@ export default function RecipeDetail({ recipe }: RecipeDetailProps) {
         </div>
       )}
 
+      {/* Source attribution */}
+      {recipe.source_url && (
+        <div style={{ lineHeight: `${LINE_HEIGHT}px` }}>
+          <a
+            href={recipe.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold no-underline hover:opacity-80 transition-opacity"
+            style={{
+              background: 'var(--color-bg)',
+              border: '1.5px solid var(--color-border)',
+              color: 'var(--color-muted)',
+              fontFamily: 'Nunito, sans-serif',
+            }}
+          >
+            🔗 {recipe.source_platform ?? recipe.source_title ?? 'View original'}
+          </a>
+        </div>
+      )}
+
       {/* Instructions */}
       {recipe.instructions.length > 0 && (
         <div>
@@ -97,7 +118,7 @@ export default function RecipeDetail({ recipe }: RecipeDetailProps) {
             className="font-extrabold text-base"
             style={{ lineHeight: `${LINE_HEIGHT}px`, fontFamily: 'Nunito, sans-serif' }}
           >
-            Method 📝
+            Method
           </h3>
           <ol>
             {recipe.instructions.map((step, i) => {
