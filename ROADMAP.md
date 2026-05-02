@@ -18,7 +18,7 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 
 ---
 
-## Current Status: Migration Complete, Phase 3 Next
+## Current Status: Phase 3 Complete, Deploy Next
 
 ### Completed
 
@@ -27,8 +27,11 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 | Phase 1 | Pantry CRUD, receipt scanning, recipe generation, LangGraph workflows, 454+ tests |
 | Phase 2 | Chat intent router, recipe grounding (constraint extraction + expiry scoring), conversation history, DOM kitchen scene + milestone decorations |
 | Migration | Next.js + Supabase + FastAPI AI microservice (three-tier rewrite); component migration done; JWT wiring + SSE streaming done |
-| Recipe library | Save, search, edit, delete, favourite recipes; `is_favorite` toggle; search auto-select |
+| Recipe library | Save, search, edit, delete, favourite recipes; `is_favorite` toggle; search auto-select; ingredients + instructions editing |
 | AI workflows R1+R2 | Sub-graph decomposition (`chat/`, `pantry/`, `recipe/`), parent router, server-side conversation sessions + context-aware routing (`SessionMode`) |
+| Phase 3 | URL recipe import (recipe-scrapers + LLM fallback, source attribution chip, confirmation flow); `source_url` + `source_platform` in DB |
+| Phase 4 | Component migration complete — Pantry, Scan, Chat, Dashboard all on Next.js; old `web/` Vite app retired |
+| Phase 6 | JWT forwarding from Next.js session to AI microservice; SSE streaming wired |
 
 ### Migration phases completed
 
@@ -36,13 +39,9 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 - [x] Next.js app + Supabase auth (cookie-based sessions)
 - [x] 19 CRUD route handlers in Next.js
 - [x] AI microservice extracted (`ai-service/`)
-- [x] Recipe library UI (RecipeBook, edit modal, delete confirm, favourites)
-
-### Migration phases remaining
-
-- [ ] **Phase 4 — Component migration**: port Pantry, Scan, Chat, Dashboard pages to Next.js; replace React Router with `next/link`; split API client for CRUD vs AI calls
-- [ ] **Phase 6 — AI wiring**: JWT forwarding from Next.js session to AI microservice; SSE streaming direct browser → Railway
-- [ ] **Phase 7 — Deploy**: Next.js → Vercel, AI microservice → Railway, production env vars + CORS
+- [x] Recipe library UI (RecipeBook, edit modal with ingredients/instructions, delete confirm, favourites)
+- [x] URL recipe import with confirmation step + source attribution
+- [x] All pages (Pantry, Scan, Chat, Dashboard) on Next.js App Router
 
 ---
 
@@ -52,9 +51,8 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 
 ### Features
 
-- [ ] Finish component migration (Phase 4 above — blocks everything else)
-- [ ] URL recipe import (scrape structured data from recipe sites)
-- [ ] Video recipe ingestion (TikTok, YouTube Shorts, Instagram Reels)
+- [x] URL recipe import (recipe-scrapers + LLM fallback, confirmation step, source attribution)
+- [ ] Video recipe ingestion (TikTok, YouTube Shorts, Instagram Reels) — `BubblyChef-u1c`
   - [ ] Transcription + visual ingredient detection
   - [ ] Recipe card extraction from video
   - [ ] Video metadata storage (creator, platform, thumbnail)
@@ -75,7 +73,21 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 
 - **Pagination** — pantry list endpoint has no pagination (Next.js route handler, issue #5)
 - **Rate limiting** — no rate limiting on AI provider calls (issue #8)
-- **Component migration** — Pantry, Scan, Chat pages still served from old `web/` Vite app
+
+---
+
+## Phase 7: Deploy ← **Current**
+
+**Goal:** Live production app on Vercel + Railway.
+
+### Checklist
+
+- [ ] Connect GitHub repo to Vercel, set root directory to `nextjs/`
+- [ ] Set Next.js env vars in Vercel: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_AI_SERVICE_URL` (→ Railway URL)
+- [ ] Deploy `ai-service/` to Railway, set env vars from `ai-service/.env`
+- [ ] Update `BUBBLY_CORS_ORIGINS` on Railway to include Vercel production URL
+- [ ] Smoke test all pages + AI chat in production
+- [ ] Custom domain (optional)
 
 ---
 
@@ -124,4 +136,4 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 
 ---
 
-*Last updated: 2026-04-29*
+*Last updated: 2026-05-02*
