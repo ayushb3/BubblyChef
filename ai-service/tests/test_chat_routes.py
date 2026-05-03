@@ -2,12 +2,11 @@
 
 Mocks:
 - get_current_user_id dependency → fixed test user_id
-- run_chat_workflow_streaming → predictable SSE event sequence
+- run_chat_workflow_streaming → patched directly on the router module
 - SupabaseRepository.get_history / save_message → in-memory stubs
 """
 
 import json
-import sys
 from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -16,40 +15,13 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-# ---------------------------------------------------------------------------
-# Stub out bubbly_chef.workflows.router before any app import attempts it.
-# The ai-service router.py inherits old monolith imports (api.deps, repository.sqlite)
-# that don't exist in the ai-service tree. We inject a fake module so the
-# lazy import in chat.py resolves without touching those paths.
-# ---------------------------------------------------------------------------
-_router_stub = MagicMock()
+from bubbly_chef.api.auth import get_current_user_id
+from bubbly_chef.main import create_app
 
-
-async def _fake_stream_default(*args: Any, **kwargs: Any) -> AsyncIterator[str]:
-    yield json.dumps({"type": "token", "content": "Hello"})
-    yield json.dumps({"type": "token", "content": " world"})
-    yield json.dumps({"type": "done"})
-    yield json.dumps(
-        {
-            "type": "envelope",
-            "data": {
-                "request_id": "req-1",
-                "workflow_id": "wf-1",
-                "conversation_id": TEST_CONV_ID,
-                "intent": "general_chat",
-                "assistant_message": "Hello world",
-                "proposal": None,
-                "confidence": {"overall": 0.9},
-                "requires_review": False,
-                "next_action": "none",
-            },
-        }
-    )
-
-
-# We cannot reference TEST_CONV_ID before definition, so define it first.
 TEST_USER_ID = "test-user-123"
 TEST_CONV_ID = "550e8400-e29b-41d4-a716-446655440001"
+
+_STREAM_PATCH = "bubbly_chef.workflows.router.run_chat_workflow_streaming"
 
 
 async def _fake_stream(*args: Any, **kwargs: Any) -> AsyncIterator[str]:
@@ -72,14 +44,6 @@ async def _fake_stream(*args: Any, **kwargs: Any) -> AsyncIterator[str]:
             },
         }
     )
-
-
-_router_stub.run_chat_workflow_streaming = _fake_stream
-sys.modules.setdefault("bubbly_chef.workflows.router", _router_stub)
-
-# Now safe to import app modules
-from bubbly_chef.api.auth import get_current_user_id  # noqa: E402
-from bubbly_chef.main import create_app  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +120,7 @@ async def test_chat_stream_returns_sse(client: AsyncClient) -> None:
     """POST /v1/chat/stream returns text/event-stream content type."""
     mock_repo = _make_mock_repo()
 
-    with patch(
+    with patch(_STREAM_PATCH, side_effect=_fake_stream), patch(
         "bubbly_chef.api.routes.chat.get_repository",
         new_callable=AsyncMock,
         return_value=mock_repo,
@@ -175,7 +139,7 @@ async def test_chat_stream_yields_tokens(client: AsyncClient) -> None:
     """POST /v1/chat/stream body contains token and envelope SSE events."""
     mock_repo = _make_mock_repo()
 
-    with patch(
+    with patch(_STREAM_PATCH, side_effect=_fake_stream), patch(
         "bubbly_chef.api.routes.chat.get_repository",
         new_callable=AsyncMock,
         return_value=mock_repo,
