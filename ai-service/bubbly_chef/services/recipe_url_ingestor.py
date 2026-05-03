@@ -42,17 +42,9 @@ async def httpx_get(url: str) -> str:
 
 
 def get_ai_manager() -> Any:  # noqa: ANN401
-    """Return the configured AIManager. Extracted so tests can patch it."""
-    from bubbly_chef.ai.manager import AIManager
-    from bubbly_chef.ai.provider import AIProvider
-    from bubbly_chef.config import settings
-
-    providers: list[AIProvider] = []
-    if settings.gemini_api_key:
-        from bubbly_chef.ai.gemini import GeminiProvider
-
-        providers.append(GeminiProvider(api_key=settings.gemini_api_key))
-    return AIManager(providers=providers)
+    """Return the singleton AIManager from deps."""
+    from bubbly_chef.api.deps import get_ai_manager as _get
+    return _get()
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +124,28 @@ HTML (truncated to first 8000 chars):
 {html}
 """
 
+_AI_NO_FETCH_PROMPT = """\
+Extract the recipe at the URL below. The page could not be fetched directly, so use your
+training knowledge of this specific recipe page to fill in details accurately.
+
+Return a JSON object with these fields:
+- title: string (required)
+- description: string or null
+- ingredients: list of objects with "name" (required), "quantity" (float|null), \
+"unit" (str|null), "preparation" (str|null), "optional" (bool), "substitutes" (list[str])
+- instructions: list of strings, each a single step
+- prep_time_minutes: integer or null
+- cook_time_minutes: integer or null
+- total_time_minutes: integer or null
+- servings: integer or null
+- cuisine: string or null
+- dietary_tags: list of strings
+- source_type: "url"
+- source_url: "{source_url}"
+
+URL: {source_url}
+"""
+
 
 # ---------------------------------------------------------------------------
 # Main extraction function
@@ -159,24 +173,35 @@ async def ingest_recipe_from_url(url: str) -> RecipeCard:
         )
 
     # ── Fetch HTML once — reused by Tiers 2 and 3 ────────────────────────
-    html = await httpx_get(url)
-
-    # ── Tier 2: scrape_html with supported_only=False (Schema.org fallback) ──
+    html: str | None = None
     try:
-        scraper = scrape_html(html, org_url=url, supported_only=False)
-        logger.info(f"recipe-scrapers (supported_only=False) succeeded for {url}")
-        return _scraper_to_recipe_card(scraper, url)
-    except Exception as e:
-        logger.info(
-            f"recipe-scrapers wild fallback failed ({type(e).__name__}: {e}), "
-            "falling to AI"
+        html = await httpx_get(url)
+    except httpx.HTTPStatusError as e:
+        logger.warning(
+            f"HTTP {e.response.status_code} fetching {url} — skipping scraper tiers, "
+            "falling directly to AI extraction"
         )
+    except Exception as e:
+        logger.warning(f"Failed to fetch {url}: {e} — falling directly to AI extraction")
 
-    # ── Tier 3: AI extraction from raw HTML ───────────────────────────────
+    if html is not None:
+        # ── Tier 2: scrape_html with supported_only=False (Schema.org fallback) ──
+        try:
+            scraper = scrape_html(html, org_url=url, supported_only=False)
+            logger.info(f"recipe-scrapers (supported_only=False) succeeded for {url}")
+            return _scraper_to_recipe_card(scraper, url)
+        except Exception as e:
+            logger.info(
+                f"recipe-scrapers wild fallback failed ({type(e).__name__}: {e}), "
+                "falling to AI"
+            )
+
+    # ── Tier 3: AI extraction ─────────────────────────────────────────────
     logger.info(f"Attempting AI extraction for {url}")
-    html_snippet = html[:8000]
-
-    prompt = _AI_EXTRACTION_PROMPT.format(source_url=url, html=html_snippet)
+    if html is not None:
+        prompt = _AI_EXTRACTION_PROMPT.format(source_url=url, html=html[:8000])
+    else:
+        prompt = _AI_NO_FETCH_PROMPT.format(source_url=url)
     ai_manager = get_ai_manager()
     result = await ai_manager.complete(prompt=prompt, response_schema=RecipeCard)
 
