@@ -30,7 +30,7 @@ cd nextjs && npx tsc --noEmit
 |---|---|
 | Frontend + CRUD | Next.js 14 (App Router), React, TypeScript, Tailwind CSS v4 (port 3000) |
 | Auth + Database | Supabase (Postgres 15 + Row Level Security) |
-| AI Microservice | FastAPI + LangGraph + Gemini API + Ollama fallback + Tesseract (port 8888) |
+| AI Microservice | FastAPI + LangGraph + Gemini API + Ollama fallback (port 8888) |
 | State (frontend) | React Query (server state), Zustand (client state) |
 | Styling | Tailwind CSS v4 + Framer Motion, Nunito font |
 | Deployment | Vercel (frontend) + Railway (AI microservice) |
@@ -50,7 +50,7 @@ Browser
       chat, scan, recipe generation
       LangGraph workflows
       Gemini → Ollama fallback
-      Tesseract OCR
+      Gemini Vision OCR (receipt scanning)
 ```
 
 **Key patterns:**
@@ -181,7 +181,7 @@ POST  /apply
 
 ### Receipt Scanning
 ```
-Upload image → (optional) preprocess → Tesseract OCR
+Upload image → (optional) preprocess → Gemini Vision OCR
 → AI parses items with confidence scores
 → ≥0.8 ready_to_add | 0.5–0.8 needs_review | <0.5 skipped
 → User reviews/edits → clicks "Add X Items"
@@ -221,13 +221,15 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 
 ## Current State
 
+**Live at:** https://bubbly-chef.vercel.app
+
 **Done:**
 - Phase 1 + 2: pantry CRUD, receipt scanning, recipe generation, chat intent router, DOM kitchen scene, milestone decorations, 454+ tests
 - Migration: Next.js + Supabase + FastAPI AI microservice (three-tier)
 - Recipe library UI: save, search, edit, delete, favourite
+- Phase 7: Deployed to Vercel + Railway; Gemini Vision OCR; all core features working in production
 
-**Next: Phase 3 — Component Migration + Multimodal Ingestion**
-See `ROADMAP.md` for plan, open issues, and success criteria.
+**Next:** See `ROADMAP.md` for open issues and upcoming work.
 
 ---
 
@@ -308,13 +310,13 @@ BUBBLY_CORS_ORIGINS=["http://localhost:3000"]
 
 ## Known Limitations / Tech Debt
 
-- Component migration incomplete — Pantry, Scan, Chat pages still in old `web/` Vite app
 - No rate limiting on AI provider calls — issue #8
 - Pagination missing from pantry list — issue #5
 - No unit conversion (can't deduct "3 eggs" from "1 dozen eggs") — issue #6
 - `mutating` state in RecipeBook — buttons not yet `disabled={mutating}`
 - No error feedback on failed recipe mutations
 - iOS Safari bottom nav bug — issue #4
+- Recipe generation ignores constraint modifications from chat follow-up — BubblyChef-747
 
 ---
 
@@ -334,7 +336,7 @@ Single-context — `CONTEXT.md` at repo root, `docs/adr/` for architectural deci
 
 ---
 
-*Last updated: 2026-04-29*
+*Last updated: 2026-05-03*
 
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->

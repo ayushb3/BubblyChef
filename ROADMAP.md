@@ -18,7 +18,7 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 
 ---
 
-## Current Status: Phase 3 Complete, Deploy Next
+## Current Status: Phase 7 Complete — Live in Production
 
 ### Completed
 
@@ -32,6 +32,7 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 | Phase 3 | URL recipe import (recipe-scrapers + LLM fallback, source attribution chip, confirmation flow); `source_url` + `source_platform` in DB |
 | Phase 4 | Component migration complete — Pantry, Scan, Chat, Dashboard all on Next.js; old `web/` Vite app retired |
 | Phase 6 | JWT forwarding from Next.js session to AI microservice; SSE streaming wired |
+| Phase 7 | Deployed to Vercel (frontend) + Railway (AI service); Tesseract replaced with Gemini vision; receipt scan, chat, recipe import all working in production |
 
 ### Migration phases completed
 
@@ -76,18 +77,18 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 
 ---
 
-## Phase 7: Deploy ← **Current**
+## Phase 7: Deploy ← **Complete**
 
-**Goal:** Live production app on Vercel + Railway.
+**Live at:** https://bubbly-chef.vercel.app (frontend) + https://bubblychef-production.up.railway.app (AI service)
 
-### Checklist
-
-- [ ] Connect GitHub repo to Vercel, set root directory to `nextjs/`
-- [ ] Set Next.js env vars in Vercel: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_AI_SERVICE_URL` (→ Railway URL)
-- [ ] Deploy `ai-service/` to Railway, set env vars from `ai-service/.env`
-- [ ] Update `BUBBLY_CORS_ORIGINS` on Railway to include Vercel production URL
-- [ ] Smoke test all pages + AI chat in production
-- [ ] Custom domain (optional)
+### Completed
+- [x] Connect GitHub repo to Vercel, root directory `nextjs/`
+- [x] Set Next.js env vars in Vercel
+- [x] Deploy `ai-service/` to Railway (Dockerfile, port 8888)
+- [x] Update `BUBBLY_CORS_ORIGINS` on Railway to include Vercel production URL
+- [x] Smoke test all pages + AI chat in production
+- [x] Replace Tesseract OCR with Gemini vision (simpler Docker, better accuracy)
+- [x] Fix recipe import fallback for sites that block datacenter IPs (Allrecipes etc.)
 
 ---
 

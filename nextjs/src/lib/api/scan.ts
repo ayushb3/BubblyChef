@@ -19,16 +19,25 @@ async function compressImage(file: File): Promise<File> {
   return new Promise((resolve) => {
     const img = new Image()
     const url = URL.createObjectURL(file)
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve(file) // upload original; let server reject if too large
+    }
     img.onload = () => {
       URL.revokeObjectURL(url)
       const canvas = document.createElement('canvas')
-      // Scale down proportionally until estimated size is under limit
       const scale = Math.sqrt(MAX_UPLOAD_BYTES / file.size) * 0.9
       canvas.width = Math.round(img.width * scale)
       canvas.height = Math.round(img.height * scale)
       canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
       canvas.toBlob(
-        (blob) => resolve(new File([blob!], file.name, { type: 'image/jpeg' })),
+        (blob) => {
+          if (!blob) {
+            resolve(file) // fall back to original on canvas failure
+            return
+          }
+          resolve(new File([blob], file.name, { type: 'image/jpeg' }))
+        },
         'image/jpeg',
         0.85,
       )
