@@ -92,18 +92,27 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     "photographing a product, or looking up a specific product\n"
     "- recipe_ingest_request: User wants to SAVE, IMPORT, or STORE a "
     "recipe from a URL or text (must have save/import intent)\n"
-    "- recipe_generation: User wants a recipe MADE for them — "
-    "meal ideas, dinner suggestions, 'give me a recipe', "
+    "- recipe_brainstorm: User asks open-ended 'what can I make?' style "
+    "questions — brainstorm ideas from pantry, 'recipe suggestions', "
+    "'what should I cook tonight?'\n"
+    "- recipe_generation: User wants a SPECIFIC recipe MADE for them — "
+    "meal ideas, dinner suggestions, 'give me a recipe for X', "
     "'recipe for X', 'what's for dinner'\n"
+    "- recipe_card: User is selecting or refining a specific recipe from "
+    "a prior brainstorm — 'make me the pasta one', 'no cheese', 'less salt'\n"
     "- cooking_help: User asking HOW-TO questions about cooking — "
     "techniques, food storage, substitutions, temperatures, "
     "cooking times (NOT recipe requests)\n"
     "- general_chat: ONLY for messages truly unrelated to food, cooking, "
     "or the kitchen (e.g. greetings, app questions, small talk)\n\n"
+    "IMPORTANT: Distinguish recipe_brainstorm from recipe_generation:\n"
+    "- 'what can I make with what I have?' → recipe_brainstorm\n"
+    "- 'give me a pasta recipe' → recipe_generation\n"
+    "- 'dinner ideas' → recipe_brainstorm\n"
+    "- 'recipe for chicken tikka masala' → recipe_generation\n\n"
     "IMPORTANT: Distinguish recipe_generation from cooking_help:\n"
     "- 'give me a pasta recipe' → recipe_generation\n"
     "- 'how do I cook pasta?' → cooking_help\n"
-    "- 'dinner ideas' → recipe_generation\n"
     "- 'how long does chicken last?' → cooking_help\n\n"
     "Be accurate. Look for key indicators:\n"
     '- "bought", "got", "purchased", "used", "consumed", "threw away",'
@@ -114,8 +123,12 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     ' "what\'s this product" -> product_ingest_request\n'
     '- "save recipe", "import recipe", "add this recipe",'
     " has URL -> recipe_ingest_request\n"
-    '- "give me a recipe", "recipe for", "dinner ideas", "meal ideas",'
+    '- "what can I make", "recipe ideas", "what should I cook",'
+    ' "suggestions" -> recipe_brainstorm\n'
+    '- "give me a recipe", "recipe for", "meal ideas",'
     ' "make me something", "suggest a meal" -> recipe_generation\n'
+    '- "no X", "less X", "without X", "make it more X"'
+    " (in context of prior recipe) -> recipe_card\n"
     '- "how to cook", "how long does X last", "substitute for",'
     ' "food storage", "what temperature" -> cooking_help\n'
     "- Everything else -> general_chat"
@@ -333,46 +346,8 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "selected_recipe_name": selected_name,
         }
 
-    # First try rule-based classification for obvious cases
+    # URL shortcut: unambiguous recipe ingest signal (no LLM needed)
     text_lower = input_text.lower()
-
-    # Receipt indicators
-    receipt_keywords = [
-        "receipt",
-        "scanned a receipt",
-        "uploaded receipt",
-        "here's my receipt",
-        "receipt photo",
-    ]
-    if any(kw in text_lower for kw in receipt_keywords):
-        logger.info("Intent classified: receipt_ingest (source=keyword, match=receipt)")
-        return {
-            **state,
-            "intent": Intent.RECEIPT_INGEST.value,
-            "intent_confidence": 0.95,
-            "intent_reasoning": "Contains receipt-related keywords",
-            "detected_entities": ["receipt"],
-        }
-
-    # Product scan indicators
-    product_keywords = [
-        "barcode",
-        "scan this",
-        "scanned this product",
-        "photo of this",
-        "look up this product",
-    ]
-    if any(kw in text_lower for kw in product_keywords):
-        logger.info("Intent classified: product_ingest (source=keyword, match=product)")
-        return {
-            **state,
-            "intent": Intent.PRODUCT_INGEST.value,
-            "intent_confidence": 0.95,
-            "intent_reasoning": "Contains product scan keywords",
-            "detected_entities": ["product"],
-        }
-
-    # Check for URL patterns (indicates recipe ingest intent)
     url_patterns = [
         "http://",
         "https://",
@@ -382,178 +357,17 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
         "tiktok.com",
         "instagram.com",
     ]
-    has_url = any(p in text_lower for p in url_patterns)
-
-    # Recipe ingest indicators (saving/importing a recipe)
-    recipe_ingest_keywords = ["save recipe", "import recipe", "add recipe", "store recipe",
-                              "save this recipe", "import this recipe", "save that recipe"]
-    if any(kw in text_lower for kw in recipe_ingest_keywords) or has_url:
-        logger.info(f"Intent classified: recipe_ingest (source=keyword, has_url={has_url})")
+    if any(p in text_lower for p in url_patterns):
+        logger.info("Intent classified: recipe_ingest (source=url_shortcut)")
         return {
             **state,
             "intent": Intent.RECIPE_INGEST.value,
-            "intent_confidence": 0.95 if has_url else 0.90,
-            "intent_reasoning": "User wants to save/import a recipe",
-            "detected_entities": ["recipe"],
-        }
-
-    # Recipe brainstorm indicators — MUST be checked BEFORE recipe_generation
-    # These are open-ended "what can I make?" style questions
-    recipe_brainstorm_keywords = [
-        "what can i make",
-        "what can i cook",
-        "what should i make",
-        "what should i cook",
-        "what to make",
-        "what to cook",
-        "suggest a recipe",
-        "recipe ideas",
-        "recipe suggestions",
-        "with what i have",
-    ]
-    matched_brainstorm = next(
-        (kw for kw in recipe_brainstorm_keywords if kw in text_lower), None
-    )
-    if matched_brainstorm:
-        logger.info(
-            f"Intent classified: recipe_brainstorm "
-            f"(source=keyword, match='{matched_brainstorm}')"
-        )
-        return {
-            **state,
-            "intent": Intent.RECIPE_BRAINSTORM.value,
-            "intent_confidence": 0.92,
-            "intent_reasoning": (
-                f"User asking for recipe brainstorm (matched '{matched_brainstorm}')"
-            ),
+            "intent_confidence": 0.95,
+            "intent_reasoning": "URL detected — recipe ingest shortcut",
             "detected_entities": [],
         }
 
-    # Recipe generation indicators — user wants a concrete recipe produced
-    recipe_generation_keywords = [
-        "dinner idea",
-        "lunch idea",
-        "meal idea",
-        "recipe for",
-        "suggest a meal",
-        "recipes with",
-        "what's for dinner",
-        "give me a recipe",
-        "make me a recipe",
-        "i want a recipe",
-        "can you make",
-        "cook me",
-        "make me something",
-        "make me a",
-        "cook something",
-        "i'm craving",
-        "i feel like eating",
-        "something with",
-        "make for dinner",
-        "make for lunch",
-        "quick dinner",
-        "quick lunch",
-        "quick meal",
-        "easy dinner",
-        "easy meal",
-        "simple dinner",
-        "simple meal",
-        "healthy dinner",
-        "healthy meal",
-        "surprise me",
-        "something to eat",
-    ]
-    matched_generation = next(
-        (kw for kw in recipe_generation_keywords if kw in text_lower), None
-    )
-    if matched_generation:
-        logger.info(
-            f"Intent classified: recipe_generation "
-            f"(source=keyword, match='{matched_generation}')"
-        )
-        return {
-            **state,
-            "intent": Intent.RECIPE_GENERATION.value,
-            "intent_confidence": 0.90,
-            "intent_reasoning": (
-                f"User wants a recipe generated (matched '{matched_generation}')"
-            ),
-            "detected_entities": [],
-        }
-
-    # Generic "recipe" keyword - if no import/save verbs, user wants generation
-    if "recipe" in text_lower and not any(
-        v in text_lower for v in ["save", "import", "add", "store"]
-    ):
-        logger.info("Intent classified: recipe_generation (source=keyword, match='recipe' generic)")
-        return {
-            **state,
-            "intent": Intent.RECIPE_GENERATION.value,
-            "intent_confidence": 0.85,
-            "intent_reasoning": "Recipe request without import intent",
-            "detected_entities": [],
-        }
-
-    # Cooking help indicators (advice only: how-to, substitutions, storage)
-    cooking_help_keywords = [
-        "how to cook",
-        "how long does",
-        "substitute for",
-        "how do i",
-        "cooking tip",
-        "food storage",
-        "use my",
-        "can i freeze",
-        "is it safe",
-        "what temperature",
-    ]
-    matched_cooking = next(
-        (kw for kw in cooking_help_keywords if kw in text_lower), None
-    )
-    if matched_cooking:
-        logger.info(
-            f"Intent classified: cooking_help "
-            f"(source=keyword, match='{matched_cooking}')"
-        )
-        return {
-            **state,
-            "intent": Intent.COOKING_HELP.value,
-            "intent_confidence": 0.90,
-            "intent_reasoning": f"User asking for cooking help (matched '{matched_cooking}')",
-            "detected_entities": [],
-        }
-
-    # Pantry update indicators (common patterns)
-    pantry_keywords = [
-        "bought",
-        "purchased",
-        "got some",
-        "picked up",
-        "used",
-        "consumed",
-        "threw away",
-        "finished",
-        "ran out",
-        "add to pantry",
-        "remove from pantry",
-    ]
-    matched_pantry = next(
-        (kw for kw in pantry_keywords if kw in text_lower), None
-    )
-    if matched_pantry:
-        logger.info(
-            f"Intent classified: pantry_update "
-            f"(source=keyword, match='{matched_pantry}')"
-        )
-        return {
-            **state,
-            "intent": Intent.PANTRY_UPDATE.value,
-            "intent_confidence": 0.90,
-            "intent_reasoning": f"Contains pantry action keywords (matched '{matched_pantry}')",
-            "detected_entities": [],  # Will be filled by parse step
-        }
-
-    # Fall back to LLM classification for ambiguous cases
+    # LLM classification for all other cases
     ai_manager = get_ai_manager()
     prompt = (
         INTENT_CLASSIFICATION_SYSTEM_PROMPT
@@ -583,6 +397,8 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "product_ingest_request": Intent.PRODUCT_INGEST.value,
             "recipe_ingest_request": Intent.RECIPE_INGEST.value,
             "recipe_generation": Intent.RECIPE_GENERATION.value,
+            "recipe_brainstorm": Intent.RECIPE_BRAINSTORM.value,
+            "recipe_card": Intent.RECIPE_CARD.value,
             "cooking_help": Intent.COOKING_HELP.value,
             "general_chat": Intent.GENERAL_CHAT.value,
         }
