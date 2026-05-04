@@ -42,3 +42,8 @@ next-env.d.ts
 
 # playwright-cli snapshots
 .playwright-cli/
+
+# Playwright
+e2e/.auth/user.json
+e2e/.results/
+e2e/.report/
