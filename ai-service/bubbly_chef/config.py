@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     auto_add_confidence_threshold: float = 0.8
     review_confidence_threshold: float = 0.5
 
+    # Testing
+    run_live_tests: bool = False
+
     @property
     def auto_apply_confidence_threshold(self) -> float:
         """Alias used by ingest workflows."""
