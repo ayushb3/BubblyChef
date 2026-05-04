@@ -46,17 +46,32 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const [importOpen, setImportOpen] = useState(false)
   const [importDraft, setImportDraft] = useState<Partial<Recipe> | null>(null)
   const [mutating, setMutating] = useState(false)
+  // Local optimistic overrides for favorite state — avoids full re-fetch on toggle
+  const [favoriteOverrides, setFavoriteOverrides] = useState<Record<string, boolean>>({})
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!errorMessage) return
+    const t = setTimeout(() => setErrorMessage(null), 5000)
+    return () => clearTimeout(t)
+  }, [errorMessage])
+
+  // Merge optimistic favorite overrides into the recipe list
+  const recipesWithOverrides = useMemo(
+    () => recipes.map((r) => r.id in favoriteOverrides ? { ...r, is_favorite: favoriteOverrides[r.id] } : r),
+    [recipes, favoriteOverrides],
+  )
 
   const filteredRecipes = useMemo(
     () =>
       search
-        ? recipes
+        ? recipesWithOverrides
             .map((r) => ({ r, score: scoreRecipe(r, search) }))
             .filter(({ score }) => score > 0)
             .sort((a, b) => b.score - a.score)
             .map(({ r }) => r)
-        : recipes,
-    [recipes, search],
+        : recipesWithOverrides,
+    [recipesWithOverrides, search],
   )
 
   useEffect(() => {
@@ -65,7 +80,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     }
   }, [search, filteredRecipes])
 
-  const selectedRecipe = recipes.find((r) => r.id === selectedId) ?? filteredRecipes[0] ?? null
+  const selectedRecipe = recipesWithOverrides.find((r) => r.id === selectedId) ?? recipesWithOverrides[0] ?? null
 
   const handleSearch = useCallback((q: string) => {
     setSearch(q)
@@ -78,25 +93,40 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
 
   const handleFavorite = async () => {
     if (!selectedRecipe) return
+    setErrorMessage(null)
+    const id = selectedRecipe.id
     const newVal = !selectedRecipe.is_favorite
-    const res = await fetch(`/api/recipes/${selectedRecipe.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_favorite: newVal }),
-    })
-    if (res.ok) onMutate?.()
+    setFavoriteOverrides((prev) => ({ ...prev, [id]: newVal }))
+    try {
+      const res = await fetch(`/api/recipes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_favorite: newVal }),
+      })
+      if (!res.ok) throw new Error('Failed to update favorite')
+    } catch {
+      setFavoriteOverrides((prev) => ({ ...prev, [id]: !newVal }))
+      setErrorMessage('Could not update favorite. Please try again.')
+    }
   }
 
   const handleEditSave = async (updates: Partial<Recipe>) => {
     setMutating(true)
-    await fetch(`/api/recipes/${selectedRecipe!.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    })
-    setMutating(false)
-    setEditOpen(false)
-    onMutate?.()
+    setErrorMessage(null)
+    try {
+      const res = await fetch(`/api/recipes/${selectedRecipe!.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      setEditOpen(false)
+      onMutate?.()
+    } catch {
+      setErrorMessage('Could not save changes. Please try again.')
+    } finally {
+      setMutating(false)
+    }
   }
 
   const handleImported = (extracted: Partial<Recipe>, sourceUrl: string) => {
@@ -146,12 +176,19 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
 
   const handleDeleteConfirm = async () => {
     setMutating(true)
+    setErrorMessage(null)
     const nextRecipe = filteredRecipes.find((r) => r.id !== selectedRecipe?.id) ?? null
-    await fetch(`/api/recipes/${selectedRecipe!.id}`, { method: 'DELETE' })
-    setMutating(false)
-    setDeleteOpen(false)
-    setSelectedId(nextRecipe?.id ?? null)
-    onMutate?.()
+    try {
+      const res = await fetch(`/api/recipes/${selectedRecipe!.id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete')
+      setDeleteOpen(false)
+      setSelectedId(nextRecipe?.id ?? null)
+      onMutate?.()
+    } catch {
+      setErrorMessage('Could not delete recipe. Please try again.')
+    } finally {
+      setMutating(false)
+    }
   }
 
   const totalTime = selectedRecipe?.total_time_minutes
@@ -333,7 +370,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
               <div className="flex gap-2 mt-2">
                 <button
                   onClick={handleFavorite}
-                  className="text-lg leading-none px-1 hover:scale-110 transition-transform"
+                  disabled={mutating}
+                  className="text-lg leading-none px-1 hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                   aria-label={selectedRecipe.is_favorite ? 'Unfavorite' : 'Favorite'}
                   title={selectedRecipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
                 >
@@ -341,7 +379,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 </button>
                 <button
                   onClick={() => setEditOpen(true)}
-                  className="text-lg leading-none px-1 hover:scale-110 transition-transform"
+                  disabled={mutating}
+                  className="text-lg leading-none px-1 hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                   aria-label="Edit recipe"
                   title="Edit recipe"
                 >
@@ -349,7 +388,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 </button>
                 <button
                   onClick={() => setDeleteOpen(true)}
-                  className="text-lg leading-none px-1 hover:scale-110 transition-transform"
+                  disabled={mutating}
+                  className="text-lg leading-none px-1 hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                   aria-label="Delete recipe"
                   title="Delete recipe"
                 >
@@ -367,6 +407,30 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 />
               )}
             </div>
+
+            {/* Error banner */}
+            {errorMessage && (
+              <div
+                className="mx-4 mt-2 px-3 py-2 rounded-xl text-sm flex items-center justify-between"
+                style={{
+                  background: 'rgba(255,154,162,0.15)',
+                  border: '1px solid rgba(255,154,162,0.4)',
+                  color: '#4a4a4a',
+                  fontFamily: 'Nunito, sans-serif',
+                }}
+                role="alert"
+              >
+                <span>{errorMessage}</span>
+                <button
+                  onClick={() => setErrorMessage(null)}
+                  className="ml-2 hover:opacity-70 transition-opacity"
+                  style={{ color: '#ff9aa2' }}
+                  aria-label="Dismiss error"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             {/* Divider */}
             <div className="h-px flex-shrink-0" style={{ background: 'var(--color-border)' }} />
