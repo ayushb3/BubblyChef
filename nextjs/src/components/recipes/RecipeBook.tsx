@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { List, X, Heart, PencilSimple, Trash } from "@phosphor-icons/react"
 import RecipeDetail, { type Recipe } from './RecipePage'
 import RecipeSearchBar from './RecipeSearchBar'
 import BubblesMascot from '@/components/ui/BubblesMascot'
@@ -231,10 +232,10 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   </span>
                   <button
                     onClick={() => setSidebarOpen(false)}
-                    className="text-[var(--color-muted)] hover:text-[var(--color-text)] text-lg leading-none px-1"
+                    className="text-[var(--color-muted)] hover:text-[var(--color-text)] p-1.5 rounded-full hover:bg-[var(--color-border)] transition-colors"
                     aria-label="Close sidebar"
                   >
-                    ✕
+                     <X size={16} weight="bold" />
                   </button>
                 </div>
 
@@ -297,7 +298,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
             }}
             aria-label="Open recipe list"
           >
-            ☰
+            <List size={16} weight="bold" />
           </button>
         )}
 
@@ -330,30 +331,37 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
               </div>
 
               {/* Action buttons */}
-              <div className="flex gap-2 mt-2">
+              <div className="flex gap-1.5 mt-2">
                 <button
                   onClick={handleFavorite}
-                  className="text-lg leading-none px-1 hover:scale-110 transition-transform"
-                  aria-label={selectedRecipe.is_favorite ? 'Unfavorite' : 'Favorite'}
+                  className="flex items-center justify-center w-9 h-9 rounded-full transition-all hover:scale-105 active:scale-95"
+                  style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
+                  aria-label={selectedRecipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
                   title={selectedRecipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
                 >
-                  {selectedRecipe.is_favorite ? '❤️' : '🤍'}
+                  <Heart
+                    size={18}
+                    weight={selectedRecipe.is_favorite ? 'fill' : 'regular'}
+                    style={{ color: selectedRecipe.is_favorite ? 'var(--color-primary)' : 'var(--color-muted)' }}
+                  />
                 </button>
                 <button
                   onClick={() => setEditOpen(true)}
-                  className="text-lg leading-none px-1 hover:scale-110 transition-transform"
+                  className="flex items-center justify-center w-9 h-9 rounded-full transition-all hover:scale-105 active:scale-95"
+                  style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}
                   aria-label="Edit recipe"
                   title="Edit recipe"
                 >
-                  ✏️
+                  <PencilSimple size={18} />
                 </button>
                 <button
                   onClick={() => setDeleteOpen(true)}
-                  className="text-lg leading-none px-1 hover:scale-110 transition-transform"
+                  className="flex items-center justify-center w-9 h-9 rounded-full transition-all hover:scale-105 active:scale-95"
+                  style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}
                   aria-label="Delete recipe"
                   title="Delete recipe"
                 >
-                  🗑️
+                  <Trash size={18} />
                 </button>
               </div>
 
