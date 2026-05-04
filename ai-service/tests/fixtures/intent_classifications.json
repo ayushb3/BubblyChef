@@ -1,0 +1,240 @@
+{
+  "_meta": {
+    "prompt_hash": "76959848ebe6ff7a255bca6bd1debca723b9d9de4b12821af8156d4c2263c182",
+    "captured_at": "2026-05-04T00:04:22.982836+00:00",
+    "model": "gemini-2.5-flash"
+  },
+  "I bought milk": {
+    "intent": "pantry_update",
+    "confidence": 1.0,
+    "reasoning": "The message uses the keyword 'bought', which is a direct indicator for updating pantry inventory.",
+    "entities": [
+      "milk"
+    ],
+    "expected": "pantry_update"
+  },
+  "picked up some eggs and bread today": {
+    "intent": "pantry_update",
+    "confidence": 1.0,
+    "reasoning": "The phrase 'picked up' indicates the user acquired groceries, which falls under updating the pantry with new items. This is a clear indicator for pantry_update.",
+    "entities": [
+      "eggs",
+      "bread"
+    ],
+    "expected": "pantry_update"
+  },
+  "threw away the old yogurt": {
+    "intent": "pantry_update",
+    "confidence": 1.0,
+    "reasoning": "The phrase 'threw away' is a direct indicator for updating pantry inventory, specifically removing an item.",
+    "entities": [
+      "yogurt"
+    ],
+    "expected": "pantry_update"
+  },
+  "I scanned a receipt": {
+    "intent": "receipt_ingest_request",
+    "confidence": 1.0,
+    "reasoning": "The user explicitly states 'scanned a receipt', which is a direct indicator for receipt ingestion.",
+    "entities": [
+      "receipt"
+    ],
+    "expected": "receipt_ingest_request"
+  },
+  "here's my receipt from Costco": {
+    "intent": "receipt_ingest_request",
+    "confidence": 1.0,
+    "reasoning": "The message explicitly states 'here's my receipt', which is a direct indicator for receipt ingestion.",
+    "entities": [
+      "receipt",
+      "Costco"
+    ],
+    "expected": "receipt_ingest_request"
+  },
+  "scan this barcode": {
+    "intent": "product_ingest_request",
+    "confidence": 1.0,
+    "reasoning": "The phrase 'scan this barcode' is a direct indicator for the product_ingest_request intent, which involves identifying a specific product.",
+    "entities": [
+      "barcode"
+    ],
+    "expected": "product_ingest_request"
+  },
+  "look up this product": {
+    "intent": "product_ingest_request",
+    "confidence": 1.0,
+    "reasoning": "The phrase \"look up this product\" is a direct key indicator for the product_ingest_request intent.",
+    "entities": [
+      "product"
+    ],
+    "expected": "product_ingest_request"
+  },
+  "save this recipe https://allrecipes.com/123": {
+    "intent": "recipe_ingest_request",
+    "confidence": 0.95,
+    "reasoning": "URL detected \u2014 recipe ingest shortcut",
+    "entities": [],
+    "expected": "recipe_ingest_request"
+  },
+  "import this recipe for me": {
+    "intent": "recipe_ingest_request",
+    "confidence": 1.0,
+    "reasoning": "The message explicitly uses the phrase 'import this recipe', which is a direct indicator for the recipe_ingest_request intent.",
+    "entities": [
+      "recipe"
+    ],
+    "expected": "recipe_ingest_request"
+  },
+  "what can I make tonight?": {
+    "intent": "recipe_brainstorm",
+    "confidence": 1.0,
+    "reasoning": "The phrase 'what can I make' is a direct indicator for recipe_brainstorm, as it's an open-ended request for ideas.",
+    "entities": [],
+    "expected": "recipe_brainstorm"
+  },
+  "what should I cook with what I have?": {
+    "intent": "recipe_brainstorm",
+    "confidence": 1.0,
+    "reasoning": "The user is asking an open-ended question about what to cook, specifically leveraging available ingredients ('with what I have'), which directly matches the definition and examples for recipe_brainstorm ('what can I make with what I have?', 'what should I cook').",
+    "entities": [],
+    "expected": "recipe_brainstorm"
+  },
+  "recipe ideas please": {
+    "intent": "recipe_brainstorm",
+    "confidence": 1.0,
+    "reasoning": "The phrase 'recipe ideas' is a direct indicator for the recipe_brainstorm intent, as per the provided guidelines.",
+    "entities": [
+      "recipe ideas"
+    ],
+    "expected": "recipe_brainstorm"
+  },
+  "give me a pasta recipe": {
+    "intent": "recipe_generation",
+    "confidence": 1.0,
+    "reasoning": "The phrase 'give me a pasta recipe' directly indicates a request for a specific recipe to be generated, matching the criteria for recipe_generation.",
+    "entities": [
+      "pasta recipe"
+    ],
+    "expected": "recipe_generation"
+  },
+  "dinner ideas for tonight": {
+    "intent": "recipe_brainstorm",
+    "confidence": 1.0,
+    "reasoning": "The user is asking for 'dinner ideas', which is a clear indicator for recipe brainstorming rather than a request for a specific recipe.",
+    "entities": [
+      "dinner ideas"
+    ],
+    "expected": "recipe_brainstorm"
+  },
+  "make me something with chicken": {
+    "intent": "recipe_generation",
+    "confidence": 1.0,
+    "reasoning": "The phrase 'make me something with chicken' is a direct request for a specific recipe, aligning with 'give me a recipe' or 'make me something' indicators for recipe_generation. It's not an open-ended brainstorm.",
+    "entities": [
+      "chicken"
+    ],
+    "expected": "recipe_generation"
+  },
+  "I'm craving something spicy": {
+    "intent": "recipe_generation",
+    "confidence": 0.9,
+    "reasoning": "The user is expressing a desire for a specific type of meal ('something spicy'), which falls under requesting 'meal ideas' or 'suggest a meal' that fits a criterion, aligning with recipe_generation.",
+    "entities": [
+      "spicy"
+    ],
+    "expected": "recipe_generation"
+  },
+  "quick easy meal under 30 minutes": {
+    "intent": "recipe_generation",
+    "confidence": 0.95,
+    "reasoning": "The user is asking for a specific type of meal idea with constraints ('quick', 'easy', 'under 30 minutes'), which aligns with 'meal ideas' or 'suggest a meal' indicators for recipe_generation. It's not an open-ended 'what can I make with what I have?' (brainstorm) but a request for a generated recipe/idea fitting criteria.",
+    "entities": [
+      "quick",
+      "easy",
+      "under 30 minutes"
+    ],
+    "expected": "recipe_generation"
+  },
+  "how do I caramelise onions?": {
+    "intent": "cooking_help",
+    "confidence": 1.0,
+    "reasoning": "The user is asking a 'how-to' question about a cooking technique ('how do I caramelise onions?'), which directly aligns with the definition of 'cooking_help'.",
+    "entities": [
+      "caramelise onions"
+    ],
+    "expected": "cooking_help"
+  },
+  "how long does chicken last in the fridge?": {
+    "intent": "cooking_help",
+    "confidence": 1.0,
+    "reasoning": "The user is asking a 'how-to' question about food storage duration ('how long does X last'), which is a direct indicator for the cooking_help intent.",
+    "entities": [
+      "chicken",
+      "fridge",
+      "storage duration"
+    ],
+    "expected": "cooking_help"
+  },
+  "substitute for butter in baking?": {
+    "intent": "cooking_help",
+    "confidence": 1.0,
+    "reasoning": "The message asks for a 'substitute for', which is a direct indicator for the 'cooking_help' intent, as it's a 'how-to' question about ingredients.",
+    "entities": [
+      "butter",
+      "baking",
+      "substitute"
+    ],
+    "expected": "cooking_help"
+  },
+  "can I freeze cooked pasta?": {
+    "intent": "cooking_help",
+    "confidence": 1.0,
+    "reasoning": "The user is asking a 'how-to' question about food storage ('can I freeze cooked pasta?'), which directly aligns with the 'cooking_help' intent.",
+    "entities": [
+      "cooked pasta",
+      "freeze"
+    ],
+    "expected": "cooking_help"
+  },
+  "hello, how are you?": {
+    "intent": "general_chat",
+    "confidence": 1.0,
+    "reasoning": "The message is a standard greeting and small talk, completely unrelated to food, cooking, or pantry management.",
+    "entities": [],
+    "expected": "general_chat"
+  },
+  "what does this app do?": {
+    "intent": "general_chat",
+    "confidence": 1.0,
+    "reasoning": "The user is asking a question about the functionality of the app itself, which is unrelated to specific food, cooking, or pantry tasks. This fits the definition of 'general_chat' for app-related questions.",
+    "entities": [],
+    "expected": "general_chat"
+  },
+  "no cheese on that": {
+    "intent": "recipe_card",
+    "confidence": 1.0,
+    "reasoning": "The phrase 'no cheese on that' indicates a refinement or modification to a previously discussed recipe, which aligns directly with the definition and examples for 'recipe_card'.",
+    "entities": [
+      "cheese"
+    ],
+    "expected": "recipe_card"
+  },
+  "make it more spicy": {
+    "intent": "recipe_card",
+    "confidence": 1.0,
+    "reasoning": "The phrase 'make it more spicy' directly matches the examples for refining a specific recipe from a prior interaction, such as 'make it more X'.",
+    "entities": [
+      "spicy"
+    ],
+    "expected": "recipe_card"
+  },
+  "the second one": {
+    "intent": "recipe_card",
+    "confidence": 0.9,
+    "reasoning": "The phrase 'the second one' indicates the user is selecting from a previously presented list or set of options, which aligns with the 'recipe_card' intent for selecting or refining a specific recipe from a prior brainstorm.",
+    "entities": [
+      "second one"
+    ],
+    "expected": "recipe_card"
+  }
+}
