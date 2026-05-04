@@ -48,7 +48,7 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 
 ## Phase 3: Recipe Library + Multimodal Ingestion
 
-**Goal:** Users can save, search, and reference recipes; import from URLs and video.
+**Goal:** Users can save, search, and reference recipes; import from URLs and video. Core pantry-to-recipe workflows become seamless.
 
 ### Features
 
@@ -59,6 +59,12 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
   - [ ] Video metadata storage (creator, platform, thumbnail)
 - [ ] Shopping list generation from missing recipe ingredients
 - [ ] Chat references saved recipes ("make that butter chicken from TikTok")
+- [ ] #39 — Home screen: replace launcher cards with kawaii kitchen hub
+- [ ] #40 — Cook a recipe: auto-deduct ingredients from pantry
+- [ ] #41 — Unify scan and manual add into a single pantry add flow
+- [ ] #42 — Auto-generate grocery list from depleted/low pantry items
+- [ ] #43 — In-app notification center for expiry alerts and pantry nudges
+- [ ] #45 — Recipe page: contextual step timers
 
 ### Success Criteria
 
@@ -69,11 +75,6 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 | Recipe CRUD e2e | `pytest -k recipe_crud` |
 | URL ingest | `pytest -k url_ingest` |
 | Supabase migrations current | `supabase db status` |
-
-### Known Blockers
-
-- **Pagination** — pantry list endpoint has no pagination (Next.js route handler, issue #5)
-- **Rate limiting** — no rate limiting on AI provider calls (issue #8)
 
 ---
 
@@ -96,24 +97,19 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 
 | # | Issue | Priority |
 |---|---|---|
-| #5 | Add pagination to pantry list | High (Phase 3 blocker) |
-| #8 | Rate limiting for AI provider calls | High (Phase 3 blocker) |
-| — | `mutating` state in RecipeBook — buttons not `disabled={mutating}` yet | Medium |
-| — | No error feedback on failed recipe mutations | Medium |
+| #47 | RecipeBook: disable action buttons while mutation is in flight | Medium |
+| #48 | RecipeBook: show error feedback when edit or delete mutation fails | Medium |
+| #44 | Recipe page: replace emoji action icons with styled UI controls | Medium |
 | #10 | Accessibility (ARIA labels, keyboard nav) | Medium |
 | #11 | End-to-end tests with Playwright | Medium |
-| #6 | Unit conversion system (dozen eggs → individual) | Low |
 
 ---
 
-## Open Bugs
+## Phase 5: Intelligence
 
-| # | Issue | Priority |
-|---|---|---|
-| #1 | Receipt parsing confuses prices with quantities | Medium |
-| #2 | Long item names overflow on mobile | Low |
-| #3 | Expiry date estimation for produce inaccurate | Medium |
-| #4 | Bottom nav not fixed on iOS Safari | Low |
+| # | Issue |
+|---|---|
+| #46 | AI taste profiling: infer user preferences and suggest pantry staples |
 
 ---
 
@@ -137,4 +133,4 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 
 ---
 
-*Last updated: 2026-05-02*
+*Last updated: 2026-05-03*
