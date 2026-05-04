@@ -272,15 +272,25 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 
 **Session orientation:** Read `ROADMAP.md` for current phase + open issues.
 
+**Full workflow reference:** See `docs/WORKFLOW.md` for the complete pipeline (plan → PRD → issues → implement).
+
 **For non-trivial features:**
 1. Triage — read the relevant code, identify files affected
 2. Describe the goal; Claude enters plan mode → approve the plan
 3. Agent team implements in parallel: `dev1` (AI service/backend), `dev2` (Next.js/frontend)
 4. Run quality gates before committing: `cd ai-service && pytest && ruff check bubbly_chef/ && mypy bubbly_chef/ --strict` + `cd nextjs && npx tsc --noEmit`
 
+**For larger initiatives:**
+1. Explore + plan mode → design in `docs/plans/`
+2. `/to-prd` → publishes PRD as GitHub Issue
+3. `/to-issues` → breaks PRD into vertical-slice child issues
+4. Implement each issue independently
+
 **For spec-driven autonomous work:**
 - Write a design doc in `docs/plans/` with clear acceptance criteria
 - Tell Claude: *"Implement the spec at docs/plans/my-feature.md autonomously"*
+
+**Plan storage:** When creating plans (plan mode, architecture investigations, design docs), save them to `docs/plans/` with a date prefix (`YYYY-MM-DD-topic.md`). This keeps plans visible in the project alongside the code they describe.
 
 ---
 
