@@ -8,6 +8,7 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 import RecipeEditModal from './RecipeEditModal'
 import RecipeDeleteConfirm from './RecipeDeleteConfirm'
 import RecipeImportModal from './RecipeImportModal'
+import CookModal from './CookModal'
 
 interface RecipeBookProps {
   recipes: Recipe[]
@@ -44,6 +45,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [cookOpen, setCookOpen] = useState(false)
   const [importDraft, setImportDraft] = useState<Partial<Recipe> | null>(null)
   const [mutating, setMutating] = useState(false)
 
@@ -330,7 +332,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
               </div>
 
               {/* Action buttons */}
-              <div className="flex gap-2 mt-2">
+              <div className="flex items-center gap-2 mt-2">
                 <button
                   onClick={handleFavorite}
                   className="text-lg leading-none px-1 hover:scale-110 transition-transform"
@@ -354,6 +356,16 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   title="Delete recipe"
                 >
                   🗑️
+                </button>
+                {/* Cook it button */}
+                <button
+                  onClick={() => setCookOpen(true)}
+                  className="ml-auto px-4 py-1.5 rounded-full text-xs font-bold text-white active:scale-95 transition-transform"
+                  style={{ background: '#ffb5c5', fontFamily: 'Nunito, sans-serif' }}
+                  aria-label="Cook this recipe"
+                  title="Cook it — deduct ingredients from pantry"
+                >
+                  Cook it
                 </button>
               </div>
 
@@ -422,6 +434,18 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
           recipe={{ id: '', user_id: '', created_at: '', ...importDraft } as Recipe}
           onSave={handleImportSave}
           onClose={() => setImportDraft(null)}
+        />
+      )}
+
+      {/* Cook modal */}
+      {cookOpen && selectedRecipe && (
+        <CookModal
+          recipeId={selectedRecipe.id}
+          recipeTitle={selectedRecipe.title}
+          onClose={() => setCookOpen(false)}
+          onCooked={() => {
+            onMutate?.()
+          }}
         />
       )}
     </div>

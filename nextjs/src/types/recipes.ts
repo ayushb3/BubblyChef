@@ -58,3 +58,36 @@ export interface RefineRecipeRequest {
   recipe: Record<string, unknown>
   prompt: string
 }
+
+// ---------------------------------------------------------------------------
+// Cook-a-recipe / pantry deduction types
+// ---------------------------------------------------------------------------
+
+export type IngredientMatchStatus = 'ready' | 'shortfall' | 'unit_conflict' | 'missing'
+
+export interface IngredientMatch {
+  ingredient_name: string
+  ingredient_qty: number | null
+  ingredient_unit: string | null
+  pantry_item_id: string | null
+  pantry_item_name: string | null
+  pantry_qty_available: number | null
+  deduct_qty: number | null
+  base_unit: string | null
+  status: IngredientMatchStatus
+  shortfall: number | null
+}
+
+export interface CookProposal {
+  recipe_id: string
+  recipe_title: string
+  matches: IngredientMatch[]
+  missing: string[]
+  unit_conflicts: Array<{ ingredient: string; recipe_unit: string; pantry_unit: string }>
+}
+
+export interface DeductionItem {
+  pantry_item_id: string
+  deduct_qty: number
+  base_unit: string
+}

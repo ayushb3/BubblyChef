@@ -305,6 +305,79 @@ class SupabaseRepository:
         # Return raw dict — caller can construct RecipeCard if needed
         return result.data  # type: ignore[return-value]
 
+    async def update_recipe_cooked(self, user_id: str, recipe_id: str) -> None:
+        """Increment times_cooked and set last_cooked_at to now."""
+        # Read current times_cooked first
+        result = (
+            self.client.table("recipes")
+            .select("times_cooked")
+            .eq("id", recipe_id)
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+        current = result.data or {}
+        times_cooked = int(current.get("times_cooked", 0)) + 1
+        (
+            self.client.table("recipes")
+            .update(
+                {
+                    "times_cooked": times_cooked,
+                    "last_cooked_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            .eq("id", recipe_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+
+    async def deduct_pantry_item(
+        self, user_id: str, item_id: str, deduct_qty: float
+    ) -> None:
+        """Decrement pantry item quantity_base by deduct_qty, flooring at 0.
+
+        Also updates the display quantity proportionally when quantity_base
+        is available, so the frontend shows a sensible number.
+        """
+        result = (
+            self.client.table("pantry_items")
+            .select("quantity, quantity_base, unit_base")
+            .eq("id", item_id)
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+        if not result.data:
+            logger.warning(f"deduct_pantry_item: item {item_id} not found for user {user_id}")
+            return
+
+        row = result.data
+        current_base = float(row["quantity_base"]) if row.get("quantity_base") is not None else None
+        current_qty = float(row["quantity"])
+
+        if current_base is not None:
+            new_base = max(0.0, current_base - deduct_qty)
+            # Proportionally scale display quantity
+            ratio = new_base / current_base if current_base > 0 else 0.0
+            new_qty = round(current_qty * ratio, 4)
+            (
+                self.client.table("pantry_items")
+                .update({"quantity": new_qty, "quantity_base": new_base})
+                .eq("id", item_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+        else:
+            # No base unit — deduct directly from display quantity
+            new_qty = max(0.0, current_qty - deduct_qty)
+            (
+                self.client.table("pantry_items")
+                .update({"quantity": new_qty})
+                .eq("id", item_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+
     # =========================================================================
     # Conversation history
     # =========================================================================
