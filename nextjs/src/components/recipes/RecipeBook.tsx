@@ -78,12 +78,14 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
 
   const handleFavorite = async () => {
     if (!selectedRecipe) return
+    setMutating(true)
     const newVal = !selectedRecipe.is_favorite
     const res = await fetch(`/api/recipes/${selectedRecipe.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_favorite: newVal }),
     })
+    setMutating(false)
     if (res.ok) onMutate?.()
   }
 
@@ -333,7 +335,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
               <div className="flex gap-2 mt-2">
                 <button
                   onClick={handleFavorite}
-                  className="text-lg leading-none px-1 hover:scale-110 transition-transform"
+                  disabled={mutating}
+                  className="text-lg leading-none px-1 hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                   aria-label={selectedRecipe.is_favorite ? 'Unfavorite' : 'Favorite'}
                   title={selectedRecipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
                 >
@@ -341,7 +344,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 </button>
                 <button
                   onClick={() => setEditOpen(true)}
-                  className="text-lg leading-none px-1 hover:scale-110 transition-transform"
+                  disabled={mutating}
+                  className="text-lg leading-none px-1 hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                   aria-label="Edit recipe"
                   title="Edit recipe"
                 >
@@ -349,7 +353,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 </button>
                 <button
                   onClick={() => setDeleteOpen(true)}
-                  className="text-lg leading-none px-1 hover:scale-110 transition-transform"
+                  disabled={mutating}
+                  className="text-lg leading-none px-1 hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                   aria-label="Delete recipe"
                   title="Delete recipe"
                 >
