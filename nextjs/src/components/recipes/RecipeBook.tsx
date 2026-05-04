@@ -46,17 +46,25 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const [importOpen, setImportOpen] = useState(false)
   const [importDraft, setImportDraft] = useState<Partial<Recipe> | null>(null)
   const [mutating, setMutating] = useState(false)
+  // Local optimistic overrides for favorite state — avoids full re-fetch on toggle
+  const [favoriteOverrides, setFavoriteOverrides] = useState<Record<string, boolean>>({})
+
+  // Merge optimistic favorite overrides into the recipe list
+  const recipesWithOverrides = useMemo(
+    () => recipes.map((r) => r.id in favoriteOverrides ? { ...r, is_favorite: favoriteOverrides[r.id] } : r),
+    [recipes, favoriteOverrides],
+  )
 
   const filteredRecipes = useMemo(
     () =>
       search
-        ? recipes
+        ? recipesWithOverrides
             .map((r) => ({ r, score: scoreRecipe(r, search) }))
             .filter(({ score }) => score > 0)
             .sort((a, b) => b.score - a.score)
             .map(({ r }) => r)
-        : recipes,
-    [recipes, search],
+        : recipesWithOverrides,
+    [recipesWithOverrides, search],
   )
 
   useEffect(() => {
@@ -65,7 +73,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     }
   }, [search, filteredRecipes])
 
-  const selectedRecipe = recipes.find((r) => r.id === selectedId) ?? filteredRecipes[0] ?? null
+  const selectedRecipe = recipesWithOverrides.find((r) => r.id === selectedId) ?? recipesWithOverrides[0] ?? null
 
   const handleSearch = useCallback((q: string) => {
     setSearch(q)
@@ -78,15 +86,20 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
 
   const handleFavorite = async () => {
     if (!selectedRecipe) return
-    setMutating(true)
+    const id = selectedRecipe.id
     const newVal = !selectedRecipe.is_favorite
-    const res = await fetch(`/api/recipes/${selectedRecipe.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_favorite: newVal }),
-    })
-    setMutating(false)
-    if (res.ok) onMutate?.()
+    setFavoriteOverrides((prev) => ({ ...prev, [id]: newVal }))
+    try {
+      const res = await fetch(`/api/recipes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_favorite: newVal }),
+      })
+      if (!res.ok) throw new Error()
+    } catch {
+      // revert on failure
+      setFavoriteOverrides((prev) => ({ ...prev, [id]: !newVal }))
+    }
   }
 
   const handleEditSave = async (updates: Partial<Recipe>) => {
