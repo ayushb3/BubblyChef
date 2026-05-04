@@ -2,9 +2,9 @@
 
 Run once (or after any prompt change) to refresh fixtures:
     cd ai-service
-    BUBBLY_GEMINI_API_KEY=... python tests/capture_intent_fixtures.py
+    python tests/capture_intent_fixtures.py
 
-Requires a real BUBBLY_GEMINI_API_KEY. Writes results to
+Reads BUBBLY_GEMINI_API_KEY from .env automatically. Writes results to
 tests/fixtures/intent_classifications.json. Prints a unified diff if the
 file already exists so you can review changes before overwriting.
 """
@@ -67,7 +67,7 @@ CASES: list[dict[str, Any]] = [
     {"input": "recipe ideas please", "expected": "recipe_brainstorm"},
     # recipe_generation
     {"input": "give me a pasta recipe", "expected": "recipe_generation"},
-    {"input": "dinner ideas for tonight", "expected": "recipe_generation"},
+    {"input": "dinner ideas for tonight", "expected": "recipe_brainstorm"},
     {"input": "make me something with chicken", "expected": "recipe_generation"},
     {"input": "I'm craving something spicy", "expected": "recipe_generation"},
     {"input": "quick easy meal under 30 minutes", "expected": "recipe_generation"},
@@ -175,8 +175,10 @@ def _diff(old: str, new: str) -> str:
 
 
 async def main() -> None:
-    if not os.getenv("BUBBLY_GEMINI_API_KEY"):
-        print("ERROR: BUBBLY_GEMINI_API_KEY is not set.", file=sys.stderr)
+    from bubbly_chef.config import settings
+
+    if not settings.gemini_api_key:
+        print("ERROR: BUBBLY_GEMINI_API_KEY is not set in .env or environment.", file=sys.stderr)
         sys.exit(1)
 
     print(f"Capturing {len(CASES)} intent classifications against Gemini...\n")

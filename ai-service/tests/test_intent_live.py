@@ -1,18 +1,17 @@
 """Live intent classification tests — call the real Gemini API.
 
-Skipped unless BUBBLY_RUN_LIVE_TESTS=1. Run before shipping prompt changes:
+Skipped unless BUBBLY_RUN_LIVE_TESTS=1 (set in .env or shell). Run before shipping prompt changes:
     cd ai-service
-    BUBBLY_RUN_LIVE_TESTS=1 pytest tests/test_intent_live.py -v
+    pytest tests/test_intent_live.py -v
 """
-
-import os
 
 import pytest
 
+from bubbly_chef.config import settings
 from bubbly_chef.models.base import Intent
 from bubbly_chef.workflows.router import classify_intent
 
-_LIVE = os.getenv("BUBBLY_RUN_LIVE_TESTS", "0") == "1"
+_LIVE = getattr(settings, "run_live_tests", False)
 _SKIP = pytest.mark.skipif(not _LIVE, reason="set BUBBLY_RUN_LIVE_TESTS=1 to run live tests")
 
 _BRAINSTORM_HISTORY = [

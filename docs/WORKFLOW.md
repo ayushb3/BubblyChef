@@ -1,16 +1,58 @@
-# BubblyChef — Working with Claude Code
+# BubblyChef — Workflow Reference
 
-> How to get the most out of Claude Code for feature work, bug fixes, and autonomous improvement loops.
+> How to get the most out of Claude Code for feature work, bug fixes, and larger initiatives.
 
 ---
 
 ## Orientation
 
-```bash
-/status          # where am I, what's changed, what's next
+Read `ROADMAP.md` for current phase + open issues. `MEMORY.md` is auto-loaded each session.
+
+---
+
+## The Pipeline
+
+All work flows through GitHub Issues. The depth of the pipeline depends on scope:
+
+```
+Small fix:
+  describe bug → Claude implements → quality gates → commit → push
+
+Feature (multi-file):
+  explore → plan mode (docs/plans/) → approve → agent team implements → commit → push
+
+Large initiative:
+  explore → plan mode → /to-prd (creates parent GH issue)
+    → /to-issues (breaks PRD into vertical-slice child issues)
+    → implement each issue → commit → push
 ```
 
-Read `ROADMAP.md` for current phase + open issues. `MEMORY.md` is auto-loaded each session.
+### Plan Mode
+
+For non-trivial work, Claude enters plan mode to explore the codebase and propose an approach before writing code. The plan is saved to `docs/plans/` with a date prefix.
+
+### `/to-prd` — Synthesize a PRD
+
+When a design conversation reaches clarity, `/to-prd` synthesizes a PRD from conversation context:
+- Problem statement, solution, user stories
+- Implementation decisions (modules, interfaces, schemas)
+- Testing decisions
+- Publishes as a GitHub Issue with `needs-triage` label
+
+### `/to-issues` — Break into vertical slices
+
+Takes a PRD (or any large issue) and breaks it into independently-implementable vertical slices:
+- Each slice cuts through ALL layers end-to-end (schema → API → UI → tests)
+- Each slice is demoable/verifiable on its own
+- Slices are marked HITL (needs human decision) or AFK (fully autonomous)
+- Published as child GitHub Issues with dependency links
+
+### Implementing Issues
+
+Once issues exist:
+- Small issues → describe goal, Claude implements directly
+- Larger issues → plan mode → agent team (dev1 backend, dev2 frontend)
+- Each completed issue → quality gates → commit → push → close issue
 
 ---
 
@@ -18,7 +60,7 @@ Read `ROADMAP.md` for current phase + open issues. `MEMORY.md` is auto-loaded ea
 
 ### Quick fix / small change
 ```
-describe the bug or change → Claude implements → /vibe recent → commit
+describe the bug or change → Claude implements → quality gates → commit
 ```
 
 ### Feature (multi-file)
@@ -26,13 +68,12 @@ describe the bug or change → Claude implements → /vibe recent → commit
 describe the feature
   → Claude enters plan mode → you review + approve
   → agent team implements in parallel
-  → run quality gates → commit
+  → quality gates → commit
 ```
-Claude's built-in agent roles handle the split:
-- **pm** — reads codebase, decomposes into tasks, coordinates
+
+Agent roles:
 - **dev1** — backend/Python (FastAPI, LangGraph, repository)
 - **dev2** — frontend/TypeScript (React, Tailwind, hooks)
-- **designer** — UX review, visual consistency
 
 ### Spec-driven autonomous implementation
 When you have a thorough design doc (e.g. `docs/plans/my-feature.md`):
@@ -43,26 +84,10 @@ When you have a thorough design doc (e.g. `docs/plans/my-feature.md`):
 4. No back-and-forth — agents read the spec, implement, run tests, mark done
 5. You review the diff and commit
 
-The spec is the decision layer. The more complete it is, the less Claude needs to ask.
-
-### Autonomous improvement loop (replaces `/evolve`)
-To run until all quality gates pass:
-
+### Autonomous improvement loop
 ```
 "Run pytest + mypy + ruff + tsc. For each failure, create a task and fix it.
  Keep going until all gates are green."
-```
-
-Claude will:
-1. Run the quality gates
-2. Create tasks for each failure
-3. Assign dev1/dev2 as appropriate
-4. Fix → re-run → repeat until clean
-
-You can also kick this off on a schedule:
-```
-"Every morning at 9am, run quality gates and create tasks for any failures"
-→ Claude sets up a durable cron job
 ```
 
 ---
@@ -72,15 +97,11 @@ You can also kick this off on a schedule:
 Run these before any commit:
 
 ```bash
-pytest --tb=no -q                  # all tests pass
-mypy bubbly_chef/ --strict         # no type errors
-ruff check bubbly_chef/            # no lint errors
-cd web && npx tsc --noEmit         # TypeScript clean
-```
+# AI microservice
+cd ai-service && pytest --tb=no -q && mypy bubbly_chef/ --strict && ruff check bubbly_chef/
 
-One command:
-```bash
-pytest --tb=no -q && mypy bubbly_chef/ --strict && ruff check bubbly_chef/ && cd web && npx tsc --noEmit
+# Frontend
+cd nextjs && npx tsc --noEmit
 ```
 
 ---
@@ -88,29 +109,21 @@ pytest --tb=no -q && mypy bubbly_chef/ --strict && ruff check bubbly_chef/ && cd
 ## Validation
 
 ```
-/vibe recent     # review changed code before committing
+/vibe recent     # multi-perspective code review on recent changes
 ```
-
-This runs a multi-perspective code review on your recent changes: correctness, security, maintainability.
 
 ---
 
 ## Knowledge / Memory
 
-Decisions, lessons, and project state persist in `.claude/agent-memory/` (auto-loaded via `MEMORY.md`).
+Decisions and project state persist in auto-memory (auto-loaded via `MEMORY.md`).
 
-Key commands:
 ```bash
 # Tell Claude to remember something
 "remember that [X] — save it to memory"
 
-# Ask Claude to recall context
-"check memory for anything relevant to [topic]"
-```
-
-After finishing a session with significant decisions:
-```
-"save a handoff note to memory capturing what we decided and why"
+# Persist context for next session
+"save a handoff note capturing what we decided and why"
 ```
 
 ---
@@ -130,23 +143,6 @@ If context is lost mid-session:
 
 ---
 
-## What Was Removed
-
-AgentOps (`/rpi`, `/crank`, `/evolve`, `ao` CLI) was the previous workflow layer.
-
-**What replaced what:**
-| Old | New |
-|---|---|
-| `/rpi "goal"` | Describe goal → plan mode → agent team |
-| `/crank` | Claude task tree + parallel agents (automatic) |
-| `/evolve` | "Run gates autonomously until green" prompt |
-| `/vibe` | `/vibe recent` (still works — it's a native skill) |
-| `/handoff` | "Save handoff note to memory" |
-| `ao lookup` | "Check memory for [topic]" |
-| `.agents/` knowledge | `.claude/agent-memory/` + `MEMORY.md` |
-
----
-
 ## Common Failure Patterns
 
 | Pattern | Stop sign |
@@ -158,4 +154,4 @@ AgentOps (`/rpi`, `/crank`, `/evolve`, `ao` CLI) was the previous workflow layer
 
 ---
 
-_Last updated: 2026-03-31_
+_Last updated: 2026-05-03_
