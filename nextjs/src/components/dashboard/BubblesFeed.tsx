@@ -181,7 +181,7 @@ export default function BubblesFeed({ displayName }: BubblesFeedProps) {
         <BubbleMessage
           delay={delays[hasUrgent ? 2 : 1]}
           bubbleState="surprised"
-          actions={[{ label: 'Scan a receipt 📷', href: '/scan' }]}
+          actions={[{ label: 'Scan a receipt 📷', href: '/pantry?add=scan' }]}
         >
           Your pantry is empty! Let&apos;s fix that.
         </BubbleMessage>

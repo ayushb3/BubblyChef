@@ -1,0 +1,215 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import ScanTab from './ScanTab'
+import TypeTab from './TypeTab'
+
+export interface AddItem {
+  name: string
+  quantity: number
+  unit: string
+  category: string
+  storage_location: string
+  expiry_date: string | null
+  source: 'scan' | 'manual'
+}
+
+export type PantryAddTab = 'scan' | 'type'
+
+interface PantryAddSheetProps {
+  isOpen: boolean
+  onClose: () => void
+  initialTab?: PantryAddTab
+  onItemsAdded: () => void
+}
+
+export default function PantryAddSheet({
+  isOpen,
+  onClose,
+  initialTab = 'scan',
+  onItemsAdded,
+}: PantryAddSheetProps) {
+  const [activeTab, setActiveTab] = useState<PantryAddTab>(initialTab)
+  const [scanItems, setScanItems] = useState<AddItem[]>([])
+  const [typeItems, setTypeItems] = useState<AddItem[]>([])
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Update tab when prop changes (e.g. URL param triggers re-open)
+  useEffect(() => {
+    if (isOpen) setActiveTab(initialTab)
+  }, [isOpen, initialTab])
+
+  // Reset state when sheet closes
+  useEffect(() => {
+    if (!isOpen) {
+      setScanItems([])
+      setTypeItems([])
+      setError(null)
+      setIsSubmitting(false)
+    }
+  }, [isOpen])
+
+  const allItems = [...scanItems, ...typeItems]
+  const itemCount = allItems.length
+
+  async function handleConfirm() {
+    if (itemCount === 0) return
+    setIsSubmitting(true)
+    setError(null)
+
+    try {
+      const res = await fetch('/api/pantry/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: allItems.map(({ source: _source, ...item }) => item),
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Failed to add items' }))
+        throw new Error(data.error ?? `Failed to add items: ${res.status}`)
+      }
+
+      onItemsAdded()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add items')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            className="fixed inset-0 bg-black/40 z-50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+          />
+
+          {/* Sheet — slides up from bottom */}
+          <motion.div
+            className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl flex flex-col"
+            style={{
+              background: 'var(--color-surface)',
+              maxHeight: '92vh',
+            }}
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+          >
+            {/* Handle bar */}
+            <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+              <div className="w-10 h-1 rounded-full bg-[var(--color-border)]" />
+            </div>
+
+            {/* Header */}
+            <div className="px-6 pb-3 flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-extrabold text-[var(--color-text)]">
+                  Add to Pantry
+                </h2>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors text-xl leading-none px-1"
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Tab switcher */}
+              <div className="flex gap-2 mt-3">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('scan')}
+                  className={`flex-1 py-2 rounded-full text-sm font-semibold transition-colors ${
+                    activeTab === 'scan'
+                      ? 'bg-[var(--color-primary)] text-white'
+                      : 'bg-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'
+                  }`}
+                >
+                  📷 Scan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('type')}
+                  className={`flex-1 py-2 rounded-full text-sm font-semibold transition-colors ${
+                    activeTab === 'type'
+                      ? 'bg-[var(--color-primary)] text-white'
+                      : 'bg-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'
+                  }`}
+                >
+                  ✍️ Type
+                </button>
+              </div>
+            </div>
+
+            {/* Tab content — scrollable */}
+            <div className="flex-1 overflow-y-auto px-6 pb-4 min-h-0">
+              {error && (
+                <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 rounded-2xl text-sm">
+                  {error}
+                </div>
+              )}
+
+              <AnimatePresence mode="wait">
+                {activeTab === 'scan' ? (
+                  <motion.div
+                    key="scan"
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 12 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <ScanTab onItemsReady={setScanItems} />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="type"
+                    initial={{ opacity: 0, x: 12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -12 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <TypeTab onItemsReady={setTypeItems} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Sticky confirm footer */}
+            <div className="flex-shrink-0 px-6 pb-8 pt-3 border-t border-[var(--color-border)]">
+              <motion.button
+                type="button"
+                onClick={handleConfirm}
+                disabled={itemCount === 0 || isSubmitting}
+                whileHover={{ scale: itemCount === 0 || isSubmitting ? 1 : 1.02 }}
+                whileTap={{ scale: itemCount === 0 || isSubmitting ? 1 : 0.96 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+                className="w-full py-4 rounded-full font-bold text-white shadow-lg transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: 'var(--color-primary-dark, #FF8FAB)' }}
+              >
+                {isSubmitting
+                  ? 'Adding…'
+                  : itemCount === 0
+                    ? 'Add Items'
+                    : `Add ${itemCount} Item${itemCount !== 1 ? 's' : ''} 🛒`}
+              </motion.button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  )
+}

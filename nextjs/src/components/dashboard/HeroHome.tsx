@@ -124,7 +124,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
   const heroAction = urgentItem
     ? { label: 'Find a recipe', href: '/chat?mode=recipe' }
     : totalCount === 0
-      ? { label: 'Scan receipt', href: '/scan' }
+      ? { label: 'Scan receipt', href: '/pantry?add=scan' }
       : recipe
         ? { label: 'Open recipe', href: '/recipes' }
         : expiringCount > 0
@@ -197,7 +197,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
             emoji: '📷',
             label: 'Scan',
             detail: 'Receipt',
-            href: '/scan',
+            href: '/pantry?add=scan',
             gradient: 'linear-gradient(135deg, #B5D5F5 0%, #7EC8F0 100%)',
           },
           {
