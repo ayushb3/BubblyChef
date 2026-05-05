@@ -10,6 +10,7 @@ import MessageBubble from '@/components/chat/MessageBubble'
 import TypingIndicator from '@/components/chat/TypingIndicator'
 import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
+import ThemePicker from '@/components/ui/ThemePicker'
 import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
 import type { ChatMessage, ChatRecipeData, PantryProposalData } from '@/types/chat'
@@ -119,15 +120,18 @@ export default function ChatPage() {
         mascotState={mascotState}
         mascotAnimate={isStreaming}
         rightSlot={
-          hasMessages ? (
-            <button
-              type="button"
-              onClick={startNewChat}
-              className="text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-primary)]/10 px-3 py-1.5 rounded-full hover:bg-[var(--color-primary)]/20 transition-colors"
-            >
-              New Chat
-            </button>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            {hasMessages && (
+              <button
+                type="button"
+                onClick={startNewChat}
+                className="text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-primary)]/10 px-3 py-1.5 rounded-full hover:bg-[var(--color-primary)]/20 transition-colors"
+              >
+                New Chat
+              </button>
+            )}
+            <ThemePicker />
+          </div>
         }
       />
 

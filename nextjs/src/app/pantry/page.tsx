@@ -8,6 +8,7 @@ import FadeInView from '@/components/ui/FadeInView'
 import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import AddItemModal from '@/components/pantry/AddItemModal'
+import ThemePicker from '@/components/ui/ThemePicker'
 import { getFoodEmoji } from '@/lib/food-emoji'
 
 interface PantryItem {
@@ -108,9 +109,12 @@ export default function PantryPage() {
       {/* Header */}
       <BubblesHeader
         rightSlot={
-          <span className="bg-[var(--color-primary)] text-white text-xs font-semibold px-3 py-1 rounded-full">
-            {allItems.length} item{allItems.length !== 1 ? 's' : ''}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="bg-[var(--color-primary)] text-white text-xs font-semibold px-3 py-1 rounded-full">
+              {allItems.length} item{allItems.length !== 1 ? 's' : ''}
+            </span>
+            <ThemePicker />
+          </div>
         }
       />
 

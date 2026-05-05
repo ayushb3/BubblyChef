@@ -8,6 +8,7 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 import FadeInView from '@/components/ui/FadeInView'
 import SpringButton from '@/components/ui/SpringButton'
 import ScanResults from '@/components/scan/ScanResults'
+import ThemePicker from '@/components/ui/ThemePicker'
 import { uploadReceipt, confirmScanItems } from '@/lib/api/scan'
 import type { ScannedItem, ScanResult } from '@/types/scan'
 
@@ -78,7 +79,7 @@ export default function ScanPage() {
 
   return (
     <div className="min-h-screen pb-24">
-      <BubblesHeader />
+      <BubblesHeader rightSlot={<ThemePicker />} />
       <div className="p-6 pt-4 max-w-md mx-auto">
 
       {error && (
