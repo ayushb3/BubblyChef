@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import SpringButton from '@/components/ui/SpringButton'
@@ -9,6 +10,7 @@ import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import AddItemModal from '@/components/pantry/AddItemModal'
 import ThemePicker from '@/components/ui/ThemePicker'
+import PantryAddSheet, { type PantryAddTab } from '@/components/pantry/PantryAddSheet'
 import { getFoodEmoji } from '@/lib/food-emoji'
 
 interface PantryItem {
@@ -66,7 +68,18 @@ function groupByCategory(items: PantryItem[]) {
 }
 
 export default function PantryPage() {
+  return (
+    <Suspense>
+      <PantryPageInner />
+    </Suspense>
+  )
+}
+
+function PantryPageInner() {
   const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+
   const { data, isLoading } = useQuery({
     queryKey: ['pantry', {}],
     queryFn: () => fetch('/api/pantry').then((r) => r.json()),
@@ -76,8 +89,23 @@ export default function PantryPage() {
 
   const [search, setSearch] = useState('')
   const [locationFilter, setLocationFilter] = useState('all')
-  const [modalOpen, setModalOpen] = useState(false)
+
+  // Edit modal (single item)
+  const [editModalOpen, setEditModalOpen] = useState(false)
   const [editItem, setEditItem] = useState<PantryItem | null>(null)
+
+  // Add sheet (bulk add: scan + type)
+  const [addSheetOpen, setAddSheetOpen] = useState(false)
+  const [addSheetTab, setAddSheetTab] = useState<PantryAddTab>('scan')
+
+  // Handle ?add=scan or ?add=type URL params
+  useEffect(() => {
+    const addParam = searchParams.get('add')
+    if (addParam === 'scan' || addParam === 'type') {
+      setAddSheetTab(addParam)
+      setAddSheetOpen(true)
+    }
+  }, [searchParams])
 
   // Client-side filtering
   const filteredItems = allItems.filter((item) => {
@@ -90,17 +118,29 @@ export default function PantryPage() {
   const categories = Object.keys(grouped).sort()
 
   const handleOpenAdd = () => {
-    setEditItem(null)
-    setModalOpen(true)
+    setAddSheetTab('scan')
+    setAddSheetOpen(true)
   }
 
   const handleOpenEdit = (item: PantryItem) => {
     setEditItem(item)
-    setModalOpen(true)
+    setEditModalOpen(true)
   }
 
-  const handleModalClose = () => {
-    setModalOpen(false)
+  const handleEditModalClose = () => {
+    setEditModalOpen(false)
+    queryClient.invalidateQueries({ queryKey: ['pantry'] })
+  }
+
+  const handleAddSheetClose = () => {
+    setAddSheetOpen(false)
+    // Clear ?add param from URL without navigation
+    const url = new URL(window.location.href)
+    url.searchParams.delete('add')
+    router.replace(url.pathname + url.search, { scroll: false })
+  }
+
+  const handleItemsAdded = () => {
     queryClient.invalidateQueries({ queryKey: ['pantry'] })
   }
 
@@ -155,7 +195,7 @@ export default function PantryPage() {
       ) : filteredItems.length === 0 ? (
         <div className="mx-6 bg-[var(--color-surface)] rounded-3xl overflow-hidden border border-[var(--color-border)] shadow-sm">
           <div className="chowder-panel px-5 py-3">
-            <p className="text-white font-semibold text-sm">Fresh & Stocked</p>
+            <p className="text-white font-semibold text-sm">Fresh &amp; Stocked</p>
           </div>
           <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
             <div className="mb-4">
@@ -229,10 +269,18 @@ export default function PantryPage() {
         </SpringButton>
       </div>
 
-      {/* Add/Edit Modal */}
+      {/* Bulk Add Sheet (scan + type) */}
+      <PantryAddSheet
+        isOpen={addSheetOpen}
+        onClose={handleAddSheetClose}
+        initialTab={addSheetTab}
+        onItemsAdded={handleItemsAdded}
+      />
+
+      {/* Single Item Edit Modal */}
       <AddItemModal
-        isOpen={modalOpen}
-        onClose={handleModalClose}
+        isOpen={editModalOpen}
+        onClose={handleEditModalClose}
         editItem={editItem}
       />
     </div>
