@@ -135,7 +135,7 @@ export default function RecipeDetail({ recipe }: RecipeDetailProps) {
                   <span
                     className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
                     style={{
-                      background: 'var(--color-primary)',
+                      background: 'var(--color-accent)',
                       fontFamily: 'Nunito, sans-serif',
                       marginTop: `${(LINE_HEIGHT - 24) / 2}px`,
                     }}

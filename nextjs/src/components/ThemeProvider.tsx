@@ -30,31 +30,27 @@ const ThemeContext = createContext<ThemeContextValue | null>(null)
 // ─── Provider ────────────────────────────────────────────────────────────────
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  // Initialise from localStorage on first render.
-  // WHY lazy initialiser: avoids reading localStorage on every re-render.
-  const [theme, setThemeState] = useState<ThemeKey>(() => {
-    if (typeof window === 'undefined') return DEFAULT_THEME
-    const stored = localStorage.getItem(STORAGE_KEY)
-    return stored !== null && isValidTheme(stored) ? stored : DEFAULT_THEME
-  })
+  // Start with DEFAULT_THEME so server and client render identically.
+  // WHY: reading localStorage in a lazy initialiser causes a hydration mismatch
+  // because the server always sees DEFAULT_THEME while the client may see a
+  // stored value — React flags the divergence. We correct to the stored value
+  // in the effect below, after hydration.
+  const [theme, setThemeState] = useState<ThemeKey>(DEFAULT_THEME)
 
-  // On mount, sync document.documentElement with the resolved theme.
-  // WHY: The flash-prevention inline script in layout.tsx reads localStorage
-  // and sets data-theme before React hydrates. After hydration, we need to
-  // ensure the attribute stays in sync with our React state (they should
-  // already agree, but this is the authoritative handshake).
+  // On mount: read localStorage and apply the stored theme.
+  // WHY split from useState: this runs only on the client after hydration, so
+  // both passes agree on DEFAULT_THEME and there is no mismatch.
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme)
-  }, [theme])
+    const stored = localStorage.getItem(STORAGE_KEY)
+    const resolved = stored !== null && isValidTheme(stored) ? stored : DEFAULT_THEME
+    setThemeState(resolved)
+    document.documentElement.setAttribute('data-theme', resolved)
+  }, [])
 
   const setTheme = (key: ThemeKey) => {
-    // Update React state (triggers re-render and the useEffect above)
     setThemeState(key)
-    // Write to localStorage so the choice persists across page loads
     localStorage.setItem(STORAGE_KEY, key)
-    // Update the DOM attribute synchronously — we do this here AND in
-    // useEffect so the visual change is instantaneous, not deferred to the
-    // next paint. This avoids a one-frame flash when the user picks a theme.
+    // Synchronous setAttribute avoids a one-frame flash; React state catches up next render.
     document.documentElement.setAttribute('data-theme', key)
   }
 

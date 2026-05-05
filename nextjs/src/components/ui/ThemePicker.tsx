@@ -12,10 +12,10 @@ import type { ThemeKey } from '@/components/ThemeProvider'
 
 const PALETTES: Array<{ key: ThemeKey; hex: string; label: string }> = [
   { key: 'sakura',    hex: '#FFB7C5', label: 'Switch to sakura theme' },
-  { key: 'mint',      hex: '#B5EAD7', label: 'Switch to mint theme' },
+  { key: 'mint',      hex: '#A8E6CF', label: 'Switch to mint theme' },
   { key: 'lavender',  hex: '#C9B5E8', label: 'Switch to lavender theme' },
-  { key: 'yuzu',      hex: '#FFDAB3', label: 'Switch to yuzu theme' },
-  { key: 'bluebell',  hex: '#B5D5F5', label: 'Switch to bluebell theme' },
+  { key: 'yuzu',      hex: '#FFD98C', label: 'Switch to yuzu theme' },
+  { key: 'bluebell',  hex: '#A3C4F5', label: 'Switch to bluebell theme' },
 ]
 
 // ─── Component ────────────────────────────────────────────────────────────────

@@ -208,8 +208,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         </div>
         <button
           onClick={() => setImportOpen(true)}
-          className="flex-shrink-0 px-3 py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
-          style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+          className="flex-shrink-0 px-3 py-2 rounded-full text-sm font-bold text-[var(--color-text)] active:scale-95 transition-transform"
+          style={{ background: 'var(--color-accent)', fontFamily: 'Nunito, sans-serif' }}
           title="Import recipe from URL"
           aria-label="Import recipe from URL"
         >
@@ -401,7 +401,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 <button
                   onClick={() => setCookOpen(true)}
                   className="ml-auto px-4 py-1.5 rounded-full text-xs font-bold text-white active:scale-95 transition-transform"
-                  style={{ background: '#ffb5c5', fontFamily: 'Nunito, sans-serif' }}
+                  style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
                   aria-label="Cook this recipe"
                   title="Cook it — deduct ingredients from pantry"
                 >
