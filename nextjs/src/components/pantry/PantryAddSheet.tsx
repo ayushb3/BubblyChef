@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useDragControls } from 'framer-motion'
 import ScanTab from './ScanTab'
 import TypeTab from './TypeTab'
 
@@ -35,6 +35,7 @@ export default function PantryAddSheet({
   const [typeItems, setTypeItems] = useState<AddItem[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const dragControls = useDragControls()
 
   // Update tab when prop changes (e.g. URL param triggers re-open)
   useEffect(() => {
@@ -95,20 +96,31 @@ export default function PantryAddSheet({
             onClick={onClose}
           />
 
-          {/* Sheet — slides up from bottom */}
+          {/* Sheet — slides up from bottom, sits above the bottom nav */}
           <motion.div
-            className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl flex flex-col"
+            className="fixed bottom-16 left-0 right-0 z-50 rounded-t-3xl flex flex-col select-none"
             style={{
               background: 'var(--color-surface)',
-              maxHeight: '92vh',
+              maxHeight: 'calc(92vh - 64px)',
             }}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+            drag="y"
+            dragControls={dragControls}
+            dragListener={false}
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0, bottom: 0.3 }}
+            onDragEnd={(_e, info) => {
+              if (info.offset.y > 80 || info.velocity.y > 500) onClose()
+            }}
           >
-            {/* Handle bar */}
-            <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+            {/* Handle bar — drag initiator */}
+            <div
+              className="flex justify-center pt-3 pb-1 flex-shrink-0 cursor-grab active:cursor-grabbing touch-none"
+              onPointerDown={(e) => dragControls.start(e)}
+            >
               <div className="w-10 h-1 rounded-full bg-[var(--color-border)]" />
             </div>
 
@@ -189,7 +201,7 @@ export default function PantryAddSheet({
             </div>
 
             {/* Sticky confirm footer */}
-            <div className="flex-shrink-0 px-6 pb-8 pt-3 border-t border-[var(--color-border)]">
+            <div className="flex-shrink-0 px-6 pb-4 pt-3 border-t border-[var(--color-border)]">
               <motion.button
                 type="button"
                 onClick={handleConfirm}
