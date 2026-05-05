@@ -21,6 +21,72 @@
     --color-accent-dark: #7EC8F0;
   }
 
+  /* Theme palettes — applied via data-theme attribute on <html> */
+  /* Sakura (default — intentionally mirrors :root for explicitness) */
+  [data-theme="sakura"] {
+    --color-bg: #FFF0F5;
+    --color-primary: #FFB7C5;
+    --color-accent: #B5D5F5;
+    --color-text: #5C4A5A;
+    --color-surface: #FFFAFC;
+    --color-border: #F2D6E0;
+    --color-muted: #9B8A93;
+    --color-primary-dark: #FF8FAB;
+    --color-accent-dark: #7EC8F0;
+  }
+
+  /* Mint */
+  [data-theme="mint"] {
+    --color-bg: #F0FBF5;
+    --color-primary: #B5EAD7;
+    --color-accent: #A8D8EA;
+    --color-text: #3A5C4A;
+    --color-surface: #F8FFFA;
+    --color-border: #C8E8D8;
+    --color-muted: #7A9B8A;
+    --color-primary-dark: #7EC8A0;
+    --color-accent-dark: #5BBAD5;
+  }
+
+  /* Lavender */
+  [data-theme="lavender"] {
+    --color-bg: #F5F0FF;
+    --color-primary: #C9B5E8;
+    --color-accent: #B5D5F5;
+    --color-text: #4A3A5C;
+    --color-surface: #FAF8FF;
+    --color-border: #D8C8E8;
+    --color-muted: #8A7A9B;
+    --color-primary-dark: #9B7DD4;
+    --color-accent-dark: #7EC8F0;
+  }
+
+  /* Yuzu */
+  [data-theme="yuzu"] {
+    --color-bg: #FFFBF0;
+    --color-primary: #FFDAB3;
+    --color-accent: #FFD1A9;
+    --color-text: #5C4A3A;
+    --color-surface: #FFFDF8;
+    --color-border: #F0DFC8;
+    --color-muted: #9B8A7A;
+    --color-primary-dark: #FFB07C;
+    --color-accent-dark: #FFB87C;
+  }
+
+  /* Bluebell */
+  [data-theme="bluebell"] {
+    --color-bg: #F0F5FF;
+    --color-primary: #B5D5F5;
+    --color-accent: #C9E4FF;
+    --color-text: #3A4A5C;
+    --color-surface: #F8FBFF;
+    --color-border: #C8D8F0;
+    --color-muted: #7A8A9B;
+    --color-primary-dark: #5AABF0;
+    --color-accent-dark: #89C4FF;
+  }
+
   body {
     background: var(--color-bg);
     color: var(--color-text);

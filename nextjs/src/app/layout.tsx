@@ -27,6 +27,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${nunito.variable} ${quicksand.variable} h-full antialiased`}>
+      <head>
+        {/* Flash-prevention: apply saved theme before first paint to avoid palette flicker */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('bubbly-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className="min-h-screen bg-[var(--color-bg)]" style={{ fontFamily: 'Nunito, sans-serif' }}>
         <Providers>
           <main className="pb-20">{children}</main>
