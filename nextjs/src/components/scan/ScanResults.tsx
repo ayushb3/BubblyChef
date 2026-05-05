@@ -14,6 +14,8 @@ interface ScanResultsProps {
   onSkippedChange: (items: ScannedItem[]) => void
   onConfirm: () => void
   isSubmitting: boolean
+  /** When true, hides the built-in confirm button (used when embedded in PantryAddSheet) */
+  hideConfirmButton?: boolean
 }
 
 interface TierSectionProps {
@@ -103,6 +105,7 @@ export default function ScanResults({
   onSkippedChange,
   onConfirm,
   isSubmitting,
+  hideConfirmButton = false,
 }: ScanResultsProps) {
   const totalActive = readyToAdd.length + needsReview.length
 
@@ -155,6 +158,7 @@ export default function ScanResults({
       )}
 
       {/* Sticky footer CTA */}
+      {!hideConfirmButton && (
       <div className="sticky bottom-4 mt-4">
         <motion.button
           type="button"
@@ -173,6 +177,7 @@ export default function ScanResults({
               : `Add ${totalActive} Item${totalActive === 1 ? '' : 's'} to Pantry`}
         </motion.button>
       </div>
+      )}
     </div>
   )
 }
