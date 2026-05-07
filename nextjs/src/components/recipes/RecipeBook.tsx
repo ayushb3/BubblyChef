@@ -235,7 +235,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                     className="text-[var(--color-muted)] hover:text-[var(--color-text)] p-1.5 rounded-full hover:bg-[var(--color-border)] transition-colors"
                     aria-label="Close sidebar"
                   >
-                     <X size={16} weight="bold" />
+                    <X size={16} weight="bold" />
                   </button>
                 </div>
 
@@ -288,7 +288,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         {!sidebarOpen && (
           <button
             onClick={() => setSidebarOpen(true)}
-            className="absolute left-0 top-4 z-10 flex items-center justify-center rounded-r-lg shadow-sm"
+            className="absolute left-0 top-4 z-10 flex items-center justify-center rounded-r-lg shadow-sm hover:opacity-80 transition-opacity"
             style={{
               width: '28px',
               height: '40px',
