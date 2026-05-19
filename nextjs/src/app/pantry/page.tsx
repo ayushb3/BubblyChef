@@ -24,17 +24,17 @@ interface PantryItem {
 }
 
 const CATEGORY_BG: Record<string, string> = {
-  produce: 'var(--color-fresh)',
-  dairy: 'var(--color-expiring)',
-  frozen: 'var(--color-border)',
-  meat: 'var(--color-expired)',
-  seafood: 'var(--color-expired)',
-  beverages: 'var(--color-accent)',
+  produce: 'var(--color-cat-produce)',
+  dairy: 'var(--color-cat-dairy)',
+  frozen: 'var(--color-cat-frozen)',
+  meat: 'var(--color-cat-meat)',
+  seafood: 'var(--color-cat-meat)',
+  beverages: 'var(--color-cat-beverage)',
   condiments: 'var(--color-surface)',
   pantry: 'var(--color-surface)',
   dry_goods: 'var(--color-surface)',
   canned: 'var(--color-surface)',
-  snacks: 'var(--color-accent)',
+  snacks: 'var(--color-cat-snack)',
   other: 'var(--color-surface)',
 }
 

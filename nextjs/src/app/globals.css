@@ -25,6 +25,13 @@
     --color-expiring-text: #7B5A00;
     --color-fresh: #DCFCE7;
     --color-fresh-text: #166534;
+    /* Category palette tokens — pantry card tinting */
+    --color-cat-produce: #d1fae5;
+    --color-cat-dairy: #fef3c7;
+    --color-cat-meat: #fce7f3;
+    --color-cat-frozen: #e0e7ff;
+    --color-cat-beverage: #e0f2fe;
+    --color-cat-snack: #fdf4ff;
   }
 
   /* Theme palettes — applied via data-theme attribute on <html> */
@@ -52,6 +59,12 @@
     --color-muted: #7A9B8A;
     --color-primary-dark: #6DC8A8;
     --color-accent-dark: #FF8C73;
+    --color-cat-produce: #bbf7d0;
+    --color-cat-dairy: #fef9c3;
+    --color-cat-meat: #fce7f3;
+    --color-cat-frozen: #e0e7ff;
+    --color-cat-beverage: #bae6fd;
+    --color-cat-snack: #f3e8ff;
   }
 
   /* Lavender: purple + butter yellow */
@@ -65,6 +78,12 @@
     --color-muted: #8A7A9B;
     --color-primary-dark: #9B7DD4;
     --color-accent-dark: #FFCA5A;
+    --color-cat-produce: #d1fae5;
+    --color-cat-dairy: #fef3c7;
+    --color-cat-meat: #fce7f3;
+    --color-cat-frozen: #ddd6fe;
+    --color-cat-beverage: #e0f2fe;
+    --color-cat-snack: #fdf4ff;
   }
 
   /* Yuzu: warm yellow + teal */
