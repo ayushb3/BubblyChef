@@ -191,21 +191,21 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
             label: 'Use Soon',
             detail: expiringCount > 0 ? `${expiringCount} item${expiringCount > 1 ? 's' : ''}` : 'All fresh!',
             href: '/pantry',
-            gradient: 'linear-gradient(135deg, #FFB7C5 0%, #FF8FAB 100%)',
+            gradient: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
           },
           {
             emoji: '📷',
             label: 'Scan',
             detail: 'Receipt',
             href: '/pantry?add=scan',
-            gradient: 'linear-gradient(135deg, #B5D5F5 0%, #7EC8F0 100%)',
+            gradient: 'linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-dark) 100%)',
           },
           {
             emoji: '✨',
             label: 'Ask',
             detail: 'Bubbles',
             href: '/chat',
-            gradient: 'linear-gradient(135deg, #C9B5E8 0%, #9B7DD4 100%)',
+            gradient: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-accent-dark) 100%)',
           },
         ].map((card, i) => (
           <FadeInView key={card.href} delay={0.35 + i * 0.08}>
