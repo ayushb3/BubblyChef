@@ -125,7 +125,7 @@ export default function ChatPage() {
               <button
                 type="button"
                 onClick={startNewChat}
-                className="text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-primary)]/10 px-3 py-1.5 rounded-full hover:bg-[var(--color-primary)]/20 transition-colors"
+                className="text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-surface)] px-3 py-1.5 rounded-full hover:bg-[var(--color-border)] transition-colors"
               >
                 New Chat
               </button>
@@ -137,9 +137,9 @@ export default function ChatPage() {
 
       {/* AI unavailable warning */}
       {!aiAvailable && (
-        <div className="mx-4 mt-3 px-4 py-2.5 bg-[#FFF3E4] border border-[#FFD4A3] rounded-xl flex items-center gap-2 text-sm">
+        <div className="mx-4 mt-3 px-4 py-2.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl flex items-center gap-2 text-sm">
           <span>⚠️</span>
-          <span className="text-[#8B5E2B]">
+          <span className="text-[var(--color-text)]">
             AI is unavailable. Check your Gemini API key or start Ollama.
           </span>
         </div>
@@ -191,7 +191,7 @@ export default function ChatPage() {
                   key={s}
                   type="button"
                   onClick={() => handleSuggestionClick(s)}
-                  className="bg-[var(--color-primary)]/10 text-[var(--color-text)] text-sm font-medium px-4 py-2 rounded-full border border-[var(--color-border)] hover:bg-[var(--color-primary)]/20 transition-colors"
+                  className="bg-[var(--color-surface)] text-[var(--color-text)] text-sm font-medium px-4 py-2 rounded-full border border-[var(--color-border)] hover:bg-[var(--color-border)] transition-colors"
                 >
                   {s}
                 </button>
@@ -211,7 +211,7 @@ export default function ChatPage() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={isStreaming}
-            className="w-full rounded-full px-4 py-2.5 border border-[var(--color-border)] bg-white text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] text-sm disabled:opacity-50"
+            className="w-full rounded-full px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] text-sm disabled:opacity-50"
           />
           <RotatingPlaceholder visible={!input && !isStreaming && !hasMessages} />
         </div>
