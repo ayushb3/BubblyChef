@@ -281,7 +281,7 @@ function MessageRenderer({
       : rawProposal as ChatRecipeData
     return (
       <div className="flex items-end gap-2">
-        <BubblesMascot size={24} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+        <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
         <div className="flex flex-col gap-2 items-start">
           {message.content && (
             <MessageBubble message={message} />
@@ -302,7 +302,7 @@ function MessageRenderer({
     const proposal = message.response.proposal as PantryProposalData
     return (
       <div className="flex items-end gap-2">
-        <BubblesMascot size={24} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+        <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
         <div className="flex flex-col gap-2 items-start">
           {message.content && (
             <MessageBubble message={message} />
@@ -322,7 +322,7 @@ function MessageRenderer({
   if (!message.content && isLastAssistant) return null
   return (
     <div className="flex items-end gap-2">
-      <BubblesMascot size={24} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+      <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
       <MessageBubble message={message} />
     </div>
   )
