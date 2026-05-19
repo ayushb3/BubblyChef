@@ -42,6 +42,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const [selectedId, setSelectedId] = useState<string | null>(
     recipes.length > 0 ? recipes[0].id : null,
   )
+  const [flippedId, setFlippedId] = useState<string | null>(null)
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
@@ -285,28 +286,59 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                       {search ? `No results for "${search}"` : 'No recipes yet'}
                     </li>
                   ) : (
-                    filteredRecipes.map((r) => {
-                      const isActive = r.id === selectedId
-                      return (
+                    filteredRecipes.map((r) => (
                         <li key={r.id}>
-                          <button
-                            onClick={() => handleSelect(r.id)}
-                            className="w-full text-left px-4 py-3 text-sm transition-colors"
-                            style={{
-                              background: isActive ? 'var(--color-bg)' : 'transparent',
-                              borderLeft: `3px solid ${isActive ? 'var(--color-primary)' : 'transparent'}`,
-                              fontFamily: 'Nunito, sans-serif',
-                              fontWeight: isActive ? 700 : 400,
-                              color: isActive
-                                ? 'var(--color-text)'
-                                : 'var(--color-muted)',
-                            }}
-                          >
-                            <span className="line-clamp-2">{r.title}</span>
-                          </button>
+                          <div style={{ perspective: '1200px' }} className="cursor-pointer px-2 py-1.5">
+                            <motion.div
+                              style={{ transformStyle: 'preserve-3d', position: 'relative', willChange: 'transform', minHeight: '64px' }}
+                              animate={{ rotateY: flippedId === r.id ? 180 : 0 }}
+                              transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                              onClick={() => setFlippedId(flippedId === r.id ? null : r.id)}
+                            >
+                              {/* Front face */}
+                              <div
+                                style={{ backfaceVisibility: 'hidden' }}
+                                className="p-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
+                              >
+                                <p className="text-sm font-semibold text-[var(--color-text)] line-clamp-2" style={{ fontFamily: 'Nunito, sans-serif' }}>{r.title}</p>
+                                <div className="flex gap-1 mt-1 flex-wrap">
+                                  {r.cuisine && <MetaChip label={r.cuisine} />}
+                                  {r.prep_time_minutes && <MetaChip label={`${r.prep_time_minutes}m`} />}
+                                </div>
+                              </div>
+                              {/* Back face */}
+                              <div
+                                style={{
+                                  backfaceVisibility: 'hidden',
+                                  transform: 'rotateY(180deg)',
+                                  position: 'absolute',
+                                  top: 0,
+                                  right: 0,
+                                  bottom: 0,
+                                  left: 0,
+                                }}
+                                className="p-2 rounded-xl border border-[var(--color-primary)] bg-[var(--color-bg)] overflow-hidden"
+                              >
+                                <p className="text-xs font-semibold text-[var(--color-primary-dark)] mb-1">Ingredients</p>
+                                <ul className="text-xs text-[var(--color-text)] space-y-0.5">
+                                  {r.ingredients?.slice(0, 4).map((ing, i) => (
+                                    <li key={i}>• {typeof ing === 'string' ? ing : (ing as { text?: string; name?: string }).text ?? (ing as { text?: string; name?: string }).name ?? ''}</li>
+                                  ))}
+                                  {(r.ingredients?.length ?? 0) > 4 && (
+                                    <li className="text-[var(--color-muted)]">+{r.ingredients!.length - 4} more</li>
+                                  )}
+                                </ul>
+                                <button
+                                  className="mt-1.5 text-xs text-[var(--color-primary-dark)] underline"
+                                  onClick={(e) => { e.stopPropagation(); handleSelect(r.id) }}
+                                >
+                                  Open recipe →
+                                </button>
+                              </div>
+                            </motion.div>
+                          </div>
                         </li>
-                      )
-                    })
+                      ))
                   )}
                 </ul>
 
