@@ -23,6 +23,21 @@ interface PantryItem {
   expiry_date: string | null
 }
 
+const CATEGORY_BG: Record<string, string> = {
+  produce: 'var(--color-fresh)',
+  dairy: 'var(--color-expiring)',
+  frozen: 'var(--color-border)',
+  meat: 'var(--color-expired)',
+  seafood: 'var(--color-expired)',
+  beverages: 'var(--color-accent)',
+  condiments: 'var(--color-surface)',
+  pantry: 'var(--color-surface)',
+  dry_goods: 'var(--color-surface)',
+  canned: 'var(--color-surface)',
+  snacks: 'var(--color-accent)',
+  other: 'var(--color-surface)',
+}
+
 const CATEGORY_EMOJI: Record<string, string> = {
   produce: '🥬',
   dairy: '🧈',
@@ -51,10 +66,10 @@ function daysUntilExpiry(date: string | null): number | null {
 
 function expiryBadge(days: number | null) {
   if (days === null) return null
-  if (days <= 0) return { label: 'Expired', color: 'bg-red-400 text-white' }
-  if (days <= 2) return { label: `${days}d left`, color: 'bg-red-300 text-white' }
-  if (days <= 5) return { label: `${days}d left`, color: 'bg-yellow-300 text-yellow-900' }
-  return { label: `${days}d left`, color: 'bg-green-200 text-green-800' }
+  if (days <= 0) return { label: 'Expired', color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
+  if (days <= 2) return { label: `${days}d left`, color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
+  if (days <= 5) return { label: `${days}d left`, color: 'bg-[var(--color-expiring)] text-[var(--color-expiring-text)]' }
+  return { label: `${days}d left`, color: 'bg-[var(--color-fresh)] text-[var(--color-fresh-text)]' }
 }
 
 function groupByCategory(items: PantryItem[]) {
@@ -179,7 +194,7 @@ function PantryPageInner() {
             className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
               locationFilter === loc.value
                 ? 'bg-[var(--color-primary)] text-white'
-                : 'bg-white text-[var(--color-text)] border border-[var(--color-border)]'
+                : 'bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border)]'
             }`}
           >
             {loc.label}
@@ -228,7 +243,8 @@ function PantryPageInner() {
                         key={item.id}
                         type="button"
                         onClick={() => handleOpenEdit(item)}
-                        className="bg-white rounded-2xl p-3 border border-[var(--color-border)] text-left hover:border-[var(--color-primary)] transition-colors"
+                        className="rounded-2xl p-3 border border-[var(--color-border)] text-left hover:border-[var(--color-primary)] transition-colors"
+                        style={{ background: CATEGORY_BG[item.category?.toLowerCase() ?? ''] ?? 'var(--color-surface)' }}
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: i * 0.04, duration: 0.25 }}
