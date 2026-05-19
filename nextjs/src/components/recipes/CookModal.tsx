@@ -17,15 +17,15 @@ type ModalState = 'loading' | 'review' | 'confirming' | 'success' | 'error'
 function statusColor(status: IngredientMatch['status']): string {
   switch (status) {
     case 'ready':
-      return '#b5ead7' // pastel-mint
+      return 'var(--color-fresh)'
     case 'shortfall':
-      return '#ffdab3' // pastel-peach
+      return 'var(--color-expiring)'
     case 'unit_conflict':
-      return '#ffdab3' // pastel-peach
+      return 'var(--color-expiring)'
     case 'missing':
-      return '#e5e7eb' // grey
+      return 'var(--color-border)'
     default:
-      return '#e5e7eb'
+      return 'var(--color-border)'
   }
 }
 
@@ -138,7 +138,7 @@ export default function CookModal({
           className="w-full max-w-md mx-2 mb-4 sm:mb-0 rounded-2xl overflow-hidden flex flex-col"
           style={{
             background: 'var(--color-surface)',
-            boxShadow: '0 8px 32px rgba(255,181,197,0.25)',
+            boxShadow: '0 8px 32px color-mix(in srgb, var(--color-primary) 25%, transparent)',
             maxHeight: '85vh',
           }}
           initial={{ y: 60, opacity: 0 }}
@@ -321,7 +321,7 @@ export default function CookModal({
                 onClick={handleConfirm}
                 disabled={state === 'confirming'}
                 className="flex-1 py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform disabled:opacity-50"
-                style={{ background: '#ffb5c5', fontFamily: 'Nunito, sans-serif' }}
+                style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
               >
                 {state === 'confirming' ? 'Saving...' : 'Confirm'}
               </button>
