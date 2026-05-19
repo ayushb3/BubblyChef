@@ -23,6 +23,21 @@ interface PantryItem {
   expiry_date: string | null
 }
 
+const CATEGORY_BG: Record<string, string> = {
+  produce: 'var(--color-fresh)',
+  dairy: 'var(--color-expiring)',
+  frozen: 'var(--color-border)',
+  meat: 'var(--color-expired)',
+  seafood: 'var(--color-expired)',
+  beverages: 'var(--color-accent)',
+  condiments: 'var(--color-surface)',
+  pantry: 'var(--color-surface)',
+  dry_goods: 'var(--color-surface)',
+  canned: 'var(--color-surface)',
+  snacks: 'var(--color-accent)',
+  other: 'var(--color-surface)',
+}
+
 const CATEGORY_EMOJI: Record<string, string> = {
   produce: '🥬',
   dairy: '🧈',
@@ -228,7 +243,8 @@ function PantryPageInner() {
                         key={item.id}
                         type="button"
                         onClick={() => handleOpenEdit(item)}
-                        className="bg-[var(--color-surface)] rounded-2xl p-3 border border-[var(--color-border)] text-left hover:border-[var(--color-primary)] transition-colors"
+                        className="rounded-2xl p-3 border border-[var(--color-border)] text-left hover:border-[var(--color-primary)] transition-colors"
+                        style={{ background: CATEGORY_BG[item.category?.toLowerCase() ?? ''] ?? 'var(--color-surface)' }}
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: i * 0.04, duration: 0.25 }}
