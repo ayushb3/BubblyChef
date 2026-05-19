@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
 import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
@@ -264,7 +264,15 @@ function MessageRenderer({
 }: MessageRendererProps) {
   // User messages — simple bubble
   if (message.role === 'user') {
-    return <MessageBubble message={message} />
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      >
+        <MessageBubble message={message} />
+      </motion.div>
+    )
   }
 
   const mascotState = isLastAssistant && isStreaming ? 'thinking' : 'happy'
@@ -280,20 +288,26 @@ function MessageRenderer({
       ? rawProposal.recipe
       : rawProposal as ChatRecipeData
     return (
-      <div className="flex items-end gap-2">
-        <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
-        <div className="flex flex-col gap-2 items-start">
-          {message.content && (
-            <MessageBubble message={message} />
-          )}
-          <ChatRecipeCard
-            recipe={recipe}
-            onSave={() => onSave(recipe)}
-            onTryAnother={onTryAnother}
-            saveState={saveState}
-          />
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      >
+        <div className="flex items-end gap-2">
+          <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+          <div className="flex flex-col gap-2 items-start">
+            {message.content && (
+              <MessageBubble message={message} />
+            )}
+            <ChatRecipeCard
+              recipe={recipe}
+              onSave={() => onSave(recipe)}
+              onTryAnother={onTryAnother}
+              saveState={saveState}
+            />
+          </div>
         </div>
-      </div>
+      </motion.div>
     )
   }
 
@@ -301,29 +315,41 @@ function MessageRenderer({
   if (intent === 'pantry_update' && message.response?.proposal) {
     const proposal = message.response.proposal as PantryProposalData
     return (
-      <div className="flex items-end gap-2">
-        <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
-        <div className="flex flex-col gap-2 items-start">
-          {message.content && (
-            <MessageBubble message={message} />
-          )}
-          <PantryProposalCard
-            proposal={proposal}
-            onApprove={onApprove}
-            onReject={onReject}
-            state={proposalState ?? 'pending'}
-          />
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      >
+        <div className="flex items-end gap-2">
+          <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+          <div className="flex flex-col gap-2 items-start">
+            {message.content && (
+              <MessageBubble message={message} />
+            )}
+            <PantryProposalCard
+              proposal={proposal}
+              onApprove={onApprove}
+              onReject={onReject}
+              state={proposalState ?? 'pending'}
+            />
+          </div>
         </div>
-      </div>
+      </motion.div>
     )
   }
 
   // Default: text message with markdown (skip empty streaming messages — typing indicator handles those)
   if (!message.content && isLastAssistant) return null
   return (
-    <div className="flex items-end gap-2">
-      <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
-      <MessageBubble message={message} />
-    </div>
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+    >
+      <div className="flex items-end gap-2">
+        <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+        <MessageBubble message={message} />
+      </div>
+    </motion.div>
   )
 }
