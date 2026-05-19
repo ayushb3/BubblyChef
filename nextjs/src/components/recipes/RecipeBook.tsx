@@ -222,7 +222,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         className="relative rounded-2xl overflow-hidden border border-[var(--color-border)]"
         style={{
           background: 'var(--color-surface)',
-          boxShadow: '0 4px 24px rgba(255,183,197,0.15)',
+          boxShadow: '0 4px 24px color-mix(in srgb, var(--color-primary) 15%, transparent)',
           minHeight: '520px',
         }}
       >
@@ -425,9 +425,9 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
               <div
                 className="mx-4 mt-2 px-3 py-2 rounded-xl text-sm flex items-center justify-between"
                 style={{
-                  background: 'rgba(255,154,162,0.15)',
-                  border: '1px solid rgba(255,154,162,0.4)',
-                  color: '#4a4a4a',
+                  background: 'var(--color-bg)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-text)',
                   fontFamily: 'Nunito, sans-serif',
                 }}
                 role="alert"
@@ -436,7 +436,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 <button
                   onClick={() => setErrorMessage(null)}
                   className="ml-2 hover:opacity-70 transition-opacity"
-                  style={{ color: '#ff9aa2' }}
+                  style={{ color: 'var(--color-primary-dark)' }}
                   aria-label="Dismiss error"
                 >
                   ✕
