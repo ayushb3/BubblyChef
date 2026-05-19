@@ -359,6 +359,18 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   {selectedRecipe.description}
                 </p>
               )}
+              {selectedRecipe.tags && selectedRecipe.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {selectedRecipe.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--color-bg)] text-[var(--color-primary-dark)] border border-[var(--color-border)]"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {selectedRecipe.cuisine && <MetaChip label={selectedRecipe.cuisine} />}
                 {totalTime && <MetaChip label={totalTime} />}
@@ -373,7 +385,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 <button
                   onClick={handleFavorite}
                   disabled={mutating}
-                  className="text-lg leading-none px-1 hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                  className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                   aria-label={selectedRecipe.is_favorite ? 'Unfavorite' : 'Favorite'}
                   title={selectedRecipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
                 >
@@ -382,7 +394,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 <button
                   onClick={() => setEditOpen(true)}
                   disabled={mutating}
-                  className="text-lg leading-none px-1 hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                  className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                   aria-label="Edit recipe"
                   title="Edit recipe"
                 >
@@ -391,7 +403,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 <button
                   onClick={() => setDeleteOpen(true)}
                   disabled={mutating}
-                  className="text-lg leading-none px-1 hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                  className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                   aria-label="Delete recipe"
                   title="Delete recipe"
                 >
