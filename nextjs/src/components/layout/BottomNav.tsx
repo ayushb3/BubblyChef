@@ -49,9 +49,18 @@ export default function BottomNav() {
             <Link
               key={tab.href}
               href={tab.href}
-              className="flex-1 flex flex-col items-center py-2 pb-4 gap-0.5"
+              className="flex-1 relative flex flex-col items-center py-2 pb-4 gap-0.5"
             >
+              {isActive && (
+                <motion.div
+                  layoutId="nav-pill"
+                  className="absolute inset-x-1 inset-y-1 rounded-2xl"
+                  style={{ background: 'var(--color-primary)', opacity: 0.15 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                />
+              )}
               <motion.div
+                className="relative z-10"
                 animate={isActive ? { scale: [1, 1.2, 1] } : { scale: 1 }}
                 transition={isActive ? { type: 'tween', duration: 0.3, ease: 'easeInOut' } : {}}
               >
@@ -61,16 +70,8 @@ export default function BottomNav() {
                   className={isActive ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}
                 />
               </motion.div>
-              {isActive && (
-                <motion.div
-                  layoutId="nav-indicator"
-                  className="w-4 h-1 rounded-full bg-[var(--color-primary)]"
-                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                />
-              )}
-              {!isActive && <div className="w-4 h-1" />}
               <span
-                className={`text-xs font-medium ${isActive ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}`}
+                className={`relative z-10 text-xs font-medium ${isActive ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}`}
               >
                 {tab.label}
               </span>
