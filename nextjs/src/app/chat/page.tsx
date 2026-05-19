@@ -158,6 +158,7 @@ export default function ChatPage() {
                   msg.role === 'assistant' &&
                   index === messages.length - 1
                 }
+                isStreaming={isStreaming}
                 proposalState={proposalStates[msg.id]}
                 saveState={saveStates[msg.id] ?? 'idle'}
                 onApprove={() => approveProposal(msg.id)}
@@ -241,6 +242,7 @@ export default function ChatPage() {
 interface MessageRendererProps {
   message: ChatMessage
   isLastAssistant: boolean
+  isStreaming: boolean
   proposalState?: 'pending' | 'approved' | 'rejected'
   saveState: 'idle' | 'saving' | 'saved' | 'error'
   onApprove: () => void
@@ -252,6 +254,7 @@ interface MessageRendererProps {
 function MessageRenderer({
   message,
   isLastAssistant,
+  isStreaming,
   proposalState,
   saveState,
   onApprove,
@@ -264,6 +267,7 @@ function MessageRenderer({
     return <MessageBubble message={message} />
   }
 
+  const mascotState = isLastAssistant && isStreaming ? 'thinking' : 'happy'
   const intent = message.intent ?? message.response?.intent
 
   // Recipe card intent
@@ -276,16 +280,19 @@ function MessageRenderer({
       ? rawProposal.recipe
       : rawProposal as ChatRecipeData
     return (
-      <div className="flex flex-col gap-2 items-start">
-        {message.content && (
-          <MessageBubble message={message} />
-        )}
-        <ChatRecipeCard
-          recipe={recipe}
-          onSave={() => onSave(recipe)}
-          onTryAnother={onTryAnother}
-          saveState={saveState}
-        />
+      <div className="flex items-end gap-2">
+        <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+        <div className="flex flex-col gap-2 items-start">
+          {message.content && (
+            <MessageBubble message={message} />
+          )}
+          <ChatRecipeCard
+            recipe={recipe}
+            onSave={() => onSave(recipe)}
+            onTryAnother={onTryAnother}
+            saveState={saveState}
+          />
+        </div>
       </div>
     )
   }
@@ -294,21 +301,29 @@ function MessageRenderer({
   if (intent === 'pantry_update' && message.response?.proposal) {
     const proposal = message.response.proposal as PantryProposalData
     return (
-      <div className="flex flex-col gap-2 items-start">
-        {message.content && (
-          <MessageBubble message={message} />
-        )}
-        <PantryProposalCard
-          proposal={proposal}
-          onApprove={onApprove}
-          onReject={onReject}
-          state={proposalState ?? 'pending'}
-        />
+      <div className="flex items-end gap-2">
+        <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+        <div className="flex flex-col gap-2 items-start">
+          {message.content && (
+            <MessageBubble message={message} />
+          )}
+          <PantryProposalCard
+            proposal={proposal}
+            onApprove={onApprove}
+            onReject={onReject}
+            state={proposalState ?? 'pending'}
+          />
+        </div>
       </div>
     )
   }
 
   // Default: text message with markdown (skip empty streaming messages — typing indicator handles those)
   if (!message.content && isLastAssistant) return null
-  return <MessageBubble message={message} />
+  return (
+    <div className="flex items-end gap-2">
+      <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+      <MessageBubble message={message} />
+    </div>
+  )
 }
