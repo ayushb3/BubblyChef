@@ -43,9 +43,23 @@ const FIRST_LINE_OFFSET = 4 // px — pad-top so first text line sits on first r
 
 export default function RecipeDetail({ recipe }: RecipeDetailProps) {
   return (
-    <div
-      className="px-5 py-4 text-sm text-[var(--color-text)]"
-      style={{
+    <>
+      {recipe.thumbnail_url && (
+        <div className="w-full h-36 rounded-2xl overflow-hidden mb-3 mx-5" style={{ width: 'calc(100% - 2.5rem)' }}>
+          <img
+            src={recipe.thumbnail_url}
+            alt={recipe.title}
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              const parent = e.currentTarget.parentElement as HTMLDivElement | null
+              if (parent) parent.style.display = 'none'
+            }}
+          />
+        </div>
+      )}
+      <div
+        className="px-5 py-4 text-sm text-[var(--color-text)]"
+        style={{
         fontFamily: 'Nunito, sans-serif',
         backgroundImage:
           'repeating-linear-gradient(transparent, transparent 27px, var(--color-border) 27px, var(--color-border) 28px)',
@@ -150,5 +164,6 @@ export default function RecipeDetail({ recipe }: RecipeDetailProps) {
         </div>
       )}
     </div>
+    </>
   )
 }

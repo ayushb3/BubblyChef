@@ -303,6 +303,14 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                             }}
                           >
                             <span className="line-clamp-2">{r.title}</span>
+                            {r.thumbnail_url && (
+                              <img
+                                src={r.thumbnail_url}
+                                alt={r.title}
+                                className="w-full h-16 object-cover rounded-lg mt-1.5"
+                                onError={(e) => { e.currentTarget.style.display = 'none' }}
+                              />
+                            )}
                           </button>
                         </li>
                       )
