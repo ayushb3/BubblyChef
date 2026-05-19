@@ -19,6 +19,12 @@
     --color-muted: #9B8A93;
     --color-primary-dark: #FF8FAB;
     --color-accent-dark: #5EC9B0;
+    --color-expired: #FFCDD2;
+    --color-expired-text: #7B2D2D;
+    --color-expiring: #FFF3C4;
+    --color-expiring-text: #7B5A00;
+    --color-fresh: #DCFCE7;
+    --color-fresh-text: #166534;
   }
 
   /* Theme palettes — applied via data-theme attribute on <html> */
@@ -101,6 +107,7 @@
 /* Chowder-style textile/fabric panel — subtle woven crosshatch texture */
 .chowder-panel {
   background-color: var(--color-primary);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Crect width='12' height='12' fill='none'/%3E%3Cline x1='0' y1='0' x2='12' y2='0' stroke='%23ffffff' stroke-width='0.8' stroke-opacity='0.15'/%3E%3Cline x1='0' y1='6' x2='12' y2='6' stroke='%23B5D5F5' stroke-width='0.6' stroke-opacity='0.12'/%3E%3Cline x1='0' y1='0' x2='0' y2='12' stroke='%23ffffff' stroke-width='0.8' stroke-opacity='0.15'/%3E%3Cline x1='6' y1='0' x2='6' y2='12' stroke='%23FFB7C5' stroke-width='0.6' stroke-opacity='0.12'/%3E%3Cline x1='0' y1='0' x2='12' y2='12' stroke='%23ffffff' stroke-width='0.4' stroke-opacity='0.08'/%3E%3Cline x1='12' y1='0' x2='0' y2='12' stroke='%23ffffff' stroke-width='0.4' stroke-opacity='0.08'/%3E%3C/svg%3E");
-  background-size: 12px 12px;
+  background-image:
+    repeating-linear-gradient(0deg, transparent, transparent 5px, rgba(255,255,255,0.08) 5px, rgba(255,255,255,0.08) 6px),
+    repeating-linear-gradient(90deg, transparent, transparent 5px, rgba(255,255,255,0.06) 5px, rgba(255,255,255,0.06) 6px);
 }

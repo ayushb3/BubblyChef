@@ -66,10 +66,10 @@ function daysUntilExpiry(date: string | null): number | null {
 
 function expiryBadge(days: number | null) {
   if (days === null) return null
-  if (days <= 0) return { label: 'Expired', color: 'bg-red-400 text-white' }
-  if (days <= 2) return { label: `${days}d left`, color: 'bg-red-300 text-white' }
-  if (days <= 5) return { label: `${days}d left`, color: 'bg-yellow-300 text-yellow-900' }
-  return { label: `${days}d left`, color: 'bg-green-200 text-green-800' }
+  if (days <= 0) return { label: 'Expired', color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
+  if (days <= 2) return { label: `${days}d left`, color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
+  if (days <= 5) return { label: `${days}d left`, color: 'bg-[var(--color-expiring)] text-[var(--color-expiring-text)]' }
+  return { label: `${days}d left`, color: 'bg-[var(--color-fresh)] text-[var(--color-fresh-text)]' }
 }
 
 function groupByCategory(items: PantryItem[]) {
@@ -194,7 +194,7 @@ function PantryPageInner() {
             className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
               locationFilter === loc.value
                 ? 'bg-[var(--color-primary)] text-white'
-                : 'bg-white text-[var(--color-text)] border border-[var(--color-border)]'
+                : 'bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border)]'
             }`}
           >
             {loc.label}
