@@ -295,7 +295,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         className="relative rounded-2xl overflow-hidden border border-[var(--color-border)]"
         style={{
           background: 'var(--color-surface)',
-          boxShadow: '0 4px 24px color-mix(in srgb, var(--color-primary) 15%, transparent)',
+          boxShadow: 'var(--shadow-soft)',
           minHeight: '520px',
         }}
       >
@@ -307,7 +307,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
               <motion.div
                 key="backdrop"
                 className="absolute inset-0 z-10"
-                style={{ background: 'rgba(0,0,0,0.18)' }}
+                style={{ background: 'var(--color-backdrop)' }}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
