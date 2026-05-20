@@ -405,94 +405,195 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         {/* ─── Main recipe panel ─── */}
         {selectedRecipe ? (
           <div className="flex flex-col h-full">
-            {/* Recipe header */}
-            <div
-              className="px-5 pt-4 pb-3 flex-shrink-0"
-              style={{ paddingLeft: '40px' }} // clear the hamburger tab
-            >
-              <h2
-                className="text-xl font-extrabold text-[var(--color-text)] leading-tight"
-                style={{ fontFamily: 'Nunito, sans-serif' }}
-              >
-                {selectedRecipe.title}
-              </h2>
-              {selectedRecipe.description && (
-                <p className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-2">
-                  {selectedRecipe.description}
-                </p>
-              )}
-              {selectedRecipe.tags && selectedRecipe.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {selectedRecipe.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--color-bg)] text-[var(--color-primary-dark)] border border-[var(--color-border)]"
+            {/* Recipe header — hero variant when thumbnail exists */}
+            {selectedRecipe.thumbnail_url ? (
+              <div className="flex-shrink-0">
+                {/* Hero image with title overlay */}
+                <div className="relative w-full overflow-hidden" style={{ height: '180px' }}>
+                  <img
+                    src={selectedRecipe.thumbnail_url}
+                    alt={selectedRecipe.title}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = 'none'
+                    }}
+                  />
+                  {/* Gradient overlay — title sits on top */}
+                  <div
+                    className="absolute inset-0 flex flex-col justify-end px-4 pb-3"
+                    style={{
+                      background: 'linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.18) 55%, transparent 100%)',
+                      paddingLeft: '44px', // clear hamburger tab
+                    }}
+                  >
+                    <h2
+                      className="text-lg font-extrabold text-white leading-tight line-clamp-2"
+                      style={{ fontFamily: 'Nunito, sans-serif', textShadow: '0 1px 4px rgba(0,0,0,0.4)' }}
                     >
-                      {tag}
-                    </span>
-                  ))}
+                      {selectedRecipe.title}
+                    </h2>
+                    {selectedRecipe.description && (
+                      <p className="text-xs text-white/80 mt-0.5 line-clamp-1">
+                        {selectedRecipe.description}
+                      </p>
+                    )}
+                  </div>
                 </div>
-              )}
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {selectedRecipe.cuisine && <MetaChip label={selectedRecipe.cuisine} />}
-                {totalTime && <MetaChip label={totalTime} />}
-                {selectedRecipe.difficulty && <MetaChip label={selectedRecipe.difficulty} />}
-                {selectedRecipe.servings && (
-                  <MetaChip label={`Serves ${selectedRecipe.servings}`} />
+
+                {/* Tags + chips + actions — below the hero */}
+                <div className="px-4 pt-2 pb-3" style={{ paddingLeft: '44px' }}>
+                  {selectedRecipe.tags && selectedRecipe.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {selectedRecipe.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--color-bg)] text-[var(--color-primary-dark)] border border-[var(--color-border)]"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {selectedRecipe.cuisine && <MetaChip label={selectedRecipe.cuisine} />}
+                    {totalTime && <MetaChip label={totalTime} />}
+                    {selectedRecipe.difficulty && <MetaChip label={selectedRecipe.difficulty} />}
+                    {selectedRecipe.servings && <MetaChip label={`Serves ${selectedRecipe.servings}`} />}
+                  </div>
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleFavorite}
+                      disabled={mutating}
+                      className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                      aria-label={selectedRecipe.is_favorite ? 'Unfavorite' : 'Favorite'}
+                      title={selectedRecipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+                    >
+                      {selectedRecipe.is_favorite ? '❤️' : '🤍'}
+                    </button>
+                    <button
+                      onClick={() => setEditOpen(true)}
+                      disabled={mutating}
+                      className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                      aria-label="Edit recipe"
+                      title="Edit recipe"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      onClick={() => setDeleteOpen(true)}
+                      disabled={mutating}
+                      className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                      aria-label="Delete recipe"
+                      title="Delete recipe"
+                    >
+                      🗑️
+                    </button>
+                    <button
+                      onClick={() => setCookOpen(true)}
+                      className="ml-auto px-4 py-1.5 rounded-full text-xs font-bold text-white active:scale-95 transition-transform"
+                      style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+                      aria-label="Cook this recipe"
+                      title="Cook it — deduct ingredients from pantry"
+                    >
+                      Cook it
+                    </button>
+                  </div>
+                  {deleteOpen && (
+                    <RecipeDeleteConfirm
+                      recipeTitle={selectedRecipe.title}
+                      onConfirm={handleDeleteConfirm}
+                      onCancel={() => setDeleteOpen(false)}
+                      deleting={mutating}
+                    />
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* Plain header — no thumbnail */
+              <div
+                className="px-5 pt-4 pb-3 flex-shrink-0"
+                style={{ paddingLeft: '40px' }}
+              >
+                <h2
+                  className="text-xl font-extrabold text-[var(--color-text)] leading-tight"
+                  style={{ fontFamily: 'Nunito, sans-serif' }}
+                >
+                  {selectedRecipe.title}
+                </h2>
+                {selectedRecipe.description && (
+                  <p className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-2">
+                    {selectedRecipe.description}
+                  </p>
+                )}
+                {selectedRecipe.tags && selectedRecipe.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {selectedRecipe.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--color-bg)] text-[var(--color-primary-dark)] border border-[var(--color-border)]"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {selectedRecipe.cuisine && <MetaChip label={selectedRecipe.cuisine} />}
+                  {totalTime && <MetaChip label={totalTime} />}
+                  {selectedRecipe.difficulty && <MetaChip label={selectedRecipe.difficulty} />}
+                  {selectedRecipe.servings && (
+                    <MetaChip label={`Serves ${selectedRecipe.servings}`} />
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    onClick={handleFavorite}
+                    disabled={mutating}
+                    className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                    aria-label={selectedRecipe.is_favorite ? 'Unfavorite' : 'Favorite'}
+                    title={selectedRecipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+                  >
+                    {selectedRecipe.is_favorite ? '❤️' : '🤍'}
+                  </button>
+                  <button
+                    onClick={() => setEditOpen(true)}
+                    disabled={mutating}
+                    className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                    aria-label="Edit recipe"
+                    title="Edit recipe"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={() => setDeleteOpen(true)}
+                    disabled={mutating}
+                    className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                    aria-label="Delete recipe"
+                    title="Delete recipe"
+                  >
+                    🗑️
+                  </button>
+                  <button
+                    onClick={() => setCookOpen(true)}
+                    className="ml-auto px-4 py-1.5 rounded-full text-xs font-bold text-white active:scale-95 transition-transform"
+                    style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+                    aria-label="Cook this recipe"
+                    title="Cook it — deduct ingredients from pantry"
+                  >
+                    Cook it
+                  </button>
+                </div>
+                {deleteOpen && (
+                  <RecipeDeleteConfirm
+                    recipeTitle={selectedRecipe.title}
+                    onConfirm={handleDeleteConfirm}
+                    onCancel={() => setDeleteOpen(false)}
+                    deleting={mutating}
+                  />
                 )}
               </div>
-
-              {/* Action buttons */}
-              <div className="flex items-center gap-2 mt-2">
-                <button
-                  onClick={handleFavorite}
-                  disabled={mutating}
-                  className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
-                  aria-label={selectedRecipe.is_favorite ? 'Unfavorite' : 'Favorite'}
-                  title={selectedRecipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
-                >
-                  {selectedRecipe.is_favorite ? '❤️' : '🤍'}
-                </button>
-                <button
-                  onClick={() => setEditOpen(true)}
-                  disabled={mutating}
-                  className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
-                  aria-label="Edit recipe"
-                  title="Edit recipe"
-                >
-                  ✏️
-                </button>
-                <button
-                  onClick={() => setDeleteOpen(true)}
-                  disabled={mutating}
-                  className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
-                  aria-label="Delete recipe"
-                  title="Delete recipe"
-                >
-                  🗑️
-                </button>
-                {/* Cook it button */}
-                <button
-                  onClick={() => setCookOpen(true)}
-                  className="ml-auto px-4 py-1.5 rounded-full text-xs font-bold text-white active:scale-95 transition-transform"
-                  style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
-                  aria-label="Cook this recipe"
-                  title="Cook it — deduct ingredients from pantry"
-                >
-                  Cook it
-                </button>
-              </div>
-
-              {/* Delete confirm strip */}
-              {deleteOpen && (
-                <RecipeDeleteConfirm
-                  recipeTitle={selectedRecipe.title}
-                  onConfirm={handleDeleteConfirm}
-                  onCancel={() => setDeleteOpen(false)}
-                  deleting={mutating}
-                />
-              )}
-            </div>
+            )}
 
             {/* Error banner */}
             {errorMessage && (
