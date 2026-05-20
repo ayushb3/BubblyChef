@@ -84,6 +84,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   // Local optimistic overrides for favorite state — avoids full re-fetch on toggle
   const [favoriteOverrides, setFavoriteOverrides] = useState<Record<string, boolean>>({})
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [thumbError, setThumbError] = useState(false)
 
   useEffect(() => {
     if (!errorMessage) return
@@ -116,6 +117,9 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   }, [search, filteredRecipes])
 
   const selectedRecipe = recipesWithOverrides.find((r) => r.id === selectedId) ?? recipesWithOverrides[0] ?? null
+
+  // Reset hero image error state whenever the selected recipe changes
+  useEffect(() => { setThumbError(false) }, [selectedId])
 
   const currentIndex = filteredRecipes.findIndex((r) => r.id === selectedId)
 
@@ -233,8 +237,17 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     })
     setMutating(false)
     setImportDraft(null)
+    if (res.status === 409) {
+      // Already saved — navigate to the existing recipe instead
+      const data = await res.json()
+      setImportOpen(false)
+      if (data.existing_id) setSelectedId(data.existing_id)
+      setErrorMessage(`"${data.existing_title ?? 'This recipe'}" is already in your book.`)
+      return
+    }
     if (res.ok) {
       const saved = await res.json()
+      setImportOpen(false)
       onMutate?.()
       setSelectedId(saved.id ?? null)
     }
@@ -405,8 +418,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         {/* ─── Main recipe panel ─── */}
         {selectedRecipe ? (
           <div className="flex flex-col h-full">
-            {/* Recipe header — hero variant when thumbnail exists */}
-            {selectedRecipe.thumbnail_url ? (
+            {/* Recipe header — hero variant when thumbnail exists and loads successfully */}
+            {selectedRecipe.thumbnail_url && !thumbError ? (
               <div className="flex-shrink-0">
                 {/* Hero image with title overlay */}
                 <div className="relative w-full overflow-hidden" style={{ height: '180px' }}>
@@ -414,9 +427,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                     src={selectedRecipe.thumbnail_url}
                     alt={selectedRecipe.title}
                     className="w-full h-full object-cover"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).style.display = 'none'
-                    }}
+                    onError={() => setThumbError(true)}
                   />
                   {/* Gradient overlay — title sits on top */}
                   <div
