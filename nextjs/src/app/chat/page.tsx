@@ -7,6 +7,7 @@ import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import RotatingPlaceholder from '@/components/chat/RotatingPlaceholder'
 import MessageBubble from '@/components/chat/MessageBubble'
+import PostMessageChips from '@/components/chat/PostMessageChips'
 import TypingIndicator from '@/components/chat/TypingIndicator'
 import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
@@ -58,6 +59,10 @@ export default function ChatPage() {
     const text = input.trim()
     if (!text) return
     setInput('')
+    sendMessage(text)
+  }
+
+  const handleSendText = (text: string) => {
     sendMessage(text)
   }
 
@@ -154,12 +159,18 @@ export default function ChatPage() {
                   msg.role === 'assistant' &&
                   index === messages.length - 1
                 }
+                isLastMessage={
+                  !isStreaming &&
+                  msg.role === 'assistant' &&
+                  index === messages.length - 1
+                }
                 proposalState={proposalStates[msg.id]}
                 saveState={saveStates[msg.id] ?? 'idle'}
                 onApprove={() => approveProposal(msg.id)}
                 onReject={() => rejectProposal(msg.id)}
                 onSave={(recipe) => handleSaveRecipe(msg.id, recipe)}
                 onTryAnother={handleTryAnother}
+                onTellMore={() => handleSendText('Tell me more about this')}
               />
             ))}
 
@@ -237,23 +248,27 @@ export default function ChatPage() {
 interface MessageRendererProps {
   message: ChatMessage
   isLastAssistant: boolean
+  isLastMessage: boolean
   proposalState?: 'pending' | 'approved' | 'rejected'
   saveState: 'idle' | 'saving' | 'saved' | 'error'
   onApprove: () => void
   onReject: () => void
   onSave: (recipe: ChatRecipeData) => void
   onTryAnother: () => void
+  onTellMore: () => void
 }
 
 function MessageRenderer({
   message,
   isLastAssistant,
+  isLastMessage,
   proposalState,
   saveState,
   onApprove,
   onReject,
   onSave,
   onTryAnother,
+  onTellMore,
 }: MessageRendererProps) {
   // User messages — simple bubble
   if (message.role === 'user') {
@@ -306,5 +321,15 @@ function MessageRenderer({
 
   // Default: text message with markdown (skip empty streaming messages — typing indicator handles those)
   if (!message.content && isLastAssistant) return null
-  return <MessageBubble message={message} />
+  return (
+    <>
+      <MessageBubble message={message} />
+      {isLastMessage && (
+        <PostMessageChips
+          onTryAnother={onTryAnother}
+          onTellMore={onTellMore}
+        />
+      )}
+    </>
+  )
 }
