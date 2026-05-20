@@ -11,6 +11,7 @@ import TypingIndicator from '@/components/chat/TypingIndicator'
 import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
 import ThemePicker from '@/components/ui/ThemePicker'
+import Chip from '@/components/ui/Chip'
 import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
 import type { ChatMessage, ChatRecipeData, PantryProposalData } from '@/types/chat'
@@ -188,14 +189,13 @@ export default function ChatPage() {
             </p>
             <div className="flex flex-wrap gap-2 justify-center">
               {SUGGESTIONS.map((s) => (
-                <button
+                <Chip
                   key={s}
-                  type="button"
+                  tone="accent"
                   onClick={() => handleSuggestionClick(s)}
-                  className="bg-[var(--color-surface)] text-[var(--color-text)] text-sm font-medium px-4 py-2 rounded-full border border-[var(--color-border)] hover:bg-[var(--color-border)] transition-colors"
                 >
                   {s}
-                </button>
+                </Chip>
               ))}
             </div>
           </div>
