@@ -10,6 +10,7 @@ import {
   BookOpen,
 } from '@phosphor-icons/react/dist/ssr'
 import type { ComponentType } from 'react'
+import { springs } from '@/lib/motion'
 
 interface IconProps {
   size?: number
@@ -56,7 +57,7 @@ export default function BottomNav() {
                   layoutId="nav-pill"
                   className="absolute inset-x-1 inset-y-1 rounded-2xl"
                   style={{ background: 'var(--color-primary)', opacity: 0.15 }}
-                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                  transition={springs.snappy}
                 />
               )}
               <motion.div
