@@ -1,6 +1,7 @@
 'use client'
 
 import BubblesMascot from './BubblesMascot'
+import Chip from './Chip'
 
 interface EmptyStateProps {
   mascotState: 'happy' | 'thinking' | 'surprised'
@@ -36,15 +37,9 @@ export default function EmptyState({
           </p>
         )}
         {cta && (
-          <button
-            type="button"
-            onClick={cta.onClick}
-            className="mt-1 px-5 py-2.5 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
-            style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
-          >
-            {cta.emoji && <span className="mr-1">{cta.emoji}</span>}
+          <Chip tone="primary" size="md" emoji={cta.emoji} onClick={cta.onClick}>
             {cta.label}
-          </button>
+          </Chip>
         )}
       </div>
     </div>
