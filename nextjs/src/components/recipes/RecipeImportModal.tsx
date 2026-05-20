@@ -159,7 +159,7 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
                   }}
                 >
                   {label}
-                  {noImage && <span style={{ color: 'var(--color-expiring)' }}>⚠</span>}
+                  {noImage && <span style={{ color: '#f59e0b' }}>⚠</span>}
                   {' '}↗
                 </a>
               ))}
