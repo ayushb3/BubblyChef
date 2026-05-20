@@ -447,7 +447,6 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                     className="absolute inset-0 flex flex-col justify-end px-4 pb-3"
                     style={{
                       background: 'linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.18) 55%, transparent 100%)',
-                      paddingLeft: '44px', // clear hamburger tab
                     }}
                   >
                     <h2
@@ -465,7 +464,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 </div>
 
                 {/* Tags + chips + actions — below the hero */}
-                <div className="px-4 pt-2 pb-3" style={{ paddingLeft: '44px' }}>
+                <div className="px-4 pt-2 pb-3">
                   {selectedRecipe.tags && selectedRecipe.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mb-2">
                       {selectedRecipe.tags.map((tag) => (
@@ -578,8 +577,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
             ) : (
               /* Plain header — no thumbnail */
               <div
-                className="px-5 pt-4 pb-3 flex-shrink-0"
-                style={{ paddingLeft: '40px' }}
+                className="px-4 pt-4 pb-3 flex-shrink-0"
               >
                 <h2
                   className="text-xl font-extrabold text-[var(--color-text)] leading-tight"
