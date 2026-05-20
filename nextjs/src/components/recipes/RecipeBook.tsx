@@ -550,6 +550,18 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                         )}
                       </AnimatePresence>
                     </div>
+
+                    {/* Cook it button */}
+                    <button
+                      onClick={() => setCookOpen(true)}
+                      disabled={mutating}
+                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                      style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
+                      aria-label="Cook this recipe"
+                      title="Cook it"
+                    >
+                      🍳
+                    </button>
                   </div>
                   {deleteOpen && (
                     <RecipeDeleteConfirm
@@ -663,6 +675,18 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                       )}
                     </AnimatePresence>
                   </div>
+
+                  {/* Cook it button */}
+                  <button
+                    onClick={() => setCookOpen(true)}
+                    disabled={mutating}
+                    className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                    style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
+                    aria-label="Cook this recipe"
+                    title="Cook it"
+                  >
+                    🍳
+                  </button>
                 </div>
                 {deleteOpen && (
                   <RecipeDeleteConfirm
@@ -752,21 +776,6 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   whileDrag={{ cursor: 'grabbing' }}
                 >
                   <RecipeDetail recipe={selectedRecipe} />
-
-                  {/* Sticky Cook CTA — pinned at bottom of scroll area */}
-                  <div
-                    className="sticky bottom-0 px-4 py-3"
-                    style={{ background: 'var(--color-surface)', borderTop: '1px solid var(--color-border)' }}
-                  >
-                    <button
-                      onClick={() => setCookOpen(true)}
-                      className="w-full py-3 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
-                      style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
-                      aria-label="Cook this recipe"
-                    >
-                      🍳 Cook it
-                    </button>
-                  </div>
                 </motion.div>
               </AnimatePresence>
             </div>

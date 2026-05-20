@@ -61,6 +61,10 @@ def match_ingredients(
     unit_conflicts: list[dict[str, str]] = []
 
     for ingredient in recipe_ingredients:
+        # Ingredients may be stored as plain strings (e.g. "1 cup flour") or dicts
+        if isinstance(ingredient, str):
+            ingredient = {"name": ingredient}
+
         raw_name: str = ingredient.get("name", "")
         if not raw_name:
             continue
