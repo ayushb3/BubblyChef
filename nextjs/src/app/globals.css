@@ -25,6 +25,25 @@
     --color-expiring-text: #7B5A00;
     --color-fresh: #DCFCE7;
     --color-fresh-text: #166534;
+    /*
+     * Semantic signal tokens (fresh / expiring / expired) are intentionally
+     * theme-invariant — red = bad and green = good across all five themes,
+     * so these are NOT redefined per [data-theme="*"]. Tokens above the
+     * separator (--color-bg ... --color-accent-dark) flex per theme.
+     */
+
+    /* Shared visual primitives — derive from theme tokens via color-mix so
+     * shadows/backdrops automatically adopt the active theme palette. */
+    --shadow-soft: 0 4px 24px color-mix(in srgb, var(--color-primary) 15%, transparent);
+    --shadow-pop: 0 8px 32px color-mix(in srgb, var(--color-primary) 25%, transparent);
+    --color-backdrop: color-mix(in srgb, var(--color-text) 18%, transparent);
+    --color-hero-overlay: linear-gradient(
+      to top,
+      color-mix(in srgb, black 72%, transparent) 0%,
+      color-mix(in srgb, black 18%, transparent) 55%,
+      transparent 100%
+    );
+    --text-shadow-on-image: 0 1px 4px color-mix(in srgb, black 40%, transparent);
   }
 
   /* Theme palettes — applied via data-theme attribute on <html> */
