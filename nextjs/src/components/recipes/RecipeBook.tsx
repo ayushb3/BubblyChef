@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, type PanInfo } from 'framer-motion'
 import RecipeDetail, { type Recipe } from './RecipePage'
 import RecipeSearchBar from './RecipeSearchBar'
 import BubblesMascot from '@/components/ui/BubblesMascot'
@@ -36,12 +36,45 @@ function MetaChip({ label }: { label: string }) {
   )
 }
 
+// Page-turn animation variants — book-page-curl feel
+const pageVariants = {
+  enter: (dir: number) => ({
+    x: dir > 0 ? '60%' : '-60%',
+    rotateY: dir > 0 ? -15 : 15,
+    opacity: 0,
+    scale: 0.92,
+  }),
+  center: {
+    x: 0,
+    rotateY: 0,
+    opacity: 1,
+    scale: 1,
+  },
+  exit: (dir: number) => ({
+    x: dir > 0 ? '-60%' : '60%',
+    rotateY: dir > 0 ? 12 : -12,
+    opacity: 0,
+    scale: 0.92,
+  }),
+}
+
+const pageTransition = {
+  type: 'spring' as const,
+  stiffness: 260,
+  damping: 28,
+  mass: 0.8,
+}
+
+const SWIPE_THRESHOLD = 50
+const VELOCITY_THRESHOLD = 300
+
 export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const [search, setSearch] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(
     recipes.length > 0 ? recipes[0].id : null,
   )
+  const [direction, setDirection] = useState<1 | -1>(1)
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
@@ -84,11 +117,42 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
 
   const selectedRecipe = recipesWithOverrides.find((r) => r.id === selectedId) ?? recipesWithOverrides[0] ?? null
 
+  const currentIndex = filteredRecipes.findIndex((r) => r.id === selectedId)
+
+  const goNext = useCallback(() => {
+    if (currentIndex < filteredRecipes.length - 1) {
+      setDirection(1)
+      setSelectedId(filteredRecipes[currentIndex + 1].id)
+      setSidebarOpen(false)
+    }
+  }, [currentIndex, filteredRecipes])
+
+  const goPrev = useCallback(() => {
+    if (currentIndex > 0) {
+      setDirection(-1)
+      setSelectedId(filteredRecipes[currentIndex - 1].id)
+      setSidebarOpen(false)
+    }
+  }, [currentIndex, filteredRecipes])
+
+  const handleDragEnd = useCallback(
+    (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      if (info.offset.x < -SWIPE_THRESHOLD || info.velocity.x < -VELOCITY_THRESHOLD) {
+        goNext()
+      } else if (info.offset.x > SWIPE_THRESHOLD || info.velocity.x > VELOCITY_THRESHOLD) {
+        goPrev()
+      }
+    },
+    [goNext, goPrev],
+  )
+
   const handleSearch = useCallback((q: string) => {
     setSearch(q)
   }, [])
 
   const handleSelect = (id: string) => {
+    const newIndex = filteredRecipes.findIndex((r) => r.id === id)
+    setDirection(newIndex > currentIndex ? 1 : -1)
     setSelectedId(id)
     setSidebarOpen(false)
   }
@@ -297,9 +361,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                               borderLeft: `3px solid ${isActive ? 'var(--color-primary)' : 'transparent'}`,
                               fontFamily: 'Nunito, sans-serif',
                               fontWeight: isActive ? 700 : 400,
-                              color: isActive
-                                ? 'var(--color-text)'
-                                : 'var(--color-muted)',
+                              color: isActive ? 'var(--color-text)' : 'var(--color-muted)',
                             }}
                           >
                             <span className="line-clamp-2">{r.title}</span>
@@ -459,15 +521,54 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
             {/* Divider */}
             <div className="h-px flex-shrink-0" style={{ background: 'var(--color-border)' }} />
 
-            {/* Scrollable recipe body */}
-            <div className="flex-1 overflow-y-auto">
-              <AnimatePresence mode="wait">
+            {/* Page indicator + nav arrows */}
+            {filteredRecipes.length > 1 && (
+              <div className="flex items-center justify-between px-5 py-1.5 flex-shrink-0" style={{ borderBottom: '1px solid var(--color-border)' }}>
+                <button
+                  onClick={goPrev}
+                  disabled={currentIndex === 0}
+                  className="text-[var(--color-primary-dark)] text-lg px-1 disabled:opacity-30 active:scale-90 transition-transform"
+                  aria-label="Previous recipe"
+                >
+                  ‹
+                </button>
+                <span className="text-xs text-[var(--color-muted)]" style={{ fontFamily: 'Nunito, sans-serif' }}>
+                  {currentIndex + 1} / {filteredRecipes.length}
+                </span>
+                <button
+                  onClick={goNext}
+                  disabled={currentIndex === filteredRecipes.length - 1}
+                  className="text-[var(--color-primary-dark)] text-lg px-1 disabled:opacity-30 active:scale-90 transition-transform"
+                  aria-label="Next recipe"
+                >
+                  ›
+                </button>
+              </div>
+            )}
+
+            {/* Scrollable recipe body — book page-turn animation */}
+            <div className="flex-1 overflow-hidden relative" style={{ perspective: '1200px' }}>
+              <AnimatePresence mode="wait" custom={direction}>
                 <motion.div
                   key={selectedRecipe.id}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.2 }}
+                  custom={direction}
+                  variants={pageVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  transition={pageTransition}
+                  drag="x"
+                  dragConstraints={{ left: 0, right: 0 }}
+                  dragElastic={0.1}
+                  onDragEnd={handleDragEnd}
+                  style={{
+                    height: '100%',
+                    overflowY: 'auto',
+                    transformOrigin: direction > 0 ? 'left center' : 'right center',
+                    cursor: 'grab',
+                    willChange: 'transform',
+                  }}
+                  whileDrag={{ cursor: 'grabbing' }}
                 >
                   <RecipeDetail recipe={selectedRecipe} />
                 </motion.div>
