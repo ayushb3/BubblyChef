@@ -12,6 +12,7 @@ import AddItemModal from '@/components/pantry/AddItemModal'
 import ThemePicker from '@/components/ui/ThemePicker'
 import PantryAddSheet, { type PantryAddTab } from '@/components/pantry/PantryAddSheet'
 import { getFoodEmoji } from '@/lib/food-emoji'
+import Chip from '@/components/ui/Chip'
 
 interface PantryItem {
   id: string
@@ -187,18 +188,14 @@ function PantryPageInner() {
       {/* Location filter chips */}
       <div className="px-6 mb-4 flex gap-2 overflow-x-auto">
         {LOCATION_FILTERS.map((loc) => (
-          <button
+          <Chip
             key={loc.value}
-            type="button"
+            tone={locationFilter === loc.value ? 'primary' : 'muted'}
+            selected={locationFilter === loc.value}
             onClick={() => setLocationFilter(loc.value)}
-            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-              locationFilter === loc.value
-                ? 'bg-[var(--color-primary)] text-white'
-                : 'bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border)]'
-            }`}
           >
             {loc.label}
-          </button>
+          </Chip>
         ))}
       </div>
 

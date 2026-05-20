@@ -10,6 +10,8 @@ import RecipeDeleteConfirm from './RecipeDeleteConfirm'
 import RecipeImportModal from './RecipeImportModal'
 import CookModal from './CookModal'
 import { springs } from '@/lib/motion'
+import Chip from '@/components/ui/Chip'
+import { tagToTone } from '@/lib/tag-tone'
 
 interface RecipeBookProps {
   recipes: Recipe[]
@@ -27,14 +29,6 @@ function scoreRecipe(r: Recipe, q: string): number {
   if (r.meal_type?.toLowerCase().includes(lq)) score += 1
   if ((r.description ?? '').toLowerCase().includes(lq)) score += 0.5
   return score
-}
-
-function MetaChip({ label }: { label: string }) {
-  return (
-    <span className="inline-block border border-[var(--color-border)] px-2 py-0.5 rounded text-xs text-[var(--color-muted)] font-semibold uppercase tracking-wide">
-      {label}
-    </span>
-  )
 }
 
 // Page-turn animation variants — book-page-curl feel
@@ -451,21 +445,17 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 <div className="px-4 pt-2 pb-3" style={{ paddingLeft: '44px' }}>
                   {selectedRecipe.tags && selectedRecipe.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mb-2">
-                      {selectedRecipe.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--color-bg)] text-[var(--color-primary-dark)] border border-[var(--color-border)]"
-                        >
-                          {tag}
-                        </span>
-                      ))}
+                      {selectedRecipe.tags.map((tag) => {
+                        const { tone, emoji } = tagToTone(tag)
+                        return <Chip key={tag} tone={tone} emoji={emoji || undefined} size="sm">{tag}</Chip>
+                      })}
                     </div>
                   )}
                   <div className="flex flex-wrap gap-1.5 mb-2">
-                    {selectedRecipe.cuisine && <MetaChip label={selectedRecipe.cuisine} />}
-                    {totalTime && <MetaChip label={totalTime} />}
-                    {selectedRecipe.difficulty && <MetaChip label={selectedRecipe.difficulty} />}
-                    {selectedRecipe.servings && <MetaChip label={`Serves ${selectedRecipe.servings}`} />}
+                    {selectedRecipe.cuisine && <Chip tone="fresh" emoji="✨">{selectedRecipe.cuisine}</Chip>}
+                    {totalTime && <Chip tone="expiring" emoji="⏱️">{totalTime}</Chip>}
+                    {selectedRecipe.difficulty && <Chip tone="fresh" emoji="✨">{selectedRecipe.difficulty}</Chip>}
+                    {selectedRecipe.servings && <Chip tone="muted" emoji="🍽️">{`Serves ${selectedRecipe.servings}`}</Chip>}
                   </div>
                   {/* Action buttons */}
                   <div className="flex items-center gap-2">
@@ -535,22 +525,18 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 )}
                 {selectedRecipe.tags && selectedRecipe.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mt-2">
-                    {selectedRecipe.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--color-bg)] text-[var(--color-primary-dark)] border border-[var(--color-border)]"
-                      >
-                        {tag}
-                      </span>
-                    ))}
+                    {selectedRecipe.tags.map((tag) => {
+                      const { tone, emoji } = tagToTone(tag)
+                      return <Chip key={tag} tone={tone} emoji={emoji || undefined} size="sm">{tag}</Chip>
+                    })}
                   </div>
                 )}
                 <div className="flex flex-wrap gap-1.5 mt-2">
-                  {selectedRecipe.cuisine && <MetaChip label={selectedRecipe.cuisine} />}
-                  {totalTime && <MetaChip label={totalTime} />}
-                  {selectedRecipe.difficulty && <MetaChip label={selectedRecipe.difficulty} />}
+                  {selectedRecipe.cuisine && <Chip tone="fresh" emoji="✨">{selectedRecipe.cuisine}</Chip>}
+                  {totalTime && <Chip tone="expiring" emoji="⏱️">{totalTime}</Chip>}
+                  {selectedRecipe.difficulty && <Chip tone="fresh" emoji="✨">{selectedRecipe.difficulty}</Chip>}
                   {selectedRecipe.servings && (
-                    <MetaChip label={`Serves ${selectedRecipe.servings}`} />
+                    <Chip tone="muted" emoji="🍽️">{`Serves ${selectedRecipe.servings}`}</Chip>
                   )}
                 </div>
                 <div className="flex items-center gap-2 mt-2">
