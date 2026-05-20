@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useCallback, useEffect, useMemo } from 'react'
-import { motion, AnimatePresence, type PanInfo } from 'framer-motion'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { motion, AnimatePresence, useAnimation, type PanInfo } from 'framer-motion'
+import { Heart, DotsThree } from '@phosphor-icons/react'
 import RecipeDetail, { type Recipe } from './RecipePage'
 import RecipeSearchBar from './RecipeSearchBar'
 import BubblesMascot from '@/components/ui/BubblesMascot'
@@ -9,7 +10,7 @@ import RecipeEditModal from './RecipeEditModal'
 import RecipeDeleteConfirm from './RecipeDeleteConfirm'
 import RecipeImportModal from './RecipeImportModal'
 import CookModal from './CookModal'
-import { springs } from '@/lib/motion'
+import { springs, heartPopVariants } from '@/lib/motion'
 
 interface RecipeBookProps {
   recipes: Recipe[]
@@ -81,12 +82,27 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const [favoriteOverrides, setFavoriteOverrides] = useState<Record<string, boolean>>({})
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [thumbError, setThumbError] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const heartControls = useAnimation()
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!errorMessage) return
     const t = setTimeout(() => setErrorMessage(null), 5000)
     return () => clearTimeout(t)
   }, [errorMessage])
+
+  // Close overflow menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleMouseDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => document.removeEventListener('mousedown', handleMouseDown)
+  }, [menuOpen])
 
   // Merge optimistic favorite overrides into the recipe list
   const recipesWithOverrides = useMemo(
@@ -163,6 +179,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     const id = selectedRecipe.id
     const newVal = !selectedRecipe.is_favorite
     setFavoriteOverrides((prev) => ({ ...prev, [id]: newVal }))
+    void heartControls.start('pop').then(() => heartControls.start('idle'))
     try {
       const res = await fetch(`/api/recipes/${id}`, {
         method: 'PUT',
@@ -469,42 +486,70 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   </div>
                   {/* Action buttons */}
                   <div className="flex items-center gap-2">
-                    <button
+                    {/* Heart button — 44x44 with pop animation */}
+                    <motion.button
                       onClick={handleFavorite}
                       disabled={mutating}
-                      className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                      style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
                       aria-label={selectedRecipe.is_favorite ? 'Unfavorite' : 'Favorite'}
                       title={selectedRecipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
                     >
-                      {selectedRecipe.is_favorite ? '❤️' : '🤍'}
-                    </button>
-                    <button
-                      onClick={() => setEditOpen(true)}
-                      disabled={mutating}
-                      className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
-                      aria-label="Edit recipe"
-                      title="Edit recipe"
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      onClick={() => setDeleteOpen(true)}
-                      disabled={mutating}
-                      className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
-                      aria-label="Delete recipe"
-                      title="Delete recipe"
-                    >
-                      🗑️
-                    </button>
-                    <button
-                      onClick={() => setCookOpen(true)}
-                      className="ml-auto px-4 py-1.5 rounded-full text-xs font-bold text-white active:scale-95 transition-transform"
-                      style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
-                      aria-label="Cook this recipe"
-                      title="Cook it — deduct ingredients from pantry"
-                    >
-                      Cook it
-                    </button>
+                      <motion.span variants={heartPopVariants} animate={heartControls} initial="idle">
+                        <Heart
+                          size={20}
+                          weight={selectedRecipe.is_favorite ? 'fill' : 'regular'}
+                          color={selectedRecipe.is_favorite ? 'var(--color-coral)' : 'var(--color-muted)'}
+                        />
+                      </motion.span>
+                    </motion.button>
+
+                    {/* Overflow menu — Edit + Delete */}
+                    <div className="relative" ref={menuRef}>
+                      <button
+                        onClick={() => setMenuOpen((o) => !o)}
+                        disabled={mutating}
+                        className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                        style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
+                        aria-label="More options"
+                        aria-haspopup="true"
+                        aria-expanded={menuOpen}
+                      >
+                        <DotsThree size={20} weight="bold" color="var(--color-muted)" />
+                      </button>
+                      <AnimatePresence>
+                        {menuOpen && (
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.9, y: -4 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: -4 }}
+                            transition={springs.snappy}
+                            className="absolute right-0 top-12 z-20 rounded-2xl overflow-hidden"
+                            style={{
+                              background: 'var(--color-surface)',
+                              border: '1px solid var(--color-border)',
+                              boxShadow: 'var(--shadow-pop)',
+                              minWidth: '140px',
+                            }}
+                          >
+                            <button
+                              onClick={() => { setMenuOpen(false); setEditOpen(true) }}
+                              className="w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
+                              style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+                            >
+                              ✏️ Edit
+                            </button>
+                            <button
+                              onClick={() => { setMenuOpen(false); setDeleteOpen(true) }}
+                              className="w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
+                              style={{ color: 'var(--color-coral)', fontFamily: 'Nunito, sans-serif' }}
+                            >
+                              🗑️ Delete
+                            </button>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
                   </div>
                   {deleteOpen && (
                     <RecipeDeleteConfirm
@@ -554,42 +599,70 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   )}
                 </div>
                 <div className="flex items-center gap-2 mt-2">
-                  <button
+                  {/* Heart button — 44x44 with pop animation */}
+                  <motion.button
                     onClick={handleFavorite}
                     disabled={mutating}
-                    className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                    className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                    style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
                     aria-label={selectedRecipe.is_favorite ? 'Unfavorite' : 'Favorite'}
                     title={selectedRecipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
                   >
-                    {selectedRecipe.is_favorite ? '❤️' : '🤍'}
-                  </button>
-                  <button
-                    onClick={() => setEditOpen(true)}
-                    disabled={mutating}
-                    className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
-                    aria-label="Edit recipe"
-                    title="Edit recipe"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    onClick={() => setDeleteOpen(true)}
-                    disabled={mutating}
-                    className="w-8 h-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
-                    aria-label="Delete recipe"
-                    title="Delete recipe"
-                  >
-                    🗑️
-                  </button>
-                  <button
-                    onClick={() => setCookOpen(true)}
-                    className="ml-auto px-4 py-1.5 rounded-full text-xs font-bold text-white active:scale-95 transition-transform"
-                    style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
-                    aria-label="Cook this recipe"
-                    title="Cook it — deduct ingredients from pantry"
-                  >
-                    Cook it
-                  </button>
+                    <motion.span variants={heartPopVariants} animate={heartControls} initial="idle">
+                      <Heart
+                        size={20}
+                        weight={selectedRecipe.is_favorite ? 'fill' : 'regular'}
+                        color={selectedRecipe.is_favorite ? 'var(--color-coral)' : 'var(--color-muted)'}
+                      />
+                    </motion.span>
+                  </motion.button>
+
+                  {/* Overflow menu — Edit + Delete */}
+                  <div className="relative" ref={menuRef}>
+                    <button
+                      onClick={() => setMenuOpen((o) => !o)}
+                      disabled={mutating}
+                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                      style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
+                      aria-label="More options"
+                      aria-haspopup="true"
+                      aria-expanded={menuOpen}
+                    >
+                      <DotsThree size={20} weight="bold" color="var(--color-muted)" />
+                    </button>
+                    <AnimatePresence>
+                      {menuOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9, y: -4 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.9, y: -4 }}
+                          transition={springs.snappy}
+                          className="absolute right-0 top-12 z-20 rounded-2xl overflow-hidden"
+                          style={{
+                            background: 'var(--color-surface)',
+                            border: '1px solid var(--color-border)',
+                            boxShadow: 'var(--shadow-pop)',
+                            minWidth: '140px',
+                          }}
+                        >
+                          <button
+                            onClick={() => { setMenuOpen(false); setEditOpen(true) }}
+                            className="w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
+                            style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+                          >
+                            ✏️ Edit
+                          </button>
+                          <button
+                            onClick={() => { setMenuOpen(false); setDeleteOpen(true) }}
+                            className="w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
+                            style={{ color: 'var(--color-coral)', fontFamily: 'Nunito, sans-serif' }}
+                          >
+                            🗑️ Delete
+                          </button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
                 {deleteOpen && (
                   <RecipeDeleteConfirm
@@ -679,6 +752,21 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   whileDrag={{ cursor: 'grabbing' }}
                 >
                   <RecipeDetail recipe={selectedRecipe} />
+
+                  {/* Sticky Cook CTA — pinned at bottom of scroll area */}
+                  <div
+                    className="sticky bottom-0 px-4 py-3"
+                    style={{ background: 'var(--color-surface)', borderTop: '1px solid var(--color-border)' }}
+                  >
+                    <button
+                      onClick={() => setCookOpen(true)}
+                      className="w-full py-3 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
+                      style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+                      aria-label="Cook this recipe"
+                    >
+                      🍳 Cook it
+                    </button>
+                  </div>
                 </motion.div>
               </AnimatePresence>
             </div>
