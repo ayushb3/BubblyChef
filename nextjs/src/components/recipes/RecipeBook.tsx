@@ -9,6 +9,7 @@ import RecipeEditModal from './RecipeEditModal'
 import RecipeDeleteConfirm from './RecipeDeleteConfirm'
 import RecipeImportModal from './RecipeImportModal'
 import CookModal from './CookModal'
+import { springs } from '@/lib/motion'
 
 interface RecipeBookProps {
   recipes: Recipe[]
@@ -58,12 +59,7 @@ const pageVariants = {
   }),
 }
 
-const pageTransition = {
-  type: 'spring' as const,
-  stiffness: 260,
-  damping: 28,
-  mass: 0.8,
-}
+const pageTransition = springs.page
 
 const SWIPE_THRESHOLD = 50
 const VELOCITY_THRESHOLD = 300
