@@ -8,23 +8,119 @@ insufficient, which have unit conflicts, and which are missing entirely.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
-from bubbly_chef.domain.catalog import lookup as catalog_lookup
 from bubbly_chef.domain.normalizer import normalize_food_name, normalize_to_base_unit
 from bubbly_chef.models.cook import CookProposal, IngredientMatch
 from bubbly_chef.models.pantry import PantryItem
 
 logger = logging.getLogger(__name__)
 
+# Matches leading quantity+unit in a raw ingredient string, e.g.:
+#   "2 large eggs"       → qty=2,  unit=None,   rest="large eggs"
+#   "1/2 cup flour"      → qty=0.5, unit="cup",  rest="flour"
+#   "1 teaspoon lemon zest" → qty=1, unit="tsp", rest="lemon zest"
+_LEADING_QTY_RE = re.compile(
+    r"^\s*"
+    r"(?P<qty>\d+\s*/\s*\d+|\d+(?:\.\d+)?)"   # fraction or decimal
+    r"(?:\s+(?P<unit>cup|cups|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons"
+    r"|oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg|ml|l|liter|liters"
+    r"|pint|quart|gallon|fl\s+oz|fluid\s+ounce|stick|sticks|clove|cloves"
+    r"|bunch|bunches|slice|slices|piece|pieces|can|cans|package|packages"
+    r"|head|heads|sprig|sprigs|pinch|dash|handful|item|count|dozen))?"
+    r"\s+",
+    re.IGNORECASE,
+)
+
+# Adjectives that appear between quantity and the actual food noun
+_ADJECTIVE_RE = re.compile(
+    r"^(?:large|small|medium|extra-large|xl|fresh|dried|whole|finely|coarsely"
+    r"|roughly|thinly|thickly|grated|sliced|diced|chopped|minced|crushed"
+    r"|peeled|seeded|boneless|skinless|lean|ground|frozen|canned|organic"
+    r"|plus|more|additional|extra)\s+",
+    re.IGNORECASE,
+)
+
+# Conjunctions that split multi-ingredient strings, e.g. "2 eggs and 1 yolk"
+_CONJUNCTION_RE = re.compile(r"\s*(?:,\s*|\s+and\s+|\s+or\s+|\s+plus\s+).*$", re.IGNORECASE)
+
+
+def _parse_ingredient_string(raw: str) -> dict[str, Any]:
+    """Parse a raw ingredient string into {name, quantity, unit}.
+
+    Handles strings like:
+      "2 large eggs" → {name: "eggs", quantity: 2.0, unit: None}
+      "1/2 cup finely grated Parmesan" → {name: "parmesan", quantity: 0.5, unit: "cup"}
+      "1 teaspoon lemon zest" → {name: "lemon zest", quantity: 1.0, unit: "teaspoon"}
+      "1/2 cup plus 2 tbsp Parmesan" → {name: "parmesan", quantity: 0.5, unit: "cup"}
+    """
+    stripped = raw.strip()
+
+    # Split on first conjunction — use the first segment for qty/unit, last for the food noun
+    conj_m = _CONJUNCTION_RE.search(stripped)
+    first_segment = _CONJUNCTION_RE.sub("", stripped)
+    last_segment = stripped[conj_m.start():].lstrip(" ,").strip() if conj_m else first_segment
+
+    qty: float | None = None
+    unit: str | None = None
+    text = first_segment
+
+    m = _LEADING_QTY_RE.match(text)
+    if m:
+        qty_str = m.group("qty").replace(" ", "")
+        if "/" in qty_str:
+            num, den = qty_str.split("/")
+            qty = float(num) / float(den)
+        else:
+            qty = float(qty_str)
+        unit = m.group("unit")
+        text = text[m.end():]
+
+    # Strip leading adjectives to reach the food noun
+    for _ in range(5):
+        stripped_adj = _ADJECTIVE_RE.sub("", text)
+        if stripped_adj == text:
+            break
+        text = stripped_adj
+
+    name = text.strip().lower()
+
+    # Food unit words appearing as the sole "name" mean the parse consumed too much.
+    # In that case fall back to the last conjunction segment for the actual food noun.
+    _UNIT_WORDS = {"cup", "cups", "tbsp", "tablespoon", "tablespoons", "tsp",
+                   "teaspoon", "teaspoons", "oz", "lb", "lbs", "g", "kg", "ml",
+                   "l", "item", "count", "piece", "pieces", "slice", "slices",
+                   "bunch", "can", "cans", "package", "packages", "clove", "cloves",
+                   "sprig", "sprigs", "head", "heads", "stick", "sticks"}
+    if not name or name in _UNIT_WORDS:
+        last = last_segment
+        # Strip leading adjectives/conjunction words before the qty match
+        for _ in range(5):
+            stripped_adj = _ADJECTIVE_RE.sub("", last)
+            if stripped_adj == last:
+                break
+            last = stripped_adj
+        last_m = _LEADING_QTY_RE.match(last)
+        if last_m:
+            last = last[last_m.end():]
+        for _ in range(5):
+            stripped_adj = _ADJECTIVE_RE.sub("", last)
+            if stripped_adj == last:
+                break
+            last = stripped_adj
+        name = last.strip().lower() or name
+
+    return {"name": name, "quantity": qty, "unit": unit}
+
 
 def _normalize_ingredient_name(name: str) -> str:
-    """Normalize an ingredient name for matching against pantry items."""
-    # First try catalog lookup at 80-threshold (task spec)
-    entry = catalog_lookup(name, threshold=80)
-    if entry:
-        return entry.canonical.lower().strip()
-    # Fall back to synonym + regex normalizer
+    """Normalize an ingredient name for matching against pantry items.
+
+    Skips catalog fuzzy-lookup intentionally — WRatio at any reasonable threshold
+    produces cross-food false positives (e.g. "pecorino romano" → "roma tomato").
+    Synonym normalization in normalize_food_name() is sufficient for pantry matching.
+    """
     return normalize_food_name(name).lower().strip()
 
 
@@ -61,9 +157,10 @@ def match_ingredients(
     unit_conflicts: list[dict[str, str]] = []
 
     for ingredient in recipe_ingredients:
-        # Ingredients may be stored as plain strings (e.g. "1 cup flour") or dicts
+        # Ingredients may be stored as plain strings (e.g. "1 cup flour") or dicts.
+        # Parse the string to extract name, quantity, and unit before any dict access.
         if isinstance(ingredient, str):
-            ingredient = {"name": ingredient}
+            ingredient = _parse_ingredient_string(ingredient)
 
         raw_name: str = ingredient.get("name", "")
         if not raw_name:
