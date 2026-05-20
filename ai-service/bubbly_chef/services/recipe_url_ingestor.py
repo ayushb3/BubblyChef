@@ -90,6 +90,7 @@ def _scraper_to_recipe_card(scraper: Any, url: str) -> RecipeCard:  # noqa: ANN4
         source_url=url,
         source_type="url",
         image_url=image,
+        thumbnail_url=image,
         total_time_minutes=total_time,
         servings=_parse_servings(yields_str),
         ingredients=[_parse_ingredient(i) for i in raw_ingredients],
@@ -117,6 +118,7 @@ Rules:
 - servings: integer or null
 - cuisine: string or null (e.g. "Italian", "Mexican")
 - dietary_tags: list of strings (e.g. ["vegan", "gluten-free"])
+- image_url: string or null (the recipe's primary image URL, if present in the page)
 - source_type: "url"
 - source_url: "{source_url}"
 
@@ -208,6 +210,8 @@ async def ingest_recipe_from_url(url: str) -> RecipeCard:
     if isinstance(result, RecipeCard):
         result.source_url = url
         result.source_type = "url"
+        if result.image_url and not result.thumbnail_url:
+            result.thumbnail_url = result.image_url
         return result
 
     # Shouldn't happen but guard anyway

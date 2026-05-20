@@ -60,7 +60,12 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
 
       const raw = await res.json()
       // AI service wraps in { recipe: ... } envelope
-      const recipe: Partial<Recipe> = 'recipe' in raw ? raw.recipe : raw
+      const rawRecipe = ('recipe' in raw ? raw.recipe : raw) as Record<string, unknown>
+      const recipe: Partial<Recipe> = {
+        ...rawRecipe,
+        // image_url isn't in the Recipe type but scrapers return it — preserve as thumbnail_url
+        thumbnail_url: (rawRecipe.thumbnail_url ?? rawRecipe.image_url ?? null) as string | null,
+      }
       onImported(recipe, trimmed)
     } catch {
       setErrorMsg(ERROR_MESSAGES.fetch_failed)
