@@ -12,7 +12,12 @@ Read `ROADMAP.md` for current phase + open issues. `MEMORY.md` is auto-loaded ea
 
 ## The Pipeline
 
-All work flows through GitHub Issues. The depth of the pipeline depends on scope:
+All work flows through GitHub Issues. This is the project-specific quick reference;
+the full process model (issue lifecycle, autonomy gate, layered review,
+orchestration depth) lives in `WORKFLOW.md` at the repo root — that's the shared
+doc-of-record, identical across every project on this workflow, not repeated here.
+
+The depth of the pipeline depends on scope:
 
 ```
 Small fix:
@@ -22,8 +27,8 @@ Feature (multi-file):
   explore → plan mode (docs/plans/) → approve → agent team implements → commit → push
 
 Large initiative:
-  explore → plan mode → /to-prd (creates parent GH issue)
-    → /to-issues (breaks PRD into vertical-slice child issues)
+  explore → plan mode → /wayfinder (idea, size unknown) or /to-spec (already shaped)
+    → /to-tickets (breaks the spec into vertical-slice child issues)
     → implement each issue → commit → push
 ```
 
@@ -31,28 +36,31 @@ Large initiative:
 
 For non-trivial work, Claude enters plan mode to explore the codebase and propose an approach before writing code. The plan is saved to `docs/plans/` with a date prefix.
 
-### `/to-prd` — Synthesize a PRD
+### `/wayfinder` / `/to-spec` — Get to a spec
 
-When a design conversation reaches clarity, `/to-prd` synthesizes a PRD from conversation context:
-- Problem statement, solution, user stories
-- Implementation decisions (modules, interfaces, schemas)
-- Testing decisions
-- Publishes as a GitHub Issue with `needs-triage` label
+- Loose idea, size unknown → `/wayfinder` charts a map of decision tickets first.
+- Idea already shaped by a conversation → `/to-spec` synthesizes straight to a spec
+  issue from conversation context: problem statement, solution, user stories,
+  implementation decisions, testing decisions. Publishes as a GitHub Issue labeled
+  `ready-for-agent`.
 
-### `/to-issues` — Break into vertical slices
+### `/to-tickets` — Break into vertical slices
 
-Takes a PRD (or any large issue) and breaks it into independently-implementable vertical slices:
+Takes a spec (or any large issue) and breaks it into independently-implementable vertical slices:
 - Each slice cuts through ALL layers end-to-end (schema → API → UI → tests)
 - Each slice is demoable/verifiable on its own
-- Slices are marked HITL (needs human decision) or AFK (fully autonomous)
 - Published as child GitHub Issues with dependency links
 
 ### Implementing Issues
 
 Once issues exist:
 - Small issues → describe goal, Claude implements directly
-- Larger issues → plan mode → agent team (dev1 backend, dev2 frontend)
+- Larger issues → plan mode → agent team, per `docs/agents/roles/` (`pm` delegates
+  to `backend`, `frontend`, `ui-ux`, `qa-reviewer` — see each role file for its
+  ownership boundary)
 - Each completed issue → quality gates → commit → push → close issue
+- Sub-PRs merge autonomously once CI is green and a summary is posted;
+  feature-level PRs always wait for your review — see the shared `WORKFLOW.md` §6
 
 ---
 
@@ -71,9 +79,11 @@ describe the feature
   → quality gates → commit
 ```
 
-Agent roles:
-- **dev1** — backend/Python (FastAPI, LangGraph, repository)
-- **dev2** — frontend/TypeScript (React, Tailwind, hooks)
+Agent roles (see `docs/agents/roles/` for the full mandate of each):
+- **backend** — FastAPI + LangGraph AI microservice (`ai-service/`)
+- **frontend** — Next.js routing, CRUD API, data/state wiring (`nextjs/`)
+- **ui-ux** — design system, motion, accessibility (`nextjs/src/components/`)
+- **qa-reviewer** — test suites + Playwright e2e, reviews against the DoD
 
 ### Spec-driven autonomous implementation
 When you have a thorough design doc (e.g. `docs/plans/my-feature.md`):
