@@ -215,25 +215,64 @@ fallback and retries. **A new provider is ~150 lines and a config reorder.**
 The architecture was built for exactly this; the decision is reversible per
 route.
 
-### Cost, stated honestly
+### Measured pricing (researched 2026-07-24)
 
-**Nothing is cheaper than Gemini's free tier.** If cost is the goal, the
-current setup wins and should stay — guiding principle #2 ("Zero cost AI")
-already says so. The real reasons to add a provider are:
+> An earlier draft of this plan asserted that vision requirements ruled out
+> open-weight models, and quoted Claude pricing without comparanda. **Both were
+> wrong.** Corrected below against current published rates. Sources listed at
+> the end of this section.
 
-1. **Rate limits.** Issue #8 (no rate limiting on AI calls) is still open. A
-   daily-Bubbles-line feature multiplies call volume by the user base; free-tier
-   429s become a production failure mode.
-2. **Structured-output reliability** — see below.
-3. Quality on the generation-heavy paths.
+| Provider / model | In $/MTok | Out $/MTok | Vision | Context |
+|---|---:|---:|---|---|
+| DeepSeek V4 Flash | 0.14 | 0.28 | via DeepSeek-OCR 2 | 1M |
+| **GLM-4.6V** (VLM) | **0.30** | **0.90** | **native** | 128K |
+| DeepSeek V4 Pro | 0.435 | 0.87 | via DeepSeek-OCR 2 | 1M |
+| **Gemini 2.5 Flash** *(current)* | **0.30** | **2.50** | native | 1M |
+| GLM-4.7 | 0.60 | 2.20 | — | 205K |
+| Kimi K2.5 | 0.60 | 3.00 | — | 262K |
+| Claude Haiku 4.5 | 1.00 | 5.00 | native | 200K |
+| GLM-5.2 | 1.40 | 4.40 | native | 1M |
+| Gemini 3.5 Flash | 1.50 | 9.00 | native | 1M |
+| Claude Sonnet 5 | 3.00 | 15.00 | native | 1M |
+| Claude Opus 5 | 5.00 | 25.00 | native | 1M |
+| **GLM-OCR** (0.9B, doc-parsing only) | **0.03** | — | OCR-specialised | — |
 
-Claude pricing per million tokens, for reference:
+Prices move fast and vary by host (OpenRouter/DeepInfra resell below Z.ai
+list). Re-check before committing; treat the ordering as more durable than the
+absolute figures.
 
-| Model | Input | Output | Context |
-|---|---|---|---|
-| Haiku 4.5 | $1 | $5 | 200K |
-| Sonnet 5 | $3 ($2 intro, through 2026-08-31) | $15 ($10 intro) | 1M |
-| Opus 5 | $5 | $25 | 1M |
+### Three findings that change the decision
+
+**1. The vision constraint was imaginary.** GLM-5.2 and GLM-4.6V both take
+image input natively; GLM-4.6V is a dedicated VLM at $0.30/$0.90 with a
+rate-limited free Flash tier. **GLM-OCR** is a 0.9B model built specifically for
+document parsing at **$0.03/MTok** — an order of magnitude cheaper than any
+general model, aimed squarely at the receipt-scanning workload. DeepSeek ships
+DeepSeek-OCR 2 for the same job. Receipt OCR is the *best*-served workload in
+the open-model ecosystem, not the blocker.
+
+**2. Google is no longer the cheap option.** Gemini 3.5 Flash at $1.50/$9.00 is
+**more expensive than Claude Haiku 4.5** ($1.00/$5.00) and 5× the current
+2.5 Flash on input. Staying on 2.5 Flash is a deliberate choice, not a default —
+the upgrade path within Google costs more than leaving.
+
+**3. The spread is ~50×, but the absolute numbers are pennies.** Modelled on an
+active user at ~82K input / ~20K output tokens per month (30 chat turns,
+10 recipe generations, 4 receipt scans, 30 daily Bubbles lines):
+
+| Model | $/active user/month | 100 users |
+|---|---:|---:|
+| DeepSeek V4 Flash | $0.017 | $1.70 |
+| GLM-4.6V | $0.043 | $4.30 |
+| Gemini 2.5 Flash *(current)* | $0.075 | $7.50 |
+| GLM-5.2 | $0.203 | $20 |
+| Gemini 3.5 Flash | $0.303 | $30 |
+| Claude Sonnet 5 | $0.546 | $55 |
+| Claude Opus 5 | $0.91 | $91 |
+
+**At BubblyChef's scale, model choice is not a cost decision.** A hundred users
+on the most expensive option is $91/month. Pick on quality, reliability, and
+structured-output support; revisit cost at four figures of users.
 
 ### The non-cost argument: structured outputs
 
@@ -242,35 +281,35 @@ as text and parses the reply; `ai/manager.py` carries
 `max_structured_retries = 2` because that fails often enough to need retries.
 
 Every AI call in this codebase is Pydantic-schema'd (the "structured AI output"
-rule in `CLAUDE.md`). A provider with **native** structured outputs makes schema
-conformance guaranteed rather than retried — removing a whole bug class the app
-currently pays retries to work around. That is a stronger argument for adding a
-provider than price is.
+rule in `CLAUDE.md`). Native structured-output support makes schema conformance
+guaranteed rather than retried, removing a bug class the app currently pays
+retries to work around. This applies to several providers, not one — it is an
+argument for *evaluating on this axis*, not for a specific vendor.
 
-### Route by workload, not one model for everything
+### Recommended approach: evaluate, don't pick from a table
 
-| Workload | Volume | Sensitivity | Fit |
-|---|---|---|---|
-| Intent classification | High | Low | Cheapest tier (Haiku-class) |
-| Recipe generation | Medium | High | Sonnet-class |
-| Bubbles daily line (Phase F) | 1/user/day, cached | Medium | Cost irrelevant at this volume |
-| Receipt OCR (vision) | Low | High | **See constraint below** |
+The `AIProvider` ABC makes a provider ~150 lines. The right move is a **bake-off
+on the existing snapshot tests**, not a paper decision:
 
-⚠️ **Vision is a hard constraint on any open-model plan.** Receipt scanning
-needs vision, and the main API models for DeepSeek and Kimi are text-only (GLM
-has a vision line). A switch to an open text model still leaves OCR needing
-Gemini or Claude. **Recommendation: keep Gemini on vision regardless of what
-happens on the text paths.**
+1. `tests/test_intent_classification.py` already has snapshot-based intent
+   fixtures and `capture_intent_fixtures.py`. That is a ready-made eval harness.
+2. Add GLM and Claude providers; run the snapshot suite against each.
+3. Score on: intent accuracy, structured-output failure rate (count the
+   `max_structured_retries` hits), latency, cost per run.
+4. Route per workload from the results. Cheap+specialised for OCR (GLM-OCR is
+   the standout candidate), whatever wins the eval for recipe generation.
 
-Open-weight hosted options (Kimi, GLM, DeepSeek) are worth pricing at decision
-time; this document deliberately does not quote figures it can't verify.
+Keep `AIManager`'s ordered fallback throughout — the point of the abstraction is
+that this stays a config decision, reversible per route.
 
-### Recommended next step
-
-Add a Claude provider, put it first for recipe generation only, and leave
-Gemini in the fallback slot beneath it. `AIManager` already handles the
-ordering. Measure output quality before widening the rollout — and keep Gemini
-as the vision provider either way.
+**Sources:** [Z.ai/GLM pricing](https://pricepertoken.com/pricing-page/provider/z-ai) ·
+[GLM-4.6V](https://openrouter.ai/z-ai/glm-4.6v) ·
+[GLM-OCR benchmarks](https://decodethefuture.org/en/glm-ocr-explained/) ·
+[Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing) ·
+[Gemini 3.5 Flash](https://pricepertoken.com/pricing-page/model/google-gemini-3.5-flash) ·
+[DeepSeek pricing](https://www.nxcode.io/resources/news/deepseek-api-pricing-complete-guide-2026) ·
+[Kimi pricing](https://benchlm.ai/moonshot/api-pricing) ·
+Claude pricing from Anthropic's `claude-api` skill docs.
 
 ---
 
