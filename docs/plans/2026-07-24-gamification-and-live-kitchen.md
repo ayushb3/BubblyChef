@@ -99,18 +99,36 @@ a genuine ground-up redesign — and it is the subject of the rest of this doc.
 
 ---
 
-## 4. Decision 3 — Build the kitchen in DOM + Framer Motion, not Phaser 3
+## 4. Decision 3 — Pixel-art art direction, rendered in DOM + Framer Motion
 
-**PRD #67 specs Phaser 3. I recommend overriding that.**
+**Art direction: pixel art, in the "Don't Get Fired" mould** — a dense,
+detailed diorama with heavy background craft and minimal user movement. The
+player looks at the room and taps it; they do not drive a character around it.
+
+**PRD #67 specs Phaser 3 as the renderer. I recommend overriding that** — the
+pixel-art direction does not require a canvas, and in one specific way is
+*better* served by DOM.
 
 ### The actual requirements
 
 From the PRD's own user stories: two colour bands, four tappable furniture
 zones, one mascot that patrols left/right and flips on turn, a fridge with
 fullness states, a glow on expiry, a drop shadow under each object. The speech
-bubble and chalkboard note are *already specced as React DOM overlays*.
+bubble and chalkboard note are *already specced as React DOM overlays*. The
+pixel direction adds ambient background animation — steam, a bubbling pot, a
+ticking clock — but not interactivity.
 
 That is not a game-engine workload. It is a styled div with tweens.
+
+### Pixel art in DOM
+
+| Need | DOM technique |
+|---|---|
+| Crisp pixels at scale | `image-rendering: pixelated` + integer `transform: scale()` |
+| Dense background detail | One PNG. A busy room costs the same as an empty one. |
+| Sprite animation (walk cycle, steam, pot) | CSS `steps()` on `background-position` — the classic spritesheet technique, zero JS |
+| 15–20 simultaneous ambient loops | CSS keyframe animations, GPU-composited |
+| Tappable zones | Real `<button>`/`<Link>` over the art — keyboard + screen-reader native |
 
 ### The comparison
 
@@ -135,13 +153,124 @@ DOM delivers here.
 
 **What survives from PRD #67 unchanged:** the side-view dollhouse perspective,
 the two-band depth model, spatial stability (furniture never moves), the ≤5
-zones rule, positive-framing-only, one primary metaphor (fridge fullness), the
-placeholder-first asset strategy, and the strict data/render separation. The
-EventBus becomes ordinary React props and context — simpler, same boundary.
+zones rule, positive-framing-only, one primary metaphor (fridge fullness), and
+the strict data/render separation. The EventBus becomes ordinary React props
+and context — simpler, same boundary.
 
 **Consequence:** issues #68 (Phaser scaffold + EventBus) and #67's Phaser
 sections need rewriting. #69–#75 survive largely intact with the renderer
 swapped.
+
+### The real cost of pixel art: placeholder-first is dead
+
+PRD #67's asset strategy — coloured rounded rectangles, real art as a follow-up
+track — **does not survive the pixel direction**. A coloured rectangle reads as
+an unfinished component in a vector style; in a pixel style it reads as
+nothing at all. Pixel art *is* the assets.
+
+**The art pipeline therefore moves onto the critical path.** Phase C cannot
+ship without at least a starter tileset. Realistic sourcing is an existing
+interior/kitchen tileset (LimeZu's Modern Interiors is the well-known one for
+this exact look; Kenney's packs are CC0) rather than commissioned art.
+
+⚠️ **Verify the licence before building against a pack.** Roadmap item K1
+(Fluent Emoji icon system) is already blocked on icon licensing — this project
+has been bitten by exactly this once.
+
+### The one genuine tension: pixel art vs. the five-palette theme switcher
+
+Pixel-art PNGs have baked-in colours. CSS custom properties cannot recolour
+them, so the kitchen scene cannot follow the theme switcher the way the rest of
+the UI does. Options, worst to best:
+
+| Option | Verdict |
+|---|---|
+| CSS `filter: hue-rotate()` | Looks bad on pixel art. No. |
+| Five PNG sets, one per palette | 5× the art cost on the critical path. No. |
+| Canvas/WebGL palette swap | The one real argument for a canvas renderer — see below |
+| **Art-direct the room; theme only the chrome** | **Recommended** |
+
+**Recommendation: the kitchen is a place, not a themed surface.** It gets one
+art-directed look; the five palettes apply to nav, cards, chat, and the React
+overlays. Time-of-day and seasonal tints (an overlay, not a recolour) give the
+room variation without multiplying assets.
+
+**If per-palette rooms later become a hard requirement**, the escape hatch is
+**PixiJS** — a renderer (not a game framework), roughly a third of Phaser's
+weight, with `NEAREST` scaling built for pixel art and cheap palette swapping.
+Phaser would still be the wrong tool: there is no physics and no game loop here
+under any art direction.
+
+---
+
+## 4b. Decision 4 — Add an AI provider; don't migrate off Gemini
+
+Phase F (Living Bubbles) is the first feature to add real AI call volume, so
+the provider question lands here.
+
+**Framing correction: this is not a migration.** `ai/provider.py` already
+defines an `AIProvider` ABC (`complete`, `vision_complete`, `stream_complete`,
+`is_available`) and `AIManager` already walks an ordered provider list with
+fallback and retries. **A new provider is ~150 lines and a config reorder.**
+The architecture was built for exactly this; the decision is reversible per
+route.
+
+### Cost, stated honestly
+
+**Nothing is cheaper than Gemini's free tier.** If cost is the goal, the
+current setup wins and should stay — guiding principle #2 ("Zero cost AI")
+already says so. The real reasons to add a provider are:
+
+1. **Rate limits.** Issue #8 (no rate limiting on AI calls) is still open. A
+   daily-Bubbles-line feature multiplies call volume by the user base; free-tier
+   429s become a production failure mode.
+2. **Structured-output reliability** — see below.
+3. Quality on the generation-heavy paths.
+
+Claude pricing per million tokens, for reference:
+
+| Model | Input | Output | Context |
+|---|---|---|---|
+| Haiku 4.5 | $1 | $5 | 200K |
+| Sonnet 5 | $3 ($2 intro, through 2026-08-31) | $15 ($10 intro) | 1M |
+| Opus 5 | $5 | $25 | 1M |
+
+### The non-cost argument: structured outputs
+
+`ai/gemini.py` serialises `response_schema.model_json_schema()` into the prompt
+as text and parses the reply; `ai/manager.py` carries
+`max_structured_retries = 2` because that fails often enough to need retries.
+
+Every AI call in this codebase is Pydantic-schema'd (the "structured AI output"
+rule in `CLAUDE.md`). A provider with **native** structured outputs makes schema
+conformance guaranteed rather than retried — removing a whole bug class the app
+currently pays retries to work around. That is a stronger argument for adding a
+provider than price is.
+
+### Route by workload, not one model for everything
+
+| Workload | Volume | Sensitivity | Fit |
+|---|---|---|---|
+| Intent classification | High | Low | Cheapest tier (Haiku-class) |
+| Recipe generation | Medium | High | Sonnet-class |
+| Bubbles daily line (Phase F) | 1/user/day, cached | Medium | Cost irrelevant at this volume |
+| Receipt OCR (vision) | Low | High | **See constraint below** |
+
+⚠️ **Vision is a hard constraint on any open-model plan.** Receipt scanning
+needs vision, and the main API models for DeepSeek and Kimi are text-only (GLM
+has a vision line). A switch to an open text model still leaves OCR needing
+Gemini or Claude. **Recommendation: keep Gemini on vision regardless of what
+happens on the text paths.**
+
+Open-weight hosted options (Kimi, GLM, DeepSeek) are worth pricing at decision
+time; this document deliberately does not quote figures it can't verify.
+
+### Recommended next step
+
+Add a Claude provider, put it first for recipe generation only, and leave
+Gemini in the fallback slot beneath it. `AIManager` already handles the
+ordering. Measure output quality before widening the rollout — and keep Gemini
+as the vision provider either way.
 
 ---
 
@@ -327,11 +456,15 @@ Each phase is independently shippable and leaves the app in a working state.
 - Web Push subscription plumbing — *scaffolding only*, no sends yet
 
 ### Phase C — Live kitchen v1 (no progression yet)
+- **C0 — art spike (blocking, do first):** select and licence-check a pixel
+  tileset; confirm the side-view dollhouse read; produce room background +
+  4 furniture sprites + a 4-frame Bubbles walk cycle
 - Rewrite the renderer sections of PRD #67 for DOM; close/rewrite #68
-- Room: two-band dollhouse layout on CSS custom properties, all 5 palettes
-- 4 zones as accessible links: fridge → `/pantry`, stove → `/chat?mode=recipe`,
-  bookshelf → `/recipes`, scan poster → `/scan`
-- Bubbles NPC: patrol, direction flip, idle bob, deterministic mood
+- Room: two-band dollhouse layout, pixel background, `image-rendering: pixelated`
+- 4 zones as accessible links over the art: fridge → `/pantry`,
+  stove → `/chat?mode=recipe`, bookshelf → `/recipes`, scan poster → `/scan`
+- Bubbles NPC: CSS `steps()` walk cycle, direction flip, idle bob,
+  deterministic mood
 - Ambient state track (5.4c): fridge fullness, expiry glow, counter dishes
 - Delete `HeroHome.tsx`
 - **Ships a better home screen with zero backend work.**
@@ -368,6 +501,10 @@ Each phase is independently shippable and leaves the app in a working state.
 |---|---|
 | Phase A audit finds `feat/ui-overhaul` needs real rework | Time-box the audit. If it exceeds ~2 days, land it behind the theme picker as opt-in and fix forward rather than blocking C–G. |
 | Overriding PRD #67's Phaser decision invalidates #68–#75 | Only #68 dies outright. Rewrite #67's renderer section; #69–#75 keep their scope with the renderer swapped. |
+| **Pixel art puts the art pipeline on the critical path** — placeholder-first no longer works | Phase C0 is a blocking art spike against an existing licensed tileset, not commissioned work. If C0 slips, Phases D–F (all backend) can proceed in parallel against the current home screen. |
+| Tileset licence turns out to be unusable (cf. K1) | Licence-check *before* building against a pack. Prefer CC0 (Kenney) or a clearly-licensed commercial pack. |
+| Pixel room can't follow the 5-palette theme switcher | Accepted: the room is art-directed, chrome is themed. Time-of-day/seasonal tint overlays give variation. PixiJS is the escape hatch if per-palette rooms become a hard requirement. |
+| Adding an AI provider raises cost from zero | Route by workload; start with recipe generation only, Gemini as fallback beneath it. Keep Gemini on vision — no open text model covers receipt OCR. |
 | Daily Bubbles generation trips free-tier limits | One call/user/day, cached, with a deterministic fallback. Resolve issue #8 (rate limiting) during Phase F. |
 | Gamification feels bolted on | XP comes exclusively from real kitchen events. No login rewards, no tap-to-collect. If a mechanic doesn't map to a kitchen action, it doesn't ship. |
 | iOS PWA push friction (requires Add to Home Screen) | Accepted. Ship an install prompt in Phase B; measure before considering native. |
@@ -377,9 +514,10 @@ Each phase is independently shippable and leaves the app in a working state.
 
 ## 8. Open questions
 
-1. **Art assets.** Phases C–E ship placeholder-first per PRD #67. Real sprites
-   are an independent track — commission, generate, or stay stylised-CSS
-   permanently? The DOM decision makes "stay stylised" genuinely viable.
+1. **Which tileset.** Phase C0 must pick one and licence-check it. Open sub-
+   questions: is a single pack enough for room + furniture + a mascot walk
+   cycle, or does Bubbles need custom pixel art to stay on-model? (She has
+   existing PNG assets in `nextjs/public/mascot/` that are not pixel art.)
 2. **Does the Scan tab leave the bottom nav** once the scan poster exists in the
    kitchen? PRD #67 flagged this as a separate UX decision; still unresolved.
 3. **Retro-seeding.** Should existing cook/scan history backfill the event
