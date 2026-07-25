@@ -213,14 +213,18 @@ for why this changed.
 | Investigation | `diagnosing-bugs`, `research`, `improve-codebase-architecture`, `resolving-merge-conflicts` | ✅ vendored |
 | Design interviews | `grill-with-docs`, `grill-me`, `grilling` | ✅ vendored |
 | Setup | `setup-matt-pocock-skills` | ✅ vendored |
-| Review (extra layers) | `interrogate`, `thermo-nuclear-code-quality-review` | ⚠️ **not vendored** — see below |
-| Understanding (PM-facing) | `how`, `why`, `blast-radius` | ⚠️ **not vendored** |
-| Process hygiene | `show-me-your-work`, `figure-it-out` | ⚠️ **not vendored** |
-| Self-tuning | `automate-me` | ⚠️ **not vendored** |
+| Review (extra layers) | `interrogate`, `thermo-nuclear-review` | ✅ vendored |
+| Understanding (PM-facing) | `how`, `why`, `blast-radius` | ✅ vendored |
+| Process hygiene | `show-me-your-work`, `figure-it-out` | ✅ vendored |
+| Self-tuning | `automate-me` | ✅ vendored |
 | House rules | see §8 | folded into prose, not skills |
 
-`skills-lock.json` records the upstream commit and a per-skill hash, so
-`setup-matt-pocock-skills` can still detect drift against `mattpocock/skills`.
+27 skills total — 19 from `mattpocock/skills`, 8 from `cursor/plugins`
+(`pstack/` and `thermos/`). `skills-lock.json` records the upstream commit per
+source plus a per-skill hash, so drift stays detectable against both.
+
+**Naming note:** the skill is `thermo-nuclear-review` upstream, not
+`thermo-nuclear-code-quality-review` as earlier drafts of this doc called it.
 
 ### 9.1 Why vendoring, and what's still broken
 
@@ -232,15 +236,16 @@ had also drifted from upstream (four renames: `to-prd`→`to-spec`, `to-issues`�
 six skills this document depends on, including `implement` and `code-review` — the
 two that *are* the build-and-review loop.
 
-**Still outstanding:** the ⚠️ rows above are hand-ported from `cursor/plugins`
-(pstack) and live at `~/Code/.agents/skills/<name>/` — a local home directory. They
-do not exist in CI or cloud sessions, which means §7's three-layer review is
-**one layer** anywhere but a configured laptop. Either vendor them here too, or
-downgrade §7's promise to match reality. Do not leave it implied-but-false.
+The `cursor/plugins` set previously lived at `~/Code/.agents/skills/<name>/` — a
+local home directory that CI, cloud sessions, and a phone have no access to, making
+§7's "three-layer review" **one layer** everywhere but one configured laptop. Those
+are now vendored here too, so all three layers work anywhere the repo does.
 
-The `thermo-nuclear` `PreToolUse` hook has the same class of problem from a different
-angle: it triggers on `Bash` running `gh pr create`, so it never fires in an
-environment that creates PRs through the GitHub MCP tools instead of the `gh` CLI.
+**Still outstanding:** the `thermo-nuclear` `PreToolUse` hook has the same class of
+problem from a different angle — it triggers on `Bash` running `gh pr create`, so it
+never fires in an environment that creates PRs through the GitHub MCP tools instead
+of the `gh` CLI. The skill is now present everywhere; its *trigger* still isn't.
+Move that check to a CI job, or add a matching trigger for the MCP path.
 
 ## 10. What's explicitly skipped
 
