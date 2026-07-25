@@ -8,6 +8,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from postgrest import CountMethod
 from supabase import Client, create_client
 
 from bubbly_chef.config import settings
@@ -17,6 +18,20 @@ from bubbly_chef.models.recipe import RecipeCard
 from bubbly_chef.models.session import ConversationSession, SessionMode
 
 logger = logging.getLogger(__name__)
+
+
+def _as_row(value: Any) -> dict[str, Any]:
+    """Narrow a Postgrest JSON value to a plain dict row.
+
+    Postgrest types query results as the recursive ``JSON`` union (``None |
+    bool | str | int | float | Sequence[JSON] | Mapping[str, JSON]``), but
+    every row returned from a Postgres table select is a JSON object in
+    practice. This narrows the type at the repository boundary with a real
+    runtime check rather than casting blindly.
+    """
+    if not isinstance(value, dict):
+        raise TypeError(f"Expected a JSON object row from Supabase, got {type(value).__name__}")
+    return value
 
 
 class SupabaseRepository:
@@ -74,7 +89,7 @@ class SupabaseRepository:
             .order("name")
             .execute()
         )
-        return [self._row_to_pantry_item(r) for r in result.data]
+        return [self._row_to_pantry_item(_as_row(r)) for r in result.data]
 
     async def get_expiring_items(self, user_id: str, days: int = 3) -> list[PantryItem]:
         from datetime import date, timedelta
@@ -84,12 +99,12 @@ class SupabaseRepository:
             self.client.table("pantry_items")
             .select("*")
             .eq("user_id", user_id)
-            .not_("expiry_date", "is", "null")
+            .not_.is_("expiry_date", "null")
             .lte("expiry_date", future)
             .order("expiry_date")
             .execute()
         )
-        return [self._row_to_pantry_item(r) for r in result.data]
+        return [self._row_to_pantry_item(_as_row(r)) for r in result.data]
 
     async def find_similar_item(
         self, user_id: str, name: str
@@ -104,11 +119,11 @@ class SupabaseRepository:
             .execute()
         )
         if result.data:
-            return self._row_to_pantry_item(result.data[0])
+            return self._row_to_pantry_item(_as_row(result.data[0]))
         return None
 
     async def add_pantry_item(self, user_id: str, item: PantryItem) -> PantryItem:
-        data = {
+        data: dict[str, Any] = {
             "user_id": user_id,
             "name": item.name,
             "name_normalized": item.name.lower().strip(),
@@ -124,7 +139,7 @@ class SupabaseRepository:
             "slot_index": item.slot_index,
         }
         result = self.client.table("pantry_items").insert(data).execute()
-        return self._row_to_pantry_item(result.data[0])
+        return self._row_to_pantry_item(_as_row(result.data[0]))
 
     async def update_pantry_item(
         self, user_id: str, item_id: str, updates: dict[str, Any]
@@ -143,7 +158,7 @@ class SupabaseRepository:
             .execute()
         )
         if result.data:
-            return self._row_to_pantry_item(result.data[0])
+            return self._row_to_pantry_item(_as_row(result.data[0]))
         return None
 
     async def delete_pantry_item(self, user_id: str, item_id: str) -> bool:
@@ -159,7 +174,7 @@ class SupabaseRepository:
     async def count_pantry_items(self, user_id: str) -> int:
         result = (
             self.client.table("pantry_items")
-            .select("id", count="exact")
+            .select("id", count=CountMethod.exact)
             .eq("user_id", user_id)
             .execute()
         )
@@ -281,7 +296,7 @@ class SupabaseRepository:
             "cook_time_minutes": recipe.cook_time_minutes,
             "total_time_minutes": recipe.total_time_minutes,
             "servings": recipe.servings,
-            "tags": recipe.tags or [],
+            "tags": recipe.dietary_tags or [],
             "difficulty": recipe.difficulty,
             "cuisine": recipe.cuisine,
             "meal_type": recipe.meal_type,
@@ -291,7 +306,7 @@ class SupabaseRepository:
         self.client.table("recipes").insert(data).execute()
         return recipe  # Return as-is; ID comes from Supabase
 
-    async def get_recipe(self, user_id: str, recipe_id: str) -> RecipeCard | None:
+    async def get_recipe(self, user_id: str, recipe_id: str) -> dict[str, Any] | None:
         result = (
             self.client.table("recipes")
             .select("*")
@@ -303,7 +318,7 @@ class SupabaseRepository:
         if not result.data:
             return None
         # Return raw dict — caller can construct RecipeCard if needed
-        return result.data  # type: ignore[return-value]
+        return _as_row(result.data)
 
     # =========================================================================
     # Conversation history
@@ -339,7 +354,7 @@ class SupabaseRepository:
             .limit(limit)
             .execute()
         )
-        return result.data
+        return [_as_row(r) for r in result.data]
 
     # =========================================================================
     # Session operations
@@ -356,7 +371,7 @@ class SupabaseRepository:
             .execute()
         )
         if result.data:
-            row = result.data[0]
+            row = _as_row(result.data[0])
             return ConversationSession(
                 conversation_id=row["conversation_id"],
                 active_mode=SessionMode(row.get("active_mode", "default")),
@@ -430,7 +445,7 @@ class SupabaseRepository:
             .execute()
         )
         if result.data:
-            return result.data[0]
+            return _as_row(result.data[0])
         return None
 
 
