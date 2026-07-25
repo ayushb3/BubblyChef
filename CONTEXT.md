@@ -118,9 +118,12 @@ Parent graph that:
 - **State management**: React Query (server state), Zustand (client state)
 - **Styling**: Tailwind CSS v4 + Framer Motion
 - **Auth**: Supabase (session token in Authorization header)
-- **API**: Two surfaces:
-  - CRUD → `/api/*` (Next.js routes, same-origin)
-  - AI ops → `http://localhost:8888` (FastAPI microservice, direct browser calls for SSE)
+- **API**: CRUD always goes through `/api/*` (Next.js routes, same-origin). Most
+  AI ops (recipe generate/refine/cook + cook/confirm, scan, apply) go through
+  Next.js proxy routes under `/api/ai/*`, which forward the user's Supabase JWT
+  server-side to the FastAPI microservice (`lib/api/ai-proxy.ts`). Only chat
+  streaming (`/v1/chat/stream`) still goes direct from browser to
+  `http://localhost:8888`/the Railway URL, to avoid Vercel's serverless timeout.
 
 ## Backend Stack
 
@@ -162,7 +165,7 @@ AI never writes to DB directly. Always returns ProposalEnvelope:
   "notes": "High confidence: clear ingredients + standard technique"
 }
 ```
-Frontend displays confidence badge. User clicks "Add" → POST `/apply` → write to DB.
+Frontend displays confidence badge. User clicks "Add" → POST `/v1/workflows/apply` → write to DB.
 
 ---
 
