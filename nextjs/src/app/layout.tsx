@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Nunito, Quicksand } from "next/font/google";
 import { Providers } from "@/components/Providers";
 import BottomNav from "@/components/layout/BottomNav";
+import PageTransition from "@/components/ui/PageTransition";
 import "./globals.css";
 
 const nunito = Nunito({
@@ -26,10 +27,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${nunito.variable} ${quicksand.variable} h-full antialiased`}>
+    <html lang="en" className={`${nunito.variable} ${quicksand.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        {/* Flash-prevention: apply saved theme before first paint to avoid palette flicker */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('bubbly-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className="min-h-screen bg-[var(--color-bg)]" style={{ fontFamily: 'Nunito, sans-serif' }}>
         <Providers>
-          <main className="pb-20">{children}</main>
+          <main className="pb-20"><PageTransition>{children}</PageTransition></main>
           <BottomNav />
         </Providers>
       </body>

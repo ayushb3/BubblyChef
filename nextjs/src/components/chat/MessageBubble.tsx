@@ -24,7 +24,7 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
           'px-4 py-2.5 text-sm leading-relaxed',
           isUser
             ? 'bg-[var(--color-primary)] text-white rounded-2xl rounded-br-md max-w-[80%]'
-            : 'bg-[var(--color-surface)] text-[var(--color-text)] rounded-2xl rounded-bl-md border border-[var(--color-border)] max-w-[85%]',
+            : 'bg-[var(--color-accent)]/30 text-[var(--color-text)] rounded-2xl rounded-bl-md border border-[var(--color-accent)] max-w-[85%]',
         ].join(' ')}
       >
         {isUser ? (

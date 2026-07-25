@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
 import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
@@ -10,6 +10,8 @@ import MessageBubble from '@/components/chat/MessageBubble'
 import TypingIndicator from '@/components/chat/TypingIndicator'
 import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
+import ThemePicker from '@/components/ui/ThemePicker'
+import Chip from '@/components/ui/Chip'
 import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
 import type { ChatMessage, ChatRecipeData, PantryProposalData } from '@/types/chat'
@@ -119,23 +121,26 @@ export default function ChatPage() {
         mascotState={mascotState}
         mascotAnimate={isStreaming}
         rightSlot={
-          hasMessages ? (
-            <button
-              type="button"
-              onClick={startNewChat}
-              className="text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-primary)]/10 px-3 py-1.5 rounded-full hover:bg-[var(--color-primary)]/20 transition-colors"
-            >
-              New Chat
-            </button>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            {hasMessages && (
+              <button
+                type="button"
+                onClick={startNewChat}
+                className="text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-surface)] px-3 py-1.5 rounded-full hover:bg-[var(--color-border)] transition-colors"
+              >
+                New Chat
+              </button>
+            )}
+            <ThemePicker />
+          </div>
         }
       />
 
       {/* AI unavailable warning */}
       {!aiAvailable && (
-        <div className="mx-4 mt-3 px-4 py-2.5 bg-[#FFF3E4] border border-[#FFD4A3] rounded-xl flex items-center gap-2 text-sm">
+        <div className="mx-4 mt-3 px-4 py-2.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl flex items-center gap-2 text-sm">
           <span>⚠️</span>
-          <span className="text-[#8B5E2B]">
+          <span className="text-[var(--color-text)]">
             AI is unavailable. Check your Gemini API key or start Ollama.
           </span>
         </div>
@@ -154,6 +159,7 @@ export default function ChatPage() {
                   msg.role === 'assistant' &&
                   index === messages.length - 1
                 }
+                isStreaming={isStreaming}
                 proposalState={proposalStates[msg.id]}
                 saveState={saveStates[msg.id] ?? 'idle'}
                 onApprove={() => approveProposal(msg.id)}
@@ -183,14 +189,13 @@ export default function ChatPage() {
             </p>
             <div className="flex flex-wrap gap-2 justify-center">
               {SUGGESTIONS.map((s) => (
-                <button
+                <Chip
                   key={s}
-                  type="button"
+                  tone="accent"
                   onClick={() => handleSuggestionClick(s)}
-                  className="bg-[var(--color-primary)]/10 text-[var(--color-text)] text-sm font-medium px-4 py-2 rounded-full border border-[var(--color-border)] hover:bg-[var(--color-primary)]/20 transition-colors"
                 >
                   {s}
-                </button>
+                </Chip>
               ))}
             </div>
           </div>
@@ -207,7 +212,7 @@ export default function ChatPage() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={isStreaming}
-            className="w-full rounded-full px-4 py-2.5 border border-[var(--color-border)] bg-white text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] text-sm disabled:opacity-50"
+            className="w-full rounded-full px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] text-sm disabled:opacity-50"
           />
           <RotatingPlaceholder visible={!input && !isStreaming && !hasMessages} />
         </div>
@@ -237,6 +242,7 @@ export default function ChatPage() {
 interface MessageRendererProps {
   message: ChatMessage
   isLastAssistant: boolean
+  isStreaming: boolean
   proposalState?: 'pending' | 'approved' | 'rejected'
   saveState: 'idle' | 'saving' | 'saved' | 'error'
   onApprove: () => void
@@ -248,6 +254,7 @@ interface MessageRendererProps {
 function MessageRenderer({
   message,
   isLastAssistant,
+  isStreaming,
   proposalState,
   saveState,
   onApprove,
@@ -257,9 +264,18 @@ function MessageRenderer({
 }: MessageRendererProps) {
   // User messages — simple bubble
   if (message.role === 'user') {
-    return <MessageBubble message={message} />
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      >
+        <MessageBubble message={message} />
+      </motion.div>
+    )
   }
 
+  const mascotState = isLastAssistant && isStreaming ? 'thinking' : 'happy'
   const intent = message.intent ?? message.response?.intent
 
   // Recipe card intent
@@ -272,17 +288,26 @@ function MessageRenderer({
       ? rawProposal.recipe
       : rawProposal as ChatRecipeData
     return (
-      <div className="flex flex-col gap-2 items-start">
-        {message.content && (
-          <MessageBubble message={message} />
-        )}
-        <ChatRecipeCard
-          recipe={recipe}
-          onSave={() => onSave(recipe)}
-          onTryAnother={onTryAnother}
-          saveState={saveState}
-        />
-      </div>
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      >
+        <div className="flex items-end gap-2">
+          <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+          <div className="flex flex-col gap-2 items-start">
+            {message.content && (
+              <MessageBubble message={message} />
+            )}
+            <ChatRecipeCard
+              recipe={recipe}
+              onSave={() => onSave(recipe)}
+              onTryAnother={onTryAnother}
+              saveState={saveState}
+            />
+          </div>
+        </div>
+      </motion.div>
     )
   }
 
@@ -290,21 +315,41 @@ function MessageRenderer({
   if (intent === 'pantry_update' && message.response?.proposal) {
     const proposal = message.response.proposal as PantryProposalData
     return (
-      <div className="flex flex-col gap-2 items-start">
-        {message.content && (
-          <MessageBubble message={message} />
-        )}
-        <PantryProposalCard
-          proposal={proposal}
-          onApprove={onApprove}
-          onReject={onReject}
-          state={proposalState ?? 'pending'}
-        />
-      </div>
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      >
+        <div className="flex items-end gap-2">
+          <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+          <div className="flex flex-col gap-2 items-start">
+            {message.content && (
+              <MessageBubble message={message} />
+            )}
+            <PantryProposalCard
+              proposal={proposal}
+              onApprove={onApprove}
+              onReject={onReject}
+              state={proposalState ?? 'pending'}
+            />
+          </div>
+        </div>
+      </motion.div>
     )
   }
 
   // Default: text message with markdown (skip empty streaming messages — typing indicator handles those)
   if (!message.content && isLastAssistant) return null
-  return <MessageBubble message={message} />
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+    >
+      <div className="flex items-end gap-2">
+        <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+        <MessageBubble message={message} />
+      </div>
+    </motion.div>
+  )
 }

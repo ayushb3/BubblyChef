@@ -43,9 +43,10 @@ const FIRST_LINE_OFFSET = 4 // px — pad-top so first text line sits on first r
 
 export default function RecipeDetail({ recipe }: RecipeDetailProps) {
   return (
-    <div
-      className="px-5 py-4 text-sm text-[var(--color-text)]"
-      style={{
+    <>
+      <div
+        className="px-5 py-4 text-sm text-[var(--color-text)]"
+        style={{
         fontFamily: 'Nunito, sans-serif',
         backgroundImage:
           'repeating-linear-gradient(transparent, transparent 27px, var(--color-border) 27px, var(--color-border) 28px)',
@@ -135,7 +136,7 @@ export default function RecipeDetail({ recipe }: RecipeDetailProps) {
                   <span
                     className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
                     style={{
-                      background: 'var(--color-primary)',
+                      background: 'var(--color-accent)',
                       fontFamily: 'Nunito, sans-serif',
                       marginTop: `${(LINE_HEIGHT - 24) / 2}px`,
                     }}
@@ -150,5 +151,6 @@ export default function RecipeDetail({ recipe }: RecipeDetailProps) {
         </div>
       )}
     </div>
+    </>
   )
 }
