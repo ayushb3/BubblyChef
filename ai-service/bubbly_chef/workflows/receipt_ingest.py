@@ -13,6 +13,7 @@ from langgraph.graph import END, StateGraph
 
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.config import settings
+from bubbly_chef.domain.normalizer import normalize_to_base_unit
 from bubbly_chef.models.base import ProposalEnvelope
 from bubbly_chef.models.pantry import (
     ActionType,
@@ -20,7 +21,6 @@ from bubbly_chef.models.pantry import (
     PantryProposal,
     PantryUpsertAction,
 )
-from bubbly_chef.domain.normalizer import normalize_to_base_unit
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 from bubbly_chef.tools.normalizer import get_normalizer
 from bubbly_chef.workflows.state import (

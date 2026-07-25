@@ -69,7 +69,9 @@ class SupabaseRepository:
             storage_location=StorageLocation(row.get("location", "pantry")),
             quantity=float(row.get("quantity", 1.0)),
             unit=row.get("unit", "item"),
-            quantity_base=float(row["quantity_base"]) if row.get("quantity_base") is not None else None,
+            quantity_base=float(row["quantity_base"])
+            if row.get("quantity_base") is not None
+            else None,
             unit_base=row.get("unit_base"),
             expiry_date=expiry,
             slot_index=row.get("slot_index"),
@@ -127,7 +129,9 @@ class SupabaseRepository:
             "user_id": user_id,
             "name": item.name,
             "name_normalized": item.name.lower().strip(),
-            "category": item.category.value if hasattr(item.category, "value") else str(item.category),
+            "category": item.category.value
+            if hasattr(item.category, "value")
+            else str(item.category),
             "location": item.storage_location.value
             if hasattr(item.storage_location, "value")
             else str(item.storage_location),

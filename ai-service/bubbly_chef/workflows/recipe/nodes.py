@@ -173,7 +173,9 @@ def _format_pantry_item_for_prompt(item: dict[str, Any]) -> str:
     qty_base = item.get("quantity_base")
     unit_base = item.get("unit_base")
     if qty_base is not None and unit_base:
-        return f"{name} ({display} = {float(qty_base):.1f} {unit_base})" if display else f"{name} ({float(qty_base):.1f} {unit_base})"
+        if display:
+            return f"{name} ({display} = {float(qty_base):.1f} {unit_base})"
+        return f"{name} ({float(qty_base):.1f} {unit_base})"
     return f"{name} ({display})" if display else name
 
 
@@ -567,7 +569,9 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
         if pantry_snapshot:
             scored_items = score_and_rank(pantry_snapshot, constraints)
 
-    priority_items = [_format_pantry_item_for_prompt(i) for i in scored_items if i.get("_score", 0) >= 5]
+    priority_items = [
+        _format_pantry_item_for_prompt(i) for i in scored_items if i.get("_score", 0) >= 5
+    ]
     supporting_items = [
         _format_pantry_item_for_prompt(i) for i in scored_items
         if 0 <= i.get("_score", 0) < 5

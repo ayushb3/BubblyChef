@@ -7,6 +7,7 @@ Serves only AI-powered endpoints:
 - Workflow events (approve/reject proposals)
 """
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -17,8 +18,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from bubbly_chef.api.routes import chat, ingest, recipes_ai, scan, workflows
 from bubbly_chef.config import settings
 from bubbly_chef.repository.supabase_repo import get_repository
-
-import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

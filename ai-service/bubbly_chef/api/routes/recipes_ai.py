@@ -96,7 +96,9 @@ async def generate_recipe(
         )
 
         return {
-            "recipe": result.recipe.model_dump(mode="json") if hasattr(result.recipe, "model_dump") else result.recipe,
+            "recipe": result.recipe.model_dump(mode="json")
+            if hasattr(result.recipe, "model_dump")
+            else result.recipe,
             "ingredients_status": [
                 s.model_dump(mode="json") if hasattr(s, "model_dump") else s
                 for s in (result.ingredients_status or [])
@@ -129,8 +131,8 @@ async def refine_recipe(
 
     try:
         from bubbly_chef.api.deps import get_ai_manager
-        from bubbly_chef.services.recipe_generator import generate_recipe as gen_recipe
         from bubbly_chef.models.recipe import RecipeCard
+        from bubbly_chef.services.recipe_generator import generate_recipe as gen_recipe
 
         ai_manager = get_ai_manager()
 
@@ -148,7 +150,9 @@ async def refine_recipe(
         )
 
         return {
-            "recipe": result.recipe.model_dump(mode="json") if hasattr(result.recipe, "model_dump") else result.recipe,
+            "recipe": result.recipe.model_dump(mode="json")
+            if hasattr(result.recipe, "model_dump")
+            else result.recipe,
             "ingredients_status": [
                 s.model_dump(mode="json") if hasattr(s, "model_dump") else s
                 for s in (result.ingredients_status or [])
