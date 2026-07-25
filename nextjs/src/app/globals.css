@@ -25,6 +25,10 @@
     --color-expiring-text: #7B5A00;
     --color-fresh: #DCFCE7;
     --color-fresh-text: #166534;
+    /* Destructive / favourited accent. Referenced by RecipeBook, RecipeImportModal
+     * and RecipeDeleteConfirm; previously undeclared, so every call site without an
+     * inline fallback silently inherited ambient text colour. */
+    --color-coral: #FF9AA2;
     /*
      * Semantic signal tokens (fresh / expiring / expired) are intentionally
      * theme-invariant — red = bad and green = good across all five themes,
