@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 try:
-    from recipe_scrapers import scrape_html, scrape_me  # type: ignore[import-untyped,unused-ignore]
+    from recipe_scrapers import scrape_html, scrape_me
 except ImportError as _e:
     raise ImportError(
         "recipe-scrapers is not installed. Run: pip install recipe-scrapers"
