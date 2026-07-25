@@ -8,6 +8,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from postgrest import CountMethod
 from supabase import Client, create_client
 
 from bubbly_chef.config import settings
@@ -17,6 +18,20 @@ from bubbly_chef.models.recipe import RecipeCard
 from bubbly_chef.models.session import ConversationSession, SessionMode
 
 logger = logging.getLogger(__name__)
+
+
+def _as_row(value: Any) -> dict[str, Any]:
+    """Narrow a Postgrest JSON value to a plain dict row.
+
+    Postgrest types query results as the recursive ``JSON`` union (``None |
+    bool | str | int | float | Sequence[JSON] | Mapping[str, JSON]``), but
+    every row returned from a Postgres table select is a JSON object in
+    practice. This narrows the type at the repository boundary with a real
+    runtime check rather than casting blindly.
+    """
+    if not isinstance(value, dict):
+        raise TypeError(f"Expected a JSON object row from Supabase, got {type(value).__name__}")
+    return value
 
 
 class SupabaseRepository:
@@ -54,7 +69,9 @@ class SupabaseRepository:
             storage_location=StorageLocation(row.get("location", "pantry")),
             quantity=float(row.get("quantity", 1.0)),
             unit=row.get("unit", "item"),
-            quantity_base=float(row["quantity_base"]) if row.get("quantity_base") is not None else None,
+            quantity_base=float(row["quantity_base"])
+            if row.get("quantity_base") is not None
+            else None,
             unit_base=row.get("unit_base"),
             expiry_date=expiry,
             slot_index=row.get("slot_index"),
@@ -74,7 +91,7 @@ class SupabaseRepository:
             .order("name")
             .execute()
         )
-        return [self._row_to_pantry_item(r) for r in result.data]
+        return [self._row_to_pantry_item(_as_row(r)) for r in result.data]
 
     async def get_expiring_items(self, user_id: str, days: int = 3) -> list[PantryItem]:
         from datetime import date, timedelta
@@ -84,12 +101,12 @@ class SupabaseRepository:
             self.client.table("pantry_items")
             .select("*")
             .eq("user_id", user_id)
-            .not_("expiry_date", "is", "null")
+            .not_.is_("expiry_date", "null")
             .lte("expiry_date", future)
             .order("expiry_date")
             .execute()
         )
-        return [self._row_to_pantry_item(r) for r in result.data]
+        return [self._row_to_pantry_item(_as_row(r)) for r in result.data]
 
     async def find_similar_item(
         self, user_id: str, name: str
@@ -104,15 +121,17 @@ class SupabaseRepository:
             .execute()
         )
         if result.data:
-            return self._row_to_pantry_item(result.data[0])
+            return self._row_to_pantry_item(_as_row(result.data[0]))
         return None
 
     async def add_pantry_item(self, user_id: str, item: PantryItem) -> PantryItem:
-        data = {
+        data: dict[str, Any] = {
             "user_id": user_id,
             "name": item.name,
             "name_normalized": item.name.lower().strip(),
-            "category": item.category.value if hasattr(item.category, "value") else str(item.category),
+            "category": item.category.value
+            if hasattr(item.category, "value")
+            else str(item.category),
             "location": item.storage_location.value
             if hasattr(item.storage_location, "value")
             else str(item.storage_location),
@@ -124,7 +143,7 @@ class SupabaseRepository:
             "slot_index": item.slot_index,
         }
         result = self.client.table("pantry_items").insert(data).execute()
-        return self._row_to_pantry_item(result.data[0])
+        return self._row_to_pantry_item(_as_row(result.data[0]))
 
     async def update_pantry_item(
         self, user_id: str, item_id: str, updates: dict[str, Any]
@@ -143,7 +162,7 @@ class SupabaseRepository:
             .execute()
         )
         if result.data:
-            return self._row_to_pantry_item(result.data[0])
+            return self._row_to_pantry_item(_as_row(result.data[0]))
         return None
 
     async def delete_pantry_item(self, user_id: str, item_id: str) -> bool:
@@ -159,7 +178,7 @@ class SupabaseRepository:
     async def count_pantry_items(self, user_id: str) -> int:
         result = (
             self.client.table("pantry_items")
-            .select("id", count="exact")
+            .select("id", count=CountMethod.exact)
             .eq("user_id", user_id)
             .execute()
         )
@@ -281,7 +300,7 @@ class SupabaseRepository:
             "cook_time_minutes": recipe.cook_time_minutes,
             "total_time_minutes": recipe.total_time_minutes,
             "servings": recipe.servings,
-            "tags": recipe.tags or [],
+            "tags": recipe.dietary_tags or [],
             "difficulty": recipe.difficulty,
             "cuisine": recipe.cuisine,
             "meal_type": recipe.meal_type,
@@ -291,7 +310,7 @@ class SupabaseRepository:
         self.client.table("recipes").insert(data).execute()
         return recipe  # Return as-is; ID comes from Supabase
 
-    async def get_recipe(self, user_id: str, recipe_id: str) -> RecipeCard | None:
+    async def get_recipe(self, user_id: str, recipe_id: str) -> dict[str, Any] | None:
         result = (
             self.client.table("recipes")
             .select("*")
@@ -303,7 +322,82 @@ class SupabaseRepository:
         if not result.data:
             return None
         # Return raw dict — caller can construct RecipeCard if needed
-        return result.data  # type: ignore[return-value]
+        return _as_row(result.data)
+
+    async def update_recipe_cooked(self, user_id: str, recipe_id: str) -> None:
+        """Increment times_cooked and set last_cooked_at to now."""
+        # Read current times_cooked first
+        result = (
+            self.client.table("recipes")
+            .select("times_cooked")
+            .eq("id", recipe_id)
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+        current = _as_row(result.data) if result.data else {}
+        times_cooked = int(current.get("times_cooked", 0)) + 1
+        (
+            self.client.table("recipes")
+            .update(
+                {
+                    "times_cooked": times_cooked,
+                    "last_cooked_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            .eq("id", recipe_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+
+    async def deduct_pantry_item(
+        self, user_id: str, item_id: str, deduct_qty: float
+    ) -> None:
+        """Decrement pantry item quantity_base by deduct_qty, flooring at 0.
+
+        Also updates the display quantity proportionally when quantity_base
+        is available, so the frontend shows a sensible number.
+        """
+        result = (
+            self.client.table("pantry_items")
+            .select("quantity, quantity_base, unit_base")
+            .eq("id", item_id)
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+        if not result.data:
+            logger.warning(f"deduct_pantry_item: item {item_id} not found for user {user_id}")
+            return
+
+        row = _as_row(result.data)
+        current_base = (
+            float(row["quantity_base"]) if row.get("quantity_base") is not None else None
+        )
+        current_qty = float(row["quantity"])
+
+        if current_base is not None:
+            new_base = max(0.0, current_base - deduct_qty)
+            # Proportionally scale display quantity
+            ratio = new_base / current_base if current_base > 0 else 0.0
+            new_qty = round(current_qty * ratio, 4)
+            (
+                self.client.table("pantry_items")
+                .update({"quantity": new_qty, "quantity_base": new_base})
+                .eq("id", item_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+        else:
+            # No base unit — deduct directly from display quantity
+            new_qty = max(0.0, current_qty - deduct_qty)
+            (
+                self.client.table("pantry_items")
+                .update({"quantity": new_qty})
+                .eq("id", item_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
 
     # =========================================================================
     # Conversation history
@@ -339,7 +433,7 @@ class SupabaseRepository:
             .limit(limit)
             .execute()
         )
-        return result.data
+        return [_as_row(r) for r in result.data]
 
     # =========================================================================
     # Session operations
@@ -356,7 +450,7 @@ class SupabaseRepository:
             .execute()
         )
         if result.data:
-            row = result.data[0]
+            row = _as_row(result.data[0])
             return ConversationSession(
                 conversation_id=row["conversation_id"],
                 active_mode=SessionMode(row.get("active_mode", "default")),
@@ -430,7 +524,7 @@ class SupabaseRepository:
             .execute()
         )
         if result.data:
-            return result.data[0]
+            return _as_row(result.data[0])
         return None
 
 

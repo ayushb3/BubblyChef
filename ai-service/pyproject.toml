@@ -25,7 +25,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
-    "ruff>=0.4",
+    "ruff>=0.15,<0.17",
     "mypy>=1.10",
 ]
 
@@ -33,6 +33,28 @@ dev = [
 line-length = 100
 target-version = "py311"
 
+# Pin the rule set explicitly. Without this, ruff's shifting defaults decide what
+# CI enforces — 0.16 changed them and turned CI red with no code change.
+# Mirrors the root pyproject.toml.
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+[[tool.mypy.overrides]]
+module = "supabase"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langgraph.graph"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langgraph.graph.state"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "recipe_scrapers"
+ignore_missing_imports = true

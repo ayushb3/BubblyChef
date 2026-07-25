@@ -9,9 +9,8 @@ import time
 from typing import Any
 
 import jwt
-from jwt import PyJWKClient, PyJWKClientError
-
 from fastapi import HTTPException, Request
+from jwt import PyJWKClient, PyJWKClientError
 
 from bubbly_chef.config import settings
 
@@ -86,6 +85,6 @@ async def get_current_user_id(request: Request) -> str:
             raise HTTPException(status_code=401, detail="Invalid or expired token") from e
 
     user_id = payload.get("sub")
-    if not user_id:
+    if not user_id or not isinstance(user_id, str):
         raise HTTPException(status_code=401, detail="Invalid token: no sub claim")
     return user_id

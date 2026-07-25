@@ -19,7 +19,6 @@
 ## Reference
 
 - [Workflow Guide](WORKFLOW.md) — full pipeline: plan → PRD → issues → implement
-- [Mattpocock Skills Guide](MATTPOCOCK-SKILLS-GUIDE.md) — grill→PRD→issues→TDD methodology
 - [Migration Summary](MIGRATION_SUMMARY.md) — monolith → Next.js + Supabase migration log
 - [Design Prompts](design/v0-prompts.md) — UI design system + Vercel v0 component prompts
 - [ADRs](adr/) — architectural decision records

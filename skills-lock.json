@@ -1,77 +1,291 @@
 {
-  "version": 1,
-  "skills": {
-    "caveman": {
-      "source": "mattpocock/skills",
+  "version": 2,
+  "vendoredPath": ".claude/skills",
+  "vendoredAt": "2026-07-24",
+  "sources": {
+    "mattpocock/skills": {
       "sourceType": "github",
-      "skillPath": "skills/productivity/caveman/SKILL.md",
-      "computedHash": "934433479903febc585bf6deb5f0cebc63137e3f86b7babe0aab1ecb94d6d7a4"
+      "upstreamCommit": "ed37663cc5fbef691ddfecd080dff42f7e7e350d"
     },
-    "diagnose": {
-      "source": "mattpocock/skills",
+    "cursor/plugins": {
       "sourceType": "github",
-      "skillPath": "skills/engineering/diagnose/SKILL.md",
-      "computedHash": "15939a26f86edec2d4862042b8564e5a062cb81d04e047a0cea6305c8830b5f5"
+      "upstreamCommit": "04166ac89136d36de2a87f24429e6cc307594953"
+    }
+  },
+  "skills": {
+    "automate-me": {
+      "source": "cursor/plugins",
+      "skillPath": "pstack/skills/automate-me/SKILL.md",
+      "computedHash": "a5999a0e1d1c242df77d2fbc3e8dae201228135b2c6c6409ef353c1b507df530",
+      "files": [
+        "SKILL.md"
+      ]
+    },
+    "blast-radius": {
+      "source": "cursor/plugins",
+      "skillPath": "pstack/skills/blast-radius/SKILL.md",
+      "computedHash": "b060df3ca85803eabbce9fab53f5cc024ca8d784bdde5513c1c1a784947523f8",
+      "files": [
+        "SKILL.md"
+      ]
+    },
+    "code-review": {
+      "source": "mattpocock/skills",
+      "skillPath": "skills/engineering/code-review/SKILL.md",
+      "computedHash": "6a65cc61114f96db07ec41e3920e67c9c5bf70dd6e0901eb9460ebcb2bdc209f",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
+    },
+    "codebase-design": {
+      "source": "mattpocock/skills",
+      "skillPath": "skills/engineering/codebase-design/SKILL.md",
+      "computedHash": "a8d50abac5a4018f60e1d911d4b6f4e36454ca14d6c390c0695a578c7de65dad",
+      "files": [
+        "DEEPENING.md",
+        "DESIGN-IT-TWICE.md",
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
+    },
+    "diagnosing-bugs": {
+      "source": "mattpocock/skills",
+      "skillPath": "skills/engineering/diagnosing-bugs/SKILL.md",
+      "computedHash": "7a0779480f323a66d109404646bcc1a14bf0232b45b3e3ea93b652a035718acb",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "scripts/hitl-loop.template.sh"
+      ]
+    },
+    "domain-modeling": {
+      "source": "mattpocock/skills",
+      "skillPath": "skills/engineering/domain-modeling/SKILL.md",
+      "computedHash": "152e2c97239affb12a60c5f4a7e74ab546a49ae169688c81f4e2ccc42dafa579",
+      "files": [
+        "ADR-FORMAT.md",
+        "CONTEXT-FORMAT.md",
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
+    },
+    "figure-it-out": {
+      "source": "cursor/plugins",
+      "skillPath": "pstack/skills/figure-it-out/SKILL.md",
+      "computedHash": "548616d04909de854f36869af2af127ce321fc6aaf95ea5a626997709fd46a2a",
+      "files": [
+        "SKILL.md"
+      ]
     },
     "grill-me": {
       "source": "mattpocock/skills",
-      "sourceType": "github",
       "skillPath": "skills/productivity/grill-me/SKILL.md",
-      "computedHash": "784f0dbb7403b0f00324bce9a112f715342777a0daee7bbb7385f9c6f0a170ea"
+      "computedHash": "6189dfceb7304a6e5558f75d87e68fa3bc7fcf7ba120e44f21f8a61fe01eba54",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
     },
     "grill-with-docs": {
       "source": "mattpocock/skills",
-      "sourceType": "github",
       "skillPath": "skills/engineering/grill-with-docs/SKILL.md",
-      "computedHash": "ea225e10406dbb6a18ba97af34e4e9313424438195cd16e657635f841b6e7a2f"
+      "computedHash": "610d091047bcfb9db0f75c057d15538481a721111579fc5ec7f83ad9131a2165",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
+    },
+    "grilling": {
+      "source": "mattpocock/skills",
+      "skillPath": "skills/productivity/grilling/SKILL.md",
+      "computedHash": "44331dda57f461db4fec3f2efb6ddabe7aaaa0a57ae0f88a883bc61aed8a0587",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
+    },
+    "handoff": {
+      "source": "mattpocock/skills",
+      "skillPath": "skills/productivity/handoff/SKILL.md",
+      "computedHash": "57c9f1f392d7352cdc85b1e39ca49eddc70ce1dc278bd9653fb4f23dfc2560fc",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
+    },
+    "how": {
+      "source": "cursor/plugins",
+      "skillPath": "pstack/skills/how/SKILL.md",
+      "computedHash": "1f4036902709f1d19b3d040f8ac89e20bfd12bdf1018fd91834f06edaaf575e2",
+      "files": [
+        "SKILL.md",
+        "references/critic-prompt.md",
+        "references/critique-rubric.md",
+        "references/explainer-prompt.md",
+        "references/explorer-prompt.md"
+      ]
+    },
+    "implement": {
+      "source": "mattpocock/skills",
+      "skillPath": "skills/engineering/implement/SKILL.md",
+      "computedHash": "6d3fd9e83b8f36e5213854779db49b256a457a7ebb4a503e53fa7dcff696adc3",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
     },
     "improve-codebase-architecture": {
       "source": "mattpocock/skills",
-      "sourceType": "github",
       "skillPath": "skills/engineering/improve-codebase-architecture/SKILL.md",
-      "computedHash": "c77b86b4332919499608f9af1880074e1fec65a59b95c70c27a9f39cd137865e"
+      "computedHash": "4b4cb798c3863d5b6f5c0b4604af1ecb5beb6df82553c972898a91ba38bcf289",
+      "files": [
+        "HTML-REPORT.md",
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
+    },
+    "interrogate": {
+      "source": "cursor/plugins",
+      "skillPath": "pstack/skills/interrogate/SKILL.md",
+      "computedHash": "0af6a0486cc9e852aa568925343fa91302a58de32956125117fa96c9eff62517",
+      "files": [
+        "SKILL.md",
+        "references/code-quality-review.md",
+        "references/lead-judgment.md",
+        "references/reviewer-prompt.md",
+        "references/rubric.md"
+      ]
+    },
+    "prototype": {
+      "source": "mattpocock/skills",
+      "skillPath": "skills/engineering/prototype/SKILL.md",
+      "computedHash": "03074862d4b6e4eaf472aa75146e1d193dd9e3bba0e4303a9b2425562d1d44cc",
+      "files": [
+        "LOGIC.md",
+        "SKILL.md",
+        "UI.md",
+        "agents/openai.yaml"
+      ]
+    },
+    "research": {
+      "source": "mattpocock/skills",
+      "skillPath": "skills/engineering/research/SKILL.md",
+      "computedHash": "af378829f015775a3bcd65ff466826722e99359017ae6bae227ca4c9bd14049c",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
+    },
+    "resolving-merge-conflicts": {
+      "source": "mattpocock/skills",
+      "skillPath": "skills/engineering/resolving-merge-conflicts/SKILL.md",
+      "computedHash": "c7c9ba81362a786aac05d2223123bf1bd2f8a99c3243a72882ede9c68bedfb24",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
     },
     "setup-matt-pocock-skills": {
       "source": "mattpocock/skills",
-      "sourceType": "github",
       "skillPath": "skills/engineering/setup-matt-pocock-skills/SKILL.md",
-      "computedHash": "3a32f8f1ed8160c9d286a2aabe88ee9b884c6f3f88a7a6c47b7d5d552c959587"
+      "computedHash": "def265a8b15ffb8afc3f335d69e175ba9a7fe3991218984b0e49e8345cde3b20",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "domain.md",
+        "issue-tracker-github.md",
+        "issue-tracker-gitlab.md",
+        "issue-tracker-local.md",
+        "triage-labels.md"
+      ]
+    },
+    "show-me-your-work": {
+      "source": "cursor/plugins",
+      "skillPath": "pstack/skills/show-me-your-work/SKILL.md",
+      "computedHash": "b99833c41a8781a6af191487f1af37711a3198b98f9373e3c02292b8a6e09aba",
+      "files": [
+        "SKILL.md",
+        "references/decision-log-template.tsv",
+        "scripts/log.sh"
+      ]
     },
     "tdd": {
       "source": "mattpocock/skills",
-      "sourceType": "github",
       "skillPath": "skills/engineering/tdd/SKILL.md",
-      "computedHash": "15a7b5e36383ebadb2dec5e586679e55e9663d292da418926b8da6fc0ef27d84"
+      "computedHash": "5363bb2775679fe9311fbb67947f95359169c6e7f1fac77c0f25e190bca6cf2f",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "mocking.md",
+        "tests.md"
+      ]
     },
-    "to-issues": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/engineering/to-issues/SKILL.md",
-      "computedHash": "73a91f30784523aa59ec9b02769576ebfc738e2cd5ad8f6441076031f0a5d5ac"
+    "thermo-nuclear-review": {
+      "source": "cursor/plugins",
+      "skillPath": "thermos/skills/thermo-nuclear-review/SKILL.md",
+      "computedHash": "5091011c4490932d40658ae958fb55b9aaca8e2bba5196860295ab945180e434",
+      "files": [
+        "SKILL.md"
+      ]
     },
-    "to-prd": {
+    "to-spec": {
       "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/engineering/to-prd/SKILL.md",
-      "computedHash": "fd8c259f9c44eff08e29a1a2fc71a806a3568d279a55387a361f78620b10f2aa"
+      "skillPath": "skills/engineering/to-spec/SKILL.md",
+      "computedHash": "267638edd513b5918de626ad5605d261952abb7428cb308869c663ca924e93e7",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
+    },
+    "to-tickets": {
+      "source": "mattpocock/skills",
+      "skillPath": "skills/engineering/to-tickets/SKILL.md",
+      "computedHash": "5ecdf1d4df8a360ed39df21a2347f97ba177afd449a577da4f6b6ea8e1ebb808",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
     },
     "triage": {
       "source": "mattpocock/skills",
-      "sourceType": "github",
       "skillPath": "skills/engineering/triage/SKILL.md",
-      "computedHash": "2b6efb6da12d92551772fcc04acf331f4e0e6f7bd9d4cb23ce0b301e0b128feb"
+      "computedHash": "d45827c299c021f77b0f146fefa3ee679b13f99e9a2ffdf48e8de2347adeefe1",
+      "files": [
+        "AGENT-BRIEF.md",
+        "OUT-OF-SCOPE.md",
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
     },
-    "write-a-skill": {
+    "wayfinder": {
       "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/productivity/write-a-skill/SKILL.md",
-      "computedHash": "b44d8aab2ead83c716e01af4c9a24ccc4575ce70ad58ec4f1749fb88c9cc82ba"
+      "skillPath": "skills/engineering/wayfinder/SKILL.md",
+      "computedHash": "257e40665b28ae959ffdcb97d7a72b074360f4a3d201bd84786505308546e434",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
     },
-    "zoom-out": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/engineering/zoom-out/SKILL.md",
-      "computedHash": "8357aeaece3b709c442eab67e64b86844e05e2f1ea95b109565eba50b6def36e"
+    "why": {
+      "source": "cursor/plugins",
+      "skillPath": "pstack/skills/why/SKILL.md",
+      "computedHash": "ac1aa3dcb8f2ee1614c11056cc62cd642f8b09f10c11953465dd1319f5ec9d4b",
+      "files": [
+        "SKILL.md",
+        "references/epistemics.md",
+        "references/investigator-prompt.md",
+        "references/source-playbook.md",
+        "references/sources/code-archaeology.md",
+        "references/sources/databricks.md",
+        "references/sources/datadog.md",
+        "references/sources/incident-postmortem.md",
+        "references/sources/linear.md",
+        "references/sources/notion.md",
+        "references/sources/sentry.md",
+        "references/sources/slack.md",
+        "references/synthesizer-prompt.md"
+      ]
     }
   }
 }

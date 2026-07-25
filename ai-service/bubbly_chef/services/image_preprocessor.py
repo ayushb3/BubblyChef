@@ -1,9 +1,8 @@
 """Image preprocessing service for optimal OCR performance."""
 
 import io
-from typing import Literal
-
 import logging
+from typing import Literal
 
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps

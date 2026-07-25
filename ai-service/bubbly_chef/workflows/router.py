@@ -742,11 +742,11 @@ def get_chat_router_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
 
 async def run_chat_workflow(
     message: str,
+    user_id: str,
     conversation_id: str | None = None,
     mode: str = "text",
     pantry_snapshot: list[dict[str, Any]] | None = None,
     history: list[dict[str, Any]] | None = None,
-    user_id: str | None = None,
 ) -> ProposalEnvelope[Any]:
     """
     Run the chat router workflow and return a ProposalEnvelope.
@@ -755,6 +755,8 @@ async def run_chat_workflow(
 
     Args:
         message: User's message text
+        user_id: Authenticated Supabase user ID (never None — every route
+            requires a valid JWT via get_current_user_id before calling this)
         conversation_id: Optional conversation thread ID
         mode: "text" or "voice"
         pantry_snapshot: Optional current pantry for dedup
@@ -994,11 +996,11 @@ def _build_envelope_from_state(
 
 async def run_chat_workflow_streaming(
     message: str,
+    user_id: str,
     conversation_id: str | None = None,
     mode: str = "text",
     pantry_snapshot: list[dict[str, Any]] | None = None,
     history: list[dict[str, Any]] | None = None,
-    user_id: str | None = None,
 ) -> AsyncIterator[str]:
     """
     Streaming variant of run_chat_workflow.
@@ -1183,14 +1185,14 @@ async def run_chat_workflow_streaming(
 # =============================================================================
 
 
-async def run_chat_ingest(text: str) -> ProposalEnvelope[PantryProposal]:
+async def run_chat_ingest(text: str, user_id: str) -> ProposalEnvelope[PantryProposal]:
     """
     Legacy API for chat ingest.
 
     This maintains backward compatibility with the old ingest endpoint.
     For new code, use run_chat_workflow() instead.
     """
-    envelope = await run_chat_workflow(message=text)
+    envelope = await run_chat_workflow(message=text, user_id=user_id)
 
     # For legacy API, always return PantryProposal envelope
     if envelope.intent == Intent.PANTRY_UPDATE:

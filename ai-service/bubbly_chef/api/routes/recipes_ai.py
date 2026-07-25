@@ -1,8 +1,10 @@
 """Recipe AI routes for the BubblyChef AI microservice.
 
 Exposes:
-- POST /v1/recipes/generate — generate a recipe from constraints + pantry
-- POST /v1/recipes/refine  — refine an existing recipe with a prompt
+- POST /v1/recipes/generate        — generate a recipe from constraints + pantry
+- POST /v1/recipes/refine          — refine an existing recipe with a prompt
+- POST /v1/recipes/cook            — build a CookProposal (match ingredients to pantry)
+- POST /v1/recipes/cook/confirm    — apply deductions + mark recipe as cooked
 """
 
 import logging
@@ -12,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from bubbly_chef.api.auth import get_current_user_id
+from bubbly_chef.models.cook import CookConfirmRequest, CookProposal
 from bubbly_chef.repository.supabase_repo import get_repository
 
 logger = logging.getLogger(__name__)
@@ -65,10 +68,10 @@ async def generate_recipe(
     )
 
     try:
-        from bubbly_chef.ai.manager import get_ai_manager
+        from bubbly_chef.api.deps import get_ai_manager
         from bubbly_chef.services.recipe_generator import generate_recipe as gen_recipe
 
-        ai_manager = await get_ai_manager()
+        ai_manager = get_ai_manager()
 
         # Fetch pantry items for grounding
         pantry_items = []
@@ -96,7 +99,9 @@ async def generate_recipe(
         )
 
         return {
-            "recipe": result.recipe.model_dump(mode="json") if hasattr(result.recipe, "model_dump") else result.recipe,
+            "recipe": result.recipe.model_dump(mode="json")
+            if hasattr(result.recipe, "model_dump")
+            else result.recipe,
             "ingredients_status": [
                 s.model_dump(mode="json") if hasattr(s, "model_dump") else s
                 for s in (result.ingredients_status or [])
@@ -128,11 +133,11 @@ async def refine_recipe(
     logger.info(f"Recipe refine: user={user_id}, prompt='{request.prompt[:50]}...'")
 
     try:
-        from bubbly_chef.ai.manager import get_ai_manager
-        from bubbly_chef.services.recipe_generator import generate_recipe as gen_recipe
+        from bubbly_chef.api.deps import get_ai_manager
         from bubbly_chef.models.recipe import RecipeCard
+        from bubbly_chef.services.recipe_generator import generate_recipe as gen_recipe
 
-        ai_manager = await get_ai_manager()
+        ai_manager = get_ai_manager()
 
         # Build a RecipeCard from the dict for the previous_recipe param
         previous_recipe = RecipeCard(**request.recipe) if request.recipe else None
@@ -148,7 +153,9 @@ async def refine_recipe(
         )
 
         return {
-            "recipe": result.recipe.model_dump(mode="json") if hasattr(result.recipe, "model_dump") else result.recipe,
+            "recipe": result.recipe.model_dump(mode="json")
+            if hasattr(result.recipe, "model_dump")
+            else result.recipe,
             "ingredients_status": [
                 s.model_dump(mode="json") if hasattr(s, "model_dump") else s
                 for s in (result.ingredients_status or [])
@@ -161,3 +168,112 @@ async def refine_recipe(
     except Exception as e:
         logger.error(f"Recipe refinement failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Recipe refinement failed: {str(e)}") from e
+
+
+# ---------------------------------------------------------------------------
+# Cook-a-recipe endpoints
+# ---------------------------------------------------------------------------
+
+
+class CookRequest(BaseModel):
+    """Request body for POST /v1/recipes/cook."""
+
+    recipe_id: str = Field(description="UUID of the recipe to cook")
+
+
+@router.post(
+    "/cook",
+    response_model=CookProposal,
+    summary="Match recipe ingredients against pantry",
+    responses={
+        200: {"description": "CookProposal with per-ingredient match results"},
+        401: {"description": "Missing or invalid JWT"},
+        404: {"description": "Recipe not found"},
+    },
+)
+async def cook_recipe(
+    request: CookRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> CookProposal:
+    """Fetch the recipe and the user's pantry, then return a CookProposal.
+
+    No writes are performed here — the user must call /cook/confirm to apply.
+    """
+    logger.info(f"Cook proposal: user={user_id}, recipe={request.recipe_id}")
+
+    try:
+        from bubbly_chef.services.cook_matcher import match_ingredients
+
+        repo = await get_repository()
+
+        # Fetch recipe (raw dict — get_recipe returns dict)
+        recipe_data = await repo.get_recipe(user_id, request.recipe_id)
+        if recipe_data is None:
+            raise HTTPException(status_code=404, detail="Recipe not found")
+
+        pantry_items = await repo.get_all_pantry_items(user_id)
+
+        recipe_dict: dict[str, Any] = recipe_data
+        ingredients: list[dict[str, Any]] = recipe_dict.get("ingredients", [])
+        title: str = recipe_dict.get("title", "")
+
+        proposal = match_ingredients(
+            recipe_id=request.recipe_id,
+            recipe_title=title,
+            recipe_ingredients=ingredients,
+            pantry_items=pantry_items,
+        )
+        return proposal
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Cook proposal failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Cook proposal failed: {str(e)}") from e
+
+
+@router.post(
+    "/cook/confirm",
+    summary="Apply pantry deductions and mark recipe as cooked",
+    responses={
+        200: {"description": "Deductions applied and recipe marked as cooked"},
+        401: {"description": "Missing or invalid JWT"},
+        404: {"description": "Recipe not found"},
+    },
+)
+async def cook_confirm(
+    request: CookConfirmRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> dict[str, Any]:
+    """Apply user-approved deductions and increment times_cooked on the recipe."""
+    logger.info(
+        f"Cook confirm: user={user_id}, recipe={request.recipe_id}, "
+        f"deductions={len(request.deductions)}"
+    )
+
+    try:
+        repo = await get_repository()
+
+        # Verify recipe exists and belongs to this user
+        recipe_data = await repo.get_recipe(user_id, str(request.recipe_id))
+        if recipe_data is None:
+            raise HTTPException(status_code=404, detail="Recipe not found")
+
+        # Apply each deduction
+        for deduction in request.deductions:
+            await repo.deduct_pantry_item(
+                user_id=user_id,
+                item_id=str(deduction.pantry_item_id),
+                deduct_qty=deduction.deduct_qty,
+            )
+
+        # Mark recipe as cooked
+        await repo.update_recipe_cooked(user_id=user_id, recipe_id=str(request.recipe_id))
+
+        return {"success": True, "deductions_applied": len(request.deductions)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Cook confirm failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Cook confirm failed: {str(e)}") from e

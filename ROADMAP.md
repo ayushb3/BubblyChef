@@ -18,31 +18,63 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 
 ---
 
-## Current Status: Phase 7 Complete — Live in Production
+## Current Status: Phase 7 shipped · design-system + cook flow landed
 
-### Completed
+**Live at:** https://bubbly-chef.vercel.app
+
+### Recently landed (2026-07-25)
+
+| Area | What shipped |
+|---|---|
+| Design system | 5-palette theme switcher (`ThemePicker`), shared `Chip`, `EmptyState`, `lib/motion.ts` spring config + reduced-motion helper, semantic colour tokens |
+| Recipes | Cook-a-recipe with pantry deduction (`CookModal`, `cook_matcher.py`, migration `00006`), action cluster (44px heart + pop, overflow menu), hero thumbnails, page-turn swipe |
+| Chat | Bubble tails, post-message suggestion chips, mascot avatars, spring pop-in |
+| Quality | **Six CI gates now enforced** — pytest, ruff, `mypy --strict`, tsc, jest, Playwright smoke |
+| Tooling | 27 agent skills vendored into `.claude/skills/` (work in CI + cloud, not just locally) |
+
+### Bugs found and fixed by the new gates
+
+Adding `mypy --strict` immediately surfaced four live defects:
+
+- `get_ai_manager` imported from the wrong module **and** awaited though synchronous — `/v1/recipes/generate` and `/refine` always returned HTTP 500
+- `recipe.tags` used where `RecipeCard` defines `dietary_tags` — `AttributeError` on every recipe save
+- `.not_()` called as a function when postgrest exposes it as a property — `TypeError` in `get_expiring_items()`
+- `count="exact"` string where postgrest now requires the `CountMethod` enum
+
+CI itself had also been red on every commit — `ruff>=0.4` was unpinned with no explicit rule set, so ruff 0.16's changed defaults broke the build with no code change. Rule set is now pinned explicitly.
+
+### Completed phases
 
 | Phase | Description |
 |---|---|
-| Phase 1 | Pantry CRUD, receipt scanning, recipe generation, LangGraph workflows, 454+ tests |
-| Phase 2 | Chat intent router, recipe grounding (constraint extraction + expiry scoring), conversation history, DOM kitchen scene + milestone decorations |
-| Migration | Next.js + Supabase + FastAPI AI microservice (three-tier rewrite); component migration done; JWT wiring + SSE streaming done |
-| Recipe library | Save, search, edit, delete, favourite recipes; `is_favorite` toggle; search auto-select; ingredients + instructions editing |
-| AI workflows R1+R2 | Sub-graph decomposition (`chat/`, `pantry/`, `recipe/`), parent router, server-side conversation sessions + context-aware routing (`SessionMode`) |
-| Phase 3 | URL recipe import (recipe-scrapers + LLM fallback, source attribution chip, confirmation flow); `source_url` + `source_platform` in DB |
-| Phase 4 | Component migration complete — Pantry, Scan, Chat, Dashboard all on Next.js; old `web/` Vite app retired |
-| Phase 6 | JWT forwarding from Next.js session to AI microservice; SSE streaming wired |
-| Phase 7 | Deployed to Vercel (frontend) + Railway (AI service); Tesseract replaced with Gemini vision; receipt scan, chat, recipe import all working in production |
+| Phase 1 | Pantry CRUD, receipt scanning, recipe generation, LangGraph workflows |
+| Phase 2 | Chat intent router, recipe grounding, conversation history |
+| Migration | Next.js + Supabase + FastAPI three-tier rewrite |
+| Recipe library | Save, search, edit, delete, favourite; URL import with source attribution |
+| AI workflows R1+R2 | Sub-graph decomposition, parent router, server-side sessions |
+| Phase 6 | JWT forwarding, SSE streaming |
+| Phase 7 | Vercel + Railway deploy; Gemini Vision OCR |
+| **Design system** | Theme switcher, shared primitives, motion config |
+| **Cook flow** | Recipe → pantry deduction, cook tracking |
 
-### Migration phases completed
+---
 
-- [x] Supabase schema + RLS (7 tables)
-- [x] Next.js app + Supabase auth (cookie-based sessions)
-- [x] 19 CRUD route handlers in Next.js
-- [x] AI microservice extracted (`ai-service/`)
-- [x] Recipe library UI (RecipeBook, edit modal with ingredients/instructions, delete confirm, favourites)
-- [x] URL recipe import with confirmation step + source attribution
-- [x] All pages (Pantry, Scan, Chat, Dashboard) on Next.js App Router
+## Next up
+
+Planned in `docs/plans/2026-07-24-gamification-and-live-kitchen.md` and
+`docs/plans/2026-07-24-agent-team-execution.md`:
+
+1. **PWA shell** — manifest, service worker, install prompt, push scaffolding
+2. **Live kitchen** — pixel-art diorama home screen (DOM + Framer Motion, not Phaser)
+3. **Progression** — `kitchen_events` ledger → XP, streaks, decoration unlocks
+4. **Living Bubbles** — mascot with memory of your cooking history
+5. **Push notifications** — expiry nudges, streak reminders
+
+### Known not-done (verified, despite prior claims)
+
+- `ScrollFadeIn` (#87) — commit message claimed it; the component was never added
+- Chat input still `disabled={isStreaming}` (#105) — typing while streaming not implemented
+- Category tinting still reuses expiry tokens (#110) — no dedicated palette
 
 ---
 
@@ -94,15 +126,17 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 
 ## Tech Debt
 
-| # | Issue | Priority |
-|---|---|---|
-| #5 | Add pagination to pantry list | High (Phase 3 blocker) |
-| #8 | Rate limiting for AI provider calls | High (Phase 3 blocker) |
-| — | `mutating` state in RecipeBook — buttons not `disabled={mutating}` yet | Medium |
-| — | No error feedback on failed recipe mutations | Medium |
-| #10 | Accessibility (ARIA labels, keyboard nav) | Medium |
-| #11 | End-to-end tests with Playwright | Medium |
-| #6 | Unit conversion system (dozen eggs → individual) | Low |
+| # | Issue | Priority | Status |
+|---|---|---|---|
+| #125 | Duplicate recipe ingredients over-deduct the same pantry item | High | New — found in landing audit |
+| #5 | Add pagination to pantry list | High | Open |
+| #8 | Rate limiting for AI provider calls | High | Open — matters more once daily Bubbles lands |
+| #10 | Accessibility (ARIA labels, keyboard nav) | Medium | Open |
+| #6 | Unit conversion system (dozen eggs → individual) | Low | Open |
+| — | `cook_matcher` + new repo methods have no behavioural test coverage | Medium | Tests mock the repo entirely |
+| — | `interrogate` / `thermo-nuclear` hook only fires on `gh pr create` | Low | Never fires where PRs are made via MCP |
+
+**Resolved:** `mutating` state in RecipeBook, error feedback on failed recipe mutations, e2e tests (#11), e2e in CI (#55).
 
 ---
 
@@ -111,8 +145,8 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 | # | Issue | Priority |
 |---|---|---|
 | #1 | Receipt parsing confuses prices with quantities | Medium |
-| #2 | Long item names overflow on mobile | Low |
 | #3 | Expiry date estimation for produce inaccurate | Medium |
+| #2 | Long item names overflow on mobile | Low |
 | #4 | Bottom nav not fixed on iOS Safari | Low |
 
 ---
@@ -137,4 +171,4 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 
 ---
 
-*Last updated: 2026-05-02*
+*Last updated: 2026-07-25*

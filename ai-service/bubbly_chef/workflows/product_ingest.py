@@ -381,7 +381,7 @@ async def run_product_ingest(
     }
 
     # Run the graph
-    final_state = await product_ingest_graph.ainvoke(initial_state)  # type: ignore[arg-type]
+    final_state = await product_ingest_graph.ainvoke(initial_state)
 
     # Build proposal
     actions = final_state.get("actions", [])

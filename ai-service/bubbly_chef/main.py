@@ -7,8 +7,10 @@ Serves only AI-powered endpoints:
 - Workflow events (approve/reject proposals)
 """
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,8 +18,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from bubbly_chef.api.routes import chat, ingest, recipes_ai, scan, workflows
 from bubbly_chef.config import settings
 from bubbly_chef.repository.supabase_repo import get_repository
-
-import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -62,11 +62,11 @@ def create_app() -> FastAPI:
 
     # Health check
     @app.get("/health")
-    async def health_root() -> dict:
+    async def health_root() -> dict[str, Any]:
         return {"status": "ok"}
 
     @app.get("/health/ai")
-    async def health() -> dict:
+    async def health() -> dict[str, Any]:
         providers = []
         if settings.gemini_api_key:
             providers.append({"name": "gemini", "available": True})

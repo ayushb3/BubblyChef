@@ -63,7 +63,10 @@ async def ingest_recipe_url(
         from bubbly_chef.services.recipe_url_ingestor import ingest_recipe_from_url
 
         recipe = await ingest_recipe_from_url(request.url)
-        logger.info(f"Recipe URL ingest success: user={user_id}, title={recipe.title!r}")
+        logger.info(
+            f"Recipe URL ingest success: user={user_id}, title={recipe.title!r}, "
+            f"thumbnail_url={recipe.thumbnail_url!r}"
+        )
         return recipe
 
     except ValueError as e:

@@ -9,16 +9,111 @@
 
 @layer base {
   :root {
-    /* Kawaii design tokens */
+    /* Kawaii design tokens — Sakura default */
     --color-bg: #FFF0F5;
     --color-primary: #FFB7C5;
-    --color-accent: #B5D5F5;
+    --color-accent: #B5EADC;
     --color-text: #5C4A5A;
     --color-surface: #FFFAFC;
     --color-border: #F2D6E0;
     --color-muted: #9B8A93;
     --color-primary-dark: #FF8FAB;
-    --color-accent-dark: #7EC8F0;
+    --color-accent-dark: #5EC9B0;
+    --color-expired: #FFCDD2;
+    --color-expired-text: #7B2D2D;
+    --color-expiring: #FFF3C4;
+    --color-expiring-text: #7B5A00;
+    --color-fresh: #DCFCE7;
+    --color-fresh-text: #166534;
+    /* Destructive / favourited accent. Referenced by RecipeBook, RecipeImportModal
+     * and RecipeDeleteConfirm; previously undeclared, so every call site without an
+     * inline fallback silently inherited ambient text colour. */
+    --color-coral: #FF9AA2;
+    /*
+     * Semantic signal tokens (fresh / expiring / expired) are intentionally
+     * theme-invariant — red = bad and green = good across all five themes,
+     * so these are NOT redefined per [data-theme="*"]. Tokens above the
+     * separator (--color-bg ... --color-accent-dark) flex per theme.
+     */
+
+    /* Shared visual primitives — derive from theme tokens via color-mix so
+     * shadows/backdrops automatically adopt the active theme palette. */
+    --shadow-soft: 0 4px 24px color-mix(in srgb, var(--color-primary) 15%, transparent);
+    --shadow-pop: 0 8px 32px color-mix(in srgb, var(--color-primary) 25%, transparent);
+    --color-backdrop: color-mix(in srgb, var(--color-text) 18%, transparent);
+    --color-hero-overlay: linear-gradient(
+      to top,
+      color-mix(in srgb, black 72%, transparent) 0%,
+      color-mix(in srgb, black 18%, transparent) 55%,
+      transparent 100%
+    );
+    --text-shadow-on-image: 0 1px 4px color-mix(in srgb, black 40%, transparent);
+  }
+
+  /* Theme palettes — applied via data-theme attribute on <html> */
+  /* Sakura: pink + mint green */
+  [data-theme="sakura"] {
+    --color-bg: #FFF0F5;
+    --color-primary: #FFB7C5;
+    --color-accent: #B5EADC;
+    --color-text: #5C4A5A;
+    --color-surface: #FFFAFC;
+    --color-border: #F2D6E0;
+    --color-muted: #9B8A93;
+    --color-primary-dark: #FF8FAB;
+    --color-accent-dark: #5EC9B0;
+  }
+
+  /* Mint: soft green + coral */
+  [data-theme="mint"] {
+    --color-bg: #F0FBF5;
+    --color-primary: #A8E6CF;
+    --color-accent: #FFB7A3;
+    --color-text: #3A5C4A;
+    --color-surface: #F8FFFA;
+    --color-border: #C8E8D8;
+    --color-muted: #7A9B8A;
+    --color-primary-dark: #6DC8A8;
+    --color-accent-dark: #FF8C73;
+  }
+
+  /* Lavender: purple + butter yellow */
+  [data-theme="lavender"] {
+    --color-bg: #F5F0FF;
+    --color-primary: #C9B5E8;
+    --color-accent: #FFE0A3;
+    --color-text: #4A3A5C;
+    --color-surface: #FAF8FF;
+    --color-border: #D8C8E8;
+    --color-muted: #8A7A9B;
+    --color-primary-dark: #9B7DD4;
+    --color-accent-dark: #FFCA5A;
+  }
+
+  /* Yuzu: warm yellow + teal */
+  [data-theme="yuzu"] {
+    --color-bg: #FFFBF0;
+    --color-primary: #FFD98C;
+    --color-accent: #89D4CF;
+    --color-text: #5C4A3A;
+    --color-surface: #FFFDF8;
+    --color-border: #F0DFC8;
+    --color-muted: #9B8A7A;
+    --color-primary-dark: #FFB830;
+    --color-accent-dark: #4FBDB6;
+  }
+
+  /* Bluebell: sky blue + blush pink */
+  [data-theme="bluebell"] {
+    --color-bg: #F0F5FF;
+    --color-primary: #A3C4F5;
+    --color-accent: #F5C0D0;
+    --color-text: #3A4A5C;
+    --color-surface: #F8FBFF;
+    --color-border: #C8D8F0;
+    --color-muted: #7A8A9B;
+    --color-primary-dark: #5A9EF0;
+    --color-accent-dark: #E8849A;
   }
 
   body {
@@ -35,6 +130,7 @@
 /* Chowder-style textile/fabric panel — subtle woven crosshatch texture */
 .chowder-panel {
   background-color: var(--color-primary);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Crect width='12' height='12' fill='none'/%3E%3Cline x1='0' y1='0' x2='12' y2='0' stroke='%23ffffff' stroke-width='0.8' stroke-opacity='0.15'/%3E%3Cline x1='0' y1='6' x2='12' y2='6' stroke='%23B5D5F5' stroke-width='0.6' stroke-opacity='0.12'/%3E%3Cline x1='0' y1='0' x2='0' y2='12' stroke='%23ffffff' stroke-width='0.8' stroke-opacity='0.15'/%3E%3Cline x1='6' y1='0' x2='6' y2='12' stroke='%23FFB7C5' stroke-width='0.6' stroke-opacity='0.12'/%3E%3Cline x1='0' y1='0' x2='12' y2='12' stroke='%23ffffff' stroke-width='0.4' stroke-opacity='0.08'/%3E%3Cline x1='12' y1='0' x2='0' y2='12' stroke='%23ffffff' stroke-width='0.4' stroke-opacity='0.08'/%3E%3C/svg%3E");
-  background-size: 12px 12px;
+  background-image:
+    repeating-linear-gradient(0deg, transparent, transparent 5px, rgba(255,255,255,0.08) 5px, rgba(255,255,255,0.08) 6px),
+    repeating-linear-gradient(90deg, transparent, transparent 5px, rgba(255,255,255,0.06) 5px, rgba(255,255,255,0.06) 6px);
 }

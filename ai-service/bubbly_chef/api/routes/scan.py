@@ -5,7 +5,7 @@ Exposes:
 """
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
@@ -28,7 +28,7 @@ router = APIRouter(prefix="/v1/scan", tags=["scan"])
 async def scan_receipt(
     file: UploadFile = File(..., description="Receipt image (JPEG/PNG)"),
     preprocess: bool = True,
-    preprocess_mode: str = "auto",
+    preprocess_mode: Literal["auto", "light", "aggressive"] = "auto",
     user_id: str = Depends(get_current_user_id),
 ) -> dict[str, Any]:
     """Upload a receipt image, run OCR, and return parsed items.
@@ -56,7 +56,12 @@ async def scan_receipt(
             from bubbly_chef.services.image_preprocessor import get_image_preprocessor
 
             preprocessor = get_image_preprocessor(mode=preprocess_mode)
-            image_data = await preprocessor.preprocess(image_data, return_format="bytes")
+            preprocessed = await preprocessor.preprocess(image_data, return_format="bytes")
+            if not isinstance(preprocessed, bytes):
+                raise TypeError(
+                    "Expected bytes from preprocessor with return_format='bytes'"
+                )
+            image_data = preprocessed
 
         # OCR
         from bubbly_chef.services.ocr import get_ocr_service
@@ -91,7 +96,9 @@ async def scan_receipt(
                 "name": pantry_item.name,
                 "quantity": pantry_item.quantity,
                 "unit": pantry_item.unit,
-                "category": pantry_item.category.value if hasattr(pantry_item.category, "value") else str(pantry_item.category),
+                "category": pantry_item.category.value
+                if hasattr(pantry_item.category, "value")
+                else str(pantry_item.category),
                 "location": pantry_item.storage_location or "pantry",
                 "confidence": confidence,
             }
