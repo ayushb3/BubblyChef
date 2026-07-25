@@ -45,6 +45,16 @@ _ADJECTIVE_RE = re.compile(
 # Conjunctions that split multi-ingredient strings, e.g. "2 eggs and 1 yolk"
 _CONJUNCTION_RE = re.compile(r"\s*(?:,\s*|\s+and\s+|\s+or\s+|\s+plus\s+).*$", re.IGNORECASE)
 
+# Food unit words that, appearing as the sole parsed "name", mean the parse
+# consumed too much and we should fall back to the last conjunction segment.
+_UNIT_WORDS = frozenset({
+    "cup", "cups", "tbsp", "tablespoon", "tablespoons", "tsp", "teaspoon",
+    "teaspoons", "oz", "lb", "lbs", "g", "kg", "ml", "l", "item", "count",
+    "piece", "pieces", "slice", "slices", "bunch", "can", "cans", "package",
+    "packages", "clove", "cloves", "sprig", "sprigs", "head", "heads",
+    "stick", "sticks",
+})
+
 
 def _parse_ingredient_string(raw: str) -> dict[str, Any]:
     """Parse a raw ingredient string into {name, quantity, unit}.
@@ -88,11 +98,6 @@ def _parse_ingredient_string(raw: str) -> dict[str, Any]:
 
     # Food unit words appearing as the sole "name" mean the parse consumed too much.
     # In that case fall back to the last conjunction segment for the actual food noun.
-    _UNIT_WORDS = {"cup", "cups", "tbsp", "tablespoon", "tablespoons", "tsp",
-                   "teaspoon", "teaspoons", "oz", "lb", "lbs", "g", "kg", "ml",
-                   "l", "item", "count", "piece", "pieces", "slice", "slices",
-                   "bunch", "can", "cans", "package", "packages", "clove", "cloves",
-                   "sprig", "sprigs", "head", "heads", "stick", "sticks"}
     if not name or name in _UNIT_WORDS:
         last = last_segment
         # Strip leading adjectives/conjunction words before the qty match
