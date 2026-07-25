@@ -65,7 +65,7 @@ class WorkflowState(TypedDict, total=False):
     request_id: str  # UUID as string for serialization
     workflow_id: str  # UUID as string
     conversation_id: str | None
-    user_id: str | None  # Supabase auth user ID, needed for repo calls
+    user_id: str  # Supabase auth user ID, needed for repo calls — always set by routes
 
     # ==========================================================================
     # Session (R2)
