@@ -226,7 +226,10 @@ async def ingest_recipe_from_url(url: str) -> RecipeCard:
         else:
             if result.image_url and not result.thumbnail_url:
                 result.thumbnail_url = result.image_url
-        logger.info(f"[ai] title={result.title!r} image_url={result.image_url!r} thumbnail_url={result.thumbnail_url!r}")
+        logger.info(
+            f"[ai] title={result.title!r} image_url={result.image_url!r} "
+            f"thumbnail_url={result.thumbnail_url!r}"
+        )
         return result
 
     # Shouldn't happen but guard anyway

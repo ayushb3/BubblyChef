@@ -213,8 +213,7 @@ async def cook_recipe(
 
         pantry_items = await repo.get_all_pantry_items(user_id)
 
-        # get_recipe returns a raw Supabase dict at runtime despite the RecipeCard type hint
-        recipe_dict: dict[str, Any] = recipe_data  # type: ignore[assignment]
+        recipe_dict: dict[str, Any] = recipe_data
         ingredients: list[dict[str, Any]] = recipe_dict.get("ingredients", [])
         title: str = recipe_dict.get("title", "")
 

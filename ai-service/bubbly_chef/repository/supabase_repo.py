@@ -335,7 +335,7 @@ class SupabaseRepository:
             .single()
             .execute()
         )
-        current = result.data or {}
+        current = _as_row(result.data) if result.data else {}
         times_cooked = int(current.get("times_cooked", 0)) + 1
         (
             self.client.table("recipes")
@@ -370,8 +370,10 @@ class SupabaseRepository:
             logger.warning(f"deduct_pantry_item: item {item_id} not found for user {user_id}")
             return
 
-        row = result.data
-        current_base = float(row["quantity_base"]) if row.get("quantity_base") is not None else None
+        row = _as_row(result.data)
+        current_base = (
+            float(row["quantity_base"]) if row.get("quantity_base") is not None else None
+        )
         current_qty = float(row["quantity"])
 
         if current_base is not None:

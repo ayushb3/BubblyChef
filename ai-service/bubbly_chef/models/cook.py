@@ -10,7 +10,9 @@ class IngredientMatch(BaseModel):
     """Per-ingredient match result from the cook matcher."""
 
     ingredient_name: str = Field(description="Ingredient name from the recipe")
-    ingredient_qty: float | None = Field(default=None, description="Quantity required by the recipe")
+    ingredient_qty: float | None = Field(
+        default=None, description="Quantity required by the recipe"
+    )
     ingredient_unit: str | None = Field(default=None, description="Unit required by the recipe")
 
     # Pantry side (None when status == "missing")
@@ -25,7 +27,10 @@ class IngredientMatch(BaseModel):
     base_unit: str | None = Field(default=None, description="Base unit used for comparison")
 
     status: Literal["ready", "shortfall", "unit_conflict", "missing"] = Field(
-        description="ready=have enough, shortfall=not enough, unit_conflict=can't compare, missing=not in pantry"
+        description=(
+            "ready=have enough, shortfall=not enough, "
+            "unit_conflict=can't compare, missing=not in pantry"
+        )
     )
     shortfall: float | None = Field(
         default=None, description="How much is missing (base unit), only set when status==shortfall"
