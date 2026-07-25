@@ -54,7 +54,7 @@ Browser
 ```
 
 **Key patterns:**
-- **Two API surfaces** — CRUD goes through Next.js routes (same-origin); AI ops go direct to microservice. Never mix.
+- **CRUD vs. AI, with a proxy exception** — CRUD always goes through Next.js routes (same-origin). Most AI ops (recipe generate/refine/cook + cook/confirm, scan, apply) go through Next.js proxy routes under `nextjs/src/app/api/ai/*`, which forward the user's Supabase JWT server-side via `lib/api/ai-proxy.ts` (`aiProxyFetch`/`aiProxyJson`) to the FastAPI microservice. Only chat streaming (`/v1/chat/stream`) still goes direct from browser to the AI microservice, to avoid Vercel's serverless timeout on SSE.
 - **AI Provider Abstraction** — `AIManager` picks first available provider. Never call Gemini SDK directly.
 - **Repository Pattern** — All DB access via `SupabaseRepository` in `ai-service/`. Every method takes `user_id` as first param.
 - **LangGraph Workflows** — Complex multi-step AI ops live in `ai-service/bubbly_chef/workflows/`, not in routes.
@@ -103,7 +103,6 @@ BubblyChef/
 │       └── repository/supabase_repo.py  # SupabaseRepository (30+ methods, service_role)
 │
 ├── supabase/migrations/             # SQL migrations (schema + RLS policies)
-├── bubbly_chef/                     # [LEGACY] Original monolith — reference only
 └── docs/                            # Architecture, setup, plans
 ```
 
@@ -151,28 +150,34 @@ GET               /api/foods/search
 
 ### AI microservice routes (`http://localhost:8888`)
 
+All AI routes live under `/v1/*` (`api/routes/*.py`, `APIRouter(prefix=...)`).
+Non-streaming ones are also reachable through Next.js proxy routes at
+`/api/ai/*` (see the CRUD-vs-AI pattern above) — chat streaming is the one
+exception that stays direct browser → microservice.
+
 ```
 GET   /health | /health/ai
 
-# Chat (LangGraph intent router)
-POST  /v1/chat
-GET   /v1/chat/history
+# Chat (api/routes/chat.py, prefix /v1/chat)
+POST  /v1/chat/stream               # SSE streaming chat (browser → microservice, direct)
+POST  /v1/chat                      # Non-streaming fallback
+GET   /v1/chat/history/{conversation_id}
+GET   /v1/chat/sessions
 
-# Scan (OCR + AI parse)
-GET   /scan/ocr-status
-POST  /scan/preprocess
-POST  /scan/receipt
-POST  /scan/confirm
+# Scan (api/routes/scan.py, prefix /v1/scan)
+POST  /v1/scan/receipt              # OCR + AI parse — proxied via /api/ai/scan
 
-# Recipe generation
-POST  /recipes/generate
-GET   /recipes/suggestions
+# Recipe generation (api/routes/recipes_ai.py, prefix /v1/recipes)
+POST  /v1/recipes/generate          # proxied via /api/ai/recipes/generate
+POST  /v1/recipes/refine            # proxied via /api/ai/recipes/refine
+POST  /v1/recipes/cook              # match ingredients vs pantry — proxied via /api/ai/recipes/cook
+POST  /v1/recipes/cook/confirm      # apply deductions — proxied via /api/ai/recipes/cook/confirm
 
-# Ingest workflows
-POST  /ingest/chat | /ingest/receipt | /ingest/product | /ingest/recipe
+# Ingest (api/routes/ingest.py, prefix /v1/ingest)
+POST  /v1/ingest/recipe-url         # extract RecipeCard from a URL
 
-# Apply proposal (human-reviewed → DB)
-POST  /apply
+# Apply proposal (api/routes/workflows.py, prefix /v1/workflows)
+POST  /v1/workflows/apply           # human-reviewed proposal → DB — proxied via /api/ai/workflows/apply
 ```
 
 ---
@@ -181,11 +186,11 @@ POST  /apply
 
 ### Receipt Scanning
 ```
-Upload image → (optional) preprocess → Gemini Vision OCR
+POST /v1/scan/receipt (optional preprocess) → Gemini Vision OCR
 → AI parses items with confidence scores
 → ≥0.8 ready_to_add | 0.5–0.8 needs_review | <0.5 skipped
 → User reviews/edits → clicks "Add X Items"
-→ POST /scan/confirm writes to DB
+→ POST /v1/workflows/apply (intent=pantry_update) writes to DB
 Nothing auto-adds without explicit user confirm.
 ```
 
@@ -321,7 +326,7 @@ NEXT_PUBLIC_AI_SERVICE_URL=http://localhost:8888
 ### ai-service/.env
 ```bash
 BUBBLY_SUPABASE_URL=...
-BUBBLY_SUPABASE_SERVICE_ROLE_KEY=...
+BUBBLY_SUPABASE_SECRET_KEY=...
 BUBBLY_SUPABASE_JWT_SECRET=...
 BUBBLY_GEMINI_API_KEY=...
 BUBBLY_OLLAMA_BASE_URL=http://localhost:11434   # optional
@@ -337,8 +342,6 @@ BUBBLY_CORS_ORIGINS=["http://localhost:3000"]
 - No rate limiting on AI provider calls — issue #8
 - Pagination missing from pantry list — issue #5
 - No unit conversion (can't deduct "3 eggs" from "1 dozen eggs") — issue #6
-- `mutating` state in RecipeBook — buttons not yet `disabled={mutating}`
-- No error feedback on failed recipe mutations
 - iOS Safari bottom nav bug — issue #4
 - Recipe generation ignores constraint modifications from chat follow-up — BubblyChef-747
 

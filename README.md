@@ -22,7 +22,7 @@ A Sanrio-inspired pantry + recipe assistant. Scan receipts, manage your pantry, 
 |---|---|
 | Frontend + CRUD | Next.js 14 (App Router), React, TypeScript, Tailwind CSS |
 | Auth + Database | Supabase (Postgres + Row Level Security) |
-| AI Microservice | FastAPI + LangGraph + Gemini API + Tesseract OCR |
+| AI Microservice | FastAPI + LangGraph + Gemini API + Gemini Vision OCR |
 | Deployment | Vercel (frontend) + Railway (AI service) |
 
 ---
@@ -60,7 +60,7 @@ NEXT_PUBLIC_AI_SERVICE_URL=http://localhost:8888
 
 # ai-service/.env
 BUBBLY_SUPABASE_URL=your-supabase-url
-BUBBLY_SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+BUBBLY_SUPABASE_SECRET_KEY=your-secret-key
 BUBBLY_SUPABASE_JWT_SECRET=your-jwt-secret
 BUBBLY_GEMINI_API_KEY=your-gemini-key
 ```
@@ -98,7 +98,7 @@ Browser
       (chat, scan, recipe-generate)
        LangGraph workflows
        Gemini → Ollama fallback
-       Tesseract OCR
+       Gemini Vision OCR
 ```
 
 **Key patterns:**
@@ -130,7 +130,6 @@ BubblyChef/
 ├── supabase/
 │   └── migrations/          # SQL migrations (schema + RLS)
 │
-├── bubbly_chef/             # [LEGACY] Original monolith — reference only
 └── docs/                    # Architecture, setup guides, plans
 ```
 

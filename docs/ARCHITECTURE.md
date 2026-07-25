@@ -15,7 +15,7 @@ BubblyChef is now a **three-tier architecture** deployed as separate services:
 │    (Postgres)    (Railway)  │
 │     Auth+RLS     FastAPI    │
 │                  LangGraph  │
-│                  Tesseract  │
+│                  Gemini OCR │
 └─────────────────────────────┘
 ```
 
@@ -23,7 +23,7 @@ BubblyChef is now a **three-tier architecture** deployed as separate services:
 |---|---|---|---|
 | **Frontend + CRUD API** | Next.js 14, React, TypeScript, Tailwind | Vercel (prod), localhost:3000 (dev) | 3000 |
 | **Database + Auth** | Supabase (Postgres 15), Row Level Security | Supabase cloud | N/A |
-| **AI Microservice** | FastAPI, LangGraph, Gemini, Tesseract | Railway (prod), localhost:8888 (dev) | 8888 |
+| **AI Microservice** | FastAPI, LangGraph, Gemini (incl. Vision OCR) | Railway (prod), localhost:8888 (dev) | 8888 |
 
 ---
 
@@ -96,8 +96,6 @@ BubblyChef/
 │   │   └── 00002_rls_policies.sql   # RLS + auto-create profile trigger
 │   └── config.toml
 │
-├── bubbly_chef/                     # [LEGACY] Original monolith (reference only)
-├── web/                             # [LEGACY] Original Vite frontend (reference only)
 ├── scripts/
 │   └── migrate_sqlite_to_supabase.py
 └── docs/
@@ -211,7 +209,7 @@ items = await repo.get_all_pantry_items(user_id=user_id)
 | Variable | Description |
 |---|---|
 | `BUBBLY_SUPABASE_URL` | Supabase project URL |
-| `BUBBLY_SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key |
+| `BUBBLY_SUPABASE_SECRET_KEY` | Supabase secret key (bypasses RLS) |
 | `BUBBLY_SUPABASE_JWT_SECRET` | JWT secret for token validation |
 | `BUBBLY_GEMINI_API_KEY` | Google Gemini API key |
 | `BUBBLY_CORS_ORIGINS` | Allowed origins (JSON array) |
@@ -244,6 +242,6 @@ uvicorn bubbly_chef.main:app --reload --port 8888
 | User profiles | `nextjs/src/app/api/profile/` | Same |
 | Auth | `nextjs/src/lib/supabase/` + middleware | Cookie-based, SSR |
 | Chat (AI) | `ai-service/` | LangGraph + Gemini |
-| Receipt OCR | `ai-service/` | Tesseract binary dependency |
+| Receipt OCR | `ai-service/` | Gemini Vision — no system dependencies |
 | Recipe generation | `ai-service/` | LangGraph grounding workflow |
 | `apply_pantry_proposal` | `ai-service/` | Complex write logic tied to AI workflows |
