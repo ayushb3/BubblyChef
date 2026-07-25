@@ -21,12 +21,36 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
     >
       <div
         className={[
-          'px-4 py-2.5 text-sm leading-relaxed',
+          'relative px-4 py-2.5 text-sm leading-relaxed',
           isUser
             ? 'bg-[var(--color-primary)] text-white rounded-2xl rounded-br-md max-w-[80%]'
             : 'bg-[var(--color-accent)]/30 text-[var(--color-text)] rounded-2xl rounded-bl-md border border-[var(--color-accent)] max-w-[85%]',
         ].join(' ')}
       >
+        {/* Assistant bubble tail — points left, toward the mascot avatar */}
+        {!isUser && (
+          <span
+            aria-hidden
+            className="absolute -left-[7px] top-3 w-0 h-0"
+            style={{
+              borderTop: '6px solid transparent',
+              borderBottom: '6px solid transparent',
+              borderRight: '7px solid var(--color-accent)',
+            }}
+          />
+        )}
+        {/* User bubble tail — points right */}
+        {isUser && (
+          <span
+            aria-hidden
+            className="absolute -right-[7px] top-3 w-0 h-0"
+            style={{
+              borderTop: '6px solid transparent',
+              borderBottom: '6px solid transparent',
+              borderLeft: '7px solid var(--color-primary)',
+            }}
+          />
+        )}
         {isUser ? (
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
         ) : (

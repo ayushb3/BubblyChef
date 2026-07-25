@@ -8,6 +8,7 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 import EmptyState from '@/components/ui/EmptyState'
 import RotatingPlaceholder from '@/components/chat/RotatingPlaceholder'
 import MessageBubble from '@/components/chat/MessageBubble'
+import PostMessageChips from '@/components/chat/PostMessageChips'
 import TypingIndicator from '@/components/chat/TypingIndicator'
 import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
@@ -107,6 +108,10 @@ export default function ChatPage() {
     sendMessage('Give me a different recipe')
   }
 
+  const handleTellMore = () => {
+    sendMessage('Tell me more about this')
+  }
+
   // Determine if the typing indicator should show
   // (streaming has started but no content yet on the last assistant message)
   const lastMsg = messages[messages.length - 1]
@@ -160,6 +165,11 @@ export default function ChatPage() {
                   msg.role === 'assistant' &&
                   index === messages.length - 1
                 }
+                isLastMessage={
+                  !isStreaming &&
+                  msg.role === 'assistant' &&
+                  index === messages.length - 1
+                }
                 isStreaming={isStreaming}
                 proposalState={proposalStates[msg.id]}
                 saveState={saveStates[msg.id] ?? 'idle'}
@@ -167,6 +177,7 @@ export default function ChatPage() {
                 onReject={() => rejectProposal(msg.id)}
                 onSave={(recipe) => handleSaveRecipe(msg.id, recipe)}
                 onTryAnother={handleTryAnother}
+                onTellMore={handleTellMore}
               />
             ))}
 
@@ -242,6 +253,7 @@ export default function ChatPage() {
 interface MessageRendererProps {
   message: ChatMessage
   isLastAssistant: boolean
+  isLastMessage: boolean
   isStreaming: boolean
   proposalState?: 'pending' | 'approved' | 'rejected'
   saveState: 'idle' | 'saving' | 'saved' | 'error'
@@ -249,11 +261,13 @@ interface MessageRendererProps {
   onReject: () => void
   onSave: (recipe: ChatRecipeData) => void
   onTryAnother: () => void
+  onTellMore: () => void
 }
 
 function MessageRenderer({
   message,
   isLastAssistant,
+  isLastMessage,
   isStreaming,
   proposalState,
   saveState,
@@ -261,6 +275,7 @@ function MessageRenderer({
   onReject,
   onSave,
   onTryAnother,
+  onTellMore,
 }: MessageRendererProps) {
   // User messages — simple bubble
   if (message.role === 'user') {
@@ -350,6 +365,9 @@ function MessageRenderer({
         <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
         <MessageBubble message={message} />
       </div>
+      {isLastMessage && (
+        <PostMessageChips onTryAnother={onTryAnother} onTellMore={onTellMore} />
+      )}
     </motion.div>
   )
 }
