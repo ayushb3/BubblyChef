@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
 import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
+import EmptyState from '@/components/ui/EmptyState'
 import RotatingPlaceholder from '@/components/chat/RotatingPlaceholder'
 import MessageBubble from '@/components/chat/MessageBubble'
 import TypingIndicator from '@/components/chat/TypingIndicator'
@@ -177,16 +178,15 @@ export default function ChatPage() {
           </div>
         ) : (
           /* Empty state */
-          <div className="flex flex-col items-center justify-center h-full text-center pb-8">
-            <div className="mb-4">
-              <BubblesMascot state="happy" size={120} />
+          <div className="flex flex-col items-center justify-center h-full text-center pb-8 px-4 gap-4">
+            <div className="w-full max-w-sm">
+              <EmptyState
+                state="happy"
+                header="Chat with Bubbles"
+                headline="What are we cooking today?"
+              />
             </div>
-            <p className="font-semibold text-[var(--color-text)] mb-1">
-              Hi! I&apos;m Bubbles, your kitchen assistant! ✨
-            </p>
-            <p className="text-sm text-[var(--color-muted)] mb-6">
-              Ask me about recipes, cooking tips, or managing your pantry.
-            </p>
+            {/* Suggestion chips — chat-specific affordance, not part of the generic empty state */}
             <div className="flex flex-wrap gap-2 justify-center">
               {SUGGESTIONS.map((s) => (
                 <Chip

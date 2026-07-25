@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence, useAnimation, type PanInfo } from 'framer-motion'
 import { Heart, DotsThree } from '@phosphor-icons/react'
 import RecipeDetail, { type Recipe } from './RecipePage'
 import RecipeSearchBar from './RecipeSearchBar'
-import BubblesMascot from '@/components/ui/BubblesMascot'
+import EmptyState from '@/components/ui/EmptyState'
 import RecipeEditModal from './RecipeEditModal'
 import RecipeDeleteConfirm from './RecipeDeleteConfirm'
 import RecipeImportModal from './RecipeImportModal'
@@ -60,6 +61,7 @@ const SWIPE_THRESHOLD = 50
 const VELOCITY_THRESHOLD = 300
 
 export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
+  const router = useRouter()
   const [search, setSearch] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -773,14 +775,14 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
           </div>
         ) : (
           /* Empty state */
-          <div className="flex flex-col items-center justify-center h-full gap-3 py-16">
-            <BubblesMascot state="thinking" size={72} />
-            <p
-              className="text-sm text-[var(--color-muted)] text-center px-6"
-              style={{ fontFamily: 'Nunito, sans-serif' }}
-            >
-              No recipes yet — start chatting with Chef Bubbly!
-            </p>
+          <div className="p-4">
+            <EmptyState
+              state="surprised"
+              header="Your Recipes"
+              headline="No recipes yet"
+              subline="Chat with Bubbles to generate your first recipe, or import one from a URL."
+              cta={{ label: 'Start chatting', emoji: '💬', onClick: () => router.push('/chat') }}
+            />
           </div>
         )}
       </div>
