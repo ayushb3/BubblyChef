@@ -353,7 +353,7 @@ async def run_recipe_ingest(
     }
 
     # Run the graph
-    final_state = await recipe_ingest_graph.ainvoke(initial_state)  # type: ignore[arg-type]
+    final_state = await recipe_ingest_graph.ainvoke(initial_state)
 
     # Build proposal
     recipe = final_state.get("recipe")

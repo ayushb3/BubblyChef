@@ -9,6 +9,7 @@ Serves only AI-powered endpoints:
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,11 +63,11 @@ def create_app() -> FastAPI:
 
     # Health check
     @app.get("/health")
-    async def health_root() -> dict:
+    async def health_root() -> dict[str, Any]:
         return {"status": "ok"}
 
     @app.get("/health/ai")
-    async def health() -> dict:
+    async def health() -> dict[str, Any]:
         providers = []
         if settings.gemini_api_key:
             providers.append({"name": "gemini", "available": True})
