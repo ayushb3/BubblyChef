@@ -50,8 +50,12 @@ export function useChat(initialConversationId?: string) {
 
   // ── Send message ─────────────────────────────────────────────────────────
 
+  /**
+   * Send a message. `context` is optional extra payload for the AI workflow
+   * (e.g. `{ cooking_recipe: {...} }` after the Cook flow hands off to chat).
+   */
   const sendMessage = useCallback(
-    (text: string) => {
+    (text: string, context?: Record<string, unknown> | null) => {
       const trimmed = text.trim()
       if (!trimmed || isStreaming) return
 
@@ -84,7 +88,11 @@ export function useChat(initialConversationId?: string) {
       streamAbortRef.current = abortController
 
       streamChatMessage(
-        { message: trimmed, conversation_id: convId },
+        {
+          message: trimmed,
+          conversation_id: convId,
+          ...(context ? { context } : {}),
+        },
 
         // onToken — append each token to the placeholder
         (token: string) => {

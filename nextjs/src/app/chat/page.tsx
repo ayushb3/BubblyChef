@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
 import BubblesHeader from '@/components/layout/BubblesHeader'
@@ -8,6 +9,7 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 import RotatingPlaceholder from '@/components/chat/RotatingPlaceholder'
 import MessageBubble from '@/components/chat/MessageBubble'
 import PostMessageChips from '@/components/chat/PostMessageChips'
+import CookingContextCard from '@/components/chat/CookingContextCard'
 import TypingIndicator from '@/components/chat/TypingIndicator'
 import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
@@ -16,7 +18,14 @@ import Chip from '@/components/ui/Chip'
 import EmptyState from '@/components/ui/EmptyState'
 import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
-import type { ChatMessage, ChatRecipeData, PantryProposalData } from '@/types/chat'
+import { fetchRecipe } from '@/lib/api/recipes'
+import type { Recipe } from '@/components/recipes/RecipePage'
+import type {
+  ChatMessage,
+  ChatRecipeData,
+  CookingRecipeContext,
+  PantryProposalData,
+} from '@/types/chat'
 
 const SUGGESTIONS = [
   'What can I make tonight? 🌙',
@@ -25,7 +34,34 @@ const SUGGESTIONS = [
   'Help me meal prep 📦',
 ]
 
+const COOKING_SUGGESTIONS = [
+  'What can I substitute? 🔁',
+  'How do I prep this? 🔪',
+  'How long does this take? ⏱️',
+]
+
+/** Flatten a saved recipe's ingredients to plain strings for the AI context. */
+function ingredientLines(recipe: Recipe): string[] {
+  return recipe.ingredients.map((ing) =>
+    typeof ing === 'string'
+      ? ing
+      : [ing.quantity, ing.unit, ing.name].filter(Boolean).join(' '),
+  )
+}
+
+/**
+ * `useSearchParams` opts the tree into client-side rendering, so the page shell
+ * is a Suspense boundary around the real chat surface (Next.js 16 requirement).
+ */
 export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="h-screen" />}>
+      <ChatSurface />
+    </Suspense>
+  )
+}
+
+function ChatSurface() {
   const {
     messages,
     isStreaming,
@@ -37,11 +73,21 @@ export default function ChatPage() {
     rejectProposal,
   } = useChat()
 
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  // Set by the Cook flow: /chat?cooking=<recipeId>. Changing recipes changes
+  // the param, so the context resets for free when the user cooks again.
+  const cookingRecipeId = searchParams.get('cooking')
+
   const [input, setInput] = useState('')
   const [aiAvailable, setAiAvailable] = useState(true)
   const [saveStates, setSaveStates] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({})
+  const [cookingRecipe, setCookingRecipe] = useState<Recipe | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // The recipe only needs to ride along on the first message — the backend
+  // pins it to the conversation session for subsequent turns.
+  const contextSentRef = useRef(false)
 
   // Check AI health on mount
   useEffect(() => {
@@ -49,6 +95,56 @@ export default function ChatPage() {
       .then((h) => setAiAvailable(h.ai_available))
       .catch(() => setAiAvailable(false))
   }, [])
+
+  // Load the recipe named by ?cooking=
+  useEffect(() => {
+    if (!cookingRecipeId) {
+      setCookingRecipe(null)
+      return
+    }
+    let cancelled = false
+    contextSentRef.current = false
+    fetchRecipe(cookingRecipeId)
+      .then((recipe) => {
+        if (!cancelled) setCookingRecipe(recipe)
+      })
+      .catch(() => {
+        // Recipe unavailable — chat still works, just without the context card
+        if (!cancelled) setCookingRecipe(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [cookingRecipeId])
+
+  const cookingContext = useMemo(() => {
+    if (!cookingRecipe) return null
+    const payload: CookingRecipeContext = {
+      id: cookingRecipe.id,
+      title: cookingRecipe.title,
+      ingredients: ingredientLines(cookingRecipe),
+    }
+    return { cooking_recipe: payload } as Record<string, unknown>
+  }, [cookingRecipe])
+
+  /** Attach the cook context to the first message of the conversation only. */
+  const takeCookingContext = (): Record<string, unknown> | undefined => {
+    if (!cookingContext || contextSentRef.current || isStreaming) return undefined
+    contextSentRef.current = true
+    return cookingContext
+  }
+
+  const dismissCookingCard = () => {
+    setCookingRecipe(null)
+    // Drop the param so a refresh (or a later cook) doesn't resurrect the card.
+    router.replace('/chat', { scroll: false })
+  }
+
+  const handleNewChat = () => {
+    // New conversation — the backend session is gone, so resend the context.
+    contextSentRef.current = false
+    startNewChat()
+  }
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -62,12 +158,12 @@ export default function ChatPage() {
     const text = input.trim()
     if (!text) return
     setInput('')
-    sendMessage(text)
+    sendMessage(text, takeCookingContext())
   }
 
   const handleSuggestionClick = (suggestion: string) => {
     setInput('')
-    sendMessage(suggestion)
+    sendMessage(suggestion, takeCookingContext())
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -131,7 +227,7 @@ export default function ChatPage() {
             {hasMessages && (
               <button
                 type="button"
-                onClick={startNewChat}
+                onClick={handleNewChat}
                 className="text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-surface)] px-3 py-1.5 rounded-full hover:bg-[var(--color-border)] transition-colors"
               >
                 New Chat
@@ -154,6 +250,17 @@ export default function ChatPage() {
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
+        {/* Cook handoff context — dismissible, sits above the thread */}
+        <AnimatePresence>
+          {cookingRecipe && (
+            <CookingContextCard
+              title={cookingRecipe.title}
+              ingredientCount={cookingRecipe.ingredients.length}
+              onDismiss={dismissCookingCard}
+            />
+          )}
+        </AnimatePresence>
+
         {hasMessages ? (
           <div className="flex flex-col gap-3">
             {messages.map((msg, index) => (
@@ -188,18 +295,27 @@ export default function ChatPage() {
             <div ref={messagesEndRef} />
           </div>
         ) : (
-          /* Empty state */
-          <div className="flex flex-col items-center justify-center h-full text-center pb-8">
+          /* Empty state — drops the full-height centering when the cook card
+             is above it, so the two don't fight for the same space. */
+          <div
+            className={`flex flex-col items-center justify-center text-center pb-8 ${
+              cookingRecipe ? 'pt-4' : 'h-full'
+            }`}
+          >
             <EmptyState
               mascotState="happy"
               headerLabel="Chef Bubbly"
-              headline="Chat with Bubbles"
-              subline="What are we cooking today?"
+              headline={cookingRecipe ? 'Cooking with Bubbles' : 'Chat with Bubbles'}
+              subline={
+                cookingRecipe
+                  ? 'Ask me anything about this recipe!'
+                  : 'What are we cooking today?'
+              }
               className="w-full max-w-sm mb-5"
             />
             {/* Chat-specific affordances — kept out of the generic EmptyState */}
             <div className="flex flex-wrap gap-2 justify-center">
-              {SUGGESTIONS.map((s) => (
+              {(cookingRecipe ? COOKING_SUGGESTIONS : SUGGESTIONS).map((s) => (
                 <Chip
                   key={s}
                   tone="accent"
@@ -254,6 +370,8 @@ export default function ChatPage() {
     </div>
   )
 }
+
+// ─── Cooking Context Card ─────────────────────────────────────────────────────
 
 // ─── Message Renderer ─────────────────────────────────────────────────────────
 

@@ -103,6 +103,19 @@ export interface ChatRequest {
   conversation_id: string | null
   mode?: string
   pantry_snapshot?: Record<string, unknown>[]
+  /**
+   * Extra context forwarded to the AI workflow. Recognised key:
+   * `cooking_recipe` ({ id, title, ingredients }) — pins the conversation to
+   * the recipe the user just started cooking.
+   */
+  context?: Record<string, unknown> | null
+}
+
+/** Shape of `context.cooking_recipe` sent after the Cook flow hands off to chat. */
+export interface CookingRecipeContext {
+  id: string
+  title: string
+  ingredients: string[]
 }
 
 // ─── SSE Stream Events ────────────────────────────────────────────────────────

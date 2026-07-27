@@ -5,6 +5,7 @@
  * the proxy for auth forwarding.
  */
 
+import type { Recipe } from '@/components/recipes/RecipePage'
 import type {
   RecipeConstraints,
   GenerateRecipeResponse,
@@ -12,6 +13,20 @@ import type {
   CookProposal,
   DeductionItem,
 } from '@/types/recipes'
+
+/**
+ * Fetch a single saved recipe by id (Next.js CRUD route, not the AI service).
+ */
+export async function fetchRecipe(recipeId: string): Promise<Recipe> {
+  const res = await fetch(`/api/recipes/${recipeId}`)
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Recipe fetch failed' }))
+    throw new Error(err.error ?? `Recipe fetch failed: ${res.status}`)
+  }
+
+  return res.json()
+}
 
 /**
  * Generate a pantry-aware recipe from constraints.

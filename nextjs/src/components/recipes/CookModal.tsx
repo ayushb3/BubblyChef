@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
 import type { CookProposal, IngredientMatch, DeductionItem } from '@/types/recipes'
@@ -60,6 +61,7 @@ export default function CookModal({
   onClose,
   onCooked,
 }: CookModalProps) {
+  const router = useRouter()
   const [state, setState] = useState<ModalState>('loading')
   const [proposal, setProposal] = useState<CookProposal | null>(null)
   const [errorMsg, setErrorMsg] = useState<string>('')
@@ -132,10 +134,13 @@ export default function CookModal({
     try {
       await confirmCook(recipeId, deductions)
       setState('success')
-      // Auto-close after a short delay so user sees the success state
+      // Hold the success state briefly so the user sees the deduction land,
+      // then hand off to chat with this recipe as context (issue #122).
+      // router.push is a client-side transition — no full reload.
       setTimeout(() => {
         onCooked()
         onClose()
+        router.push(`/chat?cooking=${encodeURIComponent(recipeId)}`)
       }, 1200)
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to confirm cook')
@@ -235,7 +240,7 @@ export default function CookModal({
                   className="text-xs text-[var(--color-muted)] mt-1"
                   style={{ fontFamily: 'Nunito, sans-serif' }}
                 >
-                  Pantry updated and recipe marked as cooked.
+                  Pantry updated — taking you to chat if you have questions.
                 </p>
               </div>
             )}
