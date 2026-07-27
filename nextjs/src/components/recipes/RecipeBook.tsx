@@ -2,10 +2,11 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence, useAnimation, type PanInfo } from 'framer-motion'
+import { useRouter } from 'next/navigation'
 import { Heart, DotsThree } from '@phosphor-icons/react'
 import RecipeDetail, { type Recipe } from './RecipePage'
 import RecipeSearchBar from './RecipeSearchBar'
-import BubblesMascot from '@/components/ui/BubblesMascot'
+import EmptyState from '@/components/ui/EmptyState'
 import RecipeEditModal from './RecipeEditModal'
 import RecipeDeleteConfirm from './RecipeDeleteConfirm'
 import RecipeImportModal from './RecipeImportModal'
@@ -60,6 +61,7 @@ const SWIPE_THRESHOLD = 50
 const VELOCITY_THRESHOLD = 300
 
 export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
+  const router = useRouter()
   const [search, setSearch] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -301,7 +303,9 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         </button>
       </div>
 
-      {/* Book container */}
+      {/* Book container — swapped wholesale for the empty state when the
+          library has no recipes at all (sidebar/hamburger are moot then). */}
+      {selectedRecipe ? (
       <div
         className="relative rounded-2xl overflow-hidden border border-[var(--color-border)]"
         style={{
@@ -423,7 +427,6 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         )}
 
         {/* ─── Main recipe panel ─── */}
-        {selectedRecipe ? (
           <div className="flex flex-col h-full">
             {/* Recipe header — hero variant when thumbnail exists and loads successfully */}
             {selectedRecipe.thumbnail_url && !thumbError ? (
@@ -771,19 +774,18 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
               </AnimatePresence>
             </div>
           </div>
-        ) : (
-          /* Empty state */
-          <div className="flex flex-col items-center justify-center h-full gap-3 py-16">
-            <BubblesMascot state="thinking" size={72} />
-            <p
-              className="text-sm text-[var(--color-muted)] text-center px-6"
-              style={{ fontFamily: 'Nunito, sans-serif' }}
-            >
-              No recipes yet — start chatting with Chef Bubbly!
-            </p>
-          </div>
-        )}
       </div>
+      ) : (
+        <EmptyState
+          mascotState="surprised"
+          headerLabel="Your Recipe Book"
+          headline="No recipes yet"
+          subline="Ask Chef Bubbly what to cook, or import a recipe with the link button above."
+          ctaLabel="Chat with Bubbles"
+          ctaEmoji="💬"
+          onCta={() => router.push('/chat')}
+        />
+      )}
 
       {/* Edit modal */}
       {editOpen && selectedRecipe && (

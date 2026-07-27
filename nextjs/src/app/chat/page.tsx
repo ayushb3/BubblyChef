@@ -7,11 +7,13 @@ import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import RotatingPlaceholder from '@/components/chat/RotatingPlaceholder'
 import MessageBubble from '@/components/chat/MessageBubble'
+import PostMessageChips from '@/components/chat/PostMessageChips'
 import TypingIndicator from '@/components/chat/TypingIndicator'
 import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
 import ThemePicker from '@/components/ui/ThemePicker'
 import Chip from '@/components/ui/Chip'
+import EmptyState from '@/components/ui/EmptyState'
 import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
 import type { ChatMessage, ChatRecipeData, PantryProposalData } from '@/types/chat'
@@ -106,6 +108,10 @@ export default function ChatPage() {
     sendMessage('Give me a different recipe')
   }
 
+  const handleTellMore = () => {
+    sendMessage('Tell me more about that')
+  }
+
   // Determine if the typing indicator should show
   // (streaming has started but no content yet on the last assistant message)
   const lastMsg = messages[messages.length - 1]
@@ -160,12 +166,18 @@ export default function ChatPage() {
                   index === messages.length - 1
                 }
                 isStreaming={isStreaming}
+                isLastSettledAssistant={
+                  !isStreaming &&
+                  msg.role === 'assistant' &&
+                  index === messages.length - 1
+                }
                 proposalState={proposalStates[msg.id]}
                 saveState={saveStates[msg.id] ?? 'idle'}
                 onApprove={() => approveProposal(msg.id)}
                 onReject={() => rejectProposal(msg.id)}
                 onSave={(recipe) => handleSaveRecipe(msg.id, recipe)}
                 onTryAnother={handleTryAnother}
+                onTellMore={handleTellMore}
               />
             ))}
 
@@ -178,15 +190,14 @@ export default function ChatPage() {
         ) : (
           /* Empty state */
           <div className="flex flex-col items-center justify-center h-full text-center pb-8">
-            <div className="mb-4">
-              <BubblesMascot state="happy" size={120} />
-            </div>
-            <p className="font-semibold text-[var(--color-text)] mb-1">
-              Hi! I&apos;m Bubbles, your kitchen assistant! ✨
-            </p>
-            <p className="text-sm text-[var(--color-muted)] mb-6">
-              Ask me about recipes, cooking tips, or managing your pantry.
-            </p>
+            <EmptyState
+              mascotState="happy"
+              headerLabel="Chef Bubbly"
+              headline="Chat with Bubbles"
+              subline="What are we cooking today?"
+              className="w-full max-w-sm mb-5"
+            />
+            {/* Chat-specific affordances — kept out of the generic EmptyState */}
             <div className="flex flex-wrap gap-2 justify-center">
               {SUGGESTIONS.map((s) => (
                 <Chip
@@ -243,24 +254,29 @@ interface MessageRendererProps {
   message: ChatMessage
   isLastAssistant: boolean
   isStreaming: boolean
+  /** Last assistant message once streaming has finished — gates follow-up chips. */
+  isLastSettledAssistant: boolean
   proposalState?: 'pending' | 'approved' | 'rejected'
   saveState: 'idle' | 'saving' | 'saved' | 'error'
   onApprove: () => void
   onReject: () => void
   onSave: (recipe: ChatRecipeData) => void
   onTryAnother: () => void
+  onTellMore: () => void
 }
 
 function MessageRenderer({
   message,
   isLastAssistant,
   isStreaming,
+  isLastSettledAssistant,
   proposalState,
   saveState,
   onApprove,
   onReject,
   onSave,
   onTryAnother,
+  onTellMore,
 }: MessageRendererProps) {
   // User messages — simple bubble
   if (message.role === 'user') {
@@ -350,6 +366,11 @@ function MessageRenderer({
         <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
         <MessageBubble message={message} />
       </div>
+      {/* Follow-up affordances — only under the last settled assistant reply.
+          Recipe-card and pantry-proposal messages carry their own actions. */}
+      {isLastSettledAssistant && (
+        <PostMessageChips onTryAnother={onTryAnother} onTellMore={onTellMore} />
+      )}
     </motion.div>
   )
 }
