@@ -63,7 +63,15 @@ export interface RefineRecipeRequest {
 // Cook-a-recipe / pantry deduction types
 // ---------------------------------------------------------------------------
 
-export type IngredientMatchStatus = 'ready' | 'shortfall' | 'unit_conflict' | 'missing'
+export type IngredientMatchStatus =
+  | 'ready'
+  | 'substitute'
+  | 'shortfall'
+  | 'unit_conflict'
+  | 'missing'
+
+/** How the pantry item was found, recorded separately from status. */
+export type IngredientMatchType = 'exact' | 'substitute' | 'none'
 
 export interface IngredientMatch {
   ingredient_name: string
@@ -76,6 +84,12 @@ export interface IngredientMatch {
   base_unit: string | null
   status: IngredientMatchStatus
   shortfall: number | null
+  /**
+   * A substitute with too little stock is status 'shortfall' but still
+   * match_type 'substitute', so the swap note shows alongside the shortfall.
+   */
+  match_type: IngredientMatchType
+  substitution_note: string | null
 }
 
 export interface CookProposal {

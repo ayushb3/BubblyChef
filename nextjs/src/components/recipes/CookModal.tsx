@@ -18,6 +18,8 @@ function statusColor(status: IngredientMatch['status']): string {
   switch (status) {
     case 'ready':
       return 'var(--color-fresh)'
+    case 'substitute':
+      return 'var(--color-expiring)'
     case 'shortfall':
       return 'var(--color-expiring)'
     case 'unit_conflict':
@@ -33,6 +35,8 @@ function statusLabel(status: IngredientMatch['status']): string {
   switch (status) {
     case 'ready':
       return 'Ready'
+    case 'substitute':
+      return 'Substitute'
     case 'shortfall':
       return 'Not enough'
     case 'unit_conflict':
@@ -254,9 +258,17 @@ export default function CookModal({
                         <tr key={i} className="border-t border-[var(--color-border)]">
                           <td className="py-1.5 pr-2 font-semibold text-[var(--color-text)]">
                             {m.ingredient_name}
+                            {m.match_type === 'substitute' && m.substitution_note && (
+                              <span className="block font-normal text-[10px] leading-snug text-[var(--color-muted)] mt-0.5">
+                                {m.substitution_note}
+                              </span>
+                            )}
                           </td>
                           <td className="py-1.5 pr-2 text-[var(--color-muted)]">
                             {m.pantry_item_name ?? '—'}
+                            {m.match_type === 'substitute' && (
+                              <span className="block text-[10px] italic mt-0.5">substituted</span>
+                            )}
                           </td>
                           <td className="py-1.5 pr-2 text-right text-[var(--color-muted)]">
                             {m.status === 'unit_conflict' ? (

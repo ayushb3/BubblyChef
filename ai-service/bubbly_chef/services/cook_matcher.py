@@ -9,13 +9,76 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
 
 from bubbly_chef.domain.normalizer import normalize_food_name, normalize_to_base_unit
 from bubbly_chef.models.cook import CookProposal, IngredientMatch
 from bubbly_chef.models.pantry import PantryItem
 
 logger = logging.getLogger(__name__)
+
+# Below this, a suggested stand-in is discarded and the ingredient stays missing.
+# Substituting an ingredient changes what the user actually cooks, so the bar is
+# higher than for a plain lookup.
+SUBSTITUTION_CONFIDENCE_THRESHOLD = 0.7
+
+
+@dataclass(frozen=True)
+class ResolvedAlias:
+    """A pantry item the LLM proposes for an ingredient the synonym table missed."""
+
+    pantry_name: str
+    """Normalized name of the pantry item to match against."""
+    match_type: Literal["exact", "substitute"]
+    note: str | None = None
+
+
+class _LLMIngredientMatch(BaseModel):
+    """One ingredient's resolution, as returned by the model."""
+
+    ingredient_name: str = Field(description="The unmatched ingredient this refers to")
+    best_match: str | None = Field(
+        default=None, description="Name of the pantry item to use, or null if none works"
+    )
+    match_type: Literal["exact", "substitute", "none"] = Field(
+        description="exact=same thing by another name, substitute=workable stand-in, none=no option"
+    )
+    confidence: float = Field(default=0.0, description="0.0-1.0 confidence in this resolution")
+    substitution_note: str | None = Field(
+        default=None, description="One short sentence explaining the swap, for the user"
+    )
+
+
+class _LLMMatchBatch(BaseModel):
+    """Envelope so the whole unmatched set resolves in a single call."""
+
+    results: list[_LLMIngredientMatch] = Field(default_factory=list)
+
+
+_SUBSTITUTION_PROMPT = """You are helping a home cook decide whether anything in their \
+pantry can stand in for recipe ingredients they appear to be missing.
+
+Recipe ingredients with no pantry match:
+{unmatched}
+
+Everything currently in their pantry:
+{pantry}
+
+For each unmatched ingredient, choose the single best pantry item, or null if nothing \
+sensible applies. Use match_type "exact" when it is genuinely the same ingredient under \
+a different name (pecorino romano and parmesan are not the same thing; scallion and \
+green onion are). Use "substitute" when it is a different ingredient that would still \
+work in a recipe, and say briefly what changes — flavour, texture, sweetness. Use \
+"none" when the honest answer is that they cannot make this ingredient.
+
+Do not suggest a swap that would change the dish into something else, and do not treat \
+derivatives as interchangeable: lemon juice cannot replace lemon zest, and vice versa. \
+Set confidence below {threshold} for anything you are unsure about.
+
+Keep substitution_note under 15 words. Return one result per unmatched ingredient."""
 
 # Matches leading quantity+unit in a raw ingredient string, e.g.:
 #   "2 large eggs"       → qty=2,  unit=None,   rest="large eggs"
@@ -129,6 +192,7 @@ def match_ingredients(
     recipe_title: str,
     recipe_ingredients: list[dict[str, Any]],
     pantry_items: list[PantryItem],
+    aliases: dict[str, ResolvedAlias] | None = None,
 ) -> CookProposal:
     """Match recipe ingredients against pantry items and produce a CookProposal.
 
@@ -138,6 +202,11 @@ def match_ingredients(
         recipe_ingredients: List of ingredient dicts with keys:
             name (str), quantity (float|None), unit (str|None).
         pantry_items: List of PantryItem objects for the current user.
+        aliases: Optional map of normalized ingredient name -> ResolvedAlias, used to
+            match ingredients the synonym table misses. Applied inside this single
+            pass, not as a second pass, so aliased ingredients draw on the same
+            consumption accounting as everything else — a substitute must not be
+            able to claim stock an earlier ingredient already took.
 
     Returns:
         CookProposal with matches, missing, and unit_conflicts lists.
@@ -193,11 +262,30 @@ def match_ingredients(
 
         # --- Find pantry match ---
         pantry_item = pantry_index.get(norm_name)
+        alias: ResolvedAlias | None = None
+
+        if pantry_item is None and aliases:
+            alias = aliases.get(norm_name)
+            if alias is not None:
+                pantry_item = pantry_index.get(alias.pantry_name)
+                if pantry_item is None:
+                    # Alias named an item that is not actually in the pantry.
+                    alias = None
 
         if pantry_item is None:
             # No match at all
             missing.append(raw_name)
             continue
+
+        # A stand-in is surfaced as its own status so the user can see the swap,
+        # but only when stock is sufficient — a short substitute is more useful
+        # reported as a shortfall, with match_type still recording the swap.
+        is_substitute = alias is not None and alias.match_type == "substitute"
+        match_type: Literal["exact", "substitute", "none"] = (
+            "substitute" if is_substitute else "exact"
+        )
+        note = alias.note if is_substitute and alias is not None else None
+        ok_status: Literal["ready", "substitute"] = "substitute" if is_substitute else "ready"
 
         # What this row still has after earlier ingredients in this recipe took
         # their share.
@@ -218,36 +306,42 @@ def match_ingredients(
                     pantry_qty_available=unclaimed,
                     deduct_qty=None,
                     base_unit=pantry_item.unit_base,
-                    status="ready",
+                    status=ok_status,
+                    match_type=match_type,
+                    substitution_note=note,
                 )
             )
             continue
 
-        # --- Convert recipe ingredient to base unit ---
-        # Use the normalized name, not the raw one. normalize_to_base_unit looks
-        # the name up in INGREDIENT_CANONICAL_UNIT, which is keyed by canonical
-        # names: "cheese" resolves to grams, "cheddar" misses and falls back to
-        # the category default of "count", making a gram quantity look like a
-        # cross-dimension conversion and reporting a spurious unit_conflict.
-        # Matching identity and matching units have to agree on the same name.
-        req_base_qty, req_base_unit = normalize_to_base_unit(
-            name=norm_name,
-            quantity=ing_qty,
-            unit=ing_unit,
-        )
-
-        # Also ensure pantry item has a base unit
+        # --- Resolve the pantry side first ---
+        # The recipe line is then converted toward whatever unit the pantry row
+        # actually uses, which is the only unit the deduction can be expressed in.
         pantry_base_qty = pantry_item.quantity_base
         pantry_base_unit = pantry_item.unit_base
 
         # If pantry item lacks base values, try to derive them. Normalized name
-        # here too, for the same reason as the recipe side above.
+        # here, since the registry is keyed by canonical names.
         if pantry_base_qty is None or pantry_base_unit is None:
             pantry_base_qty, pantry_base_unit = normalize_to_base_unit(
                 name=_normalize_ingredient_name(pantry_item.name),
                 quantity=pantry_item.quantity,
                 unit=pantry_item.unit,
             )
+
+        # --- Convert recipe ingredient into the pantry row's unit ---
+        # Target the pantry's base unit when it is known, rather than looking the
+        # recipe's ingredient name up in INGREDIENT_CANONICAL_UNIT. That registry
+        # only covers the names it lists: "cheese" resolves to grams, but
+        # "cheddar", "sour cream" and "greek yogurt" all miss and fall back to the
+        # category default of "count" — turning a perfectly ordinary gram quantity
+        # into a spurious unit_conflict. It matters most for substitutes (#123),
+        # where the recipe name and the pantry name are different words by design.
+        req_base_qty, req_base_unit = normalize_to_base_unit(
+            name=norm_name,
+            quantity=ing_qty,
+            unit=ing_unit,
+            target_unit=pantry_base_unit,
+        )
 
         # --- Unit conflict: can't convert either side ---
         if req_base_qty is None or pantry_base_qty is None or req_base_unit != pantry_base_unit:
@@ -268,6 +362,8 @@ def match_ingredients(
                     deduct_qty=None,
                     base_unit=pantry_base_unit or ing_unit,
                     status="unit_conflict",
+                    match_type=match_type,
+                    substitution_note=note,
                 )
             )
             continue
@@ -292,7 +388,9 @@ def match_ingredients(
                     pantry_qty_available=available_base_qty,
                     deduct_qty=req_base_qty,
                     base_unit=req_base_unit,
-                    status="ready",
+                    status=ok_status,
+                    match_type=match_type,
+                    substitution_note=note,
                 )
             )
         else:
@@ -310,6 +408,8 @@ def match_ingredients(
                     base_unit=req_base_unit,
                     status="shortfall",
                     shortfall=round(shortfall, 4),
+                    match_type=match_type,
+                    substitution_note=note,
                 )
             )
 
@@ -319,4 +419,129 @@ def match_ingredients(
         matches=matches,
         missing=missing,
         unit_conflicts=unit_conflicts,
+    )
+
+
+def _unmatched_ingredient_names(
+    recipe_ingredients: list[dict[str, Any]],
+    pantry_items: list[PantryItem],
+) -> list[str]:
+    """Names the deterministic synonym table cannot place in the pantry.
+
+    Name resolution only — no quantity or unit logic — so this can run before the
+    real matching pass without disturbing its consumption accounting.
+    """
+    pantry_names = {_normalize_ingredient_name(item.name) for item in pantry_items}
+
+    unmatched: list[str] = []
+    seen: set[str] = set()
+    for ingredient in recipe_ingredients:
+        if isinstance(ingredient, str):
+            ingredient = _parse_ingredient_string(ingredient)
+        raw_name = ingredient.get("name", "")
+        if not raw_name:
+            continue
+        norm = _normalize_ingredient_name(raw_name)
+        if norm in pantry_names or norm in seen:
+            continue
+        seen.add(norm)
+        unmatched.append(raw_name)
+    return unmatched
+
+
+async def resolve_aliases_with_llm(
+    unmatched_names: list[str],
+    pantry_items: list[PantryItem],
+    ai_manager: Any,
+) -> dict[str, ResolvedAlias]:
+    """Ask the model which pantry items could stand in for unmatched ingredients.
+
+    One batched call for the whole set, not one per ingredient. Returns a map keyed
+    by normalized ingredient name; anything the model declines, scores below
+    SUBSTITUTION_CONFIDENCE_THRESHOLD, or names a pantry item that does not exist
+    is dropped, so the caller simply sees fewer aliases.
+
+    Never raises. Any provider failure returns an empty map, which leaves the
+    ingredients missing exactly as they were before this tier existed.
+    """
+    if not unmatched_names or not pantry_items:
+        return {}
+
+    pantry_by_norm = {_normalize_ingredient_name(i.name): i for i in pantry_items}
+
+    prompt = _SUBSTITUTION_PROMPT.format(
+        unmatched="\n".join(f"- {n}" for n in unmatched_names),
+        pantry="\n".join(f"- {i.name}" for i in pantry_items),
+        threshold=SUBSTITUTION_CONFIDENCE_THRESHOLD,
+    )
+
+    try:
+        result = await ai_manager.complete(
+            prompt=prompt,
+            response_schema=_LLMMatchBatch,
+            temperature=0.1,
+        )
+    except Exception as e:  # noqa: BLE001 - degrading to "missing" is the contract
+        logger.warning(f"Substitution matching unavailable, leaving ingredients missing: {e}")
+        return {}
+
+    if not isinstance(result, _LLMMatchBatch):
+        logger.warning("Substitution matching returned an unexpected shape; ignoring")
+        return {}
+
+    aliases: dict[str, ResolvedAlias] = {}
+    for entry in result.results:
+        if entry.match_type == "none" or not entry.best_match:
+            continue
+        if entry.confidence < SUBSTITUTION_CONFIDENCE_THRESHOLD:
+            logger.debug(
+                f"Dropping low-confidence match {entry.ingredient_name} -> "
+                f"{entry.best_match} ({entry.confidence})"
+            )
+            continue
+
+        pantry_norm = _normalize_ingredient_name(entry.best_match)
+        if pantry_norm not in pantry_by_norm:
+            # Model named something the user does not have.
+            logger.debug(f"Dropping match to absent pantry item: {entry.best_match}")
+            continue
+
+        aliases[_normalize_ingredient_name(entry.ingredient_name)] = ResolvedAlias(
+            pantry_name=pantry_norm,
+            match_type=entry.match_type,
+            note=entry.substitution_note,
+        )
+
+    return aliases
+
+
+async def match_ingredients_with_llm(
+    recipe_id: str,
+    recipe_title: str,
+    recipe_ingredients: list[dict[str, Any]],
+    pantry_items: list[PantryItem],
+    ai_manager: Any,
+) -> CookProposal:
+    """match_ingredients() with an LLM tier for whatever the synonym table misses.
+
+    Deterministic matching stays the fast path: ingredients it resolves never reach
+    the model, so a fully-matched recipe adds no latency and no API call. Only the
+    leftovers are sent, in one batch.
+
+    The aliases are fed into a single match_ingredients() pass rather than being
+    matched separately afterwards, so substitutes share the same per-pantry-item
+    consumption accounting as direct matches.
+    """
+    unmatched = _unmatched_ingredient_names(recipe_ingredients, pantry_items)
+
+    aliases: dict[str, ResolvedAlias] = {}
+    if unmatched:
+        aliases = await resolve_aliases_with_llm(unmatched, pantry_items, ai_manager)
+
+    return match_ingredients(
+        recipe_id=recipe_id,
+        recipe_title=recipe_title,
+        recipe_ingredients=recipe_ingredients,
+        pantry_items=pantry_items,
+        aliases=aliases,
     )

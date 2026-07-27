@@ -24,11 +24,26 @@ class IngredientMatch(BaseModel):
     )
     base_unit: str | None = Field(default=None, description="Base unit used for comparison")
 
-    status: Literal["ready", "shortfall", "unit_conflict", "missing"] = Field(
-        description="ready=have enough, shortfall=not enough, unit_conflict=can't compare, missing=not in pantry"
+    status: Literal["ready", "substitute", "shortfall", "unit_conflict", "missing"] = Field(
+        description=(
+            "ready=have enough, substitute=covered by a suggested stand-in, "
+            "shortfall=not enough, unit_conflict=can't compare, missing=not in pantry"
+        )
     )
     shortfall: float | None = Field(
         default=None, description="How much is missing (base unit), only set when status==shortfall"
+    )
+
+    # How the pantry item was found, recorded separately from status. A substitute
+    # with too little stock is status="shortfall" but still match_type="substitute",
+    # so the UI can show the stand-in note alongside the shortfall.
+    match_type: Literal["exact", "substitute", "none"] = Field(
+        default="exact",
+        description="exact=name/synonym match, substitute=LLM-suggested stand-in, none=no match",
+    )
+    substitution_note: str | None = Field(
+        default=None,
+        description="Short explanation shown to the user, only set when match_type==substitute",
     )
 
 

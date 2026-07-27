@@ -7,8 +7,16 @@ from datetime import UTC, datetime
 
 import pytest
 
+from unittest.mock import AsyncMock, MagicMock
+
+from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
-from bubbly_chef.services.cook_matcher import match_ingredients
+from bubbly_chef.services.cook_matcher import (
+    _LLMIngredientMatch,
+    _LLMMatchBatch,
+    match_ingredients,
+    match_ingredients_with_llm,
+)
 
 
 def _make_item(
@@ -229,4 +237,187 @@ class TestDuplicateIngredientDeduction:
 
         assert proposal.matches[0].status == "ready"
         assert proposal.matches[1].status == "shortfall"
+        assert sum(m.deduct_qty or 0.0 for m in proposal.matches) == pytest.approx(100.0)
+
+
+class TestLLMSubstitutionMatching:
+    """Tier 2 — the model resolves what the synonym table misses (#123)."""
+
+    @staticmethod
+    def _ai(batch: object) -> MagicMock:
+        ai = MagicMock()
+        ai.complete = AsyncMock(return_value=batch)
+        return ai
+
+    @pytest.mark.asyncio
+    async def test_exact_matches_never_reach_the_model(self) -> None:
+        """A fully-matched recipe adds no latency and no API call."""
+        pantry = [_make_item("eggs", 12.0, "count", qty_base=12.0, unit_base="count")]
+        ingredients = [{"name": "eggs", "quantity": 2.0, "unit": "count"}]
+        ai = self._ai(_LLMMatchBatch(results=[]))
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        ai.complete.assert_not_called()
+        assert proposal.matches[0].status == "ready"
+        assert proposal.matches[0].match_type == "exact"
+
+    @pytest.mark.asyncio
+    async def test_substitute_is_surfaced_with_its_note(self) -> None:
+        """A confident stand-in becomes a substitute match, not a missing ingredient."""
+        pantry = [_make_item("greek yogurt", 200.0, "g", qty_base=200.0, unit_base="g")]
+        ingredients = [{"name": "sour cream", "quantity": 100.0, "unit": "g"}]
+        ai = self._ai(
+            _LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="sour cream",
+                        best_match="greek yogurt",
+                        match_type="substitute",
+                        confidence=0.9,
+                        substitution_note="Tangier and thicker, works in most sauces.",
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        ai.complete.assert_awaited_once()
+        assert proposal.missing == []
+        assert len(proposal.matches) == 1
+        match = proposal.matches[0]
+        assert match.status == "substitute"
+        assert match.match_type == "substitute"
+        assert match.substitution_note == "Tangier and thicker, works in most sauces."
+        assert match.deduct_qty == pytest.approx(100.0)
+
+    @pytest.mark.asyncio
+    async def test_no_match_leaves_ingredient_missing(self) -> None:
+        """match_type "none" is respected rather than forced into a swap."""
+        pantry = [_make_item("eggs", 12.0, "count", qty_base=12.0, unit_base="count")]
+        ingredients = [{"name": "tahini", "quantity": 2.0, "unit": "tbsp"}]
+        ai = self._ai(
+            _LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="tahini",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.95,
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert proposal.missing == ["tahini"]
+        assert proposal.matches == []
+
+    @pytest.mark.asyncio
+    async def test_low_confidence_suggestion_is_discarded(self) -> None:
+        """Swapping an ingredient changes the dish, so weak suggestions are dropped."""
+        pantry = [_make_item("cheese", 100.0, "g", qty_base=100.0, unit_base="g")]
+        ingredients = [{"name": "tahini", "quantity": 50.0, "unit": "g"}]
+        ai = self._ai(
+            _LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="tahini",
+                        best_match="cheese",
+                        match_type="substitute",
+                        confidence=0.3,
+                        substitution_note="Not really comparable.",
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert proposal.missing == ["tahini"]
+
+    @pytest.mark.asyncio
+    async def test_suggestion_naming_an_absent_item_is_discarded(self) -> None:
+        """The model cannot invent stock the user does not have."""
+        pantry = [_make_item("eggs", 12.0, "count", qty_base=12.0, unit_base="count")]
+        ingredients = [{"name": "tahini", "quantity": 2.0, "unit": "tbsp"}]
+        ai = self._ai(
+            _LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="tahini",
+                        best_match="peanut butter",
+                        match_type="substitute",
+                        confidence=0.95,
+                        substitution_note="Similar nutty paste.",
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert proposal.missing == ["tahini"]
+
+    @pytest.mark.asyncio
+    async def test_provider_failure_degrades_to_missing(self) -> None:
+        """A provider outage must not fail the cook proposal."""
+        pantry = [_make_item("greek yogurt", 200.0, "g", qty_base=200.0, unit_base="g")]
+        ingredients = [{"name": "sour cream", "quantity": 100.0, "unit": "g"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(side_effect=NoProviderAvailableError("all providers down"))
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert proposal.missing == ["sour cream"]
+        assert proposal.matches == []
+
+    @pytest.mark.asyncio
+    async def test_substitute_shares_consumption_with_direct_matches(self) -> None:
+        """A stand-in cannot claim stock an earlier ingredient already took.
+
+        This is why aliases are resolved into a single matching pass rather than
+        matched separately afterwards — a second pass would carry its own
+        consumption accounting and reintroduce the #125 over-deduction.
+        """
+        pantry = [_make_item("cheese", 100.0, "g", qty_base=100.0, unit_base="g")]
+        ingredients = [
+            {"name": "cheese", "quantity": 80.0, "unit": "g"},
+            {"name": "pecorino romano", "quantity": 80.0, "unit": "g"},
+        ]
+        ai = self._ai(
+            _LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="pecorino romano",
+                        best_match="cheese",
+                        match_type="substitute",
+                        confidence=0.9,
+                        substitution_note="Milder, less salty.",
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert proposal.matches[0].status == "ready"
+        assert proposal.matches[1].status == "shortfall"
+        assert proposal.matches[1].match_type == "substitute"
         assert sum(m.deduct_qty or 0.0 for m in proposal.matches) == pytest.approx(100.0)

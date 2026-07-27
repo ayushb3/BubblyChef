@@ -198,7 +198,8 @@ async def cook_recipe(
     logger.info(f"Cook proposal: user={user_id}, recipe={request.recipe_id}")
 
     try:
-        from bubbly_chef.services.cook_matcher import match_ingredients
+        from bubbly_chef.api.deps import get_ai_manager
+        from bubbly_chef.services.cook_matcher import match_ingredients_with_llm
 
         repo = await get_repository()
 
@@ -214,11 +215,15 @@ async def cook_recipe(
         ingredients: list[dict[str, Any]] = recipe_dict.get("ingredients", [])
         title: str = recipe_dict.get("title", "")
 
-        proposal = match_ingredients(
+        # Deterministic matching first; the model is only consulted for whatever
+        # the synonym table cannot place, and a provider outage degrades those
+        # ingredients to "missing" rather than failing the request.
+        proposal = await match_ingredients_with_llm(
             recipe_id=request.recipe_id,
             recipe_title=title,
             recipe_ingredients=ingredients,
             pantry_items=pantry_items,
+            ai_manager=get_ai_manager(),
         )
         return proposal
 
