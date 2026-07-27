@@ -86,25 +86,44 @@ export default function CookModal({
     if (!proposal) return
     setState('confirming')
 
-    // Build deductions from matched items that have a deduct_qty
-    const deductions: DeductionItem[] = proposal.matches
-      .filter((m: IngredientMatch) => m.pantry_item_id != null && m.status !== 'missing')
-      .map((m: IngredientMatch) => {
-        // For unit_conflict rows, use the user's override qty (or 0 if not set)
-        const overrideKey = m.pantry_item_id!
-        let deductQty: number
-        if (m.status === 'unit_conflict') {
-          deductQty = parseFloat(overrides[overrideKey] ?? '0') || 0
-        } else {
-          deductQty = m.deduct_qty ?? 0
-        }
-        return {
-          pantry_item_id: m.pantry_item_id!,
+    // Build deductions from matched items that have a deduct_qty, summing any
+    // that land on the same pantry item.
+    //
+    // Several recipe lines can resolve to one pantry row — literal duplicates,
+    // or names the backend collapses onto the same item (cheddar and parmesan
+    // both normalize to "cheese"). Emitting one entry per match would then send
+    // two deductions for one row, and the server applies each as a
+    // read-modify-write. The backend sums defensively too; doing it here keeps
+    // the payload honest about what is actually being deducted.
+    const byPantryItem = new Map<string, DeductionItem>()
+
+    proposal.matches.forEach((m: IngredientMatch, i: number) => {
+      if (m.pantry_item_id == null || m.status === 'missing') return
+
+      // For unit_conflict rows, use the user's override qty (or 0 if not set).
+      // Keyed by row index, not pantry item — two rows sharing an item still
+      // need their own input.
+      const deductQty =
+        m.status === 'unit_conflict'
+          ? parseFloat(overrides[String(i)] ?? '0') || 0
+          : (m.deduct_qty ?? 0)
+
+      if (deductQty <= 0) return
+
+      const id = m.pantry_item_id
+      const existing = byPantryItem.get(id)
+      if (existing) {
+        existing.deduct_qty += deductQty
+      } else {
+        byPantryItem.set(id, {
+          pantry_item_id: id,
           deduct_qty: deductQty,
           base_unit: m.base_unit ?? 'item',
-        }
-      })
-      .filter((d: DeductionItem) => d.deduct_qty > 0)
+        })
+      }
+    })
+
+    const deductions: DeductionItem[] = Array.from(byPantryItem.values())
 
     try {
       await confirmCook(recipeId, deductions)
@@ -245,11 +264,11 @@ export default function CookModal({
                                 type="number"
                                 min="0"
                                 step="0.1"
-                                value={overrides[m.pantry_item_id!] ?? ''}
+                                value={overrides[String(i)] ?? ''}
                                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                                   setOverrides((prev: Record<string, string>) => ({
                                     ...prev,
-                                    [m.pantry_item_id!]: e.target.value,
+                                    [String(i)]: e.target.value,
                                   }))
                                 }
                                 className="w-16 text-right border border-[var(--color-border)] rounded px-1 py-0.5 text-xs"

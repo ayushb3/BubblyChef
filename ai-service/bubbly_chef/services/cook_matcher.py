@@ -141,6 +141,11 @@ def match_ingredients(
 
     Returns:
         CookProposal with matches, missing, and unit_conflicts lists.
+
+    Several recipe ingredients may resolve to the same pantry row. Each one is
+    matched against what the row has left after the earlier ones, so a recipe
+    asking for more than a row holds reports a shortfall rather than claiming
+    every line is ready.
     """
     from uuid import UUID
 
@@ -148,13 +153,29 @@ def match_ingredients(
     pantry_index: dict[str, PantryItem] = {}
     for item in pantry_items:
         key = _normalize_ingredient_name(item.name)
-        # Keep the item with the highest quantity if there are duplicates
+        # Keep the item with the highest quantity if there are duplicates.
+        # NOTE: this discards the other rows' quantities, so a pantry holding
+        # 2 onions + 3 onions as separate rows reports 3 available rather than 5.
+        # Fixing that needs a match to span multiple rows (and a deduction plan
+        # per row), which is a contract change reaching the frontend — tracked
+        # separately rather than bolted on here.
         if key not in pantry_index or item.quantity > pantry_index[key].quantity:
             pantry_index[key] = item
 
     matches: list[IngredientMatch] = []
     missing: list[str] = []
     unit_conflicts: list[dict[str, str]] = []
+
+    # Base-unit quantity already claimed from each pantry row by earlier ingredients
+    # in THIS recipe, keyed by pantry item id.
+    #
+    # Two recipe lines can resolve to the same pantry row — either as literal
+    # duplicates ("onion" twice) or because normalize_food_name() collapses
+    # synonyms (cheddar and parmesan both become "cheese"). Without this running
+    # total each line compares against the row's untouched quantity, so both are
+    # reported "ready" even when the row only covers one of them, and the confirm
+    # step then deducts twice.
+    consumed: dict[Any, float] = {}
 
     for ingredient in recipe_ingredients:
         # Ingredients may be stored as plain strings (e.g. "1 cup flour") or dicts.
@@ -178,8 +199,15 @@ def match_ingredients(
             missing.append(raw_name)
             continue
 
+        # What this row still has after earlier ingredients in this recipe took
+        # their share.
+        already_claimed = consumed.get(pantry_item.id, 0.0)
+
         # --- No quantity on recipe ingredient → can't deduct, just note as ready ---
         if ing_qty is None or ing_unit is None:
+            unclaimed = pantry_item.quantity_base
+            if unclaimed is not None:
+                unclaimed = max(0.0, unclaimed - already_claimed)
             matches.append(
                 IngredientMatch(
                     ingredient_name=raw_name,
@@ -187,7 +215,7 @@ def match_ingredients(
                     ingredient_unit=ing_unit,
                     pantry_item_id=pantry_item.id,
                     pantry_item_name=pantry_item.name,
-                    pantry_qty_available=pantry_item.quantity_base,
+                    pantry_qty_available=unclaimed,
                     deduct_qty=None,
                     base_unit=pantry_item.unit_base,
                     status="ready",
@@ -196,8 +224,14 @@ def match_ingredients(
             continue
 
         # --- Convert recipe ingredient to base unit ---
+        # Use the normalized name, not the raw one. normalize_to_base_unit looks
+        # the name up in INGREDIENT_CANONICAL_UNIT, which is keyed by canonical
+        # names: "cheese" resolves to grams, "cheddar" misses and falls back to
+        # the category default of "count", making a gram quantity look like a
+        # cross-dimension conversion and reporting a spurious unit_conflict.
+        # Matching identity and matching units have to agree on the same name.
         req_base_qty, req_base_unit = normalize_to_base_unit(
-            name=raw_name,
+            name=norm_name,
             quantity=ing_qty,
             unit=ing_unit,
         )
@@ -206,10 +240,11 @@ def match_ingredients(
         pantry_base_qty = pantry_item.quantity_base
         pantry_base_unit = pantry_item.unit_base
 
-        # If pantry item lacks base values, try to derive them
+        # If pantry item lacks base values, try to derive them. Normalized name
+        # here too, for the same reason as the recipe side above.
         if pantry_base_qty is None or pantry_base_unit is None:
             pantry_base_qty, pantry_base_unit = normalize_to_base_unit(
-                name=pantry_item.name,
+                name=_normalize_ingredient_name(pantry_item.name),
                 quantity=pantry_item.quantity,
                 unit=pantry_item.unit,
             )
@@ -242,7 +277,11 @@ def match_ingredients(
         assert pantry_base_qty is not None
         assert req_base_unit is not None
 
-        if pantry_base_qty >= req_base_qty:
+        # Compare against what is left, not the row's original quantity.
+        available_base_qty = max(0.0, pantry_base_qty - already_claimed)
+
+        if available_base_qty >= req_base_qty:
+            consumed[pantry_item.id] = already_claimed + req_base_qty
             matches.append(
                 IngredientMatch(
                     ingredient_name=raw_name,
@@ -250,14 +289,15 @@ def match_ingredients(
                     ingredient_unit=ing_unit,
                     pantry_item_id=pantry_item.id,
                     pantry_item_name=pantry_item.name,
-                    pantry_qty_available=pantry_base_qty,
+                    pantry_qty_available=available_base_qty,
                     deduct_qty=req_base_qty,
                     base_unit=req_base_unit,
                     status="ready",
                 )
             )
         else:
-            shortfall = req_base_qty - pantry_base_qty
+            shortfall = req_base_qty - available_base_qty
+            consumed[pantry_item.id] = already_claimed + available_base_qty
             matches.append(
                 IngredientMatch(
                     ingredient_name=raw_name,
@@ -265,8 +305,8 @@ def match_ingredients(
                     ingredient_unit=ing_unit,
                     pantry_item_id=pantry_item.id,
                     pantry_item_name=pantry_item.name,
-                    pantry_qty_available=pantry_base_qty,
-                    deduct_qty=pantry_base_qty,  # deduct what we have
+                    pantry_qty_available=available_base_qty,
+                    deduct_qty=available_base_qty,  # deduct what is left
                     base_unit=req_base_unit,
                     status="shortfall",
                     shortfall=round(shortfall, 4),

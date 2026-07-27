@@ -256,18 +256,30 @@ async def cook_confirm(
         if recipe_data is None:
             raise HTTPException(status_code=404, detail="Recipe not found")
 
-        # Apply each deduction
+        # Collapse deductions per pantry item before touching the DB.
+        #
+        # deduct_pantry_item is a read-modify-write, so two deductions naming the
+        # same item would each read the pre-deduction quantity's successor and
+        # apply separately — correct only by luck of ordering. Summing first means
+        # one write per item and a total that cannot depend on iteration order.
+        # The matcher already avoids emitting duplicates, but this endpoint is
+        # reachable with any payload a client cares to send.
+        totals: dict[str, float] = {}
         for deduction in request.deductions:
+            item_id = str(deduction.pantry_item_id)
+            totals[item_id] = totals.get(item_id, 0.0) + deduction.deduct_qty
+
+        for item_id, deduct_qty in totals.items():
             await repo.deduct_pantry_item(
                 user_id=user_id,
-                item_id=str(deduction.pantry_item_id),
-                deduct_qty=deduction.deduct_qty,
+                item_id=item_id,
+                deduct_qty=deduct_qty,
             )
 
         # Mark recipe as cooked
         await repo.update_recipe_cooked(user_id=user_id, recipe_id=str(request.recipe_id))
 
-        return {"success": True, "deductions_applied": len(request.deductions)}
+        return {"success": True, "deductions_applied": len(totals)}
 
     except HTTPException:
         raise

@@ -151,3 +151,82 @@ class TestMatchIngredients:
 
         assert str(proposal.recipe_id) == rid
         assert proposal.recipe_title == "My Recipe"
+
+
+class TestDuplicateIngredientDeduction:
+    """Several recipe lines resolving to one pantry row must not over-claim it.
+
+    Regression cover for the case where each line was compared against the row's
+    untouched quantity, so a recipe asking for more than the row holds reported
+    every line "ready" and the confirm step deducted once per line.
+    """
+
+    def test_duplicate_ingredient_does_not_double_count(self) -> None:
+        """Two lines for the same item split one row's quantity between them."""
+        pantry = [_make_item("eggs", 3.0, "count", qty_base=3.0, unit_base="count")]
+        ingredients = [
+            {"name": "eggs", "quantity": 2.0, "unit": "count"},
+            {"name": "eggs", "quantity": 2.0, "unit": "count"},
+        ]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert len(proposal.matches) == 2
+        first, second = proposal.matches
+
+        # First line takes 2 of the 3 available.
+        assert first.status == "ready"
+        assert first.deduct_qty == pytest.approx(2.0)
+
+        # Only 1 remains, so the second line is short by 1 — not a second "ready".
+        assert second.status == "shortfall"
+        assert second.deduct_qty == pytest.approx(1.0)
+        assert second.shortfall == pytest.approx(1.0)
+        assert second.pantry_qty_available == pytest.approx(1.0)
+
+    def test_total_deduction_never_exceeds_stock(self) -> None:
+        """Summed deductions across duplicate lines stay within the row."""
+        pantry = [_make_item("eggs", 3.0, "count", qty_base=3.0, unit_base="count")]
+        ingredients = [{"name": "eggs", "quantity": 2.0, "unit": "count"}] * 3
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        total = sum(m.deduct_qty or 0.0 for m in proposal.matches)
+        assert total == pytest.approx(3.0)
+
+    def test_duplicates_within_capacity_are_both_ready(self) -> None:
+        """Splitting a row that can cover both lines leaves both ready."""
+        pantry = [_make_item("eggs", 12.0, "count", qty_base=12.0, unit_base="count")]
+        ingredients = [
+            {"name": "eggs", "quantity": 2.0, "unit": "count"},
+            {"name": "eggs", "quantity": 3.0, "unit": "count"},
+        ]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert [m.status for m in proposal.matches] == ["ready", "ready"]
+        assert sum(m.deduct_qty or 0.0 for m in proposal.matches) == pytest.approx(5.0)
+        # The second line sees the row already reduced by the first.
+        assert proposal.matches[1].pantry_qty_available == pytest.approx(10.0)
+
+    def test_synonym_collision_shares_one_pantry_row(self) -> None:
+        """Distinct names that normalize together still share one row's stock.
+
+        normalize_food_name() maps cheddar and parmesan onto "cheese", so these
+        two lines resolve to the same pantry item despite never repeating a name.
+        This is the variant most likely to slip past review.
+        """
+        pantry = [_make_item("cheese", 100.0, "g", qty_base=100.0, unit_base="g")]
+        ingredients = [
+            {"name": "cheddar", "quantity": 60.0, "unit": "g"},
+            {"name": "parmesan", "quantity": 60.0, "unit": "g"},
+        ]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert len(proposal.matches) == 2
+        assert proposal.matches[0].pantry_item_id == proposal.matches[1].pantry_item_id
+
+        assert proposal.matches[0].status == "ready"
+        assert proposal.matches[1].status == "shortfall"
+        assert sum(m.deduct_qty or 0.0 for m in proposal.matches) == pytest.approx(100.0)

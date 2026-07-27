@@ -252,3 +252,43 @@ class TestCookConfirmRoute:
         assert response.status_code == 200
         mock_repo.update_recipe_cooked.assert_called_once()
         mock_repo.deduct_pantry_item.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_collapses_duplicate_deductions_for_one_item(
+        self, client: AsyncClient
+    ) -> None:
+        """Two deductions naming the same pantry item become one summed write.
+
+        deduct_pantry_item is a read-modify-write, so applying the same item
+        twice depends on ordering and read timing. The endpoint sums first and
+        writes once, whatever the client sends.
+        """
+        recipe_dict: dict[str, Any] = {"id": RECIPE_ID, "title": "Eggs"}
+
+        mock_repo = AsyncMock()
+        mock_repo.get_recipe.return_value = recipe_dict
+        mock_repo.deduct_pantry_item.return_value = None
+        mock_repo.update_recipe_cooked.return_value = None
+
+        payload = {
+            "recipe_id": RECIPE_ID,
+            "deductions": [
+                {"pantry_item_id": PANTRY_ITEM_ID, "deduct_qty": 2.0, "base_unit": "count"},
+                {"pantry_item_id": PANTRY_ITEM_ID, "deduct_qty": 3.0, "base_unit": "count"},
+            ],
+        }
+
+        with patch(
+            "bubbly_chef.api.routes.recipes_ai.get_repository",
+            return_value=mock_repo,
+        ):
+            response = await client.post("/v1/recipes/cook/confirm", json=payload)
+
+        assert response.status_code == 200
+        assert response.json()["deductions_applied"] == 1
+
+        mock_repo.deduct_pantry_item.assert_called_once_with(
+            user_id=TEST_USER_ID,
+            item_id=PANTRY_ITEM_ID,
+            deduct_qty=5.0,
+        )
