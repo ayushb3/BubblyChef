@@ -82,7 +82,8 @@ function ChatSurface() {
   const [input, setInput] = useState('')
   const [aiAvailable, setAiAvailable] = useState(true)
   const [saveStates, setSaveStates] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({})
-  const [cookingRecipe, setCookingRecipe] = useState<Recipe | null>(null)
+  const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
+  const [dismissedRecipeId, setDismissedRecipeId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   // The recipe only needs to ride along on the first message — the backend
@@ -98,24 +99,31 @@ function ChatSurface() {
 
   // Load the recipe named by ?cooking=
   useEffect(() => {
-    if (!cookingRecipeId) {
-      setCookingRecipe(null)
-      return
-    }
+    if (!cookingRecipeId) return
     let cancelled = false
     contextSentRef.current = false
     fetchRecipe(cookingRecipeId)
       .then((recipe) => {
-        if (!cancelled) setCookingRecipe(recipe)
+        if (!cancelled) setLoadedRecipe(recipe)
       })
       .catch(() => {
         // Recipe unavailable — chat still works, just without the context card
-        if (!cancelled) setCookingRecipe(null)
+        if (!cancelled) setLoadedRecipe(null)
       })
     return () => {
       cancelled = true
     }
   }, [cookingRecipeId])
+
+  // Derived, not stored: the card shows only while the loaded recipe still
+  // matches the URL param and hasn't been dismissed. Keeps a stale recipe from
+  // flashing between navigations without clearing state inside an effect.
+  const cookingRecipe =
+    cookingRecipeId &&
+    cookingRecipeId !== dismissedRecipeId &&
+    loadedRecipe?.id === cookingRecipeId
+      ? loadedRecipe
+      : null
 
   const cookingContext = useMemo(() => {
     if (!cookingRecipe) return null
@@ -135,8 +143,8 @@ function ChatSurface() {
   }
 
   const dismissCookingCard = () => {
-    setCookingRecipe(null)
-    // Drop the param so a refresh (or a later cook) doesn't resurrect the card.
+    // Hide immediately, then drop the param so a refresh doesn't resurrect it.
+    setDismissedRecipeId(cookingRecipeId)
     router.replace('/chat', { scroll: false })
   }
 
