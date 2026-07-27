@@ -90,6 +90,7 @@ async def chat_stream(
                 pantry_snapshot=request.pantry_snapshot,
                 history=history,
                 user_id=user_id,
+                context=request.context,
             ):
                 parsed = json.loads(chunk_json)
                 event_type = parsed.get("type", "token")
@@ -188,6 +189,7 @@ async def chat_non_streaming(
             pantry_snapshot=request.pantry_snapshot,
             history=history,
             user_id=user_id,
+            context=request.context,
         ):
             parsed = json.loads(chunk_json)
             event_type = parsed.get("type", "token")

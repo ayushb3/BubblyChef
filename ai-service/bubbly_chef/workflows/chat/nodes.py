@@ -8,6 +8,7 @@ Contains the node functions (and their helpers/prompts) for:
 
 import logging
 from datetime import date
+from typing import Any
 
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.api.deps import get_ai_manager
@@ -93,6 +94,81 @@ def detect_mode_suggestion(text: str, current_mode: str) -> str | None:
     return None
 
 
+# ─── Cook handoff: recipe the user is actively cooking ───────────────────────
+
+COOKING_RECIPE_KEY = "cooking_recipe"
+
+# Ingredient lines kept out of the prompt beyond this — long imported recipes
+# would otherwise crowd out the pantry and history context.
+MAX_PROMPT_INGREDIENTS = 25
+
+
+def get_cooking_recipe(state: WorkflowState) -> dict[str, Any] | None:
+    """Return the recipe the user is currently cooking, if any.
+
+    Two sources, in priority order:
+    1. The request `context` — the client sends this on the first message after
+       the Cook flow hands off to chat.
+    2. The session metadata — where `update_session_node` pins it so later
+       turns in the same conversation keep the recipe without resending it.
+    """
+    context = state.get("context") or {}
+    recipe = context.get(COOKING_RECIPE_KEY)
+    if not isinstance(recipe, dict):
+        session = state.get("session") or {}
+        metadata = session.get("metadata") or {}
+        recipe = metadata.get(COOKING_RECIPE_KEY)
+    return recipe if isinstance(recipe, dict) else None
+
+
+def normalize_cooking_recipe(raw: dict[str, Any]) -> dict[str, Any]:
+    """Trim a client-supplied cooking recipe down to what prompts/sessions need."""
+    raw_ingredients = raw.get("ingredients")
+    ingredients: list[str] = []
+    if isinstance(raw_ingredients, list):
+        ingredients = [
+            str(item).strip()
+            for item in raw_ingredients[: MAX_PROMPT_INGREDIENTS * 2]
+            if str(item).strip()
+        ]
+    recipe_id = raw.get("id")
+    return {
+        "id": str(recipe_id) if recipe_id is not None else None,
+        "title": str(raw.get("title") or "").strip(),
+        "ingredients": ingredients,
+    }
+
+
+def format_cooking_recipe_context(state: WorkflowState) -> str:
+    """Format the actively-cooked recipe as a compact prompt block.
+
+    Returns an empty string when nothing is pinned, so callers can concatenate
+    it unconditionally.
+    """
+    raw = get_cooking_recipe(state)
+    if not raw:
+        return ""
+
+    recipe = normalize_cooking_recipe(raw)
+    title = recipe["title"]
+    if not title:
+        return ""
+
+    block = f'\n\nThe user is cooking "{title}" right now.'
+    ingredients: list[str] = recipe["ingredients"]
+    if ingredients:
+        shown = ingredients[:MAX_PROMPT_INGREDIENTS]
+        block += " Its ingredients: " + ", ".join(shown)
+        if len(ingredients) > len(shown):
+            block += f", plus {len(ingredients) - len(shown)} more"
+        block += "."
+    block += (
+        " Assume their questions are about this dish — technique, timing,"
+        " substitutions — unless they clearly change the subject."
+    )
+    return block
+
+
 def format_history_context(state: WorkflowState, max_turns: int = 10) -> str:
     """Format recent conversation history for injection into LLM prompts.
 
@@ -163,10 +239,12 @@ async def general_chat_response(state: WorkflowState) -> WorkflowState:
 
     mode_prefix = get_mode_prefix(state)
     history_context = format_history_context(state)
+    recipe_context = format_cooking_recipe_context(state)
     prompt = (
         mode_prefix
         + GENERAL_CHAT_SYSTEM_PROMPT
         + pantry_context
+        + recipe_context
         + "\n\n"
         + history_context
         + GENERAL_CHAT_USER_PROMPT.format(text=input_text)
@@ -277,7 +355,16 @@ mention they can switch to Recipe mode for a full step-by-step recipe."""
     user_prompt = f"\n\nUser: {input_text}\n\nRespond helpfully and concisely."
     mode_prefix = get_mode_prefix(state)
     history_context = format_history_context(state)
-    prompt = mode_prefix + cooking_system + pantry_context + "\n\n" + history_context + user_prompt
+    recipe_context = format_cooking_recipe_context(state)
+    prompt = (
+        mode_prefix
+        + cooking_system
+        + pantry_context
+        + recipe_context
+        + "\n\n"
+        + history_context
+        + user_prompt
+    )
 
     try:
         result = await ai_manager.complete(prompt=prompt, temperature=0.7)

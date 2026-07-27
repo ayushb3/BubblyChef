@@ -81,6 +81,7 @@ class WorkflowState(TypedDict, total=False):
     input_type: str  # "chat", "receipt", "product", "recipe"
     input_mode: str  # "text" or "voice"
     pantry_snapshot: list[dict[str, Any]] | None
+    context: dict[str, Any] | None  # Client-supplied context, e.g. {"cooking_recipe": {...}}
     conversation_history: list[dict[str, Any]]  # Prior turns [{role, content, intent}]
 
     # ==========================================================================

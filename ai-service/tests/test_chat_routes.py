@@ -220,3 +220,100 @@ async def test_chat_sessions_list(client: AsyncClient) -> None:
     assert len(data) == 1
     assert data[0]["conversation_id"] == TEST_CONV_ID
 
+
+
+# ---------------------------------------------------------------------------
+# Cook handoff — request context reaching the workflow (issue #122)
+# ---------------------------------------------------------------------------
+
+
+COOKING_CONTEXT = {
+    "cooking_recipe": {
+        "id": "recipe-42",
+        "title": "Lemon Garlic Pasta",
+        "ingredients": ["spaghetti", "lemon", "garlic", "olive oil"],
+    }
+}
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_forwards_context_to_workflow(client: AsyncClient) -> None:
+    """POST /v1/chat/stream passes request.context through to the workflow."""
+    mock_repo = _make_mock_repo()
+    captured: dict[str, Any] = {}
+
+    async def _capturing_stream(*args: Any, **kwargs: Any) -> AsyncIterator[str]:
+        captured.update(kwargs)
+        async for chunk in _fake_stream():
+            yield chunk
+
+    with patch(_STREAM_PATCH, side_effect=_capturing_stream), patch(
+        "bubbly_chef.api.routes.chat.get_repository",
+        new_callable=AsyncMock,
+        return_value=mock_repo,
+    ):
+        response = await client.post(
+            "/v1/chat/stream",
+            json={
+                "message": "how do I julienne the carrots?",
+                "conversation_id": TEST_CONV_ID,
+                "context": COOKING_CONTEXT,
+            },
+        )
+
+    assert response.status_code == 200
+    assert captured["context"] == COOKING_CONTEXT
+
+
+@pytest.mark.asyncio
+async def test_chat_non_streaming_forwards_context_to_workflow(client: AsyncClient) -> None:
+    """POST /v1/chat passes request.context through to the workflow."""
+    mock_repo = _make_mock_repo()
+    captured: dict[str, Any] = {}
+
+    async def _capturing_stream(*args: Any, **kwargs: Any) -> AsyncIterator[str]:
+        captured.update(kwargs)
+        async for chunk in _fake_stream():
+            yield chunk
+
+    with patch(_STREAM_PATCH, side_effect=_capturing_stream), patch(
+        "bubbly_chef.api.routes.chat.get_repository",
+        new_callable=AsyncMock,
+        return_value=mock_repo,
+    ):
+        response = await client.post(
+            "/v1/chat",
+            json={
+                "message": "what can I swap for lemon zest?",
+                "conversation_id": TEST_CONV_ID,
+                "context": COOKING_CONTEXT,
+            },
+        )
+
+    assert response.status_code == 200
+    assert captured["context"] == COOKING_CONTEXT
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_context_defaults_to_none(client: AsyncClient) -> None:
+    """Requests without context still forward context=None (no regression)."""
+    mock_repo = _make_mock_repo()
+    captured: dict[str, Any] = {}
+
+    async def _capturing_stream(*args: Any, **kwargs: Any) -> AsyncIterator[str]:
+        captured.update(kwargs)
+        async for chunk in _fake_stream():
+            yield chunk
+
+    with patch(_STREAM_PATCH, side_effect=_capturing_stream), patch(
+        "bubbly_chef.api.routes.chat.get_repository",
+        new_callable=AsyncMock,
+        return_value=mock_repo,
+    ):
+        response = await client.post(
+            "/v1/chat/stream",
+            json={"message": "Hello", "conversation_id": TEST_CONV_ID},
+        )
+
+    assert response.status_code == 200
+    assert captured["context"] is None
