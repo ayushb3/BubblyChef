@@ -3,8 +3,11 @@ name: CI
 on:
   push:
     branches: [main]
+  # Deliberately unfiltered by base branch. A `branches: [main]` filter here means
+  # any PR targeting a long-lived feature branch gets zero checks — that is how
+  # #119, #120 and #121 all reached review having never been typechecked or tested.
+  # Stacked PRs need the same gate as PRs to main.
   pull_request:
-    branches: [main]
 
 jobs:
   # ── Next.js ──────────────────────────────────────────────────────────────
