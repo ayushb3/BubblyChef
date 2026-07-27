@@ -104,7 +104,7 @@ graph TB
 
 | Layer | Tech | Deploys to |
 |---|---|---|
-| Frontend + CRUD API | Next.js 14 (App Router, React 19) | Vercel |
+| Frontend + CRUD API | Next.js 16 (App Router, React 19) | Vercel |
 | AI Microservice | FastAPI + LangGraph + Tesseract | Railway |
 | Database | Supabase Postgres (7 tables, RLS) | Supabase Cloud |
 | Auth | Supabase Auth (JWT + PKCE) | Supabase Cloud |

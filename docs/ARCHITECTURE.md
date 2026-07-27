@@ -21,7 +21,7 @@ BubblyChef is now a **three-tier architecture** deployed as separate services:
 
 | Service | Tech | Hosts | Port |
 |---|---|---|---|
-| **Frontend + CRUD API** | Next.js 14, React, TypeScript, Tailwind | Vercel (prod), localhost:3000 (dev) | 3000 |
+| **Frontend + CRUD API** | Next.js 16, React, TypeScript, Tailwind | Vercel (prod), localhost:3000 (dev) | 3000 |
 | **Database + Auth** | Supabase (Postgres 15), Row Level Security | Supabase cloud | N/A |
 | **AI Microservice** | FastAPI, LangGraph, Gemini, Tesseract | Railway (prod), localhost:8888 (dev) | 8888 |
 
