@@ -222,10 +222,17 @@ export default function ChatPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={isStreaming}
-            className="w-full rounded-full px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] text-sm disabled:opacity-50"
+            // Stays enabled while a reply streams so the next question can be
+            // composed as the answer arrives. Submitting is still blocked —
+            // sendMessage returns early when isStreaming (useChat), and the Send
+            // button is replaced by Stop below — so typing cannot interleave two
+            // requests.
+            aria-label="Message Bubbles"
+            className="w-full rounded-full px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
           />
-          <RotatingPlaceholder visible={!input && !isStreaming && !hasMessages} />
+          {/* Placeholder hides once anything is typed; no longer tied to streaming,
+              since the field is now usable mid-stream. */}
+          <RotatingPlaceholder visible={!input && !hasMessages} />
         </div>
         {isStreaming ? (
           <SpringButton
