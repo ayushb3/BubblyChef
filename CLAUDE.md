@@ -272,18 +272,26 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 
 **Session orientation:** Read `ROADMAP.md` for current phase + open issues.
 
-**Full workflow reference:** See `docs/WORKFLOW.md` for the complete pipeline (plan → PRD → issues → implement).
+**Full workflow reference:** See `WORKFLOW.md` at the repo root for the complete
+process model (issue lifecycle, autonomy gate, layered review, orchestration
+depth), and `docs/WORKFLOW.md` for BubblyChef's own operational quick-reference
+(recovery commands, common failure patterns).
+
+**Agent team:** `pm` (you, orchestrating) plus `backend`, `frontend`, `ui-ux`,
+`qa-reviewer` — see `docs/agents/roles/` for each role's full mandate and
+ownership boundary. PM delegates one level deep only — dev roles don't spawn
+further subagents; see `WORKFLOW.md` §5.
 
 **For non-trivial features:**
 1. Triage — read the relevant code, identify files affected
 2. Describe the goal; Claude enters plan mode → approve the plan
-3. Agent team implements in parallel: `dev1` (AI service/backend), `dev2` (Next.js/frontend)
+3. Agent team implements per role boundaries (`docs/agents/roles/`)
 4. Run quality gates before committing: `cd ai-service && pytest && ruff check bubbly_chef/ && mypy bubbly_chef/ --strict` + `cd nextjs && npx tsc --noEmit`
 
 **For larger initiatives:**
 1. Explore + plan mode → design in `docs/plans/`
-2. `/to-prd` → publishes PRD as GitHub Issue
-3. `/to-issues` → breaks PRD into vertical-slice child issues
+2. `/wayfinder` (idea, size unknown) or `/to-spec` (idea already shaped) → publishes a spec as a GitHub Issue
+3. `/to-tickets` → breaks the spec into vertical-slice child issues
 4. Implement each issue independently
 
 **For spec-driven autonomous work:**
@@ -291,6 +299,12 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 - Tell Claude: *"Implement the spec at docs/plans/my-feature.md autonomously"*
 
 **Plan storage:** When creating plans (plan mode, architecture investigations, design docs), save them to `docs/plans/` with a date prefix (`YYYY-MM-DD-topic.md`). This keeps plans visible in the project alongside the code they describe.
+
+**Branch naming (going forward):** `feat/issue-<n>-<slug>` / `fix/issue-<n>-<slug>`,
+merged with real merge commits — this is already the dominant pattern in the repo.
+Two other schemes (hash-suffixed, `ui-wN-*`) exist on older branches; don't
+bulk-rename them, just use the convention above for anything new. See `WORKFLOW.md`
+§4.
 
 ---
 
@@ -344,9 +358,22 @@ Default mattpocock vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, 
 
 Single-context — `CONTEXT.md` at repo root, `docs/adr/` for architectural decisions. See `docs/agents/domain.md`.
 
+### Agent roles
+
+`pm`, `backend`, `frontend`, `ui-ux`, `qa-reviewer` — one file per role under
+`docs/agents/roles/`, committed (not gitignored). See `docs/agents/roles/pm.md`
+for the orchestration mandate and `docs/agents/roles/_role-template.md` for how to
+add a new one.
+
+### Review
+
+`/code-review` on every PR; `/interrogate` before merging a feature-level PR;
+`thermo-nuclear-code-quality-review` fires automatically as a `PreToolUse` hook at
+`gh pr create`/`gh pr merge` time. See `WORKFLOW.md` §7.
+
 ---
 
-*Last updated: 2026-05-03*
+*Last updated: 2026-07-11*
 
 
 ## Issue Tracking
