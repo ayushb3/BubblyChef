@@ -25,8 +25,11 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
-    "ruff>=0.4",
-    "mypy>=1.10",
+    # Pinned to a minor range: these tools gate CI, and unpinned upper bounds mean
+    # a new default-rule set upstream turns CI red without a code change here.
+    # ruff 0.16 expanded its defaults and reports 144 findings on code 0.15 passes.
+    "ruff>=0.15,<0.16",
+    "mypy>=1.10,<2",
 ]
 
 [tool.ruff]
