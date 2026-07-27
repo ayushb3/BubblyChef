@@ -14,7 +14,7 @@ export const heartPopVariants: Variants = {
   pop: {
     scale: [1, 1.4, 0.95, 1.1, 1],
     rotate: [0, -12, 8, -4, 0],
-    transition: springs.pop,
+    transition: { type: 'tween', duration: 0.4, ease: [0.34, 1.56, 0.64, 1] },
   },
 }
 
