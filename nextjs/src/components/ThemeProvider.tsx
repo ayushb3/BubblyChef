@@ -43,6 +43,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY)
     const resolved = stored !== null && isValidTheme(stored) ? stored : DEFAULT_THEME
+    // Deliberate: localStorage isn't readable during SSR, so the only way to
+    // correct the theme after the (mandatory) DEFAULT_THEME-on-both-passes
+    // first render is in an effect, once we know we've hydrated. There's no
+    // prop/derived-value this could be computed from during render — moving
+    // it there would either reintroduce the server/client mismatch this
+    // avoids, or read localStorage during SSR (which doesn't exist). See the
+    // WHY comment on `theme` above.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setThemeState(resolved)
     document.documentElement.setAttribute('data-theme', resolved)
   }, [])

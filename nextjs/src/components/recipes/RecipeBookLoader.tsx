@@ -9,8 +9,17 @@ export default function RecipeBookLoader() {
   const [loading, setLoading] = useState(true)
   const [refreshKey, setRefreshKey] = useState(0)
 
-  useEffect(() => {
+  // Reset `loading` for a refetch during render rather than in the effect
+  // below (React docs: "Adjusting state when a prop changes"). `loading`
+  // already starts `true` for the initial mount fetch, so this only fires on
+  // a genuine `refreshKey` bump from `onMutate` — no setState-in-effect needed.
+  const [trackedRefreshKey, setTrackedRefreshKey] = useState(refreshKey)
+  if (refreshKey !== trackedRefreshKey) {
+    setTrackedRefreshKey(refreshKey)
     setLoading(true)
+  }
+
+  useEffect(() => {
     fetch('/api/recipes')
       .then((r) => r.json())
       .then((data) => {

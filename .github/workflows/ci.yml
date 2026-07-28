@@ -32,6 +32,9 @@ jobs:
       - name: TypeScript
         run: npx tsc --noEmit
 
+      - name: ESLint
+        run: npx eslint src/
+
       - name: Jest
         run: npm test -- --ci
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useSyncExternalStore } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
 const PROMPTS = [
@@ -18,21 +18,37 @@ const PROMPTS = [
 
 const INTERVAL_MS = 4000
 
+// `prefers-reduced-motion` is a browser API with no server-side equivalent, so
+// SSR always sees "not reduced" (getServerSnapshot). useSyncExternalStore is
+// the React-sanctioned way to read + subscribe to this kind of external
+// store: it renders the server snapshot on the first client pass (matching
+// hydration) and re-renders with the real client value right after, with no
+// `setState` call inside an effect body.
+function subscribeReducedMotion(callback: () => void): () => void {
+  const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+  mq.addEventListener('change', callback)
+  return () => mq.removeEventListener('change', callback)
+}
+
+function getReducedMotionSnapshot(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+function getReducedMotionServerSnapshot(): boolean {
+  return false
+}
+
 interface RotatingPlaceholderProps {
   visible: boolean
 }
 
 export default function RotatingPlaceholder({ visible }: RotatingPlaceholderProps) {
   const [index, setIndex] = useState(0)
-  const [reducedMotion, setReducedMotion] = useState(false)
-
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
-    setReducedMotion(mq.matches)
-    const handler = (e: MediaQueryListEvent) => setReducedMotion(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
+  const reducedMotion = useSyncExternalStore(
+    subscribeReducedMotion,
+    getReducedMotionSnapshot,
+    getReducedMotionServerSnapshot
+  )
 
   useEffect(() => {
     if (!visible || reducedMotion) return

@@ -249,7 +249,7 @@ export default function RecipeRefinementModal({
                   className="text-sm text-center py-4"
                   style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
                 >
-                  Type a refinement below — e.g. "make it vegetarian" or "reduce cook time"
+                  Type a refinement below — e.g. &ldquo;make it vegetarian&rdquo; or &ldquo;reduce cook time&rdquo;
                 </p>
               )}
             </div>
