@@ -95,9 +95,11 @@ class ChatRequest(BaseModel):
     context: dict[str, Any] | None = Field(
         default=None,
         description=(
-            "Additional context forwarded to the workflow. Recognised key: "
-            '"cooking_recipe" ({id, title, ingredients}) — pins the conversation '
-            "to the recipe the user just started cooking."
+            "Additional context forwarded to the workflow. Recognised keys: "
+            '"cooking_recipe_id" (<str>) — the recipe the user just started '
+            "cooking; the recipe is resolved server-side from this id and the "
+            "conversation is pinned to it. Legacy: \"cooking_recipe\" "
+            "({id, title, ingredients}) — still accepted, same effect."
         ),
     )
 
