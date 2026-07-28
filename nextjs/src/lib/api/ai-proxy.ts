@@ -73,3 +73,33 @@ export async function aiProxyJson(
 
   return NextResponse.json(data)
 }
+
+/**
+ * Estimate an expiry date for a pantry item via the AI service's Python
+ * heuristic (the single source of truth — see #158). Returns an ISO date
+ * string, or `null` on any failure so callers can fall back to a null expiry
+ * without ever blocking the add.
+ */
+export async function estimateExpiry(item: {
+  name: string
+  category?: string | null
+  location?: string | null
+}): Promise<string | null> {
+  try {
+    const res = await aiProxyFetch('/v1/pantry/estimate-expiry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: item.name,
+        category: item.category || 'other',
+        location: item.location || 'pantry',
+      }),
+    })
+    if (res instanceof NextResponse || !res.ok) return null
+    const data = (await res.json()) as { expiry_date?: string }
+    return data.expiry_date ?? null
+  } catch {
+    // Estimation is best-effort — never let it block adding the item.
+    return null
+  }
+}

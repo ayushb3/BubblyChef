@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>#146 — Pantry tile: Cook this vs Toss it</title>
+<style>
+  :root {
+    --color-surface: #fff9f5; --color-border: #f0e0e0; --color-text: #4a4a4a;
+    --color-muted: #9a9a9a; --color-primary-dark: #d6738a;
+    --color-fresh: #b5ead7; --color-fresh-text: #2e7d5b;
+    --color-expiring: #ffdab3; --color-expiring-text: #b5651d;
+    --color-expired: #ffb3b3; --color-expired-text: #b53a3a;
+    --cat-bg: #fff3f5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Nunito', -apple-system, system-ui, sans-serif;
+    background: #fff; color: var(--color-text); margin: 0; padding: 28px 20px; line-height: 1.45;
+  }
+  h1 { font-size: 20px; margin: 0 0 2px; }
+  .sub { color: var(--color-muted); font-size: 13px; margin: 0 0 24px; }
+  .cols { display: flex; gap: 28px; flex-wrap: wrap; max-width: 900px; margin: 0 auto; }
+  .col { flex: 1; min-width: 260px; }
+  .col h2 { font-size: 14px; font-weight: 800; margin: 0 0 10px; }
+  .col .caption { font-size: 12px; color: var(--color-muted); min-height: 34px; margin-bottom: 12px; }
+
+  /* Real pantry panel + 2-col tile grid */
+  .panel { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 24px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
+  .panel-head { background: linear-gradient(90deg,#ffb5c5,#ff9aa2); padding: 8px 18px; }
+  .panel-head p { color: #fff; font-weight: 700; font-size: 13px; margin: 0; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px; }
+
+  .tile { border: 1px solid var(--color-border); border-radius: 16px; overflow: hidden; display: flex; flex-direction: column; background: var(--cat-bg); }
+  .tile-body { padding: 12px; text-align: left; }
+  .tile .row1 { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .tile .emoji { font-size: 18px; }
+  .tile .name { font-weight: 700; font-size: 13px; }
+  .tile .row2 { display: flex; align-items: center; justify-content: space-between; }
+  .tile .qty { font-size: 11px; color: var(--color-muted); }
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; }
+  .b-fresh { background: var(--color-fresh); color: var(--color-fresh-text); }
+  .b-expiring { background: var(--color-expiring); color: var(--color-expiring-text); }
+  .b-expired { background: var(--color-expired); color: var(--color-expired-text); }
+  .strip { border-top: 1px solid var(--color-border); min-height: 40px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--color-primary-dark); }
+  .strip.toss { color: #6b5b95; }
+  .flag { position: relative; }
+  .flag::after { content: "⚠"; position: absolute; top: 8px; right: 8px; font-size: 12px; }
+
+  .bad { outline: 2px solid #ff5c5c; outline-offset: 3px; }
+  .tag { display: inline-block; font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 999px; margin-bottom: 8px; }
+  .tag-bug { background: #ffe0e0; color: #c0392b; }
+  .tag-fix { background: var(--color-fresh); color: var(--color-fresh-text); }
+  .note { font-size: 12px; color: var(--color-muted); margin-top: 8px; }
+  .legend { max-width: 900px; margin: 28px auto 0; background: var(--color-surface); border-radius: 16px; padding: 16px 20px; font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
+  .legend code { background: #fff; padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+  .new { background: var(--color-fresh); color: var(--color-fresh-text); font-size: 10px; padding: 1px 7px; border-radius: 999px; font-weight: 800; }
+</style>
+</head>
+<body>
+  <h1>🍅 #146 — The real pantry tile (2-col grid), for an <b>expired</b> item</h1>
+  <p class="sub">"Cook this" is a footer strip inside each small tile — it deep-links to a seeded chat, it does <b>not</b> open a recipe card. The tile already shows an "Expired" badge. Here's today vs. the fix.</p>
+
+  <div class="cols">
+    <!-- TODAY -->
+    <div class="col">
+      <h2>Today <span class="tag tag-bug">BUG</span></h2>
+      <p class="caption">The tile shows a red <b>Expired</b> badge and a <b>Cook this</b> strip at the same time. Tapping it seeds a chat that says "…before it goes bad" about food already gone.</p>
+      <div class="panel">
+        <div class="panel-head"><p>🥬 Produce</p></div>
+        <div class="grid">
+          <div class="tile bad">
+            <div class="tile-body">
+              <div class="row1"><span class="emoji">🥬</span><span class="name">Spinach</span></div>
+              <div class="row2"><span class="qty">1 bag</span><span class="badge b-expired">Expired</span></div>
+            </div>
+            <div class="strip">🍳 Cook this</div>
+          </div>
+          <div class="tile">
+            <div class="tile-body">
+              <div class="row1"><span class="emoji">🥛</span><span class="name">Milk</span></div>
+              <div class="row2"><span class="qty">1 gal</span><span class="badge b-expiring">2d left</span></div>
+            </div>
+            <div class="strip">🍳 Cook this</div>
+          </div>
+        </div>
+      </div>
+      <p class="note">Milk (2d left) is a legit "Cook this." Spinach (expired) is the incoherent one.</p>
+    </div>
+
+    <!-- RECOMMENDED -->
+    <div class="col">
+      <h2>Recommended <span class="tag tag-fix">FIX</span></h2>
+      <p class="caption">Expired tile loses "Cook this," keeps the Expired badge, and gains a <b>Toss it?</b> strip that opens the resolve action (Used it up / Tossed it). Milk is untouched.</p>
+      <div class="panel">
+        <div class="panel-head"><p>🥬 Produce</p></div>
+        <div class="grid">
+          <div class="tile flag">
+            <div class="tile-body">
+              <div class="row1"><span class="emoji">🥬</span><span class="name">Spinach</span></div>
+              <div class="row2"><span class="qty">1 bag</span><span class="badge b-expired">Expired</span></div>
+            </div>
+            <div class="strip toss">🗑️ Toss it? <span class="new" style="margin-left:6px">#140</span></div>
+          </div>
+          <div class="tile">
+            <div class="tile-body">
+              <div class="row1"><span class="emoji">🥛</span><span class="name">Milk</span></div>
+              <div class="row2"><span class="qty">1 gal</span><span class="badge b-expiring">2d left</span></div>
+            </div>
+            <div class="strip">🍳 Cook this</div>
+          </div>
+        </div>
+      </div>
+      <p class="note">Tapping "Toss it?" → the #140 resolve sheet: "Used it up" / "Tossed it".</p>
+    </div>
+  </div>
+
+  <div class="legend">
+    <b>What actually changes in code</b><br><br>
+    <b>1. Stop the bleed (1 line, ships on <code>main</code> now):</b> the strip's gate<br>
+    &nbsp;&nbsp;<code>isUrgent = days &lt;= 3</code> &nbsp;→&nbsp; <code>days &gt;= 0 &amp;&amp; days &lt;= 3</code><br>
+    Expired tiles (days &lt; 0) stop showing "Cook this." They still show the red "Expired" badge (that badge is separate, at <code>days &lt;= 0</code>). No new UI, no risk.<br><br>
+    <b>2. The "Toss it?" strip (needs #140, in draft PR #150):</b> a second footer strip for <code>days &lt; 0</code> that opens the resolve action. Built on top once #150 merges — no throwaway work.
+  </div>
+</body>
+</html>
