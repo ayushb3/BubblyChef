@@ -63,7 +63,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
         {/* Backdrop */}
         <motion.div
           key="edit-backdrop"
-          className="fixed inset-0 z-50"
+          className="fixed inset-0 z-[60]"
           style={{ background: 'rgba(0,0,0,0.4)' }}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -75,7 +75,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
         {/* Modal panel */}
         <motion.div
           key="edit-panel"
-          className="fixed inset-x-4 top-1/2 z-50 rounded-2xl overflow-hidden"
+          className="fixed inset-x-4 top-1/2 z-[60] rounded-2xl overflow-hidden"
           style={{
             background: 'var(--color-surface)',
             border: '1px solid var(--color-border)',

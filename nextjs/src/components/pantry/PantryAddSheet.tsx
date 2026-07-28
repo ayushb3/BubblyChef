@@ -89,7 +89,7 @@ export default function PantryAddSheet({
         <>
           {/* Backdrop */}
           <motion.div
-            className="fixed inset-0 bg-black/40 z-50"
+            className="fixed inset-0 bg-black/40 z-[60]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -98,7 +98,7 @@ export default function PantryAddSheet({
 
           {/* Sheet — slides up from bottom, sits above the bottom nav */}
           <motion.div
-            className="fixed bottom-16 left-0 right-0 z-50 rounded-t-3xl flex flex-col select-none"
+            className="fixed bottom-16 left-0 right-0 z-[60] rounded-t-3xl flex flex-col select-none"
             style={{
               background: 'var(--color-surface)',
               maxHeight: 'calc(92vh - 64px)',
