@@ -12,6 +12,7 @@ import AddItemModal from '@/components/pantry/AddItemModal'
 import ThemePicker from '@/components/ui/ThemePicker'
 import PantryAddSheet, { type PantryAddTab } from '@/components/pantry/PantryAddSheet'
 import { getFoodEmoji } from '@/lib/food-emoji'
+import { titleCase } from '@/lib/format'
 import Chip from '@/components/ui/Chip'
 
 interface PantryItem {
@@ -252,7 +253,7 @@ function PantryPageInner() {
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-lg">{getFoodEmoji(item.name, item.category)}</span>
                           <span className="font-semibold text-sm text-[var(--color-text)] truncate">
-                            {item.name}
+                            {titleCase(item.name)}
                           </span>
                         </div>
                         <div className="flex items-center justify-between">

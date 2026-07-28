@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
+import { titleCase } from '@/lib/format'
 import type { PantryProposalData, PantryProposalAction } from '@/types/chat'
 
 interface PantryProposalCardProps {
@@ -28,7 +29,7 @@ function ActionRow({ action }: { action: PantryProposalAction }) {
         {icon}
       </span>
       <div className="flex-1 min-w-0">
-        <span className="font-semibold text-sm text-[var(--color-text)]">{action.item.name}</span>
+        <span className="font-semibold text-sm text-[var(--color-text)]">{titleCase(action.item.name)}</span>
         {qtyStr && (
           <span className="text-sm text-[var(--color-muted)] ml-1.5">{qtyStr}</span>
         )}
