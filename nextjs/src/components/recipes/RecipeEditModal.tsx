@@ -102,7 +102,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
             </h2>
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-full flex items-center justify-center transition-opacity hover:opacity-70 active:scale-95"
+              className="focus-ring w-8 h-8 rounded-full flex items-center justify-center transition-opacity hover:opacity-70 active:scale-95"
               style={{ background: 'var(--color-bg)', color: 'var(--color-muted)' }}
               aria-label="Close"
             >
@@ -124,7 +124,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full rounded-xl px-4 py-2.5 text-sm outline-none border focus:border-[var(--color-primary)]"
+                className="focus-ring w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)]"
                 style={{
                   background: 'var(--color-bg)',
                   border: '1.5px solid var(--color-border)',
@@ -146,7 +146,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
-                className="w-full rounded-xl px-4 py-2.5 text-sm outline-none resize-none border focus:border-[var(--color-primary)]"
+                className="focus-ring w-full rounded-xl px-4 py-2.5 text-sm resize-none border focus:border-[var(--color-primary)]"
                 style={{
                   background: 'var(--color-bg)',
                   border: '1.5px solid var(--color-border)',
@@ -169,7 +169,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
                 placeholder="comma-separated"
-                className="w-full rounded-xl px-4 py-2.5 text-sm outline-none border focus:border-[var(--color-primary)]"
+                className="focus-ring w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)]"
                 style={{
                   background: 'var(--color-bg)',
                   border: '1.5px solid var(--color-border)',
@@ -194,7 +194,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
                       type="text"
                       value={item}
                       onChange={(e) => updateItem(setIngredients, i, e.target.value)}
-                      className="flex-1 rounded-xl px-3 py-2 text-sm outline-none border focus:border-[var(--color-primary)]"
+                      className="focus-ring flex-1 rounded-xl px-3 py-2 text-sm border focus:border-[var(--color-primary)]"
                       style={{
                         background: 'var(--color-bg)',
                         border: '1.5px solid var(--color-border)',
@@ -204,7 +204,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
                     />
                     <button
                       onClick={() => removeItem(setIngredients, i)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-xs hover:opacity-70 flex-shrink-0"
+                      className="focus-ring w-7 h-7 rounded-full flex items-center justify-center text-xs hover:opacity-70 flex-shrink-0"
                       style={{ background: 'var(--color-bg)', color: 'var(--color-muted)', border: '1.5px solid var(--color-border)' }}
                       aria-label="Remove ingredient"
                     >
@@ -214,7 +214,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
                 ))}
                 <button
                   onClick={() => addItem(setIngredients)}
-                  className="text-xs font-bold px-3 py-1.5 rounded-full"
+                  className="focus-ring text-xs font-bold px-3 py-1.5 rounded-full"
                   style={{ color: 'var(--color-primary)', background: 'var(--color-bg)', border: '1.5px solid var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
                 >
                   + Add ingredient
@@ -243,7 +243,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
                       value={step}
                       onChange={(e) => updateItem(setInstructions, i, e.target.value)}
                       rows={2}
-                      className="flex-1 rounded-xl px-3 py-2 text-sm outline-none resize-none border focus:border-[var(--color-primary)]"
+                      className="focus-ring flex-1 rounded-xl px-3 py-2 text-sm resize-none border focus:border-[var(--color-primary)]"
                       style={{
                         background: 'var(--color-bg)',
                         border: '1.5px solid var(--color-border)',
@@ -253,7 +253,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
                     />
                     <button
                       onClick={() => removeItem(setInstructions, i)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-xs hover:opacity-70 flex-shrink-0 mt-1"
+                      className="focus-ring w-7 h-7 rounded-full flex items-center justify-center text-xs hover:opacity-70 flex-shrink-0 mt-1"
                       style={{ background: 'var(--color-bg)', color: 'var(--color-muted)', border: '1.5px solid var(--color-border)' }}
                       aria-label="Remove step"
                     >
@@ -263,7 +263,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
                 ))}
                 <button
                   onClick={() => addItem(setInstructions)}
-                  className="text-xs font-bold px-3 py-1.5 rounded-full"
+                  className="focus-ring text-xs font-bold px-3 py-1.5 rounded-full"
                   style={{ color: 'var(--color-primary)', background: 'var(--color-bg)', border: '1.5px solid var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
                 >
                   + Add step
@@ -280,7 +280,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
             <button
               onClick={handleSave}
               disabled={saving || !title.trim()}
-              className="flex-1 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
+              className="focus-ring flex-1 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
               style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
             >
               {saving ? 'Saving...' : 'Save'}
@@ -288,7 +288,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
             <button
               onClick={onClose}
               disabled={saving}
-              className="flex-1 py-2.5 rounded-full text-sm font-bold disabled:opacity-50 active:scale-95 transition-transform"
+              className="focus-ring flex-1 py-2.5 rounded-full text-sm font-bold disabled:opacity-50 active:scale-95 transition-transform"
               style={{
                 background: 'var(--color-bg)',
                 border: '1.5px solid var(--color-border)',

@@ -164,11 +164,10 @@ describe('expiring pantry cards (#138)', () => {
     const editButton = nameEl.closest('button')
     const link = screen.getByRole('link', { name: /Cook this spinach/i })
 
+    // Design-system utility (globals.css, #147) — inset variant, since the card
+    // wrapper is overflow-hidden and an outward ring/offset would be clipped.
     for (const el of [editButton, link]) {
-      expect(el?.className).toMatch(/focus-visible:outline-2/)
-      // Inset offset — the card wrapper is overflow-hidden, so an outward ring
-      // would be clipped.
-      expect(el?.className).toContain('focus-visible:outline-offset-[-2px]')
+      expect(el?.className).toMatch(/\bfocus-ring-inset\b/)
     }
   })
 })

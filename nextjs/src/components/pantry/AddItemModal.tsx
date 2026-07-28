@@ -207,7 +207,7 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                   onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                   placeholder="e.g., Milk, Eggs, Rice..."
-                  className="w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
+                  className="focus-ring w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
                 />
                 {showSuggestions && suggestions.length > 0 && (
                   <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[var(--color-border)] rounded-xl shadow-lg z-10 overflow-hidden">
@@ -216,7 +216,9 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                         key={s.canonical_name}
                         type="button"
                         onMouseDown={() => selectSuggestion(s)}
-                        className="w-full text-left px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-primary)]/10 transition-colors"
+                        // Inset: this dropdown clips overflow, so an outward ring
+                        // would be cut off at the panel edge.
+                        className="focus-ring-inset w-full text-left px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-primary)]/10 transition-colors"
                       >
                         {s.canonical_name}
                         {s.category && (
@@ -238,7 +240,7 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                     step="any"
                     value={quantity}
                     onChange={(e) => setQuantity(Number(e.target.value))}
-                    className="w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
+                    className="focus-ring w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
                   />
                 </div>
                 <div className="flex-1">
@@ -248,7 +250,7 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                     value={unit}
                     onChange={(e) => setUnit(e.target.value)}
                     list="unit-suggestions"
-                    className="w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
+                    className="focus-ring w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
                   />
                   <datalist id="unit-suggestions">
                     {UNIT_SUGGESTIONS.map((u) => (
@@ -264,7 +266,7 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
+                  className="focus-ring w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
                 >
                   {CATEGORIES.map((c) => (
                     <option key={c.value} value={c.value}>{c.label}</option>
@@ -281,7 +283,7 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                       key={loc.value}
                       type="button"
                       onClick={() => setLocation(loc.value)}
-                      className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                      className={`focus-ring flex-1 py-2 rounded-xl text-xs font-semibold transition-colors ${
                         location === loc.value
                           ? 'bg-[var(--color-primary)] text-white'
                           : 'bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border)]'
@@ -300,7 +302,7 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                   type="date"
                   value={expiryDate}
                   onChange={(e) => setExpiryDate(e.target.value)}
-                  className="w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
+                  className="focus-ring w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
                 />
               </div>
 
@@ -314,14 +316,14 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                           type="button"
                           onClick={handleDelete}
                           disabled={saving}
-                          className="flex-1 py-2.5 rounded-full bg-red-400 text-white text-sm font-semibold disabled:opacity-50"
+                          className="focus-ring flex-1 py-2.5 rounded-full bg-red-400 text-white text-sm font-semibold disabled:opacity-50"
                         >
                           Confirm Delete
                         </button>
                         <button
                           type="button"
                           onClick={() => setConfirmDelete(false)}
-                          className="flex-1 py-2.5 rounded-full bg-[var(--color-surface)] text-[var(--color-text)] text-sm font-semibold border border-[var(--color-border)]"
+                          className="focus-ring flex-1 py-2.5 rounded-full bg-[var(--color-surface)] text-[var(--color-text)] text-sm font-semibold border border-[var(--color-border)]"
                         >
                           Cancel
                         </button>
@@ -330,7 +332,7 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                       <button
                         type="button"
                         onClick={() => setConfirmDelete(true)}
-                        className="py-2.5 px-4 rounded-full text-red-400 text-sm font-semibold border border-red-300"
+                        className="focus-ring py-2.5 px-4 rounded-full text-red-400 text-sm font-semibold border border-red-300"
                       >
                         Delete
                       </button>

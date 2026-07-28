@@ -70,7 +70,7 @@ export default function ThemePicker() {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform"
+        className="focus-ring w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform"
         style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
         aria-label={`Change theme, current theme ${active.name}`}
         aria-haspopup="true"
@@ -123,8 +123,9 @@ export default function ThemePicker() {
                     if (!isActive) setTheme(key)
                     setOpen(false)
                   }}
-                  // py-3 + 20px swatch puts each row at 44px tall.
-                  className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-semibold hover:bg-[var(--color-bg)] transition-colors"
+                  // py-3 + 20px swatch puts each row at 44px tall. Inset ring:
+                  // the popover panel above is `overflow-hidden`.
+                  className="focus-ring-inset w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-semibold hover:bg-[var(--color-bg)] transition-colors"
                   style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
                 >
                   <span

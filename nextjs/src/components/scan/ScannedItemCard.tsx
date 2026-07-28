@@ -60,7 +60,7 @@ export default function ScannedItemCard({
         type="button"
         aria-label={`Dismiss ${item.name}`}
         onClick={onDismiss}
-        className="absolute top-3 right-3 w-6 h-6 flex items-center justify-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-border)] transition-colors text-sm font-bold"
+        className="focus-ring absolute top-3 right-3 w-6 h-6 flex items-center justify-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-border)] transition-colors text-sm font-bold"
       >
         ×
       </button>
@@ -80,7 +80,7 @@ export default function ScannedItemCard({
           aria-label="Item name"
           value={item.name}
           onChange={(e) => update('name', e.target.value)}
-          className="flex-1 text-sm font-semibold text-[var(--color-text)] bg-transparent border-b border-[var(--color-border)] focus:border-[var(--color-primary)] outline-none pb-1 transition-colors"
+          className="focus-ring flex-1 text-sm font-semibold text-[var(--color-text)] bg-transparent border-b border-[var(--color-border)] focus:border-[var(--color-primary)] pb-1 transition-colors"
           placeholder="Item name"
         />
       </div>
@@ -96,7 +96,7 @@ export default function ScannedItemCard({
             min={0}
             step={0.1}
             onChange={(e) => update('quantity', parseFloat(e.target.value) || 0)}
-            className="w-full text-sm text-[var(--color-text)] bg-[var(--color-bg,#FFF0F5)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+            className="focus-ring w-full text-sm text-[var(--color-text)] bg-[var(--color-bg,#FFF0F5)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:border-[var(--color-primary)] transition-colors"
           />
         </div>
         <div className="flex-1">
@@ -106,7 +106,7 @@ export default function ScannedItemCard({
             aria-label="Unit"
             value={item.unit}
             onChange={(e) => update('unit', e.target.value)}
-            className="w-full text-sm text-[var(--color-text)] bg-[var(--color-bg,#FFF0F5)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+            className="focus-ring w-full text-sm text-[var(--color-text)] bg-[var(--color-bg,#FFF0F5)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:border-[var(--color-primary)] transition-colors"
             placeholder="pcs, g, ml…"
           />
         </div>
@@ -120,7 +120,7 @@ export default function ScannedItemCard({
             aria-label="Category"
             value={item.category}
             onChange={(e) => update('category', e.target.value)}
-            className="w-full text-sm text-[var(--color-text)] bg-[var(--color-bg,#FFF0F5)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+            className="focus-ring w-full text-sm text-[var(--color-text)] bg-[var(--color-bg,#FFF0F5)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:border-[var(--color-primary)] transition-colors"
           >
             {CATEGORIES.map((c) => (
               <option key={c} value={c}>
@@ -135,7 +135,7 @@ export default function ScannedItemCard({
             aria-label="Location"
             value={item.location}
             onChange={(e) => update('location', e.target.value)}
-            className="w-full text-sm text-[var(--color-text)] bg-[var(--color-bg,#FFF0F5)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+            className="focus-ring w-full text-sm text-[var(--color-text)] bg-[var(--color-bg,#FFF0F5)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:border-[var(--color-primary)] transition-colors"
           >
             {LOCATIONS.map((l) => (
               <option key={l} value={l}>

@@ -56,7 +56,7 @@ export default function Chip({
   ariaLabel,
   className,
 }: ChipProps) {
-  const baseClass = `inline-flex items-center gap-1 ${SIZE_CLASS[size]} rounded-full font-semibold whitespace-nowrap transition-colors border border-[var(--color-border)]`
+  const baseClass = `focus-ring inline-flex items-center gap-1 ${SIZE_CLASS[size]} rounded-full font-semibold whitespace-nowrap transition-colors border border-[var(--color-border)]`
   const merged = className ? `${baseClass} ${className}` : baseClass
 
   const style = {

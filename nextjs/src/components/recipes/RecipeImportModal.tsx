@@ -120,7 +120,7 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
             </h2>
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-full flex items-center justify-center transition-opacity hover:opacity-70 active:scale-95"
+              className="focus-ring w-8 h-8 rounded-full flex items-center justify-center transition-opacity hover:opacity-70 active:scale-95"
               style={{ background: 'var(--color-bg)', color: 'var(--color-muted)' }}
               aria-label="Close"
             >
@@ -150,7 +150,7 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
                   target="_blank"
                   rel="noopener noreferrer"
                   title={noImage ? 'Images may not be available for this site' : undefined}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold no-underline hover:opacity-80 active:scale-95 transition-all"
+                  className="focus-ring inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold no-underline hover:opacity-80 active:scale-95 transition-all"
                   style={{
                     background: 'var(--color-bg)',
                     border: '1.5px solid var(--color-border)',
@@ -176,7 +176,7 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
               placeholder="https://www.allrecipes.com/recipe/..."
               disabled={state === 'loading'}
               autoFocus
-              className="w-full rounded-xl px-4 py-2.5 text-sm outline-none border focus:border-[var(--color-primary)] disabled:opacity-50"
+              className="focus-ring w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)] disabled:opacity-50"
               style={{
                 background: 'var(--color-bg)',
                 border: `1.5px solid ${state === 'error' ? 'var(--color-coral)' : 'var(--color-border)'}`,
@@ -213,7 +213,7 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
             <button
               onClick={handleImport}
               disabled={state === 'loading' || !url.trim()}
-              className="flex-1 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
+              className="focus-ring flex-1 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
               style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
             >
               {state === 'loading' ? 'Importing…' : 'Import'}
@@ -221,7 +221,7 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
             <button
               onClick={onClose}
               disabled={state === 'loading'}
-              className="flex-1 py-2.5 rounded-full text-sm font-bold disabled:opacity-50 active:scale-95 transition-transform"
+              className="focus-ring flex-1 py-2.5 rounded-full text-sm font-bold disabled:opacity-50 active:scale-95 transition-transform"
               style={{
                 background: 'var(--color-bg)',
                 border: '1.5px solid var(--color-border)',

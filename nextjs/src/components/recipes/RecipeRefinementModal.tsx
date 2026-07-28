@@ -143,7 +143,7 @@ export default function RecipeRefinementModal({
               </h2>
               <button
                 onClick={onClose}
-                className="w-8 h-8 rounded-full flex items-center justify-center transition-opacity hover:opacity-70 active:scale-95"
+                className="focus-ring w-8 h-8 rounded-full flex items-center justify-center transition-opacity hover:opacity-70 active:scale-95"
                 style={{ background: 'var(--color-surface)', color: 'var(--color-muted)' }}
                 aria-label="Close"
               >
@@ -293,7 +293,7 @@ export default function RecipeRefinementModal({
                   onKeyDown={handleKeyDown}
                   placeholder="e.g. make it vegan, less spicy..."
                   disabled={refining}
-                  className="flex-1 rounded-full px-4 py-2.5 text-sm outline-none disabled:opacity-50"
+                  className="focus-ring flex-1 rounded-full px-4 py-2.5 text-sm disabled:opacity-50"
                   style={{
                     background: 'var(--color-bg)',
                     border: '1.5px solid var(--color-border)',

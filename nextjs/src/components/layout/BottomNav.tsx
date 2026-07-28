@@ -50,7 +50,7 @@ export default function BottomNav() {
             <Link
               key={tab.href}
               href={tab.href}
-              className="flex-1 relative flex flex-col items-center py-2 pb-4 gap-0.5"
+              className="focus-ring-inset flex-1 relative flex flex-col items-center py-2 pb-4 gap-0.5"
             >
               {isActive && (
                 <motion.div

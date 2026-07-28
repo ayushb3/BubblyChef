@@ -63,6 +63,24 @@
       transparent 100%
     );
     --text-shadow-on-image: 0 1px 4px color-mix(in srgb, black 40%, transparent);
+
+    /*
+     * Focus ring — the one design-system-wide answer to WCAG 2.4.7 (issue #147).
+     * Deliberately aliases --color-text, not --color-primary-dark/--color-accent-dark.
+     * Those read as the "obvious" accent choice, but checked against every theme's
+     * --color-surface they measure as low as ~1.7:1 (yuzu) and never clear ~3.2:1
+     * (best case, lavender) — under the 3:1 WCAG 1.4.11 floor for non-text UI
+     * components on at least 4 of the 5 themes. --color-text is the one token each
+     * theme already guarantees is dark enough to read as body copy on every light
+     * surface it ships (surface/bg/category tints/gradient card stops), which measures
+     * 7.3–9.7:1 against --color-surface across all five palettes — so the ring is
+     * legible by construction instead of needing a per-theme override.
+     * Aliased (not hardcoded) so it re-resolves per [data-theme="*"] automatically,
+     * the same trick --shadow-soft already relies on above.
+     */
+    --color-focus-ring: var(--color-text);
+    --focus-ring-width: 2px;
+    --focus-ring-offset: 2px;
   }
 
   /* Theme palettes — applied via data-theme attribute on <html> */
@@ -151,4 +169,39 @@
   background-image:
     repeating-linear-gradient(0deg, transparent, transparent 5px, rgba(255,255,255,0.08) 5px, rgba(255,255,255,0.08) 6px),
     repeating-linear-gradient(90deg, transparent, transparent 5px, rgba(255,255,255,0.06) 5px, rgba(255,255,255,0.06) 6px);
+}
+
+/*
+ * Focus ring utilities (issue #147) — the single mechanism for keyboard focus
+ * across the app. Two variants:
+ *
+ *  .focus-ring         outward ring (default) — use on anything whose parent
+ *                       does NOT clip overflow. This is almost everything:
+ *                       buttons, links, inputs, selects, nav items.
+ *  .focus-ring-inset    ring drawn inward — required wherever the element sits
+ *                       inside an `overflow-hidden` ancestor (rounded cards,
+ *                       clipped dropdown panels), since an outward ring/offset
+ *                       gets clipped there and becomes invisible to keyboard
+ *                       users. Same color/width token, just a negative offset.
+ *
+ * Only :focus-visible is styled (not :focus), matching every browser's own
+ * heuristic for "was this focused via keyboard" — no extra `:focus { outline:
+ * none }` reset needed to suppress a mouse-click ring.
+ */
+@layer utilities {
+  .focus-ring {
+    outline: var(--focus-ring-width) solid transparent;
+    outline-offset: var(--focus-ring-offset);
+  }
+  .focus-ring:focus-visible {
+    outline-color: var(--color-focus-ring);
+  }
+
+  .focus-ring-inset {
+    outline: var(--focus-ring-width) solid transparent;
+    outline-offset: calc(-1 * var(--focus-ring-width));
+  }
+  .focus-ring-inset:focus-visible {
+    outline-color: var(--color-focus-ring);
+  }
 }
