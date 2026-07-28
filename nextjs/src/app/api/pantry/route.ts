@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse } from '@/lib/response-helpers'
 import { enrichPantryItem, buildPantryListResponse } from '@/lib/pantry-helpers'
+import { estimateExpiry } from '@/lib/api/ai-proxy'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
 
 export async function GET(request: Request) {
@@ -39,6 +40,16 @@ export async function POST(request: Request) {
 
   const body = await request.json()
 
+  // Estimate an expiry when the user didn't supply one (#158) — same Python
+  // heuristic as the AI paths, via the AI service. Falls back to null on error.
+  const expiry =
+    body.expiry_date ||
+    (await estimateExpiry({
+      name: body.name,
+      category: body.category,
+      location: body.storage_location || body.location,
+    }))
+
   const { data, error } = await supabase
     .from('pantry_items')
     .insert({
@@ -49,7 +60,7 @@ export async function POST(request: Request) {
       location: body.storage_location || body.location || 'pantry',
       quantity: body.quantity || 1.0,
       unit: body.unit || 'item',
-      expiry_date: body.expiry_date || null,
+      expiry_date: expiry || null,
       slot_index: body.slot_index ?? null,
     })
     .select()
