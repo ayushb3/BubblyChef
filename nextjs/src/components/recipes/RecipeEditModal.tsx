@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { type Recipe, type Ingredient } from './RecipePage'
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
 const toIngStr = (i: string | Ingredient): string =>
   typeof i === 'string' ? i : [i.quantity, i.unit, i.name].filter(Boolean).join(' ')
@@ -27,6 +28,11 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
     (recipe.instructions ?? []).map(toStepStr)
   )
   const [saving, setSaving] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+  // This modal only exists in the tree while open — its parent mounts it
+  // conditionally rather than passing an `isOpen` prop — so `true` is fixed:
+  // the trap arms once on mount and tears down (returning focus) on unmount.
+  useModalFocusTrap(true, onClose, panelRef)
 
   const updateItem = (
     setter: React.Dispatch<React.SetStateAction<string[]>>,
@@ -75,7 +81,12 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
         {/* Modal panel */}
         <motion.div
           key="edit-panel"
-          className="fixed inset-x-4 top-1/2 z-[60] rounded-2xl overflow-hidden"
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="recipe-edit-modal-title"
+          tabIndex={-1}
+          className="focus-ring-inset fixed inset-x-4 top-1/2 z-[60] rounded-2xl overflow-hidden"
           style={{
             background: 'var(--color-surface)',
             border: '1px solid var(--color-border)',
@@ -95,6 +106,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
             style={{ borderColor: 'var(--color-border)' }}
           >
             <h2
+              id="recipe-edit-modal-title"
               className="text-base font-extrabold"
               style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
             >

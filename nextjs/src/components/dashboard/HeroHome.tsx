@@ -209,7 +209,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
                 </p>
                 <Link
                   href={heroAction.href}
-                  className="inline-block mt-3 text-xs font-semibold px-5 py-2 rounded-full text-white"
+                  className="focus-ring min-h-[44px] inline-flex items-center mt-3 text-xs font-semibold px-5 py-2 rounded-full text-white"
                   style={{ background: 'var(--color-primary)' }}
                 >
                   {heroAction.label}
@@ -250,7 +250,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
           },
         ].map((card, i) => (
           <FadeInView key={card.href} delay={0.35 + i * 0.08}>
-            <Link href={card.href}>
+            <Link href={card.href} className="focus-ring block rounded-2xl">
               <motion.div
                 whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.97 }}
@@ -279,7 +279,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
         <Link
           href={tipChatHref(tip)}
           aria-label={`Ask Bubbles about today's tip: ${tip}`}
-          className="block max-w-sm w-full"
+          className="focus-ring block max-w-sm w-full rounded-2xl"
         >
           <div
             className="flex items-center gap-3 rounded-2xl px-4 py-3 border border-[var(--color-border)]"

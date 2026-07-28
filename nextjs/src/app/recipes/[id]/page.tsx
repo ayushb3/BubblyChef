@@ -132,9 +132,12 @@ export default function RecipeDetailPage() {
     : null
 
   // ── Loading state ──────────────────────────────────────────────────────────
+  // Neither of these two early-return states (nor the main render below) uses
+  // <main> — the root layout already supplies the page's one <main> landmark;
+  // nesting a second here would duplicate it for screen readers.
   if (loading) {
     return (
-      <main
+      <div
         className="min-h-screen flex flex-col items-center justify-center px-4 py-16 gap-6"
         style={{ background: 'var(--color-bg)' }}
       >
@@ -145,14 +148,14 @@ export default function RecipeDetailPage() {
         >
           Loading recipe...
         </p>
-      </main>
+      </div>
     )
   }
 
   // ── Error / 404 state ──────────────────────────────────────────────────────
   if (error || !recipe) {
     return (
-      <main
+      <div
         className="min-h-screen flex flex-col items-center justify-center px-4 py-16 gap-4"
         style={{ background: 'var(--color-bg)' }}
       >
@@ -173,19 +176,19 @@ export default function RecipeDetailPage() {
         </p>
         <Link
           href="/recipes"
-          className="mt-2 px-6 py-2 rounded-full font-bold text-white text-sm"
+          className="focus-ring mt-2 px-6 py-2 rounded-full font-bold text-white text-sm"
           style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
         >
           Back to Recipes
         </Link>
-      </main>
+      </div>
     )
   }
 
   // ── Recipe detail ──────────────────────────────────────────────────────────
   return (
     <>
-      <main
+      <div
         className="min-h-screen pb-24"
         style={{ background: 'var(--color-bg)', fontFamily: 'Nunito, sans-serif' }}
       >
@@ -195,8 +198,9 @@ export default function RecipeDetailPage() {
             <div className="flex items-start justify-between gap-4 mb-5">
               {/* Back button */}
               <button
+                type="button"
                 onClick={() => router.push('/recipes')}
-                className="flex items-center gap-1 text-sm font-semibold transition-opacity hover:opacity-70 active:scale-95 flex-shrink-0 mt-1"
+                className="focus-ring flex items-center gap-1 text-sm font-semibold transition-opacity hover:opacity-70 active:scale-95 flex-shrink-0 mt-1"
                 style={{ color: 'var(--color-muted)' }}
               >
                 <span aria-hidden>←</span>
@@ -331,16 +335,23 @@ export default function RecipeDetailPage() {
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: i * 0.03, duration: 0.25 }}
                       >
-                        {/* Custom checkbox */}
+                        {/* Custom checkbox — the real <input> is visually
+                            hidden (`sr-only`) so screen readers still get a
+                            native checkbox, but that leaves keyboard focus
+                            with nothing to show on: `peer` + `peer-focus-visible`
+                            below draws a ring on the visible box instead, using
+                            the same tokens `.focus-ring` uses (that utility
+                            itself can't apply here — it targets the focused
+                            element, which is the invisible one). */}
                         <div className="flex-shrink-0 mt-0.5">
                           <input
                             type="checkbox"
-                            className="sr-only"
+                            className="peer sr-only"
                             checked={checked}
                             onChange={() => toggleIngredient(i)}
                           />
                           <div
-                            className="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors"
+                            className="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors peer-focus-visible:outline peer-focus-visible:outline-[var(--focus-ring-width)] peer-focus-visible:outline-offset-[var(--focus-ring-offset)] peer-focus-visible:outline-[var(--color-focus-ring)]"
                             style={{
                               borderColor: checked ? 'var(--color-accent)' : 'var(--color-border)',
                               background: checked ? 'var(--color-accent)' : 'transparent',
@@ -465,7 +476,7 @@ export default function RecipeDetailPage() {
             </FadeInView>
           )}
         </div>
-      </main>
+      </div>
 
       {/* AI Refinement Modal */}
       <RecipeRefinementModal

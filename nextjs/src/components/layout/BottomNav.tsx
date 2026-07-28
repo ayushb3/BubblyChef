@@ -39,7 +39,10 @@ export default function BottomNav() {
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[var(--color-surface)] border-t border-[var(--color-border)] rounded-t-3xl">
+    <nav
+      aria-label="Primary"
+      className="fixed bottom-0 left-0 right-0 z-50 bg-[var(--color-surface)] border-t border-[var(--color-border)] rounded-t-3xl"
+    >
       <div className="flex items-stretch">
         {tabs.map((tab) => {
           const isActive = tab.href === '/'
@@ -50,6 +53,7 @@ export default function BottomNav() {
             <Link
               key={tab.href}
               href={tab.href}
+              aria-current={isActive ? 'page' : undefined}
               className="focus-ring-inset flex-1 relative flex flex-col items-center py-2 pb-4 gap-0.5"
             >
               {isActive && (

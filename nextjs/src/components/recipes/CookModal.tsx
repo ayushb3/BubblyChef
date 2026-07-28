@@ -1,10 +1,11 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
 import type { CookProposal, IngredientMatch, DeductionItem } from '@/types/recipes'
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
 interface CookModalProps {
   recipeId: string
@@ -67,6 +68,9 @@ export default function CookModal({
   const [errorMsg, setErrorMsg] = useState<string>('')
   // Editable override quantities for unit_conflict rows (keyed by pantry_item_id)
   const [overrides, setOverrides] = useState<Record<string, string>>({})
+  const panelRef = useRef<HTMLDivElement>(null)
+  // Mounts-to-open, like RecipeEditModal — see comment there.
+  useModalFocusTrap(true, onClose, panelRef)
 
   useEffect(() => {
     let cancelled = false
@@ -163,7 +167,12 @@ export default function CookModal({
       >
         {/* Sheet */}
         <motion.div
-          className="w-full max-w-md mx-2 mb-4 sm:mb-0 rounded-2xl overflow-hidden flex flex-col"
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cook-modal-title"
+          tabIndex={-1}
+          className="focus-ring-inset w-full max-w-md mx-2 mb-4 sm:mb-0 rounded-2xl overflow-hidden flex flex-col"
           style={{
             background: 'var(--color-surface)',
             boxShadow: '0 8px 32px color-mix(in srgb, var(--color-primary) 25%, transparent)',
@@ -181,6 +190,7 @@ export default function CookModal({
           >
             <div>
               <h2
+                id="cook-modal-title"
                 className="text-base font-extrabold text-[var(--color-text)]"
                 style={{ fontFamily: 'Nunito, sans-serif' }}
               >
@@ -194,8 +204,9 @@ export default function CookModal({
               </p>
             </div>
             <button
+              type="button"
               onClick={onClose}
-              className="text-[var(--color-muted)] hover:text-[var(--color-text)] text-xl leading-none px-1"
+              className="focus-ring min-h-[44px] min-w-[44px] flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-text)] text-xl leading-none"
               aria-label="Close"
             >
               ✕
@@ -288,7 +299,7 @@ export default function CookModal({
                                     [String(i)]: e.target.value,
                                   }))
                                 }
-                                className="w-16 text-right border border-[var(--color-border)] rounded px-1 py-0.5 text-xs"
+                                className="focus-ring w-16 text-right border border-[var(--color-border)] rounded px-1 py-0.5 text-xs"
                                 placeholder="qty"
                                 aria-label={`Deduct quantity for ${m.ingredient_name}`}
                               />
@@ -346,17 +357,19 @@ export default function CookModal({
               style={{ background: 'var(--color-bg)' }}
             >
               <button
+                type="button"
                 onClick={onClose}
                 disabled={state === 'confirming'}
-                className="flex-1 py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform disabled:opacity-50"
+                className="focus-ring flex-1 py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform disabled:opacity-50"
                 style={{ fontFamily: 'Nunito, sans-serif' }}
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleConfirm}
                 disabled={state === 'confirming'}
-                className="flex-1 py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform disabled:opacity-50"
+                className="focus-ring flex-1 py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform disabled:opacity-50"
                 style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
               >
                 {state === 'confirming' ? 'Saving...' : 'Confirm'}

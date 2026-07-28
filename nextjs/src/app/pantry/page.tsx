@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
@@ -123,14 +123,20 @@ function PantryPageInner() {
   const [addSheetOpen, setAddSheetOpen] = useState(false)
   const [addSheetTab, setAddSheetTab] = useState<PantryAddTab>('scan')
 
-  // Handle ?add=scan or ?add=type URL params
-  useEffect(() => {
-    const addParam = searchParams.get('add')
+  // Handle ?add=scan or ?add=type URL params. Adjusted during render rather
+  // than in an effect (React docs: "Adjusting state when a prop changes") —
+  // `seenAddParam` tracks the last `add` value we've already reacted to, so
+  // this only opens the sheet when the param actually changes (e.g. a fresh
+  // `?add=scan` link), not on every unrelated re-render.
+  const addParam = searchParams.get('add')
+  const [seenAddParam, setSeenAddParam] = useState<string | null>(null)
+  if (addParam !== seenAddParam) {
+    setSeenAddParam(addParam)
     if (addParam === 'scan' || addParam === 'type') {
       setAddSheetTab(addParam)
       setAddSheetOpen(true)
     }
-  }, [searchParams])
+  }
 
   // Client-side filtering
   const filteredItems = allItems.filter((item) => {
@@ -258,6 +264,14 @@ function PantryPageInner() {
                         <button
                           type="button"
                           onClick={() => handleOpenEdit(item)}
+                          // Visible text already names the item ("Milk"), but
+                          // on its own that just reads as "button, milk, 3
+                          // item, fresh" to a screen reader — no hint this
+                          // opens an edit form. aria-label states the action;
+                          // it intentionally doesn't repeat quantity/expiry
+                          // (those are announced by ResolveActions/the "Cook
+                          // this" link right below, keyed to the same name).
+                          aria-label={`Edit ${titleCase(item.name)}`}
                           // Inset focus ring (design-system utility, #147): the
                           // card wrapper is `overflow-hidden`, so an outward
                           // ring/offset would be clipped and invisible to

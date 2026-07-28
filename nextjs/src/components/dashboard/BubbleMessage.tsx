@@ -48,11 +48,10 @@ export default function BubbleMessage({
                 <Link
                   key={action.href + action.label}
                   href={action.href}
-                  className="text-xs font-semibold px-4 py-2 rounded-full transition-opacity hover:opacity-90 active:scale-95"
+                  className="focus-ring min-h-[44px] flex items-center text-xs font-semibold px-4 py-2 rounded-full transition-opacity hover:opacity-90 active:scale-95"
                   style={{
                     background: i % 2 === 0 ? 'var(--color-primary)' : 'var(--color-accent)',
                     color: 'white',
-                    display: 'inline-block',
                   }}
                 >
                   {action.label}
@@ -62,7 +61,7 @@ export default function BubbleMessage({
                 <button
                   type="button"
                   onClick={onDismiss}
-                  className="text-xs font-semibold px-4 py-2 rounded-full transition-opacity hover:opacity-90 active:scale-95"
+                  className="focus-ring min-h-[44px] text-xs font-semibold px-4 py-2 rounded-full transition-opacity hover:opacity-90 active:scale-95"
                   style={{
                     background: 'var(--color-border)',
                     color: 'var(--color-muted)',

@@ -100,6 +100,22 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     return () => document.removeEventListener('mousedown', handleMouseDown)
   }, [menuOpen])
 
+  // Escape closes the overflow menu too — it's a popover, not a full
+  // dialog (no focus trap), but a keyboard user who opened it with Enter/
+  // Space needs a keyboard-only way to back out, and should land back on
+  // the "More options" toggle rather than losing their place.
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMenuOpen(false)
+        menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [menuOpen])
+
   // Merge optimistic favorite overrides into the recipe list
   const recipesWithOverrides = useMemo(
     () => recipes.map((r) => r.id in favoriteOverrides ? { ...r, is_favorite: favoriteOverrides[r.id] } : r),
@@ -293,8 +309,9 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
           <RecipeSearchBar onSearch={handleSearch} />
         </div>
         <button
+          type="button"
           onClick={() => setImportOpen(true)}
-          className="flex-shrink-0 px-3 py-2 rounded-full text-sm font-bold text-[var(--color-text)] active:scale-95 transition-transform"
+          className="focus-ring flex-shrink-0 px-3 py-2 rounded-full text-sm font-bold text-[var(--color-text)] active:scale-95 transition-transform"
           style={{ background: 'var(--color-accent)', fontFamily: 'Nunito, sans-serif' }}
           title="Import recipe from URL"
           aria-label="Import recipe from URL"
@@ -357,8 +374,9 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                     Recipes 🍳
                   </span>
                   <button
+                    type="button"
                     onClick={() => setSidebarOpen(false)}
-                    className="text-[var(--color-muted)] hover:text-[var(--color-text)] text-lg leading-none px-1"
+                    className="focus-ring-inset min-h-[44px] min-w-[44px] flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-text)] text-lg leading-none"
                     aria-label="Close sidebar"
                   >
                     ✕
@@ -378,8 +396,10 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                       return (
                         <li key={r.id}>
                           <button
+                            type="button"
                             onClick={() => handleSelect(r.id)}
-                            className="w-full text-left px-4 py-3 text-sm transition-colors"
+                            aria-current={isActive ? 'true' : undefined}
+                            className="focus-ring-inset w-full text-left px-4 py-3 text-sm transition-colors min-h-[44px]"
                             style={{
                               background: isActive ? 'var(--color-bg)' : 'transparent',
                               borderLeft: `3px solid ${isActive ? 'var(--color-primary)' : 'transparent'}`,
@@ -411,8 +431,9 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         {/* ─── Hamburger tab ─── */}
         {!sidebarOpen && (
           <button
+            type="button"
             onClick={() => setSidebarOpen(true)}
-            className="absolute left-0 top-4 z-10 flex items-center justify-center rounded-r-lg shadow-sm"
+            className="focus-ring-inset absolute left-0 top-4 z-10 flex items-center justify-center rounded-r-lg shadow-sm"
             style={{
               width: '28px',
               height: '40px',
@@ -480,9 +501,10 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   <div className="flex items-center justify-between">
                     {/* Cook it — primary-tinted to signal the main action */}
                     <button
+                      type="button"
                       onClick={() => setCookOpen(true)}
                       disabled={mutating}
-                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                      className="focus-ring-inset w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                       style={{ background: 'color-mix(in srgb, var(--color-primary) 18%, var(--color-bg))', border: '1.5px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border))' }}
                       aria-label="Cook this recipe"
                       title="Cook it"
@@ -493,9 +515,11 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                     <div className="flex items-center gap-2">
                       {/* Heart button — 44x44 with pop animation */}
                       <motion.button
+                        type="button"
                         onClick={handleFavorite}
                         disabled={mutating}
-                        className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                        aria-pressed={selectedRecipe.is_favorite}
+                        className="focus-ring-inset w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                         style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
                         aria-label={selectedRecipe.is_favorite ? 'Unfavorite' : 'Favorite'}
                         title={selectedRecipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
@@ -512,9 +536,10 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                       {/* Overflow menu — Edit + Delete */}
                       <div className="relative" ref={menuRef}>
                         <button
+                          type="button"
                           onClick={() => setMenuOpen((o) => !o)}
                           disabled={mutating}
-                          className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                          className="focus-ring-inset w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                           style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
                           aria-label="More options"
                           aria-haspopup="true"
@@ -538,15 +563,17 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                               }}
                             >
                               <button
+                                type="button"
                                 onClick={() => { setMenuOpen(false); setEditOpen(true) }}
-                                className="w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
+                                className="focus-ring-inset w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors min-h-[44px]"
                                 style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
                               >
                                 ✏️ Edit
                               </button>
                               <button
+                                type="button"
                                 onClick={() => { setMenuOpen(false); setDeleteOpen(true) }}
-                                className="w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
+                                className="focus-ring-inset w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors min-h-[44px]"
                                 style={{ color: 'var(--color-coral)', fontFamily: 'Nunito, sans-serif' }}
                               >
                                 🗑️ Delete
@@ -604,9 +631,10 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   <div className="flex items-center justify-between w-full">
                     {/* Cook it — primary-tinted to signal the main action */}
                     <button
+                      type="button"
                       onClick={() => setCookOpen(true)}
                       disabled={mutating}
-                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                      className="focus-ring-inset w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                       style={{ background: 'color-mix(in srgb, var(--color-primary) 18%, var(--color-bg))', border: '1.5px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border))' }}
                       aria-label="Cook this recipe"
                       title="Cook it"
@@ -617,9 +645,11 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                     <div className="flex items-center gap-2">
                       {/* Heart button — 44x44 with pop animation */}
                       <motion.button
+                        type="button"
                         onClick={handleFavorite}
                         disabled={mutating}
-                        className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                        aria-pressed={selectedRecipe.is_favorite}
+                        className="focus-ring-inset w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                         style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
                         aria-label={selectedRecipe.is_favorite ? 'Unfavorite' : 'Favorite'}
                         title={selectedRecipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
@@ -636,9 +666,10 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                       {/* Overflow menu — Edit + Delete */}
                       <div className="relative" ref={menuRef}>
                         <button
+                          type="button"
                           onClick={() => setMenuOpen((o) => !o)}
                           disabled={mutating}
-                          className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                          className="focus-ring-inset w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                           style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
                           aria-label="More options"
                           aria-haspopup="true"
@@ -662,15 +693,17 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                               }}
                             >
                               <button
+                                type="button"
                                 onClick={() => { setMenuOpen(false); setEditOpen(true) }}
-                                className="w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
+                                className="focus-ring-inset w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors min-h-[44px]"
                                 style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
                               >
                                 ✏️ Edit
                               </button>
                               <button
+                                type="button"
                                 onClick={() => { setMenuOpen(false); setDeleteOpen(true) }}
-                                className="w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
+                                className="focus-ring-inset w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors min-h-[44px]"
                                 style={{ color: 'var(--color-coral)', fontFamily: 'Nunito, sans-serif' }}
                               >
                                 🗑️ Delete
@@ -707,8 +740,9 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
               >
                 <span>{errorMessage}</span>
                 <button
+                  type="button"
                   onClick={() => setErrorMessage(null)}
-                  className="ml-2 hover:opacity-70 transition-opacity"
+                  className="focus-ring-inset ml-2 min-h-[44px] min-w-[44px] flex items-center justify-center hover:opacity-70 transition-opacity"
                   style={{ color: 'var(--color-primary-dark)' }}
                   aria-label="Dismiss error"
                 >
@@ -724,20 +758,31 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
             {filteredRecipes.length > 1 && (
               <div className="flex items-center justify-between px-5 py-1.5 flex-shrink-0" style={{ borderBottom: '1px solid var(--color-border)' }}>
                 <button
+                  type="button"
                   onClick={goPrev}
                   disabled={currentIndex === 0}
-                  className="text-[var(--color-primary-dark)] text-lg px-1 disabled:opacity-30 active:scale-90 transition-transform"
+                  className="focus-ring-inset min-h-[44px] min-w-[44px] flex items-center justify-center text-[var(--color-primary-dark)] text-lg disabled:opacity-30 active:scale-90 transition-transform"
                   aria-label="Previous recipe"
                 >
                   ‹
                 </button>
-                <span className="text-xs text-[var(--color-muted)]" style={{ fontFamily: 'Nunito, sans-serif' }}>
+                <span className="text-xs text-[var(--color-muted)]" style={{ fontFamily: 'Nunito, sans-serif' }} aria-hidden="true">
                   {currentIndex + 1} / {filteredRecipes.length}
                 </span>
+                {/* Page-turning swaps the whole panel's content (title,
+                    ingredients, steps...) but leaves focus sitting on
+                    whichever arrow was clicked — nothing else here moves
+                    focus to the new content, so nothing else would announce
+                    the change. This is the one place in the book that needs
+                    a live region rather than relying on a focus move. */}
+                <span aria-live="polite" className="sr-only">
+                  {selectedRecipe.title}, recipe {currentIndex + 1} of {filteredRecipes.length}
+                </span>
                 <button
+                  type="button"
                   onClick={goNext}
                   disabled={currentIndex === filteredRecipes.length - 1}
-                  className="text-[var(--color-primary-dark)] text-lg px-1 disabled:opacity-30 active:scale-90 transition-transform"
+                  className="focus-ring-inset min-h-[44px] min-w-[44px] flex items-center justify-center text-[var(--color-primary-dark)] text-lg disabled:opacity-30 active:scale-90 transition-transform"
                   aria-label="Next recipe"
                 >
                   ›

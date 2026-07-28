@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
 interface PantryItemData {
   id: string
@@ -61,6 +62,8 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isEditMode = !!editItem
+  const panelRef = useRef<HTMLDivElement>(null)
+  useModalFocusTrap(isOpen, onClose, panelRef)
 
   // Populate form when editing
   useEffect(() => {
@@ -181,7 +184,12 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
 
           {/* Modal */}
           <motion.div
-            className="fixed bottom-0 left-0 right-0 z-[60] bg-white rounded-t-3xl max-h-[85vh] overflow-y-auto"
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-item-modal-title"
+            tabIndex={-1}
+            className="focus-ring-inset fixed bottom-0 left-0 right-0 z-[60] bg-white rounded-t-3xl max-h-[85vh] overflow-y-auto"
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
@@ -193,7 +201,7 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
             </div>
 
             <div className="px-6 pb-8">
-              <h2 className="text-lg font-extrabold text-[var(--color-text)] mb-4">
+              <h2 id="add-item-modal-title" className="text-lg font-extrabold text-[var(--color-text)] mb-4">
                 {isEditMode ? 'Edit Item' : 'Add Item'} ✏️
               </h2>
 

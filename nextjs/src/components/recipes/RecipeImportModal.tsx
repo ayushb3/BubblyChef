@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { type Recipe } from './RecipePage'
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
 interface RecipeImportModalProps {
   onImported: (recipe: Partial<Recipe>, sourceUrl: string) => void
@@ -22,6 +23,9 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
   const [url, setUrl] = useState('')
   const [state, setState] = useState<ImportState>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+  const panelRef = useRef<HTMLDivElement>(null)
+  // Mounts-to-open, like RecipeEditModal — see comment there.
+  useModalFocusTrap(true, onClose, panelRef)
 
   const isValidUrl = (s: string) => {
     try {
@@ -93,7 +97,12 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
 
         <motion.div
           key="import-panel"
-          className="fixed inset-x-4 top-1/2 z-[60] rounded-2xl overflow-hidden"
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="recipe-import-modal-title"
+          tabIndex={-1}
+          className="focus-ring-inset fixed inset-x-4 top-1/2 z-[60] rounded-2xl overflow-hidden"
           style={{
             background: 'var(--color-surface)',
             border: '1px solid var(--color-border)',
@@ -113,6 +122,7 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
             style={{ borderColor: 'var(--color-border)' }}
           >
             <h2
+              id="recipe-import-modal-title"
               className="text-base font-extrabold"
               style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
             >

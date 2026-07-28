@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence, useDragControls } from 'framer-motion'
 import ScanTab from './ScanTab'
 import TypeTab from './TypeTab'
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
 export interface AddItem {
   name: string
@@ -36,6 +37,8 @@ export default function PantryAddSheet({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const dragControls = useDragControls()
+  const panelRef = useRef<HTMLDivElement>(null)
+  useModalFocusTrap(isOpen, onClose, panelRef)
 
   // Update tab when prop changes (e.g. URL param triggers re-open)
   useEffect(() => {
@@ -98,7 +101,12 @@ export default function PantryAddSheet({
 
           {/* Sheet — slides up from bottom, sits above the bottom nav */}
           <motion.div
-            className="fixed bottom-16 left-0 right-0 z-[60] rounded-t-3xl flex flex-col select-none"
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pantry-add-sheet-title"
+            tabIndex={-1}
+            className="focus-ring-inset fixed bottom-16 left-0 right-0 z-[60] rounded-t-3xl flex flex-col select-none"
             style={{
               background: 'var(--color-surface)',
               maxHeight: 'calc(92vh - 64px)',
@@ -127,13 +135,13 @@ export default function PantryAddSheet({
             {/* Header */}
             <div className="px-6 pb-3 flex-shrink-0">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-extrabold text-[var(--color-text)]">
+                <h2 id="pantry-add-sheet-title" className="text-lg font-extrabold text-[var(--color-text)]">
                   Add to Pantry
                 </h2>
                 <button
                   type="button"
                   onClick={onClose}
-                  className="text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors text-xl leading-none px-1"
+                  className="focus-ring min-h-[44px] min-w-[44px] flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors text-xl leading-none"
                   aria-label="Close"
                 >
                   ✕
@@ -145,7 +153,8 @@ export default function PantryAddSheet({
                 <button
                   type="button"
                   onClick={() => setActiveTab('scan')}
-                  className={`flex-1 py-2 rounded-full text-sm font-semibold transition-colors ${
+                  aria-pressed={activeTab === 'scan'}
+                  className={`focus-ring flex-1 py-2 rounded-full text-sm font-semibold transition-colors ${
                     activeTab === 'scan'
                       ? 'bg-[var(--color-primary)] text-white'
                       : 'bg-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'
@@ -156,7 +165,8 @@ export default function PantryAddSheet({
                 <button
                   type="button"
                   onClick={() => setActiveTab('type')}
-                  className={`flex-1 py-2 rounded-full text-sm font-semibold transition-colors ${
+                  aria-pressed={activeTab === 'type'}
+                  className={`focus-ring flex-1 py-2 rounded-full text-sm font-semibold transition-colors ${
                     activeTab === 'type'
                       ? 'bg-[var(--color-primary)] text-white'
                       : 'bg-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'
@@ -209,7 +219,7 @@ export default function PantryAddSheet({
                 whileHover={{ scale: itemCount === 0 || isSubmitting ? 1 : 1.02 }}
                 whileTap={{ scale: itemCount === 0 || isSubmitting ? 1 : 0.96 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-                className="w-full py-4 rounded-full font-bold text-white shadow-lg transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                className="focus-ring w-full py-4 rounded-full font-bold text-white shadow-lg transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'var(--color-primary-dark, #FF8FAB)' }}
               >
                 {isSubmitting

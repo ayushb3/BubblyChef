@@ -29,9 +29,10 @@ export default function RecipeDeleteConfirm({
         Delete &ldquo;{recipeTitle}&rdquo;?
       </span>
       <button
+        type="button"
         onClick={onConfirm}
         disabled={deleting}
-        className="px-3 py-1 rounded-full text-xs font-bold disabled:opacity-50 active:scale-95 transition-transform"
+        className="focus-ring min-h-[44px] px-3 py-1 rounded-full text-xs font-bold disabled:opacity-50 active:scale-95 transition-transform"
         style={{
           color: 'var(--color-coral, #ff9aa2)',
           border: '1.5px solid var(--color-coral, #ff9aa2)',
@@ -42,9 +43,10 @@ export default function RecipeDeleteConfirm({
         {deleting ? 'Deleting...' : 'Delete'}
       </button>
       <button
+        type="button"
         onClick={onCancel}
         disabled={deleting}
-        className="px-3 py-1 rounded-full text-xs font-bold disabled:opacity-50 active:scale-95 transition-transform"
+        className="focus-ring min-h-[44px] px-3 py-1 rounded-full text-xs font-bold disabled:opacity-50 active:scale-95 transition-transform"
         style={{
           color: 'var(--color-muted)',
           border: '1.5px solid var(--color-border)',
