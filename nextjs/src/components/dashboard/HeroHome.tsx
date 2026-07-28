@@ -229,7 +229,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
             detail: expiringCount > 0 ? `${expiringCount} item${expiringCount > 1 ? 's' : ''}` : 'All fresh!',
             // Only this card's detail depends on fetched data.
             pending: loading,
-            href: '/pantry',
+            href: '/pantry/use-soon',
             gradient: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
           },
           {

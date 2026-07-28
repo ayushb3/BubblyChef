@@ -15,7 +15,9 @@ import PantryAddSheet, { type PantryAddTab } from '@/components/pantry/PantryAdd
 import { getFoodEmoji } from '@/lib/food-emoji'
 import { titleCase } from '@/lib/format'
 import { cookThisHref } from '@/lib/chat-seed'
+import { expiryBadge } from '@/lib/expiry-badge'
 import Chip from '@/components/ui/Chip'
+import ResolveActions from '@/components/pantry/ResolveActions'
 
 interface PantryItem {
   id: string
@@ -78,14 +80,6 @@ function daysUntilExpiry(date: string | null): number | null {
  */
 function isUrgent(days: number | null): boolean {
   return days !== null && days <= 3
-}
-
-function expiryBadge(days: number | null) {
-  if (days === null) return null
-  if (days <= 0) return { label: 'Expired', color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
-  if (days <= 2) return { label: `${days}d left`, color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
-  if (days <= 5) return { label: `${days}d left`, color: 'bg-[var(--color-expiring)] text-[var(--color-expiring-text)]' }
-  return { label: `${days}d left`, color: 'bg-[var(--color-fresh)] text-[var(--color-fresh-text)]' }
 }
 
 function groupByCategory(items: PantryItem[]) {
@@ -281,7 +275,7 @@ function PantryPageInner() {
                               {item.quantity} {item.unit}
                             </span>
                             {badge && (
-                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge.color}`}>
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge.className}`}>
                                 {badge.label}
                               </span>
                             )}
@@ -301,6 +295,17 @@ function PantryPageInner() {
                           >
                             🍳 Cook this
                           </Link>
+                        )}
+
+                        {/* Resolve out of the pantry entirely — issue #140 */}
+                        {isUrgent(days) && (
+                          <div className="border-t border-[var(--color-border)] p-2">
+                            <ResolveActions
+                              itemId={item.id}
+                              itemName={item.name}
+                              onResolved={() => queryClient.invalidateQueries({ queryKey: ['pantry'] })}
+                            />
+                          </div>
                         )}
                       </motion.div>
                     )
