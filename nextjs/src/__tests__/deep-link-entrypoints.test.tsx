@@ -115,7 +115,7 @@ describe('expiring pantry cards (#138)', () => {
     global.fetch = jest.fn(async () => jsonResponse({ items })) as unknown as typeof fetch
   })
 
-  it('offers "Cook this" on expiring and expired items only', async () => {
+  it('offers "Cook this" on expiring items only — not expired, not far-future', async () => {
     renderPantry()
 
     // Displayed title-cased (#132), but the `use` param below must stay the raw
@@ -124,7 +124,11 @@ describe('expiring pantry cards (#138)', () => {
     const cookLinks = screen.getAllByRole('link', { name: /^Cook this/i })
     const names = cookLinks.map((l) => hrefParams(l).get('use'))
 
-    expect(names).toEqual(expect.arrayContaining(['spinach', 'yoghurt']))
+    // spinach (days=1) is urgent — gets "Cook this"
+    expect(names).toContain('spinach')
+    // yoghurt is already expired (days=-2) — no "Cook this" (#146)
+    expect(names).not.toContain('yoghurt')
+    // rice is far-future (days=60) — never urgent
     expect(names).not.toContain('rice')
   })
 
