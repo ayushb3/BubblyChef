@@ -68,10 +68,10 @@ async def generate_recipe(
     )
 
     try:
-        from bubbly_chef.ai.manager import get_ai_manager
+        from bubbly_chef.api.deps import get_ai_manager
         from bubbly_chef.services.recipe_generator import generate_recipe as gen_recipe
 
-        ai_manager = await get_ai_manager()
+        ai_manager = get_ai_manager()
 
         # Fetch pantry items for grounding
         pantry_items = []
@@ -131,11 +131,11 @@ async def refine_recipe(
     logger.info(f"Recipe refine: user={user_id}, prompt='{request.prompt[:50]}...'")
 
     try:
-        from bubbly_chef.ai.manager import get_ai_manager
+        from bubbly_chef.api.deps import get_ai_manager
         from bubbly_chef.services.recipe_generator import generate_recipe as gen_recipe
         from bubbly_chef.models.recipe import RecipeCard
 
-        ai_manager = await get_ai_manager()
+        ai_manager = get_ai_manager()
 
         # Build a RecipeCard from the dict for the previous_recipe param
         previous_recipe = RecipeCard(**request.recipe) if request.recipe else None
