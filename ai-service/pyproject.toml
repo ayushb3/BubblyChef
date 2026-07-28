@@ -25,8 +25,13 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
-    "ruff>=0.4",
-    "mypy>=1.10",
+    # Upper bounds are load-bearing, not caution. CI installs the newest matching
+    # release, so an unbounded spec means the lint gate changes under you: ruff
+    # 0.16 expanded its default rule set and reports 144 findings on code 0.15
+    # passes clean. Adopting that rule set is tracked in #129 — until then, moving
+    # this bound turns CI red on every branch at once.
+    "ruff>=0.15,<0.16",
+    "mypy>=1.10,<2",
 ]
 
 [tool.ruff]
