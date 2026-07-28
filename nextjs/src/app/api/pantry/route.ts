@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse } from '@/lib/response-helpers'
 import { enrichPantryItem, buildPantryListResponse } from '@/lib/pantry-helpers'
-import { estimateExpiry } from '@/lib/api/ai-proxy'
+import { estimateExpiry, estimateCategory } from '@/lib/api/ai-proxy'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
 
 export async function GET(request: Request) {
@@ -40,13 +40,18 @@ export async function POST(request: Request) {
 
   const body = await request.json()
 
+  // Resolve category: use the supplied value, else ask the catalog, else 'other'
+  // (#159 — same Python catalog as the AI ingest paths; best-effort, never blocks).
+  const category =
+    body.category || (await estimateCategory(body.name as string)) || 'other'
+
   // Estimate an expiry when the user didn't supply one (#158) — same Python
   // heuristic as the AI paths, via the AI service. Falls back to null on error.
   const expiry =
     body.expiry_date ||
     (await estimateExpiry({
       name: body.name,
-      category: body.category,
+      category,
       location: body.storage_location || body.location,
     }))
 
@@ -56,7 +61,7 @@ export async function POST(request: Request) {
       user_id: user.id,
       name: body.name,
       name_normalized: (body.name as string).toLowerCase().trim(),
-      category: body.category || 'other',
+      category,
       location: body.storage_location || body.location || 'pantry',
       quantity: body.quantity || 1.0,
       unit: body.unit || 'item',
