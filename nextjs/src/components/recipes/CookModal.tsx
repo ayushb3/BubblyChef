@@ -152,7 +152,7 @@ export default function CookModal({
     <AnimatePresence>
       {/* Backdrop */}
       <motion.div
-        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+        className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center"
         style={{ background: 'rgba(0,0,0,0.4)' }}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
