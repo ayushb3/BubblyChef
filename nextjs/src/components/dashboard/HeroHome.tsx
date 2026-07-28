@@ -49,6 +49,28 @@ interface HeroHomeProps {
   displayName: string
 }
 
+/**
+ * Shared skeleton idiom — same pulse + `var(--color-border)` fill used by the
+ * route-level fallback in `app/loading.tsx`, so there's only one loading look.
+ * Rendered as a `<span className="block">` so it stays valid inside `<p>`.
+ */
+function Skeleton({
+  className,
+  onColor = false,
+}: {
+  className?: string
+  /** Sitting on top of a gradient card, where `--color-border` would disappear. */
+  onColor?: boolean
+}) {
+  return (
+    <span
+      className={`block rounded animate-pulse motion-reduce:animate-none ${className ?? ''}`}
+      style={{ background: onColor ? 'rgb(255 255 255 / 0.45)' : 'var(--color-border)' }}
+      aria-hidden="true"
+    />
+  )
+}
+
 export default function HeroHome({ displayName }: HeroHomeProps) {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<HomeData>({
@@ -105,9 +127,19 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
     fetchAll()
   }, [])
 
-  const greeting = getGreeting()
-  const emoji = getGreetingEmoji()
-  const tip = tips[new Date().getDay() % tips.length]
+  // The greeting/tip are derived from the *client's* clock, which can disagree with
+  // the server's. Now that this block renders on the first pass (rather than behind
+  // the old all-or-nothing `loading` gate), we follow the ThemeProvider convention:
+  // render a neutral value on both passes, then correct it in an effect after
+  // hydration. That keeps the greeting instant without a hydration mismatch.
+  const [clockReady, setClockReady] = useState(false)
+  useEffect(() => {
+    setClockReady(true)
+  }, [])
+
+  const greeting = clockReady ? getGreeting() : 'Hello'
+  const emoji = clockReady ? getGreetingEmoji() : '👋'
+  const tip = tips[(clockReady ? new Date().getDay() : 0) % tips.length]
   const { totalCount, expiringCount, urgentItem, recipe } = data
 
   // Compute the single hero message (most important)
@@ -130,16 +162,6 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
         : expiringCount > 0
           ? { label: 'View pantry', href: '/pantry' }
           : { label: 'Ask Bubbles', href: '/chat' }
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
-        <div className="w-28 h-28 rounded-full animate-pulse" style={{ background: 'var(--color-border)' }} />
-        <div className="w-48 h-4 rounded animate-pulse" style={{ background: 'var(--color-border)' }} />
-        <div className="w-32 h-3 rounded animate-pulse mt-1" style={{ background: 'var(--color-border)' }} />
-      </div>
-    )
-  }
 
   return (
     <div className="flex flex-col items-center">
@@ -168,17 +190,28 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
           <div
             className="relative rounded-2xl p-4 text-center shadow-sm border border-[var(--color-border)]"
             style={{ background: 'var(--color-surface)' }}
+            aria-busy={loading}
           >
-            <p className="text-[var(--color-text)] font-medium text-sm leading-relaxed">
-              {heroMessage}
-            </p>
-            <Link
-              href={heroAction.href}
-              className="inline-block mt-3 text-xs font-semibold px-5 py-2 rounded-full text-white"
-              style={{ background: 'var(--color-primary)' }}
-            >
-              {heroAction.label}
-            </Link>
+            {loading ? (
+              <div className="flex flex-col items-center gap-2">
+                <Skeleton className="w-11/12 h-3" />
+                <Skeleton className="w-2/3 h-3" />
+                <Skeleton className="w-28 h-7 rounded-full mt-2" />
+              </div>
+            ) : (
+              <>
+                <p className="text-[var(--color-text)] font-medium text-sm leading-relaxed">
+                  {heroMessage}
+                </p>
+                <Link
+                  href={heroAction.href}
+                  className="inline-block mt-3 text-xs font-semibold px-5 py-2 rounded-full text-white"
+                  style={{ background: 'var(--color-primary)' }}
+                >
+                  {heroAction.label}
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </FadeInView>
@@ -190,6 +223,8 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
             emoji: '🔥',
             label: 'Use Soon',
             detail: expiringCount > 0 ? `${expiringCount} item${expiringCount > 1 ? 's' : ''}` : 'All fresh!',
+            // Only this card's detail depends on fetched data.
+            pending: loading,
             href: '/pantry',
             gradient: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
           },
@@ -197,6 +232,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
             emoji: '📷',
             label: 'Scan',
             detail: 'Receipt',
+            pending: false,
             href: '/pantry?add=scan',
             gradient: 'linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-dark) 100%)',
           },
@@ -204,6 +240,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
             emoji: '✨',
             label: 'Ask',
             detail: 'Bubbles',
+            pending: false,
             href: '/chat',
             gradient: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-accent-dark) 100%)',
           },
@@ -218,7 +255,11 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
               >
                 <span className="text-2xl mb-1">{card.emoji}</span>
                 <span className="text-sm font-bold">{card.label}</span>
-                <span className="text-[10px] opacity-80 mt-0.5">{card.detail}</span>
+                {card.pending ? (
+                  <Skeleton onColor className="w-10 h-2 mt-1.5 mb-0.5" />
+                ) : (
+                  <span className="text-[10px] opacity-80 mt-0.5">{card.detail}</span>
+                )}
               </motion.div>
             </Link>
           </FadeInView>
@@ -241,16 +282,20 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
         </Link>
       </FadeInView>
 
-      {/* Pantry status bar */}
-      {totalCount > 0 && (
+      {/* Pantry status bar — data-dependent, so it skeletons until the fetches land */}
+      {(loading || totalCount > 0) && (
         <FadeInView delay={0.7}>
-          <div className="mt-4 text-center">
-            <p className="text-xs text-[var(--color-muted)]">
-              🧺 {totalCount} item{totalCount !== 1 ? 's' : ''} in pantry
-              {expiringCount > 0 && (
-                <span> · <span style={{ color: 'var(--color-primary)' }}>{expiringCount} expiring</span></span>
-              )}
-            </p>
+          <div className="mt-4 flex justify-center text-center">
+            {loading ? (
+              <Skeleton className="w-36 h-3" />
+            ) : (
+              <p className="text-xs text-[var(--color-muted)]">
+                🧺 {totalCount} item{totalCount !== 1 ? 's' : ''} in pantry
+                {expiringCount > 0 && (
+                  <span> · <span style={{ color: 'var(--color-primary)' }}>{expiringCount} expiring</span></span>
+                )}
+              </p>
+            )}
           </div>
         </FadeInView>
       )}
