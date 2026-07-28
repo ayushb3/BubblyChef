@@ -83,7 +83,18 @@ class RecipeConstraints(BaseModel):
     servings: int | None = None
     skill_level: str | None = None
     excluded_ingredients: list[str] = Field(default_factory=list)
-    preferred_ingredients: list[str] = Field(default_factory=list)
+    preferred_ingredients: list[str] = Field(
+        default_factory=list,
+        description="Ingredients the user would like included (soft preference)",
+    )
+    must_use_ingredients: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Ingredients the user explicitly wants to use up — e.g. 'what can I make "
+            "with my eggs before they go bad'. Stronger than preferred_ingredients: "
+            "every suggestion must actually use these."
+        ),
+    )
 
 
 class IngredientAvailability(BaseModel):
