@@ -43,6 +43,21 @@ in the route tree*. A component's props interface is the seam — change it only
 after confirming with `frontend` (or via the PM if delegated in parallel), since
 `frontend` is the caller.
 
+**Container components are the exception.** A handful of components under
+`nextjs/src/components/` are not presentational at all — they fetch their own data
+and own their own loading/error state. `dashboard/HeroHome.tsx` is the clearest
+case: it fires three API calls and decides what renders while they're in flight.
+For these, `frontend` writes the data, state, and loading *structure* (which
+regions skeleton, what paints first), and `ui-ux` owns the visual language those
+regions consume — tokens, motion config, the skeleton idiom, focus treatment.
+
+Practically: `frontend` **reusing** an existing visual idiom inside a container is
+not a boundary crossing and needs no sign-off. `frontend` **introducing a new**
+one — a novel skeleton style, a new focus ring, a colour that isn't a token — does,
+and should come back through `ui-ux` or the PM. Accessibility remains this role's
+explicit responsibility (see Conventions), so a11y work inside a container is
+`ui-ux`'s to review even when `frontend` physically made the edit.
+
 ## Conventions
 
 - Tailwind only, no custom CSS files outside the global design-token layer.
