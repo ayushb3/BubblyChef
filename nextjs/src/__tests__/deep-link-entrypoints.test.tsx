@@ -77,7 +77,10 @@ describe('dashboard tip card (#143)', () => {
 
     // The tip is corrected after hydration (#135's neutral-render convention),
     // so read the rendered copy rather than assuming a fixed index.
-    const tipLink = screen.getByRole('link', { name: /Tip:/ })
+    // The accessible name is an explicit aria-label ("Ask Bubbles about today's
+    // tip: …") rather than the raw tip text, so screen-reader users are told
+    // what activating the card actually does.
+    const tipLink = screen.getByRole('link', { name: /Ask Bubbles about today's tip/i })
     await waitFor(() => expect(hrefParams(tipLink).get('tip')).toBeTruthy())
 
     const rendered = (tipLink.textContent ?? '').split('Tip:')[1]?.trim()
@@ -141,5 +144,29 @@ describe('expiring pantry cards (#138)', () => {
     expect(nameEl.closest('button')).not.toBeNull()
     // ...and that button does not nest the link (invalid HTML, dead tap target).
     expect(nameEl.closest('button')?.querySelector('a')).toBeNull()
+  })
+
+  // jsdom has no layout engine and no Tailwind at runtime, so these assert on
+  // the utility classes that produce the behaviour rather than measured pixels.
+  it('gives "Cook this" a 44px tap target (WCAG 2.5.5)', async () => {
+    renderPantry()
+
+    const link = await screen.findByRole('link', { name: /Cook this spinach/i })
+    expect(link.className).toContain('min-h-[44px]')
+  })
+
+  it('gives both card controls a visible focus ring', async () => {
+    renderPantry()
+
+    const nameEl = await screen.findByText('spinach')
+    const editButton = nameEl.closest('button')
+    const link = screen.getByRole('link', { name: /Cook this spinach/i })
+
+    for (const el of [editButton, link]) {
+      expect(el?.className).toMatch(/focus-visible:outline-2/)
+      // Inset offset — the card wrapper is overflow-hidden, so an outward ring
+      // would be clipped.
+      expect(el?.className).toContain('focus-visible:outline-offset-[-2px]')
+    }
   })
 })

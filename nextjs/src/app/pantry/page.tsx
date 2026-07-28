@@ -260,7 +260,10 @@ function PantryPageInner() {
                         <button
                           type="button"
                           onClick={() => handleOpenEdit(item)}
-                          className="p-3 text-left w-full flex-1"
+                          // Inset focus outline: the card wrapper is
+                          // `overflow-hidden`, so an outward ring/offset would be
+                          // clipped and invisible to keyboard users.
+                          className="p-3 text-left w-full flex-1 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary-dark)]"
                         >
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-lg">{getFoodEmoji(item.name, item.category)}</span>
@@ -285,7 +288,11 @@ function PantryPageInner() {
                           <Link
                             href={cookThisHref(item.name, item.expiry_date)}
                             aria-label={`Cook this ${item.name}`}
-                            className="border-t border-[var(--color-border)] px-3 py-2 text-xs font-semibold text-[var(--color-primary-dark)] text-center hover:bg-[var(--color-border)] transition-colors"
+                            // WCAG 2.5.5: the label stays `text-xs` so the card
+                            // grid doesn't reflow, but the box around it is a
+                            // full 44px tap target — same trick ThemePicker uses
+                            // (24px swatch inside a 44×44 button).
+                            className="border-t border-[var(--color-border)] px-3 min-h-[44px] flex items-center justify-center text-xs font-semibold text-[var(--color-primary-dark)] text-center hover:bg-[var(--color-border)] transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary-dark)]"
                           >
                             🍳 Cook this
                           </Link>

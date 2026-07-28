@@ -273,7 +273,13 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
       <FadeInView delay={0.6}>
         {/* href is derived from the same `tip` the card renders, so the
             post-hydration correction moves both together (#143). */}
-        <Link href={tipChatHref(tip)} className="block max-w-sm w-full">
+        {/* Without an explicit label the accessible name is just the raw tip
+            text, which gives no hint that activating it opens a chat. */}
+        <Link
+          href={tipChatHref(tip)}
+          aria-label={`Ask Bubbles about today's tip: ${tip}`}
+          className="block max-w-sm w-full"
+        >
           <div
             className="flex items-center gap-3 rounded-2xl px-4 py-3 border border-[var(--color-border)]"
             style={{ background: 'var(--color-surface)' }}

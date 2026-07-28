@@ -8,6 +8,7 @@
  */
 import { render, screen, waitFor } from '@testing-library/react'
 import Loading from '@/app/loading'
+import ProfileLoading from '@/app/profile/loading'
 import HeroHome from '@/components/dashboard/HeroHome'
 
 // Any 6- or 3-digit hex colour literal. The 5-theme system means the skeleton
@@ -43,6 +44,36 @@ describe('app/loading.tsx', () => {
       expect(inline).not.toMatch(HEX_COLOR)
       expect(classes).not.toMatch(HEX_COLOR)
     }
+  })
+})
+
+describe('app/profile/loading.tsx', () => {
+  it('renders a labelled loading state', () => {
+    render(<ProfileLoading />)
+    expect(screen.getByRole('status', { name: /loading profile/i })).toBeInTheDocument()
+  })
+
+  it('opts skeletons out of animation under reduced motion', () => {
+    const { container } = render(<ProfileLoading />)
+    const pulses = Array.from(container.querySelectorAll('.animate-pulse'))
+    expect(pulses.length).toBeGreaterThan(0)
+    expect(pulses.every((el) => el.classList.contains('motion-reduce:animate-none'))).toBe(true)
+  })
+
+  it('contains no hardcoded palette colours (works across all 5 themes)', () => {
+    const { container } = render(<ProfileLoading />)
+    for (const el of Array.from(container.querySelectorAll<HTMLElement>('*'))) {
+      expect(el.getAttribute('style') ?? '').not.toMatch(HEX_COLOR)
+      expect(el.getAttribute('class') ?? '').not.toMatch(HEX_COLOR)
+    }
+  })
+
+  it('is profile-shaped, not dashboard-shaped', () => {
+    const { container } = render(<ProfileLoading />)
+    // The profile page opens with the chowder header strip + overlapping avatar.
+    expect(container.querySelector('.chowder-panel')).not.toBeNull()
+    // The dashboard fallback's three-up action card row must NOT appear here.
+    expect(container.querySelector('.grid-cols-3')).toBeNull()
   })
 })
 
