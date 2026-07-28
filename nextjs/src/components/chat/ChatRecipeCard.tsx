@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
+import { titleCase } from '@/lib/format'
 import type { ChatRecipeData, IngredientAvailability } from '@/types/chat'
 
 interface ChatRecipeCardProps {
@@ -138,7 +139,7 @@ export default function ChatRecipeCard({
                       )}
                       <span>
                         {qtyStr && <span className="font-semibold">{qtyStr} </span>}
-                        {ing.name}
+                        {titleCase(ing.name)}
                       </span>
                     </div>
                     {avail?.status === 'substitute' && avail.substitute_note && (

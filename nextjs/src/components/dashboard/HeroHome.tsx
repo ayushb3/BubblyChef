@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import FadeInView from '@/components/ui/FadeInView'
+import { titleCase } from '@/lib/format'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
 
 interface Recipe {
@@ -112,7 +113,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
 
   // Compute the single hero message (most important)
   const heroMessage = urgentItem
-    ? `Your ${urgentItem.name} expires ${urgentItem.days_until_expiry === 0 ? 'today' : 'tomorrow'}! Let's cook it up.`
+    ? `Your ${titleCase(urgentItem.name)} expires ${urgentItem.days_until_expiry === 0 ? 'today' : 'tomorrow'}! Let's cook it up.`
     : totalCount === 0
       ? "Your pantry is empty — let's stock up!"
       : recipe

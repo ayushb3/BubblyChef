@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import BubbleMessage from './BubbleMessage'
+import { titleCase } from '@/lib/format'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
 
 interface Recipe {
@@ -171,7 +172,7 @@ export default function BubblesFeed({ displayName }: BubblesFeedProps) {
           dismissLabel="Not now"
         >
           Heads up! Your{' '}
-          <strong className="font-semibold">{urgentItem.name}</strong> expires{' '}
+          <strong className="font-semibold">{titleCase(urgentItem.name)}</strong> expires{' '}
           {urgentExpiryLabel}! Want me to find a quick recipe using it?
         </BubbleMessage>
       )}
