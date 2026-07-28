@@ -58,3 +58,50 @@ export interface RefineRecipeRequest {
   recipe: Record<string, unknown>
   prompt: string
 }
+
+// ---------------------------------------------------------------------------
+// Cook-a-recipe / pantry deduction types
+// ---------------------------------------------------------------------------
+
+export type IngredientMatchStatus =
+  | 'ready'
+  | 'substitute'
+  | 'shortfall'
+  | 'unit_conflict'
+  | 'missing'
+
+/** How the pantry item was found, recorded separately from status. */
+export type IngredientMatchType = 'exact' | 'substitute' | 'none'
+
+export interface IngredientMatch {
+  ingredient_name: string
+  ingredient_qty: number | null
+  ingredient_unit: string | null
+  pantry_item_id: string | null
+  pantry_item_name: string | null
+  pantry_qty_available: number | null
+  deduct_qty: number | null
+  base_unit: string | null
+  status: IngredientMatchStatus
+  shortfall: number | null
+  /**
+   * A substitute with too little stock is status 'shortfall' but still
+   * match_type 'substitute', so the swap note shows alongside the shortfall.
+   */
+  match_type: IngredientMatchType
+  substitution_note: string | null
+}
+
+export interface CookProposal {
+  recipe_id: string
+  recipe_title: string
+  matches: IngredientMatch[]
+  missing: string[]
+  unit_conflicts: Array<{ ingredient: string; recipe_unit: string; pantry_unit: string }>
+}
+
+export interface DeductionItem {
+  pantry_item_id: string
+  deduct_qty: number
+  base_unit: string
+}

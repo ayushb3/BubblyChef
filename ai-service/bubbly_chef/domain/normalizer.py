@@ -414,10 +414,19 @@ def normalize_to_base_unit(
     quantity: float,
     unit: str,
     category: str = "other",
+    target_unit: str | None = None,
 ) -> tuple[float, str] | tuple[None, None]:
     """Convert (quantity, unit) to (quantity_base, unit_base) for a named ingredient.
 
     Returns (None, None) if conversion is not possible (unknown unit or cross-dimension).
+
+    Args:
+        target_unit: Convert toward this unit instead of looking one up by name.
+            Pass it when the destination is already known — matching a recipe line
+            against a pantry row whose unit_base is recorded, say. The name registry
+            only covers ingredients it lists, so "sour cream" or "greek yogurt" would
+            otherwise fall back to the category default of "count" and make a gram
+            quantity look like an impossible cross-dimension conversion.
 
     Examples:
         normalize_to_base_unit("eggs", 1.0, "dozen")   -> (12.0, "count")
@@ -425,6 +434,7 @@ def normalize_to_base_unit(
         normalize_to_base_unit("milk", 2.0, "cup")     -> (480.0, "ml")
         normalize_to_base_unit("matcha", 30.0, "g")    -> (30.0, "g")
         normalize_to_base_unit("sugar", 3.0, "tbsp")   -> (None, None)  # cross-dimension
+        normalize_to_base_unit("sour cream", 100.0, "g", target_unit="g") -> (100.0, "g")
     """
     from bubbly_chef.domain.defaults import (
         CATEGORY_CANONICAL_UNIT,
@@ -434,10 +444,11 @@ def normalize_to_base_unit(
     canonical_unit = normalize_unit(unit)
     name_lower = name.lower().strip()
 
-    # Determine target base unit from ingredient registry, fall back to category
-    target_unit = INGREDIENT_CANONICAL_UNIT.get(
-        name_lower, CATEGORY_CANONICAL_UNIT.get(category, "count")
-    )
+    # Caller-supplied destination wins; otherwise the ingredient registry, then category
+    if target_unit is None:
+        target_unit = INGREDIENT_CANONICAL_UNIT.get(
+            name_lower, CATEGORY_CANONICAL_UNIT.get(category, "count")
+        )
 
     # Same unit — no conversion needed
     if canonical_unit == target_unit:

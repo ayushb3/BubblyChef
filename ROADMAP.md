@@ -72,8 +72,14 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 
 ### Known Blockers
 
-- **Pagination** — pantry list endpoint has no pagination (Next.js route handler, issue #5)
-- **Rate limiting** — no rate limiting on AI provider calls (issue #8)
+None outstanding. Both entries previously listed here are closed:
+
+- ~~Pantry list pagination (#5)~~ — closed `not_planned`. The issue described
+  `bubbly_chef/api/routes/pantry.py` and `repository/sqlite.py`, neither of which
+  exists any more; pantry CRUD moved to Next.js + Supabase.
+- ~~AI provider rate limiting (#8)~~ — closed `completed`, on the basis of the
+  reactive 429 handling in `ai/gemini.py` rather than the token bucket originally
+  proposed. There is no proactive limiter; reopen if quota becomes a real problem.
 
 ---
 
@@ -96,10 +102,11 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 
 | # | Issue | Priority |
 |---|---|---|
-| #5 | Add pagination to pantry list | High (Phase 3 blocker) |
-| #8 | Rate limiting for AI provider calls | High (Phase 3 blocker) |
+| #128 | `mypy --strict` documented as a gate but 73 errors and not in CI | High |
+| #130 | `tenacity` imported but undeclared — resolves transitively by luck | High |
+| #127 | Duplicate pantry rows under-report available stock in the cook flow | Medium |
+| #129 | Adopt ruff 0.16's expanded default rules (pinned around, 144 findings) | Medium |
 | — | `mutating` state in RecipeBook — buttons not `disabled={mutating}` yet | Medium |
-| — | No error feedback on failed recipe mutations | Medium |
 | #10 | Accessibility (ARIA labels, keyboard nav) | Medium |
 | #11 | End-to-end tests with Playwright | Medium |
 | #6 | Unit conversion system (dozen eggs → individual) | Low |

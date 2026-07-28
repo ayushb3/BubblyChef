@@ -60,7 +60,12 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
 
       const raw = await res.json()
       // AI service wraps in { recipe: ... } envelope
-      const recipe: Partial<Recipe> = 'recipe' in raw ? raw.recipe : raw
+      const rawRecipe = ('recipe' in raw ? raw.recipe : raw) as Record<string, unknown>
+      const recipe: Partial<Recipe> = {
+        ...rawRecipe,
+        // image_url isn't in the Recipe type but scrapers return it — preserve as thumbnail_url
+        thumbnail_url: (rawRecipe.thumbnail_url ?? rawRecipe.image_url ?? null) as string | null,
+      }
       onImported(recipe, trimmed)
     } catch {
       setErrorMsg(ERROR_MESSAGES.fetch_failed)
@@ -129,8 +134,36 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
               className="text-xs text-[var(--color-muted)]"
               style={{ fontFamily: 'Nunito, sans-serif' }}
             >
-              Paste a link from AllRecipes, NYT Cooking, BBC Good Food, Serious Eats, and more.
+              Browse a site, copy the recipe URL, and paste it below.
             </p>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { label: 'AllRecipes', href: 'https://www.allrecipes.com', noImage: true },
+                { label: 'Serious Eats', href: 'https://www.seriouseats.com', noImage: true },
+                { label: 'BBC Good Food', href: 'https://www.bbcgoodfood.com/recipes' },
+                { label: 'NYT Cooking', href: 'https://cooking.nytimes.com' },
+                { label: 'Food Network', href: 'https://www.foodnetwork.com/recipes' },
+              ].map(({ label, href, noImage }) => (
+                <a
+                  key={label}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={noImage ? 'Images may not be available for this site' : undefined}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold no-underline hover:opacity-80 active:scale-95 transition-all"
+                  style={{
+                    background: 'var(--color-bg)',
+                    border: '1.5px solid var(--color-border)',
+                    color: 'var(--color-primary-dark)',
+                    fontFamily: 'Nunito, sans-serif',
+                  }}
+                >
+                  {label}
+                  {noImage && <span style={{ color: '#f59e0b' }}>⚠</span>}
+                  {' '}↗
+                </a>
+              ))}
+            </div>
 
             <input
               type="url"

@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import BubblesHeader from '@/components/layout/BubblesHeader'
 import HeroHome from '@/components/dashboard/HeroHome'
+import ThemePicker from '@/components/ui/ThemePicker'
 
 export default async function HomePage() {
   const supabase = await createClient()
@@ -12,7 +13,7 @@ export default async function HomePage() {
 
   return (
     <main className="min-h-screen pb-24">
-      <BubblesHeader showSubtitle />
+      <BubblesHeader showSubtitle rightSlot={<ThemePicker />} />
       <div className="px-4 pt-4 max-w-lg mx-auto">
         <HeroHome displayName={displayName} />
       </div>

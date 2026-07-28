@@ -26,7 +26,7 @@
 ### Phase 2: Next.js App + Supabase Auth (COMPLETE)
 
 **Files created:**
-- `nextjs/` — Full Next.js 14 App Router project
+- `nextjs/` — Full Next.js 16 App Router project
 - `nextjs/src/lib/supabase/{client,server,middleware}.ts` — Supabase SSR setup
 - `nextjs/src/middleware.ts` — Auth guard (redirects unauthenticated → `/login`)
 - `nextjs/src/app/login/page.tsx` — Sign in / sign up page (BubblyChef design system)

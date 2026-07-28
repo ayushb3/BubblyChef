@@ -32,8 +32,12 @@ async def httpx_get(url: str) -> str:
     """Fetch raw HTML from a URL. Extracted so tests can patch it."""
     headers = {
         "User-Agent": (
-            "Mozilla/5.0 (compatible; BubblyChef/1.0; +https://bubbly-chef.app)"
-        )
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
     }
     async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as c:
         r = await c.get(url, headers=headers)
@@ -83,6 +87,7 @@ def _scraper_to_recipe_card(scraper: Any, url: str) -> RecipeCard:  # noqa: ANN4
     yields_str: str | None = _safe(scraper.yields)
     description: str | None = _safe(scraper.description)
     image: str | None = _safe(scraper.image)
+    logger.info(f"[scraper] title={title!r} image={image!r}")
 
     return RecipeCard(
         title=title,
@@ -90,6 +95,7 @@ def _scraper_to_recipe_card(scraper: Any, url: str) -> RecipeCard:  # noqa: ANN4
         source_url=url,
         source_type="url",
         image_url=image,
+        thumbnail_url=image,
         total_time_minutes=total_time,
         servings=_parse_servings(yields_str),
         ingredients=[_parse_ingredient(i) for i in raw_ingredients],
@@ -117,6 +123,7 @@ Rules:
 - servings: integer or null
 - cuisine: string or null (e.g. "Italian", "Mexican")
 - dietary_tags: list of strings (e.g. ["vegan", "gluten-free"])
+- image_url: string or null (the recipe's primary image URL, if present in the page)
 - source_type: "url"
 - source_url: "{source_url}"
 
@@ -142,6 +149,8 @@ Return a JSON object with these fields:
 - dietary_tags: list of strings
 - source_type: "url"
 - source_url: "{source_url}"
+
+Do NOT include image_url — omit it entirely or set it to null.
 
 URL: {source_url}
 """
@@ -200,14 +209,24 @@ async def ingest_recipe_from_url(url: str) -> RecipeCard:
     logger.info(f"Attempting AI extraction for {url}")
     if html is not None:
         prompt = _AI_EXTRACTION_PROMPT.format(source_url=url, html=html[:8000])
+        no_fetch = False
     else:
         prompt = _AI_NO_FETCH_PROMPT.format(source_url=url)
+        no_fetch = True
     ai_manager = get_ai_manager()
     result = await ai_manager.complete(prompt=prompt, response_schema=RecipeCard)
 
     if isinstance(result, RecipeCard):
         result.source_url = url
         result.source_type = "url"
+        if no_fetch:
+            # Gemini hallucinates CDN URLs for blocked sites — always invalid, never serve them
+            result.image_url = None
+            result.thumbnail_url = None
+        else:
+            if result.image_url and not result.thumbnail_url:
+                result.thumbnail_url = result.image_url
+        logger.info(f"[ai] title={result.title!r} image_url={result.image_url!r} thumbnail_url={result.thumbnail_url!r}")
         return result
 
     # Shouldn't happen but guard anyway

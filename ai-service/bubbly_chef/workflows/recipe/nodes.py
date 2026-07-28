@@ -100,7 +100,19 @@ RECIPE_CONSTRAINTS_SYSTEM_PROMPT = (
     "Return structured data: cuisine preference, meal_type (breakfast/lunch/dinner/snack), "
     "mood/style, dietary restrictions, time limit, servings, skill level, "
     "and any ingredients they specifically want to include or exclude. "
-    "If a field is not mentioned, leave it as null/empty."
+    "If a field is not mentioned, leave it as null/empty.\n\n"
+    "Distinguish the two ingredient-inclusion fields carefully:\n"
+    "- must_use_ingredients: the user names a specific ingredient they want to USE UP "
+    "or cook WITH. Any phrasing that anchors the request to a named ingredient counts — "
+    "'what can I make with my eggs', 'use up my spinach before it goes bad', "
+    "'I need to finish the chicken', 'something with the leftover rice', "
+    "'recipe using my tomatoes'.\n"
+    "- preferred_ingredients: a softer nice-to-have — 'I'm in the mood for something "
+    "with cheese', 'maybe add mushrooms'.\n\n"
+    "Record only the ingredient name in must_use_ingredients (e.g. 'eggs', not "
+    "'my eggs' or 'eggs before they go bad'). Leave it empty if the user names no "
+    "specific ingredient (e.g. 'what's for dinner?', 'give me a quick pasta recipe' — "
+    "'pasta' there is a dish, not an ingredient the user is using up)."
 )
 
 BRAINSTORM_SYSTEM_PROMPT = """\
@@ -109,6 +121,8 @@ and constraints, suggest 3-4 recipe ideas.
 
 Rules:
 - Each idea should be a recipe name (2-5 words), not a full recipe
+- If "Must use" ingredients are listed, EVERY idea must actually use them — \
+this overrides every other preference
 - Prioritize ingredients marked as expiring soon
 - Match the cuisine/mood if specified
 - ALL suggestions must be for the same meal type — if meal_type is specified, \
@@ -122,6 +136,8 @@ GROUNDED_RECIPE_SYSTEM_PROMPT = """\
 Generate a complete recipe card for "{recipe_name}".
 
 Constraints: {constraints_json}
+Must-use ingredients (the user asked to cook with these — the recipe MUST \
+include them): {must_use_items}
 Priority ingredients (expiring soon — use first): {priority_items}
 Supporting ingredients available: {supporting_items}
 Context: {context}
@@ -284,15 +300,20 @@ def score_and_rank(
     Deterministically score and rank pantry items for recipe grounding.
 
     Scoring:
+    - item in must_use_ingredients: +20 (also tagged `_must_use`)
     - days_until_expiry <= 3: +10
     - days_until_expiry <= 7: +5
     - item name matches cuisine keywords: +3
     - item in preferred_ingredients: +5
     - item in excluded_ingredients: -100
+
+    Scores compose — a must-use item that is also expiring outranks one that
+    isn't, so expiry urgency still orders items within the must-use group.
     """
     cuisine = (constraints.get("cuisine") or "").lower()
     preferred = {p.lower() for p in (constraints.get("preferred_ingredients") or [])}
     excluded = {e.lower() for e in (constraints.get("excluded_ingredients") or [])}
+    must_use = {m.lower() for m in (constraints.get("must_use_ingredients") or [])}
     cuisine_keywords = CUISINE_INGREDIENTS.get(cuisine, set())
 
     today = date.today()
@@ -301,6 +322,11 @@ def score_and_rank(
     for item in pantry_items:
         name_lower = (item.get("name") or "").lower()
         score = 0.0
+
+        # "Use up my X" — dominates expiry so the named ingredient leads the list
+        is_must_use = any(m in name_lower or name_lower in m for m in must_use)
+        if is_must_use:
+            score += 20
 
         # Expiry urgency
         expiry_str = item.get("expiry_date")
@@ -327,7 +353,7 @@ def score_and_rank(
         if any(e in name_lower or name_lower in e for e in excluded):
             score -= 100
 
-        scored.append({**item, "_score": score})
+        scored.append({**item, "_score": score, "_must_use": is_must_use})
 
     scored.sort(key=lambda x: x.get("_score", 0), reverse=True)
     # Filter out excluded items (negative score)
@@ -462,19 +488,31 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
 
     # Build ingredient summary for the prompt
     if scored_items:
-        expiring = [i for i in scored_items if i.get("_score", 0) >= 10]
+        must_use = [i for i in scored_items if i.get("_must_use")]
+        rest = [i for i in scored_items if not i.get("_must_use")]
+        expiring = [i for i in rest if i.get("_score", 0) >= 10]
         supporting = [
-            i for i in scored_items
+            i for i in rest
             if i.get("_score", 0) < 10 and i.get("_score", 0) >= 0
         ]
         expiring_str = ", ".join(i.get("name", "") for i in expiring[:5])
         supporting_str = ", ".join(i.get("name", "") for i in supporting[:10])
-        pantry_context = f"\nExpiring soon (prioritize): {expiring_str or 'none'}"
+        pantry_context = ""
+        if must_use:
+            must_use_str = ", ".join(i.get("name", "") for i in must_use[:5])
+            pantry_context += f"\nMust use (the user asked to cook with these): {must_use_str}"
+        pantry_context += f"\nExpiring soon (prioritize): {expiring_str or 'none'}"
         pantry_context += f"\nOther available: {supporting_str or 'none'}"
     else:
         pantry_context = "\nNo pantry items available — suggest general recipes."
 
     constraints_str = ""
+    # Named ingredients that aren't in the pantry still bind the suggestions.
+    if constraints.get("must_use_ingredients"):
+        constraints_str += (
+            f"\nMust use: {', '.join(constraints['must_use_ingredients'])}"
+            " — every suggestion has to include these"
+        )
     if constraints.get("meal_type"):
         constraints_str += f"\nMeal type: {constraints['meal_type']}"
     if constraints.get("cuisine"):
@@ -567,6 +605,14 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
         if pantry_snapshot:
             scored_items = score_and_rank(pantry_snapshot, constraints)
 
+    # Must-use names come from the constraint itself so ingredients the user
+    # named but doesn't have in the pantry still bind the recipe.
+    must_use_names: list[str] = list(constraints.get("must_use_ingredients") or [])
+    for item in scored_items:
+        name = str(item.get("name") or "")
+        if item.get("_must_use") and name and name not in must_use_names:
+            must_use_names.append(name)
+
     priority_items = [_format_pantry_item_for_prompt(i) for i in scored_items if i.get("_score", 0) >= 5]
     supporting_items = [
         _format_pantry_item_for_prompt(i) for i in scored_items
@@ -583,6 +629,7 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
     prompt = GROUNDED_RECIPE_SYSTEM_PROMPT.format(
         recipe_name=recipe_name,
         constraints_json=constraints_json,
+        must_use_items=", ".join(must_use_names[:5]) or "none specified",
         priority_items=", ".join(priority_items[:8]) or "none specified",
         supporting_items=", ".join(supporting_items[:10]) or "none",
         context=context,

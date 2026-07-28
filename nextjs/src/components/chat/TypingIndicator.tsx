@@ -25,7 +25,7 @@ export default function TypingIndicator() {
       className="flex items-start gap-2"
     >
       <BubblesMascot size={32} state="thinking" animate={true} />
-      <div className="flex items-center gap-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl rounded-bl-md px-4 py-3">
+      <div className="flex items-center gap-1.5 bg-[var(--color-accent)]/30 border border-[var(--color-accent)] rounded-2xl rounded-bl-md px-4 py-3">
         {[0, 1, 2].map((i) => (
           <motion.span
             key={i}

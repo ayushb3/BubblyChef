@@ -28,10 +28,10 @@ cd nextjs && npx tsc --noEmit
 
 | Layer | Tech |
 |---|---|
-| Frontend + CRUD | Next.js 14 (App Router), React, TypeScript, Tailwind CSS v4 (port 3000) |
+| Frontend + CRUD | Next.js 16 (App Router), React, TypeScript, Tailwind CSS v4 (port 3000) |
 | Auth + Database | Supabase (Postgres 15 + Row Level Security) |
 | AI Microservice | FastAPI + LangGraph + Gemini API + Ollama fallback (port 8888) |
-| State (frontend) | React Query (server state), Zustand (client state) |
+| State (frontend) | React Query (server state), React hooks/context (client state) |
 | Styling | Tailwind CSS v4 + Framer Motion, Nunito font |
 | Deployment | Vercel (frontend) + Railway (AI microservice) |
 
@@ -262,7 +262,7 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 **TypeScript (nextjs/):**
 - Strict mode, functional components + hooks only
 - Tailwind only (no custom CSS files)
-- React Query for server state, Zustand for client state
+- React Query for server state; React hooks/context for client state (Zustand is NOT a dependency)
 - All API calls through `nextjs/src/lib/api/client.ts`
 - Every API route calls `requireAuth()` — never access DB without extracting user
 
@@ -334,11 +334,14 @@ BUBBLY_CORS_ORIGINS=["http://localhost:3000"]
 
 ## Known Limitations / Tech Debt
 
-- No rate limiting on AI provider calls — issue #8
-- Pagination missing from pantry list — issue #5
+- `mypy --strict` is listed as a quality gate below but reports 73 errors and is
+  not run by CI — issue #128
+- `tenacity` is imported by `tools/llm_client.py` but not declared in
+  `ai-service/pyproject.toml`; it resolves transitively through langchain — issue #130
+- Duplicate pantry rows under-report available stock in the cook flow — issue #127
+- `ruff` is pinned `<0.16`; the newer default rule set reports 144 findings — issue #129
 - No unit conversion (can't deduct "3 eggs" from "1 dozen eggs") — issue #6
 - `mutating` state in RecipeBook — buttons not yet `disabled={mutating}`
-- No error feedback on failed recipe mutations
 - iOS Safari bottom nav bug — issue #4
 - Recipe generation ignores constraint modifications from chat follow-up — BubblyChef-747
 

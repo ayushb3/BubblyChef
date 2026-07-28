@@ -20,7 +20,12 @@ presentational components rather than styling from scratch.
 ## Reads (does not edit)
 
 - `nextjs/src/components/**` — imports and composes `ui-ux`'s components; may not
-  change their internals or styling without going through `ui-ux`
+  change their internals or styling without going through `ui-ux`. **Exception:**
+  container components that fetch their own data and own their loading/error state
+  (e.g. `components/dashboard/HeroHome.tsx`) are writable by this role for data,
+  state, and loading structure — but only reusing visual idioms that already exist.
+  Introducing a new one (novel skeleton style, new focus ring, a non-token colour)
+  still goes through `ui-ux`. See the boundary section in `ui-ux.md`.
 - `ai-service/bubbly_chef/models/` — response shapes to build client-side types
   against
 

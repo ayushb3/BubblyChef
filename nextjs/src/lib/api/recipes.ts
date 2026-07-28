@@ -5,11 +5,28 @@
  * the proxy for auth forwarding.
  */
 
+import type { Recipe } from '@/components/recipes/RecipePage'
 import type {
   RecipeConstraints,
   GenerateRecipeResponse,
   RefineRecipeRequest,
+  CookProposal,
+  DeductionItem,
 } from '@/types/recipes'
+
+/**
+ * Fetch a single saved recipe by id (Next.js CRUD route, not the AI service).
+ */
+export async function fetchRecipe(recipeId: string): Promise<Recipe> {
+  const res = await fetch(`/api/recipes/${recipeId}`)
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Recipe fetch failed' }))
+    throw new Error(err.error ?? `Recipe fetch failed: ${res.status}`)
+  }
+
+  return res.json()
+}
 
 /**
  * Generate a pantry-aware recipe from constraints.
@@ -49,4 +66,42 @@ export async function refineRecipe(
   }
 
   return res.json()
+}
+
+/**
+ * Fetch a CookProposal for a recipe — matches ingredients against the user's pantry.
+ * No writes happen here; call confirmCook() to apply.
+ */
+export async function cookRecipe(recipeId: string): Promise<CookProposal> {
+  const res = await fetch('/api/ai/recipes/cook', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipe_id: recipeId }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Cook proposal failed' }))
+    throw new Error(err.error ?? `Cook proposal failed: ${res.status}`)
+  }
+
+  return res.json()
+}
+
+/**
+ * Confirm cooking a recipe: apply pantry deductions and mark recipe as cooked.
+ */
+export async function confirmCook(
+  recipeId: string,
+  deductions: DeductionItem[],
+): Promise<void> {
+  const res = await fetch('/api/ai/recipes/cook/confirm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipe_id: recipeId, deductions }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Cook confirmation failed' }))
+    throw new Error(err.error ?? `Cook confirmation failed: ${res.status}`)
+  }
 }

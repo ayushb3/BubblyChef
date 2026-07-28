@@ -93,7 +93,12 @@ class ChatRequest(BaseModel):
         default=None, description="Optional snapshot of current pantry for dedup/context"
     )
     context: dict[str, Any] | None = Field(
-        default=None, description="Additional context (e.g., user preferences)"
+        default=None,
+        description=(
+            "Additional context forwarded to the workflow. Recognised key: "
+            '"cooking_recipe" ({id, title, ingredients}) — pins the conversation '
+            "to the recipe the user just started cooking."
+        ),
     )
 
     model_config = ConfigDict(json_schema_extra={

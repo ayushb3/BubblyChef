@@ -39,13 +39,16 @@ from bubbly_chef.models.recipe import RecipeCardProposal
 from bubbly_chef.models.session import SessionMode
 from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.workflows.chat.nodes import (
+    COOKING_RECIPE_KEY,
     GENERAL_CHAT_SYSTEM_PROMPT,
     GENERAL_CHAT_USER_PROMPT,
     cooking_help_response,
     detect_mode_suggestion,
+    format_cooking_recipe_context,
     format_history_context,
     general_chat_response,
     get_mode_prefix,
+    normalize_cooking_recipe,
 )
 from bubbly_chef.workflows.pantry.nodes import (
     apply_expiry_heuristics,
@@ -542,11 +545,29 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
         intent = state.get("intent", Intent.GENERAL_CHAT.value)
         old_mode = session.active_mode.value
 
-        # Handle explicit exit
+        # Handle explicit exit — checked before the cook handoff so "stop" still
+        # breaks out of COOKING even if the client keeps resending the recipe.
         if state.get("_exit_mode"):
             session = session.reset()
             await repo.update_session(state.get("user_id", ""), session)
             logger.info(f"Session reset (exit phrase): {old_mode} → default")
+            return state
+
+        # Cook handoff: the client pins the recipe the user just started cooking.
+        # Only the request context triggers this (not the pinned copy in session
+        # metadata), so a later brainstorm can still move the session on.
+        context = state.get("context") or {}
+        raw_cooking_recipe = context.get(COOKING_RECIPE_KEY)
+        if isinstance(raw_cooking_recipe, dict):
+            cooking_recipe = normalize_cooking_recipe(raw_cooking_recipe)
+            session.active_mode = SessionMode.COOKING
+            session.pinned_recipe_id = cooking_recipe["id"]
+            session.metadata[COOKING_RECIPE_KEY] = cooking_recipe
+            await repo.update_session(state.get("user_id") or "", session)
+            logger.info(
+                f"Session pinned to cooking recipe: {old_mode} → cooking "
+                f"(recipe_id={cooking_recipe['id']})"
+            )
             return state
 
         # Mode transition rules
@@ -747,6 +768,7 @@ async def run_chat_workflow(
     pantry_snapshot: list[dict[str, Any]] | None = None,
     history: list[dict[str, Any]] | None = None,
     user_id: str | None = None,
+    context: dict[str, Any] | None = None,
 ) -> ProposalEnvelope[Any]:
     """
     Run the chat router workflow and return a ProposalEnvelope.
@@ -759,6 +781,8 @@ async def run_chat_workflow(
         mode: "text" or "voice"
         pantry_snapshot: Optional current pantry for dedup
         history: Prior conversation turns [{role, content, intent, created_at}]
+        user_id: Supabase auth user ID
+        context: Client-supplied context, e.g. {"cooking_recipe": {...}}
 
     Returns:
         ProposalEnvelope with appropriate proposal type based on intent
@@ -776,6 +800,7 @@ async def run_chat_workflow(
         "input_mode": mode,
         "pantry_snapshot": pantry_snapshot,
         "conversation_history": history or [],
+        "context": context,
         "warnings": [],
         "errors": [],
     }
@@ -999,6 +1024,7 @@ async def run_chat_workflow_streaming(
     pantry_snapshot: list[dict[str, Any]] | None = None,
     history: list[dict[str, Any]] | None = None,
     user_id: str | None = None,
+    context: dict[str, Any] | None = None,
 ) -> AsyncIterator[str]:
     """
     Streaming variant of run_chat_workflow.
@@ -1026,6 +1052,7 @@ async def run_chat_workflow_streaming(
         "input_mode": mode,
         "pantry_snapshot": pantry_snapshot,
         "conversation_history": history or [],
+        "context": context,
         "warnings": [],
         "errors": [],
     }
@@ -1104,6 +1131,8 @@ async def run_chat_workflow_streaming(
 
     mode_prefix = get_mode_prefix(classified_state)
     history_context = format_history_context(classified_state)
+    # Cook handoff — empty string unless a recipe is pinned for this conversation.
+    recipe_context = format_cooking_recipe_context(classified_state)
 
     if intent == Intent.COOKING_HELP.value:
         system = (
@@ -1125,7 +1154,15 @@ async def run_chat_workflow_streaming(
         system = GENERAL_CHAT_SYSTEM_PROMPT
         user_prompt = GENERAL_CHAT_USER_PROMPT.format(text=message)
 
-    prompt = mode_prefix + system + pantry_context + "\n\n" + history_context + user_prompt
+    prompt = (
+        mode_prefix
+        + system
+        + pantry_context
+        + recipe_context
+        + "\n\n"
+        + history_context
+        + user_prompt
+    )
 
     # Stream tokens
     collected_text = ""

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import SpringButton from '@/components/ui/SpringButton'
@@ -9,8 +10,12 @@ import FadeInView from '@/components/ui/FadeInView'
 import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import AddItemModal from '@/components/pantry/AddItemModal'
+import ThemePicker from '@/components/ui/ThemePicker'
 import PantryAddSheet, { type PantryAddTab } from '@/components/pantry/PantryAddSheet'
 import { getFoodEmoji } from '@/lib/food-emoji'
+import { titleCase } from '@/lib/format'
+import { cookThisHref } from '@/lib/chat-seed'
+import Chip from '@/components/ui/Chip'
 
 interface PantryItem {
   id: string
@@ -20,6 +25,24 @@ interface PantryItem {
   quantity: number
   unit: string
   expiry_date: string | null
+}
+
+// Category card tints — dedicated --color-cat-* tokens (globals.css). These must
+// never reference expiry/status tokens (fresh/expiring/expired): status signals
+// urgency, category signals food group. Reusing them made produce look "fresh".
+const CATEGORY_BG: Record<string, string> = {
+  produce: 'var(--color-cat-produce)',
+  dairy: 'var(--color-cat-dairy)',
+  frozen: 'var(--color-cat-frozen)',
+  meat: 'var(--color-cat-meat)',
+  seafood: 'var(--color-cat-seafood)',
+  beverages: 'var(--color-cat-beverages)',
+  condiments: 'var(--color-cat-condiments)',
+  pantry: 'var(--color-cat-dry-goods)',
+  dry_goods: 'var(--color-cat-dry-goods)',
+  canned: 'var(--color-cat-dry-goods)',
+  snacks: 'var(--color-cat-snacks)',
+  other: 'var(--color-cat-other)',
 }
 
 const CATEGORY_EMOJI: Record<string, string> = {
@@ -48,12 +71,21 @@ function daysUntilExpiry(date: string | null): number | null {
   return Math.ceil(diff / (1000 * 60 * 60 * 24))
 }
 
+/**
+ * Expired or expiring soon — the same 0–3 day window `pantry-helpers`'
+ * `is_expiring_soon` uses, plus anything already past. These are the cards that
+ * get the "Cook this" deep link (#138).
+ */
+function isUrgent(days: number | null): boolean {
+  return days !== null && days <= 3
+}
+
 function expiryBadge(days: number | null) {
   if (days === null) return null
-  if (days <= 0) return { label: 'Expired', color: 'bg-red-400 text-white' }
-  if (days <= 2) return { label: `${days}d left`, color: 'bg-red-300 text-white' }
-  if (days <= 5) return { label: `${days}d left`, color: 'bg-yellow-300 text-yellow-900' }
-  return { label: `${days}d left`, color: 'bg-green-200 text-green-800' }
+  if (days <= 0) return { label: 'Expired', color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
+  if (days <= 2) return { label: `${days}d left`, color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
+  if (days <= 5) return { label: `${days}d left`, color: 'bg-[var(--color-expiring)] text-[var(--color-expiring-text)]' }
+  return { label: `${days}d left`, color: 'bg-[var(--color-fresh)] text-[var(--color-fresh-text)]' }
 }
 
 function groupByCategory(items: PantryItem[]) {
@@ -148,9 +180,12 @@ function PantryPageInner() {
       {/* Header */}
       <BubblesHeader
         rightSlot={
-          <span className="bg-[var(--color-primary)] text-white text-xs font-semibold px-3 py-1 rounded-full">
-            {allItems.length} item{allItems.length !== 1 ? 's' : ''}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="bg-[var(--color-primary)] text-white text-xs font-semibold px-3 py-1 rounded-full">
+              {allItems.length} item{allItems.length !== 1 ? 's' : ''}
+            </span>
+            <ThemePicker />
+          </div>
         }
       />
 
@@ -168,18 +203,14 @@ function PantryPageInner() {
       {/* Location filter chips */}
       <div className="px-6 mb-4 flex gap-2 overflow-x-auto">
         {LOCATION_FILTERS.map((loc) => (
-          <button
+          <Chip
             key={loc.value}
-            type="button"
+            tone={locationFilter === loc.value ? 'primary' : 'muted'}
+            selected={locationFilter === loc.value}
             onClick={() => setLocationFilter(loc.value)}
-            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-              locationFilter === loc.value
-                ? 'bg-[var(--color-primary)] text-white'
-                : 'bg-white text-[var(--color-text)] border border-[var(--color-border)]'
-            }`}
           >
             {loc.label}
-          </button>
+          </Chip>
         ))}
       </div>
 
@@ -220,32 +251,57 @@ function PantryPageInner() {
                     const days = daysUntilExpiry(item.expiry_date)
                     const badge = expiryBadge(days)
                     return (
-                      <motion.button
+                      // Wrapper is a div, not a button: an urgent item nests a
+                      // "Cook this" link, and a link inside a button is invalid.
+                      <motion.div
                         key={item.id}
-                        type="button"
-                        onClick={() => handleOpenEdit(item)}
-                        className="bg-white rounded-2xl p-3 border border-[var(--color-border)] text-left hover:border-[var(--color-primary)] transition-colors"
+                        className="rounded-2xl border border-[var(--color-border)] overflow-hidden hover:border-[var(--color-primary)] transition-colors flex flex-col"
+                        style={{ background: CATEGORY_BG[item.category?.toLowerCase() ?? ''] ?? 'var(--color-surface)' }}
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: i * 0.04, duration: 0.25 }}
                       >
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-lg">{getFoodEmoji(item.name, item.category)}</span>
-                          <span className="font-semibold text-sm text-[var(--color-text)] truncate">
-                            {item.name}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-[var(--color-muted)]">
-                            {item.quantity} {item.unit}
-                          </span>
-                          {badge && (
-                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge.color}`}>
-                              {badge.label}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(item)}
+                          // Inset focus outline: the card wrapper is
+                          // `overflow-hidden`, so an outward ring/offset would be
+                          // clipped and invisible to keyboard users.
+                          className="p-3 text-left w-full flex-1 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary-dark)]"
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-lg">{getFoodEmoji(item.name, item.category)}</span>
+                            <span className="font-semibold text-sm text-[var(--color-text)] truncate">
+                              {titleCase(item.name)}
                             </span>
-                          )}
-                        </div>
-                      </motion.button>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-[var(--color-muted)]">
+                              {item.quantity} {item.unit}
+                            </span>
+                            {badge && (
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge.color}`}>
+                                {badge.label}
+                              </span>
+                            )}
+                          </div>
+                        </button>
+
+                        {/* One tap from an expiring item to a recipe that uses it */}
+                        {isUrgent(days) && (
+                          <Link
+                            href={cookThisHref(item.name, item.expiry_date)}
+                            aria-label={`Cook this ${item.name}`}
+                            // WCAG 2.5.5: the label stays `text-xs` so the card
+                            // grid doesn't reflow, but the box around it is a
+                            // full 44px tap target — same trick ThemePicker uses
+                            // (24px swatch inside a 44×44 button).
+                            className="border-t border-[var(--color-border)] px-3 min-h-[44px] flex items-center justify-center text-xs font-semibold text-[var(--color-primary-dark)] text-center hover:bg-[var(--color-border)] transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary-dark)]"
+                          >
+                            🍳 Cook this
+                          </Link>
+                        )}
+                      </motion.div>
                     )
                   })}
                 </div>

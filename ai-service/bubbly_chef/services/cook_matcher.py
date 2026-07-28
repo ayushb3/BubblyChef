@@ -1,0 +1,547 @@
+"""Cook matcher service.
+
+Given a list of recipe ingredients and a user's pantry items, produces a
+CookProposal that shows which ingredients can be deducted, which are
+insufficient, which have unit conflicts, and which are missing entirely.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from dataclasses import dataclass
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+from bubbly_chef.domain.normalizer import normalize_food_name, normalize_to_base_unit
+from bubbly_chef.models.cook import CookProposal, IngredientMatch
+from bubbly_chef.models.pantry import PantryItem
+
+logger = logging.getLogger(__name__)
+
+# Below this, a suggested stand-in is discarded and the ingredient stays missing.
+# Substituting an ingredient changes what the user actually cooks, so the bar is
+# higher than for a plain lookup.
+SUBSTITUTION_CONFIDENCE_THRESHOLD = 0.7
+
+
+@dataclass(frozen=True)
+class ResolvedAlias:
+    """A pantry item the LLM proposes for an ingredient the synonym table missed."""
+
+    pantry_name: str
+    """Normalized name of the pantry item to match against."""
+    match_type: Literal["exact", "substitute"]
+    note: str | None = None
+
+
+class _LLMIngredientMatch(BaseModel):
+    """One ingredient's resolution, as returned by the model."""
+
+    ingredient_name: str = Field(description="The unmatched ingredient this refers to")
+    best_match: str | None = Field(
+        default=None, description="Name of the pantry item to use, or null if none works"
+    )
+    match_type: Literal["exact", "substitute", "none"] = Field(
+        description="exact=same thing by another name, substitute=workable stand-in, none=no option"
+    )
+    confidence: float = Field(default=0.0, description="0.0-1.0 confidence in this resolution")
+    substitution_note: str | None = Field(
+        default=None, description="One short sentence explaining the swap, for the user"
+    )
+
+
+class _LLMMatchBatch(BaseModel):
+    """Envelope so the whole unmatched set resolves in a single call."""
+
+    results: list[_LLMIngredientMatch] = Field(default_factory=list)
+
+
+_SUBSTITUTION_PROMPT = """You are helping a home cook decide whether anything in their \
+pantry can stand in for recipe ingredients they appear to be missing.
+
+Recipe ingredients with no pantry match:
+{unmatched}
+
+Everything currently in their pantry:
+{pantry}
+
+For each unmatched ingredient, choose the single best pantry item, or null if nothing \
+sensible applies. Use match_type "exact" when it is genuinely the same ingredient under \
+a different name (pecorino romano and parmesan are not the same thing; scallion and \
+green onion are). Use "substitute" when it is a different ingredient that would still \
+work in a recipe, and say briefly what changes — flavour, texture, sweetness. Use \
+"none" when the honest answer is that they cannot make this ingredient.
+
+Do not suggest a swap that would change the dish into something else, and do not treat \
+derivatives as interchangeable: lemon juice cannot replace lemon zest, and vice versa. \
+Set confidence below {threshold} for anything you are unsure about.
+
+Keep substitution_note under 15 words. Return one result per unmatched ingredient."""
+
+# Matches leading quantity+unit in a raw ingredient string, e.g.:
+#   "2 large eggs"       → qty=2,  unit=None,   rest="large eggs"
+#   "1/2 cup flour"      → qty=0.5, unit="cup",  rest="flour"
+#   "1 teaspoon lemon zest" → qty=1, unit="tsp", rest="lemon zest"
+_LEADING_QTY_RE = re.compile(
+    r"^\s*"
+    r"(?P<qty>\d+\s*/\s*\d+|\d+(?:\.\d+)?)"   # fraction or decimal
+    r"(?:\s+(?P<unit>cup|cups|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons"
+    r"|oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg|ml|l|liter|liters"
+    r"|pint|quart|gallon|fl\s+oz|fluid\s+ounce|stick|sticks|clove|cloves"
+    r"|bunch|bunches|slice|slices|piece|pieces|can|cans|package|packages"
+    r"|head|heads|sprig|sprigs|pinch|dash|handful|item|count|dozen))?"
+    r"\s+",
+    re.IGNORECASE,
+)
+
+# Adjectives that appear between quantity and the actual food noun
+_ADJECTIVE_RE = re.compile(
+    r"^(?:large|small|medium|extra-large|xl|fresh|dried|whole|finely|coarsely"
+    r"|roughly|thinly|thickly|grated|sliced|diced|chopped|minced|crushed"
+    r"|peeled|seeded|boneless|skinless|lean|ground|frozen|canned|organic"
+    r"|plus|more|additional|extra)\s+",
+    re.IGNORECASE,
+)
+
+# Conjunctions that split multi-ingredient strings, e.g. "2 eggs and 1 yolk"
+_CONJUNCTION_RE = re.compile(r"\s*(?:,\s*|\s+and\s+|\s+or\s+|\s+plus\s+).*$", re.IGNORECASE)
+
+
+def _parse_ingredient_string(raw: str) -> dict[str, Any]:
+    """Parse a raw ingredient string into {name, quantity, unit}.
+
+    Handles strings like:
+      "2 large eggs" → {name: "eggs", quantity: 2.0, unit: None}
+      "1/2 cup finely grated Parmesan" → {name: "parmesan", quantity: 0.5, unit: "cup"}
+      "1 teaspoon lemon zest" → {name: "lemon zest", quantity: 1.0, unit: "teaspoon"}
+      "1/2 cup plus 2 tbsp Parmesan" → {name: "parmesan", quantity: 0.5, unit: "cup"}
+    """
+    stripped = raw.strip()
+
+    # Split on first conjunction — use the first segment for qty/unit, last for the food noun
+    conj_m = _CONJUNCTION_RE.search(stripped)
+    first_segment = _CONJUNCTION_RE.sub("", stripped)
+    last_segment = stripped[conj_m.start():].lstrip(" ,").strip() if conj_m else first_segment
+
+    qty: float | None = None
+    unit: str | None = None
+    text = first_segment
+
+    m = _LEADING_QTY_RE.match(text)
+    if m:
+        qty_str = m.group("qty").replace(" ", "")
+        if "/" in qty_str:
+            num, den = qty_str.split("/")
+            qty = float(num) / float(den)
+        else:
+            qty = float(qty_str)
+        unit = m.group("unit")
+        text = text[m.end():]
+
+    # Strip leading adjectives to reach the food noun
+    for _ in range(5):
+        stripped_adj = _ADJECTIVE_RE.sub("", text)
+        if stripped_adj == text:
+            break
+        text = stripped_adj
+
+    name = text.strip().lower()
+
+    # Food unit words appearing as the sole "name" mean the parse consumed too much.
+    # In that case fall back to the last conjunction segment for the actual food noun.
+    _UNIT_WORDS = {"cup", "cups", "tbsp", "tablespoon", "tablespoons", "tsp",
+                   "teaspoon", "teaspoons", "oz", "lb", "lbs", "g", "kg", "ml",
+                   "l", "item", "count", "piece", "pieces", "slice", "slices",
+                   "bunch", "can", "cans", "package", "packages", "clove", "cloves",
+                   "sprig", "sprigs", "head", "heads", "stick", "sticks"}
+    if not name or name in _UNIT_WORDS:
+        last = last_segment
+        # Strip leading adjectives/conjunction words before the qty match
+        for _ in range(5):
+            stripped_adj = _ADJECTIVE_RE.sub("", last)
+            if stripped_adj == last:
+                break
+            last = stripped_adj
+        last_m = _LEADING_QTY_RE.match(last)
+        if last_m:
+            last = last[last_m.end():]
+        for _ in range(5):
+            stripped_adj = _ADJECTIVE_RE.sub("", last)
+            if stripped_adj == last:
+                break
+            last = stripped_adj
+        name = last.strip().lower() or name
+
+    return {"name": name, "quantity": qty, "unit": unit}
+
+
+def _normalize_ingredient_name(name: str) -> str:
+    """Normalize an ingredient name for matching against pantry items.
+
+    Skips catalog fuzzy-lookup intentionally — WRatio at any reasonable threshold
+    produces cross-food false positives (e.g. "pecorino romano" → "roma tomato").
+    Synonym normalization in normalize_food_name() is sufficient for pantry matching.
+    """
+    return normalize_food_name(name).lower().strip()
+
+
+def match_ingredients(
+    recipe_id: str,
+    recipe_title: str,
+    recipe_ingredients: list[dict[str, Any]],
+    pantry_items: list[PantryItem],
+    aliases: dict[str, ResolvedAlias] | None = None,
+) -> CookProposal:
+    """Match recipe ingredients against pantry items and produce a CookProposal.
+
+    Args:
+        recipe_id: UUID string of the recipe.
+        recipe_title: Human-readable title for the proposal.
+        recipe_ingredients: List of ingredient dicts with keys:
+            name (str), quantity (float|None), unit (str|None).
+        pantry_items: List of PantryItem objects for the current user.
+        aliases: Optional map of normalized ingredient name -> ResolvedAlias, used to
+            match ingredients the synonym table misses. Applied inside this single
+            pass, not as a second pass, so aliased ingredients draw on the same
+            consumption accounting as everything else — a substitute must not be
+            able to claim stock an earlier ingredient already took.
+
+    Returns:
+        CookProposal with matches, missing, and unit_conflicts lists.
+
+    Several recipe ingredients may resolve to the same pantry row. Each one is
+    matched against what the row has left after the earlier ones, so a recipe
+    asking for more than a row holds reports a shortfall rather than claiming
+    every line is ready.
+    """
+    from uuid import UUID
+
+    # Build a lookup: normalized_name -> PantryItem
+    pantry_index: dict[str, PantryItem] = {}
+    for item in pantry_items:
+        key = _normalize_ingredient_name(item.name)
+        # Keep the item with the highest quantity if there are duplicates.
+        # NOTE: this discards the other rows' quantities, so a pantry holding
+        # 2 onions + 3 onions as separate rows reports 3 available rather than 5.
+        # Fixing that needs a match to span multiple rows (and a deduction plan
+        # per row), which is a contract change reaching the frontend — tracked
+        # separately rather than bolted on here.
+        if key not in pantry_index or item.quantity > pantry_index[key].quantity:
+            pantry_index[key] = item
+
+    matches: list[IngredientMatch] = []
+    missing: list[str] = []
+    unit_conflicts: list[dict[str, str]] = []
+
+    # Base-unit quantity already claimed from each pantry row by earlier ingredients
+    # in THIS recipe, keyed by pantry item id.
+    #
+    # Two recipe lines can resolve to the same pantry row — either as literal
+    # duplicates ("onion" twice) or because normalize_food_name() collapses
+    # synonyms (cheddar and parmesan both become "cheese"). Without this running
+    # total each line compares against the row's untouched quantity, so both are
+    # reported "ready" even when the row only covers one of them, and the confirm
+    # step then deducts twice.
+    consumed: dict[Any, float] = {}
+
+    for ingredient in recipe_ingredients:
+        # Ingredients may be stored as plain strings (e.g. "1 cup flour") or dicts.
+        # Parse the string to extract name, quantity, and unit before any dict access.
+        if isinstance(ingredient, str):
+            ingredient = _parse_ingredient_string(ingredient)
+
+        raw_name: str = ingredient.get("name", "")
+        if not raw_name:
+            continue
+
+        ing_qty: float | None = ingredient.get("quantity")
+        ing_unit: str | None = ingredient.get("unit")
+        norm_name = _normalize_ingredient_name(raw_name)
+
+        # --- Find pantry match ---
+        pantry_item = pantry_index.get(norm_name)
+        alias: ResolvedAlias | None = None
+
+        if pantry_item is None and aliases:
+            alias = aliases.get(norm_name)
+            if alias is not None:
+                pantry_item = pantry_index.get(alias.pantry_name)
+                if pantry_item is None:
+                    # Alias named an item that is not actually in the pantry.
+                    alias = None
+
+        if pantry_item is None:
+            # No match at all
+            missing.append(raw_name)
+            continue
+
+        # A stand-in is surfaced as its own status so the user can see the swap,
+        # but only when stock is sufficient — a short substitute is more useful
+        # reported as a shortfall, with match_type still recording the swap.
+        is_substitute = alias is not None and alias.match_type == "substitute"
+        match_type: Literal["exact", "substitute", "none"] = (
+            "substitute" if is_substitute else "exact"
+        )
+        note = alias.note if is_substitute and alias is not None else None
+        ok_status: Literal["ready", "substitute"] = "substitute" if is_substitute else "ready"
+
+        # What this row still has after earlier ingredients in this recipe took
+        # their share.
+        already_claimed = consumed.get(pantry_item.id, 0.0)
+
+        # --- No quantity on recipe ingredient → can't deduct, just note as ready ---
+        if ing_qty is None or ing_unit is None:
+            unclaimed = pantry_item.quantity_base
+            if unclaimed is not None:
+                unclaimed = max(0.0, unclaimed - already_claimed)
+            matches.append(
+                IngredientMatch(
+                    ingredient_name=raw_name,
+                    ingredient_qty=ing_qty,
+                    ingredient_unit=ing_unit,
+                    pantry_item_id=pantry_item.id,
+                    pantry_item_name=pantry_item.name,
+                    pantry_qty_available=unclaimed,
+                    deduct_qty=None,
+                    base_unit=pantry_item.unit_base,
+                    status=ok_status,
+                    match_type=match_type,
+                    substitution_note=note,
+                )
+            )
+            continue
+
+        # --- Resolve the pantry side first ---
+        # The recipe line is then converted toward whatever unit the pantry row
+        # actually uses, which is the only unit the deduction can be expressed in.
+        pantry_base_qty = pantry_item.quantity_base
+        pantry_base_unit = pantry_item.unit_base
+
+        # If pantry item lacks base values, try to derive them. Normalized name
+        # here, since the registry is keyed by canonical names.
+        if pantry_base_qty is None or pantry_base_unit is None:
+            pantry_base_qty, pantry_base_unit = normalize_to_base_unit(
+                name=_normalize_ingredient_name(pantry_item.name),
+                quantity=pantry_item.quantity,
+                unit=pantry_item.unit,
+            )
+
+        # --- Convert recipe ingredient into the pantry row's unit ---
+        # Target the pantry's base unit when it is known, rather than looking the
+        # recipe's ingredient name up in INGREDIENT_CANONICAL_UNIT. That registry
+        # only covers the names it lists: "cheese" resolves to grams, but
+        # "cheddar", "sour cream" and "greek yogurt" all miss and fall back to the
+        # category default of "count" — turning a perfectly ordinary gram quantity
+        # into a spurious unit_conflict. It matters most for substitutes (#123),
+        # where the recipe name and the pantry name are different words by design.
+        req_base_qty, req_base_unit = normalize_to_base_unit(
+            name=norm_name,
+            quantity=ing_qty,
+            unit=ing_unit,
+            target_unit=pantry_base_unit,
+        )
+
+        # --- Unit conflict: can't convert either side ---
+        if req_base_qty is None or pantry_base_qty is None or req_base_unit != pantry_base_unit:
+            conflict_info = {
+                "ingredient": raw_name,
+                "recipe_unit": ing_unit,
+                "pantry_unit": pantry_item.unit,
+            }
+            unit_conflicts.append(conflict_info)
+            matches.append(
+                IngredientMatch(
+                    ingredient_name=raw_name,
+                    ingredient_qty=ing_qty,
+                    ingredient_unit=ing_unit,
+                    pantry_item_id=pantry_item.id,
+                    pantry_item_name=pantry_item.name,
+                    pantry_qty_available=pantry_base_qty,
+                    deduct_qty=None,
+                    base_unit=pantry_base_unit or ing_unit,
+                    status="unit_conflict",
+                    match_type=match_type,
+                    substitution_note=note,
+                )
+            )
+            continue
+
+        # --- Quantity comparison ---
+        assert req_base_qty is not None
+        assert pantry_base_qty is not None
+        assert req_base_unit is not None
+
+        # Compare against what is left, not the row's original quantity.
+        available_base_qty = max(0.0, pantry_base_qty - already_claimed)
+
+        if available_base_qty >= req_base_qty:
+            consumed[pantry_item.id] = already_claimed + req_base_qty
+            matches.append(
+                IngredientMatch(
+                    ingredient_name=raw_name,
+                    ingredient_qty=ing_qty,
+                    ingredient_unit=ing_unit,
+                    pantry_item_id=pantry_item.id,
+                    pantry_item_name=pantry_item.name,
+                    pantry_qty_available=available_base_qty,
+                    deduct_qty=req_base_qty,
+                    base_unit=req_base_unit,
+                    status=ok_status,
+                    match_type=match_type,
+                    substitution_note=note,
+                )
+            )
+        else:
+            shortfall = req_base_qty - available_base_qty
+            consumed[pantry_item.id] = already_claimed + available_base_qty
+            matches.append(
+                IngredientMatch(
+                    ingredient_name=raw_name,
+                    ingredient_qty=ing_qty,
+                    ingredient_unit=ing_unit,
+                    pantry_item_id=pantry_item.id,
+                    pantry_item_name=pantry_item.name,
+                    pantry_qty_available=available_base_qty,
+                    deduct_qty=available_base_qty,  # deduct what is left
+                    base_unit=req_base_unit,
+                    status="shortfall",
+                    shortfall=round(shortfall, 4),
+                    match_type=match_type,
+                    substitution_note=note,
+                )
+            )
+
+    return CookProposal(
+        recipe_id=UUID(recipe_id),
+        recipe_title=recipe_title,
+        matches=matches,
+        missing=missing,
+        unit_conflicts=unit_conflicts,
+    )
+
+
+def _unmatched_ingredient_names(
+    recipe_ingredients: list[dict[str, Any]],
+    pantry_items: list[PantryItem],
+) -> list[str]:
+    """Names the deterministic synonym table cannot place in the pantry.
+
+    Name resolution only — no quantity or unit logic — so this can run before the
+    real matching pass without disturbing its consumption accounting.
+    """
+    pantry_names = {_normalize_ingredient_name(item.name) for item in pantry_items}
+
+    unmatched: list[str] = []
+    seen: set[str] = set()
+    for ingredient in recipe_ingredients:
+        if isinstance(ingredient, str):
+            ingredient = _parse_ingredient_string(ingredient)
+        raw_name = ingredient.get("name", "")
+        if not raw_name:
+            continue
+        norm = _normalize_ingredient_name(raw_name)
+        if norm in pantry_names or norm in seen:
+            continue
+        seen.add(norm)
+        unmatched.append(raw_name)
+    return unmatched
+
+
+async def resolve_aliases_with_llm(
+    unmatched_names: list[str],
+    pantry_items: list[PantryItem],
+    ai_manager: Any,
+) -> dict[str, ResolvedAlias]:
+    """Ask the model which pantry items could stand in for unmatched ingredients.
+
+    One batched call for the whole set, not one per ingredient. Returns a map keyed
+    by normalized ingredient name; anything the model declines, scores below
+    SUBSTITUTION_CONFIDENCE_THRESHOLD, or names a pantry item that does not exist
+    is dropped, so the caller simply sees fewer aliases.
+
+    Never raises. Any provider failure returns an empty map, which leaves the
+    ingredients missing exactly as they were before this tier existed.
+    """
+    if not unmatched_names or not pantry_items:
+        return {}
+
+    pantry_by_norm = {_normalize_ingredient_name(i.name): i for i in pantry_items}
+
+    prompt = _SUBSTITUTION_PROMPT.format(
+        unmatched="\n".join(f"- {n}" for n in unmatched_names),
+        pantry="\n".join(f"- {i.name}" for i in pantry_items),
+        threshold=SUBSTITUTION_CONFIDENCE_THRESHOLD,
+    )
+
+    try:
+        result = await ai_manager.complete(
+            prompt=prompt,
+            response_schema=_LLMMatchBatch,
+            temperature=0.1,
+        )
+    except Exception as e:  # noqa: BLE001 - degrading to "missing" is the contract
+        logger.warning(f"Substitution matching unavailable, leaving ingredients missing: {e}")
+        return {}
+
+    if not isinstance(result, _LLMMatchBatch):
+        logger.warning("Substitution matching returned an unexpected shape; ignoring")
+        return {}
+
+    aliases: dict[str, ResolvedAlias] = {}
+    for entry in result.results:
+        if entry.match_type == "none" or not entry.best_match:
+            continue
+        if entry.confidence < SUBSTITUTION_CONFIDENCE_THRESHOLD:
+            logger.debug(
+                f"Dropping low-confidence match {entry.ingredient_name} -> "
+                f"{entry.best_match} ({entry.confidence})"
+            )
+            continue
+
+        pantry_norm = _normalize_ingredient_name(entry.best_match)
+        if pantry_norm not in pantry_by_norm:
+            # Model named something the user does not have.
+            logger.debug(f"Dropping match to absent pantry item: {entry.best_match}")
+            continue
+
+        aliases[_normalize_ingredient_name(entry.ingredient_name)] = ResolvedAlias(
+            pantry_name=pantry_norm,
+            match_type=entry.match_type,
+            note=entry.substitution_note,
+        )
+
+    return aliases
+
+
+async def match_ingredients_with_llm(
+    recipe_id: str,
+    recipe_title: str,
+    recipe_ingredients: list[dict[str, Any]],
+    pantry_items: list[PantryItem],
+    ai_manager: Any,
+) -> CookProposal:
+    """match_ingredients() with an LLM tier for whatever the synonym table misses.
+
+    Deterministic matching stays the fast path: ingredients it resolves never reach
+    the model, so a fully-matched recipe adds no latency and no API call. Only the
+    leftovers are sent, in one batch.
+
+    The aliases are fed into a single match_ingredients() pass rather than being
+    matched separately afterwards, so substitutes share the same per-pantry-item
+    consumption accounting as direct matches.
+    """
+    unmatched = _unmatched_ingredient_names(recipe_ingredients, pantry_items)
+
+    aliases: dict[str, ResolvedAlias] = {}
+    if unmatched:
+        aliases = await resolve_aliases_with_llm(unmatched, pantry_items, ai_manager)
+
+    return match_ingredients(
+        recipe_id=recipe_id,
+        recipe_title=recipe_title,
+        recipe_ingredients=recipe_ingredients,
+        pantry_items=pantry_items,
+        aliases=aliases,
+    )
