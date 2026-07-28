@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { resolvePantryItem, type ResolveOutcome } from '@/lib/api/pantry'
 
 interface ResolveActionsProps {
@@ -34,7 +34,33 @@ export default function ResolveActions({ itemId, itemName, onResolved, className
   const [pendingOutcome, setPendingOutcome] = useState<ResolveOutcome | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const tossButtonRef = useRef<HTMLButtonElement>(null)
+  const cancelButtonRef = useRef<HTMLButtonElement>(null)
+  const hasMountedRef = useRef(false)
+
   const busy = status === 'resolving'
+
+  // The confirm swap unmounts whichever button triggered it, which strands
+  // focus on <body> for keyboard/screen-reader users unless we move it
+  // ourselves. Skip the very first render (mount) — this effect should only
+  // react to the idle <-> confirm-toss transition, never steal focus on load.
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true
+      return
+    }
+    if (status === 'confirm-toss') {
+      // Land on "Cancel", not "Yes, toss it": this is the one destructive,
+      // hard-to-undo action in the component, and whichever control has
+      // focus is the one a bare Enter/Space keypress will hit next.
+      cancelButtonRef.current?.focus()
+    } else if (status === 'idle') {
+      // Cancelling (or a failed toss resolve) returns to idle — send focus
+      // back to the "Tossed it" button that opened the confirm view rather
+      // than dropping it.
+      tossButtonRef.current?.focus()
+    }
+  }, [status])
 
   async function resolve(outcome: ResolveOutcome) {
     if (busy) return // guards double-tap while a request is in flight
@@ -71,6 +97,7 @@ export default function ResolveActions({ itemId, itemName, onResolved, className
           {busy ? 'Tossing…' : 'Yes, toss it'}
         </button>
         <button
+          ref={cancelButtonRef}
           type="button"
           onClick={() => setStatus('idle')}
           disabled={busy}
@@ -95,6 +122,7 @@ export default function ResolveActions({ itemId, itemName, onResolved, className
           {busy && pendingOutcome === 'used' ? 'Saving…' : '✅ Used it up'}
         </button>
         <button
+          ref={tossButtonRef}
           type="button"
           onClick={() => setStatus('confirm-toss')}
           disabled={busy}
@@ -115,7 +143,7 @@ export default function ResolveActions({ itemId, itemName, onResolved, className
             type="button"
             onClick={() => setError(null)}
             aria-label="Dismiss error"
-            className="focus-ring flex-shrink-0"
+            className="focus-ring flex-shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center"
           >
             ✕
           </button>

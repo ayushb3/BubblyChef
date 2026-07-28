@@ -61,6 +61,25 @@ describe('ResolveActions', () => {
     expect(mockResolve).not.toHaveBeenCalled()
   })
 
+  it('moves focus into the confirm swap, and back out again on cancel', async () => {
+    render(<ResolveActions itemId="p1" itemName="milk" onResolved={jest.fn()} />)
+
+    const tossButton = screen.getByRole('button', { name: /toss milk/i })
+    tossButton.focus()
+    fireEvent.click(tossButton)
+
+    // The "Tossed it" button that triggered the swap has just unmounted —
+    // focus must land on a control in the confirm view, not <body>.
+    const cancelButton = screen.getByRole('button', { name: /cancel/i })
+    expect(document.activeElement).toBe(cancelButton)
+
+    fireEvent.click(cancelButton)
+
+    // Cancelling unmounts the confirm view — focus must return to the
+    // "Tossed it" button rather than being dropped.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /toss milk/i }))
+  })
+
   it('disables both actions while a resolve is in flight (no double-tap)', async () => {
     let resolveRequest!: (value: unknown) => void
     mockResolve.mockReturnValue(new Promise((resolve) => { resolveRequest = resolve }))
