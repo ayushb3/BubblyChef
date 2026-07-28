@@ -10,6 +10,7 @@ import RotatingPlaceholder from '@/components/chat/RotatingPlaceholder'
 import MessageBubble from '@/components/chat/MessageBubble'
 import PostMessageChips from '@/components/chat/PostMessageChips'
 import CookingContextCard from '@/components/chat/CookingContextCard'
+import ChatContextCard from '@/components/chat/ChatContextCard'
 import TypingIndicator from '@/components/chat/TypingIndicator'
 import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
@@ -19,6 +20,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
 import { fetchRecipe } from '@/lib/api/recipes'
+import { deriveChatSeed } from '@/lib/chat-seed'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import type {
   ChatMessage,
@@ -79,16 +81,28 @@ function ChatSurface() {
   // the param, so the context resets for free when the user cooks again.
   const cookingRecipeId = searchParams.get('cooking')
 
+  // Deep-link seeds: /chat?tip=… (#143) and /chat?use=…&expires=… (#138).
+  // Null for a bare /chat, which is what keeps the bottom-nav entry a clean,
+  // empty conversation. The cook handoff wins if both are somehow present.
+  const seed = useMemo(
+    () => (cookingRecipeId ? null : deriveChatSeed(searchParams)),
+    [cookingRecipeId, searchParams],
+  )
+
   const [input, setInput] = useState('')
   const [aiAvailable, setAiAvailable] = useState(true)
   const [saveStates, setSaveStates] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({})
   const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
   const [dismissedRecipeId, setDismissedRecipeId] = useState<string | null>(null)
+  const [dismissedSeedKey, setDismissedSeedKey] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   // The recipe only needs to ride along on the first message — the backend
   // pins it to the conversation session for subsequent turns.
   const contextSentRef = useRef(false)
+  // Same one-shot idiom for the seeded auto-send: fires once per mount, never
+  // again on re-render, and never after the user has taken over the thread.
+  const seedSentRef = useRef(false)
 
   // Check AI health on mount
   useEffect(() => {
@@ -142,6 +156,27 @@ function ChatSurface() {
     return cookingContext
   }
 
+  // Auto-send the seeded question so a tap on the dashboard tip / an expiring
+  // item lands straight on Bubbles' answer — the tap on the card is the "1 tap"
+  // both #138 acceptance criteria budget for. The seed rides in the message
+  // *text*, not a context payload: the AI service only honours `cooking_recipe`
+  // as client context, and the must-use ingredient is recovered by an LLM pass
+  // over the message itself.
+  useEffect(() => {
+    if (!seed || seedSentRef.current) return
+    seedSentRef.current = true
+    // The seed *is* the first message, so the cook-context slot is spent.
+    contextSentRef.current = true
+    sendMessage(seed.message)
+  }, [seed, sendMessage])
+
+  const dismissSeedCard = () => {
+    // Hide immediately, then drop the params so a refresh doesn't resurrect the
+    // card (or re-fire the auto-send on a fresh mount).
+    setDismissedSeedKey(seed?.key ?? null)
+    router.replace('/chat', { scroll: false })
+  }
+
   const dismissCookingCard = () => {
     // Hide immediately, then drop the param so a refresh doesn't resurrect it.
     setDismissedRecipeId(cookingRecipeId)
@@ -151,6 +186,13 @@ function ChatSurface() {
   const handleNewChat = () => {
     // New conversation — the backend session is gone, so resend the context.
     contextSentRef.current = false
+    // A seeded banner over an empty thread would be a lie; drop it (and its
+    // params) rather than leave it hanging. `seedSentRef` stays set so the
+    // fresh thread doesn't surprise the user with another auto-sent question.
+    if (seed) {
+      setDismissedSeedKey(seed.key)
+      router.replace('/chat', { scroll: false })
+    }
     startNewChat()
   }
 
@@ -224,6 +266,9 @@ function ChatSurface() {
 
   const hasMessages = messages.length > 0
 
+  // Derived like the cook card: shown until the user dismisses this exact seed.
+  const activeSeed = seed && seed.key !== dismissedSeedKey ? seed : null
+
   return (
     <div className="flex flex-col h-screen pb-20">
       {/* Header */}
@@ -269,6 +314,21 @@ function ChatSurface() {
           )}
         </AnimatePresence>
 
+        {/* Deep-link seed context (?tip= / ?use=) — same slot, same idiom */}
+        <AnimatePresence>
+          {activeSeed && (
+            <ChatContextCard
+              key={activeSeed.key}
+              emoji={activeSeed.card.emoji}
+              label={activeSeed.card.label}
+              title={activeSeed.card.title}
+              subtitle={activeSeed.card.subtitle}
+              dismissLabel={activeSeed.card.dismissLabel}
+              onDismiss={dismissSeedCard}
+            />
+          )}
+        </AnimatePresence>
+
         {hasMessages ? (
           <div className="flex flex-col gap-3">
             {messages.map((msg, index) => (
@@ -307,7 +367,7 @@ function ChatSurface() {
              is above it, so the two don't fight for the same space. */
           <div
             className={`flex flex-col items-center justify-center text-center pb-8 ${
-              cookingRecipe ? 'pt-4' : 'h-full'
+              cookingRecipe || activeSeed ? 'pt-4' : 'h-full'
             }`}
           >
             <EmptyState

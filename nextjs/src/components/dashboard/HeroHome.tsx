@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import FadeInView from '@/components/ui/FadeInView'
+import { cookThisHref, tipChatHref } from '@/lib/chat-seed'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
 
 interface Recipe {
@@ -153,8 +154,10 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
           ? `${expiringCount} item${expiringCount > 1 ? 's' : ''} expiring soon — time to cook!`
           : 'Your kitchen is looking great!'
 
+  // The urgent-item CTA deep-links into a chat seeded with that ingredient
+  // (#138), so one tap lands on a recipe that actually uses it.
   const heroAction = urgentItem
-    ? { label: 'Find a recipe', href: '/chat?mode=recipe' }
+    ? { label: 'Find a recipe', href: cookThisHref(urgentItem.name, urgentItem.expiry_date) }
     : totalCount === 0
       ? { label: 'Scan receipt', href: '/pantry?add=scan' }
       : recipe
@@ -268,7 +271,9 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
 
       {/* Tip of the day — compact */}
       <FadeInView delay={0.6}>
-        <Link href="/chat" className="block max-w-sm w-full">
+        {/* href is derived from the same `tip` the card renders, so the
+            post-hydration correction moves both together (#143). */}
+        <Link href={tipChatHref(tip)} className="block max-w-sm w-full">
           <div
             className="flex items-center gap-3 rounded-2xl px-4 py-3 border border-[var(--color-border)]"
             style={{ background: 'var(--color-surface)' }}

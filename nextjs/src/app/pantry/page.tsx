@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import SpringButton from '@/components/ui/SpringButton'
@@ -12,6 +13,7 @@ import AddItemModal from '@/components/pantry/AddItemModal'
 import ThemePicker from '@/components/ui/ThemePicker'
 import PantryAddSheet, { type PantryAddTab } from '@/components/pantry/PantryAddSheet'
 import { getFoodEmoji } from '@/lib/food-emoji'
+import { cookThisHref } from '@/lib/chat-seed'
 import Chip from '@/components/ui/Chip'
 
 interface PantryItem {
@@ -63,6 +65,15 @@ function daysUntilExpiry(date: string | null): number | null {
   if (!date) return null
   const diff = new Date(date).getTime() - Date.now()
   return Math.ceil(diff / (1000 * 60 * 60 * 24))
+}
+
+/**
+ * Expired or expiring soon — the same 0–3 day window `pantry-helpers`'
+ * `is_expiring_soon` uses, plus anything already past. These are the cards that
+ * get the "Cook this" deep link (#138).
+ */
+function isUrgent(days: number | null): boolean {
+  return days !== null && days <= 3
 }
 
 function expiryBadge(days: number | null) {
@@ -236,33 +247,50 @@ function PantryPageInner() {
                     const days = daysUntilExpiry(item.expiry_date)
                     const badge = expiryBadge(days)
                     return (
-                      <motion.button
+                      // Wrapper is a div, not a button: an urgent item nests a
+                      // "Cook this" link, and a link inside a button is invalid.
+                      <motion.div
                         key={item.id}
-                        type="button"
-                        onClick={() => handleOpenEdit(item)}
-                        className="rounded-2xl p-3 border border-[var(--color-border)] text-left hover:border-[var(--color-primary)] transition-colors"
+                        className="rounded-2xl border border-[var(--color-border)] overflow-hidden hover:border-[var(--color-primary)] transition-colors flex flex-col"
                         style={{ background: CATEGORY_BG[item.category?.toLowerCase() ?? ''] ?? 'var(--color-surface)' }}
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: i * 0.04, duration: 0.25 }}
                       >
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-lg">{getFoodEmoji(item.name, item.category)}</span>
-                          <span className="font-semibold text-sm text-[var(--color-text)] truncate">
-                            {item.name}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-[var(--color-muted)]">
-                            {item.quantity} {item.unit}
-                          </span>
-                          {badge && (
-                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge.color}`}>
-                              {badge.label}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(item)}
+                          className="p-3 text-left w-full flex-1"
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-lg">{getFoodEmoji(item.name, item.category)}</span>
+                            <span className="font-semibold text-sm text-[var(--color-text)] truncate">
+                              {item.name}
                             </span>
-                          )}
-                        </div>
-                      </motion.button>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-[var(--color-muted)]">
+                              {item.quantity} {item.unit}
+                            </span>
+                            {badge && (
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge.color}`}>
+                                {badge.label}
+                              </span>
+                            )}
+                          </div>
+                        </button>
+
+                        {/* One tap from an expiring item to a recipe that uses it */}
+                        {isUrgent(days) && (
+                          <Link
+                            href={cookThisHref(item.name, item.expiry_date)}
+                            aria-label={`Cook this ${item.name}`}
+                            className="border-t border-[var(--color-border)] px-3 py-2 text-xs font-semibold text-[var(--color-primary-dark)] text-center hover:bg-[var(--color-border)] transition-colors"
+                          >
+                            🍳 Cook this
+                          </Link>
+                        )}
+                      </motion.div>
                     )
                   })}
                 </div>
