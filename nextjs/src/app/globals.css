@@ -88,15 +88,18 @@
 
   /* Yuzu: warm yellow + teal */
   [data-theme="yuzu"] {
+    /* Yuzu = warm yellow primary (the citrus) + forest-green accent (the leaf/stem).
+       Accent shifted from teal (#89D4CF, ~hue 177°) to leaf green (~hue 123°) so it
+       reads distinct from sakura's mint-teal accent (#B5EADC) rather than colliding. */
     --color-bg: #FFFBF0;
     --color-primary: #FFD98C;
-    --color-accent: #89D4CF;
+    --color-accent: #A8D5A2;
     --color-text: #5C4A3A;
     --color-surface: #FFFDF8;
     --color-border: #F0DFC8;
     --color-muted: #9B8A7A;
     --color-primary-dark: #FFB830;
-    --color-accent-dark: #4FBDB6;
+    --color-accent-dark: #4A8C45;
   }
 
   /* Bluebell: sky blue + blush pink */
