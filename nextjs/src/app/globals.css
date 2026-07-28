@@ -32,6 +32,25 @@
      * separator (--color-bg ... --color-accent-dark) flex per theme.
      */
 
+    /*
+     * Category tints — one soft, low-saturation background per food group.
+     * Theme-invariant like the signal tokens, but deliberately kept OUT of the
+     * red/yellow/green expiry ramp so a category tint never reads as an expiry
+     * signal (the old map reused --color-fresh/--color-expiring/--color-expired
+     * for produce/dairy/meat, so produce looked perpetually "fresh"). These sit
+     * at ~92–96% lightness so an expiry badge layered on top stays legible.
+     */
+    --color-cat-produce: #E8F5E3;    /* sage */
+    --color-cat-dairy: #FFF8E7;      /* butter cream */
+    --color-cat-meat: #FCEDE8;       /* warm blush (not expiry red) */
+    --color-cat-seafood: #E8F2F5;    /* pale aqua */
+    --color-cat-frozen: #EBF3FA;     /* icy blue */
+    --color-cat-beverages: #EAF0FB;  /* periwinkle */
+    --color-cat-condiments: #FBF0E4; /* amber */
+    --color-cat-dry-goods: #F5F0E6;  /* wheat */
+    --color-cat-snacks: #F2ECF7;     /* soft lavender */
+    --color-cat-other: #F2F1F0;      /* warm neutral */
+
     /* Shared visual primitives — derive from theme tokens via color-mix so
      * shadows/backdrops automatically adopt the active theme palette. */
     --shadow-soft: 0 4px 24px color-mix(in srgb, var(--color-primary) 15%, transparent);

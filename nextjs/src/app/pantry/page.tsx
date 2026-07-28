@@ -24,19 +24,22 @@ interface PantryItem {
   expiry_date: string | null
 }
 
+// Category card tints — dedicated --color-cat-* tokens (globals.css). These must
+// never reference expiry/status tokens (fresh/expiring/expired): status signals
+// urgency, category signals food group. Reusing them made produce look "fresh".
 const CATEGORY_BG: Record<string, string> = {
-  produce: 'var(--color-fresh)',
-  dairy: 'var(--color-expiring)',
-  frozen: 'var(--color-border)',
-  meat: 'var(--color-expired)',
-  seafood: 'var(--color-expired)',
-  beverages: 'var(--color-accent)',
-  condiments: 'var(--color-surface)',
-  pantry: 'var(--color-surface)',
-  dry_goods: 'var(--color-surface)',
-  canned: 'var(--color-surface)',
-  snacks: 'var(--color-accent)',
-  other: 'var(--color-surface)',
+  produce: 'var(--color-cat-produce)',
+  dairy: 'var(--color-cat-dairy)',
+  frozen: 'var(--color-cat-frozen)',
+  meat: 'var(--color-cat-meat)',
+  seafood: 'var(--color-cat-seafood)',
+  beverages: 'var(--color-cat-beverages)',
+  condiments: 'var(--color-cat-condiments)',
+  pantry: 'var(--color-cat-dry-goods)',
+  dry_goods: 'var(--color-cat-dry-goods)',
+  canned: 'var(--color-cat-dry-goods)',
+  snacks: 'var(--color-cat-snacks)',
+  other: 'var(--color-cat-other)',
 }
 
 const CATEGORY_EMOJI: Record<string, string> = {
