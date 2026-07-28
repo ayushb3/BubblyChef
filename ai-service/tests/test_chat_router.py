@@ -10,7 +10,11 @@ import pytest
 
 from bubbly_chef.models.base import Intent
 from bubbly_chef.models.session import ConversationSession, SessionMode
-from bubbly_chef.workflows.chat.nodes import format_cooking_recipe_context
+from bubbly_chef.workflows.chat.nodes import (
+    _flatten_ingredient,
+    format_cooking_recipe_context,
+    normalize_cooking_recipe,
+)
 from bubbly_chef.workflows.router import classify_intent, update_session_node
 from bubbly_chef.workflows.state import LLMIntentResult
 
@@ -217,13 +221,32 @@ def _cooking_context(recipe_id: str = "recipe-42") -> dict:
 
 
 def _session_repo(mode: SessionMode = SessionMode.DEFAULT) -> MagicMock:
-    """Mock repository whose session starts in `mode`."""
+    """Mock repository whose session starts in `mode`.
+
+    `get_recipe` returns a fake DB row (object-shaped ingredients, as stored in
+    the `recipes` JSONB column) so the id-only cook-handoff path can resolve
+    server-side. Legacy full-dict tests never call it.
+    """
     repo = MagicMock()
     repo.get_or_create_session = AsyncMock(
         return_value=ConversationSession(conversation_id="conv-1", active_mode=mode)
     )
     repo.update_session = AsyncMock(return_value=None)
+    repo.get_recipe = AsyncMock(return_value=_fake_recipe_row())
     return repo
+
+
+def _fake_recipe_row(recipe_id: str = "recipe-42") -> dict:
+    """A raw `recipes` row as `get_recipe` returns it (ingredients are objects)."""
+    return {
+        "id": recipe_id,
+        "title": "Lemon Garlic Pasta",
+        "ingredients": [
+            {"name": "spaghetti", "quantity": 200, "unit": "g"},
+            {"name": "lemon", "quantity": 1, "unit": None},
+            {"name": "garlic", "quantity": 3, "unit": "cloves"},
+        ],
+    }
 
 
 def _patch_repo(repo: MagicMock):
@@ -327,6 +350,142 @@ async def test_no_context_leaves_session_mode_alone():
     saved = repo.update_session.await_args.args[1]
     assert saved.active_mode == SessionMode.DEFAULT
     assert saved.pinned_recipe_id is None
+
+
+# ---------------------------------------------------------------------------
+# Cook handoff — server-side recipe resolution from id (issue #155)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cooking_recipe_id_resolves_server_side_and_pins():
+    """The id-only payload resolves the recipe via the repo and pins it.
+
+    No title/ingredients are sent by the client — proving the pin no longer
+    depends on a client-side fetch winning a race (#155).
+    """
+    repo = _session_repo()
+    state = _state(
+        input_text="what temperature for the pasta water?",
+        conversation_id="conv-1",
+        user_id="user-1",
+        intent=Intent.COOKING_HELP.value,
+        context={"cooking_recipe_id": "recipe-42"},
+    )
+
+    with _patch_repo(repo):
+        await update_session_node(state)
+
+    repo.get_recipe.assert_awaited_once_with("user-1", "recipe-42")
+    saved = repo.update_session.await_args.args[1]
+    assert saved.active_mode == SessionMode.COOKING
+    assert saved.pinned_recipe_id == "recipe-42"
+    assert saved.metadata["cooking_recipe"]["title"] == "Lemon Garlic Pasta"
+    # DB rows store ingredient objects; they must arrive flattened to strings.
+    assert saved.metadata["cooking_recipe"]["ingredients"] == [
+        "200 g spaghetti",
+        "1 lemon",
+        "3 cloves garlic",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_thin_cooking_recipe_dict_resolves_server_side():
+    """A `cooking_recipe` dict carrying only an id is resolved like the id-only form."""
+    repo = _session_repo()
+    state = _state(
+        input_text="how long do I cook it?",
+        conversation_id="conv-1",
+        user_id="user-1",
+        intent=Intent.COOKING_HELP.value,
+        context={"cooking_recipe": {"id": "recipe-42"}},
+    )
+
+    with _patch_repo(repo):
+        await update_session_node(state)
+
+    repo.get_recipe.assert_awaited_once_with("user-1", "recipe-42")
+    saved = repo.update_session.await_args.args[1]
+    assert saved.pinned_recipe_id == "recipe-42"
+    assert saved.metadata["cooking_recipe"]["title"] == "Lemon Garlic Pasta"
+
+
+@pytest.mark.asyncio
+async def test_cooking_recipe_id_missing_recipe_leaves_session_unpinned():
+    """A deleted/unauthorised recipe id resolves to None — no pin, no crash."""
+    repo = _session_repo()
+    repo.get_recipe = AsyncMock(return_value=None)
+    state = _state(
+        input_text="what temp?",
+        conversation_id="conv-1",
+        user_id="user-1",
+        intent=Intent.COOKING_HELP.value,
+        context={"cooking_recipe_id": "recipe-gone"},
+    )
+
+    with _patch_repo(repo):
+        await update_session_node(state)
+
+    repo.get_recipe.assert_awaited_once_with("user-1", "recipe-gone")
+    saved = repo.update_session.await_args.args[1]
+    assert saved.active_mode == SessionMode.DEFAULT
+    assert saved.pinned_recipe_id is None
+
+
+@pytest.mark.asyncio
+async def test_legacy_full_dict_does_not_call_get_recipe():
+    """The legacy full `cooking_recipe` dict is used as-is — no server resolve."""
+    repo = _session_repo()
+    state = _state(
+        input_text="how do I julienne the carrots?",
+        conversation_id="conv-1",
+        user_id="user-1",
+        intent=Intent.COOKING_HELP.value,
+        context=_cooking_context(),
+    )
+
+    with _patch_repo(repo):
+        await update_session_node(state)
+
+    repo.get_recipe.assert_not_awaited()
+    saved = repo.update_session.await_args.args[1]
+    assert saved.pinned_recipe_id == "recipe-42"
+    assert saved.metadata["cooking_recipe"]["ingredients"] == [
+        "spaghetti",
+        "lemon",
+        "garlic",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Ingredient flattening (str passthrough + object flatten)
+# ---------------------------------------------------------------------------
+
+
+def test_flatten_ingredient_passes_strings_through():
+    assert _flatten_ingredient("2 cups flour") == "2 cups flour"
+    assert _flatten_ingredient("  salt  ") == "salt"
+
+
+def test_flatten_ingredient_joins_object_parts():
+    assert (
+        _flatten_ingredient({"name": "spaghetti", "quantity": 200, "unit": "g"})
+        == "200 g spaghetti"
+    )
+    # Missing/None parts are skipped, not rendered as "None".
+    assert _flatten_ingredient({"name": "lemon", "quantity": 1, "unit": None}) == "1 lemon"
+    assert _flatten_ingredient({"name": "salt"}) == "salt"
+
+
+def test_normalize_cooking_recipe_handles_object_ingredients():
+    normalized = normalize_cooking_recipe(
+        {
+            "id": "r1",
+            "title": "Test",
+            "ingredients": [{"name": "egg", "quantity": 2, "unit": None}, "salt"],
+        }
+    )
+    assert normalized["ingredients"] == ["2 egg", "salt"]
 
 
 # ---------------------------------------------------------------------------
