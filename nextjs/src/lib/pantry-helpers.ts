@@ -25,20 +25,26 @@ export interface EnrichedPantryItem extends PantryItemRow {
   is_expiring_soon: boolean
 }
 
-export function enrichPantryItem(row: PantryItemRow): EnrichedPantryItem {
-  let days_until_expiry: number | null = null
-  let is_expired = false
-  let is_expiring_soon = false
+/**
+ * Days between today and an expiry date (negative when already past).
+ * Null when there is no expiry date. Shared by `enrichPantryItem` and the
+ * resolve route, which records this at the moment an item is used/tossed.
+ */
+export function daysUntilExpiry(expiryDate: string | null): number | null {
+  if (!expiryDate) return null
 
-  if (row.expiry_date) {
-    const expiry = new Date(row.expiry_date)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const diffMs = expiry.getTime() - today.getTime()
-    days_until_expiry = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
-    is_expired = days_until_expiry < 0
-    is_expiring_soon = days_until_expiry >= 0 && days_until_expiry <= 3
-  }
+  const expiry = new Date(expiryDate)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const diffMs = expiry.getTime() - today.getTime()
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+}
+
+export function enrichPantryItem(row: PantryItemRow): EnrichedPantryItem {
+  const days_until_expiry = daysUntilExpiry(row.expiry_date)
+  const is_expired = days_until_expiry !== null && days_until_expiry < 0
+  const is_expiring_soon =
+    days_until_expiry !== null && days_until_expiry >= 0 && days_until_expiry <= 3
 
   return {
     ...row,
