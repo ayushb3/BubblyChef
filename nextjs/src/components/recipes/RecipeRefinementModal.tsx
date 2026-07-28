@@ -99,7 +99,7 @@ export default function RecipeRefinementModal({
           {/* Backdrop */}
           <motion.div
             key="backdrop"
-            className="fixed inset-0 z-40"
+            className="fixed inset-0 z-[60]"
             style={{ background: 'rgba(92,74,90,0.35)', backdropFilter: 'blur(2px)' }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -111,7 +111,7 @@ export default function RecipeRefinementModal({
           {/* Modal — slide up from bottom */}
           <motion.div
             key="modal"
-            className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-3xl overflow-hidden"
+            className="fixed inset-x-0 bottom-0 z-[60] flex flex-col rounded-t-3xl overflow-hidden"
             style={{
               background: 'var(--color-bg)',
               maxHeight: '92dvh',
