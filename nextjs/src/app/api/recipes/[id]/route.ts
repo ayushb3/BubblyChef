@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
+import { mergeTags } from '@/lib/recipe-helpers'
 
 export async function GET(
   _request: Request,
@@ -43,6 +44,15 @@ export async function PUT(
   ]
   for (const field of fields) {
     if (body[field] !== undefined) updates[field] = body[field]
+  }
+
+  // If dietary_tags are present alongside (or instead of) tags, merge them.
+  // This covers any client that forwards the raw AI response shape.
+  if (body.dietary_tags !== undefined || body.tags !== undefined) {
+    updates.tags = mergeTags(
+      body.tags as string[] | undefined,
+      body.dietary_tags as string[] | undefined,
+    )
   }
 
   const { data, error } = await supabase

@@ -234,7 +234,8 @@ function ChatSurface() {
           instructions: recipe.instructions,
           cuisine: recipe.cuisine,
           meal_type: recipe.meal_type,
-          tags: [...new Set([...(recipe.dietary_tags ?? []), ...(recipe as { tags?: string[] }).tags ?? []])],
+          // Forward both fields; the API route merges + deduplicates them.
+          dietary_tags: recipe.dietary_tags,
           difficulty: recipe.difficulty,
           prep_time_minutes: recipe.prep_time_minutes,
           cook_time_minutes: recipe.cook_time_minutes,
