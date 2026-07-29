@@ -103,3 +103,25 @@ export async function estimateExpiry(item: {
     return null
   }
 }
+
+/**
+ * Infer a food category for a pantry item name via the AI service's catalog
+ * fuzzy matcher (the single source of truth — see #159). Returns a category
+ * string (e.g. "dairy"), or `null` when the catalog has no confident match.
+ * Callers should fall back to 'other' on null so the add is never blocked.
+ */
+export async function estimateCategory(name: string): Promise<string | null> {
+  try {
+    const res = await aiProxyFetch('/v1/pantry/estimate-category', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    if (res instanceof NextResponse || !res.ok) return null
+    const data = (await res.json()) as { category?: string | null }
+    return data.category ?? null
+  } catch {
+    // Categorization is best-effort — never let it block adding the item.
+    return null
+  }
+}
