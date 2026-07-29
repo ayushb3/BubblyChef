@@ -337,18 +337,21 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             input_text,
             state.get("conversation_history") or [],
         )
-        logger.info(
-            f"Intent classified: recipe_card "
-            f"(source=brainstorm_followup, selected='{selected_name}')"
-        )
-        return {
-            **state,
-            "intent": Intent.RECIPE_CARD.value,
-            "intent_confidence": 0.95,
-            "intent_reasoning": "Follow-up to recipe brainstorm",
-            "detected_entities": [],
-            "selected_recipe_name": selected_name,
-        }
+        if selected_name:
+            logger.info(
+                f"Intent classified: recipe_card "
+                f"(source=brainstorm_followup, selected='{selected_name}')"
+            )
+            return {
+                **state,
+                "intent": Intent.RECIPE_CARD.value,
+                "intent_confidence": 0.95,
+                "intent_reasoning": "Follow-up to recipe brainstorm",
+                "detected_entities": [],
+                "selected_recipe_name": selected_name,
+            }
+        # No confident selection — fall through to LLM intent classification
+        # so informational questions expand on the brainstorm ideas.
 
     # URL shortcut: unambiguous recipe ingest signal (no LLM needed)
     text_lower = input_text.lower()
@@ -957,6 +960,7 @@ async def run_chat_workflow(
         )
         envelope.suggested_mode = final_state.get("suggested_mode")
         envelope.suggested_action = final_state.get("suggested_action")
+        envelope.metadata["brainstorm_ideas"] = final_state.get("brainstorm_ideas", [])
         return envelope
 
 
@@ -1064,6 +1068,12 @@ def _build_envelope_from_state(
         )
 
     envelope.suggested_mode = final_state.get("suggested_mode")
+    if intent in (
+        Intent.GENERAL_CHAT.value,
+        Intent.COOKING_HELP.value,
+        Intent.RECIPE_BRAINSTORM.value,
+    ):
+        envelope.metadata["brainstorm_ideas"] = final_state.get("brainstorm_ideas", [])
     return envelope
 
 

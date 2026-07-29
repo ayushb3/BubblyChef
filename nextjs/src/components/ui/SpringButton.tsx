@@ -9,6 +9,8 @@ interface SpringButtonProps {
   onClick?: () => void
   type?: 'button' | 'submit' | 'reset'
   disabled?: boolean
+  /** Native tooltip / accessibility hint. */
+  title?: string
 }
 
 export default function SpringButton({
@@ -18,12 +20,14 @@ export default function SpringButton({
   onClick,
   type = 'button',
   disabled,
+  title,
 }: SpringButtonProps) {
   return (
     <motion.button
       type={type}
       onClick={onClick}
       disabled={disabled}
+      title={title}
       style={style}
       whileHover={{ scale: disabled ? 1 : 1.03 }}
       whileTap={{ scale: disabled ? 1 : 0.95 }}
