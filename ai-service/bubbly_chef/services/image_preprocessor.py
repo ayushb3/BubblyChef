@@ -304,9 +304,10 @@ class ImagePreprocessor:
         binary_img = Image.fromarray((binary * 255).astype(np.uint8), mode="L")
 
         for angle in angles:
-            # PIL.Image.rotate: positive angle = counter-clockwise; we later
-            # correct with the *negative* of the detected angle, so the sign
-            # convention is internally consistent.
+            # PIL.Image.rotate: positive angle = counter-clockwise. This is the
+            # candidate *correction* applied to the skewed image; the angle that
+            # maximises row-sum variance best straightens the text. The reported
+            # tilt is the negative of this (see the return statement).
             rotated = binary_img.rotate(
                 float(angle), resample=Image.Resampling.BILINEAR, expand=False
             )
@@ -343,7 +344,12 @@ class ImagePreprocessor:
             )
             return 0.0
 
-        return best_angle
+        # The sweep's ``best_angle`` is the rotation that, applied to the
+        # skewed image, maximises alignment — i.e. it is the *correction*
+        # rotation.  The reported skew of the document is the negative of that
+        # (a document tilted +θ CCW is straightened by rotating −θ).  Return the
+        # tilt; ``_deskew_image`` negates it again to derive the correction.
+        return -best_angle
 
     def _deskew_image(self, image: Image.Image) -> Image.Image:
         """
