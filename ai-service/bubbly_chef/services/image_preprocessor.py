@@ -1,9 +1,8 @@
 """Image preprocessing service for optimal OCR performance."""
 
 import io
-from typing import Literal
-
 import logging
+from typing import ClassVar, Literal
 
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
@@ -244,27 +243,148 @@ class ImagePreprocessor:
 
         return image
 
+    # ------------------------------------------------------------------ #
+    # Deskew constants                                                    #
+    # ------------------------------------------------------------------ #
+    _DESKEW_MAX_ANGLE: ClassVar[float] = 15.0  # degrees — clamp correction to ±15°
+    _DESKEW_ANGLE_STEP: ClassVar[float] = 0.5  # degrees — sweep resolution
+    # Minimum relative variance improvement to commit a rotation.
+    # A value of 0.02 means the best angle must improve row-sum variance by
+    # at least 2 % over the 0° baseline — protects already-straight images.
+    _DESKEW_MIN_IMPROVEMENT: ClassVar[float] = 0.02
+
+    def detect_skew_angle(self, image: Image.Image) -> float:
+        """
+        Estimate the skew angle of a document image using horizontal
+        projection-profile analysis (pure Pillow + NumPy, no OpenCV).
+
+        Algorithm
+        ---------
+        1. Down-scale to a working resolution (≤800 px wide) for speed.
+        2. Convert to binary (Otsu-like global threshold).
+        3. Sweep candidate angles from –MAX to +MAX degrees.
+        4. For each candidate, rotate the binary image and compute the
+           variance of its horizontal projection profile (row sums of dark
+           pixels).  Well-aligned text produces sharp, high-variance row
+           peaks; misaligned text smears those peaks horizontally.
+        5. Return the angle that maximises row-sum variance.
+           Return 0.0 if the improvement over the 0° baseline is below
+           ``_DESKEW_MIN_IMPROVEMENT`` (confidence guard).
+
+        Args:
+            image: Grayscale (L-mode) PIL Image.
+
+        Returns:
+            Detected skew angle in degrees.  Positive → clockwise tilt;
+            negative → counter-clockwise tilt.  0.0 means "no correction".
+        """
+        # --- 1. Resize to a fast working size (≤ 800 px wide) ----------
+        max_width = 800
+        scale = min(1.0, max_width / max(image.width, 1))
+        work_w = max(1, int(image.width * scale))
+        work_h = max(1, int(image.height * scale))
+        small = image.resize((work_w, work_h), Image.Resampling.LANCZOS)
+
+        # --- 2. Binarise (invert so text pixels = 1, background = 0) ---
+        arr = np.array(small, dtype=np.float32)
+        threshold = float(np.mean(arr))
+        # text is dark → below threshold
+        binary = (arr < threshold).astype(np.float32)
+
+        # --- 3. Sweep angles and record row-sum variance ----------------
+        best_angle = 0.0
+        best_variance = -1.0
+
+        angles = np.arange(
+            -self._DESKEW_MAX_ANGLE,
+            self._DESKEW_MAX_ANGLE + self._DESKEW_ANGLE_STEP,
+            self._DESKEW_ANGLE_STEP,
+        )
+
+        binary_img = Image.fromarray((binary * 255).astype(np.uint8), mode="L")
+
+        for angle in angles:
+            # PIL.Image.rotate: positive angle = counter-clockwise; we later
+            # correct with the *negative* of the detected angle, so the sign
+            # convention is internally consistent.
+            rotated = binary_img.rotate(
+                float(angle), resample=Image.Resampling.BILINEAR, expand=False
+            )
+            rot_arr = np.array(rotated, dtype=np.float32)
+            row_sums = rot_arr.sum(axis=1)
+            variance = float(np.var(row_sums))
+            if variance > best_variance:
+                best_variance = variance
+                best_angle = float(angle)
+
+        # --- 4. Confidence guard: compare best against 0° baseline -----
+        baseline_sums = np.array(binary_img, dtype=np.float32).sum(axis=1)
+        baseline_variance = float(np.var(baseline_sums))
+
+        if baseline_variance <= 0:
+            logger.debug("Deskew: baseline variance is zero, skipping correction")
+            return 0.0
+
+        improvement = (best_variance - baseline_variance) / baseline_variance
+        logger.debug(
+            f"Deskew: best_angle={best_angle:.1f}°, "
+            f"baseline_var={baseline_variance:.1f}, best_var={best_variance:.1f}, "
+            f"improvement={improvement:.4f}"
+        )
+
+        if abs(best_angle) < self._DESKEW_ANGLE_STEP / 2:
+            # The 0° candidate already won — no rotation needed.
+            return 0.0
+
+        if improvement < self._DESKEW_MIN_IMPROVEMENT:
+            logger.debug(
+                f"Deskew: improvement {improvement:.4f} below threshold "
+                f"{self._DESKEW_MIN_IMPROVEMENT}, skipping correction"
+            )
+            return 0.0
+
+        return best_angle
+
     def _deskew_image(self, image: Image.Image) -> Image.Image:
         """
         Correct image rotation (deskewing).
 
-        Uses a simple approach: detect text orientation and rotate if needed.
-        For production, consider using libraries like deskew or scikit-image.
+        Detects the skew angle using horizontal projection-profile analysis
+        (pure Pillow + NumPy) and rotates the image to horizontal.  Correction
+        is clamped to ±``_DESKEW_MAX_ANGLE`` degrees and skipped when
+        confidence is too low to avoid harming already-straight images.
+
+        Args:
+            image: Grayscale (L-mode) PIL Image.
+
+        Returns:
+            Deskewed PIL Image (same mode as input).
+
+        Raises:
+            ValueError: Re-raised as a warning — caller falls back to original.
         """
         try:
-            # Convert to numpy array
-            np.array(image)
+            angle = self.detect_skew_angle(image)
 
-            # Calculate projection profile to detect skew
-            # This is a simplified implementation
-            # For better results, use dedicated libraries like deskew
+            if angle == 0.0:
+                logger.debug("Deskew: no correction needed")
+                return image
 
-            # For now, we'll just do a basic check
-            # In production, you'd use more sophisticated methods
+            # Clamp (redundant given the sweep range, but defensive)
+            angle = max(-self._DESKEW_MAX_ANGLE, min(self._DESKEW_MAX_ANGLE, angle))
 
-            # Return original image for now
-            # TODO: Implement proper deskewing with angle detection
-            return image
+            # PIL.Image.rotate with a positive angle rotates counter-clockwise.
+            # Our detected angle is the CCW angle that maximises alignment, so
+            # we rotate by *negative* that angle to undo the tilt.
+            correction = -angle
+            deskewed = image.rotate(
+                correction,
+                resample=Image.Resampling.BILINEAR,
+                expand=False,
+                fillcolor=255,  # fill new corners with white (background)
+            )
+            logger.info(f"Deskew: corrected {angle:.1f}° → applied {correction:.1f}° rotation")
+            return deskewed
 
         except Exception as e:
             logger.warning(f"Deskewing failed: {e}, returning original image")
