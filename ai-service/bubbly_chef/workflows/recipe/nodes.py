@@ -381,8 +381,66 @@ def _default_meal_type() -> str:
         return "late-night snack"
 
 
+def _merge_constraints(
+    prior: dict[str, Any],
+    fresh: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge freshly-extracted constraints with the prior turn's constraints.
+
+    Rules (implement "inherit + override"):
+    - Scalar fields (cuisine, mood, meal_type, max_time_minutes, servings,
+      skill_level): fresh value wins when non-None/non-empty; otherwise
+      inherit prior.
+    - List fields (dietary, preferred_ingredients, excluded_ingredients):
+      fresh list wins when non-empty; otherwise inherit prior.
+    - must_use_ingredients: fresh list wins when non-empty; otherwise inherit
+      prior. This ensures dietary restrictions AND must-use ingredients both
+      survive a follow-up turn that doesn't repeat them.
+    """
+    merged: dict[str, Any] = dict(prior)
+
+    scalar_keys = ("cuisine", "mood", "meal_type", "max_time_minutes", "servings", "skill_level")
+    list_keys = (
+        "dietary",
+        "preferred_ingredients",
+        "excluded_ingredients",
+        "must_use_ingredients",
+    )
+
+    for key in scalar_keys:
+        fresh_val = fresh.get(key)
+        if fresh_val is not None and fresh_val != "":
+            merged[key] = fresh_val
+
+    for key in list_keys:
+        fresh_list = fresh.get(key) or []
+        if fresh_list:
+            merged[key] = fresh_list
+        # else: keep prior value (already in merged)
+
+    return merged
+
+
+def _prior_constraints_from_state(state: WorkflowState) -> dict[str, Any] | None:
+    """Return recipe_constraints stored in the session metadata, if any."""
+    session = state.get("session")
+    if not isinstance(session, dict):
+        return None
+    metadata = session.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    prior = metadata.get("recipe_constraints")
+    return prior if isinstance(prior, dict) else None
+
+
 async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
-    """Node: Extract recipe constraints from user message via structured LLM call."""
+    """Node: Extract recipe constraints from user message via structured LLM call.
+
+    On follow-up turns (e.g. user selects a brainstorm idea or refines a recipe),
+    the newly-extracted constraints are merged with any constraints persisted in
+    the session from the previous turn.  Fresh values override; fields that the
+    user didn't re-mention inherit from the prior turn (#144).
+    """
     input_text = state.get("input_text", "")
     ai_manager = get_ai_manager()
     logger.info("Extracting recipe constraints", extra={"message_preview": input_text[:80]})
@@ -394,12 +452,23 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
             temperature=0.1,
         )
         if isinstance(result, RecipeConstraints):
-            constraints = result.model_dump()
+            constraints: dict[str, Any] = result.model_dump()
         else:
             constraints = {}
     except Exception as e:
         logger.warning("Constraint extraction failed (using empty constraints): %s", e)
         constraints = {}
+
+    # Merge with prior constraints from the session (inherit + override).
+    prior = _prior_constraints_from_state(state)
+    if prior:
+        constraints = _merge_constraints(prior, constraints)
+        logger.info(
+            "Merged prior session constraints into fresh extraction "
+            "(dietary=%s, must_use=%s)",
+            constraints.get("dietary"),
+            constraints.get("must_use_ingredients"),
+        )
 
     # Default meal_type from time of day when user didn't specify
     if not constraints.get("meal_type"):
@@ -571,15 +640,35 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
 
 
 async def research_recipe(state: WorkflowState) -> WorkflowState:
-    """Node: Search DuckDuckGo for the selected recipe, store grounding context."""
-    recipe_name: str = state.get("selected_recipe_name") or state.get("input_text", "")
-    constraints: dict[str, Any] = state.get("recipe_constraints") or {}
-    cuisine_tag = constraints.get("cuisine")
+    """Node: Search DuckDuckGo for the selected recipe, store grounding context.
 
+    This node runs on the brainstorm follow-up path which bypasses
+    extract_recipe_constraints.  We load prior constraints from the session
+    here so that generate_grounded_recipe always has them available (#144).
+    """
+    recipe_name: str = state.get("selected_recipe_name") or state.get("input_text", "")
+
+    # Rehydrate constraints from the session when the brainstorm follow-up path
+    # skipped extract_recipe_constraints.  Without this the constraints from
+    # turn 1 (cuisine, dietary, must_use_ingredients, …) are silently dropped.
+    constraints: dict[str, Any] = state.get("recipe_constraints") or {}
+    if not constraints:
+        prior = _prior_constraints_from_state(state)
+        if prior:
+            constraints = prior
+            logger.info(
+                "research_recipe: inherited constraints from session "
+                "(dietary=%s, must_use=%s)",
+                constraints.get("dietary"),
+                constraints.get("must_use_ingredients"),
+            )
+
+    cuisine_tag = constraints.get("cuisine")
     search_result = await search_recipe(recipe_name, cuisine_tag=cuisine_tag)
 
     return {
         **state,
+        "recipe_constraints": constraints,
         "web_search_result": search_result.model_dump() if search_result else None,
     }
 
