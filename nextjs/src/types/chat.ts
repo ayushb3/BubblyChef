@@ -173,6 +173,19 @@ export interface ConversationSession {
   updated_at: string
 }
 
+// ─── Brainstorm helpers ───────────────────────────────────────────────────────
+
+/**
+ * Extract brainstorm idea names from a ChatResponse's metadata.
+ * Returns an empty array when the field is absent, null, or malformed so
+ * callers never need to guard against undefined.
+ */
+export function getBrainstormIdeas(response?: ChatResponse | null): string[] {
+  const raw = response?.metadata?.brainstorm_ideas
+  if (!Array.isArray(raw)) return []
+  return raw.filter((item): item is string => typeof item === 'string')
+}
+
 // ─── AI Health ────────────────────────────────────────────────────────────────
 
 export interface AIHealthStatus {

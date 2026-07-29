@@ -254,8 +254,12 @@ def detect_brainstorm_followup(state: WorkflowState) -> bool:
 def extract_selected_recipe(
     user_text: str,
     history: list[dict[str, Any]],
-) -> str:
-    """Extract which recipe the user selected from the last brainstorm response."""
+) -> str | None:
+    """Extract which recipe the user selected from the last brainstorm response.
+
+    Returns the matched recipe name, or None when the message is a conversational
+    follow-up (informational question) rather than a selection.
+    """
     from rapidfuzz import fuzz  # local import — optional dep already in pyproject.toml
 
     brainstorm_text = ""
@@ -267,15 +271,42 @@ def extract_selected_recipe(
     # Extract **bold** recipe names from brainstorm
     ideas: list[str] = re.findall(r"\*\*(.+?)\*\*", brainstorm_text)
 
+    text_lower = user_text.lower()
+
+    # Guard: informational follow-ups are NOT selections.
+    # If the text sounds like a question/elaboration request AND doesn't contain
+    # an ordinal/selection word, treat it as a conversational follow-up.
+    informational_phrases = {
+        "tell me more",
+        "more info",
+        "more about",
+        "explain",
+        "what's in",
+        "whats in",
+        "how do i make",
+        "how do you make",
+        "what are",
+        "details",
+    }
+    ordinal_words = {
+        "first", "second", "third", "fourth",
+        "1st", "2nd", "3rd", "4th",
+        "one", "two", "three", "four",
+        "surprise", "any", "random", "you pick", "all of them",
+    }
+    has_informational = any(phrase in text_lower for phrase in informational_phrases)
+    has_ordinal = any(word in text_lower for word in ordinal_words)
+    if has_informational and not has_ordinal:
+        return None
+
     if not ideas:
-        return user_text  # fallback: use raw user text as recipe name
+        return None  # no brainstorm context to match against
 
     ordinal_map = {
         "first": 0, "second": 1, "third": 2, "fourth": 3,
         "1st": 0, "2nd": 1, "3rd": 2, "4th": 3,
         "one": 0, "two": 1, "three": 2, "four": 3,
     }
-    text_lower = user_text.lower()
 
     for word, idx in ordinal_map.items():
         if word in text_lower and idx < len(ideas):
@@ -284,12 +315,12 @@ def extract_selected_recipe(
     if any(kw in text_lower for kw in ["surprise", "any", "random", "you pick", "all of them"]):
         return ideas[0]
 
-    # Fuzzy match against idea names
+    # Fuzzy match against idea names — raised threshold (>=80) to avoid false positives
     best_match = max(ideas, key=lambda idea: fuzz.partial_ratio(text_lower, idea.lower()))
-    if fuzz.partial_ratio(text_lower, best_match.lower()) > 50:
+    if fuzz.partial_ratio(text_lower, best_match.lower()) >= 80:
         return best_match
 
-    return user_text
+    return None
 
 
 def score_and_rank(
