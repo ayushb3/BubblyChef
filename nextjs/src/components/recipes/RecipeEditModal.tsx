@@ -14,9 +14,11 @@ interface RecipeEditModalProps {
   recipe: Recipe
   onSave: (updates: Partial<Recipe>) => Promise<void>
   onClose: () => void
+  /** When true, the close/cancel buttons are blocked (parent mutation in-flight) */
+  disabled?: boolean
 }
 
-export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditModalProps) {
+export default function RecipeEditModal({ recipe, onSave, onClose, disabled = false }: RecipeEditModalProps) {
   const [title, setTitle] = useState(recipe.title)
   const [description, setDescription] = useState(recipe.description ?? '')
   const [tags, setTags] = useState((recipe.tags ?? []).join(', '))
@@ -69,7 +71,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          onClick={onClose}
+          onClick={saving || disabled ? undefined : onClose}
         />
 
         {/* Modal panel */}
@@ -101,8 +103,9 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
               Edit Recipe
             </h2>
             <button
-              onClick={onClose}
-              className="w-8 h-8 rounded-full flex items-center justify-center transition-opacity hover:opacity-70 active:scale-95"
+              onClick={saving || disabled ? undefined : onClose}
+              disabled={saving || disabled}
+              className="w-8 h-8 rounded-full flex items-center justify-center transition-opacity hover:opacity-70 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ background: 'var(--color-bg)', color: 'var(--color-muted)' }}
               aria-label="Close"
             >
@@ -279,15 +282,15 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
           >
             <button
               onClick={handleSave}
-              disabled={saving || !title.trim()}
+              disabled={saving || disabled || !title.trim()}
               className="flex-1 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
               style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
             >
               {saving ? 'Saving...' : 'Save'}
             </button>
             <button
-              onClick={onClose}
-              disabled={saving}
+              onClick={saving || disabled ? undefined : onClose}
+              disabled={saving || disabled}
               className="flex-1 py-2.5 rounded-full text-sm font-bold disabled:opacity-50 active:scale-95 transition-transform"
               style={{
                 background: 'var(--color-bg)',

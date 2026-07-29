@@ -170,7 +170,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   }
 
   const handleFavorite = async () => {
-    if (!selectedRecipe) return
+    if (!selectedRecipe || mutating) return
+    setMutating(true)
     setErrorMessage(null)
     const id = selectedRecipe.id
     const newVal = !selectedRecipe.is_favorite
@@ -186,6 +187,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     } catch {
       setFavoriteOverrides((prev) => ({ ...prev, [id]: !newVal }))
       setErrorMessage('Could not update favorite. Please try again.')
+    } finally {
+      setMutating(false)
     }
   }
 
@@ -239,26 +242,31 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
 
   const handleImportSave = async (updates: Partial<Recipe>) => {
     setMutating(true)
-    const res = await fetch('/api/recipes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...importDraft, ...updates, source_type: 'url' }),
-    })
-    setMutating(false)
-    setImportDraft(null)
-    if (res.status === 409) {
-      // Already saved — navigate to the existing recipe instead
-      const data = await res.json()
-      setImportOpen(false)
-      if (data.existing_id) setSelectedId(data.existing_id)
-      setErrorMessage(`"${data.existing_title ?? 'This recipe'}" is already in your book.`)
-      return
-    }
-    if (res.ok) {
+    setErrorMessage(null)
+    try {
+      const res = await fetch('/api/recipes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...importDraft, ...updates, source_type: 'url' }),
+      })
+      if (res.status === 409) {
+        // Already saved — navigate to the existing recipe instead
+        const data = await res.json()
+        setImportOpen(false)
+        if (data.existing_id) setSelectedId(data.existing_id)
+        setErrorMessage(`"${data.existing_title ?? 'This recipe'}" is already in your book.`)
+        return
+      }
+      if (!res.ok) throw new Error('Failed to import recipe')
       const saved = await res.json()
       setImportOpen(false)
+      setImportDraft(null)
       onMutate?.()
       setSelectedId(saved.id ?? null)
+    } catch {
+      setErrorMessage('Could not import recipe. Please try again.')
+    } finally {
+      setMutating(false)
     }
   }
 
@@ -793,6 +801,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
           recipe={selectedRecipe}
           onSave={handleEditSave}
           onClose={() => setEditOpen(false)}
+          disabled={mutating}
         />
       )}
 
@@ -809,6 +818,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
           recipe={{ id: '', user_id: '', created_at: '', ...importDraft } as Recipe}
           onSave={handleImportSave}
           onClose={() => setImportDraft(null)}
+          disabled={mutating}
         />
       )}
 
