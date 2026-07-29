@@ -124,7 +124,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full rounded-xl px-4 py-2.5 text-sm outline-none border focus:border-[var(--color-primary)]"
+                className="w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)]"
                 style={{
                   background: 'var(--color-bg)',
                   border: '1.5px solid var(--color-border)',
@@ -146,7 +146,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
-                className="w-full rounded-xl px-4 py-2.5 text-sm outline-none resize-none border focus:border-[var(--color-primary)]"
+                className="w-full rounded-xl px-4 py-2.5 text-sm resize-none border focus:border-[var(--color-primary)]"
                 style={{
                   background: 'var(--color-bg)',
                   border: '1.5px solid var(--color-border)',
@@ -169,7 +169,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
                 placeholder="comma-separated"
-                className="w-full rounded-xl px-4 py-2.5 text-sm outline-none border focus:border-[var(--color-primary)]"
+                className="w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)]"
                 style={{
                   background: 'var(--color-bg)',
                   border: '1.5px solid var(--color-border)',
@@ -194,7 +194,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
                       type="text"
                       value={item}
                       onChange={(e) => updateItem(setIngredients, i, e.target.value)}
-                      className="flex-1 rounded-xl px-3 py-2 text-sm outline-none border focus:border-[var(--color-primary)]"
+                      className="flex-1 rounded-xl px-3 py-2 text-sm border focus:border-[var(--color-primary)]"
                       style={{
                         background: 'var(--color-bg)',
                         border: '1.5px solid var(--color-border)',
@@ -243,7 +243,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose }: RecipeEditM
                       value={step}
                       onChange={(e) => updateItem(setInstructions, i, e.target.value)}
                       rows={2}
-                      className="flex-1 rounded-xl px-3 py-2 text-sm outline-none resize-none border focus:border-[var(--color-primary)]"
+                      className="flex-1 rounded-xl px-3 py-2 text-sm resize-none border focus:border-[var(--color-primary)]"
                       style={{
                         background: 'var(--color-bg)',
                         border: '1.5px solid var(--color-border)',

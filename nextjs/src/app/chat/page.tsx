@@ -403,7 +403,7 @@ function ChatSurface() {
             // button is replaced by Stop below — so typing cannot interleave two
             // requests.
             aria-label="Message Bubbles"
-            className="w-full rounded-full px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+            className="w-full rounded-full px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] focus:border-[var(--color-accent)] text-sm"
           />
           {/* Placeholder hides once anything is typed; no longer tied to streaming,
               since the field is now usable mid-stream. */}

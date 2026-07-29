@@ -293,7 +293,7 @@ export default function RecipeRefinementModal({
                   onKeyDown={handleKeyDown}
                   placeholder="e.g. make it vegan, less spicy..."
                   disabled={refining}
-                  className="flex-1 rounded-full px-4 py-2.5 text-sm outline-none disabled:opacity-50"
+                  className="flex-1 rounded-full px-4 py-2.5 text-sm disabled:opacity-50"
                   style={{
                     background: 'var(--color-bg)',
                     border: '1.5px solid var(--color-border)',

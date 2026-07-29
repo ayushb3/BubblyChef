@@ -29,7 +29,7 @@ export default function RecipeSearchBar({ onSearch }: RecipeSearchBarProps) {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder="Search your recipes..."
-        className="w-full py-2.5 pl-4 pr-10 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:outline-none focus:border-[var(--color-accent)] transition-colors text-sm font-[Nunito,sans-serif]"
+        className="w-full py-2.5 pl-4 pr-10 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-accent)] transition-colors text-sm font-[Nunito,sans-serif]"
       />
 
       <AnimatePresence mode="wait">
