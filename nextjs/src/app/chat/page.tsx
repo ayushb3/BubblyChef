@@ -20,12 +20,11 @@ import EmptyState from '@/components/ui/EmptyState'
 import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
 import { fetchRecipe } from '@/lib/api/recipes'
-import { deriveChatSeed } from '@/lib/chat-seed'
+import { cookingContextForId, deriveChatSeed } from '@/lib/chat-seed'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import type {
   ChatMessage,
   ChatRecipeData,
-  CookingRecipeContext,
   PantryProposalData,
 } from '@/types/chat'
 
@@ -41,15 +40,6 @@ const COOKING_SUGGESTIONS = [
   'How do I prep this? 🔪',
   'How long does this take? ⏱️',
 ]
-
-/** Flatten a saved recipe's ingredients to plain strings for the AI context. */
-function ingredientLines(recipe: Recipe): string[] {
-  return recipe.ingredients.map((ing) =>
-    typeof ing === 'string'
-      ? ing
-      : [ing.quantity, ing.unit, ing.name].filter(Boolean).join(' '),
-  )
-}
 
 /**
  * `useSearchParams` opts the tree into client-side rendering, so the page shell
@@ -139,21 +129,22 @@ function ChatSurface() {
       ? loadedRecipe
       : null
 
-  const cookingContext = useMemo(() => {
-    if (!cookingRecipe) return null
-    const payload: CookingRecipeContext = {
-      id: cookingRecipe.id,
-      title: cookingRecipe.title,
-      ingredients: ingredientLines(cookingRecipe),
-    }
-    return { cooking_recipe: payload } as Record<string, unknown>
-  }, [cookingRecipe])
-
-  /** Attach the cook context to the first message of the conversation only. */
+  /**
+   * Attach the cook context to the first message of the conversation only.
+   *
+   * The payload is derived from `cookingRecipeId` — the `?cooking=<id>` param,
+   * known synchronously on mount — NOT from `loadedRecipe`. The AI service
+   * resolves the full recipe from this id server-side, so the pin no longer
+   * races the client's `fetchRecipe` (#155): a message sent before the card
+   * fills in still pins the session. `loadedRecipe` drives only the cosmetic
+   * card below.
+   */
   const takeCookingContext = (): Record<string, unknown> | undefined => {
-    if (!cookingContext || contextSentRef.current || isStreaming) return undefined
+    if (contextSentRef.current || isStreaming) return undefined
+    const context = cookingContextForId(cookingRecipeId)
+    if (!context) return undefined
     contextSentRef.current = true
-    return cookingContext
+    return { ...context }
   }
 
   // Auto-send the seeded question so a tap on the dashboard tip / an expiring

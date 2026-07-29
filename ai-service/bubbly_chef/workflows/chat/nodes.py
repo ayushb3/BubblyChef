@@ -97,6 +97,9 @@ def detect_mode_suggestion(text: str, current_mode: str) -> str | None:
 # ─── Cook handoff: recipe the user is actively cooking ───────────────────────
 
 COOKING_RECIPE_KEY = "cooking_recipe"
+# Preferred cook-handoff payload: just the recipe id, resolved server-side from
+# the DB. Avoids the client fetch/send race that could pin an empty context.
+COOKING_RECIPE_ID_KEY = "cooking_recipe_id"
 
 # Ingredient lines kept out of the prompt beyond this — long imported recipes
 # would otherwise crowd out the pantry and history context.
@@ -121,15 +124,30 @@ def get_cooking_recipe(state: WorkflowState) -> dict[str, Any] | None:
     return recipe if isinstance(recipe, dict) else None
 
 
+def _flatten_ingredient(raw: Any) -> str:
+    """Render one ingredient as a display string.
+
+    Client payloads send ingredients already flattened to strings, but a
+    server-resolved DB recipe stores them as objects
+    ({name, quantity, unit, ...}). Mirror the frontend's `ingredientLines`
+    ("<quantity> <unit> <name>", skipping empty parts) so both shapes yield the
+    same prompt text.
+    """
+    if isinstance(raw, dict):
+        parts = [raw.get("quantity"), raw.get("unit"), raw.get("name")]
+        return " ".join(str(part).strip() for part in parts if str(part or "").strip())
+    return str(raw).strip()
+
+
 def normalize_cooking_recipe(raw: dict[str, Any]) -> dict[str, Any]:
     """Trim a client-supplied cooking recipe down to what prompts/sessions need."""
     raw_ingredients = raw.get("ingredients")
     ingredients: list[str] = []
     if isinstance(raw_ingredients, list):
         ingredients = [
-            str(item).strip()
+            line
             for item in raw_ingredients[: MAX_PROMPT_INGREDIENTS * 2]
-            if str(item).strip()
+            if (line := _flatten_ingredient(item))
         ]
     recipe_id = raw.get("id")
     return {
