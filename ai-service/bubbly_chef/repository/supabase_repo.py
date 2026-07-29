@@ -5,7 +5,7 @@ Replaces SQLiteRepository. Uses supabase-py with the service_role key
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from supabase import Client, create_client
@@ -15,6 +15,7 @@ from bubbly_chef.domain.normalizer import normalize_to_base_unit
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.models.recipe import RecipeCard
 from bubbly_chef.models.session import ConversationSession, SessionMode
+from bubbly_chef.tools.expiry import get_expiry_heuristics
 
 logger = logging.getLogger(__name__)
 
@@ -205,17 +206,34 @@ class SupabaseRepository:
                         )
                     else:
                         # F5: pass quantity_base and unit_base to PantryItem constructor
+                        item_category = FoodCategory(action.get("category", "other"))
+                        item_location = StorageLocation(action.get("location", "pantry"))
+                        # #158: an item added via scan-confirm or chat lands here with
+                        # no expiry unless we set one. Honour an explicit date from the
+                        # action; otherwise estimate from category/location/name so the
+                        # expiry→cook loop actually lights up (previously hardcoded None).
+                        raw_expiry = action.get("expiry_date")
+                        if raw_expiry:
+                            item_expiry = (
+                                date.fromisoformat(raw_expiry)
+                                if isinstance(raw_expiry, str)
+                                else raw_expiry
+                            )
+                        else:
+                            item_expiry, _ = get_expiry_heuristics().estimate_expiry(
+                                category=item_category,
+                                storage=item_location,
+                                name=name,
+                            )
                         item = PantryItem(
                             name=name,
-                            category=FoodCategory(action.get("category", "other")),
-                            storage_location=StorageLocation(
-                                action.get("location", "pantry")
-                            ),
+                            category=item_category,
+                            storage_location=item_location,
                             quantity=float(action.get("quantity", 1)),
                             unit=action.get("unit", "item"),
                             quantity_base=action.get("quantity_base"),
                             unit_base=action.get("unit_base"),
-                            expiry_date=None,
+                            expiry_date=item_expiry,
                         )
                         await self.add_pantry_item(user_id, item)
                     applied += 1

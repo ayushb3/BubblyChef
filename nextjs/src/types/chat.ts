@@ -104,14 +104,25 @@ export interface ChatRequest {
   mode?: string
   pantry_snapshot?: Record<string, unknown>[]
   /**
-   * Extra context forwarded to the AI workflow. Recognised key:
-   * `cooking_recipe` ({ id, title, ingredients }) — pins the conversation to
-   * the recipe the user just started cooking.
+   * Extra context forwarded to the AI workflow. Recognised keys:
+   * `cooking_recipe_id` (string) — the recipe the user just started cooking;
+   * the AI service resolves the full recipe from the DB and pins the
+   * conversation to it. Legacy `cooking_recipe` ({ id, title, ingredients })
+   * is still accepted, same effect.
    */
   context?: Record<string, unknown> | null
 }
 
-/** Shape of `context.cooking_recipe` sent after the Cook flow hands off to chat. */
+/**
+ * Preferred cook-handoff context: just the recipe id, resolved server-side.
+ * Known synchronously from `?cooking=<id>`, so it never has to wait on a fetch
+ * (the client fetch/send race that #155 fixed).
+ */
+export interface CookingRecipeIdContext {
+  cooking_recipe_id: string
+}
+
+/** Legacy shape of `context.cooking_recipe` — still accepted by the AI service. */
 export interface CookingRecipeContext {
   id: string
   title: string

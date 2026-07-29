@@ -10,13 +10,29 @@
  * dismissible context card above the thread, and prime the conversation.
  *
  * IMPORTANT — the seed lives in the *message text*, not in a context payload.
- * The AI service only recognises one client-supplied context key
- * (`cooking_recipe`); anything else is ignored, and the must-use ingredient is
- * recovered by an LLM structured-output call over the message itself. So the
- * ingredient name and the tip text have to appear verbatim in `message`, and
- * the `"with my <name>"` phrasing below is the one the backend prompt was
- * tuned against. Don't reword it without re-tuning `recipe/nodes.py`.
+ * The AI service recognises two client-supplied context keys — `cooking_recipe`
+ * and `cooking_recipe_id` (the cook handoff, see `cookingContextForId` below);
+ * anything else is ignored, and the must-use ingredient is recovered by an LLM
+ * structured-output call over the message itself. So the ingredient name and
+ * the tip text have to appear verbatim in `message`, and the `"with my <name>"`
+ * phrasing below is the one the backend prompt was tuned against. Don't reword
+ * it without re-tuning `recipe/nodes.py`.
  */
+
+import type { CookingRecipeIdContext } from '@/types/chat'
+
+/**
+ * Cook-handoff context for the first chat message, built from the `?cooking=<id>`
+ * param alone. Returns the id-only payload the AI service resolves server-side,
+ * so pinning never waits on a client-side recipe fetch (#155). Returns
+ * `undefined` for a bare/blank id so callers can spread it conditionally.
+ */
+export function cookingContextForId(
+  recipeId: string | null | undefined,
+): CookingRecipeIdContext | undefined {
+  const id = recipeId?.trim()
+  return id ? { cooking_recipe_id: id } : undefined
+}
 
 /** Minimal read surface shared by `URLSearchParams` and Next's readonly variant. */
 export interface ReadableSearchParams {

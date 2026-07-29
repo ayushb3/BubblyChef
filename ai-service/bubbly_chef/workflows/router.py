@@ -37,8 +37,9 @@ from bubbly_chef.models.pantry import (
 from bubbly_chef.models.proposals import HandoffKind
 from bubbly_chef.models.recipe import RecipeCardProposal
 from bubbly_chef.models.session import SessionMode
-from bubbly_chef.repository.supabase_repo import get_repository
+from bubbly_chef.repository.supabase_repo import SupabaseRepository, get_repository
 from bubbly_chef.workflows.chat.nodes import (
+    COOKING_RECIPE_ID_KEY,
     COOKING_RECIPE_KEY,
     GENERAL_CHAT_SYSTEM_PROMPT,
     GENERAL_CHAT_USER_PROMPT,
@@ -529,6 +530,48 @@ def build_handoff_recipe(state: WorkflowState) -> WorkflowState:
     }
 
 
+async def _resolve_cook_context(
+    context: dict[str, Any],
+    user_id: str,
+    repo: SupabaseRepository,
+) -> dict[str, Any] | None:
+    """Return the raw cooking-recipe dict to pin, resolving by id when needed.
+
+    Three accepted shapes, in priority order:
+    1. `cooking_recipe_id`: <str> — the preferred payload. Resolved server-side
+       via the repository so pinning never depends on a client-side fetch (#155).
+    2. `cooking_recipe`: {id, title, ingredients, ...} — legacy full dict; used
+       as-is (non-breaking).
+    3. `cooking_recipe`: {id} — a thin dict carrying only an id; also resolved
+       server-side.
+
+    Returns None when there is no cook context, or when the id resolves to no
+    recipe (deleted / wrong user) — the caller then leaves the session un-pinned
+    rather than crashing the turn.
+    """
+    recipe_id = context.get(COOKING_RECIPE_ID_KEY)
+
+    raw = context.get(COOKING_RECIPE_KEY)
+    if recipe_id is None and isinstance(raw, dict):
+        # Legacy full dict already carries what we need.
+        if str(raw.get("title") or "").strip() or raw.get("ingredients"):
+            return raw
+        # Thin dict with only an id → resolve like the id-only payload.
+        recipe_id = raw.get("id")
+
+    if recipe_id is None:
+        return None
+
+    resolved = await repo.get_recipe(user_id, str(recipe_id))
+    if not resolved:
+        logger.warning(
+            f"Cook handoff: recipe {recipe_id!r} not found for user "
+            f"{user_id!r}; leaving session un-pinned"
+        )
+        return None
+    return dict(resolved)
+
+
 async def update_session_node(state: WorkflowState) -> WorkflowState:
     """
     Node: Update session mode based on workflow outcome.
@@ -556,14 +599,21 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
         # Cook handoff: the client pins the recipe the user just started cooking.
         # Only the request context triggers this (not the pinned copy in session
         # metadata), so a later brainstorm can still move the session on.
+        #
+        # Preferred payload is just the recipe id, which we resolve from the DB
+        # here — this removes the client fetch/send race that could otherwise pin
+        # an empty context (#155). The legacy full `cooking_recipe` dict is still
+        # accepted for non-breaking rollout; a dict carrying only an `id` is also
+        # routed through the server-side resolve.
         context = state.get("context") or {}
-        raw_cooking_recipe = context.get(COOKING_RECIPE_KEY)
+        user_id = state.get("user_id") or ""
+        raw_cooking_recipe = await _resolve_cook_context(context, user_id, repo)
         if isinstance(raw_cooking_recipe, dict):
             cooking_recipe = normalize_cooking_recipe(raw_cooking_recipe)
             session.active_mode = SessionMode.COOKING
             session.pinned_recipe_id = cooking_recipe["id"]
             session.metadata[COOKING_RECIPE_KEY] = cooking_recipe
-            await repo.update_session(state.get("user_id") or "", session)
+            await repo.update_session(user_id, session)
             logger.info(
                 f"Session pinned to cooking recipe: {old_mode} → cooking "
                 f"(recipe_id={cooking_recipe['id']})"
