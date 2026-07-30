@@ -56,12 +56,21 @@ class AnthropicProvider(AIProvider):
         return f"anthropic/{self.model}"
 
     def _headers(self) -> dict[str, str]:
-        """Build request headers, including x-api-key only when configured."""
+        """Build request headers.
+
+        When an api_key is configured we send it two ways so the same provider
+        works against both endpoints it targets:
+          - ``Authorization: Bearer <key>`` — required by the SAP proxy, which
+            rejects requests lacking it with 401 MISSING_AUTHORIZATION_HEADER.
+          - ``x-api-key: <key>`` — the header the direct Anthropic API expects.
+        Sending both is harmless: each endpoint reads the one it knows.
+        """
         headers = {
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         }
         if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
             headers["x-api-key"] = self.api_key
         return headers
 
