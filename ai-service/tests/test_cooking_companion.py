@@ -14,7 +14,6 @@ import pytest
 from bubbly_chef.ai.provider import ToolCall, ToolCallResponse
 from bubbly_chef.models.base import Intent, WorkflowStatus
 from bubbly_chef.tools.registry import (
-    _REGISTRY,
     get_registered_tools,
     get_tool,
     get_tool_schemas,
@@ -22,7 +21,6 @@ from bubbly_chef.tools.registry import (
 )
 from bubbly_chef.workflows.chat.nodes import (
     MAX_ITERATIONS,
-    _COOKING_TOOL_NAMES,
     cooking_help_response,
 )
 
@@ -376,9 +374,65 @@ class TestCheckPantryTool:
         assert "not found" in result.lower()
 
     @pytest.mark.asyncio
-    async def test_repo_error_returns_graceful_message(self):
-        """check_pantry swallows repo errors and returns a safe fallback."""
+    async def test_substring_false_positive_rejected(self):
+        """'buttermilk' must NOT match a pantry item named 'butter'.
+
+        Regression: the old fuzzy fallback used raw substring matching, so
+        'butter' ⊂ 'buttermilk' produced a wrong hit. Word-level matching
+        rejects it.
+        """
         import bubbly_chef.tools.cooking  # noqa: F401
+
+        from bubbly_chef.tools.cooking.pantry_tools import check_pantry
+
+        butter = MagicMock()
+        butter.name = "butter"
+        butter.quantity = 250.0
+        butter.unit = "g"
+        butter.expiry_date = None
+
+        mock_repo = MagicMock()
+        mock_repo.find_similar_item = AsyncMock(return_value=None)
+        mock_repo.get_all_pantry_items = AsyncMock(return_value=[butter])
+
+        with patch(
+            "bubbly_chef.tools.cooking.pantry_tools.get_repository",
+            new_callable=AsyncMock,
+            return_value=mock_repo,
+        ):
+            result = await check_pantry("buttermilk", user_id="u1")
+
+        assert "not found" in result.lower()
+        # Must not report a butter *hit* (the not-found string itself contains
+        # "butter" as a substring of "buttermilk", so assert on the hit phrasing).
+        assert "the pantry has" not in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_shared_word_match_still_works(self):
+        """A shared whole word still matches: 'eggs' → 'large free-range eggs'."""
+        import bubbly_chef.tools.cooking  # noqa: F401
+
+        from bubbly_chef.tools.cooking.pantry_tools import check_pantry
+
+        eggs = MagicMock()
+        eggs.name = "large free-range eggs"
+        eggs.quantity = 12.0
+        eggs.unit = "count"
+        eggs.expiry_date = None
+
+        mock_repo = MagicMock()
+        mock_repo.find_similar_item = AsyncMock(return_value=None)
+        mock_repo.get_all_pantry_items = AsyncMock(return_value=[eggs])
+
+        with patch(
+            "bubbly_chef.tools.cooking.pantry_tools.get_repository",
+            new_callable=AsyncMock,
+            return_value=mock_repo,
+        ):
+            result = await check_pantry("eggs", user_id="u1")
+
+        assert "large free-range eggs" in result
+        """check_pantry swallows repo errors and returns a safe fallback."""
 
         from bubbly_chef.tools.cooking.pantry_tools import check_pantry
 

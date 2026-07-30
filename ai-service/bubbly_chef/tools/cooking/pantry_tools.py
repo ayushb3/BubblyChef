@@ -3,12 +3,23 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date
 
 from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.tools.registry import tool
 
 logger = logging.getLogger(__name__)
+
+# Split a name into lowercase alphanumeric words, dropping possessive/plural
+# noise is unnecessary here — a simple word-set intersection is enough to match
+# "eggs" against "large free-range eggs" without matching "butter" ⊂ "buttermilk".
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def _words(text: str) -> set[str]:
+    """Return the set of lowercase alphanumeric words in ``text``."""
+    return set(_WORD_RE.findall(text.lower()))
 
 
 @tool
@@ -44,11 +55,16 @@ async def check_pantry(ingredient: str, *, user_id: str) -> str:
             expiry_note = days_until_expiry or ""
             return f"Yes, the pantry has {match.name}: {qty_str}{expiry_note}."
 
-        # 2. Fall back to a fuzzy scan of all items (substring match)
+        # 2. Fall back to a word-level scan of all items.  Match only on shared
+        #    whole words, not raw substrings — otherwise "buttermilk" wrongly
+        #    matches "butter" (butter ⊂ buttermilk) and "cream" matches
+        #    "ice cream sandwich".  Splitting on non-alphanumerics and comparing
+        #    word sets keeps "eggs" → "large free-range eggs" and
+        #    "chicken" → "chicken breast" while rejecting the false positives.
         items = await repo.get_all_pantry_items(user_id)
-        needle = ingredient.lower().strip()
+        needle_words = _words(ingredient)
         for item in items:
-            if needle in item.name.lower() or item.name.lower() in needle:
+            if needle_words & _words(item.name):
                 qty_str = f"{item.quantity} {item.unit}".strip()
                 return (
                     f"The pantry has '{item.name}' which may match "
