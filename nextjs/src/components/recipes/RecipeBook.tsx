@@ -568,9 +568,12 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 </div>
               </div>
             ) : (
-              /* Plain header — no thumbnail */
+              /* Plain header — no thumbnail.
+                 pl-10 (40px) reserves clearance for the 28px-wide hamburger tab
+                 that is absolutely positioned at left-0; without it the first
+                 character of the title is hidden behind the button. */
               <div
-                className="px-4 pt-4 pb-3 flex-shrink-0"
+                className="pl-10 pr-4 pt-4 pb-3 flex-shrink-0"
               >
                 <h2
                   className="text-xl font-extrabold text-[var(--color-text)] leading-tight"
