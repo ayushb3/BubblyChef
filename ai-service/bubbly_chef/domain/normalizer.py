@@ -236,6 +236,17 @@ def normalize_food_name(name: str) -> str:
     return cleaned
 
 
+def resolve_category(name: str) -> str | None:
+    """Return the best deterministic category for *name*, or None.
+
+    Tries keyword matching first (``detect_category``), then the food
+    catalog (``catalog_categorize``).  This is the single shared helper
+    used by both the manual-add path and the receipt ingest path so the
+    two paths can never drift.
+    """
+    return detect_category(name) or catalog_categorize(name) or None
+
+
 def detect_category(name: str) -> str | None:
     """
     Detect food category from name using keyword matching.

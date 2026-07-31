@@ -289,6 +289,8 @@ def map_category(category_str: str | None) -> FoodCategory:
         "dairy": FoodCategory.DAIRY,
         "milk": FoodCategory.DAIRY,
         "cheese": FoodCategory.DAIRY,
+        "egg": FoodCategory.DAIRY,
+        "eggs": FoodCategory.DAIRY,
         "meat": FoodCategory.MEAT,
         "poultry": FoodCategory.MEAT,
         "beef": FoodCategory.MEAT,
@@ -314,7 +316,17 @@ def map_category(category_str: str | None) -> FoodCategory:
         "bread": FoodCategory.BAKERY,
     }
 
-    return mapping.get(category_lower, FoodCategory.OTHER)
+    exact = mapping.get(category_lower)
+    if exact is not None:
+        return exact
+
+    # Fuzzy/substring fallback: if any known key is a token within the input
+    # (e.g. "dairy & eggs" → dairy, "produce/vegetables" → produce).
+    for key, food_category in mapping.items():
+        if key in category_lower:
+            return food_category
+
+    return FoodCategory.OTHER
 
 
 def map_action_type(action_str: str) -> ActionType:
