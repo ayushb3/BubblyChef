@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from bubbly_chef.api.auth import get_current_user_id
-from bubbly_chef.domain.catalog import categorize
+from bubbly_chef.domain.normalizer import resolve_category
 from bubbly_chef.models.pantry import FoodCategory, StorageLocation
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 
@@ -105,10 +105,10 @@ async def estimate_category(
     request: EstimateCategoryRequest,
     user_id: str = Depends(get_current_user_id),
 ) -> EstimateCategoryResponse:
-    """Infer a food category from an item name using the catalog fuzzy matcher.
+    """Infer a food category from an item name.
 
-    Deterministic — no LLM call. Returns null when the catalog has no match
-    above the confidence threshold (95). Callers should fall back to 'other'
-    on null so that a failed or absent estimate never blocks the add.
+    Uses keyword matching then catalog fuzzy match (threshold=95).
+    Returns null when neither has a confident match — callers should
+    fall back to 'other' so a failed estimate never blocks the add.
     """
-    return EstimateCategoryResponse(category=categorize(request.name))
+    return EstimateCategoryResponse(category=resolve_category(request.name))

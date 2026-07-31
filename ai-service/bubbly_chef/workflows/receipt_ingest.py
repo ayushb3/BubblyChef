@@ -15,7 +15,7 @@ from bubbly_chef.models.base import ProposalEnvelope
 from bubbly_chef.models.pantry import (
     PantryProposal,
 )
-from bubbly_chef.domain.normalizer import normalize_to_base_unit
+from bubbly_chef.domain.normalizer import normalize_to_base_unit, resolve_category
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 from bubbly_chef.tools.normalizer import get_normalizer
 from bubbly_chef.workflows.ingest_spine import (
@@ -230,12 +230,17 @@ def normalize_receipt_items(state: WorkflowState) -> WorkflowState:
         # Normalize name
         normalized_name = normalizer.normalize(name)
 
-        # Get category
+        # Get category: prefer deterministic catalog/keyword answer over the
+        # noisy LLM string (which produces compounds like "dairy & eggs" that
+        # map_category can't match exactly).
         llm_category = item.get("category")
-        if llm_category and llm_category.lower() != "other":
+        resolved = resolve_category(normalized_name)
+        if resolved:
+            category = map_category(resolved)
+        elif llm_category and llm_category.lower() != "other":
             category = map_category(llm_category)
         else:
-            category = normalizer.get_category(normalized_name)
+            category = map_category(None)
 
         # Get storage location
         storage = expiry.get_default_storage(category)
