@@ -65,7 +65,11 @@ export default function PantryAddSheet({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          items: allItems.map(({ source: _source, ...item }) => item),
+          items: allItems.map((item) => {
+            const { source, ...rest } = item
+            void source
+            return rest
+          }),
         }),
       })
 
