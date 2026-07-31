@@ -67,16 +67,17 @@ def create_app() -> FastAPI:
 
     @app.get("/health/ai")
     async def health() -> dict:
-        providers = []
-        if settings.gemini_api_key:
-            providers.append({"name": "gemini", "available": True})
-        if settings.ollama_base_url:
-            providers.append({"name": "ollama", "available": True})
+        # Ask the actual AIManager which providers are registered and
+        # reachable, rather than reconstructing from raw settings — this
+        # reflects the real config (incl. the dev SAP-proxy provider).
+        from bubbly_chef.api.deps import get_ai_manager
+
+        status = await get_ai_manager().health_check()
         return {
             "status": "ok",
             "service": "ai-microservice",
-            "ai_available": len(providers) > 0,
-            "providers": providers,
+            "ai_available": status["healthy"],
+            "providers": status["providers"],
         }
 
     # AI routes
