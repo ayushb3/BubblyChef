@@ -145,6 +145,54 @@
   }
 }
 
+/*
+ * Global focus-visible treatment (WCAG 2.4.7)
+ *
+ * Applied to ALL interactive elements via the universal selector so new
+ * components get correct focus handling by default without any extra class.
+ * :focus-visible fires only for keyboard / programmatic focus — mouse clicks
+ * do NOT trigger it — so the ring is never shown for pointer interactions.
+ *
+ * --focus-ring uses --color-text (rather than a primary hue) to guarantee
+ * legibility across all five themes:
+ *
+ *   sakura   —  #5C4A5A on #FFF0F5  ≈ 7 : 1  ✓
+ *   mint     —  #3A5C4A on #F0FBF5  ≈ 8 : 1  ✓
+ *   lavender —  #4A3A5C on #F5F0FF  ≈ 8 : 1  ✓
+ *   yuzu     —  #5C4A3A on #FFFBF0  ≈ 8 : 1  ✓
+ *   bluebell —  #3A4A5C on #F0F5FF  ≈ 8 : 1  ✓
+ *
+ * The amber yuzu primary (#FFB830) would fail against near-white (~1.8 : 1)
+ * so it is deliberately excluded.  --color-text is dark on every theme's
+ * near-white background, giving a comfortable ≥ 7 : 1 ratio.
+ *
+ * The 2 px transparent offset creates a two-tone "white gap + dark ring"
+ * effect — visible but soft — while meeting WCAG 2.4.7 Non-text Contrast.
+ */
+*:focus-visible {
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
+  border-radius: inherit; /* follow the element's own corner radius */
+}
+
+/*
+ * Inset variant — for interactive elements inside overflow:hidden containers
+ * (pantry cards, recipe modals).  A positive outline-offset is clipped by the
+ * parent; negative offset draws the ring inside the border box instead.
+ *
+ * Usage: add class="focus-ring-inset" to the element (not the container).
+ *
+ * The pantry card buttons already set focus-visible:outline-offset-[-2px]
+ * via Tailwind utilities (which override the global offset via specificity).
+ * This utility centralises the same pattern for future overflow-clipping
+ * containers where adding Tailwind utilities would be verbose.
+ */
+.focus-ring-inset:focus-visible {
+  outline: 2px solid var(--color-text);
+  outline-offset: -3px;
+  border-radius: inherit;
+}
+
 /* Chowder-style textile/fabric panel — subtle woven crosshatch texture */
 .chowder-panel {
   background-color: var(--color-primary);

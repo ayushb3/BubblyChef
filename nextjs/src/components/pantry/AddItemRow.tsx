@@ -39,7 +39,7 @@ interface AddItemRowProps {
 }
 
 const inputClass =
-  'w-full rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]'
+  'w-full rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]'
 
 export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRowProps) {
   const set = (field: keyof ManualRow, value: string | number) =>
@@ -78,13 +78,13 @@ export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRo
           step="any"
           value={row.quantity}
           onChange={(e) => set('quantity', Number(e.target.value))}
-          className="w-20 rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
+          className="w-20 rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
           aria-label="Quantity"
         />
         <select
           value={row.unit}
           onChange={(e) => set('unit', e.target.value)}
-          className="flex-1 rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
+          className="flex-1 rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
           aria-label="Unit"
         >
           {UNITS.map((u) => (
@@ -98,7 +98,7 @@ export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRo
         <select
           value={row.category}
           onChange={(e) => set('category', e.target.value)}
-          className="flex-1 rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
+          className="flex-1 rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
           aria-label="Category"
         >
           {CATEGORIES.map((c) => (
@@ -108,7 +108,7 @@ export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRo
         <select
           value={row.storage_location}
           onChange={(e) => set('storage_location', e.target.value)}
-          className="flex-1 rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
+          className="flex-1 rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
           aria-label="Storage location"
         >
           {LOCATIONS.map((l) => (

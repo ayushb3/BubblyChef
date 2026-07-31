@@ -196,7 +196,7 @@ function PantryPageInner() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search items..."
-          className="w-full rounded-full px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)] placeholder:text-[var(--color-muted)]"
+          className="w-full rounded-full px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)] placeholder:text-[var(--color-muted)]"
         />
       </div>
 
