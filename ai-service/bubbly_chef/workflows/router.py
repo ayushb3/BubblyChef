@@ -15,6 +15,7 @@ Architecture:
 """
 
 import logging
+import re
 from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -38,6 +39,7 @@ from bubbly_chef.models.proposals import HandoffKind
 from bubbly_chef.models.recipe import RecipeCardProposal
 from bubbly_chef.models.session import SessionMode
 from bubbly_chef.repository.supabase_repo import SupabaseRepository, get_repository
+from bubbly_chef.services.recipe_url_ingestor import ingest_recipe_from_url
 from bubbly_chef.workflows.chat.nodes import (
     COOKING_RECIPE_ID_KEY,
     COOKING_RECIPE_KEY,
@@ -79,6 +81,13 @@ from bubbly_chef.workflows.state import (
 )
 
 logger = logging.getLogger(__name__)
+
+_URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+
+
+def _extract_url(text: str) -> str | None:
+    m = _URL_RE.search(text)
+    return m.group(0) if m else None
 
 
 # =============================================================================
@@ -515,10 +524,42 @@ def build_handoff_product(state: WorkflowState) -> WorkflowState:
     }
 
 
-def build_handoff_recipe(state: WorkflowState) -> WorkflowState:
+async def build_handoff_recipe(state: WorkflowState) -> WorkflowState:
     """
-    Node: Build handoff response for recipe ingest request.
+    Node: Build response for recipe ingest.
+
+    If a URL is present in the message, run the extractor directly and
+    return a RecipeCardProposal. If no URL is present, ask the user to share one.
     """
+    url = _extract_url(state.get("input_text", ""))
+    if url:
+        try:
+            recipe_card = await ingest_recipe_from_url(url)
+            proposal = RecipeCardProposal(recipe=recipe_card, source_url=url)
+            return {
+                **state,
+                "intent": Intent.RECIPE_INGEST.value,
+                "assistant_message": f"Here's the recipe I found: {recipe_card.title}. Please review.",
+                "next_action": NextAction.REVIEW_PROPOSAL.value,
+                "proposal": proposal,
+                "requires_review": True,
+                "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
+            }
+        except Exception as e:
+            logger.warning(f"Recipe URL extraction failed for {url!r}: {e}")
+            return {
+                **state,
+                "intent": Intent.RECIPE_INGEST.value,
+                "assistant_message": (
+                    "I wasn't able to extract the recipe from that URL."
+                    " You can try pasting the recipe text instead."
+                ),
+                "next_action": NextAction.REQUEST_RECIPE_TEXT.value,
+                "proposal": None,
+                "requires_review": False,
+                "workflow_status": WorkflowStatus.AWAITING_INPUT.value,
+                "errors": state.get("errors", []) + [f"URL extraction failed: {e}"],
+            }
     return {
         **state,
         "intent": Intent.RECIPE_INGEST.value,
@@ -926,6 +967,18 @@ async def run_chat_workflow(
         )
 
     elif intent == Intent.RECIPE_INGEST.value:
+        proposal = final_state.get("proposal")
+        if isinstance(proposal, RecipeCardProposal):
+            return create_recipe_envelope(
+                proposal=proposal,
+                confidence=final_state.get("confidence", 0.9),
+                field_confidences=final_state.get("field_confidences", {}),
+                warnings=final_state.get("warnings", []),
+                errors=final_state.get("errors", []),
+                assistant_message=final_state.get("assistant_message", ""),
+                request_id=final_state.get("request_id"),
+                workflow_id=final_state.get("workflow_id"),
+            )
         return create_handoff_envelope(
             handoff_kind=HandoffKind.RECIPE,
             assistant_message=final_state.get("assistant_message", ""),
@@ -1035,17 +1088,30 @@ def _build_envelope_from_state(
             conversation_id=final_state.get("conversation_id"),
         )
     elif intent == Intent.RECIPE_INGEST.value:
-        envelope = create_handoff_envelope(
-            handoff_kind=HandoffKind.RECIPE,
-            assistant_message=final_state.get("assistant_message", ""),
-            next_action=NextAction.REQUEST_RECIPE_TEXT,
-            instructions="Share the recipe URL or paste the recipe text.",
-            required_inputs=["recipe_url", "recipe_text"],
-            optional_inputs=["title"],
-            request_id=final_state.get("request_id"),
-            workflow_id=final_state.get("workflow_id"),
-            conversation_id=final_state.get("conversation_id"),
-        )
+        proposal = final_state.get("proposal")
+        if isinstance(proposal, RecipeCardProposal):
+            envelope = create_recipe_envelope(
+                proposal=proposal,
+                confidence=final_state.get("confidence", 0.9),
+                field_confidences=final_state.get("field_confidences", {}),
+                warnings=final_state.get("warnings", []),
+                errors=final_state.get("errors", []),
+                assistant_message=final_state.get("assistant_message", ""),
+                request_id=final_state.get("request_id"),
+                workflow_id=final_state.get("workflow_id"),
+            )
+        else:
+            envelope = create_handoff_envelope(
+                handoff_kind=HandoffKind.RECIPE,
+                assistant_message=final_state.get("assistant_message", ""),
+                next_action=NextAction.REQUEST_RECIPE_TEXT,
+                instructions="Share the recipe URL or paste the recipe text.",
+                required_inputs=["recipe_url", "recipe_text"],
+                optional_inputs=["title"],
+                request_id=final_state.get("request_id"),
+                workflow_id=final_state.get("workflow_id"),
+                conversation_id=final_state.get("conversation_id"),
+            )
     elif intent == Intent.RECIPE_CARD.value:
         proposal = final_state.get("proposal")
         if isinstance(proposal, RecipeCardProposal):
