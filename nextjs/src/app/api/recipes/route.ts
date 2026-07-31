@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { requireAuth, errorResponse } from '@/lib/response-helpers'
+import { mergeTags } from '@/lib/recipe-helpers'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -141,7 +142,7 @@ export async function POST(request: Request) {
       servings: body.servings,
       source_url: body.source_url,
       source_platform: body.source_platform,
-      tags: [...new Set([...(body.tags || []), ...(body.dietary_tags || [])])],
+      tags: mergeTags(body.tags, body.dietary_tags),
       difficulty: body.difficulty,
       source_type: body.source_type || 'chat',
       source_title: body.source_title,
