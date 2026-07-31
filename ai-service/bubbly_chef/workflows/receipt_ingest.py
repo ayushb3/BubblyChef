@@ -7,26 +7,24 @@ pantry update proposals.
 
 import logging
 from datetime import date
-from uuid import uuid4
 
 from langgraph.graph import END, StateGraph
 
 from bubbly_chef.api.deps import get_ai_manager
-from bubbly_chef.config import settings
 from bubbly_chef.models.base import ProposalEnvelope
 from bubbly_chef.models.pantry import (
-    ActionType,
-    PantryItem,
     PantryProposal,
-    PantryUpsertAction,
 )
 from bubbly_chef.domain.normalizer import normalize_to_base_unit
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 from bubbly_chef.tools.normalizer import get_normalizer
+from bubbly_chef.workflows.ingest_spine import (
+    build_actions_from_normalized,
+    build_proposal_envelope,
+)
 from bubbly_chef.workflows.state import (
     LLMParseResult,
     WorkflowState,
-    create_pantry_envelope,
     map_category,
 )
 
@@ -99,7 +97,8 @@ async def parse_receipt_llm(state: WorkflowState) -> WorkflowState:
 
     llm = get_ai_manager()
     prompt = (
-        RECEIPT_PARSE_SYSTEM_PROMPT + "\n\n"
+        RECEIPT_PARSE_SYSTEM_PROMPT
+        + "\n\n"
         + RECEIPT_PARSE_USER_PROMPT_TEMPLATE.format(text=input_text)
     )
 
@@ -278,57 +277,16 @@ def normalize_receipt_items(state: WorkflowState) -> WorkflowState:
 def create_receipt_actions(state: WorkflowState) -> WorkflowState:
     """
     Node: Create PantryUpsertAction objects from receipt items.
+
+    Delegates to the shared ingest spine so logic is not duplicated
+    with product_ingest.  Receipt-specific reasoning string is passed
+    as the ``reasoning_for_item`` factory.
     """
-    normalized_items = state.get("normalized_items", [])
-    base_confidence = state.get("confidence", 0.5)
 
-    actions = []
-    field_confidences = {}
+    def _reasoning(item_data: dict) -> str:
+        return f"From receipt: '{item_data.get('original_name', item_data.get('name', 'unknown'))}'"
 
-    for idx, item_data in enumerate(normalized_items):
-        pantry_item = PantryItem(
-            id=uuid4(),
-            name=item_data.get("name", "unknown"),
-            original_name=item_data.get("original_name"),
-            category=map_category(item_data.get("category")),
-            storage_location=item_data.get("storage_location", "pantry"),
-            quantity=item_data.get("quantity", 1.0),
-            unit=item_data.get("unit", "item"),
-            quantity_base=item_data.get("quantity_base"),
-            unit_base=item_data.get("unit_base"),
-            purchase_date=date.fromisoformat(item_data["purchase_date"])
-            if item_data.get("purchase_date")
-            else None,
-            expiry_date=date.fromisoformat(item_data["expiry_date"])
-            if item_data.get("expiry_date")
-            else None,
-            estimated_expiry=item_data.get("estimated_expiry", True),
-        )
-
-        # All receipt items are ADD actions
-        action = PantryUpsertAction(
-            action_type=ActionType.ADD,
-            item=pantry_item,
-            confidence=base_confidence,
-            reasoning=f"From receipt: '{item_data.get('original_name', pantry_item.name)}'",
-        )
-        actions.append(action)
-
-        field_confidences[f"item_{idx}_name"] = base_confidence
-
-    # Check if review is needed
-    requires_review = (
-        base_confidence < settings.auto_apply_confidence_threshold
-        or len(state.get("errors", [])) > 0
-        or len(actions) == 0
-    )
-
-    return {
-        **state,
-        "actions": actions,
-        "field_confidences": field_confidences,
-        "requires_review": requires_review,
-    }
+    return build_actions_from_normalized(state, reasoning_for_item=_reasoning)
 
 
 # =============================================================================
@@ -399,20 +357,4 @@ async def run_receipt_ingest(
     # Run the graph
     final_state = await receipt_ingest_graph.ainvoke(initial_state)  # type: ignore[arg-type]
 
-    # Build proposal
-    actions = final_state.get("actions", [])
-
-    proposal = PantryProposal(
-        actions=actions,
-        source_text=ocr_text,
-        dedup_applied=False,
-        normalization_applied=True,
-    )
-
-    return create_pantry_envelope(
-        proposal=proposal,
-        confidence=final_state.get("confidence", 0.0),
-        field_confidences=final_state.get("field_confidences", {}),
-        warnings=final_state.get("warnings", []),
-        errors=final_state.get("errors", []),
-    )
+    return build_proposal_envelope(final_state, source_text=ocr_text)
