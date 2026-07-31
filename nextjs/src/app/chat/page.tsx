@@ -14,6 +14,8 @@ import ChatContextCard from '@/components/chat/ChatContextCard'
 import TypingIndicator from '@/components/chat/TypingIndicator'
 import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
+import BrainstormOptions from '@/components/chat/BrainstormOptions'
+import CookModal from '@/components/recipes/CookModal'
 import ThemePicker from '@/components/ui/ThemePicker'
 import Chip from '@/components/ui/Chip'
 import EmptyState from '@/components/ui/EmptyState'
@@ -27,6 +29,7 @@ import type {
   ChatRecipeData,
   PantryProposalData,
 } from '@/types/chat'
+import { getBrainstormIdeas } from '@/types/chat'
 
 const SUGGESTIONS = [
   'What can I make tonight? 🌙',
@@ -82,6 +85,10 @@ function ChatSurface() {
   const [input, setInput] = useState('')
   const [aiAvailable, setAiAvailable] = useState(true)
   const [saveStates, setSaveStates] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({})
+  /** Maps message id → saved recipe db id, populated after a successful save. */
+  const [savedRecipeIds, setSavedRecipeIds] = useState<Record<string, string>>({})
+  /** When set, the CookModal is open for this { recipeId, recipeTitle } pair. */
+  const [cookTarget, setCookTarget] = useState<{ recipeId: string; recipeTitle: string } | null>(null)
   const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
   const [dismissedRecipeId, setDismissedRecipeId] = useState<string | null>(null)
   const [dismissedSeedKey, setDismissedSeedKey] = useState<string | null>(null)
@@ -235,7 +242,16 @@ function ChatSurface() {
           servings: recipe.servings,
         }),
       })
-      setSaveStates((prev) => ({ ...prev, [msgId]: res.ok ? 'saved' : 'error' }))
+      if (res.ok) {
+        setSaveStates((prev) => ({ ...prev, [msgId]: 'saved' }))
+        // Capture the db id so "Cook this" can open CookModal immediately.
+        const saved = await res.json().catch(() => null) as { id?: string } | null
+        if (saved?.id) {
+          setSavedRecipeIds((prev) => ({ ...prev, [msgId]: saved.id as string }))
+        }
+      } else {
+        setSaveStates((prev) => ({ ...prev, [msgId]: 'error' }))
+      }
     } catch {
       setSaveStates((prev) => ({ ...prev, [msgId]: 'error' }))
     }
@@ -247,6 +263,10 @@ function ChatSurface() {
 
   const handleTellMore = () => {
     sendMessage('Tell me more about that')
+  }
+
+  const handlePickIdea = (idea: string) => {
+    sendMessage(idea)
   }
 
   // Determine if the typing indicator should show
@@ -342,8 +362,18 @@ function ChatSurface() {
                 onApprove={() => approveProposal(msg.id)}
                 onReject={() => rejectProposal(msg.id)}
                 onSave={(recipe) => handleSaveRecipe(msg.id, recipe)}
+                savedRecipeId={savedRecipeIds[msg.id] ?? null}
+                onCook={(recipeId) => {
+                  const title = msg.response?.proposal
+                    ? ((msg.response.proposal as { recipe?: { title?: string }; title?: string }).recipe?.title
+                        ?? (msg.response.proposal as { title?: string }).title
+                        ?? 'Recipe')
+                    : 'Recipe'
+                  setCookTarget({ recipeId, recipeTitle: title })
+                }}
                 onTryAnother={handleTryAnother}
                 onTellMore={handleTellMore}
+                onPickIdea={handlePickIdea}
               />
             ))}
 
@@ -426,6 +456,16 @@ function ChatSurface() {
           </SpringButton>
         )}
       </div>
+
+      {/* Cook modal — opened when the user taps "Cook this" on a saved chat recipe */}
+      {cookTarget && (
+        <CookModal
+          recipeId={cookTarget.recipeId}
+          recipeTitle={cookTarget.recipeTitle}
+          onClose={() => setCookTarget(null)}
+          onCooked={() => setCookTarget(null)}
+        />
+      )}
     </div>
   )
 }
@@ -445,8 +485,14 @@ interface MessageRendererProps {
   onApprove: () => void
   onReject: () => void
   onSave: (recipe: ChatRecipeData) => void
+  /** DB id of the saved recipe — available once onSave succeeds; gates "Cook this". */
+  savedRecipeId: string | null
+  /** Opens CookModal for the saved recipe. */
+  onCook: (recipeId: string) => void
   onTryAnother: () => void
   onTellMore: () => void
+  /** Called when the user taps a brainstorm idea card; sends the name as the next message. */
+  onPickIdea: (idea: string) => void
 }
 
 function MessageRenderer({
@@ -459,8 +505,11 @@ function MessageRenderer({
   onApprove,
   onReject,
   onSave,
+  savedRecipeId,
+  onCook,
   onTryAnother,
   onTellMore,
+  onPickIdea,
 }: MessageRendererProps) {
   // User messages — simple bubble
   if (message.role === 'user') {
@@ -477,6 +526,33 @@ function MessageRenderer({
 
   const mascotState = isLastAssistant && isStreaming ? 'thinking' : 'happy'
   const intent = message.intent ?? message.response?.intent
+
+  // Brainstorm intent — render intro bubble + tappable idea cards
+  // Falls through to plain markdown if metadata.brainstorm_ideas is absent (backward compat).
+  if (intent === 'recipe_brainstorm') {
+    const ideas = getBrainstormIdeas(message.response)
+    if (ideas.length > 0) {
+      return (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+        >
+          <div className="flex items-end gap-2">
+            <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+            <div className="flex flex-col gap-2 items-start">
+              {message.content && <MessageBubble message={message} />}
+              <BrainstormOptions
+                ideas={ideas}
+                onSelect={onPickIdea}
+                disabled={!isLastSettledAssistant}
+              />
+            </div>
+          </div>
+        </motion.div>
+      )
+    }
+  }
 
   // Recipe card intent
   if (
@@ -504,6 +580,8 @@ function MessageRenderer({
               onSave={() => onSave(recipe)}
               onTryAnother={onTryAnother}
               saveState={saveState}
+              savedRecipeId={savedRecipeId}
+              onCook={onCook}
             />
           </div>
         </div>

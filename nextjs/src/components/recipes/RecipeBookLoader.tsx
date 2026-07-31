@@ -10,7 +10,6 @@ export default function RecipeBookLoader() {
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
-    setLoading(true)
     fetch('/api/recipes')
       .then((r) => r.json())
       .then((data) => {
@@ -33,5 +32,5 @@ export default function RecipeBookLoader() {
     )
   }
 
-  return <RecipeBook recipes={recipes} onMutate={() => setRefreshKey(k => k + 1)} />
+  return <RecipeBook recipes={recipes} onMutate={() => { setLoading(true); setRefreshKey(k => k + 1) }} />
 }

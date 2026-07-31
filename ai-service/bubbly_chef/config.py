@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     ollama_timeout_seconds: int = 120
     ollama_max_retries: int = 2
 
+    # Anthropic / SAP proxy (dev only — leave use_anthropic_proxy=false in prod/CI)
+    anthropic_base_url: str = "http://localhost:6655/anthropic"
+    anthropic_api_key: str = ""
+    anthropic_model: str = "anthropic--claude-4.6-sonnet"
+    anthropic_max_tokens: int = 4096
+    use_anthropic_proxy: bool = False
+
     # CORS
     cors_origins: list[str] = ["http://localhost:3000", "capacitor://localhost"]
 

@@ -10,6 +10,7 @@
 ## Setup
 
 - [Supabase Setup](SUPABASE_SETUP.md) — step-by-step Supabase project setup (schema, auth, RLS)
+- [Dev Testing & Seeding](DEV_TESTING.md) — test account, pantry seed script, live-testing the AI service (incl. R3)
 
 ## Plans (active)
 

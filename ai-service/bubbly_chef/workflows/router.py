@@ -337,18 +337,21 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             input_text,
             state.get("conversation_history") or [],
         )
-        logger.info(
-            f"Intent classified: recipe_card "
-            f"(source=brainstorm_followup, selected='{selected_name}')"
-        )
-        return {
-            **state,
-            "intent": Intent.RECIPE_CARD.value,
-            "intent_confidence": 0.95,
-            "intent_reasoning": "Follow-up to recipe brainstorm",
-            "detected_entities": [],
-            "selected_recipe_name": selected_name,
-        }
+        if selected_name:
+            logger.info(
+                f"Intent classified: recipe_card "
+                f"(source=brainstorm_followup, selected='{selected_name}')"
+            )
+            return {
+                **state,
+                "intent": Intent.RECIPE_CARD.value,
+                "intent_confidence": 0.95,
+                "intent_reasoning": "Follow-up to recipe brainstorm",
+                "detected_entities": [],
+                "selected_recipe_name": selected_name,
+            }
+        # No confident selection — fall through to LLM intent classification
+        # so informational questions expand on the brainstorm ideas.
 
     # URL shortcut: unambiguous recipe ingest signal (no LLM needed)
     text_lower = input_text.lower()
@@ -624,6 +627,14 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
         if intent in (Intent.RECIPE_BRAINSTORM.value, Intent.RECIPE_GENERATION.value):
             session.active_mode = SessionMode.RECIPE_EXPLORING
             session.metadata["brainstorm_ideas"] = state.get("brainstorm_ideas", [])
+            # Persist constraints so the follow-up turn (research_recipe) can inherit
+            # them even though it bypasses extract_recipe_constraints (#144).
+            constraints = state.get("recipe_constraints")
+            if constraints:
+                session.metadata["recipe_constraints"] = constraints
+                logger.debug(
+                    "Session: persisted recipe_constraints for follow-up inheritance"
+                )
 
         elif intent == Intent.RECIPE_CARD.value:
             proposal = state.get("proposal")
@@ -637,6 +648,10 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 session.metadata["last_recipe_title"] = getattr(
                     getattr(proposal, "recipe", None), "title", None
                 )
+                # Keep constraints alive across further refinement turns.
+                constraints = state.get("recipe_constraints")
+                if constraints:
+                    session.metadata["recipe_constraints"] = constraints
             # else: stay in current mode
 
         elif intent == Intent.PANTRY_UPDATE.value:
@@ -653,6 +668,9 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
             if state.get("brainstorm_ideas"):
                 session.active_mode = SessionMode.RECIPE_EXPLORING
                 session.metadata["brainstorm_ideas"] = state.get("brainstorm_ideas", [])
+                constraints = state.get("recipe_constraints")
+                if constraints:
+                    session.metadata["recipe_constraints"] = constraints
                 logger.info(
                     f"Session transition (brainstorm fallback): "
                     f"{old_mode} → recipe_exploring "
@@ -957,6 +975,7 @@ async def run_chat_workflow(
         )
         envelope.suggested_mode = final_state.get("suggested_mode")
         envelope.suggested_action = final_state.get("suggested_action")
+        envelope.metadata["brainstorm_ideas"] = final_state.get("brainstorm_ideas", [])
         return envelope
 
 
@@ -1064,6 +1083,12 @@ def _build_envelope_from_state(
         )
 
     envelope.suggested_mode = final_state.get("suggested_mode")
+    if intent in (
+        Intent.GENERAL_CHAT.value,
+        Intent.COOKING_HELP.value,
+        Intent.RECIPE_BRAINSTORM.value,
+    ):
+        envelope.metadata["brainstorm_ideas"] = final_state.get("brainstorm_ideas", [])
     return envelope
 
 
