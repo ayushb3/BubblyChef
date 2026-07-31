@@ -10,7 +10,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from .provider import AIProvider, ProviderUnavailableError, StructuredOutputError
+from .provider import AIProvider, ProviderUnavailableError, StructuredOutputError, ToolCallResponse
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +219,74 @@ class AIManager:
 
         raise NoProviderAvailableError(
             f"No vision-capable provider available. Errors: {errors}"
+        )
+
+    async def complete_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        temperature: float = 0.7,
+    ) -> ToolCallResponse:
+        """Run one tool-calling turn using the first capable provider.
+
+        Mirrors ``vision_complete``: iterates providers, skips those where
+        ``supports_tool_calling`` is False, calls the first available capable
+        one, cascades on ProviderUnavailableError.
+
+        Args:
+            messages: Running conversation in provider-neutral format.
+            tools:    Tool schemas from the registry (name, description, parameters).
+            temperature: Sampling temperature.
+
+        Returns:
+            ToolCallResponse — either tool calls to execute or a final text answer.
+
+        Raises:
+            NoProviderAvailableError: If no tool-calling-capable provider is available.
+        """
+        errors: list[str] = []
+        start_time = datetime.now()
+
+        for provider in self.providers:
+            if not provider.supports_tool_calling:
+                continue
+            try:
+                if not await provider.is_available():
+                    errors.append(f"{provider.name}: not available")
+                    continue
+
+                logger.info(
+                    f"AI tool-calling request starting on [{provider.name}] "
+                    f"(messages={len(messages)}, tools={len(tools)})"
+                )
+
+                result = await provider.complete_with_tools(
+                    messages=messages,
+                    tools=tools,
+                    temperature=temperature,
+                )
+                self._current_provider = provider
+
+                elapsed = (datetime.now() - start_time).total_seconds()
+                logger.info(
+                    f"AI tool-calling completed on [{provider.name}] in {elapsed:.2f}s "
+                    f"(tool_calls={len(result.tool_calls)}, has_text={result.text is not None})"
+                )
+                return result
+
+            except ProviderUnavailableError as e:
+                errors.append(f"{provider.name}: {e}")
+                continue
+            except Exception as e:
+                logger.error(
+                    f"AI tool-calling [{provider.name}] unexpected error: {e}",
+                    exc_info=True,
+                )
+                errors.append(f"{provider.name}: {e}")
+                continue
+
+        raise NoProviderAvailableError(
+            f"No tool-calling-capable provider available. Errors: {errors}"
         )
 
     async def stream_complete(
