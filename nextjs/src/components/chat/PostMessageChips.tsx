@@ -33,7 +33,7 @@ export default function PostMessageChips({
       )}
       {onTellMore && (
         <Chip
-          tone="muted"
+          tone="primary"
           emoji="💬"
           onClick={onTellMore}
           ariaLabel="Ask Bubbles to explain further"
