@@ -15,7 +15,7 @@ from typing import Any, TypeVar
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from .provider import AIProvider, ProviderUnavailableError, StructuredOutputError
+from .provider import AIProvider, ProviderUnavailableError, StructuredOutputError, ToolCall, ToolCallResponse
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +56,21 @@ class AnthropicProvider(AIProvider):
         return f"anthropic/{self.model}"
 
     def _headers(self) -> dict[str, str]:
-        """Build request headers, including x-api-key only when configured."""
+        """Build request headers.
+
+        When an api_key is configured we send it two ways so the same provider
+        works against both endpoints it targets:
+          - ``Authorization: Bearer <key>`` — required by the SAP proxy, which
+            rejects requests lacking it with 401 MISSING_AUTHORIZATION_HEADER.
+          - ``x-api-key: <key>`` — the header the direct Anthropic API expects.
+        Sending both is harmless: each endpoint reads the one it knows.
+        """
         headers = {
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         }
         if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
             headers["x-api-key"] = self.api_key
         return headers
 
@@ -166,6 +175,127 @@ Return ONLY the JSON, no markdown formatting or extra text."""
     @property
     def supports_vision(self) -> bool:
         return True
+
+    @property
+    def supports_tool_calling(self) -> bool:
+        return True
+
+    def _build_anthropic_tools(self, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Translate provider-neutral tool schemas to Anthropic wire format."""
+        anthropic_tools = []
+        for t in tools:
+            anthropic_tools.append(
+                {
+                    "name": t["name"],
+                    "description": t.get("description", ""),
+                    "input_schema": t.get("parameters", {"type": "object", "properties": {}}),
+                }
+            )
+        return anthropic_tools
+
+    def _messages_to_anthropic(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Convert provider-neutral messages to Anthropic Messages API format.
+
+        Provider-neutral roles:
+          - "user"        → Anthropic "user" with text content block.
+          - "assistant"   → Anthropic "assistant"; content may be a list of blocks
+                            (tool_use + text) or a plain string.
+          - "tool_result" → Anthropic "user" with a tool_result content block.
+
+        The neutral format uses a ``content`` field that can be:
+          - str                 plain text
+          - list[dict]          pre-built content blocks (for assistant tool-use turns
+                                and user tool_result turns built by the ReAct node)
+        """
+        result = []
+        for msg in messages:
+            role = msg["role"]
+            content = msg["content"]
+            if role == "tool_result":
+                # Node passes pre-built Anthropic tool_result blocks in content
+                result.append({"role": "user", "content": content})
+            elif role == "assistant" and isinstance(content, list):
+                # Pre-built assistant blocks (tool_use turns)
+                result.append({"role": "assistant", "content": content})
+            else:
+                result.append(
+                    {
+                        "role": role,
+                        "content": [{"type": "text", "text": str(content)}],
+                    }
+                )
+        return result
+
+    async def complete_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        temperature: float = 0.7,
+    ) -> ToolCallResponse:
+        """Run one tool-calling turn against the Anthropic Messages API.
+
+        Args:
+            messages:    Provider-neutral running conversation.
+            tools:       Registry tool schemas (name, description, parameters).
+            temperature: Sampling temperature.
+
+        Returns:
+            ToolCallResponse with either tool_calls (model wants to act) or
+            text (final answer).
+        """
+        url = f"{self.base_url}/v1/messages"
+        anthropic_tools = self._build_anthropic_tools(tools)
+        anthropic_messages = self._messages_to_anthropic(messages)
+
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "temperature": temperature,
+            "tools": anthropic_tools,
+            "messages": anthropic_messages,
+        }
+
+        try:
+            response = await self._client.post(url, json=payload, headers=self._headers())
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            error_body = e.response.text[:500] if hasattr(e.response, "text") else str(e)
+            if e.response.status_code == 429:
+                raise ProviderUnavailableError(
+                    f"Anthropic [{self.model}] tool-calling rate limit 429: {error_body}"
+                ) from e
+            raise ProviderUnavailableError(
+                f"Anthropic [{self.model}] tool-calling API error "
+                f"{e.response.status_code}: {error_body}"
+            ) from e
+        except httpx.RequestError as e:
+            raise ProviderUnavailableError(
+                f"Anthropic [{self.model}] tool-calling connection error: {e}"
+            ) from e
+
+        data = response.json()
+        stop_reason = data.get("stop_reason", "")
+        content_blocks: list[dict[str, Any]] = data.get("content", [])
+
+        if stop_reason == "tool_use":
+            tool_calls = [
+                ToolCall(
+                    id=block["id"],
+                    name=block["name"],
+                    arguments=block.get("input", {}),
+                )
+                for block in content_blocks
+                if block.get("type") == "tool_use"
+            ]
+            return ToolCallResponse(tool_calls=tool_calls)
+
+        # end_turn or any other stop reason → extract text
+        text_parts = [
+            block.get("text", "")
+            for block in content_blocks
+            if block.get("type") == "text"
+        ]
+        return ToolCallResponse(text=" ".join(text_parts).strip() or None)
 
     async def vision_complete(
         self,
