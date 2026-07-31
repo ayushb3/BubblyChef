@@ -9,6 +9,7 @@ Serves only AI-powered endpoints:
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,7 +18,11 @@ from bubbly_chef.api.routes import chat, ingest, pantry, recipes_ai, scan, workf
 from bubbly_chef.config import settings
 from bubbly_chef.repository.supabase_repo import get_repository
 
-import logging
+# Register URL extractor into the ingest dispatcher at import time.
+# This module-level import triggers dispatcher.register_url_extractor() inside
+# url_extractor.py, mirroring how ingest_dispatcher.py self-registers the receipt
+# extractor.  Must come after bubbly_chef packages are importable.
+import bubbly_chef.services.url_extractor as _url_extractor_registration  # noqa: F401
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -1,9 +1,10 @@
 """Ingest routes for the BubblyChef AI microservice.
 
 Exposes:
-- POST /v1/ingest/recipe-url — extract a RecipeCard from a recipe page URL
-- POST /v1/ingest          — unified modality dispatcher (receipt in v1;
-                             URL #205, barcode #206 as extension seams)
+- POST /v1/ingest/recipe-url — compat shim (delegates to unified /ingest;
+                               keeps returning RecipeCard for existing callers)
+- POST /v1/ingest            — unified modality dispatcher (receipt + URL in v1;
+                               barcode #206 as extension seam)
 """
 
 import logging
@@ -40,7 +41,13 @@ class RecipeUrlRequest(BaseModel):
 @router.post(
     "/recipe-url",
     response_model=RecipeCard,
-    summary="Extract a recipe from a URL",
+    summary="[Compat shim] Extract a recipe from a URL",
+    description=(
+        "Compatibility shim for the old per-modality route. "
+        "Delegates to the unified /ingest dispatcher and unwraps the "
+        "RecipeCardProposal envelope to return the bare RecipeCard so "
+        "existing callers are unaffected. New callers should use POST /v1/ingest."
+    ),
     responses={
         200: {"description": "Extracted RecipeCard"},
         401: {"description": "Missing or invalid JWT"},
@@ -52,29 +59,34 @@ async def ingest_recipe_url(
     request: RecipeUrlRequest,
     user_id: str = Depends(get_current_user_id),
 ) -> RecipeCard:
-    """Extract a structured RecipeCard from a recipe page URL.
+    """Compat shim: extract a RecipeCard via the unified dispatcher.
 
-    Extraction strategy (in order):
-    1. recipe-scrapers — handles 500+ known sites via Schema.org
-    2. recipe-scrapers wild_mode=True — unknown sites with Schema markup
-    3. Gemini AI extraction from raw HTML (via AIManager)
+    Delegates to the URL extractor registered in the dispatcher, then unwraps
+    ``envelope.proposal.recipe`` to preserve the original RecipeCard contract.
+    Status codes (422 invalid URL, 502 extraction failure) are preserved.
     """
-    logger.info(f"Recipe URL ingest: user={user_id}, url={request.url}")
+    from bubbly_chef.api.ingest_dispatcher import IngestModality, IngestPayload, dispatcher
+
+    logger.info("Recipe URL ingest (shim): user=%s, url=%s", user_id, request.url)
+
+    payload = IngestPayload(modality=IngestModality.URL, url=request.url)
 
     try:
-        from bubbly_chef.services.recipe_url_ingestor import ingest_recipe_from_url
-
-        recipe = await ingest_recipe_from_url(request.url)
+        envelope = await dispatcher.dispatch(payload)
+        # envelope.proposal is RecipeCardProposal; unwrap to bare RecipeCard
+        recipe: RecipeCard = envelope.proposal.recipe  # type: ignore[union-attr]
         logger.info(
-            f"Recipe URL ingest success: user={user_id}, title={recipe.title!r}, "
-            f"thumbnail_url={recipe.thumbnail_url!r}"
+            "Recipe URL ingest (shim) success: user=%s, title=%r, thumbnail_url=%r",
+            user_id,
+            recipe.title,
+            recipe.thumbnail_url,
         )
         return recipe
 
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:
-        logger.error(f"Recipe URL ingest failed: {e}", exc_info=True)
+        logger.error("Recipe URL ingest (shim) failed: %s", e, exc_info=True)
         raise HTTPException(
             status_code=502,
             detail=f"Could not extract recipe from URL: {str(e)}",
@@ -88,9 +100,11 @@ async def ingest_recipe_url(
 
 @router.post(
     "",
-    summary="Unified ingest dispatcher (receipt in v1; URL #205, barcode #206 coming)",
+    summary="Unified ingest dispatcher (receipt + URL in v1; barcode #206 coming)",
     responses={
-        200: {"description": "PantryProposal envelope"},
+        200: {
+            "description": "ProposalEnvelope — PantryProposal for receipt, RecipeCardProposal for URL"
+        },
         400: {"description": "Could not detect modality or modality not yet supported"},
         401: {"description": "Missing or invalid JWT"},
         422: {"description": "Invalid or unreadable input"},
@@ -109,28 +123,26 @@ async def ingest(
     text: str | None = Form(
         default=None,
         description=(
-            "Free-form text. Auto-detected: URL → recipe (#205 stub), "
+            "Free-form text. Auto-detected: URL → recipe extraction, "
             "8-14 digit string → barcode (#206 stub), else → receipt OCR text."
         ),
     ),
     user_id: str = Depends(get_current_user_id),
 ) -> dict:
-    """Unified entry point for all pantry ingest modalities.
+    """Unified entry point for all ingest modalities.
 
-    **v1 behaviour (this ticket):** only receipt is fully wired.
+    **v1 behaviour:** receipt and URL (recipe) are fully wired.
 
     - Supply ``file`` (image upload) or ``ocr_text`` (plain text) to trigger
-      receipt parsing.
-    - Supply ``text`` to let the server auto-detect the modality:
-      URL → NotImplemented (ticket #205); barcode digits → NotImplemented
-      (#206); anything else → treated as receipt OCR text.
+      receipt parsing → returns ``ProposalEnvelope[PantryProposal]``.
+    - Supply ``text`` with a URL to extract a recipe → returns
+      ``ProposalEnvelope[RecipeCardProposal]``.
+    - Supply ``text`` with barcode digits → NotImplemented (#206).
+    - Anything else → treated as receipt OCR text.
 
-    The response is a ``ProposalEnvelope[PantryProposal]`` serialised as JSON.
-
-    **Extension seam for #205 / #206:** register an extractor with
-    ``dispatcher.register_url_extractor(fn)`` or
-    ``dispatcher.register_barcode_extractor(fn)`` at app startup and the 501
-    stubs become live automatically.
+    **Extension seam for #206:** register an extractor with
+    ``dispatcher.register_barcode_extractor(fn)`` at app startup and the stub
+    becomes live automatically.
     """
     from bubbly_chef.api.ingest_dispatcher import (
         IngestModality,

@@ -12,7 +12,7 @@ Behaviors covered:
 9. dispatcher.dispatch: auto-detects from ocr_text when modality=UNKNOWN
 10. POST /v1/ingest with ocr_text form field → 200, proposal envelope
 11. POST /v1/ingest with image file → 200 (OCR mocked)
-12. POST /v1/ingest with URL text → 400 (not yet wired, stub)
+12. POST /v1/ingest with URL text → 200 (URL extractor now registered via url_extractor module)
 """
 
 from __future__ import annotations
@@ -323,22 +323,41 @@ async def test_ingest_endpoint_receipt_via_image_file(app, _mock_envelope):
 
 
 @pytest.mark.asyncio
-async def test_ingest_endpoint_url_text_returns_400_stub(app):
-    """POST /v1/ingest with a URL in text field → 400 (not yet wired)."""
+async def test_ingest_endpoint_url_text_returns_recipe_envelope(app):
+    """POST /v1/ingest with a URL in text field → 200, RecipeCardProposal envelope."""
     from bubbly_chef.api.auth import get_current_user_id
     from httpx import ASGITransport, AsyncClient
+    from unittest.mock import MagicMock, patch
 
     app.dependency_overrides[get_current_user_id] = lambda: "test-user"
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.post(
-            "/v1/ingest",
-            data={"text": "https://www.allrecipes.com/recipe/123/cookies/"},
-        )
+    # Import the url_extractor module so it registers itself into the dispatcher.
+    import bubbly_chef.services.url_extractor  # noqa: F401
+
+    stub = MagicMock()
+    stub.title.return_value = "Dispatcher URL Test Recipe"
+    stub.ingredients.return_value = ["flour"]
+    stub.instructions_list.return_value = ["Mix and bake"]
+    stub.total_time.return_value = 30
+    stub.yields.return_value = "4 servings"
+    stub.description.return_value = None
+    stub.image.return_value = None
+
+    with patch(
+        "bubbly_chef.services.recipe_url_ingestor.scrape_me",
+        return_value=stub,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.post(
+                "/v1/ingest",
+                data={"text": "https://www.allrecipes.com/recipe/123/cookies/"},
+            )
 
     app.dependency_overrides.clear()
-    assert resp.status_code == 400
-    assert "205" in resp.json()["detail"]
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["intent"] == "recipe_card"
+    assert data["proposal"]["recipe"]["title"] == "Dispatcher URL Test Recipe"
 
 
 @pytest.mark.asyncio

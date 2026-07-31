@@ -44,6 +44,7 @@ from typing import Any
 
 from bubbly_chef.models.base import ProposalEnvelope
 from bubbly_chef.models.pantry import PantryProposal
+from bubbly_chef.models.recipe import RecipeCardProposal
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,12 @@ class IngestPayload:
 # Extractor entry
 # ---------------------------------------------------------------------------
 
-ExtractorFn = Callable[[IngestPayload], Awaitable[ProposalEnvelope[PantryProposal]]]
+# Extractors may return either a PantryProposal envelope (receipt, barcode) or a
+# RecipeCardProposal envelope (URL ingest — recipe cards diverge from the pantry
+# spine by design; see services/url_extractor.py for the rationale).
+ExtractorFn = Callable[
+    [IngestPayload], Awaitable[ProposalEnvelope[PantryProposal | RecipeCardProposal]]
+]
 
 
 @dataclass
@@ -105,7 +111,10 @@ class ExtractorEntry:
     Args:
         modality: The modality this extractor handles.
         extract: Async callable that accepts an ``IngestPayload`` and returns
-            a ``ProposalEnvelope[PantryProposal]``.
+            a ``ProposalEnvelope``.  Receipt/barcode extractors return
+            ``ProposalEnvelope[PantryProposal]``; the URL extractor returns
+            ``ProposalEnvelope[RecipeCardProposal]`` (recipes legitimately
+            diverge from the pantry tail — see services/url_extractor.py).
     """
 
     modality: IngestModality
@@ -198,7 +207,9 @@ class ModalityDispatcher:
     # Dispatch
     # ------------------------------------------------------------------
 
-    async def dispatch(self, payload: IngestPayload) -> ProposalEnvelope[PantryProposal]:
+    async def dispatch(
+        self, payload: IngestPayload
+    ) -> ProposalEnvelope[PantryProposal | RecipeCardProposal]:
         """Detect modality (if not already set) and call the registered extractor.
 
         Args:
@@ -207,7 +218,8 @@ class ModalityDispatcher:
                 ``image_bytes`` / ``ocr_text`` / ``url`` / ``barcode`` / ``text``.
 
         Returns:
-            ``ProposalEnvelope[PantryProposal]`` from the extractor.
+            ``ProposalEnvelope`` from the extractor — ``PantryProposal`` for
+            receipt/barcode, ``RecipeCardProposal`` for URL ingest.
 
         Raises:
             NotImplementedError: No extractor registered for the detected modality.
