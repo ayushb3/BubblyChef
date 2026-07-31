@@ -29,6 +29,7 @@ import logging
 from bubbly_chef.api.ingest_dispatcher import IngestPayload, dispatcher
 from bubbly_chef.models.recipe import RecipeCardProposal
 from bubbly_chef.models.base import ProposalEnvelope
+from bubbly_chef.services.recipe_url_ingestor import ingest_recipe_from_url
 from bubbly_chef.workflows.state import create_recipe_envelope
 
 logger = logging.getLogger(__name__)
@@ -52,8 +53,6 @@ async def url_extractor(payload: IngestPayload) -> ProposalEnvelope[RecipeCardPr
         ValueError: No URL could be found in the payload.
         RuntimeError: Extraction failed at all tiers (scraper + AI fallback).
     """
-    from bubbly_chef.services.recipe_url_ingestor import ingest_recipe_from_url
-
     url = payload.url or payload.text
     if not url:
         raise ValueError("URL extractor requires a URL in payload.url or payload.text")
