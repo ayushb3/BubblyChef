@@ -627,6 +627,14 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
         if intent in (Intent.RECIPE_BRAINSTORM.value, Intent.RECIPE_GENERATION.value):
             session.active_mode = SessionMode.RECIPE_EXPLORING
             session.metadata["brainstorm_ideas"] = state.get("brainstorm_ideas", [])
+            # Persist constraints so the follow-up turn (research_recipe) can inherit
+            # them even though it bypasses extract_recipe_constraints (#144).
+            constraints = state.get("recipe_constraints")
+            if constraints:
+                session.metadata["recipe_constraints"] = constraints
+                logger.debug(
+                    "Session: persisted recipe_constraints for follow-up inheritance"
+                )
 
         elif intent == Intent.RECIPE_CARD.value:
             proposal = state.get("proposal")
@@ -640,6 +648,10 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 session.metadata["last_recipe_title"] = getattr(
                     getattr(proposal, "recipe", None), "title", None
                 )
+                # Keep constraints alive across further refinement turns.
+                constraints = state.get("recipe_constraints")
+                if constraints:
+                    session.metadata["recipe_constraints"] = constraints
             # else: stay in current mode
 
         elif intent == Intent.PANTRY_UPDATE.value:
@@ -656,6 +668,9 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
             if state.get("brainstorm_ideas"):
                 session.active_mode = SessionMode.RECIPE_EXPLORING
                 session.metadata["brainstorm_ideas"] = state.get("brainstorm_ideas", [])
+                constraints = state.get("recipe_constraints")
+                if constraints:
+                    session.metadata["recipe_constraints"] = constraints
                 logger.info(
                     f"Session transition (brainstorm fallback): "
                     f"{old_mode} → recipe_exploring "
