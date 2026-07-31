@@ -88,7 +88,7 @@ async def ingest_recipe_url(
 
 @router.post(
     "",
-    summary="Unified ingest dispatcher (receipt in v1; URL #205, barcode #206 coming)",
+    summary="Unified ingest dispatcher (receipt + barcode wired; URL #205 coming)",
     responses={
         200: {"description": "PantryProposal envelope"},
         400: {"description": "Could not detect modality or modality not yet supported"},
@@ -117,20 +117,21 @@ async def ingest(
 ) -> dict:
     """Unified entry point for all pantry ingest modalities.
 
-    **v1 behaviour (this ticket):** only receipt is fully wired.
+    **v1 behaviour:** receipt and barcode/product are fully wired.
 
     - Supply ``file`` (image upload) or ``ocr_text`` (plain text) to trigger
       receipt parsing.
-    - Supply ``text`` to let the server auto-detect the modality:
-      URL → NotImplemented (ticket #205); barcode digits → NotImplemented
-      (#206); anything else → treated as receipt OCR text.
+    - Supply ``text`` with an 8–14 digit barcode number to trigger the
+      barcode/product extractor (routes to ``run_product_ingest``; lookup
+      is a stub pending #191).
+    - Supply ``text`` with a URL to get a 400 today (ticket #205).
+    - Supply any other ``text`` to let the server treat it as receipt OCR text.
 
     The response is a ``ProposalEnvelope[PantryProposal]`` serialised as JSON.
 
-    **Extension seam for #205 / #206:** register an extractor with
-    ``dispatcher.register_url_extractor(fn)`` or
-    ``dispatcher.register_barcode_extractor(fn)`` at app startup and the 501
-    stubs become live automatically.
+    **Extension seam for #205 (URL):** register an extractor with
+    ``dispatcher.register_url_extractor(fn)`` at app startup and the 400
+    stub becomes live automatically.
     """
     from bubbly_chef.api.ingest_dispatcher import (
         IngestModality,

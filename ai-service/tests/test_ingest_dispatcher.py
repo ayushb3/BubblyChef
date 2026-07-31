@@ -357,3 +357,169 @@ async def test_ingest_endpoint_non_image_file_returns_422(app):
 
     app.dependency_overrides.clear()
     assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Barcode extractor unit tests (#206)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_barcode_extractor_registered_on_module_load():
+    """_barcode_extractor is registered in the singleton dispatcher at import time."""
+    from bubbly_chef.api.ingest_dispatcher import IngestModality, dispatcher
+
+    assert IngestModality.BARCODE in dispatcher._registry
+
+
+@pytest.mark.asyncio
+async def test_barcode_extractor_uses_payload_barcode_field():
+    """Extractor reads barcode from payload.barcode and passes it to run_product_ingest."""
+    from unittest.mock import AsyncMock, patch
+
+    from bubbly_chef.api.ingest_dispatcher import IngestModality, IngestPayload, dispatcher
+
+    mock_envelope = MagicMock()
+    with patch(
+        "bubbly_chef.workflows.product_ingest.run_product_ingest",
+        new_callable=AsyncMock,
+        return_value=mock_envelope,
+    ) as mock_run:
+        payload = IngestPayload(modality=IngestModality.BARCODE, barcode="0012345678905")
+        result = await dispatcher.dispatch(payload)
+
+    mock_run.assert_awaited_once_with(barcode="0012345678905", description=None)
+    assert result is mock_envelope
+
+
+@pytest.mark.asyncio
+async def test_barcode_extractor_falls_back_to_text_digit_string():
+    """When payload.barcode is None but payload.text is a digit string, text is used as barcode."""
+    from unittest.mock import AsyncMock, patch
+
+    from bubbly_chef.api.ingest_dispatcher import IngestModality, IngestPayload, dispatcher
+
+    mock_envelope = MagicMock()
+    with patch(
+        "bubbly_chef.workflows.product_ingest.run_product_ingest",
+        new_callable=AsyncMock,
+        return_value=mock_envelope,
+    ) as mock_run:
+        # barcode=None; the digit-string is in text (how detect_modality routes it)
+        payload = IngestPayload(modality=IngestModality.BARCODE, barcode=None, text="12345678901")
+        result = await dispatcher.dispatch(payload)
+
+    mock_run.assert_awaited_once_with(barcode="12345678901", description=None)
+    assert result is mock_envelope
+
+
+@pytest.mark.asyncio
+async def test_barcode_extractor_passes_description_when_text_not_digits():
+    """Explicit BARCODE payload with non-digit text treats text as description."""
+    from unittest.mock import AsyncMock, patch
+
+    from bubbly_chef.api.ingest_dispatcher import IngestModality, IngestPayload, dispatcher
+
+    mock_envelope = MagicMock()
+    with patch(
+        "bubbly_chef.workflows.product_ingest.run_product_ingest",
+        new_callable=AsyncMock,
+        return_value=mock_envelope,
+    ) as mock_run:
+        payload = IngestPayload(
+            modality=IngestModality.BARCODE,
+            barcode=None,
+            text="Organic whole milk",
+        )
+        result = await dispatcher.dispatch(payload)
+
+    mock_run.assert_awaited_once_with(barcode=None, description="Organic whole milk")
+    assert result is mock_envelope
+
+
+@pytest.mark.asyncio
+async def test_barcode_extractor_barcode_and_description_together():
+    """When barcode field is set AND text is a non-barcode string, both are forwarded."""
+    from unittest.mock import AsyncMock, patch
+
+    from bubbly_chef.api.ingest_dispatcher import IngestModality, IngestPayload, dispatcher
+
+    mock_envelope = MagicMock()
+    with patch(
+        "bubbly_chef.workflows.product_ingest.run_product_ingest",
+        new_callable=AsyncMock,
+        return_value=mock_envelope,
+    ) as mock_run:
+        payload = IngestPayload(
+            modality=IngestModality.BARCODE,
+            barcode="0041130006006",
+            text="Whole Milk 1 gallon",
+        )
+        result = await dispatcher.dispatch(payload)
+
+    mock_run.assert_awaited_once_with(barcode="0041130006006", description="Whole Milk 1 gallon")
+    assert result is mock_envelope
+
+
+class TestDetectModalityBarcode:
+    """Barcode detection edge cases (augments existing TestDetectModality class)."""
+
+    def test_url_string_is_not_barcode(self):
+        """A URL string does NOT route to BARCODE."""
+        from bubbly_chef.api.ingest_dispatcher import IngestModality, ModalityDispatcher
+
+        result = ModalityDispatcher.detect_modality(text="https://example.com/product/123")
+        assert result is IngestModality.URL
+        assert result is not IngestModality.BARCODE
+
+    def test_fourteen_digit_barcode(self):
+        """14-digit string (EAN-14 / ITF-14) routes to BARCODE."""
+        from bubbly_chef.api.ingest_dispatcher import IngestModality, ModalityDispatcher
+
+        assert ModalityDispatcher.detect_modality(text="12345678901234") is IngestModality.BARCODE
+
+    def test_seven_digit_string_is_not_barcode(self):
+        """7-digit string is below EAN-8 minimum — not detected as BARCODE."""
+        from bubbly_chef.api.ingest_dispatcher import IngestModality, ModalityDispatcher
+
+        result = ModalityDispatcher.detect_modality(text="1234567")
+        assert result is not IngestModality.BARCODE
+
+    def test_fifteen_digit_string_is_not_barcode(self):
+        """15-digit string exceeds EAN-14 maximum — not detected as BARCODE."""
+        from bubbly_chef.api.ingest_dispatcher import IngestModality, ModalityDispatcher
+
+        result = ModalityDispatcher.detect_modality(text="123456789012345")
+        assert result is not IngestModality.BARCODE
+
+    def test_mixed_alphanumeric_is_not_barcode(self):
+        """Alphanumeric strings (e.g. SKU codes) are not barcodes."""
+        from bubbly_chef.api.ingest_dispatcher import IngestModality, ModalityDispatcher
+
+        result = ModalityDispatcher.detect_modality(text="ABC1234567")
+        assert result is not IngestModality.BARCODE
+
+
+@pytest.mark.asyncio
+async def test_ingest_endpoint_barcode_text_routes_to_product_extractor(app, _mock_envelope):
+    """POST /v1/ingest with a barcode digit-string in text → 200, product envelope."""
+    from bubbly_chef.api.auth import get_current_user_id
+    from httpx import ASGITransport, AsyncClient
+
+    app.dependency_overrides[get_current_user_id] = lambda: "test-user"
+
+    with patch(
+        "bubbly_chef.workflows.product_ingest.run_product_ingest",
+        new_callable=AsyncMock,
+        return_value=_mock_envelope,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.post(
+                "/v1/ingest",
+                data={"text": "0012345678905"},
+            )
+
+    app.dependency_overrides.clear()
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "proposal" in data
