@@ -7,26 +7,24 @@ or text description parsing.
 
 import logging
 from datetime import date
-from uuid import uuid4
 
 from langgraph.graph import END, StateGraph
 
-from bubbly_chef.config import settings
 from bubbly_chef.models.base import ProposalEnvelope
 from bubbly_chef.models.pantry import (
-    ActionType,
-    PantryItem,
     PantryProposal,
-    PantryUpsertAction,
 )
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 from bubbly_chef.tools.llm_client import LLMError, get_ollama_client
 from bubbly_chef.tools.normalizer import get_normalizer
 from bubbly_chef.tools.product_lookup import get_product_lookup
+from bubbly_chef.workflows.ingest_spine import (
+    build_actions_from_normalized,
+    build_proposal_envelope,
+)
 from bubbly_chef.workflows.state import (
     LLMParsedItem,
     WorkflowState,
-    create_pantry_envelope,
     map_category,
 )
 
@@ -257,61 +255,15 @@ def normalize_product(state: ProductWorkflowState) -> ProductWorkflowState:
 def create_product_action(state: ProductWorkflowState) -> ProductWorkflowState:
     """
     Node: Create PantryUpsertAction for the product.
+
+    Delegates to the shared ingest spine.  Product-specific reasoning
+    string is passed as the ``reasoning_for_item`` factory.
     """
-    normalized_items = state.get("normalized_items", [])
-    base_confidence = state.get("confidence", 0.5)
 
-    if not normalized_items:
-        return {
-            **state,
-            "actions": [],
-            "requires_review": True,
-        }
+    def _reasoning(_item_data: dict) -> str:
+        return "From product scan/description"
 
-    actions = []
-    field_confidences = {}
-
-    for idx, item_data in enumerate(normalized_items):
-        pantry_item = PantryItem(
-            id=uuid4(),
-            name=item_data.get("name", "unknown"),
-            original_name=item_data.get("original_name"),
-            category=map_category(item_data.get("category")),
-            storage_location=item_data.get("storage_location", "pantry"),
-            quantity=item_data.get("quantity", 1.0),
-            unit=item_data.get("unit", "item"),
-            brand=item_data.get("brand"),
-            barcode=item_data.get("barcode"),
-            purchase_date=date.fromisoformat(item_data["purchase_date"])
-            if item_data.get("purchase_date")
-            else None,
-            expiry_date=date.fromisoformat(item_data["expiry_date"])
-            if item_data.get("expiry_date")
-            else None,
-            estimated_expiry=item_data.get("estimated_expiry", True),
-        )
-
-        action = PantryUpsertAction(
-            action_type=ActionType.ADD,
-            item=pantry_item,
-            confidence=base_confidence,
-            reasoning="From product scan/description",
-        )
-        actions.append(action)
-
-        field_confidences[f"item_{idx}_name"] = base_confidence
-
-    requires_review = (
-        base_confidence < settings.auto_apply_confidence_threshold
-        or len(state.get("errors", [])) > 0
-    )
-
-    return {
-        **state,
-        "actions": actions,
-        "field_confidences": field_confidences,
-        "requires_review": requires_review,
-    }
+    return build_actions_from_normalized(state, reasoning_for_item=_reasoning)  # type: ignore[arg-type]
 
 
 # =============================================================================
@@ -383,20 +335,4 @@ async def run_product_ingest(
     # Run the graph
     final_state = await product_ingest_graph.ainvoke(initial_state)  # type: ignore[arg-type]
 
-    # Build proposal
-    actions = final_state.get("actions", [])
-
-    proposal = PantryProposal(
-        actions=actions,
-        source_text=description,
-        dedup_applied=False,
-        normalization_applied=True,
-    )
-
-    return create_pantry_envelope(
-        proposal=proposal,
-        confidence=final_state.get("confidence", 0.0),
-        field_confidences=final_state.get("field_confidences", {}),
-        warnings=final_state.get("warnings", []),
-        errors=final_state.get("errors", []),
-    )
+    return build_proposal_envelope(final_state, source_text=description)
