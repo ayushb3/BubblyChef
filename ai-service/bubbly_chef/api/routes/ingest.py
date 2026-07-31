@@ -1,96 +1,18 @@
 """Ingest routes for the BubblyChef AI microservice.
 
 Exposes:
-- POST /v1/ingest/recipe-url — compat shim (delegates to unified /ingest;
-                               keeps returning RecipeCard for existing callers)
-- POST /v1/ingest            — unified modality dispatcher (receipt + URL in v1;
-                               barcode #206 as extension seam)
+- POST /v1/ingest — unified modality dispatcher (receipt, URL, and barcode in v1)
 """
 
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import AnyHttpUrl, BaseModel, field_validator
 
 from bubbly_chef.api.auth import get_current_user_id
-from bubbly_chef.models.recipe import RecipeCard
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/ingest", tags=["ingest"])
-
-
-class RecipeUrlRequest(BaseModel):
-    """Request body for recipe URL ingestion."""
-
-    url: str
-
-    @field_validator("url")
-    @classmethod
-    def validate_url(cls, v: str) -> str:
-        """Reject obviously malformed URLs early."""
-        # AnyHttpUrl is stricter than we need (requires scheme + host), so use
-        # it just for validation then return the original string.
-        try:
-            AnyHttpUrl(v)
-        except Exception as exc:
-            raise ValueError(f"Invalid URL: {v!r}") from exc
-        return v
-
-
-@router.post(
-    "/recipe-url",
-    response_model=RecipeCard,
-    summary="[Compat shim] Extract a recipe from a URL",
-    description=(
-        "Compatibility shim for the old per-modality route. "
-        "Delegates to the unified /ingest dispatcher and unwraps the "
-        "RecipeCardProposal envelope to return the bare RecipeCard so "
-        "existing callers are unaffected. New callers should use POST /v1/ingest."
-    ),
-    responses={
-        200: {"description": "Extracted RecipeCard"},
-        401: {"description": "Missing or invalid JWT"},
-        422: {"description": "Invalid URL or extraction failed"},
-        502: {"description": "Could not fetch or extract recipe from URL"},
-    },
-)
-async def ingest_recipe_url(
-    request: RecipeUrlRequest,
-    user_id: str = Depends(get_current_user_id),
-) -> RecipeCard:
-    """Compat shim: extract a RecipeCard via the unified dispatcher.
-
-    Delegates to the URL extractor registered in the dispatcher, then unwraps
-    ``envelope.proposal.recipe`` to preserve the original RecipeCard contract.
-    Status codes (422 invalid URL, 502 extraction failure) are preserved.
-    """
-    from bubbly_chef.api.ingest_dispatcher import IngestModality, IngestPayload, dispatcher
-
-    logger.info("Recipe URL ingest (shim): user=%s, url=%s", user_id, request.url)
-
-    payload = IngestPayload(modality=IngestModality.URL, url=request.url)
-
-    try:
-        envelope = await dispatcher.dispatch(payload)
-        # envelope.proposal is RecipeCardProposal; unwrap to bare RecipeCard
-        recipe: RecipeCard = envelope.proposal.recipe  # type: ignore[union-attr]
-        logger.info(
-            "Recipe URL ingest (shim) success: user=%s, title=%r, thumbnail_url=%r",
-            user_id,
-            recipe.title,
-            recipe.thumbnail_url,
-        )
-        return recipe
-
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-    except Exception as e:
-        logger.error("Recipe URL ingest (shim) failed: %s", e, exc_info=True)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Could not extract recipe from URL: {str(e)}",
-        ) from e
 
 
 # =============================================================================
