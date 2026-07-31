@@ -16,10 +16,29 @@ def get_ai_manager() -> AIManager:
     if _ai_manager is not None:
         return _ai_manager
 
+    manager = AIManager()
+
+    # Dev-only: route all LLM calls through the local SAP proxy.
+    # When this flag is set, only AnthropicProvider is registered (no Gemini/Ollama).
+    if settings.use_anthropic_proxy:
+        from bubbly_chef.ai.anthropic import AnthropicProvider
+
+        provider = AnthropicProvider(
+            base_url=settings.anthropic_base_url,
+            api_key=settings.anthropic_api_key,
+            model=settings.anthropic_model,
+            max_tokens=settings.anthropic_max_tokens,
+        )
+        manager.add_provider(provider)
+        logger.info(
+            f"Registered Anthropic/SAP-proxy provider (model={settings.anthropic_model}, "
+            f"base_url={settings.anthropic_base_url})"
+        )
+        _ai_manager = manager
+        return _ai_manager
+
     from bubbly_chef.ai.gemini import GeminiProvider
     from bubbly_chef.ai.ollama import OllamaProvider
-
-    manager = AIManager()
 
     if settings.gemini_api_key:
         manager.add_provider(

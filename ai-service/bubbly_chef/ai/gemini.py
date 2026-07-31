@@ -12,7 +12,7 @@ from typing import Any, TypeVar
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from .provider import AIProvider, ProviderUnavailableError, StructuredOutputError
+from .provider import AIProvider, ProviderUnavailableError, StructuredOutputError, ToolCall, ToolCallResponse
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +141,135 @@ Return ONLY the JSON, no markdown formatting or extra text."""
     @property
     def supports_vision(self) -> bool:
         return True
+
+    @property
+    def supports_tool_calling(self) -> bool:
+        return True
+
+    def _build_gemini_tools(self, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Translate provider-neutral tool schemas to Gemini functionDeclarations format."""
+        declarations = []
+        for t in tools:
+            declarations.append(
+                {
+                    "name": t["name"],
+                    "description": t.get("description", ""),
+                    "parameters": t.get(
+                        "parameters", {"type": "object", "properties": {}}
+                    ),
+                }
+            )
+        return [{"functionDeclarations": declarations}]
+
+    def _messages_to_gemini(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Convert provider-neutral messages to Gemini ``contents`` format.
+
+        Provider-neutral roles:
+          - "user"        → Gemini role "user", text part.
+          - "assistant"   → Gemini role "model"; content may be a list of
+                            pre-built Gemini parts (functionCall parts) or a str.
+          - "tool_result" → Gemini role "user", functionResponse part.
+                            The node stores pre-built Gemini part dicts in ``content``.
+        """
+        result = []
+        for msg in messages:
+            role = msg["role"]
+            content = msg["content"]
+            if role == "tool_result":
+                # Pre-built functionResponse part(s) from the ReAct node
+                parts = content if isinstance(content, list) else [content]
+                result.append({"role": "user", "parts": parts})
+            elif role == "assistant" and isinstance(content, list):
+                result.append({"role": "model", "parts": content})
+            else:
+                result.append({"role": "user" if role == "user" else "model",
+                                "parts": [{"text": str(content)}]})
+        return result
+
+    async def complete_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        temperature: float = 0.7,
+    ) -> ToolCallResponse:
+        """Run one tool-calling turn against the Gemini generateContent API.
+
+        Args:
+            messages:    Provider-neutral running conversation.
+            tools:       Registry tool schemas (name, description, parameters).
+            temperature: Sampling temperature.
+
+        Returns:
+            ToolCallResponse with either tool_calls or final text.
+        """
+        url = f"{self.BASE_URL}/models/{self.model}:generateContent"
+        gemini_tools = self._build_gemini_tools(tools)
+        gemini_contents = self._messages_to_gemini(messages)
+
+        generation_config: dict[str, Any] = {
+            "temperature": temperature,
+            "topP": 0.95,
+            "topK": 40,
+        }
+
+        payload: dict[str, Any] = {
+            "contents": gemini_contents,
+            "tools": gemini_tools,
+            "generationConfig": generation_config,
+        }
+
+        try:
+            response = await self._client.post(
+                url,
+                json=payload,
+                params={"key": self.api_key},
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            error_body = e.response.text[:500] if hasattr(e.response, "text") else str(e)
+            if e.response.status_code == 429:
+                raise ProviderUnavailableError(
+                    f"Gemini [{self.model}] tool-calling rate limit 429: {error_body}"
+                ) from e
+            raise ProviderUnavailableError(
+                f"Gemini [{self.model}] tool-calling API error "
+                f"{e.response.status_code}: {error_body}"
+            ) from e
+        except httpx.RequestError as e:
+            raise ProviderUnavailableError(
+                f"Gemini [{self.model}] tool-calling connection error: {e}"
+            ) from e
+
+        data = response.json()
+        try:
+            parts: list[dict[str, Any]] = (
+                data["candidates"][0]["content"]["parts"]
+            )
+        except (KeyError, IndexError) as e:
+            raise ProviderUnavailableError(
+                f"Gemini [{self.model}] unexpected tool-calling response: {data}"
+            ) from e
+
+        # Collect function calls (if any)
+        tool_calls = []
+        text_parts = []
+        for part in parts:
+            if "functionCall" in part:
+                fc = part["functionCall"]
+                import uuid
+                tool_calls.append(
+                    ToolCall(
+                        id=str(uuid.uuid4()),
+                        name=fc["name"],
+                        arguments=fc.get("args", {}),
+                    )
+                )
+            elif "text" in part:
+                text_parts.append(part["text"])
+
+        if tool_calls:
+            return ToolCallResponse(tool_calls=tool_calls)
+        return ToolCallResponse(text=" ".join(text_parts).strip() or None)
 
     async def vision_complete(
         self,

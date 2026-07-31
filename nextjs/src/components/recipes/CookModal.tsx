@@ -184,7 +184,7 @@ export default function CookModal({
                 className="text-base font-extrabold text-[var(--color-text)]"
                 style={{ fontFamily: 'Nunito, sans-serif' }}
               >
-                Cook it
+                Mark as cooked
               </h2>
               <p
                 className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-1"
@@ -229,18 +229,18 @@ export default function CookModal({
 
             {state === 'success' && (
               <div className="py-8 text-center">
-                <p className="text-3xl mb-2">🍳</p>
+                <p className="text-3xl mb-2">✅</p>
                 <p
                   className="text-sm font-extrabold text-[var(--color-text)]"
                   style={{ fontFamily: 'Nunito, sans-serif' }}
                 >
-                  Enjoy your meal!
+                  Pantry updated!
                 </p>
                 <p
                   className="text-xs text-[var(--color-muted)] mt-1"
                   style={{ fontFamily: 'Nunito, sans-serif' }}
                 >
-                  Pantry updated — taking you to chat if you have questions.
+                  Ingredients deducted — taking you to chat.
                 </p>
               </div>
             )}
@@ -359,7 +359,7 @@ export default function CookModal({
                 className="flex-1 py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform disabled:opacity-50"
                 style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
               >
-                {state === 'confirming' ? 'Saving...' : 'Confirm'}
+                {state === 'confirming' ? 'Saving...' : 'Yes, I cooked this'}
               </button>
             </div>
           )}

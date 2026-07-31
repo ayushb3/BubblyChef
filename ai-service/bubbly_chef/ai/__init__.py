@@ -2,9 +2,10 @@
 """
 AI provider abstraction layer.
 
-Supports multiple providers (Gemini, Ollama) with automatic fallback.
+Supports multiple providers (Gemini, Ollama, Anthropic/SAP proxy) with automatic fallback.
 """
 
+from .anthropic import AnthropicProvider
 from .gemini import GeminiProvider
 from .manager import AIManager, NoProviderAvailableError
 from .ollama import OllamaProvider
@@ -20,6 +21,7 @@ __all__ = [
     "AIManager",
     "NoProviderAvailableError",
     # Providers
+    "AnthropicProvider",
     "GeminiProvider",
     "OllamaProvider",
 ]

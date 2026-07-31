@@ -10,6 +10,13 @@ interface ChatRecipeCardProps {
   onSave?: () => void
   onTryAnother?: () => void
   saveState?: 'idle' | 'saving' | 'saved' | 'error'
+  /**
+   * ID of the saved recipe — only populated after a successful save.
+   * When present the "Cook this" button becomes active.
+   */
+  savedRecipeId?: string | null
+  /** Opens the cook flow for the saved recipe. Requires savedRecipeId. */
+  onCook?: (recipeId: string) => void
 }
 
 const CHIP_COLORS: string[] = [
@@ -56,6 +63,8 @@ export default function ChatRecipeCard({
   onSave,
   onTryAnother,
   saveState = 'idle',
+  savedRecipeId,
+  onCook,
 }: ChatRecipeCardProps) {
   const totalTime =
     recipe.total_time_minutes
@@ -187,6 +196,21 @@ export default function ChatRecipeCard({
           >
             <SaveButtonContent saveState={saveState} />
           </SpringButton>
+          {/* Cook this — only usable once the recipe has been saved (needs a db id) */}
+          {onCook && (
+            <motion.button
+              type="button"
+              onClick={() => savedRecipeId && onCook(savedRecipeId)}
+              disabled={!savedRecipeId}
+              title={savedRecipeId ? 'Mark as cooked & update pantry' : 'Save the recipe first to cook it'}
+              whileHover={{ scale: savedRecipeId ? 1.03 : 1 }}
+              whileTap={{ scale: savedRecipeId ? 0.95 : 1 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+              className="py-2 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              🍳 Cook
+            </motion.button>
+          )}
           <SpringButton
             onClick={onTryAnother}
             className="flex-1 py-2 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-bg)]"
