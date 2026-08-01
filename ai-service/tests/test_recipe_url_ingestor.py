@@ -1,10 +1,10 @@
-"""Tests for POST /v1/ingest/recipe-url endpoint.
+"""Tests for URL recipe extraction via POST /v1/ingest (unified endpoint).
 
 TDD behaviors:
-1. Valid known-site URL → returns RecipeCard with title + ingredients
-2. Unknown URL with Schema → wild_mode fallback returns RecipeCard
-3. No Schema found → AI fallback fires and returns RecipeCard
-4. Invalid URL string → returns 422
+1. Valid known-site URL → returns ProposalEnvelope with RecipeCard title + ingredients
+2. Unknown URL with Schema → wild_mode fallback returns ProposalEnvelope RecipeCard
+3. No Schema found → AI fallback fires and returns ProposalEnvelope RecipeCard
+4. Non-URL text string → routed to receipt extractor, not URL extractor (no 422)
 5. recipe-scrapers raises exception → falls through to AI fallback
 """
 
@@ -33,8 +33,6 @@ def app():
     @asynccontextmanager
     async def no_op_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         yield
-
-    from fastapi import FastAPI
 
     app = FastAPI(lifespan=no_op_lifespan)
     app.add_middleware(
@@ -95,13 +93,13 @@ def _make_scraper_stub(
 
 
 # ---------------------------------------------------------------------------
-# Behavior 1: Valid known-site URL → returns RecipeCard
+# Behavior 1: Valid known-site URL → returns ProposalEnvelope RecipeCard
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_known_site_returns_recipe_card(client):
-    """scrape_me() succeeds → return RecipeCard from scraper data."""
+    """scrape_me() succeeds → ProposalEnvelope containing RecipeCard data."""
     scraper = _make_scraper_stub()
 
     with patch(
@@ -109,18 +107,21 @@ async def test_known_site_returns_recipe_card(client):
         return_value=scraper,
     ):
         resp = await client.post(
-            "/v1/ingest/recipe-url",
-            json={"url": "https://www.allrecipes.com/recipe/123/chocolate-chip-cookies/"},
+            "/v1/ingest",
+            data={"text": "https://www.allrecipes.com/recipe/123/chocolate-chip-cookies/"},
         )
 
     assert resp.status_code == 200
-    data = resp.json()
-    assert data["title"] == "Chocolate Chip Cookies"
-    assert len(data["ingredients"]) == 2
-    assert data["source_type"] == "url"
-    assert data["source_url"] == "https://www.allrecipes.com/recipe/123/chocolate-chip-cookies/"
-    # scraper path should NOT call AI
-    assert "id" in data  # RecipeCard always has an id
+    envelope = resp.json()
+    # Must return a ProposalEnvelope
+    assert envelope["intent"] == "recipe_card"
+    assert "proposal" in envelope
+    recipe = envelope["proposal"]["recipe"]
+    assert recipe["title"] == "Chocolate Chip Cookies"
+    assert len(recipe["ingredients"]) == 2
+    assert recipe["source_type"] == "url"
+    assert recipe["source_url"] == "https://www.allrecipes.com/recipe/123/chocolate-chip-cookies/"
+    assert "id" in recipe
 
 
 # ---------------------------------------------------------------------------
@@ -145,14 +146,16 @@ async def test_unknown_site_wild_mode_fallback(client):
         return_value=wild_scraper,
     ):
         resp = await client.post(
-            "/v1/ingest/recipe-url",
-            json={"url": "https://unknownblog.example.com/my-soup-recipe"},
+            "/v1/ingest",
+            data={"text": "https://unknownblog.example.com/my-soup-recipe"},
         )
 
     assert resp.status_code == 200
-    data = resp.json()
-    assert data["title"] == "Wild Mode Recipe"
-    assert data["source_type"] == "url"
+    envelope = resp.json()
+    assert envelope["intent"] == "recipe_card"
+    recipe = envelope["proposal"]["recipe"]
+    assert recipe["title"] == "Wild Mode Recipe"
+    assert recipe["source_type"] == "url"
 
 
 # ---------------------------------------------------------------------------
@@ -188,30 +191,57 @@ async def test_no_schema_ai_fallback(client):
         return_value="<html>pasta recipe page</html>",
     ):
         resp = await client.post(
-            "/v1/ingest/recipe-url",
-            json={"url": "https://example.com/pasta"},
+            "/v1/ingest",
+            data={"text": "https://example.com/pasta"},
         )
 
     assert resp.status_code == 200
-    data = resp.json()
-    assert data["title"] == "AI Extracted Pasta"
-    assert data["source_type"] == "url"
+    envelope = resp.json()
+    assert envelope["intent"] == "recipe_card"
+    recipe = envelope["proposal"]["recipe"]
+    assert recipe["title"] == "AI Extracted Pasta"
+    assert recipe["source_type"] == "url"
     assert mock_ai_manager.complete.called
 
 
 # ---------------------------------------------------------------------------
-# Behavior 4: Invalid URL string → 422
+# Behavior 4: Non-URL text → routes to receipt extractor (not URL extractor)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_invalid_url_returns_422(client):
-    """Malformed URL → 422 without calling any external service."""
-    resp = await client.post(
-        "/v1/ingest/recipe-url",
-        json={"url": "not-a-url"},
-    )
-    assert resp.status_code == 422
+async def test_non_url_text_routes_to_receipt(client):
+    """Plain text that is not a URL is classified as RECEIPT, not URL.
+
+    The server dispatcher is the source of truth for modality detection (Decision B).
+    Non-URL, non-barcode text auto-routes to the receipt extractor, not the URL
+    extractor. URL validation at the HTTP layer is not the unified endpoint's job.
+    """
+    from bubbly_chef.models.pantry import PantryProposal
+
+    fake_proposal = PantryProposal(items=[], source_text="not-a-url")
+
+    with patch(
+        "bubbly_chef.workflows.receipt_ingest.run_receipt_ingest",
+        new_callable=AsyncMock,
+    ) as mock_receipt:
+        from bubbly_chef.models.base import ConfidenceScore, Intent, ProposalEnvelope
+
+        mock_receipt.return_value = ProposalEnvelope(
+            schema_version="1.0.0",
+            intent=Intent.PANTRY_UPDATE,
+            proposal=fake_proposal,
+            confidence=ConfidenceScore(overall=1.0),
+        )
+        resp = await client.post(
+            "/v1/ingest",
+            data={"text": "not-a-url"},
+        )
+
+    # Receipt extractor is called; response is a pantry envelope, not 422
+    assert resp.status_code == 200
+    envelope = resp.json()
+    assert envelope["intent"] == "pantry_update"
 
 
 # ---------------------------------------------------------------------------
@@ -247,11 +277,13 @@ async def test_scraper_exception_falls_through_to_ai(client):
         return_value="<html>soup page</html>",
     ):
         resp = await client.post(
-            "/v1/ingest/recipe-url",
-            json={"url": "https://broken-site.example.com/soup"},
+            "/v1/ingest",
+            data={"text": "https://broken-site.example.com/soup"},
         )
 
     assert resp.status_code == 200
-    data = resp.json()
-    assert data["title"] == "Fallback Soup"
+    envelope = resp.json()
+    assert envelope["intent"] == "recipe_card"
+    recipe = envelope["proposal"]["recipe"]
+    assert recipe["title"] == "Fallback Soup"
     assert mock_ai_manager.complete.called
