@@ -510,3 +510,81 @@ def test_cooking_recipe_context_falls_back_to_session_metadata():
 def test_cooking_recipe_context_empty_without_recipe():
     assert format_cooking_recipe_context(_state()) == ""
     assert format_cooking_recipe_context(_state(context={"other": 1})) == ""
+
+
+# ---------------------------------------------------------------------------
+# build_handoff_recipe — URL present → proposal; no URL → handoff prompt (#214)
+# ---------------------------------------------------------------------------
+
+
+def _mock_ingestor(recipe_card):
+    from unittest.mock import AsyncMock, patch
+    return patch(
+        "bubbly_chef.workflows.router.ingest_recipe_from_url",
+        new=AsyncMock(return_value=recipe_card),
+    )
+
+
+def _make_recipe_card(title: str = "Crispy Fried Chicken"):
+    from bubbly_chef.models.recipe import RecipeCard
+    return RecipeCard(title=title)
+
+
+@pytest.mark.asyncio
+async def test_build_handoff_recipe_with_url_returns_proposal():
+    """A message containing a URL skips the handoff and returns a RecipeCardProposal."""
+    from bubbly_chef.models.recipe import RecipeCardProposal
+    from bubbly_chef.workflows.router import build_handoff_recipe
+
+    card = _make_recipe_card("Crispy Fried Chicken")
+    state = _state(
+        input_text="can you help make this? https://www.allrecipes.com/recipe/8805/crispy-fried-chicken/",
+        intent="recipe_ingest",
+    )
+
+    with _mock_ingestor(card):
+        result = await build_handoff_recipe(state)
+
+    from bubbly_chef.models.recipe import RecipeCardProposal
+    assert isinstance(result["proposal"], RecipeCardProposal)
+    assert result["proposal"].recipe.title == "Crispy Fried Chicken"
+    assert result["proposal"].source_url == "https://www.allrecipes.com/recipe/8805/crispy-fried-chicken/"
+    assert result.get("workflow_status") != "awaiting_input"
+
+
+@pytest.mark.asyncio
+async def test_build_handoff_recipe_without_url_returns_handoff():
+    """A message with no URL still returns the handoff prompt asking for a URL."""
+    from bubbly_chef.workflows.router import build_handoff_recipe
+
+    state = _state(input_text="can you help me save a recipe?", intent="recipe_ingest")
+    result = await build_handoff_recipe(state)
+
+    assert result.get("proposal") is None
+    assert result.get("workflow_status") == "awaiting_input"
+    msg = result.get("assistant_message", "")
+    assert "recipe" in msg.lower()
+
+
+@pytest.mark.asyncio
+async def test_build_handoff_recipe_url_extraction_failure_returns_error_handoff():
+    """If the ingestor raises, the node returns an error handoff — no crash, no loop."""
+    from unittest.mock import AsyncMock, patch
+    from bubbly_chef.workflows.router import build_handoff_recipe
+
+    state = _state(
+        input_text="save https://broken.example.com/recipe",
+        intent="recipe_ingest",
+        errors=[],
+    )
+
+    with patch(
+        "bubbly_chef.workflows.router.ingest_recipe_from_url",
+        new=AsyncMock(side_effect=RuntimeError("fetch failed")),
+    ):
+        result = await build_handoff_recipe(state)
+
+    assert result.get("proposal") is None
+    assert result.get("workflow_status") == "awaiting_input"
+    assert any("URL extraction failed" in e for e in result.get("errors", []))
+
