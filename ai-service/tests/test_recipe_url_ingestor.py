@@ -45,6 +45,9 @@ def app():
         allow_credentials=True,
     )
 
+    # Importing url_extractor registers the URL extractor into the dispatcher.
+    import bubbly_chef.services.url_extractor  # noqa: F401
+
     from bubbly_chef.api.routes.ingest import router
 
     app.include_router(router)
