@@ -97,46 +97,48 @@ def _make_normalizer_stub(normalized_name: str) -> MagicMock:
     return stub
 
 
-def _run_normalize(items: list[dict]) -> list[dict]:
-    """Call normalize_receipt_items with minimal stubs for non-category deps."""
-    from bubbly_chef.workflows.receipt_ingest import normalize_receipt_items
+def _run_normalize(item: dict) -> dict:
+    """Run the real normalize_receipt_items node over a single parsed item.
+
+    Builds a WorkflowState dict (the node's actual input) and patches the
+    module-level ``get_normalizer``/``get_expiry_heuristics`` seams so the test
+    exercises the node's own category-resolution branch — not just the helpers.
+    """
+    import datetime
+
+    from bubbly_chef.workflows import receipt_ingest
 
     fake_expiry = MagicMock()
     fake_expiry.get_default_storage.return_value = MagicMock(value="refrigerator")
-    fake_expiry.estimate_expiry.return_value = (
-        __import__("datetime").date(2026, 8, 14),
-        True,
-    )
+    fake_expiry.estimate_expiry.return_value = (datetime.date(2026, 8, 14), True)
 
-    results = []
-    for item in items:
-        stub_normalizer = _make_normalizer_stub(item["name"])
-        result = normalize_receipt_items(
-            [item],
-            normalizer=stub_normalizer,
-            expiry=fake_expiry,
-        )
-        results.extend(result)
-    return results
+    # Identity normalizer: the node passes the raw name straight to resolve_category.
+    stub_normalizer = _make_normalizer_stub(item["name"])
+
+    with (
+        patch.object(receipt_ingest, "get_normalizer", return_value=stub_normalizer),
+        patch.object(receipt_ingest, "get_expiry_heuristics", return_value=fake_expiry),
+    ):
+        state: dict = {"parsed_items": [item]}
+        result = receipt_ingest.normalize_receipt_items(state)
+
+    return result["normalized_items"][0]
 
 
 @pytest.mark.parametrize(
     "item,expected_category",
     [
-        # Eggs: LLM returned "other" — keyword path must catch it
+        # Eggs: LLM returned "other" — keyword/catalog path must catch it
         ({"name": "eggs", "category": "other", "quantity": 1.0, "unit": "dozen"}, "dairy"),
         # Milk: LLM returned compound label that exact-match dropped to OTHER
         ({"name": "milk", "category": "dairy & eggs", "quantity": 1.0, "unit": "gallon"}, "dairy"),
     ],
 )
-def test_normalize_receipt_items_dairy(
-    item: dict, expected_category: str
-) -> None:
-    """Direct regression: eggs/milk receipt items must resolve to dairy."""
-    try:
-        results = _run_normalize([item])
-        assert results[0]["category"] == expected_category
-    except TypeError:
-        # normalize_receipt_items signature may differ — fall back to calling
-        # resolve_category + map_category directly, which is the core fix.
-        assert map_category(resolve_category(item["name"])).value == expected_category
+def test_normalize_receipt_items_dairy(item: dict, expected_category: str) -> None:
+    """Direct regression: eggs/milk receipt items must resolve to dairy.
+
+    Exercises the real node end-to-end (state in → normalized_items out), so a
+    future signature or branch-precedence change is caught here.
+    """
+    normalized = _run_normalize(item)
+    assert normalized["category"] == expected_category
