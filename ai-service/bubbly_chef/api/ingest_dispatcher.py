@@ -13,14 +13,16 @@ Each entry:
 - provides an async ``extract`` callable
   ``(payload: IngestPayload) -> ProposalEnvelope[PantryProposal]``
 
-Modalities implemented in this ticket
---------------------------------------
+Modalities implemented here
+---------------------------
 - ``IngestModality.RECEIPT`` — OCR text (or raw image bytes handed off to
-  ``run_receipt_ingest``).  Receipt scanning migrated through this rail.
+  ``run_receipt_ingest``).
+- ``IngestModality.BARCODE`` — 8–14 digit barcode string (EAN/UPC) handed
+  off to ``run_product_ingest`` (#206).  Real lookup is a stub pending #191.
 
-Extension seam for #205 (URL) and #206 (barcode/product)
-----------------------------------------------------------
-Register a new extractor with:
+Extension seam for #205 (URL)
+------------------------------
+Register a URL extractor with:
 
     from bubbly_chef.api.ingest_dispatcher import dispatcher, ExtractorEntry, IngestModality
 
@@ -29,8 +31,7 @@ Register a new extractor with:
         extract=my_url_extractor,
     ))
 
-Or call ``dispatcher.register_url_extractor(fn)`` / ``register_barcode_extractor(fn)``
-for the convenience helpers.
+Or call ``dispatcher.register_url_extractor(fn)`` for the convenience helper.
 """
 
 from __future__ import annotations
@@ -290,3 +291,48 @@ async def _receipt_extractor(payload: IngestPayload) -> ProposalEnvelope[PantryP
 
 # Register the receipt extractor on module load
 dispatcher.register(ExtractorEntry(modality=IngestModality.RECEIPT, extract=_receipt_extractor))
+
+
+# ---------------------------------------------------------------------------
+# Built-in barcode/product extractor (#206)
+# ---------------------------------------------------------------------------
+
+
+async def _barcode_extractor(payload: IngestPayload) -> ProposalEnvelope[PantryProposal]:
+    """Barcode/product extractor: looks up a product by barcode or parses a description.
+
+    Input resolution (in priority order):
+    1. ``payload.barcode`` — an explicit barcode string (digits).
+    2. ``payload.text`` when it matches the barcode digit pattern — the
+       dispatcher's ``detect_modality`` already sniffed this; we re-use it
+       here as the barcode value.
+    3. ``payload.text`` that is NOT a barcode number — treated as a free-text
+       product description and passed to ``run_product_ingest`` as
+       ``description``.  Note: ``detect_modality`` classifies non-URL, non-digit
+       text as RECEIPT (OCR path), so free-text product descriptions do NOT
+       auto-route to this extractor in v1 — callers must supply a digit
+       barcode.  This branch handles the case where a caller explicitly builds
+       an ``IngestPayload(modality=BARCODE, text="Organic whole milk")``
+       without a numeric barcode.
+
+    Both barcode and description are optional in ``run_product_ingest``; if
+    neither resolves to a value the workflow raises downstream.
+    """
+    from bubbly_chef.workflows.product_ingest import run_product_ingest
+
+    barcode: str | None = payload.barcode
+
+    # If barcode field not set, check whether text looks like a digit string
+    if not barcode and payload.text and _BARCODE_RE.match(payload.text.strip()):
+        barcode = payload.text.strip()
+
+    # Any remaining text that is not a barcode number is a description
+    description: str | None = None
+    if payload.text and not (barcode and payload.text.strip() == barcode):
+        description = payload.text
+
+    return await run_product_ingest(barcode=barcode, description=description)
+
+
+# Register the barcode extractor on module load
+dispatcher.register(ExtractorEntry(modality=IngestModality.BARCODE, extract=_barcode_extractor))
