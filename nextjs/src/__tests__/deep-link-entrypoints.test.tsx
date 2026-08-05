@@ -67,6 +67,48 @@ describe('dashboard hero CTA (#138)', () => {
   })
 })
 
+describe('dashboard hero ignores already-expired items', () => {
+  // days_until_expiry is negative once an item is past its date. The urgent-item
+  // window was written as an unbounded `<= 1`, so expired stock matched it and —
+  // because the copy only special-cases 0 — got announced as "expires tomorrow".
+  const expiredItem = {
+    id: 'p-expired',
+    name: 'fresh basil',
+    expiry_date: '2026-07-31',
+    days_until_expiry: -5,
+    is_expiring_soon: false,
+  }
+
+  beforeEach(() => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/pantry/expiring')) {
+        return jsonResponse({ items: [expiredItem], count: 1 })
+      }
+      if (url.includes('/api/pantry')) {
+        return jsonResponse({ items: [expiredItem], total_count: 1 })
+      }
+      return jsonResponse({ recipes: [], total_count: 0 })
+    }) as unknown as typeof fetch
+  })
+
+  it('does not describe an expired item as expiring today or tomorrow', async () => {
+    render(<HeroHome displayName="ayush" />)
+
+    await waitFor(() =>
+      expect(screen.queryByText(/your pantry is empty/i)).not.toBeInTheDocument()
+    )
+    expect(screen.queryByText(/fresh basil expires (today|tomorrow)/i)).not.toBeInTheDocument()
+  })
+
+  it('does not count an expired item toward the expiring total', async () => {
+    render(<HeroHome displayName="ayush" />)
+
+    await waitFor(() => expect(screen.getByText(/items? in pantry/i)).toBeInTheDocument())
+    expect(screen.queryByText(/expiring/i)).not.toBeInTheDocument()
+  })
+})
+
 describe('dashboard tip card (#143)', () => {
   beforeEach(() => {
     global.fetch = jest.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch
