@@ -45,10 +45,15 @@ committed half-finished, and the script exits non-zero.
   live pantry*, so the script deliberately stops at **Cancel** — re-recording a
   demo should not destroy stock. The pantry matching, which is the part worth
   demonstrating, has already run by then.
-- The `02` recording currently shows every matched ingredient as **Unit conflict**
-  (e.g. recipe wants `200 g salmon fillet`, pantry holds `salmon fillet` in
-  another unit). That is the missing unit-conversion work in issue #6, with the
-  UX side tracked in #209 — not a recording artifact.
+- **`02` re-recorded after the unit-conversion work landed.** The previous take
+  showed all 8 matched ingredients as **Unit conflict** with nothing deductible.
+  The modal now resolves real quantities — `salmon fillet 200 g`,
+  `greek yogurt 61.8 g`, `butter 4.56 g`, `salt 3 g` — with `bread` and
+  `fresh basil` reported as honest shortfalls.
+- Two rows still read **Unit conflict**, both on purpose. `1 handful baby spinach`
+  has no defensible weight, so it is refused rather than guessed. `2 medium
+  avocado` stores `medium` as its *unit*, which is a size adjective rather than a
+  measure — remaining name/parse work, not a conversion gap.
 - `01`/`06` reflect the dashboard expiry fix: the hero only claims "expires
   today/tomorrow" for items that genuinely have 0–1 days left, and already-expired
   stock no longer inflates the "expiring" count. Expired items still show an
