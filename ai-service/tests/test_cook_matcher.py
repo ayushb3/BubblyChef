@@ -421,3 +421,191 @@ class TestLLMSubstitutionMatching:
         assert proposal.matches[1].status == "shortfall"
         assert proposal.matches[1].match_type == "substitute"
         assert sum(m.deduct_qty or 0.0 for m in proposal.matches) == pytest.approx(100.0)
+
+
+class TestCrossDimensionDeduction:
+    """Recipe volumes deducting from mass-based pantry rows.
+
+    Regression cover for the "Mark as cooked" flow being unusable: on a real
+    49-item pantry every matched ingredient came back unit_conflict and nothing
+    was deductible, because a recipe measures butter in teaspoons while the
+    pantry stores it in grams.
+    """
+
+    def test_teaspoons_and_tablespoons_deduct_from_gram_rows(self) -> None:
+        """The exact failing set from the live app, now deductible.
+
+        Hand-checked against 1 tsp = 5 ml, 1 tbsp = 15 ml:
+          1 tsp butter        = 5 ml  x 0.911 g/ml = 4.555 g
+          0.5 tsp salt        = 2.5 ml x 1.2  g/ml = 3.0 g
+          4 tbsp greek yogurt = 60 ml x 1.03 g/ml = 61.8 g
+        """
+        pantry = [
+            _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g"),
+            _make_item("salt", 1.0, "kg", qty_base=1000.0, unit_base="g"),
+            _make_item("greek yogurt", 500.0, "g", qty_base=500.0, unit_base="g"),
+        ]
+        ingredients = [
+            {"name": "butter", "quantity": 1.0, "unit": "teaspoon"},
+            {"name": "salt", "quantity": 0.5, "unit": "teaspoon"},
+            {"name": "greek yogurt", "quantity": 4.0, "unit": "tablespoon"},
+        ]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert proposal.unit_conflicts == []
+        assert [m.status for m in proposal.matches] == ["ready", "ready", "ready"]
+        assert all(m.base_unit == "g" for m in proposal.matches)
+
+        deductions = {m.ingredient_name: m.deduct_qty for m in proposal.matches}
+        assert deductions["butter"] == pytest.approx(4.555)
+        assert deductions["salt"] == pytest.approx(3.0)
+        assert deductions["greek yogurt"] == pytest.approx(61.8)
+
+    def test_rows_without_base_values_still_resolve(self) -> None:
+        """Rows written by the Next.js CRUD routes carry no quantity_base.
+
+        The matcher derives it, and that derivation used to fail for any
+        ingredient outside INGREDIENT_CANONICAL_UNIT — "greek yogurt" among
+        them — so the row could not be compared against anything at all.
+        """
+        pantry = [
+            _make_item("greek yogurt", 500.0, "g"),
+            _make_item("basmati rice", 2.0, "kg"),
+        ]
+        ingredients = [
+            {"name": "greek yogurt", "quantity": 4.0, "unit": "tablespoon"},
+            {"name": "basmati rice", "quantity": 300.0, "unit": "g"},
+        ]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert proposal.unit_conflicts == []
+        deductions = {m.ingredient_name: m.deduct_qty for m in proposal.matches}
+        assert deductions["greek yogurt"] == pytest.approx(61.8)
+        assert deductions["basmati rice"] == pytest.approx(300.0)
+
+    def test_piece_units_deduct_by_conventional_weight(self) -> None:
+        """2 cloves garlic = 6 g against a gram row, not a whole bulb."""
+        pantry = [_make_item("garlic", 100.0, "g", qty_base=100.0, unit_base="g")]
+        ingredients = [{"name": "garlic", "quantity": 2.0, "unit": "cloves"}]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert proposal.matches[0].status == "ready"
+        assert proposal.matches[0].deduct_qty == pytest.approx(6.0)
+
+    def test_ingredient_without_density_stays_an_honest_conflict(self) -> None:
+        """No density for matcha, so a tablespoon of it is still not comparable.
+
+        The conflict is the correct answer here: inventing a number would
+        deduct the wrong amount from the user's pantry without telling them.
+        """
+        pantry = [_make_item("matcha", 30.0, "g", qty_base=30.0, unit_base="g")]
+        ingredients = [{"name": "matcha", "quantity": 1.0, "unit": "tbsp"}]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert len(proposal.unit_conflicts) == 1
+        assert proposal.matches[0].status == "unit_conflict"
+        assert proposal.matches[0].deduct_qty is None
+
+    def test_repeated_volume_lines_share_one_gram_row(self) -> None:
+        """Converted quantities feed the same consumption accounting as the rest."""
+        pantry = [_make_item("butter", 6.0, "g", qty_base=6.0, unit_base="g")]
+        ingredients = [
+            {"name": "butter", "quantity": 1.0, "unit": "tsp"},  # 4.555 g
+            {"name": "butter", "quantity": 1.0, "unit": "tsp"},  # only 1.445 g left
+        ]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert proposal.matches[0].status == "ready"
+        assert proposal.matches[1].status == "shortfall"
+        total = sum(m.deduct_qty or 0.0 for m in proposal.matches)
+        assert total == pytest.approx(6.0)
+
+
+class TestSalmonAvocadoToast:
+    """End-to-end shape of the recipe that motivated all of this.
+
+    Before: 7 of 9 matched ingredients were unit_conflict and 2 were deductible.
+    After: 8 are deductible and the only conflict left is "1 handful spinach",
+    which is refused on purpose — a handful has no conventional size.
+    """
+
+    def test_most_of_the_recipe_becomes_deductible(self) -> None:
+        pantry = [
+            _make_item("bread", 1.0, "item"),
+            _make_item("avocado", 2.0, "count"),
+            _make_item("salmon", 200.0, "g"),
+            _make_item("butter", 250.0, "g"),
+            _make_item("salt", 1.0, "kg"),
+            _make_item("greek yogurt", 500.0, "g"),
+            _make_item("baby spinach", 1.0, "bag"),
+            _make_item("basil", 1.0, "bunch"),
+            _make_item("olive oil", 500.0, "ml"),
+        ]
+        ingredients = [
+            {"name": "bread", "quantity": 4.0, "unit": "slices"},
+            {"name": "avocado", "quantity": 1.0, "unit": "count"},
+            {"name": "salmon", "quantity": 100.0, "unit": "g"},
+            {"name": "butter", "quantity": 1.0, "unit": "teaspoon"},
+            {"name": "salt", "quantity": 0.5, "unit": "teaspoon"},
+            {"name": "greek yogurt", "quantity": 4.0, "unit": "tablespoon"},
+            {"name": "baby spinach", "quantity": 1.0, "unit": "handful"},
+            {"name": "basil", "quantity": 8.0, "unit": "leaves"},
+            {"name": "olive oil", "quantity": 1.0, "unit": "tablespoon"},
+        ]
+
+        proposal = match_ingredients(RECIPE_ID, "Salmon Avocado Toast", ingredients, pantry)
+
+        assert proposal.missing == []
+        deductible = [m for m in proposal.matches if m.deduct_qty is not None]
+        assert len(deductible) == 8
+
+        statuses = {m.ingredient_name: m.status for m in proposal.matches}
+        assert statuses["butter"] == "ready"
+        assert statuses["salt"] == "ready"
+        assert statuses["greek yogurt"] == "ready"
+        assert statuses["salmon"] == "ready"
+
+        # The one deliberate holdout.
+        assert [c["ingredient"] for c in proposal.unit_conflicts] == ["baby spinach"]
+        assert statuses["baby spinach"] == "unit_conflict"
+
+
+class TestPieceUnitParsing:
+    """Raw ingredient strings whose unit is a piece word.
+
+    "leaves" was absent from the parser's unit alternation, so "8 leaves fresh
+    basil" parsed as a quantity of 8 with no unit and the name "leaves fresh
+    basil" — the unit never reached the normalizer at all.
+    """
+
+    def test_leaves_parses_as_a_unit(self) -> None:
+        from bubbly_chef.services.cook_matcher import _parse_ingredient_string
+
+        parsed = _parse_ingredient_string("8 leaves fresh basil")
+
+        assert parsed == {"name": "basil", "quantity": 8.0, "unit": "leaves"}
+
+    def test_leaves_deduct_by_conventional_weight(self) -> None:
+        """8 basil leaves at 0.5 g each = 4 g off a gram row."""
+        pantry = [_make_item("basil", 20.0, "g", qty_base=20.0, unit_base="g")]
+
+        proposal = match_ingredients(
+            RECIPE_ID, RECIPE_TITLE, ["8 leaves fresh basil"], pantry
+        )
+
+        assert proposal.matches[0].status == "ready"
+        assert proposal.matches[0].deduct_qty == pytest.approx(4.0)
+
+    def test_pinch_of_salt_from_a_string(self) -> None:
+        """1 pinch = 1/16 tsp = 0.3125 ml; salt at 1.2 g/ml = 0.375 g."""
+        pantry = [_make_item("salt", 1.0, "kg", qty_base=1000.0, unit_base="g")]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ["1 pinch salt"], pantry)
+
+        assert proposal.matches[0].status == "ready"
+        assert proposal.matches[0].deduct_qty == pytest.approx(0.375)

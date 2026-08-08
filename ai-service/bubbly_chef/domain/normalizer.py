@@ -8,6 +8,7 @@ from pathlib import Path
 
 from bubbly_chef.domain.catalog import categorize as catalog_categorize
 from bubbly_chef.domain.catalog import lookup as catalog_lookup
+from bubbly_chef.domain.density import density_g_per_ml, piece_weight_g
 
 # Synonym mappings: normalized_name -> [synonyms]
 SYNONYMS: dict[str, list[str]] = {
@@ -377,6 +378,27 @@ _UNIT_ALIASES: dict[str, str] = {
     "pint": "pint", "pints": "pint", "pt": "pint",
     "count": "count", "ct": "count",
     "item": "count", "items": "count",
+    "sticks": "stick",
+    # Piece units — a discrete piece of an ingredient
+    "slice": "slice", "slices": "slice",
+    "leaf": "leaf", "leaves": "leaf",
+    "clove": "clove", "cloves": "clove",
+    "sprig": "sprig", "sprigs": "sprig",
+    "head": "head", "heads": "head",
+    "bunch": "bunch", "bunches": "bunch",
+    "handful": "handful", "handfuls": "handful",
+    # Small culinary volumes
+    "pinch": "pinch", "pinches": "pinch",
+    "dash": "dash", "dashes": "dash",
+    # Package units — one purchased container of a thing
+    "can": "can", "cans": "can",
+    "package": "package", "packages": "package", "pkg": "package", "pkgs": "package",
+    "bag": "bag", "bags": "bag",
+    "bottle": "bottle", "bottles": "bottle",
+    "jar": "jar", "jars": "jar",
+    "box": "box", "boxes": "box",
+    "container": "container", "containers": "container",
+    "loaf": "loaf", "loaves": "loaf",
 }
 
 
@@ -398,26 +420,98 @@ _TO_ML: dict[str, float] = {
     "pint": 473.0,
     "quart": 946.0,
     "gallon": 3785.0,
+    # Conventional fractions of a teaspoon, not guesses: a pinch is 1/16 tsp
+    # and a dash is 1/8 tsp. With a density they become real weights — a pinch
+    # of salt works out at 0.375 g, matching the ~0.36 g usually quoted.
+    "pinch": 5.0 / 16.0,
+    "dash": 5.0 / 8.0,
 }
 
 # ── Unit → grams conversions ───────────────────────────────────────────────
-# NOTE: "cup" is intentionally absent — cup→g is ingredient-specific
-# (1 cup flour ≈ 125g, 1 cup butter = 227g). Requires density data out of scope here.
-# Cup→ml is available via _TO_ML for volume-target ingredients.
+# Only units that mean a fixed mass on their own. Volume units (cup, tbsp) reach
+# grams through ingredient density instead — see density.py — because a cup of
+# flour (125 g) and a cup of butter (227 g) are not the same weight.
+#
+# "stick" is likewise not here: it is 113 g of butter but nothing like that as a
+# stick of celery, so it lives in PIECE_WEIGHTS_G keyed by ingredient.
 _TO_G: dict[str, float] = {
     "g": 1.0,
     "kg": 1000.0,
     "lb": 453.59,
     "oz": 28.35,
-    "stick": 113.0,   # 1 stick butter = 113g = 8 tbsp
 }
 
 # ── Unit → count conversions ───────────────────────────────────────────────
+# Piece and package units count as one discrete thing each. A pantry row
+# measured in counts is counting exactly these — slices, cloves, cans, bags —
+# so 1:1 is the only mapping that keeps both sides in the same dimension.
+#
+# It does assume the row counts the same kind of piece the recipe asks for; a
+# recipe wanting 4 slices against a pantry holding "1 bread" reports a shortfall
+# of 3. That is visible in the proposal the user reviews before anything is
+# written, which is why it is preferable to refusing to compare at all.
+#
+# "handful" is deliberately absent: it is neither a discrete thing nor a fixed
+# amount (see UNCONVERTIBLE_TO_MASS_UNITS in density.py).
 _TO_COUNT: dict[str, float] = {
     "count": 1.0,
     "item": 1.0,
     "dozen": 12.0,
+    # Pieces of an ingredient
+    "slice": 1.0,
+    "leaf": 1.0,
+    "clove": 1.0,
+    "sprig": 1.0,
+    "head": 1.0,
+    "bunch": 1.0,
+    # One purchased package of a thing
+    "can": 1.0,
+    "package": 1.0,
+    "bag": 1.0,
+    "bottle": 1.0,
+    "jar": 1.0,
+    "box": 1.0,
+    "container": 1.0,
+    "loaf": 1.0,
 }
+
+
+# ── Unit → dimension ───────────────────────────────────────────────────────
+# The dimension a unit is measured in, used as a last-resort base unit for
+# ingredients no registry covers. "kg" is mass whatever it holds, so a pantry
+# row reading "2 kg basmati rice" has a base unit of grams even though nothing
+# in the codebase has ever heard of basmati rice.
+#
+# "stick" is absent on purpose: it is a piece unit whose dimension depends on
+# the ingredient (butter is 113 g, celery is not), so it resolves through
+# PIECE_WEIGHTS_G or not at all.
+_UNIT_DIMENSION: dict[str, str] = {
+    **{unit: "count" for unit in _TO_COUNT},
+    **{unit: "ml" for unit in _TO_ML},
+    **{unit: "g" for unit in _TO_G},
+}
+
+
+def _resolve_density(name: str, category: str) -> float | None:
+    """Density in g/ml for *name*, retrying under its canonical name.
+
+    The caller may hand us a raw label ("unsalted butter", "greek yogurt") that
+    the density table does not key on, so a miss is retried against
+    normalize_food_name()'s canonical form. Still None when nothing defensible
+    exists — that is a refusal, not a gap to paper over with a default.
+    """
+    density = density_g_per_ml(name, category)
+    if density is None:
+        density = density_g_per_ml(normalize_food_name(name), category)
+    return density
+
+
+def _resolve_piece_weight(unit: str, name: str) -> float | None:
+    """Grams in one *unit* of *name*, retrying under its canonical name."""
+    weight = piece_weight_g(unit, name)
+    if weight is None:
+        weight = piece_weight_g(unit, normalize_food_name(name))
+    return weight
 
 
 def normalize_to_base_unit(
@@ -429,7 +523,15 @@ def normalize_to_base_unit(
 ) -> tuple[float, str] | tuple[None, None]:
     """Convert (quantity, unit) to (quantity_base, unit_base) for a named ingredient.
 
-    Returns (None, None) if conversion is not possible (unknown unit or cross-dimension).
+    Conversion is attempted in four tiers, cheapest and most certain first:
+    within a dimension (count/ml/g), then a conventional piece weight for the
+    ingredient (1 clove garlic = 3 g), then across dimensions using ingredient
+    density (1 tsp butter = 5 ml x 0.911 g/ml = 4.6 g).
+
+    Returns (None, None) when none of those apply — an unknown unit, or a
+    cross-dimension pair for an ingredient with no defensible density. That
+    refusal is deliberate: the cook flow turns it into a visible "unit conflict"
+    the user can resolve, which is safer than deducting a made-up quantity.
 
     Args:
         target_unit: Convert toward this unit instead of looking one up by name.
@@ -444,7 +546,8 @@ def normalize_to_base_unit(
         normalize_to_base_unit("butter", 1.0, "stick") -> (113.0, "g")
         normalize_to_base_unit("milk", 2.0, "cup")     -> (480.0, "ml")
         normalize_to_base_unit("matcha", 30.0, "g")    -> (30.0, "g")
-        normalize_to_base_unit("sugar", 3.0, "tbsp")   -> (None, None)  # cross-dimension
+        normalize_to_base_unit("sugar", 3.0, "tbsp")   -> (38.25, "g")  # via density
+        normalize_to_base_unit("matcha", 3.0, "tbsp")  -> (None, None)  # no density
         normalize_to_base_unit("sour cream", 100.0, "g", target_unit="g") -> (100.0, "g")
     """
     from bubbly_chef.domain.defaults import (
@@ -455,11 +558,16 @@ def normalize_to_base_unit(
     canonical_unit = normalize_unit(unit)
     name_lower = name.lower().strip()
 
-    # Caller-supplied destination wins; otherwise the ingredient registry, then category
+    # Caller-supplied destination wins; otherwise the ingredient registry (under
+    # the given name, then its canonical form, so "basmati rice" reaches "rice"),
+    # then the category default.
+    caller_set_target = target_unit is not None
+    registry_unit: str | None = None
     if target_unit is None:
-        target_unit = INGREDIENT_CANONICAL_UNIT.get(
-            name_lower, CATEGORY_CANONICAL_UNIT.get(category, "count")
-        )
+        registry_unit = INGREDIENT_CANONICAL_UNIT.get(name_lower)
+        if registry_unit is None:
+            registry_unit = INGREDIENT_CANONICAL_UNIT.get(normalize_food_name(name_lower))
+        target_unit = registry_unit or CATEGORY_CANONICAL_UNIT.get(category, "count")
 
     # Same unit — no conversion needed
     if canonical_unit == target_unit:
@@ -477,5 +585,42 @@ def normalize_to_base_unit(
     if target_unit == "g" and canonical_unit in _TO_G:
         return quantity * _TO_G[canonical_unit], "g"
 
-    # Cross-dimension (e.g. tbsp→g) requires density data — out of scope
+    # Piece units with a conventional weight for THIS ingredient
+    # (1 stick butter = 113 g, 1 clove garlic = 3 g)
+    if target_unit == "g":
+        piece_g = _resolve_piece_weight(canonical_unit, name_lower)
+        if piece_g is not None:
+            return quantity * piece_g, "g"
+
+    # Cross-dimension via ingredient density (volume <-> mass)
+    density = None
+    if (target_unit == "g" and canonical_unit in _TO_ML) or (
+        target_unit == "ml" and canonical_unit in _TO_G
+    ):
+        density = _resolve_density(name_lower, category)
+
+    if density is not None and density > 0:
+        if target_unit == "g":
+            return quantity * _TO_ML[canonical_unit] * density, "g"
+        return quantity * _TO_G[canonical_unit] / density, "ml"
+
+    # Last resort: base the ingredient in whatever dimension its own unit is in.
+    #
+    # Without this, any ingredient missing from INGREDIENT_CANONICAL_UNIT and
+    # called without a category — which is how the cook matcher resolves the
+    # pantry side — targets "count" via the category default, so a perfectly
+    # ordinary "500 g greek yogurt" row cannot resolve a base unit at all and
+    # every recipe line touching it reports a unit conflict.
+    #
+    # It applies only when neither the caller nor the registry named a target.
+    # A registry entry is a deliberate statement about the ingredient (eggs are
+    # counted), so "1 pinch eggs" stays a refusal rather than becoming millilitres.
+    if not caller_set_target and registry_unit is None:
+        inferred_unit = _UNIT_DIMENSION.get(canonical_unit)
+        if inferred_unit is not None and inferred_unit != target_unit:
+            return normalize_to_base_unit(
+                name, quantity, unit, category, target_unit=inferred_unit
+            )
+
+    # No defensible conversion — say so rather than guess at one
     return None, None
