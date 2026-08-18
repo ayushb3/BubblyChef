@@ -321,14 +321,22 @@ NEXT_PUBLIC_AI_SERVICE_URL=http://localhost:8888
 ### ai-service/.env
 ```bash
 BUBBLY_SUPABASE_URL=...
-BUBBLY_SUPABASE_SERVICE_ROLE_KEY=...
+BUBBLY_SUPABASE_SECRET_KEY=...          # NOT ..._SERVICE_ROLE_KEY — see note below
 BUBBLY_SUPABASE_JWT_SECRET=...
 BUBBLY_GEMINI_API_KEY=...
+BUBBLY_GEMINI_MODEL=gemini-2.5-flash    # optional
 BUBBLY_OLLAMA_BASE_URL=http://localhost:11434   # optional
 BUBBLY_AUTO_ADD_CONFIDENCE_THRESHOLD=0.8
 BUBBLY_REVIEW_CONFIDENCE_THRESHOLD=0.5
 BUBBLY_CORS_ORIGINS=["http://localhost:3000"]
 ```
+
+Every name here must match a field on `Settings` in `ai-service/bubbly_chef/config.py`
+(prefix `BUBBLY_`). That model forbids extra keys, so a stray or misspelled
+`BUBBLY_*` variable does not get ignored — the service dies at import with
+`extra_forbidden`. The Next.js side uses `SUPABASE_SERVICE_ROLE_KEY`; the
+ai-service field is `supabase_secret_key`, so the two halves of the stack spell
+the same credential differently.
 
 ---
 

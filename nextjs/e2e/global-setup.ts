@@ -1,6 +1,7 @@
 import { chromium, FullConfig } from '@playwright/test';
 import * as dotenv from 'dotenv';
 import path from 'path';
+import { launchOptions } from './browser';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 
@@ -46,7 +47,7 @@ async function globalSetup(_config: FullConfig) {
   const cookieName = `sb-${projectRef}-auth-token`;
   const cookieValue = JSON.stringify(session);
 
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(launchOptions);
   const context = await browser.newContext();
 
   // Set the auth cookie before navigating

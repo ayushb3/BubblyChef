@@ -91,15 +91,24 @@ export default function BubblesFeed({ displayName }: BubblesFeedProps) {
         const expiringItems: EnrichedPantryItem[] = expiringData.items ?? []
         const recipes: Recipe[] = recipesData.recipes ?? []
 
-        // Find item expiring within 1 day
+        // Find item expiring within 1 day. The `>= 0` bound matters: once an item
+        // is past its date days_until_expiry goes negative, so an unbounded `<= 1`
+        // also matches long-expired stock (see the same fix in HeroHome).
         const urgentItem =
           expiringItems.find(
-            (item) => item.days_until_expiry !== null && item.days_until_expiry <= 1
+            (item) =>
+              item.days_until_expiry !== null &&
+              item.days_until_expiry >= 0 &&
+              item.days_until_expiry <= 1
           ) ?? null
 
-        // Weekly expiring count (within 7 days)
+        // Weekly expiring count (within 7 days, excluding already-expired items)
         const expiringWeekCount = allItems.filter(
-          (item) => item.is_expiring_soon || (item.days_until_expiry !== null && item.days_until_expiry <= 7)
+          (item) =>
+            item.is_expiring_soon ||
+            (item.days_until_expiry !== null &&
+              item.days_until_expiry >= 0 &&
+              item.days_until_expiry <= 7)
         ).length
 
         // Random recipe from the fetched list

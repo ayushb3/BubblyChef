@@ -89,7 +89,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
         except httpx.HTTPStatusError as e:
             raise ProviderUnavailableError(f"Ollama API error: {e}") from e
         except httpx.RequestError as e:
-            raise ProviderUnavailableError(f"Ollama connection error: {e}") from e
+            raise ProviderUnavailableError(f"Ollama connection error: {type(e).__name__}: {e}") from e
 
         # Parse response
         data = response.json()

@@ -100,15 +100,27 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
         const expiringItems: EnrichedPantryItem[] = expiringData.items ?? []
         const recipes: Recipe[] = recipesData.recipes ?? []
 
+        // Both windows need a lower bound. days_until_expiry goes negative once an
+        // item is past its date, so an unbounded `<= n` also matches food that
+        // expired weeks ago — which made the hero announce a long-expired item as
+        // "expires tomorrow" and inflated the "expiring" count with dead stock.
+        // Expired items are deliberately excluded here rather than relabelled:
+        // they are still surfaced on /pantry with an "Expired" badge, and #146
+        // already established that they should not get a cook-this-now CTA.
         const urgentItem =
           expiringItems.find(
-            (item) => item.days_until_expiry !== null && item.days_until_expiry <= 1
+            (item) =>
+              item.days_until_expiry !== null &&
+              item.days_until_expiry >= 0 &&
+              item.days_until_expiry <= 1
           ) ?? null
 
         const expiringCount = allItems.filter(
           (item) =>
             item.is_expiring_soon ||
-            (item.days_until_expiry !== null && item.days_until_expiry <= 7)
+            (item.days_until_expiry !== null &&
+              item.days_until_expiry >= 0 &&
+              item.days_until_expiry <= 7)
         ).length
 
         setData({

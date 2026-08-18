@@ -24,9 +24,17 @@ def test_normalize_cup_milk() -> None:
 
 
 def test_normalize_tbsp_sugar() -> None:
-    # tbsp is a volume unit (_TO_ML), sugar's target is "g" — cross-dimension
-    # No density data available, so conversion is not possible
+    # tbsp is a volume unit (_TO_ML) and sugar's target is "g", so this crosses
+    # dimensions. It resolves through sugar's density: 3 tbsp = 45 ml at
+    # 0.85 g/ml = 38.25 g. See tests/test_density_conversion.py.
     result = normalize_to_base_unit("sugar", 3.0, "tbsp")
+    assert result == (38.25, "g")
+
+
+def test_normalize_tbsp_without_density_is_refused() -> None:
+    # Same cross-dimension shape, but no published density for matcha, so the
+    # conversion is refused rather than guessed at.
+    result = normalize_to_base_unit("matcha", 3.0, "tbsp")
     assert result == (None, None)
 
 
@@ -37,6 +45,8 @@ def test_normalize_same_unit() -> None:
 
 
 def test_normalize_unknown_unit() -> None:
+    # "pinch" is a volume, and eggs are registered as a counted ingredient, so
+    # there is no sensible way to express a pinch of them.
     result = normalize_to_base_unit("eggs", 1.0, "pinch")
     assert result == (None, None)
 

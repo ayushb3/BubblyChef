@@ -161,7 +161,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             ) from e
         except httpx.RequestError as e:
             raise ProviderUnavailableError(
-                f"Anthropic [{self.model}] connection error: {e}"
+                f"Anthropic [{self.model}] connection error: {type(e).__name__}: {e}"
             ) from e
 
         data = response.json()
@@ -270,7 +270,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             ) from e
         except httpx.RequestError as e:
             raise ProviderUnavailableError(
-                f"Anthropic [{self.model}] tool-calling connection error: {e}"
+                f"Anthropic [{self.model}] tool-calling connection error: {type(e).__name__}: {e}"
             ) from e
 
         data = response.json()
@@ -351,7 +351,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             ) from e
         except httpx.RequestError as e:
             raise ProviderUnavailableError(
-                f"Anthropic [{self.model}] vision connection error: {e}"
+                f"Anthropic [{self.model}] vision connection error: {type(e).__name__}: {e}"
             ) from e
 
         data = response.json()
@@ -452,7 +452,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             return True
         except httpx.RequestError as e:
             logger.warning(
-                f"Anthropic [{self.model}] availability check connection error: {e}"
+                f"Anthropic [{self.model}] availability check connection error: {type(e).__name__}: {e}"
             )
             return False
 
