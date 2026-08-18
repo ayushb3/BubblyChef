@@ -1,13 +1,16 @@
-FROM python:3.12-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install Python dependencies
-COPY pyproject.toml .
-RUN pip install --no-cache-dir .
+# Install pinned runtime dependencies first — this layer only changes when
+# requirements.lock changes, so it stays cached across app-code-only rebuilds.
+COPY requirements.lock .
+RUN pip install --no-cache-dir -r requirements.lock
 
-# Copy application code
+# Install the bubbly_chef package itself, without re-resolving deps.
+COPY pyproject.toml .
 COPY bubbly_chef/ bubbly_chef/
+RUN pip install --no-cache-dir --no-deps .
 
 EXPOSE 8888
 
