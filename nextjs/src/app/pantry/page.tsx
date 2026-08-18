@@ -72,12 +72,12 @@ function daysUntilExpiry(date: string | null): number | null {
 }
 
 /**
- * Expiring soon — the same 0–3 day window `pantry-helpers`' `is_expiring_soon`
- * uses. Expired items (days < 0) are excluded; they keep their Expired badge
- * but don't get the "Cook this" deep link (#138, #146).
+ * Expiring soon — items with 1–3 days remaining get the "Cook this" deep link.
+ * Day-zero items (today is the expiry date) show the Expired badge and are
+ * excluded here so they never show both badges simultaneously (#227).
  */
 function isUrgent(days: number | null): boolean {
-  return days !== null && days >= 0 && days <= 3
+  return days !== null && days > 0 && days <= 3
 }
 
 function expiryBadge(days: number | null) {

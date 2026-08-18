@@ -293,7 +293,7 @@ def _load_food_library_canonicals() -> list[str]:
         return _food_library_canonicals
 
     try:
-        with open(_FOOD_LIBRARY_PATH) as f:
+        with open(_FOOD_LIBRARY_PATH, encoding="utf-8") as f:
             entries: list[dict[str, object]] = json.load(f)
         _food_library_canonicals = [
             str(e["canonical"]) for e in entries if "canonical" in e
