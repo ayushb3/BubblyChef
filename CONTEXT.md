@@ -177,6 +177,16 @@ Items with 1–3 days until expiry are flagged as "expiring soon" and prioritize
 ### Unit Normalization
 Pantry accepts units: oz, g, ml, l, cup, tsp, tbsp, count. Recipe generation uses compatible units only.
 
+### Piece vs Package Units
+A **piece unit** (slice, leaf, clove, sprig, stick) counts pieces *of* an ingredient. A **package unit** (item, loaf, bunch, head, bag, can, package, bottle, jar, box, container) counts packages *containing* an unknown number of pieces. They are incommensurable: the pantry does not record slices per loaf.
+
+`count` is neither — it is a genuine tally, so `6 count garlic` still deducts normally. The distinction is read from a pantry row's **raw display unit**, before `normalize_unit` collapses `item` into `count`.
+
+### Imprecise (cook match status)
+A cook-proposal ingredient status alongside `ready` / `substitute` / `shortfall` / `unit_conflict`. Means "you have this, we cannot quantify how much the recipe uses" — a piece-unit request against a package-unit row. Counts as **satisfied** for cook-readiness and deducts **nothing**; the pantry row is stamped with the recipe and time that consumed it imprecisely, so the deliberate drift is visible where the user would correct it.
+
+Genuine conversion is always tried first — a piece against a row with a real mass base resolves through conventional piece weights (`2 slices cheese` vs `500 g cheese` → 42 g). See `docs/adr/0003-piece-vs-package-units-are-incommensurable.md`.
+
 ### Confidence Thresholds
 - ≥ 0.8: Ready-to-add (no user review needed)
 - 0.5–0.8: Needs review (user edits before add)
