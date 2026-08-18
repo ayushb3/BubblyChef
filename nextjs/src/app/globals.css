@@ -193,10 +193,41 @@
   border-radius: inherit;
 }
 
-/* Chowder-style textile/fabric panel — subtle woven crosshatch texture */
+/* Chowder-style textile/fabric panel — subtle woven crosshatch texture.
+ * Used as narrow category-label strips in /pantry and the decorative
+ * banner in /profile. Kept intentionally understated so these surfaces
+ * stay functional rather than decorative.
+ */
 .chowder-panel {
   background-color: var(--color-primary);
   background-image:
     repeating-linear-gradient(0deg, transparent, transparent 5px, rgba(255,255,255,0.08) 5px, rgba(255,255,255,0.08) 6px),
     repeating-linear-gradient(90deg, transparent, transparent 5px, rgba(255,255,255,0.06) 5px, rgba(255,255,255,0.06) 6px);
+}
+
+/*
+ * Chat-specific variant of the chowder panel (Fix #173).
+ *
+ * Decision: Option B — fork rather than restyle the global class.
+ * /pantry uses .chowder-panel as narrow functional category labels and
+ * /profile uses it as a plain decorative banner; both surfaces are
+ * intentionally understated. The chat EmptyState "Chef Bubbly" strip
+ * is the only header label that should read as a deliberate kawaii
+ * accent moment, so it gets its own richer treatment without touching
+ * the other two surfaces.
+ *
+ * Treatment: diagonal gradient from --color-primary to --color-primary-dark
+ * (reads as depth/directionality), crosshatch bumped to 14%/12% opacity
+ * (visible woven texture), soft bottom border, and a subtle inset shadow
+ * to lift it off the card body beneath.
+ */
+.chowder-panel-chat {
+  background-color: var(--color-primary-dark);
+  background-image:
+    linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%),
+    repeating-linear-gradient(0deg, transparent, transparent 5px, rgba(255,255,255,0.14) 5px, rgba(255,255,255,0.14) 6px),
+    repeating-linear-gradient(90deg, transparent, transparent 5px, rgba(255,255,255,0.12) 5px, rgba(255,255,255,0.12) 6px);
+  background-blend-mode: normal, overlay, overlay;
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: inset 0 -2px 6px rgba(0,0,0,0.06);
 }

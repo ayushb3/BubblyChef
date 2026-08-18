@@ -58,7 +58,11 @@ export default function EmptyState({
       transition={springs.soft}
     >
       {headerLabel && (
-        <div className="chowder-panel px-5 py-3">
+        /* chowder-panel-chat: richer diagonal-gradient + visible crosshatch
+         * variant for card-level headers.  The base .chowder-panel is kept for
+         * pantry category rows and the full-bleed profile banner where a more
+         * expressive treatment would be distracting. */
+        <div className="chowder-panel-chat px-5 py-3">
           <p className="text-white font-semibold text-sm">{headerLabel}</p>
         </div>
       )}
