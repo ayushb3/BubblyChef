@@ -177,7 +177,7 @@ class TestCookConfirmRoute:
 
         mock_repo = AsyncMock()
         mock_repo.get_recipe.return_value = recipe_dict
-        mock_repo.deduct_pantry_item.return_value = None
+        mock_repo.deduct_pantry_item.return_value = True
         mock_repo.update_recipe_cooked.return_value = None
 
         payload = {
@@ -267,7 +267,7 @@ class TestCookConfirmRoute:
 
         mock_repo = AsyncMock()
         mock_repo.get_recipe.return_value = recipe_dict
-        mock_repo.deduct_pantry_item.return_value = None
+        mock_repo.deduct_pantry_item.return_value = True
         mock_repo.update_recipe_cooked.return_value = None
 
         payload = {

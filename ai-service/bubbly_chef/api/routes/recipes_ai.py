@@ -274,17 +274,31 @@ async def cook_confirm(
             item_id = str(deduction.pantry_item_id)
             totals[item_id] = totals.get(item_id, 0.0) + deduction.deduct_qty
 
+        # deduct_pantry_item refuses a row whose base unit is unknown rather than
+        # guessing at it. Count what it actually applied — reporting the
+        # requested total would tell the user their pantry changed when those
+        # rows were deliberately left alone.
+        applied = 0
+        skipped: list[str] = []
         for item_id, deduct_qty in totals.items():
-            await repo.deduct_pantry_item(
+            if await repo.deduct_pantry_item(
                 user_id=user_id,
                 item_id=item_id,
                 deduct_qty=deduct_qty,
-            )
+            ):
+                applied += 1
+            else:
+                skipped.append(item_id)
 
         # Mark recipe as cooked
         await repo.update_recipe_cooked(user_id=user_id, recipe_id=str(request.recipe_id))
 
-        return {"success": True, "deductions_applied": len(totals)}
+        return {
+            "success": True,
+            "deductions_applied": applied,
+            "deductions_requested": len(totals),
+            "deductions_skipped": skipped,
+        }
 
     except HTTPException:
         raise

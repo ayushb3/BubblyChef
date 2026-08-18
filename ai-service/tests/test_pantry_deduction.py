@@ -135,13 +135,66 @@ class TestDeductPantryItem:
             }
         )
 
-        await repo.deduct_pantry_item(user_id="u1", item_id="i1", deduct_qty=2.0)
+        applied = await repo.deduct_pantry_item(user_id="u1", item_id="i1", deduct_qty=2.0)
 
         assert client.store["updates"] == []
+        # The caller has to be able to tell a refusal from a success, or it will
+        # report "Pantry updated!" over a row it deliberately left alone.
+        assert applied is False
 
     async def test_missing_row_is_a_no_op(self) -> None:
         repo, client = _repo_for(None)
 
-        await repo.deduct_pantry_item(user_id="u1", item_id="nope", deduct_qty=1.0)
+        applied = await repo.deduct_pantry_item(user_id="u1", item_id="nope", deduct_qty=1.0)
 
         assert client.store["updates"] == []
+        assert applied is False
+
+    async def test_applied_deduction_reports_true(self) -> None:
+        repo, _client = _repo_for(
+            {
+                "name": "butter",
+                "quantity": 250.0,
+                "unit": "g",
+                "quantity_base": 250.0,
+                "unit_base": "g",
+            }
+        )
+
+        assert await repo.deduct_pantry_item(user_id="u1", item_id="i1", deduct_qty=50.0) is True
+
+    async def test_base_is_derived_from_the_normalized_name(self) -> None:
+        """The row name must be normalized the way cook_matcher normalizes it.
+
+        The matcher computes deduct_qty against a base derived from
+        normalize_food_name(row.name); deriving here from the raw name can pick a
+        different density, so the amount would be applied against a base it was
+        never computed from. Whatever normalize_food_name() maps a name to, both
+        sides must agree — this pins them together without asserting a particular
+        density value.
+        """
+        from bubbly_chef.domain.normalizer import normalize_food_name, normalize_to_base_unit
+
+        raw = "Organic Extra Virgin Olive Oil"
+        expected_base, expected_unit = normalize_to_base_unit(
+            name=normalize_food_name(raw).lower().strip(),
+            quantity=500.0,
+            unit="g",
+        )
+        assert expected_base is not None and expected_unit is not None
+
+        repo, client = _repo_for(
+            {
+                "name": raw,
+                "quantity": 500.0,
+                "unit": "g",
+                "quantity_base": None,
+                "unit_base": None,
+            }
+        )
+
+        assert await repo.deduct_pantry_item(user_id="u1", item_id="i1", deduct_qty=10.0) is True
+
+        update = client.store["updates"][0]
+        assert update["quantity_base"] == pytest.approx(expected_base - 10.0)
+        assert update["unit_base"] == expected_unit
