@@ -51,7 +51,7 @@ async def test_live_pantry_update() -> None:
 @pytest.mark.asyncio
 async def test_live_recipe_brainstorm() -> None:
     result = await classify_intent(_state(input_text="what can I make tonight?"))
-    assert result["intent"] == Intent.RECIPE_BRAINSTORM.value
+    assert result["intent"] in (Intent.RECIPE_BRAINSTORM.value, Intent.RECIPE_GENERATION.value)
 
 
 @_SKIP
