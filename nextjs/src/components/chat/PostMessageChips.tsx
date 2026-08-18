@@ -1,46 +1,41 @@
 'use client'
 
 import Chip from '@/components/ui/Chip'
+import type { ChipTone } from '@/components/ui/Chip'
+
+export interface ChipConfig {
+  label: string
+  /** The text sent to the AI when the chip is tapped. */
+  message: string
+  tone?: ChipTone
+  emoji?: string
+}
 
 export interface PostMessageChipsProps {
-  /** Ask for a different answer to the same question. */
-  onTryAnother?: () => void
-  /** Ask Bubbles to expand on the last answer. */
-  onTellMore?: () => void
+  chips: ChipConfig[]
+  onChipTap: (message: string) => void
 }
 
 /**
  * Contextual follow-up affordances rendered under the last settled assistant
  * message. Indentation matches the 36px mascot + gap-2 gutter beside the bubble.
  */
-export default function PostMessageChips({
-  onTryAnother,
-  onTellMore,
-}: PostMessageChipsProps) {
-  if (!onTryAnother && !onTellMore) return null
+export default function PostMessageChips({ chips, onChipTap }: PostMessageChipsProps) {
+  if (chips.length === 0) return null
 
   return (
     <div className="flex flex-wrap gap-2 mt-2 ml-11">
-      {onTryAnother && (
+      {chips.map((chip) => (
         <Chip
-          tone="accent"
-          emoji="🔄"
-          onClick={onTryAnother}
-          ariaLabel="Ask for another answer"
+          key={chip.label}
+          tone={chip.tone ?? 'muted'}
+          emoji={chip.emoji}
+          onClick={() => onChipTap(chip.message)}
+          ariaLabel={chip.label}
         >
-          Try another
+          {chip.label}
         </Chip>
-      )}
-      {onTellMore && (
-        <Chip
-          tone="primary"
-          emoji="💬"
-          onClick={onTellMore}
-          ariaLabel="Ask Bubbles to explain further"
-        >
-          Tell me more
-        </Chip>
-      )}
+      ))}
     </div>
   )
 }
