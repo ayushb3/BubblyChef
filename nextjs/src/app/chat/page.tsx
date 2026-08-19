@@ -30,6 +30,42 @@ import type {
   PantryProposalData,
 } from '@/types/chat'
 import { getBrainstormIdeas } from '@/types/chat'
+import type { ChipConfig } from '@/components/chat/PostMessageChips'
+
+// ---------------------------------------------------------------------------
+// Intent-aware chip resolver
+// ---------------------------------------------------------------------------
+
+function resolveChips(intent: string | undefined): ChipConfig[] {
+  switch (intent) {
+    case 'recipe_generation':
+    case 'recipe_card':
+      return [
+        { label: 'Try another recipe', message: 'Give me a different recipe', tone: 'accent', emoji: '🔄' },
+        { label: 'Tell me more', message: 'Tell me more about that recipe', tone: 'primary', emoji: '💬' },
+      ]
+    case 'pantry_update':
+      return [
+        { label: 'Add more items', message: 'I have more items to add to my pantry', tone: 'fresh', emoji: '➕' },
+        { label: 'What expires soon?', message: 'What items in my pantry are expiring soon?', tone: 'expiring', emoji: '⏰' },
+      ]
+    case 'cooking_question':
+      return [
+        { label: 'Ask another question', message: 'I have another cooking question', tone: 'primary', emoji: '❓' },
+        { label: 'Tell me more', message: 'Tell me more about that', tone: 'accent', emoji: '💬' },
+      ]
+    case 'recipe_brainstorm':
+      return [
+        { label: 'Explore this idea', message: 'Tell me more about this recipe idea', tone: 'accent', emoji: '✨' },
+        { label: 'Try a different direction', message: 'Give me some different recipe ideas', tone: 'primary', emoji: '🔀' },
+      ]
+    default:
+      return [
+        { label: 'Try another', message: 'Give me a different answer', tone: 'accent', emoji: '🔄' },
+        { label: 'Tell me more', message: 'Tell me more about that', tone: 'primary', emoji: '💬' },
+      ]
+  }
+}
 
 const SUGGESTIONS = [
   'What can I make tonight? 🌙',
@@ -258,12 +294,8 @@ function ChatSurface() {
     }
   }
 
-  const handleTryAnother = () => {
-    sendMessage('Give me a different recipe')
-  }
-
-  const handleTellMore = () => {
-    sendMessage('Tell me more about that')
+  const handleChipTap = (message: string) => {
+    sendMessage(message)
   }
 
   const handlePickIdea = (idea: string) => {
@@ -372,8 +404,8 @@ function ChatSurface() {
                     : 'Recipe'
                   setCookTarget({ recipeId, recipeTitle: title })
                 }}
-                onTryAnother={handleTryAnother}
-                onTellMore={handleTellMore}
+                onTryAnother={handleChipTap.bind(null, 'Give me a different recipe')}
+                onChipTap={handleChipTap}
                 onPickIdea={handlePickIdea}
               />
             ))}
@@ -491,7 +523,8 @@ interface MessageRendererProps {
   /** Opens CookModal for the saved recipe. */
   onCook: (recipeId: string) => void
   onTryAnother: () => void
-  onTellMore: () => void
+  /** Called when the user taps a follow-up chip; sends the chip's message text. */
+  onChipTap: (message: string) => void
   /** Called when the user taps a brainstorm idea card; sends the name as the next message. */
   onPickIdea: (idea: string) => void
 }
@@ -509,7 +542,7 @@ function MessageRenderer({
   savedRecipeId,
   onCook,
   onTryAnother,
-  onTellMore,
+  onChipTap,
   onPickIdea,
 }: MessageRendererProps) {
   // User messages — simple bubble
@@ -632,7 +665,7 @@ function MessageRenderer({
       {/* Follow-up affordances — only under the last settled assistant reply.
           Recipe-card and pantry-proposal messages carry their own actions. */}
       {isLastSettledAssistant && (
-        <PostMessageChips onTryAnother={onTryAnother} onTellMore={onTellMore} />
+        <PostMessageChips chips={resolveChips(intent)} onChipTap={onChipTap} />
       )}
     </motion.div>
   )
