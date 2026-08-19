@@ -73,8 +73,11 @@ function daysUntilExpiry(date: string | null): number | null {
 
 /**
  * Expiring soon — the same 0–3 day window `pantry-helpers`' `is_expiring_soon`
- * uses. Expired items (days < 0) are excluded; they keep their Expired badge
- * but don't get the "Cook this" deep link (#138, #146).
+ * uses (days_until_expiry &gt;= 0 && &lt;= 3). Day-zero items are urgent, not
+ * expired — `is_expired` there is strictly `days &lt; 0` — so they keep the
+ * "Cook this" deep link. `expiryBadge` below shows "Today" rather than
+ * "Expired" for day-zero so the two badges never contradict each other or
+ * the server-computed flags (#227).
  */
 function isUrgent(days: number | null): boolean {
   return days !== null && days >= 0 && days <= 3
@@ -82,7 +85,8 @@ function isUrgent(days: number | null): boolean {
 
 function expiryBadge(days: number | null) {
   if (days === null) return null
-  if (days <= 0) return { label: 'Expired', color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
+  if (days < 0) return { label: 'Expired', color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
+  if (days === 0) return { label: 'Today', color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
   if (days <= 2) return { label: `${days}d left`, color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
   if (days <= 5) return { label: `${days}d left`, color: 'bg-[var(--color-expiring)] text-[var(--color-expiring-text)]' }
   return { label: `${days}d left`, color: 'bg-[var(--color-fresh)] text-[var(--color-fresh-text)]' }
