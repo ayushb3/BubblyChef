@@ -405,6 +405,7 @@ function ChatSurface() {
             <EmptyState
               mascotState="happy"
               headerLabel="Chef Bubbly"
+              headerVariant="chat"
               headline={cookingRecipe ? 'Cooking with Bubbles' : 'Chat with Bubbles'}
               subline={
                 cookingRecipe
