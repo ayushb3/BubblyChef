@@ -17,7 +17,7 @@ import PantryProposalCard from '@/components/chat/PantryProposalCard'
 import BrainstormOptions from '@/components/chat/BrainstormOptions'
 import CookModal from '@/components/recipes/CookModal'
 import ThemePicker from '@/components/ui/ThemePicker'
-import Chip from '@/components/ui/Chip'
+import Chip, { type ChipTone } from '@/components/ui/Chip'
 import EmptyState from '@/components/ui/EmptyState'
 import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
@@ -74,11 +74,21 @@ const SUGGESTIONS = [
   'Help me meal prep 📦',
 ]
 
+/*
+ * Fix #174: one tone per chip so the four welcome suggestions read as
+ * visually distinct options rather than four copies of the same pill.
+ * Tones reuse existing Chip.tsx tokens — no new values introduced.
+ * 'expiring' (amber) is a semantic match for the third chip's content.
+ */
+const SUGGESTION_TONES: ChipTone[] = ['primary', 'accent', 'expiring', 'fresh']
+
 const COOKING_SUGGESTIONS = [
   'What can I substitute? 🔁',
   'How do I prep this? 🔪',
   'How long does this take? ⏱️',
 ]
+
+const COOKING_SUGGESTION_TONES: ChipTone[] = ['primary', 'accent', 'fresh']
 
 /**
  * `useSearchParams` opts the tree into client-side rendering, so the page shell
@@ -427,6 +437,7 @@ function ChatSurface() {
             <EmptyState
               mascotState="happy"
               headerLabel="Chef Bubbly"
+              headerVariant="chat"
               headline={cookingRecipe ? 'Cooking with Bubbles' : 'Chat with Bubbles'}
               subline={
                 cookingRecipe
@@ -437,10 +448,10 @@ function ChatSurface() {
             />
             {/* Chat-specific affordances — kept out of the generic EmptyState */}
             <div className="flex flex-wrap gap-2 justify-center">
-              {(cookingRecipe ? COOKING_SUGGESTIONS : SUGGESTIONS).map((s) => (
+              {(cookingRecipe ? COOKING_SUGGESTIONS : SUGGESTIONS).map((s, i) => (
                 <Chip
                   key={s}
-                  tone="accent"
+                  tone={(cookingRecipe ? COOKING_SUGGESTION_TONES : SUGGESTION_TONES)[i]}
                   onClick={() => handleSuggestionClick(s)}
                 >
                   {s}
