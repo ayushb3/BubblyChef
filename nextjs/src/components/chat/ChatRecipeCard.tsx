@@ -10,13 +10,13 @@ interface ChatRecipeCardProps {
   onSave?: () => void
   onTryAnother?: () => void
   saveState?: 'idle' | 'saving' | 'saved' | 'error'
-  /**
-   * ID of the saved recipe — only populated after a successful save.
-   * When present the "Cook this" button becomes active.
-   */
   savedRecipeId?: string | null
-  /** Opens the cook flow for the saved recipe. Requires savedRecipeId. */
-  onCook?: (recipeId: string) => void
+  /** True when savedRecipeId is a draft row (not yet a real library entry). */
+  isSavedDraft?: boolean
+  /** Enters guided cooking mode. Always enabled. */
+  onCookWithMe?: () => void
+  /** Opens deduction review directly. Always enabled. */
+  onAlreadyMade?: () => void
 }
 
 const CHIP_COLORS: string[] = [
@@ -64,7 +64,9 @@ export default function ChatRecipeCard({
   onTryAnother,
   saveState = 'idle',
   savedRecipeId,
-  onCook,
+  isSavedDraft = false,
+  onCookWithMe,
+  onAlreadyMade,
 }: ChatRecipeCardProps) {
   const totalTime =
     recipe.total_time_minutes
@@ -181,42 +183,49 @@ export default function ChatRecipeCard({
         )}
 
         {/* Action buttons */}
-        <div className="flex gap-2 pt-1">
-          <SpringButton
-            onClick={onSave}
-            disabled={saveState === 'saving' || saveState === 'saved'}
-            className={[
-              'flex-1 py-2 px-3 rounded-full text-sm font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed',
-              saveState === 'saved'
-                ? 'bg-green-100 text-green-700'
-                : saveState === 'error'
-                ? 'bg-red-100 text-red-700'
-                : 'bg-[var(--color-primary)] text-white',
-            ].join(' ')}
-          >
-            <SaveButtonContent saveState={saveState} />
-          </SpringButton>
-          {/* Cook this — only usable once the recipe has been saved (needs a db id) */}
-          {onCook && (
-            <motion.button
-              type="button"
-              onClick={() => savedRecipeId && onCook(savedRecipeId)}
-              disabled={!savedRecipeId}
-              title={savedRecipeId ? 'Mark as cooked & update pantry' : 'Save the recipe first to cook it'}
-              whileHover={{ scale: savedRecipeId ? 1.03 : 1 }}
-              whileTap={{ scale: savedRecipeId ? 0.95 : 1 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-              className="py-2 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
+        <div className="flex flex-col gap-2 pt-1">
+          {/* Primary: guided cooking — always enabled */}
+          {onCookWithMe && (
+            <SpringButton
+              onClick={onCookWithMe}
+              className="w-full py-2.5 px-3 rounded-full text-sm font-semibold bg-[var(--color-primary)] text-white"
             >
-              🍳 Cook
-            </motion.button>
+              👩‍🍳 Cook with me
+            </SpringButton>
           )}
-          <SpringButton
-            onClick={onTryAnother}
-            className="flex-1 py-2 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-bg)]"
-          >
-            Try Another
-          </SpringButton>
+          <div className="flex gap-2">
+          {/* Save to Library — hidden once a real library entry exists */}
+          {saveState !== 'saved' && !(savedRecipeId && !isSavedDraft) && (
+              <SpringButton
+                onClick={onSave}
+                disabled={saveState === 'saving'}
+                className={[
+                  'flex-1 py-2 px-3 rounded-full text-sm font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed',
+                  saveState === 'error'
+                    ? 'bg-red-100 text-red-700'
+                    : 'border border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-bg)]',
+                ].join(' ')}
+              >
+                <SaveButtonContent saveState={saveState} />
+              </SpringButton>
+            )}
+            <SpringButton
+              onClick={onTryAnother}
+              className="flex-1 py-2 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-bg)]"
+            >
+              Try Another
+            </SpringButton>
+          </div>
+          {/* Tertiary: already cooked — quiet text button, always enabled */}
+          {onAlreadyMade && (
+            <button
+              type="button"
+              onClick={onAlreadyMade}
+              className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] underline underline-offset-2 text-center py-0.5 transition-colors"
+            >
+              I already made this
+            </button>
+          )}
         </div>
       </div>
     </motion.div>
