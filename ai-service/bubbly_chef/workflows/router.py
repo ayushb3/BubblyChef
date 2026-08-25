@@ -703,11 +703,10 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 session.pending_proposal = None
 
         elif intent == Intent.COOKING_HELP.value:
-            # Belt-and-suspenders: if brainstorm_ideas exist in state, the brainstorm
-            # pipeline ran. BUT only flip to RECIPE_EXPLORING when the session is NOT
-            # already COOKING — in COOKING mode the intent is forced at classify_intent,
-            # so brainstorm_ideas appearing does not mean the user left the recipe.
-            if state.get("brainstorm_ideas") and old_mode != SessionMode.COOKING.value:
+            # Belt-and-suspenders: if brainstorm_ideas exist in state,
+            # the brainstorm pipeline ran even though intent was COOKING_HELP.
+            # Transition to RECIPE_EXPLORING so follow-ups work.
+            if state.get("brainstorm_ideas"):
                 session.active_mode = SessionMode.RECIPE_EXPLORING
                 session.metadata["brainstorm_ideas"] = state.get("brainstorm_ideas", [])
                 constraints = state.get("recipe_constraints")

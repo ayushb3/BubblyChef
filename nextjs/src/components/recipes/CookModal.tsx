@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
@@ -11,10 +11,6 @@ interface CookModalProps {
   recipeTitle: string
   onClose: () => void
   onCooked: () => void
-  /** When true, success state offers "Add to library?" instead of the timer redirect. */
-  isDraft?: boolean
-  /** Called when user taps "Add to library" in the draft success state. */
-  onAddToLibrary?: () => Promise<void>
 }
 
 type ModalState = 'loading' | 'review' | 'confirming' | 'success' | 'error'
@@ -64,16 +60,13 @@ export default function CookModal({
   recipeTitle,
   onClose,
   onCooked,
-  isDraft = false,
-  onAddToLibrary,
 }: CookModalProps) {
   const router = useRouter()
   const [state, setState] = useState<ModalState>('loading')
   const [proposal, setProposal] = useState<CookProposal | null>(null)
   const [errorMsg, setErrorMsg] = useState<string>('')
-  const [addingToLibrary, setAddingToLibrary] = useState(false)
+  // Editable override quantities for unit_conflict rows (keyed by pantry_item_id)
   const [overrides, setOverrides] = useState<Record<string, string>>({})
-  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -92,7 +85,6 @@ export default function CookModal({
       })
     return () => {
       cancelled = true
-      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current)
     }
   }, [recipeId])
 
@@ -142,13 +134,14 @@ export default function CookModal({
     try {
       await confirmCook(recipeId, deductions)
       setState('success')
-      if (!isDraft) {
-        redirectTimerRef.current = setTimeout(() => {
-          onCooked()
-          onClose()
-          router.push(`/chat?cooking=${encodeURIComponent(recipeId)}`)
-        }, 1200)
-      }
+      // Hold the success state briefly so the user sees the deduction land,
+      // then hand off to chat with this recipe as context (issue #122).
+      // router.push is a client-side transition — no full reload.
+      setTimeout(() => {
+        onCooked()
+        onClose()
+        router.push(`/chat?cooking=${encodeURIComponent(recipeId)}`)
+      }, 1200)
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to confirm cook')
       setState('error')
@@ -235,53 +228,20 @@ export default function CookModal({
             )}
 
             {state === 'success' && (
-              <div className="py-8 text-center flex flex-col items-center gap-3">
-                <p className="text-3xl">✅</p>
+              <div className="py-8 text-center">
+                <p className="text-3xl mb-2">✅</p>
                 <p
                   className="text-sm font-extrabold text-[var(--color-text)]"
                   style={{ fontFamily: 'Nunito, sans-serif' }}
                 >
                   Pantry updated!
                 </p>
-                {isDraft ? (
-                  <>
-                    <p
-                      className="text-sm text-[var(--color-muted)]"
-                      style={{ fontFamily: 'Nunito, sans-serif' }}
-                    >
-                      Add <span className="font-semibold">{recipeTitle}</span> to your library?
-                    </p>
-                    <div className="flex gap-2 w-full mt-1">
-                      <button
-                        onClick={() => { onCooked(); onClose() }}
-                        className="flex-1 py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform"
-                        style={{ fontFamily: 'Nunito, sans-serif' }}
-                      >
-                        Not now
-                      </button>
-                      <button
-                        onClick={async () => {
-                          if (!onAddToLibrary) return
-                          setAddingToLibrary(true)
-                          try { await onAddToLibrary() } finally { setAddingToLibrary(false) }
-                          onCooked(); onClose()
-                        }}
-                        disabled={addingToLibrary}
-                        className="flex-1 py-2 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
-                        style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
-                      >
-                        {addingToLibrary ? 'Saving...' : 'Add to library'}
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <p
-                    className="text-xs text-[var(--color-muted)] mt-1"
-                    style={{ fontFamily: 'Nunito, sans-serif' }}
-                  >
-                    Ingredients deducted — taking you to chat.
-                  </p>
-                )}
+                <p
+                  className="text-xs text-[var(--color-muted)] mt-1"
+                  style={{ fontFamily: 'Nunito, sans-serif' }}
+                >
+                  Ingredients deducted — taking you to chat.
+                </p>
               </div>
             )}
 

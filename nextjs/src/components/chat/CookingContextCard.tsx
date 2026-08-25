@@ -7,7 +7,6 @@ interface CookingContextCardProps {
   title: string
   ingredientCount: number
   onDismiss: () => void
-  onFinishCooking?: () => void
 }
 
 /**
@@ -22,7 +21,6 @@ export default function CookingContextCard({
   title,
   ingredientCount,
   onDismiss,
-  onFinishCooking,
 }: CookingContextCardProps) {
   const { springs } = useMotionConfig()
 
@@ -64,16 +62,6 @@ export default function CookingContextCard({
             {ingredientCount} {ingredientCount === 1 ? 'ingredient' : 'ingredients'} · ask me
             anything about it
           </p>
-        )}
-        {onFinishCooking && (
-          <button
-            type="button"
-            onClick={onFinishCooking}
-            className="mt-1.5 text-xs font-semibold text-[var(--color-primary-dark)] hover:underline"
-            style={{ fontFamily: 'Nunito, sans-serif' }}
-          >
-            Finished cooking →
-          </button>
         )}
       </div>
 
