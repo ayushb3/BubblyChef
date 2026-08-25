@@ -10,13 +10,13 @@ from datetime import date
 
 from langgraph.graph import END, StateGraph
 
+from bubbly_chef.domain.normalizer import normalize_food_name, resolve_category
 from bubbly_chef.models.base import ProposalEnvelope
 from bubbly_chef.models.pantry import (
     PantryProposal,
 )
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 from bubbly_chef.tools.llm_client import LLMError, get_ollama_client
-from bubbly_chef.tools.normalizer import get_normalizer
 from bubbly_chef.tools.product_lookup import get_product_lookup
 from bubbly_chef.workflows.ingest_spine import (
     build_actions_from_normalized,
@@ -99,10 +99,11 @@ async def lookup_barcode(state: ProductWorkflowState) -> ProductWorkflowState:
     if product_info.found:
         logger.info(f"Found product for barcode {barcode}: {product_info.name}")
 
-        # Determine category from product info
-        normalizer = get_normalizer()
-        category = normalizer.get_category(product_info.name or "")
-
+        # OpenFoodFacts's own category is authoritative when present. When it
+        # is not, fall back to resolve_category's head-noun/catalog matcher
+        # (see normalize_product below) rather than guessing here — passing
+        # the raw category through and deferring the fallback keeps category
+        # resolution in one place.
         return {
             **state,
             "product_found": True,
@@ -111,7 +112,7 @@ async def lookup_barcode(state: ProductWorkflowState) -> ProductWorkflowState:
                     "name": product_info.name or "Unknown Product",
                     "quantity": state.get("quantity_override", 1.0),
                     "unit": state.get("unit_override", "item"),
-                    "category": product_info.category or category.value,
+                    "category": product_info.category,
                     "action": "add",
                     "brand": product_info.brand,
                     "barcode": barcode,
@@ -201,6 +202,13 @@ async def parse_description_llm(state: ProductWorkflowState) -> ProductWorkflowS
 def normalize_product(state: ProductWorkflowState) -> ProductWorkflowState:
     """
     Node: Normalize product item (deterministic).
+
+    Uses domain/normalizer.py's ``normalize_food_name`` (head-noun matcher)
+    instead of tools/normalizer.py's ``FoodNormalizer.normalize`` (bidirectional
+    substring), for the same reason receipt ingest does — see
+    ``receipt_ingest.normalize_receipt_items``. The bidirectional matcher
+    collapses distinct products ("milk chocolate" -> "milk") because any
+    synonym that is a substring of the input (or vice versa) wins.
     """
     parsed_items = state.get("parsed_items", [])
 
@@ -210,7 +218,6 @@ def normalize_product(state: ProductWorkflowState) -> ProductWorkflowState:
             "normalized_items": [],
         }
 
-    normalizer = get_normalizer()
     expiry = get_expiry_heuristics()
 
     normalized = []
@@ -219,11 +226,19 @@ def normalize_product(state: ProductWorkflowState) -> ProductWorkflowState:
         name = item.get("name", "")
         original_name = name
 
-        # Normalize name
-        normalized_name = normalizer.normalize(name)
+        # Normalize name through the head-noun matcher in domain/normalizer.py.
+        normalized_name = normalize_food_name(name)
 
-        # Get category
-        category = map_category(item.get("category"))
+        # Get category: prefer a known source (OpenFoodFacts's own category, or
+        # the LLM's structured guess) over the deterministic matcher, same
+        # precedence as receipt ingest. resolve_category is kept as a fallback
+        # for when neither source names anything usable.
+        source_category = item.get("category")
+        if source_category and str(source_category).lower() != "other":
+            category = map_category(source_category)
+        else:
+            resolved = resolve_category(normalized_name)
+            category = map_category(resolved) if resolved else map_category(None)
 
         # Get storage and expiry
         storage = expiry.get_default_storage(category)
