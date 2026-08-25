@@ -93,3 +93,7 @@ Thumbs.db
 .vibe/
 .windsurf/
 .zencoder/
+
+# Transient agent worktrees. `.claude/agents/` and `.claude/settings.json` are
+# tracked deliberately — scope this to worktrees only, never the whole dir.
+.claude/worktrees/
