@@ -57,6 +57,7 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
   const [suggestions, setSuggestions] = useState<FoodSuggestion[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -81,6 +82,7 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
     }
     setConfirmDelete(false)
     setSuggestions([])
+    setError(null)
   }, [editItem, isOpen])
 
   // Food typeahead
@@ -114,40 +116,52 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
     setSuggestions([])
   }
 
+  // Every write path below keeps the modal open on failure. It used to close
+  // unconditionally and swallow the error, so a 401/409/500 was indistinguishable
+  // from a successful save and the item silently never appeared (#240).
   const handleSubmit = async () => {
     if (!name.trim()) return
     setSaving(true)
+    setError(null)
     try {
-      if (isEditMode && editItem) {
-        await fetch(`/api/pantry/${editItem.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: name.trim(),
-            quantity,
-            unit,
-            category,
-            location,
-            expiry_date: expiryDate || null,
-          }),
-        })
-      } else {
-        await fetch('/api/pantry', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: name.trim(),
-            quantity,
-            unit,
-            category,
-            storage_location: location,
-            expiry_date: expiryDate || null,
-          }),
-        })
+      const res =
+        isEditMode && editItem
+          ? await fetch(`/api/pantry/${editItem.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: name.trim(),
+                quantity,
+                unit,
+                category,
+                location,
+                expiry_date: expiryDate || null,
+              }),
+            })
+          : await fetch('/api/pantry', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: name.trim(),
+                quantity,
+                unit,
+                category,
+                storage_location: location,
+                expiry_date: expiryDate || null,
+              }),
+            })
+
+      if (!res.ok) {
+        setError(
+          res.status === 401
+            ? 'Your session expired — sign in again to save.'
+            : "Couldn't save that item. Please try again.",
+        )
+        return
       }
       onClose()
     } catch {
-      // silent — user can retry
+      setError('Network problem — check your connection and try again.')
     } finally {
       setSaving(false)
     }
@@ -156,11 +170,16 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
   const handleDelete = async () => {
     if (!editItem) return
     setSaving(true)
+    setError(null)
     try {
-      await fetch(`/api/pantry/${editItem.id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/pantry/${editItem.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        setError("Couldn't delete that item. Please try again.")
+        return
+      }
       onClose()
     } catch {
-      // silent
+      setError('Network problem — check your connection and try again.')
     } finally {
       setSaving(false)
     }
@@ -303,6 +322,15 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                   className="w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
                 />
               </div>
+
+              {error && (
+                <p
+                  role="alert"
+                  className="mb-3 text-xs font-semibold text-red-500 text-center"
+                >
+                  {error}
+                </p>
+              )}
 
               {/* Actions */}
               <div className="flex gap-3">

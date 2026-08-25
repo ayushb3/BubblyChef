@@ -146,6 +146,50 @@ def test_empty_must_use_leaves_existing_ranking_unchanged() -> None:
 
 
 # ---------------------------------------------------------------------------
+# score_and_rank — expired stock (#239)
+# ---------------------------------------------------------------------------
+
+
+def test_expired_item_is_flagged_and_not_promoted() -> None:
+    """Past-date stock scores neutral and carries `_expired`, never the +10
+    urgency bonus an unbounded `days_left <= 3` used to hand it (#239)."""
+    ranked = score_and_rank([_item("spinach", days_until_expiry=-14)], {})
+    assert ranked[0]["_expired"] is True
+    assert ranked[0]["_score"] == 0
+
+
+def test_fresh_item_is_not_flagged_expired() -> None:
+    """The `_expired` flag stays off for in-date items, and expiry scoring holds."""
+    ranked = score_and_rank(
+        [_item("milk", days_until_expiry=1), _item("rice", days_until_expiry=30)], {}
+    )
+    by_name = {i["name"]: i for i in ranked}
+    assert by_name["milk"]["_expired"] is False
+    assert by_name["milk"]["_score"] == 10  # expiring soon
+    assert by_name["rice"]["_expired"] is False
+
+
+def test_expired_item_ranks_below_a_fresh_expiring_item() -> None:
+    """An expired item must not lead the list over genuinely urgent stock."""
+    ranked = score_and_rank(
+        [_item("old lettuce", days_until_expiry=-10), _item("milk", days_until_expiry=1)],
+        {},
+    )
+    assert ranked[0]["name"] == "milk"
+
+
+def test_expired_item_still_promoted_when_explicitly_must_use() -> None:
+    """A must-use item is an explicit user request — it survives the expiry rule."""
+    ranked = score_and_rank(
+        [_item("eggs", days_until_expiry=-2), _item("flour")],
+        {"must_use_ingredients": ["eggs"]},
+    )
+    assert ranked[0]["name"] == "eggs"
+    assert ranked[0]["_must_use"] is True
+    assert ranked[0]["_expired"] is True
+
+
+# ---------------------------------------------------------------------------
 # brainstorm_recipe_ideas — prompt grounding
 # ---------------------------------------------------------------------------
 
@@ -202,6 +246,62 @@ async def test_brainstorm_prompt_omits_must_use_when_unset() -> None:
     # The static rule mentions "Must use", but no must-use data line is emitted
     assert not any(li.startswith("Must use") for li in prompt.splitlines())
     assert "Expiring soon (prioritize): milk" in prompt
+
+
+@pytest.mark.asyncio
+async def test_brainstorm_drops_expired_stock_from_the_pool() -> None:
+    """Expired items must not reach the suggestion prompt at all (#239)."""
+    scored = score_and_rank(
+        [_item("fresh basil", days_until_expiry=2), _item("old spinach", days_until_expiry=-14)],
+        {},
+    )
+    with _mock_ai("**Basil Pasta**") as mock_mgr:
+        await brainstorm_recipe_ideas(
+            {
+                "input_text": "what's for dinner?",
+                "scored_pantry_items": scored,
+                "recipe_constraints": {},
+            }
+        )
+    prompt = mock_mgr.return_value.complete.call_args.kwargs["prompt"]
+    assert "basil" in prompt
+    assert "spinach" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_brainstorm_keeps_expired_item_when_must_use() -> None:
+    """A must-use item survives the expiry drop — user asked for it explicitly."""
+    scored = score_and_rank(
+        [_item("eggs", days_until_expiry=-2)], {"must_use_ingredients": ["eggs"]}
+    )
+    with _mock_ai("**Scramble**") as mock_mgr:
+        await brainstorm_recipe_ideas(
+            {
+                "input_text": "use up my eggs",
+                "scored_pantry_items": scored,
+                "recipe_constraints": {"must_use_ingredients": ["eggs"]},
+            }
+        )
+    prompt = mock_mgr.return_value.complete.call_args.kwargs["prompt"]
+    assert "eggs" in prompt
+
+
+@pytest.mark.asyncio
+async def test_brainstorm_defaults_meal_type_when_unset() -> None:
+    """Without a meal_type the prompt would let the model pick freely, yielding
+    breakfast at midnight (#248). The node falls back to the time of day."""
+    from bubbly_chef.workflows.recipe.nodes import _default_meal_type
+
+    with _mock_ai("**Dinner Idea**") as mock_mgr:
+        await brainstorm_recipe_ideas(
+            {
+                "input_text": "what can I make?",
+                "scored_pantry_items": [],
+                "recipe_constraints": {},
+            }
+        )
+    prompt = mock_mgr.return_value.complete.call_args.kwargs["prompt"]
+    assert _default_meal_type() in prompt
 
 
 # ---------------------------------------------------------------------------

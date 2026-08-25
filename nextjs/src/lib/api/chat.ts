@@ -87,6 +87,18 @@ export async function streamChatMessage(
   const decoder = new TextDecoder()
   let buffer = ''
 
+  // The caller clears its streaming state only from `onDone`/`onError`, so a
+  // stream that ends without emitting an `envelope` or `error` event (backend
+  // crash mid-stream, dropped proxy connection, truncated body) used to leave
+  // the UI streaming forever with no way out but a reload (#241). Track whether
+  // a terminal callback actually fired and synthesise one if it did not.
+  let settled = false
+  const settle = (fn: () => void) => {
+    if (settled) return
+    settled = true
+    fn()
+  }
+
   try {
     for (;;) {
       const { done, value } = await reader.read()
@@ -112,13 +124,13 @@ export async function streamChatMessage(
               parsed.type === 'envelope' ||
               currentEventType === 'envelope'
             ) {
-              onDone(parsed.data)
+              settle(() => onDone(parsed.data))
             } else if (
               parsed.type === 'error' ||
               currentEventType === 'error'
             ) {
-              onError(
-                new Error(parsed.message ?? 'Stream error'),
+              settle(() =>
+                onError(new Error(parsed.message ?? 'Stream error')),
               )
               return
             }
@@ -130,10 +142,19 @@ export async function streamChatMessage(
       }
     }
   } catch (err) {
-    if ((err as DOMException)?.name === 'AbortError') return
-    onError(err instanceof Error ? err : new Error(String(err)))
+    // An abort is a deliberate user action; the caller already reset its own
+    // state when it aborted, so mark this settled without firing a callback.
+    if ((err as DOMException)?.name === 'AbortError') {
+      settled = true
+      return
+    }
+    settle(() => onError(err instanceof Error ? err : new Error(String(err))))
   } finally {
     reader.releaseLock()
+    // Reached when the body closed cleanly but no envelope ever arrived.
+    settle(() =>
+      onError(new Error('The response ended unexpectedly. Please try again.')),
+    )
   }
 }
 
