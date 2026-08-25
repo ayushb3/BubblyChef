@@ -156,45 +156,18 @@ def clean_receipt_items(state: WorkflowState) -> WorkflowState:
     """
     Node: Clean and filter receipt items (deterministic).
 
-    Removes obvious non-food items, price artifacts, etc.
+    Drops only degenerate rows (empty or absurdly long names). Non-food
+    accounting lines (tax, total, cash, …) are left to the LLM parse and the
+    per-item confidence tiers — a substring keyword filter here silently ate
+    real food (``"bag"`` → baguette/cabbage, ``"cash"`` → cashews).
     """
     parsed_items = state.get("parsed_items", [])
-
-    # Keywords indicating non-food items to filter out
-    filter_keywords = [
-        "tax",
-        "total",
-        "subtotal",
-        "change",
-        "cash",
-        "credit",
-        "debit",
-        "bag",
-        "bags",
-        "coupon",
-        "discount",
-        "savings",
-        "member",
-        "rewards",
-        "receipt",
-        "store",
-        "thank",
-        "visit",
-        "date",
-        "time",
-        "cashier",
-    ]
 
     cleaned = []
     warnings = state.get("warnings", [])
 
     for item in parsed_items:
         name = item.get("name", "").lower()
-
-        # Skip if name looks like non-food
-        if any(kw in name for kw in filter_keywords):
-            warnings.append(f"Filtered non-food item: {item.get('name')}")
-            continue
 
         # Skip if name is too short or too long
         if len(name) < 2:

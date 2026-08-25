@@ -27,7 +27,7 @@ router = APIRouter(prefix="/v1/scan", tags=["scan"])
 )
 async def scan_receipt(
     file: UploadFile = File(..., description="Receipt image (JPEG/PNG)"),
-    preprocess: bool = True,
+    preprocess: bool = False,
     preprocess_mode: str = "auto",
     user_id: str = Depends(get_current_user_id),
 ) -> dict[str, Any]:
@@ -67,7 +67,10 @@ async def scan_receipt(
         if not ocr_text.strip():
             return {
                 "ocr_text": "",
-                "items": [],
+                "ready_to_add": [],
+                "needs_review": [],
+                "skipped": [],
+                "total_items": 0,
                 "warnings": ["No text detected in image. Try a clearer photo."],
             }
 
@@ -79,6 +82,7 @@ async def scan_receipt(
         # Extract items from the proposal envelope (Pydantic model)
         proposal = result.proposal
         actions = proposal.actions if proposal else []
+        warnings = list(result.warnings or [])
 
         # Categorize by confidence
         ready = []
@@ -108,6 +112,7 @@ async def scan_receipt(
             "needs_review": review,
             "skipped": skipped,
             "total_items": len(actions),
+            "warnings": warnings,
         }
 
     except Exception as e:
