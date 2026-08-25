@@ -15,6 +15,7 @@ import PantryAddSheet, { type PantryAddTab } from '@/components/pantry/PantryAdd
 import { getFoodEmoji } from '@/lib/food-emoji'
 import { titleCase } from '@/lib/format'
 import { cookThisHref } from '@/lib/chat-seed'
+import { daysUntilExpiry } from '@/lib/pantry-helpers'
 import Chip from '@/components/ui/Chip'
 
 interface PantryItem {
@@ -65,11 +66,9 @@ const LOCATION_FILTERS = [
   { value: 'counter', label: 'Counter' },
 ]
 
-function daysUntilExpiry(date: string | null): number | null {
-  if (!date) return null
-  const diff = new Date(date).getTime() - Date.now()
-  return Math.ceil(diff / (1000 * 60 * 60 * 24))
-}
+// `daysUntilExpiry` lives in `lib/pantry-helpers` — this file used to carry its
+// own copy that subtracted `Date.now()` instead of local midnight, which made
+// the badge disagree with the server-computed flags after ~18:00 (#244).
 
 /**
  * Expiring soon — the same 0–3 day window `pantry-helpers`' `is_expiring_soon`

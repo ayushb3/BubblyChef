@@ -355,19 +355,25 @@ function ChatSurface() {
         </div>
       )}
 
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-4 py-4">
-        {/* Cook handoff context — dismissible, sits above the thread */}
-        <AnimatePresence>
-          {cookingRecipe && (
+      {/* Cook handoff context — pinned above the thread rather than scrolling
+          with it. While a recipe is pinned, cooking *is* the task of this
+          screen, and the banner is the only on-screen confirmation that Bubbles
+          knows which recipe you mean; inside the scroll area it disappeared
+          after a couple of turns (#242). */}
+      <AnimatePresence>
+        {cookingRecipe && (
+          <div className="flex-shrink-0 px-4 pt-4">
             <CookingContextCard
               title={cookingRecipe.title}
               ingredientCount={cookingRecipe.ingredients.length}
               onDismiss={dismissCookingCard}
             />
-          )}
-        </AnimatePresence>
+          </div>
+        )}
+      </AnimatePresence>
 
+      {/* Messages area */}
+      <div className="flex-1 overflow-y-auto px-4 py-4">
         {/* Deep-link seed context (?tip= / ?use=) — same slot, same idiom */}
         <AnimatePresence>
           {activeSeed && (

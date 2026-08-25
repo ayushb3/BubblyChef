@@ -353,6 +353,7 @@ def score_and_rank(
     for item in pantry_items:
         name_lower = (item.get("name") or "").lower()
         score = 0.0
+        is_expired = False
 
         # "Use up my X" — dominates expiry so the named ingredient leads the list
         is_must_use = any(m in name_lower or name_lower in m for m in must_use)
@@ -365,7 +366,14 @@ def score_and_rank(
             try:
                 expiry = date.fromisoformat(str(expiry_str))
                 days_left = (expiry - today).days
-                if days_left <= 3:
+                # `days_left` goes negative once an item is past its date, so an
+                # unbounded `<= 3` also matched food that expired weeks ago and
+                # handed it to the LLM as a priority ingredient to cook tonight
+                # (#239). Expired stock scores neutral: still available to the
+                # model as context, never promoted as "use this first".
+                if days_left < 0:
+                    is_expired = True
+                elif days_left <= 3:
                     score += 10
                 elif days_left <= 7:
                     score += 5
@@ -384,7 +392,9 @@ def score_and_rank(
         if any(e in name_lower or name_lower in e for e in excluded):
             score -= 100
 
-        scored.append({**item, "_score": score, "_must_use": is_must_use})
+        scored.append(
+            {**item, "_score": score, "_must_use": is_must_use, "_expired": is_expired}
+        )
 
     scored.sort(key=lambda x: x.get("_score", 0), reverse=True)
     # Filter out excluded items (negative score)
@@ -586,10 +596,24 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
     scored_items: list[dict[str, Any]] = state.get("scored_pantry_items") or []
     constraints: dict[str, Any] = state.get("recipe_constraints") or {}
 
+    # Fall back to the time of day, same as the recipe-generate path does at
+    # `extract_recipe_constraints`. Without this the brainstorm prompt says only
+    # "if meal_type is specified" and the model picks freely — which produced
+    # breakfast suggestions at midnight (#248).
+    if not constraints.get("meal_type"):
+        constraints = {**constraints, "meal_type": _default_meal_type()}
+
     # Build ingredient summary for the prompt
     if scored_items:
         must_use = [i for i in scored_items if i.get("_must_use")]
-        rest = [i for i in scored_items if not i.get("_must_use")]
+        # Expired stock is dropped from the suggestion pool entirely (#239):
+        # scoring no longer promotes it, but leaving it under "Other available"
+        # still let the model build a dish around two-week-old spinach — and on
+        # a real pantry (29 of 49 items expired) it crowded out good ingredients.
+        # A must-use item is an explicit user request, so it survives.
+        rest = [
+            i for i in scored_items if not i.get("_must_use") and not i.get("_expired")
+        ]
         expiring = [i for i in rest if i.get("_score", 0) >= 10]
         supporting = [
             i for i in rest

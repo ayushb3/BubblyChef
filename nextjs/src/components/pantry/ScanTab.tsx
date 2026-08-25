@@ -56,6 +56,10 @@ export default function ScanTab({ onItemsReady }: ScanTabProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setState('upload')
+      // Retrying the same receipt is the obvious next move after a transient
+      // failure, but `onChange` doesn't fire for an unchanged value — so
+      // without this the same file simply does nothing (#246).
+      if (inputRef.current) inputRef.current.value = ''
     } finally {
       setTimeout(() => URL.revokeObjectURL(objectUrl), 500)
     }
