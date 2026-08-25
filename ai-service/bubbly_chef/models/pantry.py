@@ -135,6 +135,15 @@ class PantryUpsertAction(BaseModel):
         default=None,
         description="If UPDATE/REMOVE/USE, the ID of the existing item to modify",
     )
+    # Receipt-specific provenance fields — None for non-receipt paths
+    source_line: str | None = Field(
+        default=None,
+        description="Raw OCR receipt line this item was parsed from",
+    )
+    price: float | None = Field(
+        default=None,
+        description="Item price from receipt",
+    )
 
 
 class PantryAction(BaseModel):

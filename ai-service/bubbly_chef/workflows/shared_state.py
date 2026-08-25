@@ -46,6 +46,8 @@ class LLMParsedItem(BaseModel):
     category: str | None = Field(default=None, description="Food category guess")
     action: str = Field(default="add", description="Action: add, remove, or use")
     confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="Per-item confidence")
+    source_line: str | None = Field(default=None, description="Raw OCR receipt line this item was parsed from")
+    price: float | None = Field(default=None, description="Item price from receipt")
 
 
 class LLMParseResult(BaseModel):

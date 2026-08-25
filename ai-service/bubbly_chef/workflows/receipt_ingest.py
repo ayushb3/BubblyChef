@@ -15,9 +15,8 @@ from bubbly_chef.models.base import ProposalEnvelope
 from bubbly_chef.models.pantry import (
     PantryProposal,
 )
-from bubbly_chef.domain.normalizer import normalize_to_base_unit, resolve_category
+from bubbly_chef.domain.normalizer import normalize_food_name, normalize_to_base_unit, resolve_category
 from bubbly_chef.tools.expiry import get_expiry_heuristics
-from bubbly_chef.tools.normalizer import get_normalizer
 from bubbly_chef.workflows.ingest_spine import (
     build_actions_from_normalized,
     build_proposal_envelope,
@@ -36,44 +35,49 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 RECEIPT_PARSE_SYSTEM_PROMPT = """\
-You are a helpful assistant that extracts grocery items \
-from receipt OCR text.
+You are a precise grocery-item extractor for receipt OCR text.
 
 Receipt text is often messy with abbreviations, prices, and store-specific formatting.
-Your job is to extract the actual food/grocery items and ignore:
-- Prices
-- Tax lines
-- Totals
-- Store headers/footers
-- Non-food items (bags, etc.)
+Your job is to extract the actual food/grocery items.
 
 Rules:
-1. Extract only food/grocery items
-2. All items from a receipt are "add" actions (purchases)
-3. Extract quantities when visible
-4. Guess the food category
-5. Handle common receipt abbreviations (e.g., "ORG" = organic, "GAL" = gallon)
-6. If quantity is unclear, default to 1"""
+1. Extract only food/grocery items. Skip non-food lines (tax, totals, store headers, bag fees,
+   loyalty points, etc.) — but DO NOT filter by keyword; use context and your own judgment.
+2. All items from a receipt are "add" actions (purchases).
+3. Extract quantities when visible.
+4. Guess the food category.
+5. Handle common receipt abbreviations (e.g., "ORG" = organic, "GAL" = gallon,
+   "LB" = pound, "CT" = count, "PK" = pack).
+6. If quantity is unclear, default to 1.
+7. PRESERVE the product name — expand abbreviations but keep the full product identity
+   (e.g., "ITALIAN BOMBA HOT PEPPER" stays "Italian Bomba Hot Pepper", not "pepper";
+   "ORG CANE SUGAR" becomes "Organic Cane Sugar", not "sugar";
+   "MILK CHOC ALMONDS" becomes "Milk Chocolate Almonds", not "milk").
+8. Return a SEPARATE confidence score for each individual item (0.0–1.0), based on how
+   clearly that specific line could be read and interpreted — not a single score for all.
+9. Set source_line to the raw receipt line this item was extracted from.
+10. Set price to the item's price if visible, otherwise null."""
 
 
 RECEIPT_PARSE_USER_PROMPT_TEMPLATE = """Parse the following receipt text into grocery items:
 
 "{text}"
 
-This is receipt text that may contain:
+This receipt text may contain:
 - Item names (possibly abbreviated)
-- Prices (ignore these)
+- Prices
 - Quantities
-- Tax and totals (ignore these)
+- Tax, totals, headers, and non-food lines (skip these)
 
-Extract each food item with:
-- name: the item name (expand abbreviations)
+For each food item extract:
+- name: full product name (expand abbreviations, preserve product identity)
 - quantity: numeric amount (default 1)
 - unit: unit of measurement
 - category: food category
 - action: always "add" for receipt items
-
-Return confidence 0-1 based on how clear the receipt text is."""
+- confidence: per-item confidence 0.0–1.0 (how clearly this specific line read)
+- source_line: the exact raw receipt line this item came from
+- price: item price as a number, or null if not visible"""
 
 
 # =============================================================================
@@ -126,8 +130,11 @@ async def parse_receipt_llm(state: WorkflowState) -> WorkflowState:
             item_dict["action"] = "add"  # Force add for receipts
             parsed_items.append(item_dict)
 
-        # Receipt confidence is typically lower due to OCR noise
-        adjusted_confidence = result.confidence * 0.9  # 10% penalty for OCR
+        # Use the batch confidence as-is — the OCR penalty (×0.9) has been removed.
+        # Per-item confidence from the LLM already encodes readability at the line
+        # level, so stamping an additional document-level penalty only pushes every
+        # item below the 0.8 auto-add threshold regardless of quality.
+        adjusted_confidence = result.confidence
 
         logger.info(
             f"Receipt LLM parsed {len(parsed_items)} items with confidence {adjusted_confidence}"
@@ -189,9 +196,18 @@ def clean_receipt_items(state: WorkflowState) -> WorkflowState:
 def normalize_receipt_items(state: WorkflowState) -> WorkflowState:
     """
     Node: Normalize item names from receipt (deterministic).
+
+    Uses domain/normalizer.py's ``normalize_food_name`` (head-noun matcher) instead
+    of tools/normalizer.py's ``FoodNormalizer.normalize`` (bidirectional substring).
+    The bidirectional matcher collapses distinct products — "italian bomba hot pepper"
+    → "black pepper", "milk chocolate" → "milk" — because any synonym that is a
+    substring of the input (or vice-versa) wins.  The head-noun matcher only fires
+    on exact full-token matches, so speciality products pass through unchanged.
+
+    ``source_line`` and ``price`` from the LLM parse are forwarded as-is so they
+    reach the scan response without any additional plumbing.
     """
     parsed_items = state.get("parsed_items", [])
-    normalizer = get_normalizer()
     expiry = get_expiry_heuristics()
 
     normalized = []
@@ -200,8 +216,11 @@ def normalize_receipt_items(state: WorkflowState) -> WorkflowState:
         name = item.get("name", "")
         original_name = name
 
-        # Normalize name
-        normalized_name = normalizer.normalize(name)
+        # Normalize name through the head-noun matcher in domain/normalizer.py.
+        # This preserves "Italian Bomba Hot Pepper" and "Milk Chocolate Almonds"
+        # while still resolving exact known synonyms like "cane sugar" → "sugar"
+        # only when there is no more specific match.
+        normalized_name = normalize_food_name(name)
 
         # Get category: prefer deterministic catalog/keyword answer over the
         # noisy LLM string (which produces compounds like "dairy & eggs" that
@@ -235,6 +254,7 @@ def normalize_receipt_items(state: WorkflowState) -> WorkflowState:
             "expiry_date": expiry_date.isoformat(),
             "estimated_expiry": is_estimated,
             "purchase_date": date.today().isoformat(),
+            # source_line and price pass through from the LLM parse via **item
         }
 
         # Unit normalization (dual-store: display unit + base unit)

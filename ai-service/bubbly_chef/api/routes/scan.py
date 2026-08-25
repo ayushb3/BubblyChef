@@ -93,6 +93,9 @@ async def scan_receipt(
             pantry_item = action.item
             item = {
                 "name": pantry_item.name,
+                "original_name": pantry_item.original_name or pantry_item.name,
+                "source_line": action.source_line or "",
+                "price": action.price,
                 "quantity": pantry_item.quantity,
                 "unit": pantry_item.unit,
                 "category": pantry_item.category.value if hasattr(pantry_item.category, "value") else str(pantry_item.category),
