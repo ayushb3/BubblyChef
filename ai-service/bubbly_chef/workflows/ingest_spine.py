@@ -82,6 +82,11 @@ def build_actions_from_normalized(
     field_confidences: dict[str, float] = {}
 
     for idx, item_data in enumerate(normalized_items):
+        # Per-item confidence: the LLM emits a confidence for each item; the
+        # batch value from state["confidence"] is used as a fallback so that
+        # product-ingest (which has no per-item signal) keeps working unchanged.
+        item_confidence: float = float(item_data.get("confidence", base_confidence))
+
         pantry_item = PantryItem(
             id=uuid4(),
             name=item_data.get("name", "unknown"),
@@ -107,14 +112,18 @@ def build_actions_from_normalized(
         action = PantryUpsertAction(
             action_type=ActionType.ADD,
             item=pantry_item,
-            confidence=base_confidence,
+            confidence=item_confidence,
             reasoning=reasoning_for_item(item_data),
+            # Receipt-specific provenance — None for non-receipt paths (product_ingest
+            # items never set these keys, so .get() returns None safely).
+            source_line=item_data.get("source_line"),
+            price=item_data.get("price"),
         )
         actions.append(action)
-        field_confidences[f"item_{idx}_name"] = base_confidence
+        field_confidences[f"item_{idx}_name"] = item_confidence
 
     requires_review = (
-        base_confidence < settings.auto_apply_confidence_threshold
+        any(a.confidence < settings.auto_apply_confidence_threshold for a in actions)
         or len(state.get("errors", [])) > 0
         or len(actions) == 0
     )

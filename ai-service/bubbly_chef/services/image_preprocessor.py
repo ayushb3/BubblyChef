@@ -15,7 +15,12 @@ PreprocessMode = Literal["auto", "light", "aggressive"]
 
 class ImagePreprocessor:
     """
-    Preprocesses receipt images for optimal Tesseract OCR performance.
+    Preprocesses receipt images.
+
+    Historically tuned for Tesseract OCR; Tesseract was replaced by Gemini
+    Vision, which reads ordinary phone photos better without classical-OCR
+    enhancement. Preprocessing is now an explicit opt-in retry rather than the
+    default path.
 
     Applies various image enhancement techniques:
     - Grayscale conversion
@@ -173,11 +178,11 @@ class ImagePreprocessor:
         if std_brightness < 40:
             # Low contrast image - needs aggressive processing
             logger.info("Auto mode: Low contrast detected, using aggressive preprocessing")
-            return await self._preprocess_aggressive(image)
+            return await self._preprocess_aggressive(image, already_cropped=True)
         elif mean_brightness < 80 or mean_brightness > 200:
             # Poor lighting - needs moderate processing
             logger.info("Auto mode: Poor lighting detected, using aggressive preprocessing")
-            return await self._preprocess_aggressive(image)
+            return await self._preprocess_aggressive(image, already_cropped=True)
         else:
             # Good quality image - light processing
             logger.info("Auto mode: Good quality image, using light preprocessing")
@@ -202,7 +207,9 @@ class ImagePreprocessor:
 
         return image
 
-    async def _preprocess_aggressive(self, image: Image.Image) -> Image.Image:
+    async def _preprocess_aggressive(
+        self, image: Image.Image, already_cropped: bool = False
+    ) -> Image.Image:
         """
         Aggressive preprocessing: full pipeline for challenging images.
 
@@ -213,9 +220,18 @@ class ImagePreprocessor:
         4. Sharpening
         5. Deskewing (rotation correction)
         6. Binarization (adaptive thresholding)
+
+        Args:
+            image: Source image.
+            already_cropped: True when the caller (auto mode) has already run
+                ``_crop_receipt``. Prevents a second crop that would re-run edge
+                detection on an image that is already nothing but receipt and
+                discard most of the item list.
         """
-        # Crop receipt from background before other processing
-        image = self._crop_receipt(image)
+        # Crop receipt from background before other processing, unless the
+        # caller already cropped (avoids the fatal double-crop).
+        if not already_cropped:
+            image = self._crop_receipt(image)
 
         # Convert to grayscale
         if image.mode != "L":

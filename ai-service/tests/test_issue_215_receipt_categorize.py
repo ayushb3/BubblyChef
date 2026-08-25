@@ -91,18 +91,16 @@ def test_map_category_none_returns_other() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_normalizer_stub(normalized_name: str) -> MagicMock:
-    stub = MagicMock()
-    stub.normalize.return_value = normalized_name
-    return stub
-
-
 def _run_normalize(item: dict) -> dict:
     """Run the real normalize_receipt_items node over a single parsed item.
 
     Builds a WorkflowState dict (the node's actual input) and patches the
-    module-level ``get_normalizer``/``get_expiry_heuristics`` seams so the test
-    exercises the node's own category-resolution branch — not just the helpers.
+    module-level ``normalize_food_name``/``get_expiry_heuristics`` seams so the
+    test exercises the node's own category-resolution branch — not just the helpers.
+
+    Since Slice 2 routes receipt normalization through domain/normalizer.py's
+    ``normalize_food_name`` (head-noun matcher), the identity stub just returns
+    the raw name unchanged so that resolve_category sees the exact input.
     """
     import datetime
 
@@ -112,11 +110,8 @@ def _run_normalize(item: dict) -> dict:
     fake_expiry.get_default_storage.return_value = MagicMock(value="refrigerator")
     fake_expiry.estimate_expiry.return_value = (datetime.date(2026, 8, 14), True)
 
-    # Identity normalizer: the node passes the raw name straight to resolve_category.
-    stub_normalizer = _make_normalizer_stub(item["name"])
-
     with (
-        patch.object(receipt_ingest, "get_normalizer", return_value=stub_normalizer),
+        patch.object(receipt_ingest, "normalize_food_name", side_effect=lambda name: name),
         patch.object(receipt_ingest, "get_expiry_heuristics", return_value=fake_expiry),
     ):
         state: dict = {"parsed_items": [item]}
