@@ -21,7 +21,7 @@ import Chip, { type ChipTone } from '@/components/ui/Chip'
 import EmptyState from '@/components/ui/EmptyState'
 import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
-import { fetchRecipe } from '@/lib/api/recipes'
+import { fetchRecipe, promoteRecipeDraft } from '@/lib/api/recipes'
 import { cookingContextForId, deriveChatSeed } from '@/lib/chat-seed'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import type {
@@ -133,8 +133,12 @@ function ChatSurface() {
   const [saveStates, setSaveStates] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({})
   /** Maps message id → saved recipe db id, populated after a successful save. */
   const [savedRecipeIds, setSavedRecipeIds] = useState<Record<string, string>>({})
-  /** When set, the CookModal is open for this { recipeId, recipeTitle } pair. */
-  const [cookTarget, setCookTarget] = useState<{ recipeId: string; recipeTitle: string } | null>(null)
+  /** msgId → recipe db id for rows created as drafts (is_draft: true). */
+  const [draftRecipeIds, setDraftRecipeIds] = useState<Set<string>>(new Set())
+  /** In-flight POST promises keyed by msgId — prevents double-tap from creating two rows. */
+  const ensureInFlight = useRef<Map<string, Promise<string>>>(new Map())
+  /** When set, the CookModal is open for this { recipeId, recipeTitle, isDraft } triple. */
+  const [cookTarget, setCookTarget] = useState<{ recipeId: string; recipeTitle: string; isDraft: boolean } | null>(null)
   const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
   const [dismissedRecipeId, setDismissedRecipeId] = useState<string | null>(null)
   const [dismissedSeedKey, setDismissedSeedKey] = useState<string | null>(null)
@@ -267,31 +271,33 @@ function ChatSurface() {
     }
   }
 
+  const persistRecipe = (recipe: ChatRecipeData, options: { draft: boolean }): Promise<Response> =>
+    fetch('/api/recipes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: recipe.title,
+        description: recipe.description,
+        ingredients: recipe.ingredients,
+        instructions: recipe.instructions,
+        cuisine: recipe.cuisine,
+        meal_type: recipe.meal_type,
+        dietary_tags: recipe.dietary_tags,
+        difficulty: recipe.difficulty,
+        prep_time_minutes: recipe.prep_time_minutes,
+        cook_time_minutes: recipe.cook_time_minutes,
+        total_time_minutes: recipe.total_time_minutes,
+        servings: recipe.servings,
+        is_draft: options.draft,
+      }),
+    })
+
   const handleSaveRecipe = async (msgId: string, recipe: ChatRecipeData) => {
     setSaveStates((prev) => ({ ...prev, [msgId]: 'saving' }))
     try {
-      const res = await fetch('/api/recipes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: recipe.title,
-          description: recipe.description,
-          ingredients: recipe.ingredients,
-          instructions: recipe.instructions,
-          cuisine: recipe.cuisine,
-          meal_type: recipe.meal_type,
-          // Forward both fields; the API route merges + deduplicates them.
-          dietary_tags: recipe.dietary_tags,
-          difficulty: recipe.difficulty,
-          prep_time_minutes: recipe.prep_time_minutes,
-          cook_time_minutes: recipe.cook_time_minutes,
-          total_time_minutes: recipe.total_time_minutes,
-          servings: recipe.servings,
-        }),
-      })
+      const res = await persistRecipe(recipe, { draft: false })
       if (res.ok) {
         setSaveStates((prev) => ({ ...prev, [msgId]: 'saved' }))
-        // Capture the db id so "Cook this" can open CookModal immediately.
         const saved = await res.json().catch(() => null) as { id?: string } | null
         if (saved?.id) {
           setSavedRecipeIds((prev) => ({ ...prev, [msgId]: saved.id as string }))
@@ -302,6 +308,33 @@ function ChatSurface() {
     } catch {
       setSaveStates((prev) => ({ ...prev, [msgId]: 'error' }))
     }
+  }
+
+  /**
+   * Returns the recipe db id for msgId, creating a draft row if needed.
+   * Double-tap safe: a second call while the POST is in flight reuses the same promise.
+   */
+  const ensureRecipeId = (msgId: string, recipe: ChatRecipeData): Promise<string> => {
+    const existing = savedRecipeIds[msgId]
+    if (existing) return Promise.resolve(existing)
+
+    const inflight = ensureInFlight.current.get(msgId)
+    if (inflight) return inflight
+
+    const promise = persistRecipe(recipe, { draft: true })
+      .then(async (res) => {
+        if (!res.ok) throw new Error('Failed to persist draft recipe')
+        const saved = await res.json() as { id: string }
+        setSavedRecipeIds((prev) => ({ ...prev, [msgId]: saved.id }))
+        setDraftRecipeIds((prev) => new Set(prev).add(msgId))
+        return saved.id
+      })
+      .finally(() => {
+        ensureInFlight.current.delete(msgId)
+      })
+
+    ensureInFlight.current.set(msgId, promise)
+    return promise
   }
 
   const handleChipTap = (message: string) => {
@@ -367,6 +400,13 @@ function ChatSurface() {
               title={cookingRecipe.title}
               ingredientCount={cookingRecipe.ingredients.length}
               onDismiss={dismissCookingCard}
+              onFinishCooking={() => {
+                if (!cookingRecipeId) return
+                const isDraft = draftRecipeIds.has(
+                  Object.keys(savedRecipeIds).find((k) => savedRecipeIds[k] === cookingRecipeId) ?? ''
+                )
+                setCookTarget({ recipeId: cookingRecipeId, recipeTitle: cookingRecipe.title, isDraft })
+              }}
             />
           </div>
         )}
@@ -412,13 +452,20 @@ function ChatSurface() {
                 onReject={() => rejectProposal(msg.id)}
                 onSave={(recipe) => handleSaveRecipe(msg.id, recipe)}
                 savedRecipeId={savedRecipeIds[msg.id] ?? null}
-                onCook={(recipeId) => {
-                  const title = msg.response?.proposal
-                    ? ((msg.response.proposal as { recipe?: { title?: string }; title?: string }).recipe?.title
-                        ?? (msg.response.proposal as { title?: string }).title
-                        ?? 'Recipe')
-                    : 'Recipe'
-                  setCookTarget({ recipeId, recipeTitle: title })
+                isSavedDraft={draftRecipeIds.has(msg.id)}
+                onCookWithMe={(recipe) => {
+                  ensureRecipeId(msg.id, recipe).then((recipeId) => {
+                    router.replace(`/chat?cooking=${encodeURIComponent(recipeId)}`, { scroll: false })
+                  })
+                }}
+                onAlreadyMade={(recipe) => {
+                  const title = (msg.response?.proposal as { recipe?: { title?: string }; title?: string } | null)?.recipe?.title
+                    ?? (msg.response?.proposal as { title?: string } | null)?.title
+                    ?? 'Recipe'
+                  ensureRecipeId(msg.id, recipe).then((recipeId) => {
+                    const isDraft = draftRecipeIds.has(msg.id)
+                    setCookTarget({ recipeId, recipeTitle: title, isDraft })
+                  })
                 }}
                 onTryAnother={handleChipTap.bind(null, 'Give me a different recipe')}
                 onChipTap={handleChipTap}
@@ -512,6 +559,16 @@ function ChatSurface() {
         <CookModal
           recipeId={cookTarget.recipeId}
           recipeTitle={cookTarget.recipeTitle}
+          isDraft={cookTarget.isDraft}
+          onAddToLibrary={cookTarget.isDraft ? async () => {
+            await promoteRecipeDraft(cookTarget.recipeId)
+            setDraftRecipeIds((prev) => {
+              const next = new Set(prev)
+              const msgId = Object.keys(savedRecipeIds).find((k) => savedRecipeIds[k] === cookTarget.recipeId)
+              if (msgId) next.delete(msgId)
+              return next
+            })
+          } : undefined}
           onClose={() => setCookTarget(null)}
           onCooked={() => setCookTarget(null)}
         />
@@ -528,21 +585,19 @@ interface MessageRendererProps {
   message: ChatMessage
   isLastAssistant: boolean
   isStreaming: boolean
-  /** Last assistant message once streaming has finished — gates follow-up chips. */
   isLastSettledAssistant: boolean
   proposalState?: 'pending' | 'approved' | 'rejected'
   saveState: 'idle' | 'saving' | 'saved' | 'error'
   onApprove: () => void
   onReject: () => void
   onSave: (recipe: ChatRecipeData) => void
-  /** DB id of the saved recipe — available once onSave succeeds; gates "Cook this". */
   savedRecipeId: string | null
-  /** Opens CookModal for the saved recipe. */
-  onCook: (recipeId: string) => void
+  /** True when savedRecipeId points to a draft row (not yet a real library entry). */
+  isSavedDraft: boolean
+  onCookWithMe: (recipe: ChatRecipeData) => void
+  onAlreadyMade: (recipe: ChatRecipeData) => void
   onTryAnother: () => void
-  /** Called when the user taps a follow-up chip; sends the chip's message text. */
   onChipTap: (message: string) => void
-  /** Called when the user taps a brainstorm idea card; sends the name as the next message. */
   onPickIdea: (idea: string) => void
 }
 
@@ -557,7 +612,9 @@ function MessageRenderer({
   onReject,
   onSave,
   savedRecipeId,
-  onCook,
+  isSavedDraft,
+  onCookWithMe,
+  onAlreadyMade,
   onTryAnother,
   onChipTap,
   onPickIdea,
@@ -632,7 +689,9 @@ function MessageRenderer({
               onTryAnother={onTryAnother}
               saveState={saveState}
               savedRecipeId={savedRecipeId}
-              onCook={onCook}
+              isSavedDraft={isSavedDraft}
+              onCookWithMe={() => onCookWithMe(recipe)}
+              onAlreadyMade={() => onAlreadyMade(recipe)}
             />
           </div>
         </div>
