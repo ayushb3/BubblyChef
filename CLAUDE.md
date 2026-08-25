@@ -306,6 +306,34 @@ Two other schemes (hash-suffixed, `ui-wN-*`) exist on older branches; don't
 bulk-rename them, just use the convention above for anything new. See `WORKFLOW.md`
 §4.
 
+**Linking issues in PRs — auto-close is by design.** Every PR that resolves an
+issue must use a GitHub closing keyword in the **PR body**, one per issue, each
+on its own line:
+
+```markdown
+Fixes #239
+Fixes #240
+Closes #241
+```
+
+Accepted keywords: `Fixes` / `Closes` / `Resolves` (GitHub treats them
+identically). Rules that make this actually work:
+
+- **One keyword per issue.** `Fixes #239, #240` only closes #239 — the second
+  number is plain text. Comma-separated lists silently half-work.
+- **The keyword must be in the PR body**, not the commit message alone, and not
+  only in prose like "addresses the expiry bug (#239)". A bare `#239` links but
+  never closes.
+- **Only issues in the same repo** auto-close on merge to the default branch.
+- **Partial fixes don't get a keyword.** If a PR only lands part of an issue,
+  reference it *without* a keyword (`Related to #242`) and leave a comment
+  saying what shipped and what remains — closing it would lose the rest.
+
+Getting this wrong is a silent failure: #251 fixed six issues with the numbers
+only in prose, so all six stayed open after merge and had to be closed by hand.
+Prefer the keyword over manual closing — a merged PR should leave the tracker
+correct with no follow-up step.
+
 ---
 
 ## Environment Variables
