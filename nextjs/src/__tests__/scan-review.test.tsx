@@ -11,7 +11,7 @@
 
 import React from 'react'
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
-import ScanResults from '@/components/scan/ScanResults'
+import ReviewSurface from '@/components/scan/ReviewSurface'
 import ScannedItemCard from '@/components/scan/ScannedItemCard'
 import type { ScannedItem, ScanResult } from '@/types/scan'
 
@@ -87,7 +87,7 @@ function renderResults(overrides: Partial<{
     isSubmitting: false,
     ...overrides,
   }
-  return render(<ScanResults {...props} />)
+  return render(<ReviewSurface {...props} />)
 }
 
 // ─── 1. Tier sections render ──────────────────────────────────────────────────
