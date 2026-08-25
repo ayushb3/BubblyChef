@@ -45,7 +45,8 @@ Rules:
    loyalty points, etc.) — but DO NOT filter by keyword; use context and your own judgment.
 2. All items from a receipt are "add" actions (purchases).
 3. Extract quantities when visible.
-4. Guess the food category.
+4. Guess the food category: one of produce, dairy, meat, seafood, frozen, canned,
+   dry_goods, condiments, beverages, snacks, bakery, other.
 5. Handle common receipt abbreviations (e.g., "ORG" = organic, "GAL" = gallon,
    "LB" = pound, "CT" = count, "PK" = pack).
 6. If quantity is unclear, default to 1.
@@ -73,7 +74,8 @@ For each food item extract:
 - name: full product name (expand abbreviations, preserve product identity)
 - quantity: numeric amount (default 1)
 - unit: unit of measurement
-- category: food category
+- category: one of produce, dairy, meat, seafood, frozen, canned, dry_goods,
+  condiments, beverages, snacks, bakery, other
 - action: always "add" for receipt items
 - confidence: per-item confidence 0.0–1.0 (how clearly this specific line read)
 - source_line: the exact raw receipt line this item came from
@@ -222,17 +224,20 @@ def normalize_receipt_items(state: WorkflowState) -> WorkflowState:
         # only when there is no more specific match.
         normalized_name = normalize_food_name(name)
 
-        # Get category: prefer deterministic catalog/keyword answer over the
-        # noisy LLM string (which produces compounds like "dairy & eggs" that
-        # map_category can't match exactly).
+        # Get category: prefer the LLM's answer over the deterministic
+        # catalog/keyword matcher. The schema now constrains LLMParsedItem.category
+        # to the FoodCategory enum (see shared_state.py), so the LLM can no longer
+        # emit unmatchable free-form strings like "dairy & eggs" — the vocabulary
+        # mismatch that used to justify preferring the deterministic path is gone.
+        # resolve_category's substring/keyword matching is still weak on its own
+        # (e.g. "italian bomba hot pepper" -> "produce" via "pepper"), so it is
+        # kept only as a fallback for when the LLM returns nothing or "other".
         llm_category = item.get("category")
-        resolved = resolve_category(normalized_name)
-        if resolved:
-            category = map_category(resolved)
-        elif llm_category and llm_category.lower() != "other":
+        if llm_category and str(llm_category).lower() != "other":
             category = map_category(llm_category)
         else:
-            category = map_category(None)
+            resolved = resolve_category(normalized_name)
+            category = map_category(resolved) if resolved else map_category(None)
 
         # Get storage location
         storage = expiry.get_default_storage(category)
