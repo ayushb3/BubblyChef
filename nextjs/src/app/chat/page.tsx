@@ -145,8 +145,19 @@ function ChatSurface() {
   const [cookStartedIds, setCookStartedIds] = useState<Set<string>>(new Set())
   /** msgIds whose cook button is pending (draft POST in flight). Re-renders on change. */
   const [cookPending, setCookPending] = useState<Set<string>>(new Set())
-  /** When set, the CookModal is open for this { recipeId, recipeTitle, isDraft } triple. */
-  const [cookTarget, setCookTarget] = useState<{ recipeId: string; recipeTitle: string; isDraft: boolean } | null>(null)
+  /**
+   * When set, the CookModal is open for this recipe. `mode` decides which
+   * question it asks: 'preview' (what will this cost me, deducts nothing) or
+   * 'confirm' (I cooked it, deduct now). `msgId` is carried so a preview that
+   * proceeds to cooking can mark the originating card as started.
+   */
+  const [cookTarget, setCookTarget] = useState<{
+    recipeId: string
+    recipeTitle: string
+    isDraft: boolean
+    mode: 'preview' | 'confirm'
+    msgId?: string
+  } | null>(null)
   const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
   const [dismissedRecipeId, setDismissedRecipeId] = useState<string | null>(null)
   const [dismissedSeedKey, setDismissedSeedKey] = useState<string | null>(null)
@@ -437,7 +448,12 @@ function ChatSurface() {
               onFinishCooking={() => {
                 if (!cookingRecipeId) return
                 const isDraft = draftRecipeIds.has(msgIdForRecipeId(cookingRecipeId) ?? '')
-                setCookTarget({ recipeId: cookingRecipeId, recipeTitle: cookingRecipe.title, isDraft })
+                setCookTarget({
+                  recipeId: cookingRecipeId,
+                  recipeTitle: cookingRecipe.title,
+                  isDraft,
+                  mode: 'confirm',
+                })
               }}
             />
           </div>
@@ -486,10 +502,19 @@ function ChatSurface() {
                 savedRecipeId={savedRecipeIds[msg.id] ?? null}
                 isSavedDraft={draftRecipeIds.has(msg.id)}
                 onCookWithMe={(recipe) => {
+                  const title = recipe.title ?? 'Recipe'
                   setCookPending((prev) => new Set(prev).add(msg.id))
-                  ensureRecipeId(msg.id, recipe).then(({ id: recipeId }) => {
-                    setCookStartedIds((prev) => new Set(prev).add(msg.id))
-                    router.replace(`/chat?cooking=${encodeURIComponent(recipeId)}`, { scroll: false })
+                  ensureRecipeId(msg.id, recipe).then(({ id: recipeId, isDraft }) => {
+                    // Show what the cook will cost the pantry BEFORE starting,
+                    // not as an audit afterwards (#267). Nothing is deducted
+                    // here — "Start cooking" pins the session as before.
+                    setCookTarget({
+                      recipeId,
+                      recipeTitle: title,
+                      isDraft,
+                      mode: 'preview',
+                      msgId: msg.id,
+                    })
                   }).catch(() => {
                     // POST failed — pending cleared in finally; buttons re-enable
                   })
@@ -501,7 +526,7 @@ function ChatSurface() {
                   setCookPending((prev) => new Set(prev).add(msg.id))
                   ensureRecipeId(msg.id, recipe).then(({ id: recipeId, isDraft }) => {
                     setCookStartedIds((prev) => new Set(prev).add(msg.id))
-                    setCookTarget({ recipeId, recipeTitle: title, isDraft })
+                    setCookTarget({ recipeId, recipeTitle: title, isDraft, mode: 'confirm' })
                   }).catch(() => {
                     // POST failed — pending cleared in finally; buttons re-enable
                   })
@@ -606,6 +631,15 @@ function ChatSurface() {
           recipeId={cookTarget.recipeId}
           recipeTitle={cookTarget.recipeTitle}
           isDraft={cookTarget.isDraft}
+          mode={cookTarget.mode}
+          onStartCooking={() => {
+            // The preview was the decision point; this is where cooking actually
+            // begins. Nothing was deducted by the preview.
+            const { recipeId, msgId } = cookTarget
+            if (msgId) setCookStartedIds((prev) => new Set(prev).add(msgId))
+            setCookTarget(null)
+            router.replace(`/chat?cooking=${encodeURIComponent(recipeId)}`, { scroll: false })
+          }}
           onAddToLibrary={cookTarget.isDraft ? async () => {
             await promoteRecipeDraft(cookTarget.recipeId)
             setDraftRecipeIds((prev) => {
