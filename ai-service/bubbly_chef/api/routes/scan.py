@@ -74,10 +74,19 @@ async def scan_receipt(
                 "warnings": ["No text detected in image. Try a clearer photo."],
             }
 
-        # AI parse via receipt ingest workflow
-        from bubbly_chef.workflows.receipt_ingest import run_receipt_ingest
+        # AI parse via the unified ingest dispatcher (single ingest seam — #204).
+        # The route still owns OCR (above) and confidence bucketing (below);
+        # only the workflow invocation goes through the dispatcher so that
+        # /v1/scan/receipt is no longer a second, divergent ingest entry point.
+        from bubbly_chef.api.ingest_dispatcher import (
+            IngestModality,
+            IngestPayload,
+            dispatcher,
+        )
 
-        result = await run_receipt_ingest(ocr_text=ocr_text)
+        result = await dispatcher.dispatch(
+            IngestPayload(modality=IngestModality.RECEIPT, ocr_text=ocr_text)
+        )
 
         # Extract items from the proposal envelope (Pydantic model)
         proposal = result.proposal
