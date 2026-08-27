@@ -88,7 +88,10 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          onClick={onClose}
+          // Matches the Cancel button's `disabled={state === 'loading'}` — the
+          // backdrop used to close unconditionally, so an accidental tap during
+          // an in-flight import silently discarded the result (#247).
+          onClick={state === 'loading' ? undefined : onClose}
         />
 
         <motion.div

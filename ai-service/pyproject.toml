@@ -1,18 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "bubbly-chef-ai"
 version = "1.0.0"
 description = "BubblyChef AI Microservice — chat, recipes, OCR"
 requires-python = ">=3.11"
+# Abstract spec — the honest floor + ceiling of what's tested. The concrete,
+# fully-pinned set that ships in the Docker image lives in requirements.lock.
+# Regenerate that lock after bumping anything here: run `pip freeze` in .venv,
+# drop the `-e` self-reference line and the dev-only extras (pytest, ruff,
+# mypy) plus their exclusive transitive deps (iniconfig, pluggy, Pygments,
+# librt, mypy_extensions, pathspec) — everything else is runtime. Then
+# re-run the full test suite against the frozen versions before committing.
 dependencies = [
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.27.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
     "supabase>=2.0",
-    "python-jose[cryptography]>=3.3",
+    # PyJWT, not python-jose: api/auth.py imports `jwt` and PyJWKClient. The
+    # [crypto] extra is load-bearing — ES256/JWKS verification needs cryptography.
+    "PyJWT[crypto]>=2.8,<3",
     "google-generativeai>=0.8",
-    "langgraph>=0.2",
-    "langchain-core>=0.3",
+    "langgraph>=1.2,<2",
+    "langchain-core>=1.5,<2",
     "rapidfuzz>=3.0",
     "Pillow>=10.0",
     "numpy>=1.26",
@@ -35,6 +48,12 @@ dev = [
     "ruff>=0.15,<0.16",
     "mypy>=1.10,<2",
 ]
+
+[tool.setuptools.packages.find]
+include = ["bubbly_chef*"]
+
+[tool.setuptools.package-data]
+bubbly_chef = ["**/*.json"]
 
 [tool.ruff]
 line-length = 100

@@ -27,7 +27,7 @@ router = APIRouter(prefix="/v1/scan", tags=["scan"])
 )
 async def scan_receipt(
     file: UploadFile = File(..., description="Receipt image (JPEG/PNG)"),
-    preprocess: bool = True,
+    preprocess: bool = False,
     preprocess_mode: str = "auto",
     user_id: str = Depends(get_current_user_id),
 ) -> dict[str, Any]:
@@ -67,18 +67,31 @@ async def scan_receipt(
         if not ocr_text.strip():
             return {
                 "ocr_text": "",
-                "items": [],
+                "ready_to_add": [],
+                "needs_review": [],
+                "skipped": [],
+                "total_items": 0,
                 "warnings": ["No text detected in image. Try a clearer photo."],
             }
 
-        # AI parse via receipt ingest workflow
-        from bubbly_chef.workflows.receipt_ingest import run_receipt_ingest
+        # AI parse via the unified ingest dispatcher (single ingest seam — #204).
+        # The route still owns OCR (above) and confidence bucketing (below);
+        # only the workflow invocation goes through the dispatcher so that
+        # /v1/scan/receipt is no longer a second, divergent ingest entry point.
+        from bubbly_chef.api.ingest_dispatcher import (
+            IngestModality,
+            IngestPayload,
+            dispatcher,
+        )
 
-        result = await run_receipt_ingest(ocr_text=ocr_text)
+        result = await dispatcher.dispatch(
+            IngestPayload(modality=IngestModality.RECEIPT, ocr_text=ocr_text)
+        )
 
         # Extract items from the proposal envelope (Pydantic model)
         proposal = result.proposal
         actions = proposal.actions if proposal else []
+        warnings = list(result.warnings or [])
 
         # Categorize by confidence
         ready = []
@@ -89,6 +102,9 @@ async def scan_receipt(
             pantry_item = action.item
             item = {
                 "name": pantry_item.name,
+                "original_name": pantry_item.original_name or pantry_item.name,
+                "source_line": action.source_line or "",
+                "price": action.price,
                 "quantity": pantry_item.quantity,
                 "unit": pantry_item.unit,
                 "category": pantry_item.category.value if hasattr(pantry_item.category, "value") else str(pantry_item.category),
@@ -108,6 +124,7 @@ async def scan_receipt(
             "needs_review": review,
             "skipped": skipped,
             "total_items": len(actions),
+            "warnings": warnings,
         }
 
     except Exception as e:

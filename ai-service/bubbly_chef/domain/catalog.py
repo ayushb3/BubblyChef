@@ -23,7 +23,7 @@ class CatalogEntry:
 def _load_catalog() -> list[CatalogEntry]:
     """Load pantry_catalog.json once and cache it."""
     path = Path(__file__).parent / "pantry_catalog.json"
-    raw: list[dict[str, object]] = json.loads(path.read_text())
+    raw: list[dict[str, object]] = json.loads(path.read_text(encoding="utf-8"))
     entries: list[CatalogEntry] = []
     for item in raw:
         syns_raw = item.get("synonyms", [])

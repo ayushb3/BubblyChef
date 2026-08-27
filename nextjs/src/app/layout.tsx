@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Nunito, Quicksand } from "next/font/google";
 import { Providers } from "@/components/Providers";
 import BottomNav from "@/components/layout/BottomNav";
@@ -19,6 +19,10 @@ const quicksand = Quicksand({
 export const metadata: Metadata = {
   title: "BubblyChef",
   description: "AI-powered pantry & recipe assistant",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#ffb5c5",
 };
 
 export default function RootLayout({

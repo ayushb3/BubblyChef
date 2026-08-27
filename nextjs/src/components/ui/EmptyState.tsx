@@ -12,6 +12,14 @@ export interface EmptyStateProps {
   mascotState?: EmptyStateMascot
   /** Label rendered inside the chowder-panel header strip. */
   headerLabel?: string
+  /**
+   * Header strip treatment. 'default' is the original understated
+   * chowder-panel used by pantry/profile; 'chat' is the richer
+   * diagonal-gradient + visible-crosshatch variant (#173) for the chat
+   * empty state's "Chef Bubbly" header. Defaults to 'default' so existing
+   * callers are unaffected.
+   */
+  headerVariant?: 'default' | 'chat'
   /** Primary line — what's missing. */
   headline: string
   /** Secondary line — what to do about it. */
@@ -33,6 +41,7 @@ export interface EmptyStateProps {
 export default function EmptyState({
   mascotState = 'happy',
   headerLabel,
+  headerVariant = 'default',
   headline,
   subline,
   ctaLabel,
@@ -58,7 +67,9 @@ export default function EmptyState({
       transition={springs.soft}
     >
       {headerLabel && (
-        <div className="chowder-panel px-5 py-3">
+        <div
+          className={`${headerVariant === 'chat' ? 'chowder-panel-chat' : 'chowder-panel'} px-5 py-3`}
+        >
           <p className="text-white font-semibold text-sm">{headerLabel}</p>
         </div>
       )}

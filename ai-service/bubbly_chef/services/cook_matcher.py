@@ -91,7 +91,8 @@ _LEADING_QTY_RE = re.compile(
     r"|oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg|ml|l|liter|liters"
     r"|pint|quart|gallon|fl\s+oz|fluid\s+ounce|stick|sticks|clove|cloves"
     r"|bunch|bunches|slice|slices|piece|pieces|can|cans|package|packages"
-    r"|head|heads|sprig|sprigs|pinch|dash|handful|item|count|dozen))?"
+    r"|head|heads|sprig|sprigs|leaf|leaves|pinch|pinches|dash|dashes"
+    r"|handful|handfuls|item|count|dozen))?"
     r"\s+",
     re.IGNORECASE,
 )

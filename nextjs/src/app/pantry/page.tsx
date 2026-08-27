@@ -15,6 +15,7 @@ import PantryAddSheet, { type PantryAddTab } from '@/components/pantry/PantryAdd
 import { getFoodEmoji } from '@/lib/food-emoji'
 import { titleCase } from '@/lib/format'
 import { cookThisHref } from '@/lib/chat-seed'
+import { daysUntilExpiry } from '@/lib/pantry-helpers'
 import Chip from '@/components/ui/Chip'
 
 interface PantryItem {
@@ -65,16 +66,17 @@ const LOCATION_FILTERS = [
   { value: 'counter', label: 'Counter' },
 ]
 
-function daysUntilExpiry(date: string | null): number | null {
-  if (!date) return null
-  const diff = new Date(date).getTime() - Date.now()
-  return Math.ceil(diff / (1000 * 60 * 60 * 24))
-}
+// `daysUntilExpiry` lives in `lib/pantry-helpers` — this file used to carry its
+// own copy that subtracted `Date.now()` instead of local midnight, which made
+// the badge disagree with the server-computed flags after ~18:00 (#244).
 
 /**
  * Expiring soon — the same 0–3 day window `pantry-helpers`' `is_expiring_soon`
- * uses. Expired items (days < 0) are excluded; they keep their Expired badge
- * but don't get the "Cook this" deep link (#138, #146).
+ * uses (days_until_expiry &gt;= 0 && &lt;= 3). Day-zero items are urgent, not
+ * expired — `is_expired` there is strictly `days &lt; 0` — so they keep the
+ * "Cook this" deep link. `expiryBadge` below shows "Today" rather than
+ * "Expired" for day-zero so the two badges never contradict each other or
+ * the server-computed flags (#227).
  */
 function isUrgent(days: number | null): boolean {
   return days !== null && days >= 0 && days <= 3
@@ -82,7 +84,8 @@ function isUrgent(days: number | null): boolean {
 
 function expiryBadge(days: number | null) {
   if (days === null) return null
-  if (days <= 0) return { label: 'Expired', color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
+  if (days < 0) return { label: 'Expired', color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
+  if (days === 0) return { label: 'Today', color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
   if (days <= 2) return { label: `${days}d left`, color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
   if (days <= 5) return { label: `${days}d left`, color: 'bg-[var(--color-expiring)] text-[var(--color-expiring-text)]' }
   return { label: `${days}d left`, color: 'bg-[var(--color-fresh)] text-[var(--color-fresh-text)]' }

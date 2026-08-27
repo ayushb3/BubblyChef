@@ -80,13 +80,23 @@ const GROCERY_MART_SCAN_RESULT = {
  * fix #158 (POST /api/pantry/bulk now calls /v1/pantry/estimate-expiry when
  * no explicit date is supplied).
  *
- * Dates are intentionally set well in the future relative to 2026-07-29.
+ * Offsets are relative to *today*, not a frozen date. The pantry badges this
+ * test asserts on ("2d left") are computed from the current clock, so a
+ * hardcoded anchor silently rots: every offset shifts by one day per day until
+ * the near-term items read "Expired" and the test fails for no real reason.
  */
-function makeBulkResponse(now = '2026-07-29') {
+function makeBulkResponse(now = new Date()) {
+  const base = new Date(now);
+  base.setHours(0, 0, 0, 0);
+
   const d = (days: number) => {
-    const dt = new Date(now);
+    const dt = new Date(base);
     dt.setDate(dt.getDate() + days);
-    return dt.toISOString().slice(0, 10);
+    // Format from local parts rather than toISOString(), which converts to UTC
+    // and would shift the date by one in timezones behind UTC.
+    const month = String(dt.getMonth() + 1).padStart(2, '0');
+    const day = String(dt.getDate()).padStart(2, '0');
+    return `${dt.getFullYear()}-${month}-${day}`;
   };
   return {
     count: 8,
@@ -325,6 +335,16 @@ const LIVE = !!process.env.BUBBLY_E2E_LIVE_SCAN;
 test.describe('3a — receipt ingestion (live, opt-in)', () => {
   test.skip(!LIVE, 'Set BUBBLY_E2E_LIVE_SCAN=1 to run live OCR tests (requires both servers + Gemini key)');
 
+  // These tests wait up to 45s on live Gemini Vision OCR, which does not fit in
+  // Playwright's default 30s per-test timeout — the inner wait gets cut off at 30s
+  // and the test fails whenever OCR takes the slow path, regardless of the app
+  // being fine. Raise the test budget above the longest inner wait.
+  //
+  // Serial because, unlike 3b, these are unstubbed: they share one live Gemini
+  // quota and write to one real test-user pantry. Running them concurrently only
+  // adds contention to the latency that already makes them fragile.
+  test.describe.configure({ mode: 'serial', timeout: 120_000 });
+
   test('grocery-mart.png → OCR → confirm → ≥6 items with non-null expiry', async ({ page }) => {
     // Navigate to pantry scan sheet
     await page.goto('/pantry?add=scan');
@@ -371,7 +391,7 @@ test.describe('3a — receipt ingestion (live, opt-in)', () => {
     // If the bulk route estimated expiries (fix #158), items like Chicken Breasts
     // or Milk will show "Xd left" badges immediately.
     // Source: pantry/page.tsx ~L86: expiryBadge renders "{N}d left"
-    await expect(page.locator('text=/\\d+d left/')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('text=/\\d+d left/').first()).toBeVisible({ timeout: 10_000 });
   });
 
   test('city-harvest.png → OCR → confirm → ≥5 items with non-null expiry', async ({ page }) => {
@@ -407,6 +427,6 @@ test.describe('3a — receipt ingestion (live, opt-in)', () => {
     await expect(page.getByRole('heading', { name: 'Add to Pantry' })).not.toBeVisible({ timeout: 15_000 });
 
     // At least one expiry badge should appear after the pantry refetches
-    await expect(page.locator('text=/\\d+d left/')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('text=/\\d+d left/').first()).toBeVisible({ timeout: 10_000 });
   });
 });

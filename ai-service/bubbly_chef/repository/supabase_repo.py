@@ -11,7 +11,7 @@ from typing import Any
 from supabase import Client, create_client
 
 from bubbly_chef.config import settings
-from bubbly_chef.domain.normalizer import normalize_to_base_unit
+from bubbly_chef.domain.normalizer import normalize_food_name, normalize_to_base_unit
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.models.recipe import RecipeCard
 from bubbly_chef.models.session import ConversationSession, SessionMode
@@ -351,15 +351,30 @@ class SupabaseRepository:
 
     async def deduct_pantry_item(
         self, user_id: str, item_id: str, deduct_qty: float
-    ) -> None:
+    ) -> bool:
         """Decrement pantry item quantity_base by deduct_qty, flooring at 0.
 
         Also updates the display quantity proportionally when quantity_base
         is available, so the frontend shows a sensible number.
+
+        `deduct_qty` is always in the item's *base* unit, because that is the only
+        unit the matcher can express a deduction in. Rows written through the
+        Next.js CRUD routes carry no base values at all, so when they are absent
+        they are derived here the same way the matcher derives them — via
+        normalize_to_base_unit on the row's own name/quantity/unit. Subtracting a
+        base-unit amount straight from the display quantity instead would be wrong
+        by the whole conversion factor whenever the two units differ: deducting
+        100 g from a "2 kg" row would compute 2 - 100 and floor the row to zero.
+
+        Returns True when the row was updated, False when the deduction was
+        refused because no base unit was recorded or derivable. Callers must not
+        report a refused deduction as applied — the row is deliberately
+        untouched, and telling the user their pantry was updated when it was not
+        is the same lie the corruption bug told, just in the other direction.
         """
         result = (
             self.client.table("pantry_items")
-            .select("quantity, quantity_base, unit_base")
+            .select("name, quantity, unit, quantity_base, unit_base")
             .eq("id", item_id)
             .eq("user_id", user_id)
             .single()
@@ -367,34 +382,58 @@ class SupabaseRepository:
         )
         if not result.data:
             logger.warning(f"deduct_pantry_item: item {item_id} not found for user {user_id}")
-            return
+            return False
 
         row = result.data
         current_base = float(row["quantity_base"]) if row.get("quantity_base") is not None else None
         current_qty = float(row["quantity"])
+
+        derived_unit_base: str | None = None
+        if current_base is None:
+            derived_base, derived_unit = normalize_to_base_unit(
+                # Normalized the same way cook_matcher normalizes a pantry name
+                # before calling this function. A raw name resolves to a
+                # different density than its normalized form, so deducting on
+                # the raw name would apply deduct_qty against a different base
+                # than the one it was computed from.
+                name=normalize_food_name(str(row.get("name") or "")).lower().strip(),
+                quantity=current_qty,
+                unit=str(row.get("unit") or ""),
+            )
+            if derived_base is not None and derived_unit is not None:
+                # Persist the derived values alongside the deduction so the row
+                # stops needing this fallback on every subsequent cook.
+                current_base = derived_base
+                derived_unit_base = derived_unit
 
         if current_base is not None:
             new_base = max(0.0, current_base - deduct_qty)
             # Proportionally scale display quantity
             ratio = new_base / current_base if current_base > 0 else 0.0
             new_qty = round(current_qty * ratio, 4)
+            update: dict[str, Any] = {"quantity": new_qty, "quantity_base": new_base}
+            if derived_unit_base is not None:
+                update["unit_base"] = derived_unit_base
             (
                 self.client.table("pantry_items")
-                .update({"quantity": new_qty, "quantity_base": new_base})
+                .update(update)
                 .eq("id", item_id)
                 .eq("user_id", user_id)
                 .execute()
             )
+            return True
         else:
-            # No base unit — deduct directly from display quantity
-            new_qty = max(0.0, current_qty - deduct_qty)
-            (
-                self.client.table("pantry_items")
-                .update({"quantity": new_qty})
-                .eq("id", item_id)
-                .eq("user_id", user_id)
-                .execute()
+            # Base units are neither recorded nor derivable for this row, so the
+            # unit `deduct_qty` is expressed in is unknown. Deducting it from the
+            # display quantity would only be correct if the two units happened to
+            # coincide; when they do not it silently destroys stock. Refuse
+            # instead — an unchanged row is recoverable, a zeroed one is not.
+            logger.warning(
+                f"deduct_pantry_item: skipping item {item_id} "
+                f"({row.get('name')!r} {current_qty} {row.get('unit')!r}) — "
+                "no base unit recorded and none derivable, so the deduction unit is ambiguous"
             )
+            return False
 
     # =========================================================================
     # Conversation history

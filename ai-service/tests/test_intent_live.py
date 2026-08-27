@@ -122,3 +122,54 @@ async def test_live_exit_phrase_breaks_cooking_session() -> None:
     )
     assert result["intent"] == Intent.GENERAL_CHAT.value
     assert result.get("_exit_mode") is True
+
+
+# ---------------------------------------------------------------------------
+# Issue #145: must-use ingredient extraction via the ?use= deep-link seed
+# ---------------------------------------------------------------------------
+# The exact phrasing below comes from chat-seed.ts:94 ingredientSeedMessage().
+# The backend prompt was tuned against "What can I make with my <name> before
+# they go bad?" — do not reword without re-tuning recipe/nodes.py.
+
+
+@_SKIP
+@pytest.mark.asyncio
+async def test_live_use_seed_intent_is_recipe_brainstorm_or_generation() -> None:
+    """?use=eggs seed → live model classifies as recipe_brainstorm or recipe_generation."""
+    # Exact text produced by ingredientSeedMessage("eggs") in chat-seed.ts:94
+    message = "What can I make with my eggs before they go bad?"
+    result = await classify_intent(_state(input_text=message))
+    assert result["intent"] in (
+        Intent.RECIPE_BRAINSTORM.value,
+        Intent.RECIPE_GENERATION.value,
+    ), f"Expected recipe intent, got {result['intent']!r}"
+
+
+@_SKIP
+@pytest.mark.asyncio
+async def test_live_use_seed_extract_constraints_populates_must_use() -> None:
+    """?use=bananas seed → extract_recipe_constraints returns bananas in must_use_ingredients."""
+    from bubbly_chef.workflows.recipe.nodes import extract_recipe_constraints
+
+    # Exact text produced by ingredientSeedMessage("bananas") in chat-seed.ts:94
+    message = "What can I make with my bananas before they go bad?"
+    result = await extract_recipe_constraints({"input_text": message})
+    must_use: list[str] = result.get("recipe_constraints", {}).get(
+        "must_use_ingredients", []
+    )
+    assert any(
+        "banana" in ingredient.lower() for ingredient in must_use
+    ), f"Expected 'banana' in must_use_ingredients, got {must_use!r}"
+
+
+@_SKIP
+@pytest.mark.asyncio
+async def test_live_use_seed_different_ingredient_also_classified_correctly() -> None:
+    """?use=spinach seed → live model classifies as recipe_brainstorm or recipe_generation."""
+    # Exact text produced by ingredientSeedMessage("spinach") in chat-seed.ts:94
+    message = "What can I make with my spinach before they go bad?"
+    result = await classify_intent(_state(input_text=message))
+    assert result["intent"] in (
+        Intent.RECIPE_BRAINSTORM.value,
+        Intent.RECIPE_GENERATION.value,
+    ), f"Expected recipe intent, got {result['intent']!r}"

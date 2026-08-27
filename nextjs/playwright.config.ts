@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { launchOptions } from './e2e/browser';
 
 export default defineConfig({
   testDir: './e2e',
@@ -15,6 +16,7 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:3000',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    launchOptions,
   },
 
   projects: [

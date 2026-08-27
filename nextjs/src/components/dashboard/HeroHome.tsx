@@ -100,15 +100,27 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
         const expiringItems: EnrichedPantryItem[] = expiringData.items ?? []
         const recipes: Recipe[] = recipesData.recipes ?? []
 
+        // Both windows need a lower bound. days_until_expiry goes negative once an
+        // item is past its date, so an unbounded `<= n` also matches food that
+        // expired weeks ago — which made the hero announce a long-expired item as
+        // "expires tomorrow" and inflated the "expiring" count with dead stock.
+        // Expired items are deliberately excluded here rather than relabelled:
+        // they are still surfaced on /pantry with an "Expired" badge, and #146
+        // already established that they should not get a cook-this-now CTA.
         const urgentItem =
           expiringItems.find(
-            (item) => item.days_until_expiry !== null && item.days_until_expiry <= 1
+            (item) =>
+              item.days_until_expiry !== null &&
+              item.days_until_expiry >= 0 &&
+              item.days_until_expiry <= 1
           ) ?? null
 
         const expiringCount = allItems.filter(
           (item) =>
             item.is_expiring_soon ||
-            (item.days_until_expiry !== null && item.days_until_expiry <= 7)
+            (item.days_until_expiry !== null &&
+              item.days_until_expiry >= 0 &&
+              item.days_until_expiry <= 7)
         ).length
 
         setData({
@@ -144,15 +156,26 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
   const tip = tips[(clockReady ? new Date().getDay() : 0) % tips.length]
   const { totalCount, expiringCount, urgentItem, recipe } = data
 
+  // Derive a time-of-day word from the already-computed greeting so we don't
+  // add a second new Date() call. SSR renders 'Hello' → mealTimeWord stays
+  // empty until clockReady flips, which avoids a hydration mismatch.
+  const mealTimeWord = clockReady
+    ? greeting.includes('morning')
+      ? 'this morning'
+      : greeting.includes('afternoon')
+        ? 'this afternoon'
+        : 'tonight'
+    : ''
+
   // Compute the single hero message (most important)
   const heroMessage = urgentItem
     ? `Your ${titleCase(urgentItem.name)} expires ${urgentItem.days_until_expiry === 0 ? 'today' : 'tomorrow'}! Let's cook it up.`
     : totalCount === 0
       ? "Your pantry is empty — let's stock up!"
       : recipe
-        ? `How about ${recipe.title} tonight?${recipe.total_time_minutes ? ` Only ${recipe.total_time_minutes} min!` : ''}`
+        ? `How about ${recipe.title}${mealTimeWord ? ` ${mealTimeWord}` : ''}?${recipe.total_time_minutes ? ` Only ${recipe.total_time_minutes} min!` : ''}`
         : expiringCount > 0
-          ? `${expiringCount} item${expiringCount > 1 ? 's' : ''} expiring soon — time to cook!`
+          ? "Check the 'Use Soon' tile — some items need your attention!"
           : 'Your kitchen is looking great!'
 
   // The urgent-item CTA deep-links into a chat seeded with that ingredient
@@ -303,9 +326,6 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
             ) : (
               <p className="text-xs text-[var(--color-muted)]">
                 🧺 {totalCount} item{totalCount !== 1 ? 's' : ''} in pantry
-                {expiringCount > 0 && (
-                  <span> · <span style={{ color: 'var(--color-primary)' }}>{expiringCount} expiring</span></span>
-                )}
               </p>
             )}
           </div>

@@ -17,11 +17,11 @@ import PantryProposalCard from '@/components/chat/PantryProposalCard'
 import BrainstormOptions from '@/components/chat/BrainstormOptions'
 import CookModal from '@/components/recipes/CookModal'
 import ThemePicker from '@/components/ui/ThemePicker'
-import Chip from '@/components/ui/Chip'
+import Chip, { type ChipTone } from '@/components/ui/Chip'
 import EmptyState from '@/components/ui/EmptyState'
 import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
-import { fetchRecipe } from '@/lib/api/recipes'
+import { fetchRecipe, promoteRecipeDraft } from '@/lib/api/recipes'
 import { cookingContextForId, deriveChatSeed } from '@/lib/chat-seed'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import type {
@@ -30,6 +30,42 @@ import type {
   PantryProposalData,
 } from '@/types/chat'
 import { getBrainstormIdeas } from '@/types/chat'
+import type { ChipConfig } from '@/components/chat/PostMessageChips'
+
+// ---------------------------------------------------------------------------
+// Intent-aware chip resolver
+// ---------------------------------------------------------------------------
+
+function resolveChips(intent: string | undefined): ChipConfig[] {
+  switch (intent) {
+    case 'recipe_generation':
+    case 'recipe_card':
+      return [
+        { label: 'Try another recipe', message: 'Give me a different recipe', tone: 'accent', emoji: '🔄' },
+        { label: 'Tell me more', message: 'Tell me more about that recipe', tone: 'primary', emoji: '💬' },
+      ]
+    case 'pantry_update':
+      return [
+        { label: 'Add more items', message: 'I have more items to add to my pantry', tone: 'fresh', emoji: '➕' },
+        { label: 'What expires soon?', message: 'What items in my pantry are expiring soon?', tone: 'expiring', emoji: '⏰' },
+      ]
+    case 'cooking_question':
+      return [
+        { label: 'Ask another question', message: 'I have another cooking question', tone: 'primary', emoji: '❓' },
+        { label: 'Tell me more', message: 'Tell me more about that', tone: 'accent', emoji: '💬' },
+      ]
+    case 'recipe_brainstorm':
+      return [
+        { label: 'Explore this idea', message: 'Tell me more about this recipe idea', tone: 'accent', emoji: '✨' },
+        { label: 'Try a different direction', message: 'Give me some different recipe ideas', tone: 'primary', emoji: '🔀' },
+      ]
+    default:
+      return [
+        { label: 'Try another', message: 'Give me a different answer', tone: 'accent', emoji: '🔄' },
+        { label: 'Tell me more', message: 'Tell me more about that', tone: 'primary', emoji: '💬' },
+      ]
+  }
+}
 
 const SUGGESTIONS = [
   'What can I make tonight? 🌙',
@@ -38,11 +74,21 @@ const SUGGESTIONS = [
   'Help me meal prep 📦',
 ]
 
+/*
+ * Fix #174: one tone per chip so the four welcome suggestions read as
+ * visually distinct options rather than four copies of the same pill.
+ * Tones reuse existing Chip.tsx tokens — no new values introduced.
+ * 'expiring' (amber) is a semantic match for the third chip's content.
+ */
+const SUGGESTION_TONES: ChipTone[] = ['primary', 'accent', 'expiring', 'fresh']
+
 const COOKING_SUGGESTIONS = [
   'What can I substitute? 🔁',
   'How do I prep this? 🔪',
   'How long does this take? ⏱️',
 ]
+
+const COOKING_SUGGESTION_TONES: ChipTone[] = ['primary', 'accent', 'fresh']
 
 /**
  * `useSearchParams` opts the tree into client-side rendering, so the page shell
@@ -87,8 +133,14 @@ function ChatSurface() {
   const [saveStates, setSaveStates] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({})
   /** Maps message id → saved recipe db id, populated after a successful save. */
   const [savedRecipeIds, setSavedRecipeIds] = useState<Record<string, string>>({})
-  /** When set, the CookModal is open for this { recipeId, recipeTitle } pair. */
-  const [cookTarget, setCookTarget] = useState<{ recipeId: string; recipeTitle: string } | null>(null)
+  /** msgId → recipe db id for rows created as drafts (is_draft: true). */
+  const [draftRecipeIds, setDraftRecipeIds] = useState<Set<string>>(new Set())
+  /** In-flight POST promises keyed by msgId — prevents double-tap from creating two rows. */
+  const ensureInFlight = useRef<Map<string, Promise<{ id: string; isDraft: boolean }>>>(new Map())
+  /** msgIds whose cook button is pending (draft POST in flight). Re-renders on change. */
+  const [cookPending, setCookPending] = useState<Set<string>>(new Set())
+  /** When set, the CookModal is open for this { recipeId, recipeTitle, isDraft } triple. */
+  const [cookTarget, setCookTarget] = useState<{ recipeId: string; recipeTitle: string; isDraft: boolean } | null>(null)
   const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
   const [dismissedRecipeId, setDismissedRecipeId] = useState<string | null>(null)
   const [dismissedSeedKey, setDismissedSeedKey] = useState<string | null>(null)
@@ -221,31 +273,33 @@ function ChatSurface() {
     }
   }
 
+  const persistRecipe = (recipe: ChatRecipeData, options: { draft: boolean }): Promise<Response> =>
+    fetch('/api/recipes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: recipe.title,
+        description: recipe.description,
+        ingredients: recipe.ingredients,
+        instructions: recipe.instructions,
+        cuisine: recipe.cuisine,
+        meal_type: recipe.meal_type,
+        dietary_tags: recipe.dietary_tags,
+        difficulty: recipe.difficulty,
+        prep_time_minutes: recipe.prep_time_minutes,
+        cook_time_minutes: recipe.cook_time_minutes,
+        total_time_minutes: recipe.total_time_minutes,
+        servings: recipe.servings,
+        is_draft: options.draft,
+      }),
+    })
+
   const handleSaveRecipe = async (msgId: string, recipe: ChatRecipeData) => {
     setSaveStates((prev) => ({ ...prev, [msgId]: 'saving' }))
     try {
-      const res = await fetch('/api/recipes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: recipe.title,
-          description: recipe.description,
-          ingredients: recipe.ingredients,
-          instructions: recipe.instructions,
-          cuisine: recipe.cuisine,
-          meal_type: recipe.meal_type,
-          // Forward both fields; the API route merges + deduplicates them.
-          dietary_tags: recipe.dietary_tags,
-          difficulty: recipe.difficulty,
-          prep_time_minutes: recipe.prep_time_minutes,
-          cook_time_minutes: recipe.cook_time_minutes,
-          total_time_minutes: recipe.total_time_minutes,
-          servings: recipe.servings,
-        }),
-      })
+      const res = await persistRecipe(recipe, { draft: false })
       if (res.ok) {
         setSaveStates((prev) => ({ ...prev, [msgId]: 'saved' }))
-        // Capture the db id so "Cook this" can open CookModal immediately.
         const saved = await res.json().catch(() => null) as { id?: string } | null
         if (saved?.id) {
           setSavedRecipeIds((prev) => ({ ...prev, [msgId]: saved.id as string }))
@@ -258,12 +312,52 @@ function ChatSurface() {
     }
   }
 
-  const handleTryAnother = () => {
-    sendMessage('Give me a different recipe')
+  /**
+   * Reverse lookup: given a recipe db id, return the msgId that owns it.
+   * Used in two places — hoisted to avoid repeating the fragile Object.keys scan.
+   */
+  const msgIdForRecipeId = (recipeId: string): string | undefined =>
+    Object.keys(savedRecipeIds).find((k) => savedRecipeIds[k] === recipeId)
+
+  /**
+   * Returns { id, isDraft } for msgId, creating a draft row if needed.
+   * isDraft is derived authoritatively inside this function:
+   *   - pre-existing row → isDraft is whether msgId is already in draftRecipeIds (correct, no pending update)
+   *   - newly created draft → isDraft is always true (we just POSTed with is_draft:true)
+   * Double-tap safe: a second call while the POST is in flight reuses the same promise.
+   * On POST failure the promise rejects; callers must handle (buttons re-enable via finally).
+   */
+  const ensureRecipeId = (msgId: string, recipe: ChatRecipeData): Promise<{ id: string; isDraft: boolean }> => {
+    const existing = savedRecipeIds[msgId]
+    if (existing) return Promise.resolve({ id: existing, isDraft: draftRecipeIds.has(msgId) })
+
+    const inflight = ensureInFlight.current.get(msgId)
+    if (inflight) return inflight
+
+    const promise = persistRecipe(recipe, { draft: true })
+      .then(async (res) => {
+        if (!res.ok) throw new Error('Failed to persist draft recipe')
+        const saved = await res.json() as { id: string }
+        setSavedRecipeIds((prev) => ({ ...prev, [msgId]: saved.id }))
+        setDraftRecipeIds((prev) => new Set(prev).add(msgId))
+        // This is always a freshly created draft — isDraft is authoritatively true.
+        return { id: saved.id, isDraft: true }
+      })
+      .finally(() => {
+        ensureInFlight.current.delete(msgId)
+        setCookPending((prev) => {
+          const next = new Set(prev)
+          next.delete(msgId)
+          return next
+        })
+      })
+
+    ensureInFlight.current.set(msgId, promise)
+    return promise
   }
 
-  const handleTellMore = () => {
-    sendMessage('Tell me more about that')
+  const handleChipTap = (message: string) => {
+    sendMessage(message)
   }
 
   const handlePickIdea = (idea: string) => {
@@ -313,19 +407,30 @@ function ChatSurface() {
         </div>
       )}
 
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-4 py-4">
-        {/* Cook handoff context — dismissible, sits above the thread */}
-        <AnimatePresence>
-          {cookingRecipe && (
+      {/* Cook handoff context — pinned above the thread rather than scrolling
+          with it. While a recipe is pinned, cooking *is* the task of this
+          screen, and the banner is the only on-screen confirmation that Bubbles
+          knows which recipe you mean; inside the scroll area it disappeared
+          after a couple of turns (#242). */}
+      <AnimatePresence>
+        {cookingRecipe && (
+          <div className="flex-shrink-0 px-4 pt-4">
             <CookingContextCard
               title={cookingRecipe.title}
               ingredientCount={cookingRecipe.ingredients.length}
               onDismiss={dismissCookingCard}
+              onFinishCooking={() => {
+                if (!cookingRecipeId) return
+                const isDraft = draftRecipeIds.has(msgIdForRecipeId(cookingRecipeId) ?? '')
+                setCookTarget({ recipeId: cookingRecipeId, recipeTitle: cookingRecipe.title, isDraft })
+              }}
             />
-          )}
-        </AnimatePresence>
+          </div>
+        )}
+      </AnimatePresence>
 
+      {/* Messages area */}
+      <div className="flex-1 overflow-y-auto px-4 py-4">
         {/* Deep-link seed context (?tip= / ?use=) — same slot, same idiom */}
         <AnimatePresence>
           {activeSeed && (
@@ -364,16 +469,29 @@ function ChatSurface() {
                 onReject={() => rejectProposal(msg.id)}
                 onSave={(recipe) => handleSaveRecipe(msg.id, recipe)}
                 savedRecipeId={savedRecipeIds[msg.id] ?? null}
-                onCook={(recipeId) => {
-                  const title = msg.response?.proposal
-                    ? ((msg.response.proposal as { recipe?: { title?: string }; title?: string }).recipe?.title
-                        ?? (msg.response.proposal as { title?: string }).title
-                        ?? 'Recipe')
-                    : 'Recipe'
-                  setCookTarget({ recipeId, recipeTitle: title })
+                isSavedDraft={draftRecipeIds.has(msg.id)}
+                onCookWithMe={(recipe) => {
+                  setCookPending((prev) => new Set(prev).add(msg.id))
+                  ensureRecipeId(msg.id, recipe).then(({ id: recipeId }) => {
+                    router.replace(`/chat?cooking=${encodeURIComponent(recipeId)}`, { scroll: false })
+                  }).catch(() => {
+                    // POST failed — pending cleared in finally; buttons re-enable
+                  })
                 }}
-                onTryAnother={handleTryAnother}
-                onTellMore={handleTellMore}
+                onAlreadyMade={(recipe) => {
+                  const title = (msg.response?.proposal as { recipe?: { title?: string }; title?: string } | null)?.recipe?.title
+                    ?? (msg.response?.proposal as { title?: string } | null)?.title
+                    ?? 'Recipe'
+                  setCookPending((prev) => new Set(prev).add(msg.id))
+                  ensureRecipeId(msg.id, recipe).then(({ id: recipeId, isDraft }) => {
+                    setCookTarget({ recipeId, recipeTitle: title, isDraft })
+                  }).catch(() => {
+                    // POST failed — pending cleared in finally; buttons re-enable
+                  })
+                }}
+                cookState={cookPending.has(msg.id) ? 'pending' : 'idle'}
+                onTryAnother={handleChipTap.bind(null, 'Give me a different recipe')}
+                onChipTap={handleChipTap}
                 onPickIdea={handlePickIdea}
               />
             ))}
@@ -395,6 +513,7 @@ function ChatSurface() {
             <EmptyState
               mascotState="happy"
               headerLabel="Chef Bubbly"
+              headerVariant="chat"
               headline={cookingRecipe ? 'Cooking with Bubbles' : 'Chat with Bubbles'}
               subline={
                 cookingRecipe
@@ -405,10 +524,10 @@ function ChatSurface() {
             />
             {/* Chat-specific affordances — kept out of the generic EmptyState */}
             <div className="flex flex-wrap gap-2 justify-center">
-              {(cookingRecipe ? COOKING_SUGGESTIONS : SUGGESTIONS).map((s) => (
+              {(cookingRecipe ? COOKING_SUGGESTIONS : SUGGESTIONS).map((s, i) => (
                 <Chip
                   key={s}
-                  tone="accent"
+                  tone={(cookingRecipe ? COOKING_SUGGESTION_TONES : SUGGESTION_TONES)[i]}
                   onClick={() => handleSuggestionClick(s)}
                 >
                   {s}
@@ -463,6 +582,16 @@ function ChatSurface() {
         <CookModal
           recipeId={cookTarget.recipeId}
           recipeTitle={cookTarget.recipeTitle}
+          isDraft={cookTarget.isDraft}
+          onAddToLibrary={cookTarget.isDraft ? async () => {
+            await promoteRecipeDraft(cookTarget.recipeId)
+            setDraftRecipeIds((prev) => {
+              const next = new Set(prev)
+              const msgId = msgIdForRecipeId(cookTarget.recipeId)
+              if (msgId) next.delete(msgId)
+              return next
+            })
+          } : undefined}
           onClose={() => setCookTarget(null)}
           onCooked={() => setCookTarget(null)}
         />
@@ -479,20 +608,21 @@ interface MessageRendererProps {
   message: ChatMessage
   isLastAssistant: boolean
   isStreaming: boolean
-  /** Last assistant message once streaming has finished — gates follow-up chips. */
   isLastSettledAssistant: boolean
   proposalState?: 'pending' | 'approved' | 'rejected'
   saveState: 'idle' | 'saving' | 'saved' | 'error'
   onApprove: () => void
   onReject: () => void
   onSave: (recipe: ChatRecipeData) => void
-  /** DB id of the saved recipe — available once onSave succeeds; gates "Cook this". */
   savedRecipeId: string | null
-  /** Opens CookModal for the saved recipe. */
-  onCook: (recipeId: string) => void
+  /** True when savedRecipeId points to a draft row (not yet a real library entry). */
+  isSavedDraft: boolean
+  /** Visual state for cook buttons — 'pending' while a draft POST is in flight. */
+  cookState: 'idle' | 'pending'
+  onCookWithMe: (recipe: ChatRecipeData) => void
+  onAlreadyMade: (recipe: ChatRecipeData) => void
   onTryAnother: () => void
-  onTellMore: () => void
-  /** Called when the user taps a brainstorm idea card; sends the name as the next message. */
+  onChipTap: (message: string) => void
   onPickIdea: (idea: string) => void
 }
 
@@ -507,9 +637,12 @@ function MessageRenderer({
   onReject,
   onSave,
   savedRecipeId,
-  onCook,
+  isSavedDraft,
+  cookState,
+  onCookWithMe,
+  onAlreadyMade,
   onTryAnother,
-  onTellMore,
+  onChipTap,
   onPickIdea,
 }: MessageRendererProps) {
   // User messages — simple bubble
@@ -582,7 +715,10 @@ function MessageRenderer({
               onTryAnother={onTryAnother}
               saveState={saveState}
               savedRecipeId={savedRecipeId}
-              onCook={onCook}
+              isSavedDraft={isSavedDraft}
+              cookState={cookState}
+              onCookWithMe={() => onCookWithMe(recipe)}
+              onAlreadyMade={() => onAlreadyMade(recipe)}
             />
           </div>
         </div>
@@ -632,7 +768,7 @@ function MessageRenderer({
       {/* Follow-up affordances — only under the last settled assistant reply.
           Recipe-card and pantry-proposal messages carry their own actions. */}
       {isLastSettledAssistant && (
-        <PostMessageChips onTryAnother={onTryAnother} onTellMore={onTellMore} />
+        <PostMessageChips chips={resolveChips(intent)} onChipTap={onChipTap} />
       )}
     </motion.div>
   )
