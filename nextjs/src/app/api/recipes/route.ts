@@ -80,7 +80,12 @@ export async function GET(request: Request) {
   if (cuisine) query = query.eq('cuisine', cuisine)
   if (mealType) query = query.eq('meal_type', mealType)
   if (maxTime) query = query.lte('total_time_minutes', parseInt(maxTime, 10))
-  if (isDraft !== null && isDraft !== undefined) query = query.eq('is_draft', isDraft === 'true')
+  // Default: exclude drafts. Pass is_draft=true to get only drafts, is_draft=false for only non-drafts.
+  if (isDraft !== null && isDraft !== undefined) {
+    query = query.eq('is_draft', isDraft === 'true')
+  } else {
+    query = query.eq('is_draft', false)
+  }
 
   query = query.order('created_at', { ascending: false }).range(offset, offset + limit - 1)
 

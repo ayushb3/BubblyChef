@@ -88,8 +88,20 @@ export async function cookRecipe(recipeId: string): Promise<CookProposal> {
 }
 
 /**
- * Confirm cooking a recipe: apply pantry deductions and mark recipe as cooked.
+ * Promote a draft recipe row to a real library entry.
  */
+export async function promoteRecipeDraft(recipeId: string): Promise<void> {
+  const res = await fetch(`/api/recipes/${recipeId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_draft: false }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Failed to add recipe to library' }))
+    throw new Error(err.error ?? `Failed to add recipe to library: ${res.status}`)
+  }
+}
 export async function confirmCook(
   recipeId: string,
   deductions: DeductionItem[],
