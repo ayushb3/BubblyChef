@@ -136,7 +136,9 @@ function ChatSurface() {
   /** msgId → recipe db id for rows created as drafts (is_draft: true). */
   const [draftRecipeIds, setDraftRecipeIds] = useState<Set<string>>(new Set())
   /** In-flight POST promises keyed by msgId — prevents double-tap from creating two rows. */
-  const ensureInFlight = useRef<Map<string, Promise<string>>>(new Map())
+  const ensureInFlight = useRef<Map<string, Promise<{ id: string; isDraft: boolean }>>>(new Map())
+  /** msgIds whose cook button is pending (draft POST in flight). Re-renders on change. */
+  const [cookPending, setCookPending] = useState<Set<string>>(new Set())
   /** When set, the CookModal is open for this { recipeId, recipeTitle, isDraft } triple. */
   const [cookTarget, setCookTarget] = useState<{ recipeId: string; recipeTitle: string; isDraft: boolean } | null>(null)
   const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
@@ -311,12 +313,23 @@ function ChatSurface() {
   }
 
   /**
-   * Returns the recipe db id for msgId, creating a draft row if needed.
-   * Double-tap safe: a second call while the POST is in flight reuses the same promise.
+   * Reverse lookup: given a recipe db id, return the msgId that owns it.
+   * Used in two places — hoisted to avoid repeating the fragile Object.keys scan.
    */
-  const ensureRecipeId = (msgId: string, recipe: ChatRecipeData): Promise<string> => {
+  const msgIdForRecipeId = (recipeId: string): string | undefined =>
+    Object.keys(savedRecipeIds).find((k) => savedRecipeIds[k] === recipeId)
+
+  /**
+   * Returns { id, isDraft } for msgId, creating a draft row if needed.
+   * isDraft is derived authoritatively inside this function:
+   *   - pre-existing row → isDraft is whether msgId is already in draftRecipeIds (correct, no pending update)
+   *   - newly created draft → isDraft is always true (we just POSTed with is_draft:true)
+   * Double-tap safe: a second call while the POST is in flight reuses the same promise.
+   * On POST failure the promise rejects; callers must handle (buttons re-enable via finally).
+   */
+  const ensureRecipeId = (msgId: string, recipe: ChatRecipeData): Promise<{ id: string; isDraft: boolean }> => {
     const existing = savedRecipeIds[msgId]
-    if (existing) return Promise.resolve(existing)
+    if (existing) return Promise.resolve({ id: existing, isDraft: draftRecipeIds.has(msgId) })
 
     const inflight = ensureInFlight.current.get(msgId)
     if (inflight) return inflight
@@ -327,10 +340,16 @@ function ChatSurface() {
         const saved = await res.json() as { id: string }
         setSavedRecipeIds((prev) => ({ ...prev, [msgId]: saved.id }))
         setDraftRecipeIds((prev) => new Set(prev).add(msgId))
-        return saved.id
+        // This is always a freshly created draft — isDraft is authoritatively true.
+        return { id: saved.id, isDraft: true }
       })
       .finally(() => {
         ensureInFlight.current.delete(msgId)
+        setCookPending((prev) => {
+          const next = new Set(prev)
+          next.delete(msgId)
+          return next
+        })
       })
 
     ensureInFlight.current.set(msgId, promise)
@@ -402,9 +421,7 @@ function ChatSurface() {
               onDismiss={dismissCookingCard}
               onFinishCooking={() => {
                 if (!cookingRecipeId) return
-                const isDraft = draftRecipeIds.has(
-                  Object.keys(savedRecipeIds).find((k) => savedRecipeIds[k] === cookingRecipeId) ?? ''
-                )
+                const isDraft = draftRecipeIds.has(msgIdForRecipeId(cookingRecipeId) ?? '')
                 setCookTarget({ recipeId: cookingRecipeId, recipeTitle: cookingRecipe.title, isDraft })
               }}
             />
@@ -454,19 +471,25 @@ function ChatSurface() {
                 savedRecipeId={savedRecipeIds[msg.id] ?? null}
                 isSavedDraft={draftRecipeIds.has(msg.id)}
                 onCookWithMe={(recipe) => {
-                  ensureRecipeId(msg.id, recipe).then((recipeId) => {
+                  setCookPending((prev) => new Set(prev).add(msg.id))
+                  ensureRecipeId(msg.id, recipe).then(({ id: recipeId }) => {
                     router.replace(`/chat?cooking=${encodeURIComponent(recipeId)}`, { scroll: false })
+                  }).catch(() => {
+                    // POST failed — pending cleared in finally; buttons re-enable
                   })
                 }}
                 onAlreadyMade={(recipe) => {
                   const title = (msg.response?.proposal as { recipe?: { title?: string }; title?: string } | null)?.recipe?.title
                     ?? (msg.response?.proposal as { title?: string } | null)?.title
                     ?? 'Recipe'
-                  ensureRecipeId(msg.id, recipe).then((recipeId) => {
-                    const isDraft = draftRecipeIds.has(msg.id)
+                  setCookPending((prev) => new Set(prev).add(msg.id))
+                  ensureRecipeId(msg.id, recipe).then(({ id: recipeId, isDraft }) => {
                     setCookTarget({ recipeId, recipeTitle: title, isDraft })
+                  }).catch(() => {
+                    // POST failed — pending cleared in finally; buttons re-enable
                   })
                 }}
+                cookState={cookPending.has(msg.id) ? 'pending' : 'idle'}
                 onTryAnother={handleChipTap.bind(null, 'Give me a different recipe')}
                 onChipTap={handleChipTap}
                 onPickIdea={handlePickIdea}
@@ -564,7 +587,7 @@ function ChatSurface() {
             await promoteRecipeDraft(cookTarget.recipeId)
             setDraftRecipeIds((prev) => {
               const next = new Set(prev)
-              const msgId = Object.keys(savedRecipeIds).find((k) => savedRecipeIds[k] === cookTarget.recipeId)
+              const msgId = msgIdForRecipeId(cookTarget.recipeId)
               if (msgId) next.delete(msgId)
               return next
             })
@@ -594,6 +617,8 @@ interface MessageRendererProps {
   savedRecipeId: string | null
   /** True when savedRecipeId points to a draft row (not yet a real library entry). */
   isSavedDraft: boolean
+  /** Visual state for cook buttons — 'pending' while a draft POST is in flight. */
+  cookState: 'idle' | 'pending'
   onCookWithMe: (recipe: ChatRecipeData) => void
   onAlreadyMade: (recipe: ChatRecipeData) => void
   onTryAnother: () => void
@@ -613,6 +638,7 @@ function MessageRenderer({
   onSave,
   savedRecipeId,
   isSavedDraft,
+  cookState,
   onCookWithMe,
   onAlreadyMade,
   onTryAnother,
@@ -690,6 +716,7 @@ function MessageRenderer({
               saveState={saveState}
               savedRecipeId={savedRecipeId}
               isSavedDraft={isSavedDraft}
+              cookState={cookState}
               onCookWithMe={() => onCookWithMe(recipe)}
               onAlreadyMade={() => onAlreadyMade(recipe)}
             />

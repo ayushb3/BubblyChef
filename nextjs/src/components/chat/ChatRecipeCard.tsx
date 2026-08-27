@@ -17,6 +17,12 @@ interface ChatRecipeCardProps {
   onCookWithMe?: () => void
   /** Opens deduction review directly. Always enabled. */
   onAlreadyMade?: () => void
+  /**
+   * Visual state for cook buttons. When 'pending', both cook buttons are
+   * disabled with spinner feedback on the primary, matching the Save button
+   * disabled idiom.
+   */
+  cookState?: 'idle' | 'pending'
 }
 
 const CHIP_COLORS: string[] = [
@@ -67,6 +73,7 @@ export default function ChatRecipeCard({
   isSavedDraft = false,
   onCookWithMe,
   onAlreadyMade,
+  cookState = 'idle',
 }: ChatRecipeCardProps) {
   const totalTime =
     recipe.total_time_minutes
@@ -184,13 +191,24 @@ export default function ChatRecipeCard({
 
         {/* Action buttons */}
         <div className="flex flex-col gap-2 pt-1">
-          {/* Primary: guided cooking — always enabled */}
+          {/* Primary: guided cooking — disabled while a draft POST is in flight */}
           {onCookWithMe && (
             <SpringButton
               onClick={onCookWithMe}
-              className="w-full py-2.5 px-3 rounded-full text-sm font-semibold bg-[var(--color-primary)] text-white"
+              disabled={cookState === 'pending'}
+              className="w-full py-2.5 px-3 rounded-full text-sm font-semibold bg-[var(--color-primary)] text-white disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              👩‍🍳 Cook with me
+              {cookState === 'pending' ? (
+                <span className="flex items-center justify-center gap-1.5">
+                  <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  Starting…
+                </span>
+              ) : (
+                <>👩‍🍳 Cook with me</>
+              )}
             </SpringButton>
           )}
           <div className="flex gap-2">
@@ -216,12 +234,13 @@ export default function ChatRecipeCard({
               Try Another
             </SpringButton>
           </div>
-          {/* Tertiary: already cooked — quiet text button, always enabled */}
+          {/* Tertiary: already cooked — disabled while a draft POST is in flight */}
           {onAlreadyMade && (
             <button
               type="button"
               onClick={onAlreadyMade}
-              className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] underline underline-offset-2 text-center py-0.5 transition-colors"
+              disabled={cookState === 'pending'}
+              className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] underline underline-offset-2 text-center py-0.5 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               I already made this
             </button>

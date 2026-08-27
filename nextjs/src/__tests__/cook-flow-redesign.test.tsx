@@ -38,16 +38,34 @@ const RECIPE: ChatRecipeData = {
 }
 
 describe('ChatRecipeCard — cook-flow redesign', () => {
-  it('"Cook with me" is present and not disabled without savedRecipeId', () => {
+  it('"Cook with me" is present and not disabled when cookState is idle', () => {
     render(
       <ChatRecipeCard
         recipe={RECIPE}
         onCookWithMe={jest.fn()}
         onAlreadyMade={jest.fn()}
+        cookState="idle"
       />,
     )
     const btn = screen.getByRole('button', { name: /cook with me/i })
     expect(btn).not.toBeDisabled()
+  })
+
+  it('"Cook with me" and "I already made this" are disabled when cookState is pending', () => {
+    render(
+      <ChatRecipeCard
+        recipe={RECIPE}
+        onCookWithMe={jest.fn()}
+        onAlreadyMade={jest.fn()}
+        cookState="pending"
+      />,
+    )
+    // Primary cook button shows spinner/label change and is disabled
+    const cookBtn = screen.getByRole('button', { name: /starting/i })
+    expect(cookBtn).toBeDisabled()
+    // Tertiary already-made button is also disabled
+    const alreadyMadeBtn = screen.getByText(/i already made this/i)
+    expect(alreadyMadeBtn).toBeDisabled()
   })
 
   it('"Cook with me" fires onCookWithMe without savedRecipeId', () => {
@@ -137,20 +155,22 @@ describe('draft recipe plumbing — payload contract', () => {
 
 describe('ensureRecipeId — double-tap guard', () => {
   it('a second call while the first is in-flight reuses the same promise (no two POSTs)', async () => {
-    let resolveFirst!: (id: string) => void
-    const firstPromise = new Promise<string>((res) => { resolveFirst = res })
+    let resolveFirst!: (value: { id: string; isDraft: boolean }) => void
+    const firstPromise = new Promise<{ id: string; isDraft: boolean }>((res) => { resolveFirst = res })
 
-    const inFlight = new Map<string, Promise<string>>()
+    const inFlight = new Map<string, Promise<{ id: string; isDraft: boolean }>>()
     const savedIds: Record<string, string> = {}
+    const draftIds = new Set<string>()
 
-    const ensureRecipeId = (msgId: string): Promise<string> => {
-      if (savedIds[msgId]) return Promise.resolve(savedIds[msgId])
+    const ensureRecipeId = (msgId: string): Promise<{ id: string; isDraft: boolean }> => {
+      if (savedIds[msgId]) return Promise.resolve({ id: savedIds[msgId], isDraft: draftIds.has(msgId) })
       const existing = inFlight.get(msgId)
       if (existing) return existing
-      inFlight.set(msgId, firstPromise.then((id) => {
-        savedIds[msgId] = id
+      inFlight.set(msgId, firstPromise.then((result) => {
+        savedIds[msgId] = result.id
+        draftIds.add(msgId)
         inFlight.delete(msgId)
-        return id
+        return result
       }))
       return inFlight.get(msgId)!
     }
@@ -159,14 +179,53 @@ describe('ensureRecipeId — double-tap guard', () => {
     const p2 = ensureRecipeId('msg-1')
     expect(p1).toBe(p2) // same promise object — no second call started
 
-    resolveFirst('saved-id-42')
-    const [id1, id2] = await Promise.all([p1, p2])
-    expect(id1).toBe('saved-id-42')
-    expect(id2).toBe('saved-id-42')
+    resolveFirst({ id: 'saved-id-42', isDraft: true })
+    const [r1, r2] = await Promise.all([p1, p2])
+    expect(r1.id).toBe('saved-id-42')
+    expect(r2.id).toBe('saved-id-42')
 
     // After resolution, a third call returns the cached value synchronously
     const p3 = ensureRecipeId('msg-1')
-    expect(await p3).toBe('saved-id-42')
+    const r3 = await p3
+    expect(r3.id).toBe('saved-id-42')
+  })
+
+  it('resolves isDraft: true for a newly created draft (regression for stale-closure bug)', async () => {
+    // Simulates the real ensureRecipeId logic: POST path always yields isDraft:true.
+    // This is the regression for Finding 1: before the fix, isDraft was read from
+    // a stale closure (draftRecipeIds.has(msgId) before setDraftRecipeIds settled),
+    // so a fresh draft resolved isDraft:false and CookModal skipped the "Add to
+    // library?" prompt.
+    let resolvePost!: (value: { id: string; isDraft: boolean }) => void
+    const postPromise = new Promise<{ id: string; isDraft: boolean }>((res) => { resolvePost = res })
+
+    const inFlight = new Map<string, Promise<{ id: string; isDraft: boolean }>>()
+    const savedIds: Record<string, string> = {}
+    // Intentionally empty at call time — simulates the pre-update closure state
+    const draftIds = new Set<string>()
+
+    const ensureRecipeId = (msgId: string): Promise<{ id: string; isDraft: boolean }> => {
+      const existing = savedIds[msgId]
+      if (existing) return Promise.resolve({ id: existing, isDraft: draftIds.has(msgId) })
+      const inflight = inFlight.get(msgId)
+      if (inflight) return inflight
+      // POST path: draft just created — isDraft is authoritatively true inside the function
+      const promise = postPromise.then((saved) => {
+        savedIds[msgId] = saved.id
+        draftIds.add(msgId) // state update happens here
+        return { id: saved.id, isDraft: true } // NOT draftIds.has(msgId) from a closure
+      }).finally(() => { inFlight.delete(msgId) })
+      inFlight.set(msgId, promise)
+      return promise
+    }
+
+    const p = ensureRecipeId('msg-new')
+    resolvePost({ id: 'draft-abc', isDraft: true })
+    const result = await p
+    // The critical assertion: isDraft must be true even if draftIds was empty when the
+    // promise was created (the stale-closure scenario).
+    expect(result.isDraft).toBe(true)
+    expect(result.id).toBe('draft-abc')
   })
 })
 
@@ -194,8 +253,7 @@ describe('GET /api/recipes — draft filter default', () => {
     expect(url.searchParams.get('is_draft')).toBe('true')
   })
 
-  it('passes is_draft=all to get everything', () => {
-    const url = new URL('http://localhost/api/recipes?is_draft=all')
-    expect(url.searchParams.get('is_draft')).toBe('all')
-  })
+  // Note: is_draft=all was removed from the route (no caller used it). The only
+  // supported values are omitted (default: exclude drafts), true (only drafts),
+  // and false (only non-drafts).
 })
