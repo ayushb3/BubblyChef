@@ -32,6 +32,34 @@ interface CookModalProps {
 
 type ModalState = 'loading' | 'review' | 'confirming' | 'success' | 'error'
 
+/** Matches the skeleton idiom in src/app/loading.tsx. */
+const PULSE = 'rounded animate-pulse motion-reduce:animate-none'
+const PULSE_BG = { background: 'var(--color-border)' } as const
+
+const SKELETON_ROWS = ['70%', '55%', '80%', '45%'] as const
+
+/**
+ * What the wait is actually spent on, narrated in order (audit B8).
+ *
+ * The cook match runs a deterministic pass over the pantry, then sends only the
+ * leftovers to the model in one batch — measured at 4.9–6.2s end to end, nearly
+ * all of it the model call. A single static line for six seconds reads as a
+ * hang, so the stages advance on a timer to show the work is ongoing.
+ *
+ * These are honest labels for real phases, not a fake progress bar: the request
+ * gives no completion signal, so the copy describes what is happening rather
+ * than claiming a percentage. The last stage is deliberately open-ended — it
+ * stays put until the response lands however long that takes.
+ */
+const LOADING_STAGES = [
+  { label: 'Reading the recipe…', hint: 'Working out what each ingredient needs.' },
+  { label: 'Checking your pantry…', hint: 'Matching ingredients against what you have.' },
+  { label: 'Finding substitutes…', hint: 'Looking for stand-ins for anything missing.' },
+] as const
+
+/** Rough duration of the first two stages; the last one holds until the response. */
+const STAGE_MS = 1400
+
 function statusColor(status: IngredientMatch['status']): string {
   switch (status) {
     case 'ready':
@@ -153,7 +181,18 @@ export default function CookModal({
   const [errorMsg, setErrorMsg] = useState<string>('')
   const [addingToLibrary, setAddingToLibrary] = useState(false)
   const [overrides, setOverrides] = useState<Record<string, string>>({})
+  const [loadingStage, setLoadingStage] = useState(0)
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Advance the loading copy while the match runs, stopping on the last stage
+  // rather than looping — a cycling message would suggest repeated work.
+  useEffect(() => {
+    if (state !== 'loading') return
+    const id = setInterval(() => {
+      setLoadingStage((s) => (s < LOADING_STAGES.length - 1 ? s + 1 : s))
+    }, STAGE_MS)
+    return () => clearInterval(id)
+  }, [state])
 
   useEffect(() => {
     let cancelled = false
@@ -262,16 +301,43 @@ export default function CookModal({
           {/* Body */}
           <div className="flex-1 overflow-y-auto px-5 py-4">
             {state === 'loading' && (
-              <div className="flex flex-col items-center gap-3 py-10">
-                <div
-                  className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin"
-                  style={{ borderColor: 'var(--color-primary)', borderTopColor: 'transparent' }}
-                />
+              <div role="status" aria-live="polite" className="flex flex-col gap-4 py-2">
+                <span className="sr-only">Matching recipe ingredients against your pantry</span>
+
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin motion-reduce:animate-none shrink-0"
+                    style={{ borderColor: 'var(--color-primary)', borderTopColor: 'transparent' }}
+                  />
+                  <p
+                    className="text-sm font-semibold text-[var(--color-text)]"
+                    style={{ fontFamily: 'Nunito, sans-serif' }}
+                  >
+                    {LOADING_STAGES[loadingStage].label}
+                  </p>
+                </div>
+
+                {/* Skeleton rows standing in for the match table. Gives the wait a
+                    shape that matches what arrives, so the modal doesn't jump
+                    from a centred spinner to a dense table (#245 / audit B8). */}
+                <div className="flex flex-col gap-2" aria-hidden="true">
+                  {SKELETON_ROWS.map((width, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <div
+                        className={`h-3 ${PULSE} flex-1`}
+                        style={{ ...PULSE_BG, maxWidth: width }}
+                      />
+                      <div className={`h-3 w-12 ${PULSE}`} style={PULSE_BG} />
+                      <div className={`h-4 w-14 rounded-full ${PULSE}`} style={PULSE_BG} />
+                    </div>
+                  ))}
+                </div>
+
                 <p
-                  className="text-sm text-[var(--color-muted)]"
+                  className="text-xs text-[var(--color-muted)]"
                   style={{ fontFamily: 'Nunito, sans-serif' }}
                 >
-                  Checking your pantry...
+                  {LOADING_STAGES[loadingStage].hint}
                 </p>
               </div>
             )}
