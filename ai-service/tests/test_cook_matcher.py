@@ -609,3 +609,127 @@ class TestPieceUnitParsing:
 
         assert proposal.matches[0].status == "ready"
         assert proposal.matches[0].deduct_qty == pytest.approx(0.375)
+
+
+class TestMissingNotes:
+    """Explanations for ingredients that stayed missing (#281).
+
+    The model was already asked for a substitution_note on every result, but
+    every path that declined a candidate dropped it, leaving the user a bare
+    "not in pantry" chip and nothing to act on.
+    """
+
+    @staticmethod
+    def _manager(results: list[_LLMIngredientMatch]) -> MagicMock:
+        manager = MagicMock()
+        manager.complete = AsyncMock(return_value=_LLMMatchBatch(results=results))
+        return manager
+
+    @pytest.mark.asyncio
+    async def test_match_type_none_note_reaches_the_proposal(self) -> None:
+        pantry = [_make_item("pasta", 500, "g", 500, "g")]
+        manager = self._manager([
+            _LLMIngredientMatch(
+                ingredient_name="heavy cream",
+                best_match=None,
+                match_type="none",
+                confidence=0.9,
+                substitution_note="No good stand-in; the sauce will be thinner.",
+            )
+        ])
+
+        proposal = await match_ingredients_with_llm(
+            recipe_id=RECIPE_ID,
+            recipe_title=RECIPE_TITLE,
+            recipe_ingredients=["200 g pasta", "1 cup heavy cream"],
+            pantry_items=pantry,
+            ai_manager=manager,
+        )
+
+        assert "heavy cream" in proposal.missing
+        assert proposal.missing_notes["heavy cream"] == (
+            "No good stand-in; the sauce will be thinner."
+        )
+
+    @pytest.mark.asyncio
+    async def test_low_confidence_match_is_explained_without_advertising_the_swap(self) -> None:
+        # The note must not repeat the model's own note here: it describes a
+        # substitution we are deliberately refusing to make.
+        pantry = [_make_item("yogurt", 500, "g", 500, "g")]
+        manager = self._manager([
+            _LLMIngredientMatch(
+                ingredient_name="heavy cream",
+                best_match="yogurt",
+                match_type="substitute",
+                confidence=0.2,
+                substitution_note="Yogurt works fine here.",
+            )
+        ])
+
+        proposal = await match_ingredients_with_llm(
+            recipe_id=RECIPE_ID,
+            recipe_title=RECIPE_TITLE,
+            recipe_ingredients=["1 cup heavy cream"],
+            pantry_items=pantry,
+            ai_manager=manager,
+        )
+
+        note = proposal.missing_notes["heavy cream"]
+        assert "too uncertain" in note
+        assert "works fine" not in note
+
+    @pytest.mark.asyncio
+    async def test_note_for_a_pantry_item_the_user_does_not_have(self) -> None:
+        pantry = [_make_item("pasta", 500, "g", 500, "g")]
+        manager = self._manager([
+            _LLMIngredientMatch(
+                ingredient_name="heavy cream",
+                best_match="creme fraiche",  # not in the pantry
+                match_type="substitute",
+                confidence=0.95,
+                substitution_note="Close enough in richness.",
+            )
+        ])
+
+        proposal = await match_ingredients_with_llm(
+            recipe_id=RECIPE_ID,
+            recipe_title=RECIPE_TITLE,
+            recipe_ingredients=["1 cup heavy cream"],
+            pantry_items=pantry,
+            ai_manager=manager,
+        )
+
+        assert "creme fraiche" in proposal.missing_notes["heavy cream"]
+
+    @pytest.mark.asyncio
+    async def test_no_notes_for_ingredients_that_resolved(self) -> None:
+        # A note must never contradict a match actually shown to the user.
+        pantry = [_make_item("pasta", 500, "g", 500, "g")]
+        manager = self._manager([])
+
+        proposal = await match_ingredients_with_llm(
+            recipe_id=RECIPE_ID,
+            recipe_title=RECIPE_TITLE,
+            recipe_ingredients=["200 g pasta"],
+            pantry_items=pantry,
+            ai_manager=manager,
+        )
+
+        assert proposal.missing_notes == {}
+
+    @pytest.mark.asyncio
+    async def test_provider_failure_leaves_notes_empty(self) -> None:
+        pantry = [_make_item("pasta", 500, "g", 500, "g")]
+        manager = MagicMock()
+        manager.complete = AsyncMock(side_effect=NoProviderAvailableError("down"))
+
+        proposal = await match_ingredients_with_llm(
+            recipe_id=RECIPE_ID,
+            recipe_title=RECIPE_TITLE,
+            recipe_ingredients=["1 cup heavy cream"],
+            pantry_items=pantry,
+            ai_manager=manager,
+        )
+
+        assert "heavy cream" in proposal.missing
+        assert proposal.missing_notes == {}

@@ -78,6 +78,11 @@ Do not suggest a swap that would change the dish into something else, and do not
 derivatives as interchangeable: lemon juice cannot replace lemon zest, and vice versa. \
 Set confidence below {threshold} for anything you are unsure about.
 
+Always fill substitution_note, including when match_type is "none" — there, say what the \
+cook should do about it: whether the dish works without it, what it costs them, or what \
+they would need to buy. "No good stand-in; the sauce will be thinner" is more use than \
+silence.
+
 Keep substitution_note under 15 words. Return one result per unmatched ingredient."""
 
 # Matches leading quantity+unit in a raw ingredient string, e.g.:
@@ -454,19 +459,21 @@ async def resolve_aliases_with_llm(
     unmatched_names: list[str],
     pantry_items: list[PantryItem],
     ai_manager: Any,
-) -> dict[str, ResolvedAlias]:
+) -> tuple[dict[str, ResolvedAlias], dict[str, str]]:
     """Ask the model which pantry items could stand in for unmatched ingredients.
 
-    One batched call for the whole set, not one per ingredient. Returns a map keyed
-    by normalized ingredient name; anything the model declines, scores below
-    SUBSTITUTION_CONFIDENCE_THRESHOLD, or names a pantry item that does not exist
-    is dropped, so the caller simply sees fewer aliases.
+    One batched call for the whole set, not one per ingredient. Returns
+    (aliases, notes): aliases keyed by normalized ingredient name, and notes
+    keyed by the ORIGINAL name explaining why anything that did not resolve was
+    left unmatched. Anything the model declines, scores below
+    SUBSTITUTION_CONFIDENCE_THRESHOLD, or names a pantry item that does not
+    exist is dropped from aliases and explained in notes.
 
-    Never raises. Any provider failure returns an empty map, which leaves the
+    Never raises. Any provider failure returns empty maps, which leaves the
     ingredients missing exactly as they were before this tier existed.
     """
     if not unmatched_names or not pantry_items:
-        return {}
+        return {}, {}
 
     pantry_by_norm = {_normalize_ingredient_name(i.name): i for i in pantry_items}
 
@@ -484,27 +491,46 @@ async def resolve_aliases_with_llm(
         )
     except Exception as e:  # noqa: BLE001 - degrading to "missing" is the contract
         logger.warning(f"Substitution matching unavailable, leaving ingredients missing: {e}")
-        return {}
+        return {}, {}
 
     if not isinstance(result, _LLMMatchBatch):
         logger.warning("Substitution matching returned an unexpected shape; ignoring")
-        return {}
+        return {}, {}
 
     aliases: dict[str, ResolvedAlias] = {}
+    # Why an ingredient stayed unmatched, keyed by the ORIGINAL name so the
+    # caller can line it up with CookProposal.missing. Every path that drops a
+    # candidate records one: previously all three dropped silently, leaving the
+    # user a bare "not in pantry" chip and no idea what to do (#281).
+    notes: dict[str, str] = {}
+
+    def _note(entry: _LLMIngredientMatch, text: str | None) -> None:
+        if text:
+            notes[entry.ingredient_name] = text
+
     for entry in result.results:
         if entry.match_type == "none" or not entry.best_match:
+            # The model's own verdict on an ingredient it could not place — the
+            # most useful note of the three, and the one that was always thrown
+            # away despite the prompt asking for it.
+            _note(entry, entry.substitution_note)
             continue
         if entry.confidence < SUBSTITUTION_CONFIDENCE_THRESHOLD:
             logger.debug(
                 f"Dropping low-confidence match {entry.ingredient_name} -> "
                 f"{entry.best_match} ({entry.confidence})"
             )
+            # Deliberately not surfacing the model's note here: it describes a
+            # swap we are refusing to make, so showing it would advertise a
+            # substitution the user cannot actually get.
+            _note(entry, f"No confident match — {entry.best_match} was too uncertain.")
             continue
 
         pantry_norm = _normalize_ingredient_name(entry.best_match)
         if pantry_norm not in pantry_by_norm:
             # Model named something the user does not have.
             logger.debug(f"Dropping match to absent pantry item: {entry.best_match}")
+            _note(entry, f"Closest option was {entry.best_match}, which isn't in your pantry.")
             continue
 
         aliases[_normalize_ingredient_name(entry.ingredient_name)] = ResolvedAlias(
@@ -513,7 +539,7 @@ async def resolve_aliases_with_llm(
             note=entry.substitution_note,
         )
 
-    return aliases
+    return aliases, notes
 
 
 async def match_ingredients_with_llm(
@@ -536,13 +562,28 @@ async def match_ingredients_with_llm(
     unmatched = _unmatched_ingredient_names(recipe_ingredients, pantry_items)
 
     aliases: dict[str, ResolvedAlias] = {}
+    notes: dict[str, str] = {}
     if unmatched:
-        aliases = await resolve_aliases_with_llm(unmatched, pantry_items, ai_manager)
+        aliases, notes = await resolve_aliases_with_llm(unmatched, pantry_items, ai_manager)
 
-    return match_ingredients(
+    proposal = match_ingredients(
         recipe_id=recipe_id,
         recipe_title=recipe_title,
         recipe_ingredients=recipe_ingredients,
         pantry_items=pantry_items,
         aliases=aliases,
     )
+
+    # Carry the explanations through for whatever actually ended up missing.
+    # Filtered against the final `missing` list rather than passed through
+    # wholesale: an ingredient the model declined may still have been resolved
+    # deterministically, and a note about it would contradict the match shown.
+    if notes:
+        by_norm = {_normalize_ingredient_name(name): name for name in notes}
+        proposal.missing_notes = {
+            missing_name: notes[by_norm[key]]
+            for missing_name in proposal.missing
+            if (key := _normalize_ingredient_name(missing_name)) in by_norm
+        }
+
+    return proposal
