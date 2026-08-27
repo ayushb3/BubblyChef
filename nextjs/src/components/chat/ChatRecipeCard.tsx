@@ -18,11 +18,17 @@ interface ChatRecipeCardProps {
   /** Opens deduction review directly. Always enabled. */
   onAlreadyMade?: () => void
   /**
-   * Visual state for cook buttons. When 'pending', both cook buttons are
-   * disabled with spinner feedback on the primary, matching the Save button
-   * disabled idiom.
+   * Visual state for cook buttons.
+   *
+   * - 'pending'  — a draft POST is in flight; both cook buttons are disabled
+   *   with spinner feedback on the primary, matching the Save button idiom.
+   * - 'started'  — the user has entered cooking mode for this recipe. The card
+   *   is inert from then on: acting on it again would re-pin a session that is
+   *   already running, or deduct the same ingredients twice (#269). This is
+   *   permanent for the life of the message — dismissing the COOKING banner
+   *   does not reopen the card, because the deduction risk outlives the banner.
    */
-  cookState?: 'idle' | 'pending'
+  cookState?: 'idle' | 'pending' | 'started'
 }
 
 const CHIP_COLORS: string[] = [
@@ -189,13 +195,16 @@ export default function ChatRecipeCard({
           </div>
         )}
 
-        {/* Action buttons */}
-        <div className="flex flex-col gap-2 pt-1">
-          {/* Primary: guided cooking — disabled while a draft POST is in flight */}
+        {/* Action buttons.
+            mx-0.5 leaves room for SpringButton's whileHover scale (1.03) to
+            play without clipping against the card's padding box (#262). */}
+        <div className="flex flex-col gap-2 pt-1 mx-0.5">
+          {/* Primary: guided cooking. Disabled while a draft POST is in flight,
+              and permanently once cooking has started (#269). */}
           {onCookWithMe && (
             <SpringButton
               onClick={onCookWithMe}
-              disabled={cookState === 'pending'}
+              disabled={cookState !== 'idle'}
               className="w-full py-2.5 px-3 rounded-full text-sm font-semibold bg-[var(--color-primary)] text-white disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {cookState === 'pending' ? (
@@ -206,6 +215,8 @@ export default function ChatRecipeCard({
                   </svg>
                   Starting…
                 </span>
+              ) : cookState === 'started' ? (
+                <>✓ Cooking started</>
               ) : (
                 <>👩‍🍳 Cook with me</>
               )}
@@ -216,7 +227,7 @@ export default function ChatRecipeCard({
           {saveState !== 'saved' && !(savedRecipeId && !isSavedDraft) && (
               <SpringButton
                 onClick={onSave}
-                disabled={saveState === 'saving'}
+                disabled={saveState === 'saving' || cookState === 'started'}
                 className={[
                   'flex-1 py-2 px-3 rounded-full text-sm font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed',
                   saveState === 'error'
@@ -229,20 +240,23 @@ export default function ChatRecipeCard({
             )}
             <SpringButton
               onClick={onTryAnother}
-              className="flex-1 py-2 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-bg)]"
+              disabled={cookState === 'started'}
+              className="flex-1 py-2 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-bg)] disabled:opacity-60 disabled:cursor-not-allowed"
             >
               Try Another
             </SpringButton>
           </div>
-          {/* Tertiary: already cooked — disabled while a draft POST is in flight */}
+          {/* Tertiary: already cooked. Disabled while a draft POST is in flight,
+              and permanently once cooking has started — tapping it then would
+              deduct the same ingredients a second time (#269). */}
           {onAlreadyMade && (
             <button
               type="button"
               onClick={onAlreadyMade}
-              disabled={cookState === 'pending'}
-              className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] underline underline-offset-2 text-center py-0.5 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              disabled={cookState !== 'idle'}
+              className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] underline underline-offset-2 text-center py-0.5 transition-colors disabled:opacity-60 disabled:cursor-not-allowed disabled:no-underline"
             >
-              I already made this
+              {cookState === 'started' ? 'Cooking in progress' : 'I already made this'}
             </button>
           )}
         </div>

@@ -137,6 +137,12 @@ function ChatSurface() {
   const [draftRecipeIds, setDraftRecipeIds] = useState<Set<string>>(new Set())
   /** In-flight POST promises keyed by msgId — prevents double-tap from creating two rows. */
   const ensureInFlight = useRef<Map<string, Promise<{ id: string; isDraft: boolean }>>>(new Map())
+  /**
+   * msgIds whose recipe the user has started cooking. Once a card is in here it
+   * stays inert for the life of the conversation (#269) — re-entering cook mode
+   * or re-running the deduction on the same card is never what the user wants.
+   */
+  const [cookStartedIds, setCookStartedIds] = useState<Set<string>>(new Set())
   /** msgIds whose cook button is pending (draft POST in flight). Re-renders on change. */
   const [cookPending, setCookPending] = useState<Set<string>>(new Set())
   /** When set, the CookModal is open for this { recipeId, recipeTitle, isDraft } triple. */
@@ -227,11 +233,20 @@ function ChatSurface() {
     router.replace('/chat', { scroll: false })
   }
 
-  const dismissCookingCard = () => {
-    // Hide immediately, then drop the param so a refresh doesn't resurrect it.
-    setDismissedRecipeId(cookingRecipeId)
-    router.replace('/chat', { scroll: false })
+  /**
+   * Ends the pinned cooking session: hides the banner immediately, then drops
+   * the ?cooking= param so a refresh doesn't resurrect it.
+   *
+   * Takes the recipe id explicitly because the cook-completion path passes the
+   * id it just cooked, which is not necessarily the one currently in the URL.
+   */
+  const endCookingSession = (recipeId: string | null) => {
+    if (!recipeId) return
+    setDismissedRecipeId(recipeId)
+    if (cookingRecipeId === recipeId) router.replace('/chat', { scroll: false })
   }
+
+  const dismissCookingCard = () => endCookingSession(cookingRecipeId)
 
   const handleNewChat = () => {
     // New conversation — the backend session is gone, so resend the context.
@@ -473,6 +488,7 @@ function ChatSurface() {
                 onCookWithMe={(recipe) => {
                   setCookPending((prev) => new Set(prev).add(msg.id))
                   ensureRecipeId(msg.id, recipe).then(({ id: recipeId }) => {
+                    setCookStartedIds((prev) => new Set(prev).add(msg.id))
                     router.replace(`/chat?cooking=${encodeURIComponent(recipeId)}`, { scroll: false })
                   }).catch(() => {
                     // POST failed — pending cleared in finally; buttons re-enable
@@ -484,12 +500,19 @@ function ChatSurface() {
                     ?? 'Recipe'
                   setCookPending((prev) => new Set(prev).add(msg.id))
                   ensureRecipeId(msg.id, recipe).then(({ id: recipeId, isDraft }) => {
+                    setCookStartedIds((prev) => new Set(prev).add(msg.id))
                     setCookTarget({ recipeId, recipeTitle: title, isDraft })
                   }).catch(() => {
                     // POST failed — pending cleared in finally; buttons re-enable
                   })
                 }}
-                cookState={cookPending.has(msg.id) ? 'pending' : 'idle'}
+                cookState={
+                  cookPending.has(msg.id)
+                    ? 'pending'
+                    : cookStartedIds.has(msg.id)
+                    ? 'started'
+                    : 'idle'
+                }
                 onTryAnother={handleChipTap.bind(null, 'Give me a different recipe')}
                 onChipTap={handleChipTap}
                 onPickIdea={handlePickIdea}
@@ -593,7 +616,14 @@ function ChatSurface() {
             })
           } : undefined}
           onClose={() => setCookTarget(null)}
-          onCooked={() => setCookTarget(null)}
+          onCooked={() => {
+            setCookTarget(null)
+            // The cook is done: the ingredients are deducted, so the session is
+            // no longer "cooking this". Retire the banner (#268) — otherwise it
+            // survives the draft path, which unlike the saved path never
+            // navigates away and so never dropped the ?cooking= param.
+            endCookingSession(cookTarget.recipeId)
+          }}
         />
       )}
     </div>
@@ -618,7 +648,7 @@ interface MessageRendererProps {
   /** True when savedRecipeId points to a draft row (not yet a real library entry). */
   isSavedDraft: boolean
   /** Visual state for cook buttons — 'pending' while a draft POST is in flight. */
-  cookState: 'idle' | 'pending'
+  cookState: 'idle' | 'pending' | 'started'
   onCookWithMe: (recipe: ChatRecipeData) => void
   onAlreadyMade: (recipe: ChatRecipeData) => void
   onTryAnother: () => void
