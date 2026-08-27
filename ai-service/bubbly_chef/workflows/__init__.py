@@ -14,8 +14,6 @@ __all__ = [
     "run_receipt_ingest",
     "product_ingest_graph",
     "run_product_ingest",
-    "recipe_ingest_graph",
-    "run_recipe_ingest",
 ]
 
 
@@ -46,13 +44,6 @@ def __getattr__(name: str) -> Any:  # noqa: N807
         from bubbly_chef.workflows.product_ingest import (  # noqa: F401
             product_ingest_graph,
             run_product_ingest,
-        )
-
-        return locals()[name]
-    if name in ("recipe_ingest_graph", "run_recipe_ingest"):
-        from bubbly_chef.workflows.recipe_ingest import (  # noqa: F401
-            recipe_ingest_graph,
-            run_recipe_ingest,
         )
 
         return locals()[name]
