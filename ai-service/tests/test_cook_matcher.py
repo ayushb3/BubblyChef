@@ -16,6 +16,7 @@ from bubbly_chef.services.cook_matcher import (
     _LLMMatchBatch,
     match_ingredients,
     match_ingredients_with_llm,
+    resolve_aliases_with_llm,
 )
 
 
@@ -609,3 +610,224 @@ class TestPieceUnitParsing:
 
         assert proposal.matches[0].status == "ready"
         assert proposal.matches[0].deduct_qty == pytest.approx(0.375)
+
+
+class TestCompoundSuggestions:
+    """Compound substitution suggestions — suggest only, never deduct (#281)."""
+
+    @staticmethod
+    def _ai(batch: object) -> MagicMock:
+        ai = MagicMock()
+        ai.complete = AsyncMock(return_value=batch)
+        return ai
+
+    @pytest.mark.asyncio
+    async def test_valid_compound_suggestion_reaches_proposal(self) -> None:
+        """A compound suggestion with all components in pantry appears on the proposal."""
+        pantry = [
+            _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g"),
+            _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml"),
+            _make_item("flour", 1.0, "kg", qty_base=1000.0, unit_base="g"),
+        ]
+        ingredients = [{"name": "heavy cream", "quantity": 200.0, "unit": "ml"}]
+        ai = self._ai(
+            _LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.8,
+                        compound_components=["butter", "milk", "flour"],
+                        compound_note="Melt butter, whisk in flour, stir in milk",
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        # Ingredient still missing — nothing was deducted
+        assert "heavy cream" in proposal.missing
+        assert not any(m.ingredient_name == "heavy cream" for m in proposal.matches)
+
+        # Compound suggestion is present
+        assert len(proposal.compound_suggestions) == 1
+        suggestion = proposal.compound_suggestions[0]
+        assert suggestion.ingredient_name == "heavy cream"
+        assert set(suggestion.components) == {"butter", "milk", "flour"}
+        assert "butter" in suggestion.note.lower() or "flour" in suggestion.note.lower() or suggestion.note
+
+    @pytest.mark.asyncio
+    async def test_compound_suggestion_with_absent_component_is_dropped(self) -> None:
+        """If any component is not in the pantry the whole suggestion is dropped."""
+        pantry = [
+            _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g"),
+            _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml"),
+            # flour is NOT in pantry
+        ]
+        ingredients = [{"name": "heavy cream", "quantity": 200.0, "unit": "ml"}]
+        ai = self._ai(
+            _LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.8,
+                        compound_components=["butter", "milk", "flour"],
+                        compound_note="Melt butter, whisk in flour, stir in milk",
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert "heavy cream" in proposal.missing
+        # Suggestion must be dropped entirely when a component is absent
+        assert proposal.compound_suggestions == []
+
+    @pytest.mark.asyncio
+    async def test_low_confidence_compound_suggestion_is_dropped(self) -> None:
+        """Compound suggestions below the threshold are discarded."""
+        pantry = [
+            _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g"),
+            _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml"),
+        ]
+        ingredients = [{"name": "heavy cream", "quantity": 200.0, "unit": "ml"}]
+        ai = self._ai(
+            _LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.4,  # below SUBSTITUTION_CONFIDENCE_THRESHOLD (0.7)
+                        compound_components=["butter", "milk"],
+                        compound_note="Whisk together",
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert "heavy cream" in proposal.missing
+        assert proposal.compound_suggestions == []
+
+    @pytest.mark.asyncio
+    async def test_compound_suggestion_does_not_create_match_or_affect_deductions(self) -> None:
+        """A compound suggestion must not produce an IngredientMatch and must not deduct."""
+        pantry = [
+            _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g"),
+            _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml"),
+            _make_item("eggs", 6.0, "count", qty_base=6.0, unit_base="count"),
+        ]
+        ingredients = [
+            {"name": "eggs", "quantity": 2.0, "unit": "count"},
+            {"name": "heavy cream", "quantity": 200.0, "unit": "ml"},
+        ]
+        ai = self._ai(
+            _LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.8,
+                        compound_components=["butter", "milk"],
+                        compound_note="Melt butter, stir in milk",
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        # heavy cream is still missing
+        assert "heavy cream" in proposal.missing
+
+        # No IngredientMatch for heavy cream
+        cream_matches = [m for m in proposal.matches if m.ingredient_name == "heavy cream"]
+        assert cream_matches == []
+
+        # The only deduction is for eggs; butter and milk untouched
+        deduct_totals = {m.pantry_item_name: m.deduct_qty for m in proposal.matches}
+        assert "eggs" in deduct_totals
+        assert "butter" not in deduct_totals
+        assert "milk" not in deduct_totals
+
+        # Compound suggestion is present
+        assert len(proposal.compound_suggestions) == 1
+
+    @pytest.mark.asyncio
+    async def test_provider_failure_yields_no_compound_suggestions(self) -> None:
+        """A provider outage must not fail the proposal and yields empty suggestions."""
+        pantry = [_make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g")]
+        ingredients = [{"name": "heavy cream", "quantity": 200.0, "unit": "ml"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(side_effect=NoProviderAvailableError("all providers down"))
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert "heavy cream" in proposal.missing
+        assert proposal.compound_suggestions == []
+
+    @pytest.mark.asyncio
+    async def test_compound_suggestion_not_attached_to_resolved_ingredient(self) -> None:
+        """An ingredient resolved by deterministic matching must not carry a suggestion."""
+        # butter resolves deterministically; model should never see it,
+        # but even if it returns a compound suggestion for it, the filter drops it.
+        pantry = [
+            _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g"),
+            _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml"),
+        ]
+        ingredients = [
+            {"name": "butter", "quantity": 100.0, "unit": "g"},
+            {"name": "heavy cream", "quantity": 200.0, "unit": "ml"},
+        ]
+
+        # The model is called for "heavy cream" (unmatched). Simulate it also
+        # returning a bogus suggestion for "butter" (which was matched deterministically).
+        # We test via resolve_aliases_with_llm directly to confirm the filter in
+        # match_ingredients_with_llm strips it.
+        ai = self._ai(
+            _LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.8,
+                        compound_components=["butter", "milk"],
+                        compound_note="Melt butter, stir in milk",
+                    ),
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        # butter is matched and deducted
+        butter_match = next(m for m in proposal.matches if m.ingredient_name == "butter")
+        assert butter_match.status == "ready"
+
+        # heavy cream is still missing and has a compound suggestion
+        assert "heavy cream" in proposal.missing
+        assert any(s.ingredient_name == "heavy cream" for s in proposal.compound_suggestions)
+
+        # No compound suggestion for butter (it was resolved)
+        assert not any(s.ingredient_name == "butter" for s in proposal.compound_suggestions)

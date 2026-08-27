@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
-import type { CookProposal, IngredientMatch, DeductionItem } from '@/types/recipes'
+import type { CookProposal, CompoundSuggestion, IngredientMatch, DeductionItem } from '@/types/recipes'
 
 interface CookModalProps {
   recipeId: string
@@ -478,16 +478,36 @@ export default function CookModal({
                     >
                       Not in pantry
                     </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {proposal.missing.map((name: string) => (
-                        <span
-                          key={name}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border border-[var(--color-border)] text-[var(--color-muted)]"
-                          style={{ fontFamily: 'Nunito, sans-serif' }}
-                        >
-                          ⚠️ {name}
-                        </span>
-                      ))}
+                    <div className="flex flex-col gap-2">
+                      {proposal.missing.map((name: string) => {
+                        const suggestion = (proposal.compound_suggestions ?? []).find(
+                          (s: CompoundSuggestion) =>
+                            s.ingredient_name.toLowerCase() === name.toLowerCase(),
+                        )
+                        return (
+                          <div key={name} className="flex flex-col gap-0.5">
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border border-[var(--color-border)] text-[var(--color-muted)] self-start"
+                              style={{ fontFamily: 'Nunito, sans-serif' }}
+                            >
+                              ⚠️ {name}
+                            </span>
+                            {suggestion && (
+                              <div
+                                className="ml-2 text-[10px] leading-snug text-[var(--color-muted)]"
+                                style={{ fontFamily: 'Nunito, sans-serif' }}
+                                aria-label={`Compound substitution suggestion for ${name}`}
+                              >
+                                <span className="font-semibold">
+                                  Try combining:{' '}
+                                </span>
+                                {suggestion.components.join(' + ')}
+                                <span className="block italic mt-0.5">{suggestion.note}</span>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )}

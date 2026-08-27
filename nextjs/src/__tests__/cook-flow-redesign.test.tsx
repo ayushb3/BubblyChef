@@ -350,7 +350,7 @@ describe('endCookingSession — banner retires after a completed cook (#268)', (
 // ─── Cook preview + unresolved-row summary (#267, #245) ──────────────────────
 
 import { summariseDeductions } from '@/components/recipes/CookModal'
-import type { CookProposal, IngredientMatch } from '@/types/recipes'
+import type { CookProposal, CompoundSuggestion, IngredientMatch } from '@/types/recipes'
 
 const match = (over: Partial<IngredientMatch>): IngredientMatch => ({
   ingredient_name: 'thing',
@@ -370,6 +370,7 @@ const proposalOf = (matches: IngredientMatch[]): CookProposal => ({
   matches,
   missing: [],
   unit_conflicts: [],
+  compound_suggestions: [],
 } as unknown as CookProposal)
 
 describe('summariseDeductions (#245)', () => {
@@ -420,5 +421,83 @@ describe('summariseDeductions (#245)', () => {
     expect(summariseDeductions(p, { '0': '' }).skipped).toHaveLength(1)
     expect(summariseDeductions(p, { '0': '0' }).skipped).toHaveLength(1)
     expect(summariseDeductions(p, { '0': 'abc' }).skipped).toHaveLength(1)
+  })
+})
+
+// ─── Compound suggestion rendering in the "Not in pantry" section (#281) ─────
+
+import CookModal from '@/components/recipes/CookModal'
+
+jest.mock('next/navigation', () => ({ useRouter: () => ({ push: jest.fn() }) }))
+jest.mock('@/lib/api/recipes', () => ({
+  cookRecipe: jest.fn(),
+  confirmCook: jest.fn(),
+}))
+
+// Pull the mocked cookRecipe reference for test control
+const { cookRecipe: mockCookRecipe } = jest.requireMock('@/lib/api/recipes') as {
+  cookRecipe: jest.Mock
+}
+
+const compoundProposal = (suggestions: CompoundSuggestion[]): CookProposal => ({
+  recipe_id: 'r1',
+  recipe_title: 'Cream Sauce',
+  matches: [],
+  missing: ['heavy cream'],
+  unit_conflicts: [],
+  compound_suggestions: suggestions,
+} as unknown as CookProposal)
+
+describe('CookModal — compound suggestion rendering (#281)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('renders the compound suggestion under the missing ingredient', async () => {
+    mockCookRecipe.mockResolvedValue(
+      compoundProposal([
+        {
+          ingredient_name: 'heavy cream',
+          components: ['butter', 'milk', 'flour'],
+          note: 'Melt butter, whisk in flour, add milk',
+        },
+      ]),
+    )
+
+    render(
+      <CookModal
+        recipeId="r1"
+        recipeTitle="Cream Sauce"
+        onClose={jest.fn()}
+        onCooked={jest.fn()}
+      />,
+    )
+
+    // Wait for the proposal to load
+    const suggestion = await screen.findByLabelText(/compound substitution suggestion for heavy cream/i)
+    expect(suggestion).toBeInTheDocument()
+    expect(suggestion.textContent).toMatch(/butter.*\+.*milk.*\+.*flour/i)
+    expect(suggestion.textContent).toMatch(/Melt butter/i)
+  })
+
+  it('renders the missing ingredient tag without a suggestion when none is provided', async () => {
+    mockCookRecipe.mockResolvedValue(compoundProposal([]))
+
+    render(
+      <CookModal
+        recipeId="r1"
+        recipeTitle="Cream Sauce"
+        onClose={jest.fn()}
+        onCooked={jest.fn()}
+      />,
+    )
+
+    // The missing chip should appear
+    await screen.findByText(/⚠️ heavy cream/i)
+
+    // No suggestion node
+    expect(
+      screen.queryByLabelText(/compound substitution suggestion/i),
+    ).not.toBeInTheDocument()
   })
 })

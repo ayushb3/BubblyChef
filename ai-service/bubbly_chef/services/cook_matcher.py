@@ -15,7 +15,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from bubbly_chef.domain.normalizer import normalize_food_name, normalize_to_base_unit
-from bubbly_chef.models.cook import CookProposal, IngredientMatch
+from bubbly_chef.models.cook import CompoundSuggestion, CookProposal, IngredientMatch
 from bubbly_chef.models.pantry import PantryItem
 
 logger = logging.getLogger(__name__)
@@ -50,6 +50,19 @@ class _LLMIngredientMatch(BaseModel):
     substitution_note: str | None = Field(
         default=None, description="One short sentence explaining the swap, for the user"
     )
+    # Compound substitution — only set when no single pantry item works but a
+    # combination of 2–3 items would. best_match must be null when this is set.
+    compound_components: list[str] | None = Field(
+        default=None,
+        description=(
+            "Ordered list of 2–3 pantry item names to combine when no single item works. "
+            "Only set when best_match is null and match_type is 'none'."
+        ),
+    )
+    compound_note: str | None = Field(
+        default=None,
+        description="Short instruction under ~20 words, e.g. 'Melt butter, whisk in flour, add milk'",
+    )
 
 
 class _LLMMatchBatch(BaseModel):
@@ -67,18 +80,31 @@ Recipe ingredients with no pantry match:
 Everything currently in their pantry:
 {pantry}
 
-For each unmatched ingredient, choose the single best pantry item, or null if nothing \
-sensible applies. Use match_type "exact" when it is genuinely the same ingredient under \
-a different name (pecorino romano and parmesan are not the same thing; scallion and \
-green onion are). Use "substitute" when it is a different ingredient that would still \
-work in a recipe, and say briefly what changes — flavour, texture, sweetness. Use \
-"none" when the honest answer is that they cannot make this ingredient.
+For each unmatched ingredient:
+
+1. PREFER a single pantry item when one genuinely works:
+   - Use match_type "exact" when it is the same ingredient under a different name \
+(scallion and green onion are the same; pecorino romano and parmesan are NOT).
+   - Use match_type "substitute" when a different ingredient would still work; note \
+briefly what changes — flavour, texture, sweetness.
+   - Set best_match to the pantry item name. Leave compound_components null.
+
+2. If NO single item works but 2-3 pantry items COMBINED can approximate the missing \
+ingredient, set match_type "none", best_match null, and populate compound_components \
+with the pantry item names AND compound_note with a short instruction (under 20 words).
+   Example: heavy cream is missing, pantry has butter, milk, and flour →
+     compound_components: ["butter", "milk", "flour"]
+     compound_note: "Melt butter, whisk in flour, stir in milk until thickened"
+   ONLY list items the user actually has. Do not invent ingredients.
+
+3. If nothing works, set match_type "none", best_match null, compound_components null.
 
 Do not suggest a swap that would change the dish into something else, and do not treat \
 derivatives as interchangeable: lemon juice cannot replace lemon zest, and vice versa. \
 Set confidence below {threshold} for anything you are unsure about.
 
-Keep substitution_note under 15 words. Return one result per unmatched ingredient."""
+Keep substitution_note and compound_note under 20 words each. Return one result per \
+unmatched ingredient."""
 
 # Matches leading quantity+unit in a raw ingredient string, e.g.:
 #   "2 large eggs"       → qty=2,  unit=None,   rest="large eggs"
@@ -454,19 +480,23 @@ async def resolve_aliases_with_llm(
     unmatched_names: list[str],
     pantry_items: list[PantryItem],
     ai_manager: Any,
-) -> dict[str, ResolvedAlias]:
+) -> tuple[dict[str, ResolvedAlias], list[CompoundSuggestion]]:
     """Ask the model which pantry items could stand in for unmatched ingredients.
 
-    One batched call for the whole set, not one per ingredient. Returns a map keyed
-    by normalized ingredient name; anything the model declines, scores below
-    SUBSTITUTION_CONFIDENCE_THRESHOLD, or names a pantry item that does not exist
-    is dropped, so the caller simply sees fewer aliases.
+    One batched call for the whole set, not one per ingredient. Returns a tuple of:
+    - aliases: map keyed by normalized ingredient name; anything the model declines,
+      scores below SUBSTITUTION_CONFIDENCE_THRESHOLD, or names a pantry item that does
+      not exist is dropped, so the caller simply sees fewer aliases.
+    - compound_suggestions: advisory multi-item suggestions for ingredients that have
+      no single-item match. Every component must exist in the user's pantry; if any
+      component is missing the whole suggestion is dropped. These never enter the
+      alias/deduction path.
 
-    Never raises. Any provider failure returns an empty map, which leaves the
+    Never raises. Any provider failure returns empty collections, which leaves the
     ingredients missing exactly as they were before this tier existed.
     """
     if not unmatched_names or not pantry_items:
-        return {}
+        return {}, []
 
     pantry_by_norm = {_normalize_ingredient_name(i.name): i for i in pantry_items}
 
@@ -484,36 +514,79 @@ async def resolve_aliases_with_llm(
         )
     except Exception as e:  # noqa: BLE001 - degrading to "missing" is the contract
         logger.warning(f"Substitution matching unavailable, leaving ingredients missing: {e}")
-        return {}
+        return {}, []
 
     if not isinstance(result, _LLMMatchBatch):
         logger.warning("Substitution matching returned an unexpected shape; ignoring")
-        return {}
+        return {}, []
 
     aliases: dict[str, ResolvedAlias] = {}
+    compound_suggestions: list[CompoundSuggestion] = []
+
     for entry in result.results:
-        if entry.match_type == "none" or not entry.best_match:
-            continue
-        if entry.confidence < SUBSTITUTION_CONFIDENCE_THRESHOLD:
-            logger.debug(
-                f"Dropping low-confidence match {entry.ingredient_name} -> "
-                f"{entry.best_match} ({entry.confidence})"
+        # --- Single-item path ---
+        if entry.best_match and entry.match_type != "none":
+            if entry.confidence < SUBSTITUTION_CONFIDENCE_THRESHOLD:
+                logger.debug(
+                    f"Dropping low-confidence match {entry.ingredient_name} -> "
+                    f"{entry.best_match} ({entry.confidence})"
+                )
+                continue
+
+            pantry_norm = _normalize_ingredient_name(entry.best_match)
+            if pantry_norm not in pantry_by_norm:
+                # Model named something the user does not have.
+                logger.debug(f"Dropping match to absent pantry item: {entry.best_match}")
+                continue
+
+            aliases[_normalize_ingredient_name(entry.ingredient_name)] = ResolvedAlias(
+                pantry_name=pantry_norm,
+                match_type=entry.match_type,
+                note=entry.substitution_note,
             )
             continue
 
-        pantry_norm = _normalize_ingredient_name(entry.best_match)
-        if pantry_norm not in pantry_by_norm:
-            # Model named something the user does not have.
-            logger.debug(f"Dropping match to absent pantry item: {entry.best_match}")
-            continue
+        # --- Compound path ---
+        # Only attempt when match_type is "none" (single item didn't work), the model
+        # provided components, and a note to go with them.
+        if (
+            entry.match_type == "none"
+            and entry.compound_components
+            and entry.compound_note
+        ):
+            if entry.confidence < SUBSTITUTION_CONFIDENCE_THRESHOLD:
+                logger.debug(
+                    f"Dropping low-confidence compound suggestion for "
+                    f"{entry.ingredient_name} ({entry.confidence})"
+                )
+                continue
 
-        aliases[_normalize_ingredient_name(entry.ingredient_name)] = ResolvedAlias(
-            pantry_name=pantry_norm,
-            match_type=entry.match_type,
-            note=entry.substitution_note,
-        )
+            # Validate every component exists in the pantry; drop the whole
+            # suggestion if any is absent — we must not invent stock.
+            all_present = True
+            resolved_components: list[str] = []
+            for component_name in entry.compound_components:
+                comp_norm = _normalize_ingredient_name(component_name)
+                if comp_norm not in pantry_by_norm:
+                    logger.debug(
+                        f"Dropping compound suggestion for {entry.ingredient_name}: "
+                        f"component '{component_name}' not in pantry"
+                    )
+                    all_present = False
+                    break
+                # Use the pantry's display name so the UI can show something consistent.
+                resolved_components.append(pantry_by_norm[comp_norm].name)
 
-    return aliases
+            if all_present and resolved_components:
+                compound_suggestions.append(
+                    CompoundSuggestion(
+                        ingredient_name=entry.ingredient_name,
+                        components=resolved_components,
+                        note=entry.compound_note,
+                    )
+                )
+
+    return aliases, compound_suggestions
 
 
 async def match_ingredients_with_llm(
@@ -532,17 +605,40 @@ async def match_ingredients_with_llm(
     The aliases are fed into a single match_ingredients() pass rather than being
     matched separately afterwards, so substitutes share the same per-pantry-item
     consumption accounting as direct matches.
+
+    Compound suggestions are threaded onto the returned proposal, but only for
+    ingredients that actually ended up in proposal.missing — an ingredient resolved
+    deterministically must not carry a contradictory compound suggestion.
     """
     unmatched = _unmatched_ingredient_names(recipe_ingredients, pantry_items)
 
     aliases: dict[str, ResolvedAlias] = {}
+    raw_compound_suggestions: list[CompoundSuggestion] = []
     if unmatched:
-        aliases = await resolve_aliases_with_llm(unmatched, pantry_items, ai_manager)
+        aliases, raw_compound_suggestions = await resolve_aliases_with_llm(
+            unmatched, pantry_items, ai_manager
+        )
 
-    return match_ingredients(
+    proposal = match_ingredients(
         recipe_id=recipe_id,
         recipe_title=recipe_title,
         recipe_ingredients=recipe_ingredients,
         pantry_items=pantry_items,
         aliases=aliases,
     )
+
+    # Filter compound suggestions to those whose ingredient is still missing after
+    # the full matching pass. An ingredient resolved by the deterministic or alias
+    # path must not carry a contradictory compound suggestion.
+    if raw_compound_suggestions:
+        still_missing = {name.lower() for name in proposal.missing}
+        filtered_suggestions = [
+            s for s in raw_compound_suggestions
+            if s.ingredient_name.lower() in still_missing
+        ]
+        if filtered_suggestions:
+            proposal = proposal.model_copy(
+                update={"compound_suggestions": filtered_suggestions}
+            )
+
+    return proposal

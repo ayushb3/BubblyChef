@@ -92,12 +92,26 @@ export interface IngredientMatch {
   substitution_note: string | null
 }
 
+/**
+ * Advisory multi-item substitution for a missing ingredient.
+ * Nothing is deducted — the ingredient stays in CookProposal.missing.
+ */
+export interface CompoundSuggestion {
+  ingredient_name: string
+  /** Pantry item names to combine — all exist in the user's pantry. */
+  components: string[]
+  /** Short instruction for the cook, e.g. "Melt butter, whisk in flour, add milk" */
+  note: string
+}
+
 export interface CookProposal {
   recipe_id: string
   recipe_title: string
   matches: IngredientMatch[]
   missing: string[]
   unit_conflicts: Array<{ ingredient: string; recipe_unit: string; pantry_unit: string }>
+  /** Advisory compound substitutions — never deducted. Default: []. */
+  compound_suggestions: CompoundSuggestion[]
 }
 
 export interface DeductionItem {
