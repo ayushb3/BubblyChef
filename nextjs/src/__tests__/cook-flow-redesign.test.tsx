@@ -257,3 +257,92 @@ describe('GET /api/recipes — draft filter default', () => {
   // supported values are omitted (default: exclude drafts), true (only drafts),
   // and false (only non-drafts).
 })
+
+// ─── Cook-card follow-ups (#262 overflow, #269 inert card, #268 banner) ───────
+
+describe('ChatRecipeCard — inert once cooking has started (#269)', () => {
+  const renderStarted = () =>
+    render(
+      <ChatRecipeCard
+        recipe={RECIPE}
+        onSave={jest.fn()}
+        onTryAnother={jest.fn()}
+        onCookWithMe={jest.fn()}
+        onAlreadyMade={jest.fn()}
+        cookState="started"
+      />,
+    )
+
+  it('disables every action button once cookState is started', () => {
+    renderStarted()
+    // Primary retires to a confirmation label rather than staying tappable.
+    expect(screen.getByRole('button', { name: /cooking started/i })).toBeDisabled()
+    // The deduction entry point is the double-deduction risk — must be dead.
+    expect(screen.getByText(/cooking in progress/i)).toBeDisabled()
+    expect(screen.getByRole('button', { name: /save to library/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /try another/i })).toBeDisabled()
+  })
+
+  it('does not fire onAlreadyMade when the started card is clicked', () => {
+    const onAlreadyMade = jest.fn()
+    render(
+      <ChatRecipeCard
+        recipe={RECIPE}
+        onCookWithMe={jest.fn()}
+        onAlreadyMade={onAlreadyMade}
+        cookState="started"
+      />,
+    )
+    fireEvent.click(screen.getByText(/cooking in progress/i))
+    expect(onAlreadyMade).not.toHaveBeenCalled()
+  })
+
+  it('still fires onAlreadyMade while idle', () => {
+    const onAlreadyMade = jest.fn()
+    render(
+      <ChatRecipeCard
+        recipe={RECIPE}
+        onCookWithMe={jest.fn()}
+        onAlreadyMade={onAlreadyMade}
+        cookState="idle"
+      />,
+    )
+    fireEvent.click(screen.getByText(/i already made this/i))
+    expect(onAlreadyMade).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('endCookingSession — banner retires after a completed cook (#268)', () => {
+  // Mirrors the page handler: hide the banner for this recipe, and clear the
+  // ?cooking= param only when it names the recipe that was just cooked.
+  const makeEnd = () => {
+    const state = { dismissed: null as string | null, url: '/chat?cooking=r1' }
+    const endCookingSession = (recipeId: string | null, cookingRecipeId: string | null) => {
+      if (!recipeId) return
+      state.dismissed = recipeId
+      if (cookingRecipeId === recipeId) state.url = '/chat'
+    }
+    return { state, endCookingSession }
+  }
+
+  it('clears the pinned param when the cooked recipe is the pinned one', () => {
+    const { state, endCookingSession } = makeEnd()
+    endCookingSession('r1', 'r1')
+    expect(state.dismissed).toBe('r1')
+    expect(state.url).toBe('/chat')
+  })
+
+  it('leaves a different pinned recipe alone', () => {
+    const { state, endCookingSession } = makeEnd()
+    endCookingSession('r2', 'r1')
+    expect(state.dismissed).toBe('r2')
+    expect(state.url).toBe('/chat?cooking=r1')
+  })
+
+  it('is a no-op for a null recipe id', () => {
+    const { state, endCookingSession } = makeEnd()
+    endCookingSession(null, 'r1')
+    expect(state.dismissed).toBeNull()
+    expect(state.url).toBe('/chat?cooking=r1')
+  })
+})
