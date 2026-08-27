@@ -111,7 +111,9 @@ export interface CookProposal {
   missing: string[]
   unit_conflicts: Array<{ ingredient: string; recipe_unit: string; pantry_unit: string }>
   /** Advisory compound substitutions — never deducted. Default: []. */
-  compound_suggestions: CompoundSuggestion[]
+  compound_suggestions?: CompoundSuggestion[]
+  /** Sparse map of ingredient name → short explanation for why no pantry substitute exists. */
+  missing_notes?: Record<string, string>
 }
 
 export interface DeductionItem {

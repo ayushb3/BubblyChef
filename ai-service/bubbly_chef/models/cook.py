@@ -76,6 +76,13 @@ class CookProposal(BaseModel):
         default_factory=list,
         description="Ingredient names that have no pantry match at all",
     )
+    missing_notes: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Ingredient name -> short explanation of why nothing in the pantry works. "
+            "Sparse: only present for ingredients the model had something to say about."
+        ),
+    )
     unit_conflicts: list[dict[str, str]] = Field(
         default_factory=list,
         description="Ingredient names where unit conversion is not possible",

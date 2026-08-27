@@ -349,7 +349,7 @@ describe('endCookingSession — banner retires after a completed cook (#268)', (
 
 // ─── Cook preview + unresolved-row summary (#267, #245) ──────────────────────
 
-import { summariseDeductions } from '@/components/recipes/CookModal'
+import { summariseDeductions, MissingItemsList } from '@/components/recipes/CookModal'
 import type { CookProposal, CompoundSuggestion, IngredientMatch } from '@/types/recipes'
 
 const match = (over: Partial<IngredientMatch>): IngredientMatch => ({
@@ -499,5 +499,42 @@ describe('CookModal — compound suggestion rendering (#281)', () => {
     expect(
       screen.queryByLabelText(/compound substitution suggestion/i),
     ).not.toBeInTheDocument()
+  })
+})
+
+// ─── MissingItemsList — missing_notes rendering (#281) ───────────────────────
+
+describe('MissingItemsList — missing_notes (#281)', () => {
+  it('renders name and note text for a missing ingredient WITH a note', () => {
+    render(
+      <MissingItemsList
+        missing={['Heavy Cream']}
+        missingNotes={{ 'Heavy Cream': 'No good stand-in; the sauce will be thinner.' }}
+      />,
+    )
+    expect(screen.getByText(/Heavy Cream/)).toBeInTheDocument()
+    expect(screen.getByText(/No good stand-in; the sauce will be thinner\./)).toBeInTheDocument()
+  })
+
+  it('renders only the name chip for a missing ingredient WITHOUT a note', () => {
+    const { container } = render(
+      <MissingItemsList missing={['Saffron']} missingNotes={{}} />,
+    )
+    expect(screen.getByText(/Saffron/)).toBeInTheDocument()
+    // No note element — only the one chip span, no extra block children
+    const textNodes = container.querySelectorAll('span')
+    expect(textNodes).toHaveLength(1)
+  })
+
+  it('mixed list renders both correctly — note under first, bare chip for second', () => {
+    render(
+      <MissingItemsList
+        missing={['Heavy Cream', 'Saffron']}
+        missingNotes={{ 'Heavy Cream': 'No good stand-in; the sauce will be thinner.' }}
+      />,
+    )
+    expect(screen.getByText(/Heavy Cream/)).toBeInTheDocument()
+    expect(screen.getByText(/No good stand-in; the sauce will be thinner\./)).toBeInTheDocument()
+    expect(screen.getByText(/Saffron/)).toBeInTheDocument()
   })
 })
