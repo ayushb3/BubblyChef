@@ -98,6 +98,8 @@ export interface CookProposal {
   matches: IngredientMatch[]
   missing: string[]
   unit_conflicts: Array<{ ingredient: string; recipe_unit: string; pantry_unit: string }>
+  /** Sparse map of ingredient name → short explanation for why no pantry substitute exists. */
+  missing_notes?: Record<string, string>
 }
 
 export interface DeductionItem {

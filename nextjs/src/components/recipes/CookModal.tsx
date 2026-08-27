@@ -101,6 +101,52 @@ function formatQty(qty: number | null, unit: string | null): string {
 }
 
 /**
+ * "Not in pantry" list — exported for unit testing.
+ *
+ * Items with a note render as a small vertical block (name + muted note below).
+ * Items without a note render as plain chips, identical to the previous design,
+ * so the change is purely additive.
+ */
+export function MissingItemsList({
+  missing,
+  missingNotes = {},
+}: {
+  missing: string[]
+  missingNotes?: Record<string, string>
+}) {
+  if (missing.length === 0) return null
+  return (
+    <div className="flex flex-col gap-1.5">
+      {missing.map((name: string) => {
+        const note = missingNotes[name]
+        if (note) {
+          return (
+            <div key={name} style={{ fontFamily: 'Nunito, sans-serif' }}>
+              <span className="font-semibold text-xs text-[var(--color-text)]">⚠️ {name}</span>
+              <span
+                className="block font-normal leading-snug text-[var(--color-muted)] mt-0.5 break-words"
+                style={{ fontSize: '10px' }}
+              >
+                {note}
+              </span>
+            </div>
+          )
+        }
+        return (
+          <span
+            key={name}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border border-[var(--color-border)] text-[var(--color-muted)] self-start"
+            style={{ fontFamily: 'Nunito, sans-serif' }}
+          >
+            ⚠️ {name}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
  * Splits the proposal into what will actually be deducted and what will not.
  *
  * The two are derived together on purpose: the confirm payload and the summary
@@ -478,17 +524,10 @@ export default function CookModal({
                     >
                       Not in pantry
                     </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {proposal.missing.map((name: string) => (
-                        <span
-                          key={name}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border border-[var(--color-border)] text-[var(--color-muted)]"
-                          style={{ fontFamily: 'Nunito, sans-serif' }}
-                        >
-                          ⚠️ {name}
-                        </span>
-                      ))}
-                    </div>
+                    <MissingItemsList
+                      missing={proposal.missing}
+                      missingNotes={proposal.missing_notes}
+                    />
                   </div>
                 )}
               </div>
