@@ -199,6 +199,12 @@ export default function BubblesFeed({ displayName }: BubblesFeedProps) {
         <BubbleMessage
           delay={delays[hasUrgent ? 2 : 1]}
           bubbleState="happy"
+          // The count was a dead end until #139 gave it somewhere to go.
+          actions={
+            expiringWeekCount > 0
+              ? [{ label: 'Use them soon ⏰', href: '/pantry/use-soon' }]
+              : undefined
+          }
         >
           You have{' '}
           <strong className="font-semibold">{totalCount} items</strong> in your pantry and{' '}
