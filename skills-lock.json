@@ -103,6 +103,15 @@
       "vendoredPath": ".claude/skills/implement/",
       "computedHash": "6d3fd9e83b8f36e5213854779db49b256a457a7ebb4a503e53fa7dcff696adc3"
     },
+    "implement-issue": {
+      "source": "this repo",
+      "sourceType": "project",
+      "sourceRef": null,
+      "skillPath": null,
+      "vendoredPath": ".claude/skills/implement-issue/",
+      "computedHash": "9cb1e0996b83ea41e2713af87893753685fb648bf3f7e4a32bc103586af4df4c",
+      "note": "Project-authored. Fills the execution gap upstream has no skill for: pulls from the ready-for-agent queue."
+    },
     "improve-codebase-architecture": {
       "source": "mattpocock/skills",
       "sourceType": "github",

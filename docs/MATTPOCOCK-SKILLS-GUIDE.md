@@ -28,7 +28,9 @@ and `/setup-matt-pocock-skills` kept their names and are still installed.
 The old flow front-loaded an interview (`/grill-with-docs`) on every feature. The
 current one picks an entry point based on how shaped the work already is —
 `/wayfinder` for a loose idea, `/to-spec` when a conversation already shaped it —
-See `WORKFLOW.md` §3.
+and adds an execution step the old guide had no equivalent for
+(`/implement-issue`, which drains the `ready-for-agent` queue). See
+`WORKFLOW.md` §3.
 
 ## Where the skills actually live
 

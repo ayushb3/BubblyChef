@@ -292,7 +292,7 @@ further subagents; see `WORKFLOW.md` §5.
 1. Explore + plan mode → design in `docs/plans/`
 2. `/wayfinder` (idea, size unknown) or `/to-spec` (idea already shaped) → publishes a spec as a GitHub Issue
 3. `/to-tickets` → breaks the spec into vertical-slice child issues
-4. Implement each issue independently
+4. `/implement-issue` → takes the top `ready-for-agent` issue to a draft PR (repeat to drain the queue)
 
 **For spec-driven autonomous work:**
 - Write a design doc in `docs/plans/` with clear acceptance criteria

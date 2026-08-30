@@ -61,6 +61,13 @@ Only `ready-for-agent` tickets are picked up for implementation. If a ticket sit
 `needs-triage` or `needs-info`, it isn't ready — the agent team should not start work
 on it, even if it looks tractable.
 
+**Execution: `/implement-issue`.** The four skills above fill the queue; none of
+them drains it. Upstream has no equivalent — its execution phase is `/tdd` and
+`/diagnosing-bugs` invoked by hand, once per ticket, by a human who already picked
+the ticket. `/implement-issue` is this repo's own: it takes the top
+`ready-for-agent` issue, branches, delegates to the dev roles per §5, runs the
+gates, and opens a draft PR under the §6 autonomy gate.
+
 ## 4. Branch / PR convention
 
 ```
@@ -203,7 +210,7 @@ house-rules section. Full source: pstack's `principle-*` skills in `cursor/plugi
 | Layer | Skills | Source |
 |---|---|---|
 | Planning/tracking | `wayfinder`, `triage`, `to-spec`, `to-tickets`, `handoff` | mattpocock |
-| Build | `implement`, `tdd`, `codebase-design`, `domain-modeling` | mattpocock |
+| Build | `implement-issue` (queue pickup, this repo), `implement`, `tdd`, `codebase-design`, `domain-modeling` | this repo + mattpocock |
 | Debugging | `diagnosing-bugs` | mattpocock |
 | Review | `code-review` (mattpocock) + `interrogate`, `thermo-nuclear-code-quality-review` (ported) | both |
 | Understanding (PM-facing) | `how` (codebase walkthroughs), `why` (decision archaeology), `blast-radius` (pre-emptive break-check) | ported from `cursor/plugins` (pstack) |
@@ -263,3 +270,6 @@ drifting.*
   `setup-matt-pocock-skills`. The template assumes every operator installs the
   skills locally; that assumption breaks the moment work is handed to a remote or
   web session, which is most of the implementation work here.
+- **`implement-issue` is a project skill** with no template equivalent (§3). The
+  upstream pipeline ends at `/to-tickets` and expects a human to pick each ticket up
+  by hand; the auto-pickup step is ours.
