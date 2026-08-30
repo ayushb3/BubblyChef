@@ -156,7 +156,7 @@ pasted logs, full diffs, or raw agent transcript pushes the actually-relevant
 Summary/What-lands/Demo below the fold. Concretely: no pasted stack traces (link the
 CI run instead), no pasted diffs (the PR already has one), no multi-paragraph
 narration of what was tried and discarded (that belongs in a linked decisions log,
-not the PR body). If `/interrogate` or `thermo-nuclear-code-quality-review` surfaced
+not the PR body). If `/interrogate` or `thermo-nuclear-review` surfaced
 findings, state the resolution in one line per finding ("fixed", "won't fix —
 reason"), not the full back-and-forth.
 
@@ -167,11 +167,25 @@ Three layers, increasing in cost and decreasing in frequency:
 1. **`/code-review`** — on every PR. Cheap, always on, standard.
 2. **`/interrogate`** — a multi-model adversarial pass. Run before merging any
    feature-level PR (not sub-PRs).
-3. **`thermo-nuclear-code-quality-review`** — wired as a Claude Code `PreToolUse`
-   hook, not a GitHub Action. It fires specifically when the `Bash` tool is about to
-   run `gh pr create` or `gh pr merge` — i.e., once per PR, at the moment the PR is
-   about to become real, not on every commit or file edit inside it. This applies to
-   both sub-PRs and feature PRs.
+3. **`thermo-nuclear-review`** — wired as a Claude Code `PreToolUse` hook, not a
+   GitHub Action. It fires once per PR, at the moment the PR is about to become
+   real, not on every commit or file edit inside it. This applies to both sub-PRs
+   and feature PRs.
+
+   The hook is `.claude/hooks/pr-review-gate.sh`, registered in
+   `.claude/settings.json` — both committed, so it exists in a fresh clone rather
+   than on one laptop. It keys on the **action, not the transport**: a `Bash`
+   command running `gh pr create`/`gh pr merge`, *and* the `mcp__github__*` PR
+   create/merge tools, since a cloud session opens PRs through the MCP tools and
+   never touches the `gh` CLI. Matching only the CLI is how this layer came to be
+   documented-but-absent everywhere except one machine.
+
+   Mechanically it is a gate, not a notifier: it denies the call unless a marker
+   for the current HEAD exists at `.git/thermo-nuclear-review-<sha>`, which the
+   review records once it has run. The marker is per-commit, so a later push
+   re-arms the gate, and it lives in `.git/` so it is never committed. Bypass it
+   deliberately (`touch` the marker) only when you have a reason you would defend
+   in review.
 
    Kept as a local hook rather than a GitHub Actions bot because the latter needs
    API-key plumbing and per-repo billing setup — worth revisiting later, not bundled
@@ -248,11 +262,12 @@ local home directory that CI, cloud sessions, and a phone have no access to, mak
 §7's "three-layer review" **one layer** everywhere but one configured laptop. Those
 are now vendored here too, so all three layers work anywhere the repo does.
 
-**Still outstanding:** the `thermo-nuclear` `PreToolUse` hook has the same class of
-problem from a different angle — it triggers on `Bash` running `gh pr create`, so it
-never fires in an environment that creates PRs through the GitHub MCP tools instead
-of the `gh` CLI. The skill is now present everywhere; its *trigger* still isn't.
-Move that check to a CI job, or add a matching trigger for the MCP path.
+**Also fixed here:** the `thermo-nuclear` `PreToolUse` hook had the same class of
+problem from a different angle. It was described in this document but configured
+nowhere in the repo, and the trigger it described — `Bash` running `gh pr create` —
+would not have fired in a session that opens PRs through the GitHub MCP tools. It
+now exists as a committed script + `settings.json` entry covering both paths; see
+§7 layer 3.
 
 ## 10. What's explicitly skipped
 

@@ -419,8 +419,11 @@ add a new one.
 ### Review
 
 `/code-review` on every PR; `/interrogate` before merging a feature-level PR;
-`thermo-nuclear-code-quality-review` fires automatically as a `PreToolUse` hook at
-`gh pr create`/`gh pr merge` time. See `WORKFLOW.md` §7.
+`thermo-nuclear-review` fires automatically as a `PreToolUse` hook when a PR is
+about to be created or merged — via the `gh` CLI *or* the GitHub MCP tools. It is a
+gate: the call is denied until the review is recorded for the current HEAD. Hook
+script `.claude/hooks/pr-review-gate.sh`, registered in `.claude/settings.json`.
+See `WORKFLOW.md` §7.
 
 ---
 
