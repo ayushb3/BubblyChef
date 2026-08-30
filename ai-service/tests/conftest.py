@@ -10,6 +10,7 @@ every test so each test constructs a fresh manager on the current loop.
 import pytest
 
 from bubbly_chef.api import deps
+from bubbly_chef.services.cook_matcher import _alias_cache
 
 
 @pytest.fixture(autouse=True)
@@ -22,3 +23,18 @@ def reset_ai_manager() -> None:
     deps._ai_manager = None
     yield  # type: ignore[misc]
     deps._ai_manager = None
+
+
+@pytest.fixture(autouse=True)
+def reset_alias_cache() -> None:
+    """Clear the alias-resolution cache between tests (#280).
+
+    `_alias_cache` is module-global and survives the test that populated it, so
+    a later test calling resolve_aliases_with_llm() with the same
+    (unmatched names, pantry names) fingerprint would get a cache hit and never
+    reach its mocked provider — making assertions on await counts and on notes
+    fail depending only on test ordering.
+    """
+    _alias_cache.clear()
+    yield  # type: ignore[misc]
+    _alias_cache.clear()

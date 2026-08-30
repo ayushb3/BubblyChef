@@ -136,6 +136,11 @@ function PantryPageInner() {
   useEffect(() => {
     const addParam = searchParams.get('add')
     if (addParam === 'scan' || addParam === 'type') {
+      /* The URL is an external system being synced into React, which is exactly
+         what an effect is for. This cannot be derived state: the user must be able
+         to close the sheet again, so once opened its visibility belongs to the
+         component, not the param. */
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAddSheetTab(addParam)
       setAddSheetOpen(true)
     }

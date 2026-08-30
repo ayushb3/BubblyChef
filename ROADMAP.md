@@ -25,7 +25,7 @@ A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
 | Phase | Description |
 |---|---|
 | Phase 1 | Pantry CRUD, receipt scanning, recipe generation, LangGraph workflows, 454+ tests |
-| Phase 2 | Chat intent router, recipe grounding (constraint extraction + expiry scoring), conversation history, DOM kitchen scene + milestone decorations |
+| Phase 2 | Chat intent router, recipe grounding (constraint extraction + expiry scoring), conversation history |
 | Migration | Next.js + Supabase + FastAPI AI microservice (three-tier rewrite); component migration done; JWT wiring + SSE streaming done |
 | Recipe library | Save, search, edit, delete, favourite recipes; `is_favorite` toggle; search auto-select; ingredients + instructions editing |
 | AI workflows R1+R2 | Sub-graph decomposition (`chat/`, `pantry/`, `recipe/`), parent router, server-side conversation sessions + context-aware routing (`SessionMode`) |
@@ -144,4 +144,4 @@ None outstanding. Both entries previously listed here are closed:
 
 ---
 
-*Last updated: 2026-05-02*
+*Last updated: 2026-08-30*

@@ -47,6 +47,23 @@ class IngredientMatch(BaseModel):
     )
 
 
+class CompoundSuggestion(BaseModel):
+    """A multi-item substitution the model proposes for a missing ingredient.
+
+    This is advisory only — nothing is deducted, and the ingredient stays in
+    CookProposal.missing. Deduction from compound substitutions is a deliberate
+    follow-up tracked separately.
+    """
+
+    ingredient_name: str = Field(description="The missing ingredient this suggestion covers")
+    components: list[str] = Field(
+        description="Pantry item names to combine (all must exist in the user's pantry)"
+    )
+    note: str = Field(
+        description="Short instruction for the cook, e.g. 'Melt butter, whisk in flour, add milk'"
+    )
+
+
 class CookProposal(BaseModel):
     """Proposal returned to the user before confirming a cook action."""
 
@@ -59,9 +76,24 @@ class CookProposal(BaseModel):
         default_factory=list,
         description="Ingredient names that have no pantry match at all",
     )
+    missing_notes: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Ingredient name -> short explanation of why nothing in the pantry works. "
+            "Sparse: only present for ingredients the model had something to say about."
+        ),
+    )
     unit_conflicts: list[dict[str, str]] = Field(
         default_factory=list,
         description="Ingredient names where unit conversion is not possible",
+    )
+    compound_suggestions: list[CompoundSuggestion] = Field(
+        default_factory=list,
+        description=(
+            "Advisory compound substitutions for missing ingredients — "
+            "e.g. heavy cream ← butter + milk + flour. "
+            "Nothing is deducted; the ingredient remains in missing."
+        ),
     )
 
 
