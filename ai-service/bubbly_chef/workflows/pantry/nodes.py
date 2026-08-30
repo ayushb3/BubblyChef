@@ -13,7 +13,11 @@ from uuid import uuid4
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.config import settings
-from bubbly_chef.domain.normalizer import normalize_to_base_unit
+from bubbly_chef.domain.normalizer import (
+    normalize_food_name,
+    normalize_to_base_unit,
+    resolve_category,
+)
 from bubbly_chef.models.base import NextAction, WorkflowStatus
 from bubbly_chef.models.pantry import (
     ActionType,
@@ -23,7 +27,6 @@ from bubbly_chef.models.pantry import (
     PantryUpsertAction,
 )
 from bubbly_chef.tools.expiry import get_expiry_heuristics
-from bubbly_chef.tools.normalizer import get_normalizer
 from bubbly_chef.workflows.state import (
     LLMParseResult,
     WorkflowState,
@@ -140,9 +143,16 @@ def normalize_items(state: WorkflowState) -> WorkflowState:
     Node: Normalize item names and categories (deterministic).
 
     No LLM calls here - pure rule-based normalization.
+
+    Uses domain/normalizer.py's ``normalize_food_name`` (head-noun matcher)
+    instead of tools/normalizer.py's ``FoodNormalizer.normalize`` (bidirectional
+    substring). The bidirectional matcher collapses distinct products a chat
+    user might type — "milk chocolate" -> "milk", "red pepper flakes" ->
+    "bell pepper" — because any synonym that is a substring of the input (or
+    vice versa) wins. See ``receipt_ingest.normalize_receipt_items`` for the
+    same fix applied to receipts.
     """
     parsed_items = state.get("parsed_items", [])
-    normalizer = get_normalizer()
 
     normalized = []
     warnings = list(state.get("warnings", []))
@@ -152,18 +162,20 @@ def normalize_items(state: WorkflowState) -> WorkflowState:
         name = item.get("name", "")
         original_name = name
 
-        # Normalize name
-        normalized_name = normalizer.normalize(name)
+        # Normalize name through the head-noun matcher in domain/normalizer.py.
+        normalized_name = normalize_food_name(name)
 
         # Track if heavy normalization occurred (may lower confidence)
         heavy_normalization = normalized_name.lower() != original_name.lower()
 
-        # Get category (use normalizer if LLM didn't provide good one)
+        # Get category (use resolve_category's head-noun/catalog fallback if
+        # the LLM didn't provide a good one)
         llm_category = item.get("category")
         if llm_category and llm_category.lower() != "other":
             category = map_category(llm_category)
         else:
-            category = normalizer.get_category(normalized_name)
+            resolved = resolve_category(normalized_name)
+            category = map_category(resolved) if resolved else FoodCategory.OTHER
             if category == FoodCategory.OTHER:
                 warnings.append(f"Could not determine category for '{original_name}'")
 
