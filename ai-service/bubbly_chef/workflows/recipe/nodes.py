@@ -112,7 +112,13 @@ RECIPE_CONSTRAINTS_SYSTEM_PROMPT = (
     "Record only the ingredient name in must_use_ingredients (e.g. 'eggs', not "
     "'my eggs' or 'eggs before they go bad'). Leave it empty if the user names no "
     "specific ingredient (e.g. 'what's for dinner?', 'give me a quick pasta recipe' — "
-    "'pasta' there is a dish, not an ingredient the user is using up)."
+    "'pasta' there is a dish, not an ingredient the user is using up).\n\n"
+    "use_pantry: set to false ONLY when the user asks us not to use their pantry "
+    "-- 'don't look at my pantry', 'ignore what I have', 'forget my pantry', "
+    "'just give me a recipe'. Set it to true ONLY when they ask us to start using "
+    "it again -- 'use my pantry', 'what can I make with what I have'. If they say "
+    "nothing either way, leave it null: null means 'no opinion this turn', and a "
+    "choice they made earlier stays in force."
 )
 
 BRAINSTORM_SYSTEM_PROMPT = """\
@@ -128,6 +134,30 @@ this overrides every other preference
 - ALL suggestions must be for the same meal type — if meal_type is specified, \
 every idea must fit that meal (don't mix breakfast and dinner)
 - Only suggest recipes that can realistically be made with 60%+ of the listed ingredients
+- Format: conversational text with **bold** recipe names in a numbered list
+- End with a prompt like "Which one sounds good?" or "Want me to make any of these?"\
+"""
+
+# Used when the user has asked us not to look at their pantry (#287). The two
+# pantry-dependent rules are dropped rather than softened: "prioritize expiring"
+# and "60%+ of the listed ingredients" both refer to a list that is not in this
+# prompt, and leaving them in is what pulled the pantry back into a conversation
+# the user had explicitly excluded it from.
+BRAINSTORM_SYSTEM_PROMPT_NO_PANTRY = """\
+You are a creative cooking assistant. Suggest 3-4 recipe ideas from the user's \
+request alone.
+
+The user has asked you NOT to use their pantry. Do not mention their pantry, \
+their stock, or anything expiring, and do not steer the suggestions toward \
+ingredients you think they might have. Work only from what they asked for.
+
+Rules:
+- Each idea should be a recipe name (2-5 words), not a full recipe
+- If "Must use" ingredients are listed, EVERY idea must actually use them — \
+this overrides every other preference
+- Match the cuisine/mood if specified
+- ALL suggestions must be for the same meal type — if meal_type is specified, \
+every idea must fit that meal (don't mix breakfast and dinner)
 - Format: conversational text with **bold** recipe names in a numbered list
 - End with a prompt like "Which one sounds good?" or "Want me to make any of these?"\
 """
@@ -407,6 +437,15 @@ def score_and_rank(
 # =============================================================================
 
 
+def is_pantry_grounded(constraints: dict[str, Any] | None) -> bool:
+    """Whether pantry grounding is on for this turn.
+
+    Only an explicit False turns it off. None means the user never said either
+    way, so grounding stays on — the default the app has always had.
+    """
+    return (constraints or {}).get("use_pantry") is not False
+
+
 def _default_meal_type() -> str:
     """Infer meal type from current time of day."""
     hour = datetime.now().hour
@@ -437,6 +476,10 @@ def _merge_constraints(
     - must_use_ingredients: fresh list wins when non-empty; otherwise inherit
       prior. This ensures dietary restrictions AND must-use ingredients both
       survive a follow-up turn that doesn't repeat them.
+    - use_pantry: tri-state. A fresh True or False wins; None means the user said
+      nothing this turn, so the prior choice stands. Without this a user who said
+      "don't look at my pantry" got the pantry back on their very next message
+      (#287).
     """
     merged: dict[str, Any] = dict(prior)
 
@@ -458,6 +501,12 @@ def _merge_constraints(
         if fresh_list:
             merged[key] = fresh_list
         # else: keep prior value (already in merged)
+
+    # Tri-state, so it cannot use the scalar rule above: False is a real choice
+    # the user made, and only None means "no opinion this turn".
+    fresh_use_pantry = fresh.get("use_pantry")
+    if fresh_use_pantry is not None:
+        merged["use_pantry"] = fresh_use_pantry
 
     return merged
 
@@ -506,9 +555,10 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
         constraints = _merge_constraints(prior, constraints)
         logger.info(
             "Merged prior session constraints into fresh extraction "
-            "(dietary=%s, must_use=%s)",
+            "(dietary=%s, must_use=%s, use_pantry=%s)",
             constraints.get("dietary"),
             constraints.get("must_use_ingredients"),
+            constraints.get("use_pantry"),
         )
 
     # Default meal_type from time of day when user didn't specify
@@ -527,6 +577,13 @@ async def score_pantry_ingredients(state: WorkflowState) -> WorkflowState:
     pantry_items: list[dict[str, Any]] = state.get("pantry_snapshot") or []
     constraints: dict[str, Any] = state.get("recipe_constraints") or {}
     logger.info("Scoring pantry ingredients", extra={"constraints": constraints})
+
+    # The user asked us not to use their pantry. Return nothing rather than
+    # scoring and letting a downstream node decide: an empty list means no
+    # prompt-builder can reach for the stock even by accident (#287).
+    if not is_pantry_grounded(constraints):
+        logger.info("Pantry grounding is off for this turn; skipping scoring")
+        return {**state, "scored_pantry_items": []}
 
     # Fetch from DB if no snapshot was passed in
     if not pantry_items:
@@ -569,10 +626,18 @@ _MODE_SYSTEM_PROMPTS: dict[str, str] = {
 }
 
 
-def _get_mode_prefix(state: WorkflowState) -> str:
+# Recipe mode's own instruction to lean on the pantry. Dropped from the prefix
+# when the user has opted out, otherwise it contradicts the rest of the prompt.
+_RECIPE_MODE_PANTRY_LINE = "Prioritize ingredients the user already has in their pantry.\n"
+
+
+def _get_mode_prefix(state: WorkflowState, *, pantry_grounded: bool = True) -> str:
     """Return the system prompt prefix for the current chat mode."""
     mode = state.get("input_mode", "chat")
-    return _MODE_SYSTEM_PROMPTS.get(mode, "")
+    prefix = _MODE_SYSTEM_PROMPTS.get(mode, "")
+    if not pantry_grounded:
+        prefix = prefix.replace(_RECIPE_MODE_PANTRY_LINE, "")
+    return prefix
 
 
 def _format_history_context(state: WorkflowState, max_turns: int = 10) -> str:
@@ -595,6 +660,7 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
     input_text = state.get("input_text", "")
     scored_items: list[dict[str, Any]] = state.get("scored_pantry_items") or []
     constraints: dict[str, Any] = state.get("recipe_constraints") or {}
+    pantry_grounded = is_pantry_grounded(constraints)
 
     # Fall back to the time of day, same as the recipe-generate path does at
     # `extract_recipe_constraints`. Without this the brainstorm prompt says only
@@ -604,7 +670,11 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         constraints = {**constraints, "meal_type": _default_meal_type()}
 
     # Build ingredient summary for the prompt
-    if scored_items:
+    if not pantry_grounded:
+        # No pantry block at all — not an empty one. "No pantry items available"
+        # would still invite the model to talk about the pantry.
+        pantry_context = ""
+    elif scored_items:
         must_use = [i for i in scored_items if i.get("_must_use")]
         # Expired stock is dropped from the suggestion pool entirely (#239):
         # scoring no longer promotes it, but leaving it under "Other available"
@@ -651,10 +721,13 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         constraints_str += f"\nExclude: {', '.join(constraints['excluded_ingredients'])}"
 
     history_context = _format_history_context(state)
-    mode_prefix = _get_mode_prefix(state)
+    mode_prefix = _get_mode_prefix(state, pantry_grounded=pantry_grounded)
+    system_prompt = (
+        BRAINSTORM_SYSTEM_PROMPT if pantry_grounded else BRAINSTORM_SYSTEM_PROMPT_NO_PANTRY
+    )
     prompt = (
         mode_prefix
-        + BRAINSTORM_SYSTEM_PROMPT
+        + system_prompt
         + pantry_context
         + constraints_str
         + "\n\n"
@@ -735,9 +808,12 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
     constraints: dict[str, Any] = state.get("recipe_constraints") or {}
     scored_items: list[dict[str, Any]] = state.get("scored_pantry_items") or []
     web_result: dict[str, Any] | None = state.get("web_search_result")
+    pantry_grounded = is_pantry_grounded(constraints)
 
-    # If pantry wasn't scored yet (direct recipe_card path), try to load & score now
-    if not scored_items:
+    # If pantry wasn't scored yet (direct recipe_card path), try to load & score now.
+    # Skipped entirely when the user opted out — this is the path that would
+    # otherwise re-fetch the pantry from the DB after scoring had been skipped.
+    if not scored_items and pantry_grounded:
         pantry_snapshot: list[dict[str, Any]] = state.get("pantry_snapshot") or []
         if not pantry_snapshot:
             try:
@@ -769,7 +845,11 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
     else:
         context = "Use your culinary knowledge to create an authentic recipe."
 
-    constraints_json = _json.dumps({k: v for k, v in constraints.items() if v})
+    # use_pantry is an instruction to us, not a constraint to hand the model; when
+    # it is off the prompt below already omits every pantry field.
+    constraints_json = _json.dumps(
+        {k: v for k, v in constraints.items() if v and k != "use_pantry"}
+    )
     prompt = GROUNDED_RECIPE_SYSTEM_PROMPT.format(
         recipe_name=recipe_name,
         constraints_json=constraints_json,
