@@ -144,18 +144,37 @@ in prose):
 - Keep it reviewable on a phone (§6): no pasted logs, diffs, or transcripts —
   link the CI run and artifacts instead.
 
-Open it as **draft**. Flip to ready per the autonomy gate below.
+Open it as **draft**. It stays draft until you have *watched CI finish* — see §6.
+Creating the PR is not the end of the run.
 
 ## 6. Autonomy gate (WORKFLOW.md §6)
 
+**Wait for CI before deciding anything.** Pushing and opening the PR takes
+seconds; the checks take minutes. Do not end the run at `gh pr create` — poll
+until the checks on the head commit have actually completed:
+
+```bash
+gh pr checks <n> --watch    # blocks until every check finishes
+```
+
+Then:
+
 - **Sub-PR** (a scoped slice of a larger parent ticket, one role's ownership):
-  once CI is green and a legible summary is on the PR, mark it ready and it may
-  merge autonomously. No human wait.
+  CI green + a legible summary on the PR → `gh pr ready <n>`, and it may merge
+  autonomously. No human wait.
 - **Feature-level / large PR** (closes a top-level spec ticket, or crosses more
   than one role's ownership boundary): leave it as **draft**, post the summary,
   and **stop for the human**. Do not merge.
+- **CI red, either bucket:** it is not done. Back to §3 with the failure; fix and
+  push. Never mark ready on red.
 
 When unsure which bucket an issue is in, treat it as feature-level and wait.
+
+**If the run ends before CI finishes** — the session is cut short, the watch
+times out — leave the PR as draft and say so explicitly in the handoff: *"draft
+pending CI, sub-PR, ready to flip when green."* A draft PR left silently behind
+green CI reads as "the agent judged this needs a human", which is the opposite of
+what happened. Only the two bullets above may leave a PR in draft on purpose.
 
 ## Worked example (do not implement here)
 
@@ -170,4 +189,6 @@ spurious unit conflicts" — labelled `bug`, `backend`, `ready-for-agent`.
    change, so `tsc` is not needed; `mypy --strict` skipped (not a gate).
 5. Draft PR titled `fix: don't treat size adjectives as units (#223)`, body has
    `Fixes #223` on its own line.
-6. Single role, bounded bug → this is a **sub-PR**: ready + auto-merge on green.
+6. Single role, bounded bug → this is a **sub-PR**: watch `gh pr checks --watch`,
+   then `gh pr ready` + auto-merge on green. If the run ends first, the PR stays
+   draft and the handoff says "pending CI".
