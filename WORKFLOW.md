@@ -200,20 +200,59 @@ house-rules section. Full source: pstack's `principle-*` skills in `cursor/plugi
 
 ## 9. Skill map
 
-| Layer | Skills | Source |
-|---|---|---|
-| Planning/tracking | `wayfinder`, `triage`, `to-spec`, `to-tickets`, `handoff` | mattpocock |
-| Build | `implement`, `tdd`, `codebase-design`, `domain-modeling` | mattpocock |
-| Review | `code-review` (mattpocock) + `interrogate`, `thermo-nuclear-code-quality-review` (ported) | both |
-| Understanding (PM-facing) | `how` (codebase walkthroughs), `why` (decision archaeology), `blast-radius` (pre-emptive break-check) | ported from `cursor/plugins` (pstack) |
-| Process hygiene | `show-me-your-work` (legible decision trail on long/unattended runs), `figure-it-out` (fallback for one-off asks outside the ticket pipeline) | ported from `cursor/plugins` (pstack) |
-| Self-tuning | `automate-me` (mines your own conversations to keep this doc/`CLAUDE.md` accurate as your style evolves) | ported from `cursor/plugins` (pstack) |
-| House rules | see §8 | `cursor/plugins` `principle-*`, folded into prose, not installed as skills |
+**Skills are vendored into `.claude/skills/`, committed to the repo.** Same rule as
+role files (§5): a workflow that only exists on one laptop doesn't survive switching
+machines — and, more sharply, doesn't exist at all in CI or a cloud session. See §9.1
+for why this changed.
 
-All mattpocock skills install the standard way (see `setup-matt-pocock-skills`). The
-ported skills live at `~/Code/.agents/skills/<name>/` — same mechanism, vendored by
-hand from `cursor/plugins` (commit `a8145426e541afa424a403e3866496216c1b8142` at time
-of porting) since they don't have an installer of their own.
+| Layer | Skills | Status |
+|---|---|---|
+| Planning/tracking | `wayfinder`, `triage`, `to-spec`, `to-tickets`, `handoff` | ✅ vendored |
+| Build | `implement`, `tdd`, `codebase-design`, `domain-modeling`, `prototype` | ✅ vendored |
+| Build (project) | `implement-issue` | 🏠 project-local |
+| Review | `code-review` | ✅ vendored |
+| Investigation | `diagnosing-bugs`, `research`, `improve-codebase-architecture`, `resolving-merge-conflicts` | ✅ vendored |
+| Design interviews | `grill-with-docs`, `grill-me`, `grilling` | ✅ vendored |
+| Setup | `setup-matt-pocock-skills` | ✅ vendored |
+| Review (extra layers) | `interrogate`, `thermo-nuclear-review` | ✅ vendored |
+| Understanding (PM-facing) | `how`, `why`, `blast-radius` | ✅ vendored |
+| Process hygiene | `show-me-your-work`, `figure-it-out` | ✅ vendored |
+| Self-tuning | `automate-me` | ✅ vendored |
+| House rules | see §8 | folded into prose, not skills |
+
+27 skills total — 19 from `mattpocock/skills`, 8 from `cursor/plugins`
+(`pstack/` and `thermos/`). `skills-lock.json` records the upstream commit per
+source plus a per-skill hash, so drift stays detectable against both.
+
+`implement-issue` (🏠) is authored in this repo, not vendored from upstream —
+it has no upstream source and is deliberately absent from `skills-lock.json`.
+It codifies the pickup loop this document already specifies (§2 queue → §4
+branch → §5 delegation → §6 autonomy gate) as one invocable skill; upstream
+`implement` is the generic spec/ticket builder it delegates the actual coding to.
+
+**Naming note:** the skill is `thermo-nuclear-review` upstream, not
+`thermo-nuclear-code-quality-review` as earlier drafts of this doc called it.
+
+### 9.1 Why vendoring, and what's still broken
+
+Previously `skills-lock.json` pinned skills by *reference* and nothing was committed.
+A lockfile is a pointer, not content — so a fresh clone, a GitHub Action, or a cloud
+session resolved **zero** skills and every invocation silently no-opped. The lockfile
+had also drifted from upstream (four renames: `to-prd`→`to-spec`, `to-issues`→
+`to-tickets`, `zoom-out`→`wayfinder`, `diagnose`→`diagnosing-bugs`) and was missing
+six skills this document depends on, including `implement` and `code-review` — the
+two that *are* the build-and-review loop.
+
+The `cursor/plugins` set previously lived at `~/Code/.agents/skills/<name>/` — a
+local home directory that CI, cloud sessions, and a phone have no access to, making
+§7's "three-layer review" **one layer** everywhere but one configured laptop. Those
+are now vendored here too, so all three layers work anywhere the repo does.
+
+**Still outstanding:** the `thermo-nuclear` `PreToolUse` hook has the same class of
+problem from a different angle — it triggers on `Bash` running `gh pr create`, so it
+never fires in an environment that creates PRs through the GitHub MCP tools instead
+of the `gh` CLI. The skill is now present everywhere; its *trigger* still isn't.
+Move that check to a CI job, or add a matching trigger for the MCP path.
 
 ## 10. What's explicitly skipped
 
@@ -236,3 +275,8 @@ already-adopted principles. Revisit if the gap becomes real.
 *Vendored from `~/Code/.project-template/WORKFLOW.md`. This project may diverge
 deliberately over time — if it does, note the divergence here rather than silently
 drifting.*
+
+**Divergences from the template:**
+- §9 adds `implement-issue`, a project-local Build skill with no upstream source
+  (see §9). The template's skill map assumes every skill is vendored from
+  `mattpocock/skills` or `cursor/plugins`; this one is ours.
