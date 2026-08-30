@@ -43,6 +43,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY)
     const resolved = stored !== null && isValidTheme(stored) ? stored : DEFAULT_THEME
+    /* The extra render pass is the point: rendering DEFAULT_THEME first is what
+       keeps the server and client passes identical, and localStorage cannot be
+       read before hydration without reintroducing the mismatch this component
+       exists to avoid. Moving this into a lazy useState initialiser brings the
+       hydration bug straight back. */
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setThemeState(resolved)
     document.documentElement.setAttribute('data-theme', resolved)
   }, [])
