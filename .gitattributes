@@ -1,0 +1,7 @@
+# Vendored agent skills are hash-pinned in skills-lock.json. The hash is taken
+# over the SKILL.md bytes with LF endings, so the working copy must stay LF on
+# every platform — otherwise `core.autocrlf` on Windows rewrites the file at
+# checkout and every hash check fails for a reason that has nothing to do with
+# the skill's contents.
+.claude/skills/** text eol=lf
+skills-lock.json  text eol=lf

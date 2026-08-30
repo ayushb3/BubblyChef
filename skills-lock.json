@@ -1,77 +1,218 @@
 {
-  "version": 1,
+  "version": 2,
+  "hashAlgorithm": "sha256 of the vendored SKILL.md, LF line endings",
   "skills": {
-    "caveman": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/productivity/caveman/SKILL.md",
-      "computedHash": "934433479903febc585bf6deb5f0cebc63137e3f86b7babe0aab1ecb94d6d7a4"
+    "automate-me": {
+      "source": "pstack cursor/plugins",
+      "sourceType": "vendored",
+      "sourceRef": "a8145426e541afa424a403e3866496216c1b8142",
+      "skillPath": null,
+      "vendoredPath": ".claude/skills/automate-me/",
+      "computedHash": "a5999a0e1d1c242df77d2fbc3e8dae201228135b2c6c6409ef353c1b507df530",
+      "note": "No upstream installer. Hand-vendored via ~/Code/.agents/skills/."
     },
-    "diagnose": {
+    "blast-radius": {
+      "source": "pstack cursor/plugins",
+      "sourceType": "vendored",
+      "sourceRef": "a8145426e541afa424a403e3866496216c1b8142",
+      "skillPath": null,
+      "vendoredPath": ".claude/skills/blast-radius/",
+      "computedHash": "b060df3ca85803eabbce9fab53f5cc024ca8d784bdde5513c1c1a784947523f8",
+      "note": "No upstream installer. Hand-vendored via ~/Code/.agents/skills/."
+    },
+    "code-review": {
       "source": "mattpocock/skills",
       "sourceType": "github",
-      "skillPath": "skills/engineering/diagnose/SKILL.md",
-      "computedHash": "15939a26f86edec2d4862042b8564e5a062cb81d04e047a0cea6305c8830b5f5"
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
+      "skillPath": "skills/engineering/code-review/SKILL.md",
+      "vendoredPath": ".claude/skills/code-review/",
+      "computedHash": "47f4e52c21694def9c7c11cbfbf891ca35eac7a93e395797515be3c8a409ae50"
+    },
+    "codebase-design": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
+      "skillPath": "skills/engineering/codebase-design/SKILL.md",
+      "vendoredPath": ".claude/skills/codebase-design/",
+      "computedHash": "2c20617f87ec8af6a434859f381b2f061a69b530444e74eb39e78bb016a6d1e2"
+    },
+    "diagnosing-bugs": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
+      "skillPath": "skills/engineering/diagnosing-bugs/SKILL.md",
+      "vendoredPath": ".claude/skills/diagnosing-bugs/",
+      "computedHash": "77f3cf31bc99b2f49af943222526531fcc9fc41d047626d3640e875e85af3e84",
+      "renamedFrom": "diagnose"
+    },
+    "domain-modeling": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
+      "skillPath": "skills/engineering/domain-modeling/SKILL.md",
+      "vendoredPath": ".claude/skills/domain-modeling/",
+      "computedHash": "327a2b50620e2fd70abc6893cd6965e76b20f8d0adb0dc2c8d5eb3845efb643e"
+    },
+    "figure-it-out": {
+      "source": "pstack cursor/plugins",
+      "sourceType": "vendored",
+      "sourceRef": "a8145426e541afa424a403e3866496216c1b8142",
+      "skillPath": null,
+      "vendoredPath": ".claude/skills/figure-it-out/",
+      "computedHash": "548616d04909de854f36869af2af127ce321fc6aaf95ea5a626997709fd46a2a",
+      "note": "No upstream installer. Hand-vendored via ~/Code/.agents/skills/."
     },
     "grill-me": {
       "source": "mattpocock/skills",
       "sourceType": "github",
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
       "skillPath": "skills/productivity/grill-me/SKILL.md",
-      "computedHash": "784f0dbb7403b0f00324bce9a112f715342777a0daee7bbb7385f9c6f0a170ea"
+      "vendoredPath": ".claude/skills/grill-me/",
+      "computedHash": "caaf8b8de1684f96e26b28f3c29189db5c89cce4b73e1c93d86164f66ef88637"
     },
     "grill-with-docs": {
       "source": "mattpocock/skills",
       "sourceType": "github",
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
       "skillPath": "skills/engineering/grill-with-docs/SKILL.md",
-      "computedHash": "ea225e10406dbb6a18ba97af34e4e9313424438195cd16e657635f841b6e7a2f"
+      "vendoredPath": ".claude/skills/grill-with-docs/",
+      "computedHash": "7de372c13488f1ee96cc11cd8907b56b6809cc93eef776eeddd37de6b6cbe3fe"
+    },
+    "handoff": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
+      "skillPath": "skills/productivity/handoff/SKILL.md",
+      "vendoredPath": ".claude/skills/handoff/",
+      "computedHash": "7c62de979fdc7ac32fb5ddb2146156c917f80ee070d30fadc9d40343c4b6ed25"
+    },
+    "how": {
+      "source": "pstack cursor/plugins",
+      "sourceType": "vendored",
+      "sourceRef": "a8145426e541afa424a403e3866496216c1b8142",
+      "skillPath": null,
+      "vendoredPath": ".claude/skills/how/",
+      "computedHash": "da651aa713e2de21661af1b8f443395abdfb9b768dc2a5b211cce03f942f0602",
+      "note": "No upstream installer. Hand-vendored via ~/Code/.agents/skills/."
+    },
+    "implement": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
+      "skillPath": "skills/engineering/implement/SKILL.md",
+      "vendoredPath": ".claude/skills/implement/",
+      "computedHash": "6d3fd9e83b8f36e5213854779db49b256a457a7ebb4a503e53fa7dcff696adc3"
     },
     "improve-codebase-architecture": {
       "source": "mattpocock/skills",
       "sourceType": "github",
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
       "skillPath": "skills/engineering/improve-codebase-architecture/SKILL.md",
-      "computedHash": "c77b86b4332919499608f9af1880074e1fec65a59b95c70c27a9f39cd137865e"
+      "vendoredPath": ".claude/skills/improve-codebase-architecture/",
+      "computedHash": "d1ac25511a936ff4250a48dbcefda363837d6bb9321b3cba73df99fa37270a75"
+    },
+    "interrogate": {
+      "source": "pstack cursor/plugins",
+      "sourceType": "vendored",
+      "sourceRef": "a8145426e541afa424a403e3866496216c1b8142",
+      "skillPath": null,
+      "vendoredPath": ".claude/skills/interrogate/",
+      "computedHash": "cbace767442dfb89b26efa5d2d391ba59bd8a12fae89109e60828e9cb2d1dd33",
+      "note": "No upstream installer. Hand-vendored via ~/Code/.agents/skills/."
     },
     "setup-matt-pocock-skills": {
       "source": "mattpocock/skills",
       "sourceType": "github",
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
       "skillPath": "skills/engineering/setup-matt-pocock-skills/SKILL.md",
-      "computedHash": "3a32f8f1ed8160c9d286a2aabe88ee9b884c6f3f88a7a6c47b7d5d552c959587"
+      "vendoredPath": ".claude/skills/setup-matt-pocock-skills/",
+      "computedHash": "2bcd89e97777cdb705914424e39c97d5db524c8eb4eafac8120778a07774f0ec"
+    },
+    "show-me-your-work": {
+      "source": "pstack cursor/plugins",
+      "sourceType": "vendored",
+      "sourceRef": "a8145426e541afa424a403e3866496216c1b8142",
+      "skillPath": null,
+      "vendoredPath": ".claude/skills/show-me-your-work/",
+      "computedHash": "b99833c41a8781a6af191487f1af37711a3198b98f9373e3c02292b8a6e09aba",
+      "note": "No upstream installer. Hand-vendored via ~/Code/.agents/skills/."
     },
     "tdd": {
       "source": "mattpocock/skills",
       "sourceType": "github",
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
       "skillPath": "skills/engineering/tdd/SKILL.md",
-      "computedHash": "15a7b5e36383ebadb2dec5e586679e55e9663d292da418926b8da6fc0ef27d84"
+      "vendoredPath": ".claude/skills/tdd/",
+      "computedHash": "cb01f66bebfaa25fa1f88e6b7e769cd9fd9f35b1120b8563749820738814c927"
     },
-    "to-issues": {
+    "thermo-nuclear-code-quality-review": {
+      "source": "pstack cursor/plugins",
+      "sourceType": "vendored",
+      "sourceRef": "a8145426e541afa424a403e3866496216c1b8142",
+      "skillPath": null,
+      "vendoredPath": ".claude/skills/thermo-nuclear-code-quality-review/",
+      "computedHash": "7faca08b51b643b2ddd0836f92af15574444024685dcc1e677dbbb39ae8c9e8f",
+      "note": "No upstream installer. Hand-vendored via ~/Code/.agents/skills/."
+    },
+    "to-spec": {
       "source": "mattpocock/skills",
       "sourceType": "github",
-      "skillPath": "skills/engineering/to-issues/SKILL.md",
-      "computedHash": "73a91f30784523aa59ec9b02769576ebfc738e2cd5ad8f6441076031f0a5d5ac"
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
+      "skillPath": "skills/engineering/to-spec/SKILL.md",
+      "vendoredPath": ".claude/skills/to-spec/",
+      "computedHash": "43ad9cf318e5e7d3d1fa360253a37021796dc87a0c2e595ad262661a10f85088",
+      "renamedFrom": "to-prd"
     },
-    "to-prd": {
+    "to-tickets": {
       "source": "mattpocock/skills",
       "sourceType": "github",
-      "skillPath": "skills/engineering/to-prd/SKILL.md",
-      "computedHash": "fd8c259f9c44eff08e29a1a2fc71a806a3568d279a55387a361f78620b10f2aa"
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
+      "skillPath": "skills/engineering/to-tickets/SKILL.md",
+      "vendoredPath": ".claude/skills/to-tickets/",
+      "computedHash": "5c9fba69845c2519b9b35b9af42ae5142c21f8ca15ac2123dc2722002c8058ae",
+      "renamedFrom": "to-issues"
     },
     "triage": {
       "source": "mattpocock/skills",
       "sourceType": "github",
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
       "skillPath": "skills/engineering/triage/SKILL.md",
-      "computedHash": "2b6efb6da12d92551772fcc04acf331f4e0e6f7bd9d4cb23ce0b301e0b128feb"
+      "vendoredPath": ".claude/skills/triage/",
+      "computedHash": "623a2ed692bdc77d2090e2a3dea3b627dd722ad3bbaca0be83aada75292c8fc4"
     },
-    "write-a-skill": {
+    "wayfinder": {
       "source": "mattpocock/skills",
       "sourceType": "github",
-      "skillPath": "skills/productivity/write-a-skill/SKILL.md",
-      "computedHash": "b44d8aab2ead83c716e01af4c9a24ccc4575ce70ad58ec4f1749fb88c9cc82ba"
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
+      "skillPath": "skills/engineering/wayfinder/SKILL.md",
+      "vendoredPath": ".claude/skills/wayfinder/",
+      "computedHash": "fee6e1d0c50f0e736b4ef8a599060c959afae904c9a97d82c97f049fcc3aa0f1"
+    },
+    "why": {
+      "source": "pstack cursor/plugins",
+      "sourceType": "vendored",
+      "sourceRef": "a8145426e541afa424a403e3866496216c1b8142",
+      "skillPath": null,
+      "vendoredPath": ".claude/skills/why/",
+      "computedHash": "fe5144b1ee4f0a3a3ad663b130c3295157a0e26cf0d17a96be1a4f88cafe4afa",
+      "note": "No upstream installer. Hand-vendored via ~/Code/.agents/skills/."
+    },
+    "writing-for-agents": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "sourceRef": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
+      "skillPath": "skills/productivity/writing-for-agents/SKILL.md",
+      "vendoredPath": ".claude/skills/writing-for-agents/",
+      "computedHash": "551adca942227b44192edba88acd4e8db911f0121ce58ad16944ccf6a896a74a",
+      "renamedFrom": "write-a-skill"
+    }
+  },
+  "dropped": {
+    "caveman": {
+      "reason": "removed upstream; no successor"
     },
     "zoom-out": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/engineering/zoom-out/SKILL.md",
-      "computedHash": "8357aeaece3b709c442eab67e64b86844e05e2f1ea95b109565eba50b6def36e"
+      "reason": "removed upstream; no successor"
     }
   }
 }
