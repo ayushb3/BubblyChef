@@ -61,6 +61,12 @@ git checkout -b feat/issue-<n>-<slug>   # or fix/issue-<n>-<slug> for a bug
 `<slug>` is a short kebab-case summary of the issue title. Use `fix/` when the
 issue is labelled `bug`, `feat/` otherwise.
 
+**Keep the branch current by rebasing, not merging.** If `main` moves while you
+work, `git fetch origin && git rebase origin/main` — do **not** `git merge main`
+into the feature branch. WORKFLOW.md §4 merges PRs with real merge commits *at the
+PR boundary*; a merge commit *inside* the feature branch pollutes its history and
+defeats the linear-archaeology the `why` skill depends on.
+
 ## 3. Get context, then delegate
 
 **You are the PM here — you orchestrate, you do not write the feature code
