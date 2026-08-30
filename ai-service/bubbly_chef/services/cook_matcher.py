@@ -17,6 +17,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from bubbly_chef.domain.normalizer import normalize_food_name, normalize_to_base_unit
+from bubbly_chef.domain.normalizer import SIZE_ADJECTIVE_UNITS  # noqa: F401  re-export: single source of truth
 from bubbly_chef.models.cook import CompoundSuggestion, CookProposal, IngredientMatch
 from bubbly_chef.models.pantry import PantryItem
 

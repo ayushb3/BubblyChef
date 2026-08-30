@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class Ingredient(BaseModel):
@@ -20,6 +20,23 @@ class Ingredient(BaseModel):
     substitutes: list[str] = Field(
         default_factory=list, description="Possible substitutes for this ingredient"
     )
+
+    @field_validator("unit", mode="before")
+    @classmethod
+    def _strip_size_adjective_from_unit(cls, v: object) -> object:
+        """Size adjectives ('medium', 'large', 'small', etc.) are not units.
+
+        LLMs sometimes write them into the unit field (e.g. "2 medium avocados"
+        becomes unit="medium"). Strip them to None so the cook matcher sees no
+        unit and normalises to count, preventing spurious unit_conflicts (#223).
+        """
+        if not isinstance(v, str):
+            return v
+        # Import here to avoid a top-level circular dependency risk; the module
+        # is lightweight and the import is cached after the first call.
+        from bubbly_chef.domain.normalizer import SIZE_ADJECTIVE_UNITS
+
+        return None if v.lower().strip() in SIZE_ADJECTIVE_UNITS else v
 
 
 class RecipeCard(BaseModel):

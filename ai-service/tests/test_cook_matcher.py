@@ -1166,3 +1166,83 @@ class TestMissingNotes:
 
         assert "heavy cream" in proposal.missing
         assert proposal.missing_notes == {}
+
+
+class TestSizeAdjectiveUnits:
+    """Size adjectives in the unit field must not produce spurious unit_conflicts (#223).
+
+    Recipe ingredients arriving as dicts can have size words like "medium", "large",
+    or "small" in the unit field (put there by the LLM). These should be treated as
+    "no unit" so the ingredient normalises to count and matches correctly.
+    """
+
+    def test_medium_unit_normalises_to_count(self) -> None:
+        """normalize_to_base_unit('avocado', 2.0, 'medium') → (2.0, 'count')."""
+        from bubbly_chef.domain.normalizer import normalize_to_base_unit
+
+        qty, unit = normalize_to_base_unit("avocado", 2.0, "medium")
+        assert qty == pytest.approx(2.0)
+        assert unit == "count"
+
+    def test_large_unit_normalises_to_count(self) -> None:
+        """normalize_to_base_unit('egg', 1.0, 'large') → (1.0, 'count')."""
+        from bubbly_chef.domain.normalizer import normalize_to_base_unit
+
+        qty, unit = normalize_to_base_unit("egg", 1.0, "large")
+        assert qty == pytest.approx(1.0)
+        assert unit == "count"
+
+    def test_small_unit_normalises_to_count(self) -> None:
+        """normalize_to_base_unit('onion', 1.0, 'small') → (1.0, 'count')."""
+        from bubbly_chef.domain.normalizer import normalize_to_base_unit
+
+        qty, unit = normalize_to_base_unit("onion", 1.0, "small")
+        assert qty == pytest.approx(1.0)
+        assert unit == "count"
+
+    def test_extra_large_unit_normalises_to_count(self) -> None:
+        """'extra-large' in unit field is a size adjective, not a real unit."""
+        from bubbly_chef.domain.normalizer import normalize_to_base_unit
+
+        qty, unit = normalize_to_base_unit("egg", 2.0, "extra-large")
+        assert qty == pytest.approx(2.0)
+        assert unit == "count"
+
+    def test_unknown_unit_still_returns_none_none(self) -> None:
+        """Genuine unknown units ('glorp') must not be silently treated as count."""
+        from bubbly_chef.domain.normalizer import normalize_to_base_unit
+
+        qty, unit = normalize_to_base_unit("avocado", 2.0, "glorp")
+        assert qty is None
+        assert unit is None
+
+    def test_dict_ingredient_with_medium_unit_matches_count_pantry(self) -> None:
+        """End-to-end: {name: 'avocado', quantity: 2, unit: 'medium'} vs 3 count avocados
+        produces a match, not a unit_conflict."""
+        pantry = [_make_item("avocado", 3.0, "count", qty_base=3.0, unit_base="count")]
+        ingredients = [{"name": "avocado", "quantity": 2.0, "unit": "medium"}]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert proposal.unit_conflicts == [], f"Expected no conflicts, got {proposal.unit_conflicts}"
+        assert len(proposal.matches) == 1
+        assert proposal.matches[0].status == "ready"
+        assert proposal.matches[0].deduct_qty == pytest.approx(2.0)
+
+    def test_dict_ingredient_with_large_unit_matches_count_pantry(self) -> None:
+        """large as unit on dict ingredient also resolves without conflict."""
+        pantry = [_make_item("eggs", 6.0, "count", qty_base=6.0, unit_base="count")]
+        ingredients = [{"name": "eggs", "quantity": 2.0, "unit": "large"}]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert proposal.unit_conflicts == []
+        assert proposal.matches[0].status == "ready"
+
+    def test_size_adjective_vocabulary_is_shared_constant(self) -> None:
+        """The same set that drives the string-parse adjective regex also covers dict paths."""
+        from bubbly_chef.services.cook_matcher import SIZE_ADJECTIVE_UNITS
+
+        # These are the adjectives the issue references
+        for adj in ("medium", "large", "small", "extra-large", "xl"):
+            assert adj in SIZE_ADJECTIVE_UNITS, f"Expected {adj!r} in SIZE_ADJECTIVE_UNITS"

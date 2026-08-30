@@ -357,6 +357,23 @@ def normalize_to_library(name: str) -> str:
     return name
 
 
+# ---------------------------------------------------------------------------
+# Size adjectives that models write into the unit field of recipe ingredients.
+# "2 medium avocados" → unit="medium" (should normalise to count, not conflict).
+# Defined here so normalizer.py (the single source of truth for unit handling)
+# can strip them, and cook_matcher.py re-exports the constant so nothing else
+# needs to duplicate the list.
+# ---------------------------------------------------------------------------
+SIZE_ADJECTIVE_UNITS: frozenset[str] = frozenset({
+    "small",
+    "medium",
+    "large",
+    "extra-large",
+    "extra large",
+    "xl",
+    "x-large",
+})
+
 _UNIT_ALIASES: dict[str, str] = {
     "pound": "lb", "pounds": "lb",
     "ounce": "oz", "ounces": "oz",
@@ -403,10 +420,21 @@ _UNIT_ALIASES: dict[str, str] = {
 
 
 def normalize_unit(unit: str) -> str:
-    """Normalize unit string to canonical form."""
+    """Normalize unit string to canonical form.
+
+    Size adjectives ("medium", "large", "small", etc.) that a model may write
+    into the unit field are treated as absent — they carry no measurement
+    information and should not trigger a unit_conflict in the cook matcher.
+    """
     if not unit:
         return "item"
-    return _UNIT_ALIASES.get(unit.lower().strip(), unit.lower().strip())
+    normalized = unit.lower().strip()
+    # Size adjectives are not units. Treat them as "no unit given" so the
+    # normalizer falls through to the ingredient's canonical count-based unit
+    # rather than returning (None, None) and producing a spurious unit_conflict.
+    if normalized in SIZE_ADJECTIVE_UNITS:
+        return "item"
+    return _UNIT_ALIASES.get(normalized, normalized)
 
 
 # ── Unit → ml conversions ──────────────────────────────────────────────────

@@ -115,7 +115,9 @@ Rules:
 - title: string (required)
 - description: string or null
 - ingredients: list of objects with "name" (required), "quantity" (float|null), \
-"unit" (str|null), "preparation" (str|null), "optional" (bool), "substitutes" (list[str])
+"unit" (measurement unit only — e.g. "cups", "g", "tablespoon"; do NOT put size \
+descriptors like "medium" or "large" in unit; use "preparation" for those instead), \
+"preparation" (str|null), "optional" (bool), "substitutes" (list[str])
 - instructions: list of strings, each a single step
 - prep_time_minutes: integer or null
 - cook_time_minutes: integer or null
@@ -139,7 +141,9 @@ Return a JSON object with these fields:
 - title: string (required)
 - description: string or null
 - ingredients: list of objects with "name" (required), "quantity" (float|null), \
-"unit" (str|null), "preparation" (str|null), "optional" (bool), "substitutes" (list[str])
+"unit" (measurement unit only — e.g. "cups", "g", "tablespoon"; do NOT put size \
+descriptors like "medium" or "large" in unit; use "preparation" for those instead), \
+"preparation" (str|null), "optional" (bool), "substitutes" (list[str])
 - instructions: list of strings, each a single step
 - prep_time_minutes: integer or null
 - cook_time_minutes: integer or null
