@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 import re
+import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -19,6 +21,106 @@ from bubbly_chef.models.cook import CompoundSuggestion, CookProposal, Ingredient
 from bubbly_chef.models.pantry import PantryItem
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Alias resolution cache
+# ---------------------------------------------------------------------------
+# Only the name→pantry-item mapping is stable between preview and confirm.
+# Quantities, shortfalls, and unit-conflicts are recomputed from live pantry
+# data every time match_ingredients() runs, so those must never be cached.
+#
+# Cache key design
+# ----------------
+# The key is (sorted_unmatched_names_tuple, sorted_pantry_names_tuple).
+#
+# Why item *names*, not item *ids*, for the pantry fingerprint?
+# IDs uniquely identify rows but are opaque — two rows named "onions" and
+# "scallions" with different ids both constrain the alias mapping (the model
+# must know they exist), whereas quantity changes on an existing row do NOT
+# change which aliases are valid (aliases only care about *existence* of an
+# item, not how much of it there is).  Using names rather than ids means a
+# deduction that reduces a pantry quantity but doesn't add or remove a row
+# correctly reuses the cache, while adding a new item or deleting one
+# (different name set) correctly busts it.
+#
+# Per-user isolation: `pantry_items` is always the calling user's slice of the
+# DB — the caller (match_ingredients_with_llm) passes only that user's items,
+# so the name-fingerprint is inherently user-scoped.  No explicit user_id
+# thread-through is needed.
+
+_ALIAS_CACHE_TTL: float = 180.0  # seconds; preview→confirm is < 30 s in practice
+_ALIAS_CACHE_MAX_SIZE: int = 256  # LRU eviction above this; one entry ≈ a small dict
+
+# OrderedDict used as an LRU: newest entries move to the end on access; the
+# oldest entry is evicted from the front when the size limit is reached.
+# Value: (result, inserted_at_monotonic), where result is the full 3-tuple
+# resolve_aliases_with_llm returns — aliases, notes, and compound suggestions.
+# All three are derived from the same LLM call, so caching only the aliases
+# would silently drop the notes and suggestions on a cache hit.
+_AliasResult = tuple[
+    dict[str, "ResolvedAlias"],
+    dict[str, str],
+    list[CompoundSuggestion],
+]
+_alias_cache: OrderedDict[
+    tuple[tuple[str, ...], tuple[str, ...]],
+    tuple[_AliasResult, float],
+] = OrderedDict()
+
+
+def _copy_alias_result(result: _AliasResult) -> _AliasResult:
+    """Copy a cached result so callers cannot mutate the shared entry.
+
+    ResolvedAlias is a frozen dataclass and notes are plain strings, so shallow
+    copies suffice for those two. CompoundSuggestion is a (mutable) pydantic
+    model, so each one is copied individually rather than shared by reference.
+    """
+    aliases, notes, suggestions = result
+    return (dict(aliases), dict(notes), [s.model_copy() for s in suggestions])
+
+
+def _alias_cache_key(
+    unmatched_names: list[str],
+    pantry_items: list[PantryItem],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Build a stable, user-scoped cache key for alias resolution."""
+    norm_unmatched = tuple(sorted(_normalize_ingredient_name(n) for n in unmatched_names))
+    # Sort by normalized name so ordering differences in pantry list don't bust the cache.
+    norm_pantry = tuple(sorted(_normalize_ingredient_name(i.name) for i in pantry_items))
+    return (norm_unmatched, norm_pantry)
+
+
+def _alias_cache_get(
+    key: tuple[tuple[str, ...], tuple[str, ...]],
+    now: float,
+) -> _AliasResult | None:
+    """Return the cached result if present and not expired; None otherwise."""
+    if key not in _alias_cache:
+        return None
+    result, inserted_at = _alias_cache[key]
+    if now - inserted_at > _ALIAS_CACHE_TTL:
+        del _alias_cache[key]
+        return None
+    # Move to end (most-recently-used position).
+    _alias_cache.move_to_end(key)
+    # Copy so a caller mutating its result cannot corrupt the shared entry for
+    # every later cook.
+    return _copy_alias_result(result)
+
+
+def _alias_cache_put(
+    key: tuple[tuple[str, ...], tuple[str, ...]],
+    result: _AliasResult,
+    now: float,
+) -> None:
+    """Insert into cache, evicting the LRU entry when full."""
+    if key in _alias_cache:
+        _alias_cache.move_to_end(key)
+    # Store a copy: the caller keeps using the collections it passed in, and a
+    # mutation there must not reach into the shared entry.
+    _alias_cache[key] = (_copy_alias_result(result), now)
+    while len(_alias_cache) > _ALIAS_CACHE_MAX_SIZE:
+        _alias_cache.popitem(last=False)  # evict oldest
 
 # Below this, a suggested stand-in is discarded and the ingredient stays missing.
 # Substituting an ingredient changes what the user actually cooks, so the bar is
@@ -485,6 +587,8 @@ async def resolve_aliases_with_llm(
     unmatched_names: list[str],
     pantry_items: list[PantryItem],
     ai_manager: Any,
+    *,
+    _clock: Any = None,
 ) -> tuple[dict[str, ResolvedAlias], dict[str, str], list[CompoundSuggestion]]:
     """Ask the model which pantry items could stand in for unmatched ingredients.
 
@@ -501,11 +605,26 @@ async def resolve_aliases_with_llm(
       component is missing the whole suggestion is dropped. These never enter the
       alias/deduction path.
 
+    All three are cached together by (sorted unmatched names, sorted pantry names)
+    for _ALIAS_CACHE_TTL seconds with LRU eviction at _ALIAS_CACHE_MAX_SIZE entries.
+    Failures are never cached — a transient outage must not poison the cache.
+
     Never raises. Any provider failure returns empty collections, which leaves the
     ingredients missing exactly as they were before this tier existed.
+
+    Args:
+        _clock: Optional callable returning a monotonic float, injectable for
+            testing TTL expiry without real sleeps. Defaults to time.monotonic.
     """
     if not unmatched_names or not pantry_items:
         return {}, {}, []
+
+    now = (_clock or time.monotonic)()
+    cache_key = _alias_cache_key(unmatched_names, pantry_items)
+    cached = _alias_cache_get(cache_key, now)
+    if cached is not None:
+        logger.debug("resolve_aliases_with_llm: cache hit, skipping LLM call")
+        return cached
 
     pantry_by_norm = {_normalize_ingredient_name(i.name): i for i in pantry_items}
 
@@ -523,6 +642,7 @@ async def resolve_aliases_with_llm(
         )
     except Exception as e:  # noqa: BLE001 - degrading to "missing" is the contract
         logger.warning(f"Substitution matching unavailable, leaving ingredients missing: {e}")
+        # Do NOT cache failures — a retry must hit the provider.
         return {}, {}, []
 
     if not isinstance(result, _LLMMatchBatch):
@@ -620,6 +740,7 @@ async def resolve_aliases_with_llm(
         # a missing component.
         _note(entry, entry.substitution_note)
 
+    _alias_cache_put(cache_key, (aliases, notes, compound_suggestions), now)
     return aliases, notes, compound_suggestions
 
 

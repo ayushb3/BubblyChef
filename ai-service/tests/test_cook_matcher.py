@@ -14,6 +14,7 @@ from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.services.cook_matcher import (
     _LLMIngredientMatch,
     _LLMMatchBatch,
+    _alias_cache,
     match_ingredients,
     match_ingredients_with_llm,
     resolve_aliases_with_llm,
@@ -243,6 +244,10 @@ class TestDuplicateIngredientDeduction:
 
 class TestLLMSubstitutionMatching:
     """Tier 2 — the model resolves what the synonym table misses (#123)."""
+
+    def setup_method(self) -> None:
+        # Clear alias cache so tests are independent of each other's LLM results.
+        _alias_cache.clear()
 
     @staticmethod
     def _ai(batch: object) -> MagicMock:
@@ -610,6 +615,212 @@ class TestPieceUnitParsing:
 
         assert proposal.matches[0].status == "ready"
         assert proposal.matches[0].deduct_qty == pytest.approx(0.375)
+
+
+class TestAliasCache:
+    """Cache behaviour for resolve_aliases_with_llm — preview→confirm must not double-call."""
+
+    @staticmethod
+    def _ai_returning(batch: object) -> MagicMock:
+        ai = MagicMock()
+        ai.complete = AsyncMock(return_value=batch)
+        return ai
+
+    @staticmethod
+    def _pantry(*names: str) -> list[PantryItem]:
+        return [_make_item(n, 100.0, "g", qty_base=100.0, unit_base="g") for n in names]
+
+    def setup_method(self) -> None:
+        # Each test starts with a clean cache to prevent cross-test pollution.
+        _alias_cache.clear()
+
+    @pytest.mark.asyncio
+    async def test_second_call_with_identical_inputs_skips_llm(self) -> None:
+        """Cache hit: identical (unmatched, pantry) pair must not invoke ai_manager again."""
+        pantry = self._pantry("greek yogurt")
+        unmatched = ["sour cream"]
+        ai = self._ai_returning(
+            _LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="sour cream",
+                        best_match="greek yogurt",
+                        match_type="exact",
+                        confidence=0.95,
+                    )
+                ]
+            )
+        )
+
+        result1 = await resolve_aliases_with_llm(unmatched, pantry, ai)
+        result2 = await resolve_aliases_with_llm(unmatched, pantry, ai)
+
+        # Only one LLM call despite two invocations.
+        ai.complete.assert_awaited_once()
+        assert result1 == result2
+
+    @pytest.mark.asyncio
+    async def test_changed_pantry_causes_fresh_llm_call(self) -> None:
+        """Adding a pantry item changes the fingerprint — must not reuse stale aliases."""
+        unmatched = ["sour cream"]
+        ai = self._ai_returning(_LLMMatchBatch(results=[]))
+
+        pantry_before = self._pantry("greek yogurt")
+        await resolve_aliases_with_llm(unmatched, pantry_before, ai)
+
+        pantry_after = self._pantry("greek yogurt", "creme fraiche")
+        await resolve_aliases_with_llm(unmatched, pantry_after, ai)
+
+        assert ai.complete.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_changed_unmatched_set_causes_fresh_llm_call(self) -> None:
+        """Different unmatched ingredients = different cache key = fresh call."""
+        pantry = self._pantry("greek yogurt")
+        ai = self._ai_returning(_LLMMatchBatch(results=[]))
+
+        await resolve_aliases_with_llm(["sour cream"], pantry, ai)
+        await resolve_aliases_with_llm(["creme fraiche"], pantry, ai)
+
+        assert ai.complete.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_ttl_expiry_causes_fresh_llm_call(self) -> None:
+        """An entry older than the TTL must be evicted and the LLM re-called."""
+        pantry = self._pantry("greek yogurt")
+        unmatched = ["sour cream"]
+        ai = self._ai_returning(_LLMMatchBatch(results=[]))
+
+        # First call at t=0.
+        t = 0.0
+
+        def clock() -> float:
+            return t
+
+        await resolve_aliases_with_llm(unmatched, pantry, ai, _clock=clock)
+        assert ai.complete.await_count == 1
+
+        # Advance clock past TTL.
+        from bubbly_chef.services.cook_matcher import _ALIAS_CACHE_TTL
+
+        t = _ALIAS_CACHE_TTL + 1.0
+
+        await resolve_aliases_with_llm(unmatched, pantry, ai, _clock=clock)
+        assert ai.complete.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_within_ttl_is_still_a_hit(self) -> None:
+        """An entry just inside the TTL window must be returned from cache."""
+        pantry = self._pantry("greek yogurt")
+        unmatched = ["sour cream"]
+        ai = self._ai_returning(_LLMMatchBatch(results=[]))
+
+        t = 0.0
+
+        def clock() -> float:
+            return t
+
+        await resolve_aliases_with_llm(unmatched, pantry, ai, _clock=clock)
+
+        from bubbly_chef.services.cook_matcher import _ALIAS_CACHE_TTL
+
+        t = _ALIAS_CACHE_TTL - 1.0  # still inside window
+        await resolve_aliases_with_llm(unmatched, pantry, ai, _clock=clock)
+
+        ai.complete.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_failure_is_not_cached(self) -> None:
+        """A provider outage must not poison the cache; the next call must retry."""
+        from bubbly_chef.ai.manager import NoProviderAvailableError
+
+        pantry = self._pantry("greek yogurt")
+        unmatched = ["sour cream"]
+
+        # First call: provider fails.
+        ai_fail = MagicMock()
+        ai_fail.complete = AsyncMock(side_effect=NoProviderAvailableError("down"))
+        result_fail = await resolve_aliases_with_llm(unmatched, pantry, ai_fail)
+        assert result_fail == ({}, {}, [])
+
+        # Second call: provider recovered — must reach the LLM, not return from cache.
+        ai_ok = self._ai_returning(
+            _LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="sour cream",
+                        best_match="greek yogurt",
+                        match_type="exact",
+                        confidence=0.95,
+                    )
+                ]
+            )
+        )
+        aliases_ok, _, _ = await resolve_aliases_with_llm(unmatched, pantry, ai_ok)
+
+        ai_ok.complete.assert_awaited_once()
+        assert "sour cream" in aliases_ok
+
+    @pytest.mark.asyncio
+    async def test_quantity_change_does_not_bust_cache(self) -> None:
+        """Deducting stock (quantity change) must NOT invalidate the alias cache.
+
+        The fingerprint is built from item names, not quantities: an alias only
+        cares whether a pantry item exists, not how much of it is left.
+        """
+        unmatched = ["sour cream"]
+        ai = self._ai_returning(_LLMMatchBatch(results=[]))
+
+        pantry_full = [_make_item("greek yogurt", 200.0, "g", qty_base=200.0, unit_base="g")]
+        await resolve_aliases_with_llm(unmatched, pantry_full, ai)
+        assert ai.complete.await_count == 1
+
+        # Same item, reduced quantity (as after a deduction).
+        pantry_deducted = [_make_item("greek yogurt", 100.0, "g", qty_base=100.0, unit_base="g")]
+        await resolve_aliases_with_llm(unmatched, pantry_deducted, ai)
+
+        # Still only one LLM call — the quantity change did not bust the cache.
+        ai.complete.assert_awaited_once()
+
+
+class TestAliasCacheIsolation:
+    """A cache hit must not hand out the mutable entry it stores (#280)."""
+
+    @pytest.mark.asyncio
+    async def test_mutating_a_returned_mapping_does_not_poison_the_cache(self) -> None:
+        from bubbly_chef.services.cook_matcher import (
+            _alias_cache,
+            resolve_aliases_with_llm,
+        )
+
+        _alias_cache.clear()
+        pantry = [_make_item("yogurt", 500, "g", 500, "g")]
+        manager = MagicMock()
+        manager.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="sour cream",
+                        best_match="yogurt",
+                        match_type="substitute",
+                        confidence=0.95,
+                        substitution_note="Tangier, similar texture.",
+                    )
+                ]
+            )
+        )
+
+        first_aliases, first_notes, first_suggestions = await resolve_aliases_with_llm(
+            ["sour cream"], pantry, manager
+        )
+        assert "sour cream" in first_aliases
+        first_aliases.clear()  # a careless caller
+        first_notes.clear()
+        first_suggestions.clear()
+
+        second_aliases, _, _ = await resolve_aliases_with_llm(["sour cream"], pantry, manager)
+        assert "sour cream" in second_aliases, "cache handed out its own mutable entry"
+        assert manager.complete.await_count == 1, "should still be a cache hit"
 
 
 class TestCompoundSuggestions:
