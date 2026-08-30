@@ -51,7 +51,7 @@ Skills read ADRs to understand *why* architectural decisions were made. This pre
 ```
 
 ### docs/plans/
-**Read by**: `zoom-out`, manual reference
+**Read by**: manual reference
 
 Skills don't automatically consume plans; they're for human reference and audit trail. Plans should document:
 - Feature scope

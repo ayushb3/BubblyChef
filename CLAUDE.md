@@ -408,6 +408,18 @@ Default mattpocock vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, 
 
 Single-context — `CONTEXT.md` at repo root, `docs/adr/` for architectural decisions. See `docs/agents/domain.md`.
 
+### Skills
+
+Vendored in-repo at `.claude/skills/<name>/`, committed, pinned in
+`skills-lock.json`. They are **not** installed per-machine — a skill that lives
+only in `~/.claude/skills/` does not exist in a fresh clone or in Claude Code on
+the web, which is where most implementation work happens.
+
+The full map is `WORKFLOW.md` §9. Every command named in this file exists there.
+Renamed upstream and no longer valid: `/to-prd` (now `/to-spec`), `/to-issues`
+(now `/to-tickets`), `/diagnose` (now `/diagnosing-bugs`), `/write-a-skill` (now
+`/writing-for-agents`). `/caveman` and `/zoom-out` are gone entirely.
+
 ### Agent roles
 
 `pm`, `backend`, `frontend`, `ui-ux`, `qa-reviewer` — one file per role under

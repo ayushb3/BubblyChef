@@ -204,16 +204,36 @@ house-rules section. Full source: pstack's `principle-*` skills in `cursor/plugi
 |---|---|---|
 | Planning/tracking | `wayfinder`, `triage`, `to-spec`, `to-tickets`, `handoff` | mattpocock |
 | Build | `implement`, `tdd`, `codebase-design`, `domain-modeling` | mattpocock |
+| Debugging | `diagnosing-bugs` | mattpocock |
 | Review | `code-review` (mattpocock) + `interrogate`, `thermo-nuclear-code-quality-review` (ported) | both |
 | Understanding (PM-facing) | `how` (codebase walkthroughs), `why` (decision archaeology), `blast-radius` (pre-emptive break-check) | ported from `cursor/plugins` (pstack) |
 | Process hygiene | `show-me-your-work` (legible decision trail on long/unattended runs), `figure-it-out` (fallback for one-off asks outside the ticket pipeline) | ported from `cursor/plugins` (pstack) |
 | Self-tuning | `automate-me` (mines your own conversations to keep this doc/`CLAUDE.md` accurate as your style evolves) | ported from `cursor/plugins` (pstack) |
+| Setup / authoring | `setup-matt-pocock-skills`, `writing-for-agents`, `grill-me`, `grill-with-docs`, `improve-codebase-architecture` | mattpocock |
 | House rules | see §8 | `cursor/plugins` `principle-*`, folded into prose, not installed as skills |
 
-All mattpocock skills install the standard way (see `setup-matt-pocock-skills`). The
-ported skills live at `~/Code/.agents/skills/<name>/` — same mechanism, vendored by
-hand from `cursor/plugins` (commit `a8145426e541afa424a403e3866496216c1b8142` at time
-of porting) since they don't have an installer of their own.
+Every skill named above is **vendored into this repo** at `.claude/skills/<name>/`
+and committed. That is the whole point: a lock file installs nothing, and skills
+that live only in `~/.claude/skills/` do not exist in a fresh clone or in Claude
+Code on the web. Anything in this table that isn't in `.claude/skills/` is a bug in
+this table.
+
+`skills-lock.json` records, per skill, where it came from and a sha256 of its
+`SKILL.md` (LF endings --- `.gitattributes` pins that, or a Windows checkout
+invalidates every hash). To update a mattpocock skill, re-fetch the `skillPath`
+recorded in the lock and update its hash.
+
+- **mattpocock skills** are pinned to `mattpocock/skills@6654f6b`.
+- **Ported skills** came from `cursor/plugins` (pstack) at commit
+  `a8145426e541afa424a403e3866496216c1b8142`. They have no upstream installer, so
+  the vendored copy here is the only source of record --- they are not re-fetchable.
+
+**Renamed and removed upstream** (the lock pinned a dead generation until
+2026-08-30): `to-prd` is now `to-spec`, `to-issues` is `to-tickets`, `diagnose` is
+`diagnosing-bugs`, `write-a-skill` is `writing-for-agents`. `caveman` and `zoom-out`
+were removed with no successor and are gone. Don't reintroduce the old names ---
+`/to-prd` and `/to-issues` are not commands any more.
+
 
 ## 10. What's explicitly skipped
 
@@ -236,3 +256,10 @@ already-adopted principles. Revisit if the gap becomes real.
 *Vendored from `~/Code/.project-template/WORKFLOW.md`. This project may diverge
 deliberately over time — if it does, note the divergence here rather than silently
 drifting.*
+
+**Divergences from the template, as of 2026-08-30:**
+
+- **Skills are vendored in-repo** (§9) rather than installed per-machine via
+  `setup-matt-pocock-skills`. The template assumes every operator installs the
+  skills locally; that assumption breaks the moment work is handed to a remote or
+  web session, which is most of the implementation work here.
