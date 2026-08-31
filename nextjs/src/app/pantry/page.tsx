@@ -3,8 +3,8 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { motion, useReducedMotion } from 'framer-motion'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import SpringButton from '@/components/ui/SpringButton'
 import FadeInView from '@/components/ui/FadeInView'
 import BubblesHeader from '@/components/layout/BubblesHeader'
@@ -12,21 +12,15 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 import AddItemModal from '@/components/pantry/AddItemModal'
 import ThemePicker from '@/components/ui/ThemePicker'
 import PantryAddSheet, { type PantryAddTab } from '@/components/pantry/PantryAddSheet'
+import ResolveActions from '@/components/pantry/ResolveActions'
+import SwipeToResolve from '@/components/pantry/SwipeToResolve'
+import { resolvePantryItem, type ResolveOutcome } from '@/lib/api/pantry'
+import type { PantryItem } from '@/types/pantry'
 import { getFoodEmoji } from '@/lib/food-emoji'
 import { titleCase } from '@/lib/format'
 import { cookThisHref } from '@/lib/chat-seed'
 import { daysUntilExpiry } from '@/lib/pantry-helpers'
 import Chip from '@/components/ui/Chip'
-
-interface PantryItem {
-  id: string
-  name: string
-  category: string
-  location: string
-  quantity: number
-  unit: string
-  expiry_date: string | null
-}
 
 // Category card tints — dedicated --color-cat-* tokens (globals.css). These must
 // never reference expiry/status tokens (fresh/expiring/expired): status signals
@@ -113,6 +107,9 @@ function PantryPageInner() {
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   const router = useRouter()
+  // A gesture whose only feedback is movement isn't usable without motion, so
+  // reduced-motion users get the button affordance on every card (#140).
+  const prefersReduced = useReducedMotion()
 
   const { data, isLoading } = useQuery({
     queryKey: ['pantry', {}],
@@ -182,6 +179,21 @@ function PantryPageInner() {
   const handleItemsAdded = () => {
     queryClient.invalidateQueries({ queryKey: ['pantry'] })
   }
+
+  // Resolving deletes the pantry row and writes an append-only event, so the
+  // list is refetched rather than patched: the server is the authority on what
+  // is left, and an optimistic removal would have to be un-removed on failure.
+  const resolveMutation = useMutation({
+    mutationFn: ({ id, outcome }: { id: string; outcome: ResolveOutcome }) =>
+      resolvePantryItem(id, outcome),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pantry'] })
+    },
+  })
+
+  const resolvingId = resolveMutation.isPending
+    ? resolveMutation.variables?.id
+    : undefined
 
   return (
     <div className="min-h-screen pb-24">
@@ -258,7 +270,12 @@ function PantryPageInner() {
                   {grouped[cat].map((item, i) => {
                     const days = daysUntilExpiry(item.expiry_date)
                     const badge = expiryBadge(days)
-                    return (
+                    // Expired or expiring gets the visible buttons; everything
+                    // else resolves by swipe, so normal cards stay clean (#140).
+                    const urgent = isUrgent(days) || (days !== null && days < 0)
+                    const showButtons = urgent || prefersReduced
+                    const pending = resolvingId === item.id
+                    const card = (
                       // Wrapper is a div, not a button: an urgent item nests a
                       // "Cook this" link, and a link inside a button is invalid.
                       <motion.div
@@ -309,7 +326,32 @@ function PantryPageInner() {
                             🍳 Cook this
                           </Link>
                         )}
+
+                        {showButtons && (
+                          <ResolveActions
+                            itemName={item.name}
+                            pending={pending}
+                            onResolve={(outcome) =>
+                              resolveMutation.mutate({ id: item.id, outcome })
+                            }
+                          />
+                        )}
                       </motion.div>
+                    )
+
+                    if (showButtons) return card
+
+                    return (
+                      <SwipeToResolve
+                        key={item.id}
+                        itemName={item.name}
+                        pending={pending}
+                        onResolve={(outcome) =>
+                          resolveMutation.mutate({ id: item.id, outcome })
+                        }
+                      >
+                        {card}
+                      </SwipeToResolve>
                     )
                   })}
                 </div>
