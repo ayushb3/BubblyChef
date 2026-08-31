@@ -14,6 +14,42 @@ the skill.
 Do exactly one issue per invocation. If asked to "clear the queue", run this
 skill once per issue, not as a batch.
 
+## Run budget — check as you go, not at the end
+
+Unattended, the failure mode is a run that never admits it's stuck. Stop and take
+the give-up path below when any of these trips:
+
+- **The same quality gate fails three times running.** Three failures on one gate
+  means the diagnosis is wrong, and a fourth attempt is a guess. This is the
+  common runaway.
+- **More than eight delegation round trips**, counting every subagent spawned. A
+  well-sliced ticket takes two or three. Eight means the ticket was under-sliced
+  or the approach is wrong.
+- **More than roughly an hour of wall clock**, or your context filling with tool
+  output rather than orchestration decisions (§5 PM hygiene).
+- **The ticket needs something you cannot do** — credentials, a production
+  migration (see §3.1), or a judgment call the issue doesn't settle.
+
+These are ceilings, not targets. Most tickets finish well under all of them.
+Waiting on CI in §6 does not count against the wall clock.
+
+### The give-up path
+
+Quitting cleanly is a good outcome. A half-implemented ticket that silently
+consumed a budget is not. In order:
+
+1. Commit and **push the branch anyway**, even broken. Never delete it — the next
+   run should start from what you learned, not from zero.
+2. Comment on the issue: what you tried, where it stopped, what you'd need to
+   continue. Specific enough to be a head start.
+3. Unassign yourself, and relabel `needs-info` if the blocker is the ticket rather
+   than the code.
+4. Report to the human, naming the ceiling you hit.
+
+Do **not** open a PR for abandoned work. A draft PR is a claim that something is
+ready to look at — that's what §6 uses drafts for, and a stuck run must not look
+like a run waiting on review.
+
 ## 1. Pick the issue
 
 Pull the queue and take the **highest-priority open `ready-for-agent`** issue:
@@ -92,6 +128,45 @@ Route by ownership boundary (`.claude/agents/` + `docs/agents/roles/`):
 - Where there's a natural test seam, tell the dev role to use `/tdd`. Reviewing
   is `/code-review` (§7), run before the PR.
 
+### 3.1 Hard stop: database migrations
+
+**If the work adds or changes a file under `supabase/migrations/`, this PR cannot
+merge from an agent session under any circumstance — including a sub-PR that §6
+would otherwise let you mark ready and merge on green.**
+
+Applying a migration needs a Postgres password or a Supabase personal access
+token. An agent session has neither: `ai-service/.env` carries PostgREST API keys,
+and PostgREST has no arbitrary-SQL endpoint. So the migration cannot be applied,
+and therefore cannot be verified. Meanwhile `main` auto-deploys to Vercel —
+merging first puts code live against a schema that lacks the table, and every
+affected request 500s until a human runs the SQL.
+
+This is not hypothetical. PR #293 hit exactly this ordering problem with
+`00007_add_pantry_events.sql`.
+
+When a migration is in scope:
+
+1. Write it, and say so in the PR title or the first line of the summary.
+2. Add a **Migration** section to the PR body: filename, what it does in two or
+   three lines, and whether it is additive or destructive.
+3. Treat the PR as feature-level regardless of how many role boundaries it
+   touches.
+4. Tell the human it needs applying **before** merge, and give both routes — the
+   Supabase dashboard SQL Editor, or `supabase db push`.
+5. Do not merge. Do not `gh pr ready`. Wait.
+
+You can check whether a table already exists without any of the missing
+credentials, which is worth doing before assuming the work is needed:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" \
+  "$BUBBLY_SUPABASE_URL/rest/v1/<table>?select=id&limit=1" \
+  -H "apikey: $BUBBLY_SUPABASE_SECRET_KEY" \
+  -H "Authorization: Bearer $BUBBLY_SUPABASE_SECRET_KEY"
+```
+
+`200` means it exists; `404` with `PGRST205` means it does not. Read-only.
+
 ## 4. Quality gates (before any commit)
 
 Run these from `CLAUDE.md`. All must pass:
@@ -169,6 +244,10 @@ Then:
   push. Never mark ready on red.
 
 When unsure which bucket an issue is in, treat it as feature-level and wait.
+
+**A migration overrides all three bullets.** If the diff touches
+`supabase/migrations/`, it stays draft and waits for the human however small,
+single-boundary or green it is. See §3.1.
 
 **If the run ends before CI finishes** — the session is cut short, the watch
 times out — leave the PR as draft and say so explicitly in the handoff: *"draft

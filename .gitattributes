@@ -1,0 +1,7 @@
+# Vendored agent skills are hash-pinned in skills-lock.json, and the hash is taken
+# over the file's bytes. This repo is worked on from Windows with core.autocrlf on,
+# which would rewrite every skill at checkout and fail every hash for a reason that
+# has nothing to do with the skill's contents. Pin them to LF on every platform.
+.claude/skills/** text eol=lf
+.claude/hooks/**  text eol=lf
+skills-lock.json  text eol=lf
