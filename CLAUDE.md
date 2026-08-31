@@ -224,7 +224,7 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 **Live at:** https://bubbly-chef.vercel.app
 
 **Done:**
-- Phase 1 + 2: pantry CRUD, receipt scanning, recipe generation, chat intent router, DOM kitchen scene, milestone decorations, 454+ tests
+- Phase 1 + 2: pantry CRUD, receipt scanning, recipe generation, chat intent router, 454+ tests
 - Migration: Next.js + Supabase + FastAPI AI microservice (three-tier)
 - Recipe library UI: save, search, edit, delete, favourite
 - Phase 7: Deployed to Vercel + Railway; Gemini Vision OCR; all core features working in production
@@ -380,6 +380,17 @@ the same credential differently.
 - `mutating` state in RecipeBook — buttons not yet `disabled={mutating}`
 - iOS Safari bottom nav bug — issue #4
 - Recipe generation ignores constraint modifications from chat follow-up — BubblyChef-747
+- The `decorations` table and `GET /api/decorations` exist, but nothing in
+  `nextjs/src` consumes them and there is no kitchen-scene component — the
+  milestone/decoration feature is a backend stub with no UI. The gamification
+  and live-kitchen design that would build on it is held (high risk, medium
+  value, not MVP) — see PR #124
+- Chat can't be told to ignore the pantry, and the instruction is lost on the
+  next turn — issue #287
+- Expiring items are forced into every suggestion regardless of whether they
+  suit the dish — issue #288
+- Chat only ever proposes a single all-in-one dish; there is no notion of a
+  meal with separate components — issue #289
 
 ---
 
@@ -427,7 +438,7 @@ See `WORKFLOW.md` §7.
 
 ---
 
-*Last updated: 2026-07-11*
+*Last updated: 2026-08-30*
 
 
 ## Issue Tracking

@@ -32,6 +32,11 @@ jobs:
       - name: TypeScript
         run: npx tsc --noEmit
 
+      # Without this gate the error count drifts upward unnoticed — it had reached
+      # 8 before anyone looked (#149). Warnings stay non-fatal; errors fail the build.
+      - name: ESLint
+        run: npx eslint src/ --max-warnings=-1
+
       - name: Jest
         run: npm test -- --ci
 

@@ -95,6 +95,21 @@ class RecipeConstraints(BaseModel):
             "every suggestion must actually use these."
         ),
     )
+    use_pantry: bool | None = Field(
+        default=None,
+        description=(
+            "Whether to ground suggestions in the user's pantry. False when the user "
+            "asks us not to look at it ('don't look at my pantry', 'ignore what I "
+            "have'); True when they ask us to start using it again. None means they "
+            "did not say either way, which is what lets a previous turn's choice "
+            "survive instead of being overwritten by every silent turn."
+        ),
+    )
+
+    @property
+    def pantry_grounded(self) -> bool:
+        """True unless the user explicitly opted out. None (unstated) means grounded."""
+        return self.use_pantry is not False
 
 
 class IngredientAvailability(BaseModel):
