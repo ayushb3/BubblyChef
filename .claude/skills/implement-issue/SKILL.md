@@ -253,7 +253,8 @@ single-boundary or green it is. See §3.1.
 times out — leave the PR as draft and say so explicitly in the handoff: *"draft
 pending CI, sub-PR, ready to flip when green."* A draft PR left silently behind
 green CI reads as "the agent judged this needs a human", which is the opposite of
-what happened. Only the two bullets above may leave a PR in draft on purpose.
+what happened. Only the deliberate cases above — feature-level, CI red, and a
+migration — may leave a PR in draft on purpose.
 
 ## Worked example (do not implement here)
 
