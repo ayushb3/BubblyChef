@@ -24,6 +24,43 @@ Stop and say so if any of these is true:
 - The user named an issue that isn't `ready-for-agent`. Say what label it actually
   carries and ask. Don't relabel it yourself to unblock the skill.
 
+## Run budget — check this as you go, not at the end
+
+**One issue per invocation.** Having finished or abandoned one, stop. Do not pick
+up a second, even if the queue is full and the run went well. A human decides
+whether to go again.
+
+Stop and take the give-up path below when any of these trips:
+
+- **The same quality gate fails three times running.** Three failures on one gate
+  means the diagnosis is wrong, and a fourth attempt is a guess. This is the
+  common runaway.
+- **More than eight delegation round trips**, counting every subagent you spawn. A
+  well-sliced ticket takes two or three. Eight means the ticket was mis-sliced or
+  the approach is wrong.
+- **More than roughly an hour of wall clock**, or the context window is visibly
+  filling with tool output rather than decisions.
+- **The ticket turns out to need something you cannot do** — credentials, a
+  production migration, a judgment call the issue doesn't settle.
+
+These are ceilings, not targets. Most tickets finish well under all of them.
+
+### The give-up path
+
+Quitting cleanly is a good outcome. A half-implemented ticket that silently
+consumed a budget is not. In order:
+
+1. Commit and **push the branch anyway**, even broken. Never delete it — the next
+   run should start from what you learned, not from zero.
+2. Comment on the issue: what you tried, where it stopped, what you'd need to
+   continue. Be specific enough that it's a head start.
+3. Unassign yourself and relabel `needs-info` if the blocker is the ticket itself
+   rather than the code.
+4. Report to the human, naming the ceiling you hit.
+
+Do **not** open a PR for abandoned work. A draft PR is a claim that something is
+ready to look at.
+
 ## 1. Pick the issue
 
 ```bash
@@ -108,6 +145,42 @@ contract that then changes. Parallelise only genuinely independent slices.
 Give each role: the issue number and acceptance criteria, the context summary from
 step 4, its ownership boundary, and an instruction to write tests alongside.
 
+### Hard stop: database migrations
+
+**If the work adds or changes a file under `supabase/migrations/`, this PR cannot
+merge from an agent session under any circumstance — including a sub-PR that §8
+would otherwise let you self-merge.**
+
+Applying a migration needs a Postgres password or a Supabase personal access
+token. An agent session has neither: `ai-service/.env` carries PostgREST API keys,
+and PostgREST has no arbitrary-SQL endpoint, so the migration cannot be applied and
+therefore cannot be verified. Merging first inverts the order — `main` auto-deploys
+to Vercel, so the code goes live against a schema that lacks the table and every
+affected request 500s until a human runs the SQL.
+
+When a migration is in scope:
+
+1. Write it, and say so in the PR title or the first line of the summary.
+2. Add a **Migration** section to the PR body: the filename, what it does in two or
+   three lines, and whether it is additive or destructive.
+3. Set the PR to feature-level regardless of how many role boundaries it touches.
+4. Tell the human it needs applying **before** merge, and give both routes —
+   Supabase dashboard SQL Editor, or `supabase db push`.
+5. Do not merge. Do not mark ready. Wait.
+
+You can confirm whether a table already exists without any of those credentials,
+which is worth doing before assuming the work is needed:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" \
+  "$BUBBLY_SUPABASE_URL/rest/v1/<table>?select=id&limit=1" \
+  -H "apikey: $BUBBLY_SUPABASE_SECRET_KEY" \
+  -H "Authorization: Bearer $BUBBLY_SUPABASE_SECRET_KEY"
+```
+
+`200` means it exists, `404` with `PGRST205` means it does not. Read-only, and it
+tells you nothing a schema file wouldn't.
+
 ## 6. Quality gates, before committing
 
 ```bash
@@ -191,6 +264,10 @@ From `WORKFLOW.md` §6:
 Most things this skill picks up are feature-level, because a `ready-for-agent`
 ticket is usually a top-level ticket. **When unsure, treat it as feature-level.**
 Waiting costs a message; merging a wrong feature costs a revert.
+
+**A migration overrides all of this.** If the diff touches `supabase/migrations/`,
+it waits for the human no matter how small or single-boundary it looks. See the
+hard stop in step 5.
 
 When a merge is authorised, use a real merge commit (`gh pr merge --merge`), never
 squash — `WORKFLOW.md` §4 depends on the individual commits surviving.
