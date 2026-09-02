@@ -201,14 +201,15 @@ async def parse_description_llm(state: ProductWorkflowState) -> ProductWorkflowS
 
 def normalize_product(state: ProductWorkflowState) -> ProductWorkflowState:
     """
-    Node: Normalize product item (deterministic).
+    Node: resolve category/expiry metadata for a product item (deterministic).
 
-    Uses domain/normalizer.py's ``normalize_food_name`` (head-noun matcher)
-    instead of tools/normalizer.py's ``FoodNormalizer.normalize`` (bidirectional
-    substring), for the same reason receipt ingest does — see
-    ``receipt_ingest.normalize_receipt_items``. The bidirectional matcher
-    collapses distinct products ("milk chocolate" -> "milk") because any
-    synonym that is a substring of the input (or vice versa) wins.
+    The display name is written to the pantry unchanged — see issue #257.
+    ``normalize_food_name`` is a *match key* for internal lookups (category,
+    expiry heuristics), not a display-name rewriter: it used to overwrite
+    "chicken" with "chicken breast" and similar, which is data loss the user
+    never asked for. It is still used here, but only to resolve those internal
+    lookups; ``normalized_name`` never reaches the ``name`` field written to
+    the pantry row. Same reasoning as ``receipt_ingest.normalize_receipt_items``.
     """
     parsed_items = state.get("parsed_items", [])
 
@@ -226,7 +227,8 @@ def normalize_product(state: ProductWorkflowState) -> ProductWorkflowState:
         name = item.get("name", "")
         original_name = name
 
-        # Normalize name through the head-noun matcher in domain/normalizer.py.
+        # Match key only (category/expiry lookups below) — never written back
+        # as the display name. See the node docstring.
         normalized_name = normalize_food_name(name)
 
         # Get category: prefer a known source (OpenFoodFacts's own category, or
@@ -251,7 +253,7 @@ def normalize_product(state: ProductWorkflowState) -> ProductWorkflowState:
 
         normalized_item = {
             **item,
-            "name": normalized_name,
+            "name": name,
             "original_name": original_name,
             "category": category.value,
             "storage_location": storage.value,
