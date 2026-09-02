@@ -67,6 +67,12 @@ export type IngredientMatchStatus =
   | 'ready'
   | 'substitute'
   | 'shortfall'
+  /**
+   * The pantry has the ingredient, but the recipe counts pieces of it
+   * (4 slices) against a row counting packages (1 loaf). Satisfied for
+   * cook-readiness; nothing is deducted. See #222.
+   */
+  | 'imprecise'
   | 'unit_conflict'
   | 'missing'
 

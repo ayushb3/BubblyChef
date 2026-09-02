@@ -386,6 +386,24 @@ describe('summariseDeductions (#245)', () => {
     expect(skipped).toEqual([{ name: 'garlic', reason: 'needs_quantity' }])
   })
 
+  // #222 — an imprecise row is satisfied, not a gap the user can close.
+  it('reports an imprecise row under its own reason, never as needs_quantity', () => {
+    const p = proposalOf([
+      match({ ingredient_name: 'bread', pantry_item_id: 'p1', status: 'imprecise', deduct_qty: null }),
+    ])
+    const { deductions, skipped, matchedCount } = summariseDeductions(p, {})
+    expect(matchedCount).toBe(1)
+    expect(deductions).toHaveLength(0)
+    expect(skipped).toEqual([{ name: 'bread', reason: 'imprecise' }])
+  })
+
+  it('never deducts an imprecise row, even with a stray override typed in', () => {
+    const p = proposalOf([
+      match({ ingredient_name: 'basil', pantry_item_id: 'p2', status: 'imprecise', deduct_qty: null }),
+    ])
+    expect(summariseDeductions(p, { '0': '8' }).deductions).toHaveLength(0)
+  })
+
   it('includes a unit_conflict row once the user supplies a quantity', () => {
     const p = proposalOf([
       match({ ingredient_name: 'garlic', pantry_item_id: 'p2', status: 'unit_conflict', deduct_qty: null }),
