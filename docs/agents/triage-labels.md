@@ -1,6 +1,6 @@
 # Triage Label Vocabulary
 
-These are the canonical label names used by the mattpocock engineering skills (`triage`, `to-issues`, `diagnose`, etc.). When these skills process or create issues, they apply these labels.
+These are the canonical label names used by the mattpocock engineering skills (`triage`, `to-tickets`, `diagnosing-bugs`, etc.). When these skills process or create issues, they apply these labels.
 
 ## The Five Canonical Roles
 

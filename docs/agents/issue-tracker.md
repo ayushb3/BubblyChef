@@ -4,7 +4,7 @@ This project tracks work in **GitHub Issues** on https://github.com/ayushb3/Bubb
 
 ## How Skills Interact
 
-Skills like `to-issues`, `triage`, `to-prd`, and `diagnose` read/write issues via the GitHub CLI (`gh`).
+Skills like `to-tickets`, `triage`, `to-spec`, and `diagnosing-bugs` read/write issues via the GitHub CLI (`gh`).
 
 ### Reading Issues
 Skills call:

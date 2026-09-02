@@ -396,6 +396,18 @@ the same credential differently.
 
 ## Agent skills
 
+**Installed skills live in `.claude/skills/`, committed to the repo** — so they work
+in a fresh clone, in CI, and in cloud sessions, not just on a configured laptop.
+27 skills vendored — 19 from `mattpocock/skills`, 8 from `cursor/plugins`.
+`skills-lock.json` records each upstream commit and per-skill hashes for drift
+detection. See `WORKFLOW.md` §9.
+
+Most-used: `/implement-issue` (this project's pickup skill — grab the next
+`ready-for-agent` issue, branch, delegate, gate, open a draft PR),
+`/implement` (build from a ticket — wraps `tdd` + `code-review`),
+`/to-spec` → `/to-tickets` (plan), `/triage` (label state machine),
+`/wayfinder` (chart unknown-shaped work), `/diagnosing-bugs`, `/handoff`.
+
 ### Issue tracker
 
 Issues are tracked in GitHub Issues at https://github.com/ayushb3/BubblyChef. See `docs/agents/issue-tracker.md`.
@@ -418,8 +430,11 @@ add a new one.
 ### Review
 
 `/code-review` on every PR; `/interrogate` before merging a feature-level PR;
-`thermo-nuclear-code-quality-review` fires automatically as a `PreToolUse` hook at
-`gh pr create`/`gh pr merge` time. See `WORKFLOW.md` §7.
+`thermo-nuclear-review` fires automatically as a `PreToolUse` hook when a PR is
+about to be created or merged — via the `gh` CLI *or* the GitHub MCP tools. It is a
+gate: the call is denied until the review is recorded for the current HEAD. Hook
+script `.claude/hooks/pr-review-gate.sh`, registered in `.claude/settings.json`.
+See `WORKFLOW.md` §7.
 
 ---
 
