@@ -501,7 +501,7 @@
     "fdc_id": 335240
   },
   {
-    "canonical": "loin beef",
+    "canonical": "beef loin",
     "synonyms": [
       "beef, loin, tenderloin roast, separable lean only, boneless, trimmed to 0\" fat, select, cooked, roasted",
       "beef loin",
@@ -517,7 +517,7 @@
     "fdc_id": 746758
   },
   {
-    "canonical": "round beef",
+    "canonical": "beef round",
     "synonyms": [
       "beef, round, eye of round roast, boneless, separable lean only, trimmed to 0\" fat, select, raw",
       "beef round",
@@ -530,7 +530,7 @@
     "fdc_id": 746760
   },
   {
-    "canonical": "short loin beef",
+    "canonical": "beef short loin",
     "synonyms": [
       "beef, short loin, porterhouse steak, separable lean only, trimmed to 1/8\" fat, select, raw",
       "beef short loin",
@@ -557,7 +557,7 @@
     "fdc_id": 746764
   },
   {
-    "canonical": "dry white cheese",
+    "canonical": "queso seco",
     "synonyms": [
       "cheese, dry white, queso seco",
       "cheese dry white",
@@ -2260,7 +2260,7 @@
     "fdc_id": 2644281
   },
   {
-    "canonical": "(garbanzo beans chickpeas",
+    "canonical": "chickpeas",
     "synonyms": [
       "chickpeas, (garbanzo beans, bengal gram), dry",
       "chickpeas",
@@ -2318,7 +2318,7 @@
     "fdc_id": 2644286
   },
   {
-    "canonical": "bengal gram) chickpeas (garbanzo beans",
+    "canonical": "canned chickpeas",
     "synonyms": [
       "chickpeas (garbanzo beans, bengal gram), canned, sodium added, drained and rinsed",
       "chickpeas (garbanzo beans bengal gram)",
@@ -2422,7 +2422,7 @@
     "fdc_id": 2646168
   },
   {
-    "canonical": "breast chicken",
+    "canonical": "chicken breast",
     "synonyms": [
       "chicken, breast, boneless, skinless, raw",
       "breast"
@@ -2432,7 +2432,7 @@
     "fdc_id": 2646170
   },
   {
-    "canonical": "thigh chicken",
+    "canonical": "chicken thighs",
     "synonyms": [
       "chicken, thigh, boneless, skinless, raw",
       "chicken thigh",
@@ -2443,7 +2443,7 @@
     "fdc_id": 2646171
   },
   {
-    "canonical": "ribeye beef",
+    "canonical": "beef ribeye",
     "synonyms": [
       "beef, ribeye, steak, boneless, choice, raw",
       "beef ribeye",
@@ -2454,7 +2454,7 @@
     "fdc_id": 2646172
   },
   {
-    "canonical": "chuck beef",
+    "canonical": "beef chuck",
     "synonyms": [
       "beef, chuck, roast, boneless, choice, raw",
       "beef chuck",
@@ -2467,7 +2467,7 @@
     "fdc_id": 2646174
   },
   {
-    "canonical": "flank beef",
+    "canonical": "beef flank",
     "synonyms": [
       "beef, flank, steak, boneless, choice, raw",
       "beef flank",
@@ -2490,7 +2490,7 @@
     "fdc_id": 2647438
   },
   {
-    "canonical": "pasteurized process cheese food or product cheese",
+    "canonical": "american cheese singles",
     "synonyms": [
       "cheese, pasteurized process cheese food or product, american, singles",
       "cheese pasteurized process cheese food or product",
@@ -3248,7 +3248,7 @@
     "fdc_id": 2727571
   },
   {
-    "canonical": "short loin (ny strip steak) beef",
+    "canonical": "beef short loin (ny strip steak)",
     "synonyms": [
       "beef, short loin (ny strip steak), raw",
       "beef short loin (ny strip steak)",
@@ -3260,7 +3260,7 @@
     "fdc_id": 2727572
   },
   {
-    "canonical": "tenderloin steak beef",
+    "canonical": "beef tenderloin steak",
     "synonyms": [
       "beef, tenderloin steak, raw",
       "beef tenderloin steak",
@@ -3271,7 +3271,7 @@
     "fdc_id": 2727573
   },
   {
-    "canonical": "top sirloin steak beef",
+    "canonical": "beef top sirloin steak",
     "synonyms": [
       "beef, top sirloin steak, raw",
       "beef top sirloin steak",
@@ -3591,7 +3591,7 @@
     "fdc_id": 2747659
   },
   {
-    "canonical": "banana or hungarian wax peppers",
+    "canonical": "banana peppers",
     "synonyms": [
       "peppers, banana or hungarian wax, seeded, raw",
       "peppers banana or hungarian wax",
