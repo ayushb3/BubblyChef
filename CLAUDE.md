@@ -272,6 +272,16 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 
 **Session orientation:** Read `ROADMAP.md` for current phase + open issues.
 
+**Never cite a bare issue or PR number.** Every time you mention an issue or PR
+in conversation — in a status table, a recommendation, a batch summary, a merge
+suggestion — give a one-line summary of what it actually is alongside the number,
+in plain language rather than the title verbatim. `#288` is useless on its own;
+"#288 — brainstorming forces expiring fruit into savoury dishes" is reviewable
+without leaving the terminal. For a PR, say what the change does and what it
+affects, so a merge decision can be made from the message itself. This applies
+however many you list: a table of ten issues gets ten summaries. The point is
+that the human never has to open GitHub to follow what you're proposing.
+
 **Full workflow reference:** See `WORKFLOW.md` at the repo root for the complete
 process model (issue lifecycle, autonomy gate, layered review, orchestration
 depth), and `docs/WORKFLOW.md` for BubblyChef's own operational quick-reference
