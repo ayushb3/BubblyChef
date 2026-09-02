@@ -151,28 +151,35 @@ GET               /api/foods/search
 
 ### AI microservice routes (`http://localhost:8888`)
 
+Every AI-service route sits under a `/v1` prefix except the health checks.
+
 ```
 GET   /health | /health/ai
 
 # Chat (LangGraph intent router)
-POST  /v1/chat
-GET   /v1/chat/history
+POST  /v1/chat/stream                    # SSE — the path the UI actually uses
+POST  /v1/chat                           # non-streaming fallback
+GET   /v1/chat/history/{conversation_id}
+GET   /v1/chat/sessions
 
 # Scan (OCR + AI parse)
-GET   /scan/ocr-status
-POST  /scan/preprocess
-POST  /scan/receipt
-POST  /scan/confirm
+POST  /v1/scan/receipt
 
-# Recipe generation
-POST  /recipes/generate
-GET   /recipes/suggestions
+# Recipes (generation + cook/deduction)
+POST  /v1/recipes/generate
+POST  /v1/recipes/refine
+POST  /v1/recipes/cook
+POST  /v1/recipes/cook/confirm
 
-# Ingest workflows
-POST  /ingest/chat | /ingest/receipt | /ingest/product | /ingest/recipe
+# Pantry estimation helpers (called by the Next.js write paths)
+POST  /v1/pantry/estimate-expiry
+POST  /v1/pantry/estimate-category
+
+# Unified ingest dispatcher (receipt + barcode + URL)
+POST  /v1/ingest
 
 # Apply proposal (human-reviewed → DB)
-POST  /apply
+POST  /v1/workflows/apply
 ```
 
 ---
