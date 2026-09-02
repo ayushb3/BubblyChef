@@ -141,7 +141,11 @@ def test_genuine_lookups_still_resolve_category(name: str, expected_category: st
         ("garlic", "🧄"),
         ("olive oil", "🫒"),
         ("peanut butter", "🥜"),
-        ("chicken breast", "🐔"),
+        # #300: every chicken CUT (breast, thighs, ground, drumstick, wing) is
+        # now consistently the meat emoji, not the live-bird emoji — a package
+        # of chicken breast is not a live chicken. See test_issue_300 for the
+        # full-catalog emoji regeneration this value came out of.
+        ("chicken breast", "🍗"),
     ],
 )
 def test_genuine_lookups_still_resolve_emoji(name: str, expected_emoji: str) -> None:

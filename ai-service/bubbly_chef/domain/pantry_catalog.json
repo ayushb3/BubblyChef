@@ -7,7 +7,7 @@
       "hummus commercial"
     ],
     "category": "dry_goods",
-    "emoji": "🌾",
+    "emoji": "🫘",
     "fdc_id": 321358
   },
   {
@@ -20,7 +20,7 @@
       "grape"
     ],
     "category": "produce",
-    "emoji": "🍇",
+    "emoji": "🍅",
     "fdc_id": 321360
   },
   {
@@ -37,7 +37,7 @@
       "snap"
     ],
     "category": "produce",
-    "emoji": "🫰",
+    "emoji": "🫛",
     "fdc_id": 321611
   },
   {
@@ -50,7 +50,7 @@
       "frankfurter unheated"
     ],
     "category": "meat",
-    "emoji": "🐮",
+    "emoji": "🌭",
     "fdc_id": 323121
   },
   {
@@ -86,7 +86,7 @@
       "egg whole"
     ],
     "category": "dairy",
-    "emoji": "🐣",
+    "emoji": "🥚",
     "fdc_id": 323604
   },
   {
@@ -96,7 +96,7 @@
       "egg white"
     ],
     "category": "dairy",
-    "emoji": "☺️",
+    "emoji": "🥚",
     "fdc_id": 323697
   },
   {
@@ -142,7 +142,7 @@
       "parmesan"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 325036
   },
   {
@@ -154,7 +154,7 @@
       "cheese vitamin d fortified"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 325198
   },
   {
@@ -168,7 +168,7 @@
       "grapefruit juice unsweetened"
     ],
     "category": "produce",
-    "emoji": "☺️",
+    "emoji": "🧃",
     "fdc_id": 325287
   },
   {
@@ -181,7 +181,7 @@
       "peaches raw"
     ],
     "category": "produce",
-    "emoji": "👩",
+    "emoji": "🍑",
     "fdc_id": 325430
   },
   {
@@ -196,7 +196,7 @@
       "kernels"
     ],
     "category": "snacks",
-    "emoji": "🌻",
+    "emoji": "🌰",
     "fdc_id": 325524
   },
   {
@@ -206,7 +206,7 @@
       "bread white"
     ],
     "category": "bakery",
-    "emoji": "☺️",
+    "emoji": "🍞",
     "fdc_id": 325871
   },
   {
@@ -220,7 +220,7 @@
       "prepared"
     ],
     "category": "condiments",
-    "emoji": "👩",
+    "emoji": "🫗",
     "fdc_id": 326698
   },
   {
@@ -233,7 +233,7 @@
       "kiwifruit raw"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🥝",
     "fdc_id": 327046
   },
   {
@@ -244,7 +244,7 @@
       "nectarines raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍑",
     "fdc_id": 327357
   },
   {
@@ -255,7 +255,7 @@
       "cheddar"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 328637
   },
   {
@@ -270,7 +270,7 @@
       "cottage"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 328841
   },
   {
@@ -285,7 +285,7 @@
       "mozzarella"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 329370
   },
   {
@@ -296,7 +296,7 @@
       "yolk"
     ],
     "category": "dairy",
-    "emoji": "🐣",
+    "emoji": "🥚",
     "fdc_id": 329596
   },
   {
@@ -310,7 +310,7 @@
       "greek"
     ],
     "category": "dairy",
-    "emoji": "🎭",
+    "emoji": "🥛",
     "fdc_id": 330137
   },
   {
@@ -320,7 +320,7 @@
       "oil coconut"
     ],
     "category": "condiments",
-    "emoji": "🌴",
+    "emoji": "🥥",
     "fdc_id": 330458
   },
   {
@@ -343,7 +343,7 @@
       "broilers"
     ],
     "category": "meat",
-    "emoji": "🕵️",
+    "emoji": "🍗",
     "fdc_id": 331960
   },
   {
@@ -356,7 +356,7 @@
       "pasta"
     ],
     "category": "condiments",
-    "emoji": "🍝",
+    "emoji": "🫗",
     "fdc_id": 332282
   },
   {
@@ -374,7 +374,7 @@
       "sliced"
     ],
     "category": "meat",
-    "emoji": "🥪",
+    "emoji": "🥓",
     "fdc_id": 332397
   },
   {
@@ -389,7 +389,7 @@
       "olives stuffed with pimiento"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🫒",
     "fdc_id": 332791
   },
   {
@@ -405,7 +405,7 @@
       "oatmeal"
     ],
     "category": "bakery",
-    "emoji": "🥣",
+    "emoji": "🍞",
     "fdc_id": 333008
   },
   {
@@ -420,7 +420,7 @@
       "tomatoes diced"
     ],
     "category": "produce",
-    "emoji": "🥫",
+    "emoji": "🍅",
     "fdc_id": 333281
   },
   {
@@ -431,7 +431,7 @@
       "haddock"
     ],
     "category": "seafood",
-    "emoji": "🐬",
+    "emoji": "🐟",
     "fdc_id": 333374
   },
   {
@@ -442,7 +442,7 @@
       "pollock"
     ],
     "category": "seafood",
-    "emoji": "🐬",
+    "emoji": "🐟",
     "fdc_id": 333476
   },
   {
@@ -458,7 +458,7 @@
       "fish drained solids"
     ],
     "category": "seafood",
-    "emoji": "🐬",
+    "emoji": "🐟",
     "fdc_id": 334194
   },
   {
@@ -473,7 +473,7 @@
       "chinese"
     ],
     "category": "other",
-    "emoji": "👲",
+    "emoji": "🍽️",
     "fdc_id": 334536
   },
   {
@@ -513,7 +513,7 @@
       "beef roasted"
     ],
     "category": "meat",
-    "emoji": "🐮",
+    "emoji": "🥩",
     "fdc_id": 746758
   },
   {
@@ -526,7 +526,7 @@
       "round"
     ],
     "category": "meat",
-    "emoji": "👏",
+    "emoji": "🥩",
     "fdc_id": 746760
   },
   {
@@ -540,7 +540,7 @@
       "beef trimmed to 1/8\" fat"
     ],
     "category": "meat",
-    "emoji": "🐮",
+    "emoji": "🥩",
     "fdc_id": 746762
   },
   {
@@ -553,7 +553,7 @@
       "carrots unprepared"
     ],
     "category": "produce",
-    "emoji": "🥶",
+    "emoji": "🥕",
     "fdc_id": 746764
   },
   {
@@ -565,7 +565,7 @@
       "cheese queso seco"
     ],
     "category": "dairy",
-    "emoji": "☺️",
+    "emoji": "🧀",
     "fdc_id": 746765
   },
   {
@@ -576,7 +576,7 @@
       "ricotta"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 746766
   },
   {
@@ -600,7 +600,7 @@
       "figs uncooked"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍒",
     "fdc_id": 746768
   },
   {
@@ -634,7 +634,7 @@
       "oranges navels"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍊",
     "fdc_id": 746771
   },
   {
@@ -647,7 +647,7 @@
       "lowfat"
     ],
     "category": "dairy",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 746772
   },
   {
@@ -660,7 +660,7 @@
       "pears bartlett"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍐",
     "fdc_id": 746773
   },
   {
@@ -674,7 +674,7 @@
       "table"
     ],
     "category": "condiments",
-    "emoji": "🏓",
+    "emoji": "🧂",
     "fdc_id": 746775
   },
   {
@@ -687,7 +687,7 @@
       "nonfat"
     ],
     "category": "dairy",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 746776
   },
   {
@@ -698,7 +698,7 @@
       "salsa"
     ],
     "category": "condiments",
-    "emoji": "💃",
+    "emoji": "🫗",
     "fdc_id": 746777
   },
   {
@@ -711,7 +711,7 @@
       "reduced"
     ],
     "category": "dairy",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 746778
   },
   {
@@ -728,7 +728,7 @@
       "breakfast"
     ],
     "category": "meat",
-    "emoji": "🍞",
+    "emoji": "🌭",
     "fdc_id": 746779
   },
   {
@@ -740,7 +740,7 @@
       "italian"
     ],
     "category": "meat",
-    "emoji": "🍝",
+    "emoji": "🌭",
     "fdc_id": 746780
   },
   {
@@ -753,7 +753,7 @@
       "sausage link or ground"
     ],
     "category": "meat",
-    "emoji": "🥓",
+    "emoji": "🌭",
     "fdc_id": 746781
   },
   {
@@ -767,7 +767,7 @@
       "milk with added vitamin d"
     ],
     "category": "dairy",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 746782
   },
   {
@@ -781,7 +781,7 @@
       "sausage raw"
     ],
     "category": "meat",
-    "emoji": "🦃",
+    "emoji": "🌭",
     "fdc_id": 746783
   },
   {
@@ -793,7 +793,7 @@
       "granulated"
     ],
     "category": "snacks",
-    "emoji": "🍿",
+    "emoji": "🍯",
     "fdc_id": 746784
   },
   {
@@ -821,7 +821,7 @@
       "american"
     ],
     "category": "dairy",
-    "emoji": "🗽",
+    "emoji": "🧀",
     "fdc_id": 747429
   },
   {
@@ -854,7 +854,7 @@
       "ketchup restaurant"
     ],
     "category": "produce",
-    "emoji": "🍽️",
+    "emoji": "🫗",
     "fdc_id": 747693
   },
   {
@@ -870,7 +870,7 @@
       "grade"
     ],
     "category": "dairy",
-    "emoji": "🐣",
+    "emoji": "🥚",
     "fdc_id": 747997
   },
   {
@@ -881,7 +881,7 @@
       "canola"
     ],
     "category": "condiments",
-    "emoji": "🪔",
+    "emoji": "🫗",
     "fdc_id": 748278
   },
   {
@@ -891,7 +891,7 @@
       "oil corn"
     ],
     "category": "condiments",
-    "emoji": "🍿",
+    "emoji": "🌽",
     "fdc_id": 748323
   },
   {
@@ -902,7 +902,7 @@
       "soybean"
     ],
     "category": "condiments",
-    "emoji": "🪔",
+    "emoji": "🫗",
     "fdc_id": 748366
   },
   {
@@ -943,7 +943,7 @@
       "stick"
     ],
     "category": "dairy",
-    "emoji": "🍢",
+    "emoji": "🧈",
     "fdc_id": 789828
   },
   {
@@ -977,7 +977,7 @@
       "flour bread"
     ],
     "category": "dry_goods",
-    "emoji": "🍞",
+    "emoji": "🌾",
     "fdc_id": 790146
   },
   {
@@ -987,7 +987,7 @@
       "flour rice"
     ],
     "category": "dry_goods",
-    "emoji": "🍣",
+    "emoji": "🌾",
     "fdc_id": 790214
   },
   {
@@ -1001,7 +1001,7 @@
       "flour fine meal"
     ],
     "category": "dry_goods",
-    "emoji": "🍿",
+    "emoji": "🌾",
     "fdc_id": 790276
   },
   {
@@ -1011,7 +1011,7 @@
       "onions red"
     ],
     "category": "produce",
-    "emoji": "🥵",
+    "emoji": "🧅",
     "fdc_id": 790577
   },
   {
@@ -1021,7 +1021,7 @@
       "onions yellow"
     ],
     "category": "produce",
-    "emoji": "👩",
+    "emoji": "🧅",
     "fdc_id": 790646
   },
   {
@@ -1044,7 +1044,7 @@
       "flour defatted"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 1104705
   },
   {
@@ -1055,7 +1055,7 @@
       "pastry"
     ],
     "category": "dry_goods",
-    "emoji": "🍥",
+    "emoji": "🌾",
     "fdc_id": 1104913
   },
   {
@@ -1065,7 +1065,7 @@
       "onions white"
     ],
     "category": "produce",
-    "emoji": "☺️",
+    "emoji": "🧅",
     "fdc_id": 1104962
   },
   {
@@ -1075,7 +1075,7 @@
       "bananas overripe"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍌",
     "fdc_id": 1105073
   },
   {
@@ -1086,7 +1086,7 @@
       "slightly"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍌",
     "fdc_id": 1105314
   },
   {
@@ -1097,7 +1097,7 @@
       "delicious"
     ],
     "category": "produce",
-    "emoji": "🥵",
+    "emoji": "🍎",
     "fdc_id": 1750339
   },
   {
@@ -1108,7 +1108,7 @@
       "fuji"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍎",
     "fdc_id": 1750340
   },
   {
@@ -1119,7 +1119,7 @@
       "gala"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍎",
     "fdc_id": 1750341
   },
   {
@@ -1142,7 +1142,7 @@
       "honeycrisp"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍎",
     "fdc_id": 1750343
   },
   {
@@ -1163,7 +1163,7 @@
       "oil sunflower"
     ],
     "category": "condiments",
-    "emoji": "🌻",
+    "emoji": "🫗",
     "fdc_id": 1750349
   },
   {
@@ -1174,7 +1174,7 @@
       "safflower"
     ],
     "category": "condiments",
-    "emoji": "🪔",
+    "emoji": "🫗",
     "fdc_id": 1750350
   },
   {
@@ -1196,7 +1196,7 @@
       "mushroom oyster"
     ],
     "category": "produce",
-    "emoji": "🥡",
+    "emoji": "🍄",
     "fdc_id": 1999627
   },
   {
@@ -1207,7 +1207,7 @@
       "shiitake"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍄",
     "fdc_id": 1999628
   },
   {
@@ -1218,7 +1218,7 @@
       "button"
     ],
     "category": "produce",
-    "emoji": "☺️",
+    "emoji": "🍄",
     "fdc_id": 1999629
   },
   {
@@ -1230,7 +1230,7 @@
       "soy milk shelf stable"
     ],
     "category": "dry_goods",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 1999630
   },
   {
@@ -1245,7 +1245,7 @@
       "almond milk shelf stable"
     ],
     "category": "beverages",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 1999631
   },
   {
@@ -1255,7 +1255,7 @@
       "spinach baby"
     ],
     "category": "produce",
-    "emoji": "👶",
+    "emoji": "🥬",
     "fdc_id": 1999632
   },
   {
@@ -1265,7 +1265,7 @@
       "spinach mature"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥬",
     "fdc_id": 1999633
   },
   {
@@ -1286,7 +1286,7 @@
       "flour 00"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2003586
   },
   {
@@ -1297,7 +1297,7 @@
       "spelt"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2003587
   },
   {
@@ -1310,7 +1310,7 @@
       "semolina"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2003588
   },
   {
@@ -1326,7 +1326,7 @@
       "vitamin"
     ],
     "category": "produce",
-    "emoji": "©️",
+    "emoji": "🧃",
     "fdc_id": 2003590
   },
   {
@@ -1344,7 +1344,7 @@
       "pulp"
     ],
     "category": "produce",
-    "emoji": "😶",
+    "emoji": "🧃",
     "fdc_id": 2003591
   },
   {
@@ -1355,7 +1355,7 @@
       "purple"
     ],
     "category": "produce",
-    "emoji": "😈",
+    "emoji": "🧃",
     "fdc_id": 2003592
   },
   {
@@ -1365,7 +1365,7 @@
       "grape juice white"
     ],
     "category": "produce",
-    "emoji": "☺️",
+    "emoji": "🧃",
     "fdc_id": 2003593
   },
   {
@@ -1381,7 +1381,7 @@
       "fortified"
     ],
     "category": "produce",
-    "emoji": "🙈",
+    "emoji": "🧃",
     "fdc_id": 2003594
   },
   {
@@ -1397,7 +1397,7 @@
       "grapefruit juice refrigerated"
     ],
     "category": "produce",
-    "emoji": "🥵",
+    "emoji": "🧃",
     "fdc_id": 2003595
   },
   {
@@ -1413,7 +1413,7 @@
       "ingredients"
     ],
     "category": "produce",
-    "emoji": "🍅",
+    "emoji": "🧃",
     "fdc_id": 2003596
   },
   {
@@ -1435,7 +1435,7 @@
       "king"
     ],
     "category": "produce",
-    "emoji": "🤴",
+    "emoji": "🍄",
     "fdc_id": 2003599
   },
   {
@@ -1503,7 +1503,7 @@
       "sweetened"
     ],
     "category": "dry_goods",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 2257044
   },
   {
@@ -1518,7 +1518,7 @@
       "oat milk refrigerated"
     ],
     "category": "beverages",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 2257046
   },
   {
@@ -1528,7 +1528,7 @@
       "carrots mature"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥕",
     "fdc_id": 2258586
   },
   {
@@ -1538,7 +1538,7 @@
       "carrots baby"
     ],
     "category": "produce",
-    "emoji": "👶",
+    "emoji": "🥕",
     "fdc_id": 2258587
   },
   {
@@ -1551,7 +1551,7 @@
       "bell"
     ],
     "category": "produce",
-    "emoji": "🎐",
+    "emoji": "🫑",
     "fdc_id": 2258588
   },
   {
@@ -1562,7 +1562,7 @@
       "buttermilk low fat"
     ],
     "category": "dairy",
-    "emoji": "🔉",
+    "emoji": "🥛",
     "fdc_id": 2259792
   },
   {
@@ -1573,7 +1573,7 @@
       "yogurt whole milk"
     ],
     "category": "dairy",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 2259793
   },
   {
@@ -1586,7 +1586,7 @@
       "feta"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 2259796
   },
   {
@@ -1597,7 +1597,7 @@
       "almond"
     ],
     "category": "snacks",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2261420
   },
   {
@@ -1607,7 +1607,7 @@
       "flour oat"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2261421
   },
   {
@@ -1618,7 +1618,7 @@
       "potato"
     ],
     "category": "produce",
-    "emoji": "🥔",
+    "emoji": "🌾",
     "fdc_id": 2261422
   },
   {
@@ -1640,7 +1640,7 @@
       "sesame butter creamy"
     ],
     "category": "snacks",
-    "emoji": "🧈",
+    "emoji": "🌾",
     "fdc_id": 2262073
   },
   {
@@ -1651,7 +1651,7 @@
       "almond butter creamy"
     ],
     "category": "snacks",
-    "emoji": "🧈",
+    "emoji": "🌰",
     "fdc_id": 2262074
   },
   {
@@ -1662,7 +1662,7 @@
       "flaxseed ground"
     ],
     "category": "snacks",
-    "emoji": "🍿",
+    "emoji": "🌾",
     "fdc_id": 2262075
   },
   {
@@ -1675,7 +1675,7 @@
       "cottage cheese large or small curd"
     ],
     "category": "dairy",
-    "emoji": "💯",
+    "emoji": "🧀",
     "fdc_id": 2346384
   },
   {
@@ -1688,7 +1688,7 @@
       "cream cheese block"
     ],
     "category": "dairy",
-    "emoji": "💯",
+    "emoji": "🧀",
     "fdc_id": 2346385
   },
   {
@@ -1699,7 +1699,7 @@
       "heavy"
     ],
     "category": "dairy",
-    "emoji": "❣️",
+    "emoji": "🥛",
     "fdc_id": 2346386
   },
   {
@@ -1712,7 +1712,7 @@
       "sour"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🥛",
     "fdc_id": 2346387
   },
   {
@@ -1723,7 +1723,7 @@
       "iceberg"
     ],
     "category": "produce",
-    "emoji": "🧊",
+    "emoji": "🥬",
     "fdc_id": 2346388
   },
   {
@@ -1748,7 +1748,7 @@
       "leaf"
     ],
     "category": "produce",
-    "emoji": "🌿",
+    "emoji": "🥬",
     "fdc_id": 2346390
   },
   {
@@ -1759,7 +1759,7 @@
       "pine"
     ],
     "category": "snacks",
-    "emoji": "🌲",
+    "emoji": "🌰",
     "fdc_id": 2346392
   },
   {
@@ -1772,7 +1772,7 @@
       "walnuts"
     ],
     "category": "snacks",
-    "emoji": "🥜",
+    "emoji": "🌰",
     "fdc_id": 2346394
   },
   {
@@ -1783,7 +1783,7 @@
       "pecans"
     ],
     "category": "snacks",
-    "emoji": "🥜",
+    "emoji": "🌰",
     "fdc_id": 2346395
   },
   {
@@ -1824,7 +1824,7 @@
       "cherries raw"
     ],
     "category": "produce",
-    "emoji": "🍡",
+    "emoji": "🍒",
     "fdc_id": 2346399
   },
   {
@@ -1835,7 +1835,7 @@
       "russet"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥔",
     "fdc_id": 2346401
   },
   {
@@ -1845,7 +1845,7 @@
       "potatoes red"
     ],
     "category": "produce",
-    "emoji": "🥵",
+    "emoji": "🥔",
     "fdc_id": 2346402
   },
   {
@@ -1856,7 +1856,7 @@
       "gold"
     ],
     "category": "produce",
-    "emoji": "💛",
+    "emoji": "🥔",
     "fdc_id": 2346403
   },
   {
@@ -1873,7 +1873,7 @@
       "flesh"
     ],
     "category": "produce",
-    "emoji": "🍊",
+    "emoji": "🥔",
     "fdc_id": 2346404
   },
   {
@@ -1884,7 +1884,7 @@
       "celery raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥬",
     "fdc_id": 2346405
   },
   {
@@ -1907,7 +1907,7 @@
       "cabbage green"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🥬",
     "fdc_id": 2346407
   },
   {
@@ -1917,7 +1917,7 @@
       "cabbage red"
     ],
     "category": "produce",
-    "emoji": "🥵",
+    "emoji": "🥬",
     "fdc_id": 2346408
   },
   {
@@ -1928,7 +1928,7 @@
       "strawberries raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍓",
     "fdc_id": 2346409
   },
   {
@@ -1939,7 +1939,7 @@
       "raspberries raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍓",
     "fdc_id": 2346410
   },
   {
@@ -1960,7 +1960,7 @@
       "grapes red"
     ],
     "category": "produce",
-    "emoji": "🥵",
+    "emoji": "🍇",
     "fdc_id": 2346412
   },
   {
@@ -1970,7 +1970,7 @@
       "grapes green"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🍇",
     "fdc_id": 2346413
   },
   {
@@ -1983,7 +1983,7 @@
       "applesauce with added vitamin c"
     ],
     "category": "produce",
-    "emoji": "©️",
+    "emoji": "🍯",
     "fdc_id": 2346414
   },
   {
@@ -1994,7 +1994,7 @@
       "amaranth"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2512371
   },
   {
@@ -2005,7 +2005,7 @@
       "quinoa"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2512372
   },
   {
@@ -2015,7 +2015,7 @@
       "flour sorghum"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2512373
   },
   {
@@ -2025,7 +2025,7 @@
       "flour buckwheat"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2512374
   },
   {
@@ -2035,7 +2035,7 @@
       "flour rye"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2512375
   },
   {
@@ -2046,7 +2046,7 @@
       "barley"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2512376
   },
   {
@@ -2057,7 +2057,7 @@
       "cassava"
     ],
     "category": "produce",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2512377
   },
   {
@@ -2089,7 +2089,7 @@
       "brown"
     ],
     "category": "dry_goods",
-    "emoji": "🐴",
+    "emoji": "🍚",
     "fdc_id": 2512380
   },
   {
@@ -2099,7 +2099,7 @@
       "rice white"
     ],
     "category": "dry_goods",
-    "emoji": "☺️",
+    "emoji": "🍚",
     "fdc_id": 2512381
   },
   {
@@ -2111,7 +2111,7 @@
       "beef 90% lean meat / 10% fat"
     ],
     "category": "meat",
-    "emoji": "🐮",
+    "emoji": "🥩",
     "fdc_id": 2514743
   },
   {
@@ -2121,7 +2121,7 @@
       "pork ground"
     ],
     "category": "meat",
-    "emoji": "🥓",
+    "emoji": "🥩",
     "fdc_id": 2514745
   },
   {
@@ -2133,7 +2133,7 @@
       "chicken with additives"
     ],
     "category": "meat",
-    "emoji": "🐔",
+    "emoji": "🍗",
     "fdc_id": 2514746
   },
   {
@@ -2144,7 +2144,7 @@
       "brazilnuts"
     ],
     "category": "snacks",
-    "emoji": "🥜",
+    "emoji": "🌰",
     "fdc_id": 2515373
   },
   {
@@ -2155,7 +2155,7 @@
       "cashew"
     ],
     "category": "snacks",
-    "emoji": "🥜",
+    "emoji": "🌰",
     "fdc_id": 2515374
   },
   {
@@ -2167,7 +2167,7 @@
       "filberts"
     ],
     "category": "snacks",
-    "emoji": "🕵️",
+    "emoji": "🌰",
     "fdc_id": 2515375
   },
   {
@@ -2189,7 +2189,7 @@
       "chestnut"
     ],
     "category": "snacks",
-    "emoji": "🌰",
+    "emoji": "🌾",
     "fdc_id": 2515377
   },
   {
@@ -2200,7 +2200,7 @@
       "macadamia"
     ],
     "category": "snacks",
-    "emoji": "🥜",
+    "emoji": "🌰",
     "fdc_id": 2515378
   },
   {
@@ -2211,7 +2211,7 @@
       "pistachio"
     ],
     "category": "snacks",
-    "emoji": "🥜",
+    "emoji": "🌰",
     "fdc_id": 2515379
   },
   {
@@ -2222,7 +2222,7 @@
       "(pepitas)"
     ],
     "category": "snacks",
-    "emoji": "🎃",
+    "emoji": "🥜",
     "fdc_id": 2515380
   },
   {
@@ -2234,7 +2234,7 @@
       "seeds kernel"
     ],
     "category": "snacks",
-    "emoji": "🌻",
+    "emoji": "🥜",
     "fdc_id": 2515381
   },
   {
@@ -2244,7 +2244,7 @@
       "flour coconut"
     ],
     "category": "snacks",
-    "emoji": "🌴",
+    "emoji": "🌾",
     "fdc_id": 2515382
   },
   {
@@ -2282,7 +2282,7 @@
       "lentils dry"
     ],
     "category": "dry_goods",
-    "emoji": "🌾",
+    "emoji": "🫘",
     "fdc_id": 2644283
   },
   {
@@ -2293,7 +2293,7 @@
       "blackeye pea dry"
     ],
     "category": "dry_goods",
-    "emoji": "🌾",
+    "emoji": "🫘",
     "fdc_id": 2644284
   },
   {
@@ -2303,7 +2303,7 @@
       "beans black"
     ],
     "category": "dry_goods",
-    "emoji": "❤️",
+    "emoji": "🫘",
     "fdc_id": 2644285
   },
   {
@@ -2332,7 +2332,7 @@
       "gram)"
     ],
     "category": "dry_goods",
-    "emoji": "🐅",
+    "emoji": "🫘",
     "fdc_id": 2644288
   },
   {
@@ -2368,7 +2368,7 @@
       "peas drained and rinsed"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🫘",
     "fdc_id": 2644291
   },
   {
@@ -2394,7 +2394,7 @@
       "blackeye pea drained and rinsed"
     ],
     "category": "dry_goods",
-    "emoji": "🪫",
+    "emoji": "🫘",
     "fdc_id": 2644293
   },
   {
@@ -2406,7 +2406,7 @@
       "northern"
     ],
     "category": "dry_goods",
-    "emoji": "🦈",
+    "emoji": "🫘",
     "fdc_id": 2644294
   },
   {
@@ -2418,7 +2418,7 @@
       "pork boneless"
     ],
     "category": "meat",
-    "emoji": "🥓",
+    "emoji": "🥩",
     "fdc_id": 2646168
   },
   {
@@ -2428,7 +2428,7 @@
       "breast"
     ],
     "category": "meat",
-    "emoji": "🐔",
+    "emoji": "🍗",
     "fdc_id": 2646170
   },
   {
@@ -2439,7 +2439,7 @@
       "thigh"
     ],
     "category": "meat",
-    "emoji": "🐔",
+    "emoji": "🍗",
     "fdc_id": 2646171
   },
   {
@@ -2450,7 +2450,7 @@
       "ribeye"
     ],
     "category": "meat",
-    "emoji": "🐮",
+    "emoji": "🥩",
     "fdc_id": 2646172
   },
   {
@@ -2463,7 +2463,7 @@
       "chuck"
     ],
     "category": "meat",
-    "emoji": "🐮",
+    "emoji": "🥩",
     "fdc_id": 2646174
   },
   {
@@ -2474,7 +2474,7 @@
       "flank"
     ],
     "category": "meat",
-    "emoji": "🐮",
+    "emoji": "🥩",
     "fdc_id": 2646175
   },
   {
@@ -2486,7 +2486,7 @@
       "jack"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 2647438
   },
   {
@@ -2500,7 +2500,7 @@
       "product"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 2647439
   },
   {
@@ -2513,7 +2513,7 @@
       "provolone"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 2647440
   },
   {
@@ -2524,7 +2524,7 @@
       "oaxaca"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 2647441
   },
   {
@@ -2536,7 +2536,7 @@
       "fresco"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 2647442
   },
   {
@@ -2547,7 +2547,7 @@
       "cotija"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 2647443
   },
   {
@@ -2560,7 +2560,7 @@
       "salmon"
     ],
     "category": "seafood",
-    "emoji": "🐬",
+    "emoji": "🐟",
     "fdc_id": 2684440
   },
   {
@@ -2571,7 +2571,7 @@
       "tilapia"
     ],
     "category": "seafood",
-    "emoji": "🐬",
+    "emoji": "🐟",
     "fdc_id": 2684442
   },
   {
@@ -2598,7 +2598,7 @@
       "fish atlantic"
     ],
     "category": "seafood",
-    "emoji": "🐬",
+    "emoji": "🐟",
     "fdc_id": 2684444
   },
   {
@@ -2609,7 +2609,7 @@
       "catfish"
     ],
     "category": "seafood",
-    "emoji": "🐬",
+    "emoji": "🐟",
     "fdc_id": 2684445
   },
   {
@@ -2645,7 +2645,7 @@
       "summer"
     ],
     "category": "produce",
-    "emoji": "😎",
+    "emoji": "🥦",
     "fdc_id": 2685568
   },
   {
@@ -2658,7 +2658,7 @@
       "winter"
     ],
     "category": "produce",
-    "emoji": "⛷️",
+    "emoji": "🥦",
     "fdc_id": 2685570
   },
   {
@@ -2691,7 +2691,7 @@
       "collards raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥬",
     "fdc_id": 2685574
   },
   {
@@ -2702,7 +2702,7 @@
       "brussels sprouts raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥬",
     "fdc_id": 2685575
   },
   {
@@ -2713,7 +2713,7 @@
       "beets raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍽️",
     "fdc_id": 2685576
   },
   {
@@ -2738,7 +2738,7 @@
       "tomatoes with salt added"
     ],
     "category": "produce",
-    "emoji": "🥫",
+    "emoji": "🍅",
     "fdc_id": 2685578
   },
   {
@@ -2750,7 +2750,7 @@
       "tomato with salt added"
     ],
     "category": "produce",
-    "emoji": "🫙",
+    "emoji": "🫗",
     "fdc_id": 2685579
   },
   {
@@ -2763,7 +2763,7 @@
       "paste"
     ],
     "category": "produce",
-    "emoji": "🍅",
+    "emoji": "🫗",
     "fdc_id": 2685580
   },
   {
@@ -2774,7 +2774,7 @@
       "crushed"
     ],
     "category": "produce",
-    "emoji": "🥫",
+    "emoji": "🍅",
     "fdc_id": 2685581
   },
   {
@@ -2785,7 +2785,7 @@
       "puree"
     ],
     "category": "produce",
-    "emoji": "🍅",
+    "emoji": "🫗",
     "fdc_id": 2685582
   },
   {
@@ -2799,7 +2799,7 @@
       "skin"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍑",
     "fdc_id": 2710815
   },
   {
@@ -2820,7 +2820,7 @@
       "plantains ripe"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍌",
     "fdc_id": 2710817
   },
   {
@@ -2831,7 +2831,7 @@
       "underripe"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍌",
     "fdc_id": 2710818
   },
   {
@@ -2844,7 +2844,7 @@
       "chia seeds raw"
     ],
     "category": "dry_goods",
-    "emoji": "🌾",
+    "emoji": "🥜",
     "fdc_id": 2710819
   },
   {
@@ -2870,7 +2870,7 @@
       "wild rice raw"
     ],
     "category": "dry_goods",
-    "emoji": "🤪",
+    "emoji": "🍚",
     "fdc_id": 2710821
   },
   {
@@ -2883,7 +2883,7 @@
       "arugula raw"
     ],
     "category": "produce",
-    "emoji": "👶",
+    "emoji": "🥬",
     "fdc_id": 2710822
   },
   {
@@ -2896,7 +2896,7 @@
       "asparagus raw"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🥦",
     "fdc_id": 2710823
   },
   {
@@ -2922,7 +2922,7 @@
       "rice black"
     ],
     "category": "dry_goods",
-    "emoji": "❤️",
+    "emoji": "🍚",
     "fdc_id": 2710825
   },
   {
@@ -2938,7 +2938,7 @@
       "corn raw"
     ],
     "category": "produce",
-    "emoji": "🍡",
+    "emoji": "🌽",
     "fdc_id": 2710826
   },
   {
@@ -3014,7 +3014,7 @@
       "kiwifruit (kiwi) raw"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🥝",
     "fdc_id": 2710831
   },
   {
@@ -3071,7 +3071,7 @@
       "harina"
     ],
     "category": "dry_goods",
-    "emoji": "🫔",
+    "emoji": "🌾",
     "fdc_id": 2710835
   },
   {
@@ -3104,7 +3104,7 @@
       "plum raw"
     ],
     "category": "produce",
-    "emoji": "❤️",
+    "emoji": "🍑",
     "fdc_id": 2710837
   },
   {
@@ -3116,7 +3116,7 @@
       "rice dry"
     ],
     "category": "dry_goods",
-    "emoji": "🥵",
+    "emoji": "🍚",
     "fdc_id": 2710838
   },
   {
@@ -3133,7 +3133,7 @@
       "sorghum bran raw"
     ],
     "category": "dry_goods",
-    "emoji": "☺️",
+    "emoji": "🌾",
     "fdc_id": 2710839
   },
   {
@@ -3152,7 +3152,7 @@
       "sorghum flour raw"
     ],
     "category": "dry_goods",
-    "emoji": "☺️",
+    "emoji": "🌾",
     "fdc_id": 2710840
   },
   {
@@ -3171,7 +3171,7 @@
       "sorghum grain raw"
     ],
     "category": "dry_goods",
-    "emoji": "☺️",
+    "emoji": "🌾",
     "fdc_id": 2710841
   },
   {
@@ -3197,7 +3197,7 @@
       "plantains overripe"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍌",
     "fdc_id": 2710843
   },
   {
@@ -3207,7 +3207,7 @@
       "drumstick"
     ],
     "category": "meat",
-    "emoji": "🍖",
+    "emoji": "🍗",
     "fdc_id": 2727566
   },
   {
@@ -3218,7 +3218,7 @@
       "wing"
     ],
     "category": "meat",
-    "emoji": "🪽",
+    "emoji": "🍗",
     "fdc_id": 2727568
   },
   {
@@ -3231,7 +3231,7 @@
       "lamb raw"
     ],
     "category": "meat",
-    "emoji": "🐑",
+    "emoji": "🥩",
     "fdc_id": 2727570
   },
   {
@@ -3244,7 +3244,7 @@
       "bison raw"
     ],
     "category": "meat",
-    "emoji": "🦬",
+    "emoji": "🥩",
     "fdc_id": 2727571
   },
   {
@@ -3256,7 +3256,7 @@
       "steak)"
     ],
     "category": "meat",
-    "emoji": "🎞️",
+    "emoji": "🥩",
     "fdc_id": 2727572
   },
   {
@@ -3278,7 +3278,7 @@
       "sirloin"
     ],
     "category": "meat",
-    "emoji": "🎪",
+    "emoji": "🥩",
     "fdc_id": 2727574
   },
   {
@@ -3304,7 +3304,7 @@
       "belly"
     ],
     "category": "meat",
-    "emoji": "🫃",
+    "emoji": "🥩",
     "fdc_id": 2727576
   },
   {
@@ -3319,7 +3319,7 @@
       "pawpaw raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍑",
     "fdc_id": 2727577
   },
   {
@@ -3329,7 +3329,7 @@
       "squash pie pumpkin"
     ],
     "category": "produce",
-    "emoji": "🥧",
+    "emoji": "🍽️",
     "fdc_id": 2727578
   },
   {
@@ -3340,7 +3340,7 @@
       "spaghetti"
     ],
     "category": "produce",
-    "emoji": "🍝",
+    "emoji": "🍽️",
     "fdc_id": 2727579
   },
   {
@@ -3353,7 +3353,7 @@
       "rutabaga raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥔",
     "fdc_id": 2727580
   },
   {
@@ -3364,7 +3364,7 @@
       "blackberries raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🫐",
     "fdc_id": 2727581
   },
   {
@@ -3378,7 +3378,7 @@
       "dehusked"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍅",
     "fdc_id": 2727582
   },
   {
@@ -3409,7 +3409,7 @@
       "greens"
     ],
     "category": "produce",
-    "emoji": "🥬",
+    "emoji": "🧅",
     "fdc_id": 2727584
   },
   {
@@ -3427,7 +3427,7 @@
       "(scallion)"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🧅",
     "fdc_id": 2727585
   },
   {
@@ -3444,7 +3444,7 @@
       "shallots raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🧅",
     "fdc_id": 2727586
   },
   {
@@ -3455,7 +3455,7 @@
       "prune"
     ],
     "category": "produce",
-    "emoji": "🥤",
+    "emoji": "🧃",
     "fdc_id": 2727587
   },
   {
@@ -3466,7 +3466,7 @@
       "pomegranate"
     ],
     "category": "produce",
-    "emoji": "🥤",
+    "emoji": "🧃",
     "fdc_id": 2727588
   },
   {
@@ -3478,7 +3478,7 @@
       "cherry"
     ],
     "category": "produce",
-    "emoji": "💮",
+    "emoji": "🧃",
     "fdc_id": 2727589
   },
   {
@@ -3493,7 +3493,7 @@
       "anchovies drained"
     ],
     "category": "seafood",
-    "emoji": "🇮🇳",
+    "emoji": "🐟",
     "fdc_id": 2747652
   },
   {
@@ -3521,7 +3521,7 @@
       "alaskan"
     ],
     "category": "seafood",
-    "emoji": "🕵️",
+    "emoji": "🐟",
     "fdc_id": 2747654
   },
   {
@@ -3534,7 +3534,7 @@
       "fennel raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🧅",
     "fdc_id": 2747655
   },
   {
@@ -3547,7 +3547,7 @@
       "halibut wild caught"
     ],
     "category": "seafood",
-    "emoji": "🤪",
+    "emoji": "🐟",
     "fdc_id": 2747656
   },
   {
@@ -3576,7 +3576,7 @@
       "mahi mahi wild caught"
     ],
     "category": "seafood",
-    "emoji": "🤪",
+    "emoji": "🐟",
     "fdc_id": 2747658
   },
   {
@@ -3587,7 +3587,7 @@
       "parsnips raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥕",
     "fdc_id": 2747659
   },
   {
@@ -3599,7 +3599,7 @@
       "hungarian"
     ],
     "category": "produce",
-    "emoji": "🐒",
+    "emoji": "🌶️",
     "fdc_id": 2747660
   },
   {
@@ -3610,7 +3610,7 @@
       "jalapeno"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🌶️",
     "fdc_id": 2747661
   },
   {
@@ -3621,7 +3621,7 @@
       "poblano"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🌶️",
     "fdc_id": 2747662
   },
   {
@@ -3632,7 +3632,7 @@
       "serrano"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🌶️",
     "fdc_id": 2747663
   },
   {
@@ -3643,7 +3643,7 @@
       "radicchio raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥬",
     "fdc_id": 2747664
   },
   {
@@ -3656,7 +3656,7 @@
       "radishes raw"
     ],
     "category": "produce",
-    "emoji": "🥵",
+    "emoji": "🥕",
     "fdc_id": 2747665
   },
   {
@@ -3668,7 +3668,7 @@
       "scallops patagonian"
     ],
     "category": "seafood",
-    "emoji": "🤪",
+    "emoji": "🦐",
     "fdc_id": 2747666
   },
   {
@@ -3678,7 +3678,7 @@
       "scallops sea"
     ],
     "category": "seafood",
-    "emoji": "🧜",
+    "emoji": "🦐",
     "fdc_id": 2747667
   },
   {
@@ -3694,7 +3694,7 @@
       "chilean"
     ],
     "category": "seafood",
-    "emoji": "🇨🇱",
+    "emoji": "🐟",
     "fdc_id": 2747668
   },
   {
@@ -3707,7 +3707,7 @@
       "snapper wild caught"
     ],
     "category": "seafood",
-    "emoji": "🤪",
+    "emoji": "🐟",
     "fdc_id": 2747669
   },
   {
@@ -3721,7 +3721,7 @@
       "legs"
     ],
     "category": "seafood",
-    "emoji": "⛷️",
+    "emoji": "🦀",
     "fdc_id": 2747670
   },
   {
@@ -3734,7 +3734,7 @@
       "squid (calamari) tubes only"
     ],
     "category": "seafood",
-    "emoji": "🦑",
+    "emoji": "🦐",
     "fdc_id": 2747671
   },
   {
@@ -3747,7 +3747,7 @@
       "swordfish wild caught"
     ],
     "category": "seafood",
-    "emoji": "🤪",
+    "emoji": "🐟",
     "fdc_id": 2747672
   },
   {
@@ -3762,7 +3762,7 @@
       "yellowfin"
     ],
     "category": "seafood",
-    "emoji": "🕵️",
+    "emoji": "🐟",
     "fdc_id": 2747673
   },
   {
@@ -3773,7 +3773,7 @@
       "turnips raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥕",
     "fdc_id": 2747674
   },
   {
