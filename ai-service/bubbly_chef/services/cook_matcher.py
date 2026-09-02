@@ -499,6 +499,12 @@ def match_ingredients(
             and is_package_unit(pantry_item.unit)
             and req_base_unit in (None, "count")
         ):
+            # Report what the row has left after earlier lines took their share,
+            # as every other branch does — an imprecise line claims nothing, but
+            # it should not display stock a previous line already spoke for.
+            unclaimed = (
+                None if pantry_base_qty is None else max(0.0, pantry_base_qty - already_claimed)
+            )
             matches.append(
                 IngredientMatch(
                     ingredient_name=raw_name,
@@ -506,7 +512,7 @@ def match_ingredients(
                     ingredient_unit=ing_unit,
                     pantry_item_id=pantry_item.id,
                     pantry_item_name=pantry_item.name,
-                    pantry_qty_available=pantry_base_qty,
+                    pantry_qty_available=unclaimed,
                     deduct_qty=None,
                     base_unit=pantry_base_unit or pantry_item.unit,
                     status="imprecise",
