@@ -16,7 +16,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from bubbly_chef.domain.normalizer import normalize_food_name, normalize_to_base_unit
+from bubbly_chef.domain.normalizer import (
+    is_package_unit,
+    is_piece_unit,
+    normalize_food_name,
+    normalize_to_base_unit,
+)
 from bubbly_chef.domain.normalizer import SIZE_ADJECTIVE_UNITS  # noqa: F401  re-export: single source of truth
 from bubbly_chef.models.cook import CompoundSuggestion, CookProposal, IngredientMatch
 from bubbly_chef.models.pantry import PantryItem
@@ -477,6 +482,39 @@ def match_ingredients(
             unit=ing_unit,
             target_unit=pantry_base_unit,
         )
+
+        # --- Imprecise: pieces of an ingredient against a package of it ---
+        # "4 slices bread" against "1 item bread" converts — both sides reach
+        # "count" — but they are counting different things, so the comparison
+        # produces a shortfall and the confirm step deducts the whole loaf.
+        # Report it as its own status instead: the user has the ingredient, we
+        # just cannot say how much of it the recipe uses. Nothing is deducted.
+        #
+        # A genuine conversion always wins: "2 slices cheese" against a 500 g
+        # row resolves through the conventional piece weight to grams, so
+        # req_base_unit is "g" and this branch never sees it. Only a pair that
+        # landed on "count" (or failed to convert at all) can be imprecise.
+        if (
+            is_piece_unit(ing_unit)
+            and is_package_unit(pantry_item.unit)
+            and req_base_unit in (None, "count")
+        ):
+            matches.append(
+                IngredientMatch(
+                    ingredient_name=raw_name,
+                    ingredient_qty=ing_qty,
+                    ingredient_unit=ing_unit,
+                    pantry_item_id=pantry_item.id,
+                    pantry_item_name=pantry_item.name,
+                    pantry_qty_available=pantry_base_qty,
+                    deduct_qty=None,
+                    base_unit=pantry_base_unit or pantry_item.unit,
+                    status="imprecise",
+                    match_type=match_type,
+                    substitution_note=note,
+                )
+            )
+            continue
 
         # --- Unit conflict: can't convert either side ---
         if req_base_qty is None or pantry_base_qty is None or req_base_unit != pantry_base_unit:

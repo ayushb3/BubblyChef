@@ -536,8 +536,10 @@ class TestSalmonAvocadoToast:
     """End-to-end shape of the recipe that motivated all of this.
 
     Before: 7 of 9 matched ingredients were unit_conflict and 2 were deductible.
-    After: 8 are deductible and the only conflict left is "1 handful spinach",
-    which is refused on purpose — a handful has no conventional size.
+    After: 6 are deductible, "1 handful spinach" is still refused on purpose — a
+    handful has no conventional size — and the two piece-against-package pairs
+    (4 slices of a loaf, 8 leaves of a bunch) are satisfied without a deduction.
+    See #222 and tests/test_issue_222_piece_vs_package.py.
     """
 
     def test_most_of_the_recipe_becomes_deductible(self) -> None:
@@ -568,13 +570,18 @@ class TestSalmonAvocadoToast:
 
         assert proposal.missing == []
         deductible = [m for m in proposal.matches if m.deduct_qty is not None]
-        assert len(deductible) == 8
+        assert len(deductible) == 6
 
         statuses = {m.ingredient_name: m.status for m in proposal.matches}
         assert statuses["butter"] == "ready"
         assert statuses["salt"] == "ready"
         assert statuses["greek yogurt"] == "ready"
         assert statuses["salmon"] == "ready"
+
+        # Pieces of a package: satisfied, but nothing is deducted — deducting
+        # here would take the whole loaf and the whole bunch (#222).
+        assert statuses["bread"] == "imprecise"
+        assert statuses["basil"] == "imprecise"
 
         # The one deliberate holdout.
         assert [c["ingredient"] for c in proposal.unit_conflicts] == ["baby spinach"]

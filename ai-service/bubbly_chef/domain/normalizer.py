@@ -469,15 +469,78 @@ _TO_G: dict[str, float] = {
     "oz": 28.35,
 }
 
+# ── Piece vs package units ─────────────────────────────────────────────────
+# Both map to "count" below, but they count different things: a piece unit
+# counts pieces *of* an ingredient, a package unit counts packages *containing*
+# an unknown number of those pieces. Comparing "4 slices" against "1 loaf" is a
+# category error, not a shortfall — see
+# docs/adr/0003-piece-vs-package-units-are-incommensurable.md.
+#
+# "count" and "ct" belong to neither set: "6 count garlic" is a genuine tally
+# and must keep deducting normally.
+PIECE_UNITS: frozenset[str] = frozenset(
+    {"slice", "leaf", "clove", "sprig", "stick"}
+)
+PACKAGE_UNITS: frozenset[str] = frozenset(
+    {
+        "item",
+        "loaf",
+        "bunch",
+        "head",
+        "bag",
+        "can",
+        "package",
+        "bottle",
+        "jar",
+        "box",
+        "container",
+    }
+)
+
+# normalize_unit() maps "item" → "count", which erases exactly the distinction
+# these predicates exist to make. They therefore run their own minimal alias
+# pass over the *raw* display unit: case, whitespace and plurals only, never
+# collapsing a package unit into "count".
+_RAW_UNIT_SINGULARS: dict[str, str] = {
+    "leaves": "leaf",
+    "loaves": "loaf",
+    "bunches": "bunch",
+    "boxes": "box",
+    "pkg": "package",
+    "pkgs": "package",
+}
+
+
+def _canonical_raw_unit(unit: str | None) -> str:
+    """Lowercase, strip and de-pluralize *unit* without collapsing synonyms."""
+    if not unit:
+        return ""
+    raw = unit.lower().strip()
+    if raw in _RAW_UNIT_SINGULARS:
+        return _RAW_UNIT_SINGULARS[raw]
+    if raw.endswith("s") and raw[:-1] in (PIECE_UNITS | PACKAGE_UNITS):
+        return raw[:-1]
+    return raw
+
+
+def is_piece_unit(unit: str | None) -> bool:
+    """True when *unit* counts pieces of an ingredient (slice, clove, leaf)."""
+    return _canonical_raw_unit(unit) in PIECE_UNITS
+
+
+def is_package_unit(unit: str | None) -> bool:
+    """True when *unit* counts purchased packages (loaf, bunch, can, item)."""
+    return _canonical_raw_unit(unit) in PACKAGE_UNITS
+
+
 # ── Unit → count conversions ───────────────────────────────────────────────
 # Piece and package units count as one discrete thing each. A pantry row
 # measured in counts is counting exactly these — slices, cloves, cans, bags —
 # so 1:1 is the only mapping that keeps both sides in the same dimension.
 #
-# It does assume the row counts the same kind of piece the recipe asks for; a
-# recipe wanting 4 slices against a pantry holding "1 bread" reports a shortfall
-# of 3. That is visible in the proposal the user reviews before anything is
-# written, which is why it is preferable to refusing to compare at all.
+# Where the two sides count different things (4 slices vs 1 loaf) the cook
+# matcher intercepts the pair before this mapping can turn it into a bogus
+# shortfall — see is_piece_unit/is_package_unit above.
 #
 # "handful" is deliberately absent: it is neither a discrete thing nor a fixed
 # amount (see UNCONVERTIBLE_TO_MASS_UNITS in density.py).

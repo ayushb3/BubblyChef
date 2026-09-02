@@ -68,6 +68,8 @@ function statusColor(status: IngredientMatch['status']): string {
       return 'var(--color-expiring)'
     case 'shortfall':
       return 'var(--color-expiring)'
+    case 'imprecise':
+      return 'var(--color-accent)'
     case 'unit_conflict':
       return 'var(--color-expiring)'
     case 'missing':
@@ -85,6 +87,8 @@ function statusLabel(status: IngredientMatch['status']): string {
       return 'Substitute'
     case 'shortfall':
       return 'Not enough'
+    case 'imprecise':
+      return 'Have it'
     case 'unit_conflict':
       return 'Unit conflict'
     case 'missing':
@@ -180,12 +184,13 @@ export function summariseDeductions(
 ): {
   deductions: DeductionItem[]
   /** Matched rows that will NOT be deducted, and why. */
-  skipped: Array<{ name: string; reason: 'needs_quantity' | 'no_quantity' }>
+  skipped: Array<{ name: string; reason: 'needs_quantity' | 'imprecise' | 'no_quantity' }>
   /** Count of matched (non-missing) rows considered. */
   matchedCount: number
 } {
   const byPantryItem = new Map<string, DeductionItem>()
-  const skipped: Array<{ name: string; reason: 'needs_quantity' | 'no_quantity' }> = []
+  const skipped: Array<{ name: string; reason: 'needs_quantity' | 'imprecise' | 'no_quantity' }> =
+    []
   let matchedCount = 0
 
   proposal.matches.forEach((m: IngredientMatch, i: number) => {
@@ -201,9 +206,16 @@ export function summariseDeductions(
       : (m.deduct_qty ?? 0)
 
     if (deductQty <= 0) {
+      // 'imprecise' is not a gap the user can close by typing a number — the
+      // recipe's pieces cannot be measured against a package row, so it is
+      // reported separately from rows that are merely awaiting a quantity.
       skipped.push({
         name: m.ingredient_name,
-        reason: isConflict ? 'needs_quantity' : 'no_quantity',
+        reason: isConflict
+          ? 'needs_quantity'
+          : m.status === 'imprecise'
+            ? 'imprecise'
+            : 'no_quantity',
       })
       return
     }
@@ -285,6 +297,10 @@ export default function CookModal({
   const summary = proposal ? summariseDeductions(proposal, overrides) : null
   /** Rows the user could still resolve by typing a quantity. */
   const needsQuantity = summary?.skipped.filter((s) => s.reason === 'needs_quantity') ?? []
+  /** Rows satisfied by a package we cannot measure against — nothing to fix. */
+  const imprecise = summary?.skipped.filter((s) => s.reason === 'imprecise') ?? []
+  /** Everything else that will not be deducted, reported as before. */
+  const notDeducted = summary?.skipped.filter((s) => s.reason !== 'imprecise') ?? []
   const hasUnresolved = needsQuantity.length > 0
 
   const handleConfirm = async () => {
@@ -570,12 +586,12 @@ export default function CookModal({
                 >
                   <p
                     className={
-                      summary.skipped.length > 0 && mode === 'confirm'
+                      notDeducted.length > 0 && mode === 'confirm'
                         ? 'font-bold text-[var(--color-text)]'
                         : 'text-[var(--color-muted)]'
                     }
                   >
-                    {summary.skipped.length > 0 && mode === 'confirm' && '⚠️ '}
+                    {notDeducted.length > 0 && mode === 'confirm' && '⚠️ '}
                     {summary.deductions.length} of {summary.matchedCount} ingredient
                     {summary.matchedCount === 1 ? '' : 's'}{' '}
                     {mode === 'preview' ? 'will come from your pantry' : 'will be deducted'}
@@ -583,10 +599,16 @@ export default function CookModal({
                       needsQuantity.length === 1 ? 's' : ''
                     } a quantity`}
                   </p>
-                  {summary.skipped.length > 0 && (
+                  {notDeducted.length > 0 && (
                     <p className="text-[var(--color-muted)] mt-0.5">
                       Not {mode === 'preview' ? 'counted' : 'deducted'}:{' '}
-                      {summary.skipped.map((s) => s.name).join(', ')}
+                      {notDeducted.map((s) => s.name).join(', ')}
+                    </p>
+                  )}
+                  {imprecise.length > 0 && (
+                    <p className="text-[var(--color-muted)] mt-0.5">
+                      You have {imprecise.map((s) => s.name).join(', ')} — we can&apos;t tell how
+                      much of a pack the recipe uses, so the quantity is left as it is.
                     </p>
                   )}
                 </div>
