@@ -177,8 +177,10 @@ Generate a full recipe with:
 - ingredients: a list of objects, each with keys:
     "name" (ingredient name, e.g. "chicken breast"),
     "quantity" (numeric amount, e.g. 2),
-    "unit" (measurement unit, e.g. "cups", "medium", "tablespoon"),
-    "preparation" (optional prep note, e.g. "diced"),
+    "unit" (measurement unit ONLY — e.g. "cups", "tablespoon", "g", "count"; do NOT
+      write size descriptors like "medium", "large", or "small" here; those belong in
+      "preparation" or can be omitted),
+    "preparation" (optional prep note, e.g. "diced", or size hint like "medium"),
     "optional" (boolean, default false),
     "substitutes" (list of substitute ingredient names, default [])
 - step-by-step instructions
