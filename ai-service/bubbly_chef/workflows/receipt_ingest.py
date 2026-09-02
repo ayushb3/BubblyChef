@@ -197,14 +197,15 @@ def clean_receipt_items(state: WorkflowState) -> WorkflowState:
 
 def normalize_receipt_items(state: WorkflowState) -> WorkflowState:
     """
-    Node: Normalize item names from receipt (deterministic).
+    Node: resolve category/expiry/unit metadata for receipt items (deterministic).
 
-    Uses domain/normalizer.py's ``normalize_food_name`` (head-noun matcher) instead
-    of tools/normalizer.py's ``FoodNormalizer.normalize`` (bidirectional substring).
-    The bidirectional matcher collapses distinct products — "italian bomba hot pepper"
-    → "black pepper", "milk chocolate" → "milk" — because any synonym that is a
-    substring of the input (or vice-versa) wins.  The head-noun matcher only fires
-    on exact full-token matches, so speciality products pass through unchanged.
+    The display name the LLM produced is written to the pantry unchanged — see
+    issue #257. ``normalize_food_name`` is a *match key* for internal lookups
+    (category, expiry heuristics, unit/density resolution), not a display-name
+    rewriter: it used to overwrite "chicken" with "chicken breast" and similar,
+    which is data loss the user never asked for. It is still used here, but
+    only to resolve those internal lookups; ``normalized_name`` never reaches
+    the ``name`` field written to the pantry row.
 
     ``source_line`` and ``price`` from the LLM parse are forwarded as-is so they
     reach the scan response without any additional plumbing.
@@ -218,10 +219,8 @@ def normalize_receipt_items(state: WorkflowState) -> WorkflowState:
         name = item.get("name", "")
         original_name = name
 
-        # Normalize name through the head-noun matcher in domain/normalizer.py.
-        # This preserves "Italian Bomba Hot Pepper" and "Milk Chocolate Almonds"
-        # while still resolving exact known synonyms like "cane sugar" → "sugar"
-        # only when there is no more specific match.
+        # Match key only (category/expiry/unit lookups below) — never written
+        # back as the display name. See the node docstring.
         normalized_name = normalize_food_name(name)
 
         # Get category: prefer the LLM's answer over the deterministic
@@ -252,7 +251,7 @@ def normalize_receipt_items(state: WorkflowState) -> WorkflowState:
 
         normalized_item = {
             **item,
-            "name": normalized_name,
+            "name": name,
             "original_name": original_name,
             "category": category.value,
             "storage_location": storage.value,

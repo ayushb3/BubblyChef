@@ -7,33 +7,29 @@
       "hummus commercial"
     ],
     "category": "dry_goods",
-    "emoji": "🌾",
+    "emoji": "🫘",
     "fdc_id": 321358
   },
   {
     "canonical": "grape tomatoes",
     "synonyms": [
       "tomatoes, grape, raw",
-      "tomatoes",
       "tomatoes grape",
       "raw tomatoes",
       "tomatoes raw",
       "grape"
     ],
     "category": "produce",
-    "emoji": "🍇",
+    "emoji": "🍅",
     "fdc_id": 321360
   },
   {
     "canonical": "snap beans",
     "synonyms": [
       "beans, snap, green, canned, regular pack, drained solids",
-      "beans",
       "beans snap",
       "green beans",
       "beans green",
-      "canned beans",
-      "beans canned",
       "regular pack beans",
       "beans regular pack",
       "drained solids beans",
@@ -41,7 +37,7 @@
       "snap"
     ],
     "category": "produce",
-    "emoji": "🫰",
+    "emoji": "🫛",
     "fdc_id": 321611
   },
   {
@@ -51,18 +47,16 @@
       "frankfurter",
       "frankfurter beef",
       "unheated frankfurter",
-      "frankfurter unheated",
-      "beef"
+      "frankfurter unheated"
     ],
     "category": "meat",
-    "emoji": "🐮",
+    "emoji": "🌭",
     "fdc_id": 323121
   },
   {
     "canonical": "almonds nuts",
     "synonyms": [
       "nuts, almonds, dry roasted, with salt added",
-      "nuts",
       "nuts almonds",
       "dry roasted nuts",
       "nuts dry roasted",
@@ -89,35 +83,20 @@
     "canonical": "whole egg",
     "synonyms": [
       "egg, whole, raw, frozen, pasteurized",
-      "egg",
-      "egg whole",
-      "raw egg",
-      "egg raw",
-      "frozen egg",
-      "egg frozen",
-      "pasteurized egg",
-      "egg pasteurized"
+      "egg whole"
     ],
     "category": "dairy",
-    "emoji": "🐣",
+    "emoji": "🥚",
     "fdc_id": 323604
   },
   {
     "canonical": "white egg",
     "synonyms": [
       "egg, white, raw, frozen, pasteurized",
-      "egg",
-      "egg white",
-      "raw egg",
-      "egg raw",
-      "frozen egg",
-      "egg frozen",
-      "pasteurized egg",
-      "egg pasteurized",
-      "white"
+      "egg white"
     ],
     "category": "dairy",
-    "emoji": "☺️",
+    "emoji": "🥚",
     "fdc_id": 323697
   },
   {
@@ -147,8 +126,7 @@
       "pickles",
       "pickles cucumber",
       "dill or kosher dill pickles",
-      "pickles dill or kosher dill",
-      "cucumber"
+      "pickles dill or kosher dill"
     ],
     "category": "produce",
     "emoji": "🥒",
@@ -158,47 +136,39 @@
     "canonical": "parmesan cheese",
     "synonyms": [
       "cheese, parmesan, grated",
-      "cheese",
       "cheese parmesan",
       "grated cheese",
       "cheese grated",
       "parmesan"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 325036
   },
   {
     "canonical": "pasteurized process cheese",
     "synonyms": [
       "cheese, pasteurized process, american, vitamin d fortified",
-      "cheese",
       "cheese pasteurized process",
-      "american cheese",
-      "cheese american",
       "vitamin d fortified cheese",
-      "cheese vitamin d fortified",
-      "pasteurized",
-      "process"
+      "cheese vitamin d fortified"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 325198
   },
   {
     "canonical": "white grapefruit juice",
     "synonyms": [
       "grapefruit juice, white, canned or bottled, unsweetened",
-      "grapefruit juice",
       "grapefruit juice white",
       "canned or bottled grapefruit juice",
       "grapefruit juice canned or bottled",
       "unsweetened grapefruit juice",
-      "grapefruit juice unsweetened",
-      "white"
+      "grapefruit juice unsweetened"
     ],
     "category": "produce",
-    "emoji": "☺️",
+    "emoji": "🧃",
     "fdc_id": 325287
   },
   {
@@ -208,43 +178,35 @@
       "peaches",
       "peaches yellow",
       "raw peaches",
-      "peaches raw",
-      "yellow"
+      "peaches raw"
     ],
     "category": "produce",
-    "emoji": "👩",
+    "emoji": "🍑",
     "fdc_id": 325430
   },
   {
     "canonical": "sunflower seed kernels seeds",
     "synonyms": [
       "seeds, sunflower seed kernels, dry roasted, with salt added",
-      "seeds",
       "seeds sunflower seed kernels",
       "dry roasted seeds",
       "seeds dry roasted",
       "with salt added seeds",
       "seeds with salt added",
-      "sunflower",
-      "seed",
       "kernels"
     ],
     "category": "snacks",
-    "emoji": "🌻",
+    "emoji": "🌰",
     "fdc_id": 325524
   },
   {
     "canonical": "white bread",
     "synonyms": [
       "bread, white, commercially prepared",
-      "bread",
-      "bread white",
-      "commercially prepared bread",
-      "bread commercially prepared",
-      "white"
+      "bread white"
     ],
     "category": "bakery",
-    "emoji": "☺️",
+    "emoji": "🍞",
     "fdc_id": 325871
   },
   {
@@ -258,7 +220,7 @@
       "prepared"
     ],
     "category": "condiments",
-    "emoji": "👩",
+    "emoji": "🫗",
     "fdc_id": 326698
   },
   {
@@ -268,11 +230,10 @@
       "kiwifruit",
       "kiwifruit green",
       "raw kiwifruit",
-      "kiwifruit raw",
-      "green"
+      "kiwifruit raw"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🥝",
     "fdc_id": 327046
   },
   {
@@ -283,26 +244,24 @@
       "nectarines raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍑",
     "fdc_id": 327357
   },
   {
     "canonical": "cheddar cheese",
     "synonyms": [
       "cheese, cheddar",
-      "cheese",
       "cheese cheddar",
       "cheddar"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 328637
   },
   {
     "canonical": "cottage cheese",
     "synonyms": [
       "cheese, cottage, lowfat, 2% milkfat",
-      "cheese",
       "cheese cottage",
       "lowfat cheese",
       "cheese lowfat",
@@ -311,14 +270,13 @@
       "cottage"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 328841
   },
   {
     "canonical": "mozzarella cheese",
     "synonyms": [
       "cheese, mozzarella, low moisture, part-skim",
-      "cheese",
       "cheese mozzarella",
       "low moisture cheese",
       "cheese low moisture",
@@ -327,25 +285,18 @@
       "mozzarella"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 329370
   },
   {
     "canonical": "yolk egg",
     "synonyms": [
       "egg, yolk, raw, frozen, pasteurized",
-      "egg",
       "egg yolk",
-      "raw egg",
-      "egg raw",
-      "frozen egg",
-      "egg frozen",
-      "pasteurized egg",
-      "egg pasteurized",
       "yolk"
     ],
     "category": "dairy",
-    "emoji": "🐣",
+    "emoji": "🥚",
     "fdc_id": 329596
   },
   {
@@ -354,61 +305,30 @@
       "yogurt, greek, plain, nonfat",
       "yogurt",
       "yogurt greek",
-      "plain yogurt",
-      "yogurt plain",
       "nonfat yogurt",
       "yogurt nonfat",
       "greek"
     ],
     "category": "dairy",
-    "emoji": "🎭",
+    "emoji": "🥛",
     "fdc_id": 330137
   },
   {
     "canonical": "coconut oil",
     "synonyms": [
       "oil, coconut",
-      "oil",
-      "oil coconut",
-      "coconut"
+      "oil coconut"
     ],
     "category": "condiments",
-    "emoji": "🌴",
+    "emoji": "🥥",
     "fdc_id": 330458
-  },
-  {
-    "canonical": "broilers or fryers chicken",
-    "synonyms": [
-      "chicken, broilers or fryers, drumstick, meat only, cooked, braised",
-      "chicken",
-      "chicken broilers or fryers",
-      "drumstick chicken",
-      "chicken drumstick",
-      "meat only chicken",
-      "chicken meat only",
-      "cooked chicken",
-      "chicken cooked",
-      "braised chicken",
-      "chicken braised",
-      "broilers",
-      "fryers"
-    ],
-    "category": "meat",
-    "emoji": "🕵️",
-    "fdc_id": 331897
   },
   {
     "canonical": "broiler or fryers chicken",
     "synonyms": [
       "chicken, broiler or fryers, breast, skinless, boneless, meat only, cooked, braised",
-      "chicken",
       "chicken broiler or fryers",
       "breast chicken",
-      "chicken breast",
-      "skinless chicken",
-      "chicken skinless",
-      "boneless chicken",
-      "chicken boneless",
       "meat only chicken",
       "chicken meat only",
       "cooked chicken",
@@ -416,26 +336,27 @@
       "braised chicken",
       "chicken braised",
       "broiler",
-      "fryers"
+      "fryers",
+      "chicken, broilers or fryers, drumstick, meat only, cooked, braised",
+      "chicken broilers or fryers",
+      "drumstick chicken",
+      "broilers"
     ],
     "category": "meat",
-    "emoji": "🕵️",
+    "emoji": "🍗",
     "fdc_id": 331960
   },
   {
     "canonical": "pasta sauce",
     "synonyms": [
       "sauce, pasta, spaghetti/marinara, ready-to-serve",
-      "sauce",
       "sauce pasta",
       "spaghetti/marinara sauce",
       "sauce spaghetti/marinara",
-      "ready-to-serve sauce",
-      "sauce ready-to-serve",
       "pasta"
     ],
     "category": "condiments",
-    "emoji": "🍝",
+    "emoji": "🫗",
     "fdc_id": 332282
   },
   {
@@ -453,7 +374,7 @@
       "sliced"
     ],
     "category": "meat",
-    "emoji": "🥪",
+    "emoji": "🥓",
     "fdc_id": 332397
   },
   {
@@ -465,11 +386,10 @@
       "manzanilla olives",
       "olives manzanilla",
       "stuffed with pimiento olives",
-      "olives stuffed with pimiento",
-      "green"
+      "olives stuffed with pimiento"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🫒",
     "fdc_id": 332791
   },
   {
@@ -485,15 +405,13 @@
       "oatmeal"
     ],
     "category": "bakery",
-    "emoji": "🥣",
+    "emoji": "🍞",
     "fdc_id": 333008
   },
   {
     "canonical": "tomatoes",
     "synonyms": [
       "tomatoes, canned, red, ripe, diced",
-      "canned tomatoes",
-      "tomatoes canned",
       "red tomatoes",
       "tomatoes red",
       "ripe tomatoes",
@@ -502,60 +420,51 @@
       "tomatoes diced"
     ],
     "category": "produce",
-    "emoji": "🥫",
+    "emoji": "🍅",
     "fdc_id": 333281
   },
   {
     "canonical": "haddock fish",
     "synonyms": [
       "fish, haddock, raw",
-      "fish",
       "fish haddock",
-      "raw fish",
-      "fish raw",
       "haddock"
     ],
     "category": "seafood",
-    "emoji": "🐬",
+    "emoji": "🐟",
     "fdc_id": 333374
   },
   {
     "canonical": "pollock fish",
     "synonyms": [
       "fish, pollock, raw",
-      "fish",
       "fish pollock",
-      "raw fish",
-      "fish raw",
       "pollock"
     ],
     "category": "seafood",
-    "emoji": "🐬",
+    "emoji": "🐟",
     "fdc_id": 333476
   },
   {
     "canonical": "tuna fish",
     "synonyms": [
       "fish, tuna, light, canned in water, drained solids",
-      "fish",
       "fish tuna",
       "light fish",
       "fish light",
       "canned in water fish",
       "fish canned in water",
       "drained solids fish",
-      "fish drained solids",
-      "tuna"
+      "fish drained solids"
     ],
     "category": "seafood",
-    "emoji": "🐬",
+    "emoji": "🐟",
     "fdc_id": 334194
   },
   {
     "canonical": "chinese restaurant",
     "synonyms": [
       "restaurant, chinese, fried rice, without meat",
-      "restaurant",
       "restaurant chinese",
       "fried rice restaurant",
       "restaurant fried rice",
@@ -564,19 +473,16 @@
       "chinese"
     ],
     "category": "other",
-    "emoji": "👲",
+    "emoji": "🍽️",
     "fdc_id": 334536
   },
   {
     "canonical": "latino restaurant",
     "synonyms": [
       "restaurant, latino, tamale, pork",
-      "restaurant",
       "restaurant latino",
       "tamale restaurant",
       "restaurant tamale",
-      "pork restaurant",
-      "restaurant pork",
       "latino"
     ],
     "category": "other",
@@ -587,10 +493,7 @@
     "canonical": "whole-wheat bread",
     "synonyms": [
       "bread, whole-wheat, commercially prepared",
-      "bread",
       "bread whole-wheat",
-      "commercially prepared bread",
-      "bread commercially prepared",
       "whole-wheat"
     ],
     "category": "bakery",
@@ -598,76 +501,46 @@
     "fdc_id": 335240
   },
   {
-    "canonical": "loin beef",
+    "canonical": "beef loin",
     "synonyms": [
       "beef, loin, tenderloin roast, separable lean only, boneless, trimmed to 0\" fat, select, cooked, roasted",
-      "beef",
       "beef loin",
       "tenderloin roast beef",
       "beef tenderloin roast",
-      "separable lean only beef",
-      "beef separable lean only",
-      "boneless beef",
-      "beef boneless",
-      "trimmed to 0\" fat beef",
-      "beef trimmed to 0\" fat",
-      "select beef",
-      "beef select",
       "cooked beef",
       "beef cooked",
       "roasted beef",
-      "beef roasted",
-      "loin"
+      "beef roasted"
     ],
     "category": "meat",
-    "emoji": "🐮",
+    "emoji": "🥩",
     "fdc_id": 746758
   },
   {
-    "canonical": "round beef",
+    "canonical": "beef round",
     "synonyms": [
       "beef, round, eye of round roast, boneless, separable lean only, trimmed to 0\" fat, select, raw",
-      "beef",
       "beef round",
       "eye of round roast beef",
       "beef eye of round roast",
-      "boneless beef",
-      "beef boneless",
-      "separable lean only beef",
-      "beef separable lean only",
-      "trimmed to 0\" fat beef",
-      "beef trimmed to 0\" fat",
-      "select beef",
-      "beef select",
-      "raw beef",
-      "beef raw",
       "round"
     ],
     "category": "meat",
-    "emoji": "👏",
+    "emoji": "🥩",
     "fdc_id": 746760
   },
   {
-    "canonical": "short loin beef",
+    "canonical": "beef short loin",
     "synonyms": [
       "beef, short loin, porterhouse steak, separable lean only, trimmed to 1/8\" fat, select, raw",
-      "beef",
       "beef short loin",
       "porterhouse steak beef",
       "beef porterhouse steak",
-      "separable lean only beef",
-      "beef separable lean only",
       "trimmed to 1/8\" fat beef",
-      "beef trimmed to 1/8\" fat",
-      "select beef",
-      "beef select",
-      "raw beef",
-      "beef raw",
-      "short",
-      "loin"
+      "beef trimmed to 1/8\" fat"
     ],
     "category": "meat",
-    "emoji": "🐮",
+    "emoji": "🥩",
     "fdc_id": 746762
   },
   {
@@ -680,42 +553,36 @@
       "carrots unprepared"
     ],
     "category": "produce",
-    "emoji": "🥶",
+    "emoji": "🥕",
     "fdc_id": 746764
   },
   {
-    "canonical": "dry white cheese",
+    "canonical": "queso seco",
     "synonyms": [
       "cheese, dry white, queso seco",
-      "cheese",
       "cheese dry white",
       "queso seco cheese",
-      "cheese queso seco",
-      "white"
+      "cheese queso seco"
     ],
     "category": "dairy",
-    "emoji": "☺️",
+    "emoji": "🧀",
     "fdc_id": 746765
   },
   {
     "canonical": "ricotta cheese",
     "synonyms": [
       "cheese, ricotta, whole milk",
-      "cheese",
       "cheese ricotta",
-      "whole milk cheese",
-      "cheese whole milk",
       "ricotta"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 746766
   },
   {
     "canonical": "swiss cheese",
     "synonyms": [
       "cheese, swiss",
-      "cheese",
       "cheese swiss",
       "swiss"
     ],
@@ -733,18 +600,14 @@
       "figs uncooked"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍒",
     "fdc_id": 746768
   },
   {
     "canonical": "cos or romaine lettuce",
     "synonyms": [
       "lettuce, cos or romaine, raw",
-      "lettuce",
-      "lettuce cos or romaine",
-      "raw lettuce",
-      "lettuce raw",
-      "romaine"
+      "lettuce cos or romaine"
     ],
     "category": "produce",
     "emoji": "🥬",
@@ -754,10 +617,7 @@
     "canonical": "cantaloupe melons",
     "synonyms": [
       "melons, cantaloupe, raw",
-      "melons",
       "melons cantaloupe",
-      "raw melons",
-      "melons raw",
       "cantaloupe"
     ],
     "category": "produce",
@@ -774,25 +634,20 @@
       "oranges navels"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍊",
     "fdc_id": 746771
   },
   {
     "canonical": "lowfat milk",
     "synonyms": [
       "milk, lowfat, fluid, 1% milkfat, with added vitamin a and vitamin d",
-      "milk",
       "milk lowfat",
-      "fluid milk",
-      "milk fluid",
       "1% milkfat milk",
       "milk 1% milkfat",
-      "with added vitamin a and vitamin d milk",
-      "milk with added vitamin a and vitamin d",
       "lowfat"
     ],
     "category": "dairy",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 746772
   },
   {
@@ -805,7 +660,7 @@
       "pears bartlett"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍐",
     "fdc_id": 746773
   },
   {
@@ -819,62 +674,50 @@
       "table"
     ],
     "category": "condiments",
-    "emoji": "🏓",
+    "emoji": "🧂",
     "fdc_id": 746775
   },
   {
     "canonical": "nonfat milk",
     "synonyms": [
       "milk, nonfat, fluid, with added vitamin a and vitamin d (fat free or skim)",
-      "milk",
       "milk nonfat",
-      "fluid milk",
-      "milk fluid",
       "with added vitamin a and vitamin d (fat free or skim) milk",
       "milk with added vitamin a and vitamin d (fat free or skim)",
       "nonfat"
     ],
     "category": "dairy",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 746776
   },
   {
     "canonical": "salsa sauce",
     "synonyms": [
       "sauce, salsa, ready-to-serve",
-      "sauce",
       "sauce salsa",
-      "ready-to-serve sauce",
-      "sauce ready-to-serve",
       "salsa"
     ],
     "category": "condiments",
-    "emoji": "💃",
+    "emoji": "🫗",
     "fdc_id": 746777
   },
   {
     "canonical": "reduced fat milk",
     "synonyms": [
       "milk, reduced fat, fluid, 2% milkfat, with added vitamin a and vitamin d",
-      "milk",
       "milk reduced fat",
-      "fluid milk",
-      "milk fluid",
       "2% milkfat milk",
       "milk 2% milkfat",
-      "with added vitamin a and vitamin d milk",
-      "milk with added vitamin a and vitamin d",
       "reduced"
     ],
     "category": "dairy",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 746778
   },
   {
     "canonical": "breakfast sausage sausage",
     "synonyms": [
       "sausage, breakfast sausage, beef, pre-cooked, unprepared",
-      "sausage",
       "sausage breakfast sausage",
       "beef sausage",
       "sausage beef",
@@ -885,54 +728,38 @@
       "breakfast"
     ],
     "category": "meat",
-    "emoji": "🍞",
+    "emoji": "🌭",
     "fdc_id": 746779
   },
   {
     "canonical": "italian sausage",
     "synonyms": [
       "sausage, italian, pork, mild, cooked, pan-fried",
-      "sausage",
       "sausage italian",
       "pork sausage",
-      "sausage pork",
-      "mild sausage",
-      "sausage mild",
-      "cooked sausage",
-      "sausage cooked",
-      "pan-fried sausage",
-      "sausage pan-fried",
       "italian"
     ],
     "category": "meat",
-    "emoji": "🍝",
+    "emoji": "🌭",
     "fdc_id": 746780
   },
   {
     "canonical": "pork sausage",
     "synonyms": [
       "sausage, pork, chorizo, link or ground, cooked, pan-fried",
-      "sausage",
-      "sausage pork",
       "chorizo sausage",
       "sausage chorizo",
       "link or ground sausage",
-      "sausage link or ground",
-      "cooked sausage",
-      "sausage cooked",
-      "pan-fried sausage",
-      "sausage pan-fried",
-      "pork"
+      "sausage link or ground"
     ],
     "category": "meat",
-    "emoji": "🥓",
+    "emoji": "🌭",
     "fdc_id": 746781
   },
   {
     "canonical": "whole milk",
     "synonyms": [
       "milk, whole, 3.25% milkfat, with added vitamin d",
-      "milk",
       "milk whole",
       "3.25% milkfat milk",
       "milk 3.25% milkfat",
@@ -940,25 +767,21 @@
       "milk with added vitamin d"
     ],
     "category": "dairy",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 746782
   },
   {
     "canonical": "turkey sausage",
     "synonyms": [
       "sausage, turkey, breakfast links, mild, raw",
-      "sausage",
       "sausage turkey",
       "breakfast links sausage",
       "sausage breakfast links",
-      "mild sausage",
-      "sausage mild",
       "raw sausage",
-      "sausage raw",
-      "turkey"
+      "sausage raw"
     ],
     "category": "meat",
-    "emoji": "🦃",
+    "emoji": "🌭",
     "fdc_id": 746783
   },
   {
@@ -970,14 +793,13 @@
       "granulated"
     ],
     "category": "snacks",
-    "emoji": "🍿",
+    "emoji": "🍯",
     "fdc_id": 746784
   },
   {
     "canonical": "ground turkey",
     "synonyms": [
       "turkey, ground, 93% lean, 7% fat, pan-broiled crumbles",
-      "turkey",
       "turkey ground",
       "93% lean turkey",
       "turkey 93% lean",
@@ -994,22 +816,18 @@
     "canonical": "american cheese",
     "synonyms": [
       "cheese, american, restaurant",
-      "cheese",
-      "cheese american",
       "restaurant cheese",
       "cheese restaurant",
       "american"
     ],
     "category": "dairy",
-    "emoji": "🗽",
+    "emoji": "🧀",
     "fdc_id": 747429
   },
   {
     "canonical": "dry beans",
     "synonyms": [
       "beans, dry, medium red (0% moisture)",
-      "beans",
-      "beans dry",
       "medium red (0% moisture) beans",
       "beans medium red (0% moisture)"
     ],
@@ -1033,11 +851,10 @@
     "synonyms": [
       "ketchup, restaurant",
       "ketchup",
-      "ketchup restaurant",
-      "restaurant"
+      "ketchup restaurant"
     ],
     "category": "produce",
-    "emoji": "🍽️",
+    "emoji": "🫗",
     "fdc_id": 747693
   },
   {
@@ -1053,54 +870,48 @@
       "grade"
     ],
     "category": "dairy",
-    "emoji": "🐣",
+    "emoji": "🥚",
     "fdc_id": 747997
   },
   {
     "canonical": "canola oil",
     "synonyms": [
       "oil, canola",
-      "oil",
       "oil canola",
       "canola"
     ],
     "category": "condiments",
-    "emoji": "🪔",
+    "emoji": "🫗",
     "fdc_id": 748278
   },
   {
     "canonical": "corn oil",
     "synonyms": [
       "oil, corn",
-      "oil",
-      "oil corn",
-      "corn"
+      "oil corn"
     ],
     "category": "condiments",
-    "emoji": "🍿",
+    "emoji": "🌽",
     "fdc_id": 748323
   },
   {
     "canonical": "soybean oil",
     "synonyms": [
       "oil, soybean",
-      "oil",
       "oil soybean",
       "soybean"
     ],
     "category": "condiments",
-    "emoji": "🪔",
+    "emoji": "🫗",
     "fdc_id": 748366
   },
   {
     "canonical": "olive oil",
     "synonyms": [
       "oil, olive, extra virgin",
-      "oil",
       "oil olive",
       "extra virgin oil",
-      "oil extra virgin",
-      "olive"
+      "oil extra virgin"
     ],
     "category": "condiments",
     "emoji": "🫒",
@@ -1110,14 +921,11 @@
     "canonical": "cured pork",
     "synonyms": [
       "pork, cured, bacon, cooked, restaurant",
-      "pork",
       "pork cured",
       "bacon pork",
       "pork bacon",
       "cooked pork",
       "pork cooked",
-      "restaurant pork",
-      "pork restaurant",
       "cured"
     ],
     "category": "meat",
@@ -1135,22 +943,18 @@
       "stick"
     ],
     "category": "dairy",
-    "emoji": "🍢",
+    "emoji": "🧈",
     "fdc_id": 789828
   },
   {
     "canonical": "wheat flour",
     "synonyms": [
       "flour, wheat, all-purpose, enriched, bleached",
-      "flour",
       "flour wheat",
       "all-purpose flour",
       "flour all-purpose",
-      "enriched flour",
-      "flour enriched",
       "bleached flour",
-      "flour bleached",
-      "wheat"
+      "flour bleached"
     ],
     "category": "dry_goods",
     "emoji": "🌾",
@@ -1160,11 +964,7 @@
     "canonical": "whole wheat flour",
     "synonyms": [
       "flour, whole wheat, unenriched",
-      "flour",
-      "flour whole wheat",
-      "unenriched flour",
-      "flour unenriched",
-      "wheat"
+      "flour whole wheat"
     ],
     "category": "dry_goods",
     "emoji": "🌾",
@@ -1174,79 +974,54 @@
     "canonical": "bread flour",
     "synonyms": [
       "flour, bread, white, enriched, unbleached",
-      "flour",
-      "flour bread",
-      "white flour",
-      "flour white",
-      "enriched flour",
-      "flour enriched",
-      "unbleached flour",
-      "flour unbleached",
-      "bread"
+      "flour bread"
     ],
     "category": "dry_goods",
-    "emoji": "🍞",
+    "emoji": "🌾",
     "fdc_id": 790146
   },
   {
     "canonical": "rice flour",
     "synonyms": [
       "flour, rice, white, unenriched",
-      "flour",
-      "flour rice",
-      "white flour",
-      "flour white",
-      "unenriched flour",
-      "flour unenriched",
-      "rice"
+      "flour rice"
     ],
     "category": "dry_goods",
-    "emoji": "🍣",
+    "emoji": "🌾",
     "fdc_id": 790214
   },
   {
     "canonical": "corn flour",
     "synonyms": [
       "flour, corn, yellow, fine meal, enriched",
-      "flour",
       "flour corn",
       "yellow flour",
       "flour yellow",
       "fine meal flour",
-      "flour fine meal",
-      "enriched flour",
-      "flour enriched",
-      "corn"
+      "flour fine meal"
     ],
     "category": "dry_goods",
-    "emoji": "🍿",
+    "emoji": "🌾",
     "fdc_id": 790276
   },
   {
     "canonical": "red onions",
     "synonyms": [
       "onions, red, raw",
-      "onions",
-      "onions red",
-      "raw onions",
-      "onions raw"
+      "onions red"
     ],
     "category": "produce",
-    "emoji": "🥵",
+    "emoji": "🧅",
     "fdc_id": 790577
   },
   {
     "canonical": "yellow onions",
     "synonyms": [
       "onions, yellow, raw",
-      "onions",
-      "onions yellow",
-      "raw onions",
-      "onions raw",
-      "yellow"
+      "onions yellow"
     ],
     "category": "produce",
-    "emoji": "👩",
+    "emoji": "🧅",
     "fdc_id": 790646
   },
   {
@@ -1264,132 +1039,94 @@
     "canonical": "soy flour",
     "synonyms": [
       "flour, soy, defatted",
-      "flour",
       "flour soy",
       "defatted flour",
       "flour defatted"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 1104705
   },
   {
     "canonical": "pastry flour",
     "synonyms": [
       "flour, pastry, unenriched, unbleached",
-      "flour",
       "flour pastry",
-      "unenriched flour",
-      "flour unenriched",
-      "unbleached flour",
-      "flour unbleached",
       "pastry"
     ],
     "category": "dry_goods",
-    "emoji": "🍥",
+    "emoji": "🌾",
     "fdc_id": 1104913
   },
   {
     "canonical": "white onions",
     "synonyms": [
       "onions, white, raw",
-      "onions",
-      "onions white",
-      "raw onions",
-      "onions raw",
-      "white"
+      "onions white"
     ],
     "category": "produce",
-    "emoji": "☺️",
+    "emoji": "🧅",
     "fdc_id": 1104962
   },
   {
     "canonical": "overripe bananas",
     "synonyms": [
       "bananas, overripe, raw",
-      "bananas",
-      "bananas overripe",
-      "raw bananas",
-      "bananas raw",
-      "overripe"
+      "bananas overripe"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍌",
     "fdc_id": 1105073
   },
   {
     "canonical": "ripe and slightly ripe bananas",
     "synonyms": [
       "bananas, ripe and slightly ripe, raw",
-      "bananas",
       "bananas ripe and slightly ripe",
-      "raw bananas",
-      "bananas raw",
-      "ripe",
       "slightly"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍌",
     "fdc_id": 1105314
   },
   {
     "canonical": "red delicious apples",
     "synonyms": [
       "apples, red delicious, with skin, raw",
-      "apples",
       "apples red delicious",
-      "with skin apples",
-      "apples with skin",
-      "raw apples",
-      "apples raw",
       "delicious"
     ],
     "category": "produce",
-    "emoji": "🥵",
+    "emoji": "🍎",
     "fdc_id": 1750339
   },
   {
     "canonical": "fuji apples",
     "synonyms": [
       "apples, fuji, with skin, raw",
-      "apples",
       "apples fuji",
-      "with skin apples",
-      "apples with skin",
-      "raw apples",
-      "apples raw",
       "fuji"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍎",
     "fdc_id": 1750340
   },
   {
     "canonical": "gala apples",
     "synonyms": [
       "apples, gala, with skin, raw",
-      "apples",
       "apples gala",
-      "with skin apples",
-      "apples with skin",
-      "raw apples",
-      "apples raw",
       "gala"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍎",
     "fdc_id": 1750341
   },
   {
     "canonical": "granny smith apples",
     "synonyms": [
       "apples, granny smith, with skin, raw",
-      "apples",
       "apples granny smith",
-      "with skin apples",
-      "apples with skin",
-      "raw apples",
-      "apples raw",
       "granny",
       "smith"
     ],
@@ -1401,23 +1138,17 @@
     "canonical": "honeycrisp apples",
     "synonyms": [
       "apples, honeycrisp, with skin, raw",
-      "apples",
       "apples honeycrisp",
-      "with skin apples",
-      "apples with skin",
-      "raw apples",
-      "apples raw",
       "honeycrisp"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍎",
     "fdc_id": 1750343
   },
   {
     "canonical": "peanut oil",
     "synonyms": [
       "oil, peanut",
-      "oil",
       "oil peanut",
       "peanut"
     ],
@@ -1429,31 +1160,27 @@
     "canonical": "sunflower oil",
     "synonyms": [
       "oil, sunflower",
-      "oil",
-      "oil sunflower",
-      "sunflower"
+      "oil sunflower"
     ],
     "category": "condiments",
-    "emoji": "🌻",
+    "emoji": "🫗",
     "fdc_id": 1750349
   },
   {
     "canonical": "safflower oil",
     "synonyms": [
       "oil, safflower",
-      "oil",
       "oil safflower",
       "safflower"
     ],
     "category": "condiments",
-    "emoji": "🪔",
+    "emoji": "🫗",
     "fdc_id": 1750350
   },
   {
     "canonical": "lion's mane mushroom",
     "synonyms": [
       "mushroom, lion's mane",
-      "mushroom",
       "mushroom lion's mane",
       "lion's",
       "mane"
@@ -1466,53 +1193,44 @@
     "canonical": "oyster mushroom",
     "synonyms": [
       "mushroom, oyster",
-      "mushroom",
-      "mushroom oyster",
-      "oyster"
+      "mushroom oyster"
     ],
     "category": "produce",
-    "emoji": "🥡",
+    "emoji": "🍄",
     "fdc_id": 1999627
   },
   {
     "canonical": "shiitake mushrooms",
     "synonyms": [
       "mushrooms, shiitake",
-      "mushrooms",
       "mushrooms shiitake",
       "shiitake"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍄",
     "fdc_id": 1999628
   },
   {
     "canonical": "white button mushrooms",
     "synonyms": [
       "mushrooms, white button",
-      "mushrooms",
       "mushrooms white button",
-      "white",
       "button"
     ],
     "category": "produce",
-    "emoji": "☺️",
+    "emoji": "🍄",
     "fdc_id": 1999629
   },
   {
     "canonical": "unsweetened soy milk",
     "synonyms": [
       "soy milk, unsweetened, plain, shelf stable",
-      "soy milk",
       "soy milk unsweetened",
-      "plain soy milk",
-      "soy milk plain",
       "shelf stable soy milk",
-      "soy milk shelf stable",
-      "unsweetened"
+      "soy milk shelf stable"
     ],
     "category": "dry_goods",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 1999630
   },
   {
@@ -1524,42 +1242,36 @@
       "plain almond milk",
       "almond milk plain",
       "shelf stable almond milk",
-      "almond milk shelf stable",
-      "unsweetened"
+      "almond milk shelf stable"
     ],
     "category": "beverages",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 1999631
   },
   {
     "canonical": "baby spinach",
     "synonyms": [
       "spinach, baby",
-      "spinach",
-      "spinach baby",
-      "baby"
+      "spinach baby"
     ],
     "category": "produce",
-    "emoji": "👶",
+    "emoji": "🥬",
     "fdc_id": 1999632
   },
   {
     "canonical": "mature spinach",
     "synonyms": [
       "spinach, mature",
-      "spinach",
-      "spinach mature",
-      "mature"
+      "spinach mature"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥬",
     "fdc_id": 1999633
   },
   {
     "canonical": "roma tomato",
     "synonyms": [
       "tomato, roma",
-      "tomato",
       "tomato roma",
       "roma"
     ],
@@ -1571,39 +1283,34 @@
     "canonical": "00 flour",
     "synonyms": [
       "flour, 00",
-      "flour",
       "flour 00"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2003586
   },
   {
     "canonical": "spelt flour",
     "synonyms": [
       "flour, spelt, whole grain",
-      "flour",
       "flour spelt",
-      "whole grain flour",
-      "flour whole grain",
       "spelt"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2003587
   },
   {
     "canonical": "semolina flour",
     "synonyms": [
       "flour, semolina, coarse and semi-coarse",
-      "flour",
       "flour semolina",
       "coarse and semi-coarse flour",
       "flour coarse and semi-coarse",
       "semolina"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2003588
   },
   {
@@ -1616,11 +1323,10 @@
       "apple juice from concentrate",
       "shelf stable apple juice",
       "apple juice shelf stable",
-      "added",
       "vitamin"
     ],
     "category": "produce",
-    "emoji": "©️",
+    "emoji": "🧃",
     "fdc_id": 2003590
   },
   {
@@ -1638,43 +1344,28 @@
       "pulp"
     ],
     "category": "produce",
-    "emoji": "😶",
+    "emoji": "🧃",
     "fdc_id": 2003591
   },
   {
     "canonical": "purple grape juice",
     "synonyms": [
       "grape juice, purple, with added vitamin c, from concentrate, shelf stable",
-      "grape juice",
       "grape juice purple",
-      "with added vitamin c grape juice",
-      "grape juice with added vitamin c",
-      "from concentrate grape juice",
-      "grape juice from concentrate",
-      "shelf stable grape juice",
-      "grape juice shelf stable",
       "purple"
     ],
     "category": "produce",
-    "emoji": "😈",
+    "emoji": "🧃",
     "fdc_id": 2003592
   },
   {
     "canonical": "white grape juice",
     "synonyms": [
       "grape juice, white, with added vitamin c, from concentrate, shelf stable",
-      "grape juice",
-      "grape juice white",
-      "with added vitamin c grape juice",
-      "grape juice with added vitamin c",
-      "from concentrate grape juice",
-      "grape juice from concentrate",
-      "shelf stable grape juice",
-      "grape juice shelf stable",
-      "white"
+      "grape juice white"
     ],
     "category": "produce",
-    "emoji": "☺️",
+    "emoji": "🧃",
     "fdc_id": 2003593
   },
   {
@@ -1690,14 +1381,13 @@
       "fortified"
     ],
     "category": "produce",
-    "emoji": "🙈",
+    "emoji": "🧃",
     "fdc_id": 2003594
   },
   {
     "canonical": "red grapefruit juice",
     "synonyms": [
       "grapefruit juice, red, not fortified, not from concentrate, refrigerated",
-      "grapefruit juice",
       "grapefruit juice red",
       "not fortified grapefruit juice",
       "grapefruit juice not fortified",
@@ -1707,7 +1397,7 @@
       "grapefruit juice refrigerated"
     ],
     "category": "produce",
-    "emoji": "🥵",
+    "emoji": "🧃",
     "fdc_id": 2003595
   },
   {
@@ -1720,18 +1410,16 @@
       "tomato juice from concentrate",
       "shelf stable tomato juice",
       "tomato juice shelf stable",
-      "added",
       "ingredients"
     ],
     "category": "produce",
-    "emoji": "🍅",
+    "emoji": "🧃",
     "fdc_id": 2003596
   },
   {
     "canonical": "portabella mushroom",
     "synonyms": [
       "mushroom, portabella",
-      "mushroom",
       "mushroom portabella",
       "portabella"
     ],
@@ -1743,20 +1431,17 @@
     "canonical": "king oyster mushroom",
     "synonyms": [
       "mushroom, king oyster",
-      "mushroom",
       "mushroom king oyster",
-      "king",
-      "oyster"
+      "king"
     ],
     "category": "produce",
-    "emoji": "🤴",
+    "emoji": "🍄",
     "fdc_id": 2003599
   },
   {
     "canonical": "enoki mushroom",
     "synonyms": [
       "mushroom, enoki",
-      "mushroom",
       "mushroom enoki",
       "enoki"
     ],
@@ -1768,7 +1453,6 @@
     "canonical": "crimini mushroom",
     "synonyms": [
       "mushroom, crimini",
-      "mushroom",
       "mushroom crimini",
       "crimini"
     ],
@@ -1780,7 +1464,6 @@
     "canonical": "maitake mushroom",
     "synonyms": [
       "mushroom, maitake",
-      "mushroom",
       "mushroom maitake",
       "maitake"
     ],
@@ -1792,7 +1475,6 @@
     "canonical": "beech mushroom",
     "synonyms": [
       "mushroom, beech",
-      "mushroom",
       "mushroom beech",
       "beech"
     ],
@@ -1804,7 +1486,6 @@
     "canonical": "pioppini mushroom",
     "synonyms": [
       "mushroom, pioppini",
-      "mushroom",
       "mushroom pioppini",
       "pioppini"
     ],
@@ -1816,16 +1497,13 @@
     "canonical": "sweetened soy milk",
     "synonyms": [
       "soy milk, sweetened, plain, refrigerated",
-      "soy milk",
       "soy milk sweetened",
-      "plain soy milk",
-      "soy milk plain",
       "refrigerated soy milk",
       "soy milk refrigerated",
       "sweetened"
     ],
     "category": "dry_goods",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 2257044
   },
   {
@@ -1837,55 +1515,43 @@
       "plain oat milk",
       "oat milk plain",
       "refrigerated oat milk",
-      "oat milk refrigerated",
-      "unsweetened"
+      "oat milk refrigerated"
     ],
     "category": "beverages",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 2257046
   },
   {
     "canonical": "mature carrots",
     "synonyms": [
       "carrots, mature, raw",
-      "carrots",
-      "carrots mature",
-      "raw carrots",
-      "carrots raw",
-      "mature"
+      "carrots mature"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥕",
     "fdc_id": 2258586
   },
   {
     "canonical": "baby carrots",
     "synonyms": [
       "carrots, baby, raw",
-      "carrots",
-      "carrots baby",
-      "raw carrots",
-      "carrots raw",
-      "baby"
+      "carrots baby"
     ],
     "category": "produce",
-    "emoji": "👶",
+    "emoji": "🥕",
     "fdc_id": 2258587
   },
   {
     "canonical": "bell peppers",
     "synonyms": [
       "peppers, bell, green, raw",
-      "peppers",
       "peppers bell",
       "green peppers",
       "peppers green",
-      "raw peppers",
-      "peppers raw",
       "bell"
     ],
     "category": "produce",
-    "emoji": "🎐",
+    "emoji": "🫑",
     "fdc_id": 2258588
   },
   {
@@ -1896,73 +1562,63 @@
       "buttermilk low fat"
     ],
     "category": "dairy",
-    "emoji": "🔉",
+    "emoji": "🥛",
     "fdc_id": 2259792
   },
   {
     "canonical": "yogurt",
     "synonyms": [
       "yogurt, plain, whole milk",
-      "plain yogurt",
-      "yogurt plain",
       "whole milk yogurt",
       "yogurt whole milk"
     ],
     "category": "dairy",
-    "emoji": "🤱",
+    "emoji": "🥛",
     "fdc_id": 2259793
   },
   {
     "canonical": "feta cheese",
     "synonyms": [
       "cheese, feta, whole milk, crumbled",
-      "cheese",
       "cheese feta",
-      "whole milk cheese",
-      "cheese whole milk",
       "crumbled cheese",
       "cheese crumbled",
       "feta"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 2259796
   },
   {
     "canonical": "almond flour",
     "synonyms": [
       "flour, almond",
-      "flour",
       "flour almond",
       "almond"
     ],
     "category": "snacks",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2261420
   },
   {
     "canonical": "oat flour",
     "synonyms": [
       "flour, oat, whole grain",
-      "flour",
-      "flour oat",
-      "whole grain flour",
-      "flour whole grain"
+      "flour oat"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2261421
   },
   {
     "canonical": "potato flour",
     "synonyms": [
       "flour, potato",
-      "flour",
       "flour potato",
       "potato"
     ],
     "category": "produce",
-    "emoji": "🥔",
+    "emoji": "🌾",
     "fdc_id": 2261422
   },
   {
@@ -1970,8 +1626,7 @@
     "synonyms": [
       "peanut butter, creamy",
       "peanut butter",
-      "peanut butter creamy",
-      "creamy"
+      "peanut butter creamy"
     ],
     "category": "dry_goods",
     "emoji": "🥜",
@@ -1982,11 +1637,10 @@
     "synonyms": [
       "sesame butter, creamy",
       "sesame butter",
-      "sesame butter creamy",
-      "creamy"
+      "sesame butter creamy"
     ],
     "category": "snacks",
-    "emoji": "🧈",
+    "emoji": "🌾",
     "fdc_id": 2262073
   },
   {
@@ -1994,11 +1648,10 @@
     "synonyms": [
       "almond butter, creamy",
       "almond butter",
-      "almond butter creamy",
-      "creamy"
+      "almond butter creamy"
     ],
     "category": "snacks",
-    "emoji": "🧈",
+    "emoji": "🌰",
     "fdc_id": 2262074
   },
   {
@@ -2009,7 +1662,7 @@
       "flaxseed ground"
     ],
     "category": "snacks",
-    "emoji": "🍿",
+    "emoji": "🌾",
     "fdc_id": 2262075
   },
   {
@@ -2019,11 +1672,10 @@
       "cottage cheese",
       "cottage cheese full fat",
       "large or small curd cottage cheese",
-      "cottage cheese large or small curd",
-      "full"
+      "cottage cheese large or small curd"
     ],
     "category": "dairy",
-    "emoji": "💯",
+    "emoji": "🧀",
     "fdc_id": 2346384
   },
   {
@@ -2033,64 +1685,54 @@
       "cream cheese",
       "cream cheese full fat",
       "block cream cheese",
-      "cream cheese block",
-      "full"
+      "cream cheese block"
     ],
     "category": "dairy",
-    "emoji": "💯",
+    "emoji": "🧀",
     "fdc_id": 2346385
   },
   {
     "canonical": "heavy cream",
     "synonyms": [
       "cream, heavy",
-      "cream",
       "cream heavy",
       "heavy"
     ],
     "category": "dairy",
-    "emoji": "❣️",
+    "emoji": "🥛",
     "fdc_id": 2346386
   },
   {
     "canonical": "sour cream",
     "synonyms": [
       "cream, sour, full fat",
-      "cream",
       "cream sour",
       "full fat cream",
       "cream full fat",
       "sour"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🥛",
     "fdc_id": 2346387
   },
   {
     "canonical": "iceberg lettuce",
     "synonyms": [
       "lettuce, iceberg, raw",
-      "lettuce",
       "lettuce iceberg",
-      "raw lettuce",
-      "lettuce raw",
       "iceberg"
     ],
     "category": "produce",
-    "emoji": "🧊",
+    "emoji": "🥬",
     "fdc_id": 2346388
   },
   {
     "canonical": "romaine lettuce",
     "synonyms": [
       "lettuce, romaine, green, raw",
-      "lettuce",
       "lettuce romaine",
       "green lettuce",
-      "lettuce green",
-      "raw lettuce",
-      "lettuce raw",
-      "romaine"
+      "lettuce green"
     ],
     "category": "produce",
     "emoji": "🥬",
@@ -2100,64 +1742,48 @@
     "canonical": "leaf lettuce",
     "synonyms": [
       "lettuce, leaf, red, raw",
-      "lettuce",
       "lettuce leaf",
       "red lettuce",
       "lettuce red",
-      "raw lettuce",
-      "lettuce raw",
       "leaf"
     ],
     "category": "produce",
-    "emoji": "🌿",
+    "emoji": "🥬",
     "fdc_id": 2346390
   },
   {
     "canonical": "pine nuts nuts",
     "synonyms": [
       "nuts, pine nuts, raw",
-      "nuts",
       "nuts pine nuts",
-      "raw nuts",
-      "nuts raw",
       "pine"
     ],
     "category": "snacks",
-    "emoji": "🌲",
+    "emoji": "🌰",
     "fdc_id": 2346392
   },
   {
     "canonical": "walnuts nuts",
     "synonyms": [
       "nuts, walnuts, english, halves, raw",
-      "nuts",
       "nuts walnuts",
       "english nuts",
       "nuts english",
-      "halves nuts",
-      "nuts halves",
-      "raw nuts",
-      "nuts raw",
       "walnuts"
     ],
     "category": "snacks",
-    "emoji": "🥜",
+    "emoji": "🌰",
     "fdc_id": 2346394
   },
   {
     "canonical": "pecans nuts",
     "synonyms": [
       "nuts, pecans, halves, raw",
-      "nuts",
       "nuts pecans",
-      "halves nuts",
-      "nuts halves",
-      "raw nuts",
-      "nuts raw",
       "pecans"
     ],
     "category": "snacks",
-    "emoji": "🥜",
+    "emoji": "🌰",
     "fdc_id": 2346395
   },
   {
@@ -2169,8 +1795,7 @@
       "rolled oats",
       "oats rolled",
       "old fashioned oats",
-      "oats old fashioned",
-      "grain"
+      "oats old fashioned"
     ],
     "category": "dry_goods",
     "emoji": "🌾",
@@ -2196,58 +1821,42 @@
       "dark red cherries",
       "cherries dark red",
       "raw cherries",
-      "cherries raw",
-      "sweet"
+      "cherries raw"
     ],
     "category": "produce",
-    "emoji": "🍡",
+    "emoji": "🍒",
     "fdc_id": 2346399
   },
   {
     "canonical": "russet potatoes",
     "synonyms": [
       "potatoes, russet, without skin, raw",
-      "potatoes",
       "potatoes russet",
-      "without skin potatoes",
-      "potatoes without skin",
-      "raw potatoes",
-      "potatoes raw",
       "russet"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥔",
     "fdc_id": 2346401
   },
   {
     "canonical": "red potatoes",
     "synonyms": [
       "potatoes, red, without skin, raw",
-      "potatoes",
-      "potatoes red",
-      "without skin potatoes",
-      "potatoes without skin",
-      "raw potatoes",
-      "potatoes raw"
+      "potatoes red"
     ],
     "category": "produce",
-    "emoji": "🥵",
+    "emoji": "🥔",
     "fdc_id": 2346402
   },
   {
     "canonical": "gold potatoes",
     "synonyms": [
       "potatoes, gold, without skin, raw",
-      "potatoes",
       "potatoes gold",
-      "without skin potatoes",
-      "potatoes without skin",
-      "raw potatoes",
-      "potatoes raw",
       "gold"
     ],
     "category": "produce",
-    "emoji": "💛",
+    "emoji": "🥔",
     "fdc_id": 2346403
   },
   {
@@ -2264,7 +1873,7 @@
       "flesh"
     ],
     "category": "produce",
-    "emoji": "🍊",
+    "emoji": "🥔",
     "fdc_id": 2346404
   },
   {
@@ -2275,14 +1884,13 @@
       "celery raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥬",
     "fdc_id": 2346405
   },
   {
     "canonical": "with peel cucumber",
     "synonyms": [
       "cucumber, with peel, raw",
-      "cucumber",
       "cucumber with peel",
       "raw cucumber",
       "cucumber raw",
@@ -2296,27 +1904,20 @@
     "canonical": "green cabbage",
     "synonyms": [
       "cabbage, green, raw",
-      "cabbage",
-      "cabbage green",
-      "raw cabbage",
-      "cabbage raw",
-      "green"
+      "cabbage green"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🥬",
     "fdc_id": 2346407
   },
   {
     "canonical": "red cabbage",
     "synonyms": [
       "cabbage, red, raw",
-      "cabbage",
-      "cabbage red",
-      "raw cabbage",
-      "cabbage raw"
+      "cabbage red"
     ],
     "category": "produce",
-    "emoji": "🥵",
+    "emoji": "🥬",
     "fdc_id": 2346408
   },
   {
@@ -2327,7 +1928,7 @@
       "strawberries raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍓",
     "fdc_id": 2346409
   },
   {
@@ -2338,7 +1939,7 @@
       "raspberries raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍓",
     "fdc_id": 2346410
   },
   {
@@ -2356,31 +1957,20 @@
     "canonical": "red grapes",
     "synonyms": [
       "grapes, red, seedless, raw",
-      "grapes",
-      "grapes red",
-      "seedless grapes",
-      "grapes seedless",
-      "raw grapes",
-      "grapes raw"
+      "grapes red"
     ],
     "category": "produce",
-    "emoji": "🥵",
+    "emoji": "🍇",
     "fdc_id": 2346412
   },
   {
     "canonical": "green grapes",
     "synonyms": [
       "grapes, green, seedless, raw",
-      "grapes",
-      "grapes green",
-      "seedless grapes",
-      "grapes seedless",
-      "raw grapes",
-      "grapes raw",
-      "green"
+      "grapes green"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🍇",
     "fdc_id": 2346413
   },
   {
@@ -2390,103 +1980,91 @@
       "applesauce",
       "applesauce unsweetened",
       "with added vitamin c applesauce",
-      "applesauce with added vitamin c",
-      "unsweetened"
+      "applesauce with added vitamin c"
     ],
     "category": "produce",
-    "emoji": "©️",
+    "emoji": "🍯",
     "fdc_id": 2346414
   },
   {
     "canonical": "amaranth flour",
     "synonyms": [
       "flour, amaranth",
-      "flour",
       "flour amaranth",
       "amaranth"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2512371
   },
   {
     "canonical": "quinoa flour",
     "synonyms": [
       "flour, quinoa",
-      "flour",
       "flour quinoa",
       "quinoa"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2512372
   },
   {
     "canonical": "sorghum flour",
     "synonyms": [
       "flour, sorghum",
-      "flour",
-      "flour sorghum",
-      "sorghum"
+      "flour sorghum"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2512373
   },
   {
     "canonical": "buckwheat flour",
     "synonyms": [
       "flour, buckwheat",
-      "flour",
-      "flour buckwheat",
-      "buckwheat"
+      "flour buckwheat"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2512374
   },
   {
     "canonical": "rye flour",
     "synonyms": [
       "flour, rye",
-      "flour",
       "flour rye"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2512375
   },
   {
     "canonical": "barley flour",
     "synonyms": [
       "flour, barley",
-      "flour",
       "flour barley",
       "barley"
     ],
     "category": "dry_goods",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2512376
   },
   {
     "canonical": "cassava flour",
     "synonyms": [
       "flour, cassava",
-      "flour",
       "flour cassava",
       "cassava"
     ],
     "category": "produce",
-    "emoji": "🫓",
+    "emoji": "🌾",
     "fdc_id": 2512377
   },
   {
     "canonical": "whole grain buckwheat",
     "synonyms": [
       "buckwheat, whole grain",
-      "buckwheat",
-      "buckwheat whole grain",
-      "grain"
+      "buckwheat whole grain"
     ],
     "category": "dry_goods",
     "emoji": "🌾",
@@ -2497,8 +2075,7 @@
     "synonyms": [
       "millet, whole grain",
       "millet",
-      "millet whole grain",
-      "grain"
+      "millet whole grain"
     ],
     "category": "dry_goods",
     "emoji": "🌾",
@@ -2508,122 +2085,89 @@
     "canonical": "brown rice",
     "synonyms": [
       "rice, brown, long grain, unenriched, raw",
-      "rice",
       "rice brown",
-      "long grain rice",
-      "rice long grain",
-      "unenriched rice",
-      "rice unenriched",
-      "raw rice",
-      "rice raw",
       "brown"
     ],
     "category": "dry_goods",
-    "emoji": "🐴",
+    "emoji": "🍚",
     "fdc_id": 2512380
   },
   {
     "canonical": "white rice",
     "synonyms": [
       "rice, white, long grain, unenriched, raw",
-      "rice",
-      "rice white",
-      "long grain rice",
-      "rice long grain",
-      "unenriched rice",
-      "rice unenriched",
-      "raw rice",
-      "rice raw",
-      "white"
+      "rice white"
     ],
     "category": "dry_goods",
-    "emoji": "☺️",
+    "emoji": "🍚",
     "fdc_id": 2512381
   },
   {
     "canonical": "ground beef",
     "synonyms": [
       "beef, ground, 90% lean meat / 10% fat, raw",
-      "beef",
       "beef ground",
       "90% lean meat / 10% fat beef",
-      "beef 90% lean meat / 10% fat",
-      "raw beef",
-      "beef raw"
+      "beef 90% lean meat / 10% fat"
     ],
     "category": "meat",
-    "emoji": "🐮",
+    "emoji": "🥩",
     "fdc_id": 2514743
   },
   {
     "canonical": "ground pork",
     "synonyms": [
       "pork, ground, raw",
-      "pork",
-      "pork ground",
-      "raw pork",
-      "pork raw"
+      "pork ground"
     ],
     "category": "meat",
-    "emoji": "🥓",
+    "emoji": "🥩",
     "fdc_id": 2514745
   },
   {
     "canonical": "ground chicken",
     "synonyms": [
       "chicken, ground, with additives, raw",
-      "chicken",
       "chicken ground",
       "with additives chicken",
-      "chicken with additives",
-      "raw chicken",
-      "chicken raw"
+      "chicken with additives"
     ],
     "category": "meat",
-    "emoji": "🐔",
+    "emoji": "🍗",
     "fdc_id": 2514746
   },
   {
     "canonical": "brazilnuts nuts",
     "synonyms": [
       "nuts, brazilnuts, raw",
-      "nuts",
       "nuts brazilnuts",
-      "raw nuts",
-      "nuts raw",
       "brazilnuts"
     ],
     "category": "snacks",
-    "emoji": "🥜",
+    "emoji": "🌰",
     "fdc_id": 2515373
   },
   {
     "canonical": "cashew nuts nuts",
     "synonyms": [
       "nuts, cashew nuts, raw",
-      "nuts",
       "nuts cashew nuts",
-      "raw nuts",
-      "nuts raw",
       "cashew"
     ],
     "category": "snacks",
-    "emoji": "🥜",
+    "emoji": "🌰",
     "fdc_id": 2515374
   },
   {
     "canonical": "hazelnuts or filberts nuts",
     "synonyms": [
       "nuts, hazelnuts or filberts, raw",
-      "nuts",
       "nuts hazelnuts or filberts",
-      "raw nuts",
-      "nuts raw",
       "hazelnuts",
       "filberts"
     ],
     "category": "snacks",
-    "emoji": "🕵️",
+    "emoji": "🌰",
     "fdc_id": 2515375
   },
   {
@@ -2641,94 +2185,74 @@
     "canonical": "chestnut flour",
     "synonyms": [
       "flour, chestnut",
-      "flour",
       "flour chestnut",
       "chestnut"
     ],
     "category": "snacks",
-    "emoji": "🌰",
+    "emoji": "🌾",
     "fdc_id": 2515377
   },
   {
     "canonical": "macadamia nuts nuts",
     "synonyms": [
       "nuts, macadamia nuts, raw",
-      "nuts",
       "nuts macadamia nuts",
-      "raw nuts",
-      "nuts raw",
       "macadamia"
     ],
     "category": "snacks",
-    "emoji": "🥜",
+    "emoji": "🌰",
     "fdc_id": 2515378
   },
   {
     "canonical": "pistachio nuts nuts",
     "synonyms": [
       "nuts, pistachio nuts, raw",
-      "nuts",
       "nuts pistachio nuts",
-      "raw nuts",
-      "nuts raw",
       "pistachio"
     ],
     "category": "snacks",
-    "emoji": "🥜",
+    "emoji": "🌰",
     "fdc_id": 2515379
   },
   {
     "canonical": "pumpkin seeds (pepitas) seeds",
     "synonyms": [
       "seeds, pumpkin seeds (pepitas), raw",
-      "seeds",
       "seeds pumpkin seeds (pepitas)",
-      "raw seeds",
-      "seeds raw",
-      "pumpkin",
       "(pepitas)"
     ],
     "category": "snacks",
-    "emoji": "🎃",
+    "emoji": "🥜",
     "fdc_id": 2515380
   },
   {
     "canonical": "sunflower seed seeds",
     "synonyms": [
       "seeds, sunflower seed, kernel, raw",
-      "seeds",
       "seeds sunflower seed",
       "kernel seeds",
-      "seeds kernel",
-      "raw seeds",
-      "seeds raw",
-      "sunflower",
-      "seed"
+      "seeds kernel"
     ],
     "category": "snacks",
-    "emoji": "🌻",
+    "emoji": "🥜",
     "fdc_id": 2515381
   },
   {
     "canonical": "coconut flour",
     "synonyms": [
       "flour, coconut",
-      "flour",
-      "flour coconut",
-      "coconut"
+      "flour coconut"
     ],
     "category": "snacks",
-    "emoji": "🌴",
+    "emoji": "🌾",
     "fdc_id": 2515382
   },
   {
     "canonical": "cannellini beans",
     "synonyms": [
       "beans, cannellini, dry",
-      "beans",
       "beans cannellini",
       "dry beans",
-      "beans dry",
       "cannellini"
     ],
     "category": "dry_goods",
@@ -2736,17 +2260,15 @@
     "fdc_id": 2644281
   },
   {
-    "canonical": "(garbanzo beans chickpeas",
+    "canonical": "chickpeas",
     "synonyms": [
       "chickpeas, (garbanzo beans, bengal gram), dry",
       "chickpeas",
-      "chickpeas (garbanzo beans",
       "bengal gram) chickpeas",
       "chickpeas bengal gram)",
       "dry chickpeas",
       "chickpeas dry",
-      "(garbanzo",
-      "beans"
+      "(garbanzo"
     ],
     "category": "dry_goods",
     "emoji": "🫘",
@@ -2760,7 +2282,7 @@
       "lentils dry"
     ],
     "category": "dry_goods",
-    "emoji": "🌾",
+    "emoji": "🫘",
     "fdc_id": 2644283
   },
   {
@@ -2771,39 +2293,24 @@
       "blackeye pea dry"
     ],
     "category": "dry_goods",
-    "emoji": "🌾",
+    "emoji": "🫘",
     "fdc_id": 2644284
   },
   {
     "canonical": "black beans",
     "synonyms": [
       "beans, black, canned, sodium added, drained and rinsed",
-      "beans",
-      "beans black",
-      "canned beans",
-      "beans canned",
-      "sodium added beans",
-      "beans sodium added",
-      "drained and rinsed beans",
-      "beans drained and rinsed",
-      "black"
+      "beans black"
     ],
     "category": "dry_goods",
-    "emoji": "❤️",
+    "emoji": "🫘",
     "fdc_id": 2644285
   },
   {
     "canonical": "navy beans",
     "synonyms": [
       "beans, navy, canned, sodium added, drained and rinsed",
-      "beans",
       "beans navy",
-      "canned beans",
-      "beans canned",
-      "sodium added beans",
-      "beans sodium added",
-      "drained and rinsed beans",
-      "beans drained and rinsed",
       "navy"
     ],
     "category": "dry_goods",
@@ -2811,10 +2318,9 @@
     "fdc_id": 2644286
   },
   {
-    "canonical": "bengal gram) chickpeas (garbanzo beans",
+    "canonical": "canned chickpeas",
     "synonyms": [
       "chickpeas (garbanzo beans, bengal gram), canned, sodium added, drained and rinsed",
-      "chickpeas (garbanzo beans",
       "chickpeas (garbanzo beans bengal gram)",
       "canned chickpeas (garbanzo beans",
       "chickpeas (garbanzo beans canned",
@@ -2826,25 +2332,18 @@
       "gram)"
     ],
     "category": "dry_goods",
-    "emoji": "🐅",
+    "emoji": "🫘",
     "fdc_id": 2644288
   },
   {
     "canonical": "kidney beans",
     "synonyms": [
       "beans, kidney, dark red, canned, sodium added, sugar added, drained and rinsed",
-      "beans",
       "beans kidney",
       "dark red beans",
       "beans dark red",
-      "canned beans",
-      "beans canned",
-      "sodium added beans",
-      "beans sodium added",
       "sugar added beans",
       "beans sugar added",
-      "drained and rinsed beans",
-      "beans drained and rinsed",
       "kidney"
     ],
     "category": "dry_goods",
@@ -2866,25 +2365,17 @@
       "sugar added peas",
       "peas sugar added",
       "drained and rinsed peas",
-      "peas drained and rinsed",
-      "green"
+      "peas drained and rinsed"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🫘",
     "fdc_id": 2644291
   },
   {
     "canonical": "pinto beans",
     "synonyms": [
       "beans, pinto, canned, sodium added, drained and rinsed",
-      "beans",
       "beans pinto",
-      "canned beans",
-      "beans canned",
-      "sodium added beans",
-      "beans sodium added",
-      "drained and rinsed beans",
-      "beans drained and rinsed",
       "pinto"
     ],
     "category": "dry_goods",
@@ -2903,270 +2394,190 @@
       "blackeye pea drained and rinsed"
     ],
     "category": "dry_goods",
-    "emoji": "🪫",
+    "emoji": "🫘",
     "fdc_id": 2644293
   },
   {
     "canonical": "great northern beans",
     "synonyms": [
       "beans, great northern, canned, sodium added, drained and rinsed",
-      "beans",
       "beans great northern",
-      "canned beans",
-      "beans canned",
-      "sodium added beans",
-      "beans sodium added",
-      "drained and rinsed beans",
-      "beans drained and rinsed",
       "great",
       "northern"
     ],
     "category": "dry_goods",
-    "emoji": "🦈",
+    "emoji": "🫘",
     "fdc_id": 2644294
   },
   {
     "canonical": "loin pork",
     "synonyms": [
       "pork, loin, boneless, raw",
-      "pork",
       "pork loin",
       "boneless pork",
-      "pork boneless",
-      "raw pork",
-      "pork raw",
-      "loin"
+      "pork boneless"
     ],
     "category": "meat",
-    "emoji": "🥓",
+    "emoji": "🥩",
     "fdc_id": 2646168
   },
   {
-    "canonical": "breast chicken",
+    "canonical": "chicken breast",
     "synonyms": [
       "chicken, breast, boneless, skinless, raw",
-      "chicken",
-      "chicken breast",
-      "boneless chicken",
-      "chicken boneless",
-      "skinless chicken",
-      "chicken skinless",
-      "raw chicken",
-      "chicken raw",
       "breast"
     ],
     "category": "meat",
-    "emoji": "🐔",
+    "emoji": "🍗",
     "fdc_id": 2646170
   },
   {
-    "canonical": "thigh chicken",
+    "canonical": "chicken thighs",
     "synonyms": [
       "chicken, thigh, boneless, skinless, raw",
-      "chicken",
       "chicken thigh",
-      "boneless chicken",
-      "chicken boneless",
-      "skinless chicken",
-      "chicken skinless",
-      "raw chicken",
-      "chicken raw",
       "thigh"
     ],
     "category": "meat",
-    "emoji": "🐔",
+    "emoji": "🍗",
     "fdc_id": 2646171
   },
   {
-    "canonical": "ribeye beef",
+    "canonical": "beef ribeye",
     "synonyms": [
       "beef, ribeye, steak, boneless, choice, raw",
-      "beef",
       "beef ribeye",
-      "steak beef",
-      "beef steak",
-      "boneless beef",
-      "beef boneless",
-      "choice beef",
-      "beef choice",
-      "raw beef",
-      "beef raw",
       "ribeye"
     ],
     "category": "meat",
-    "emoji": "🐮",
+    "emoji": "🥩",
     "fdc_id": 2646172
   },
   {
-    "canonical": "chuck beef",
+    "canonical": "beef chuck",
     "synonyms": [
       "beef, chuck, roast, boneless, choice, raw",
-      "beef",
       "beef chuck",
       "roast beef",
       "beef roast",
-      "boneless beef",
-      "beef boneless",
-      "choice beef",
-      "beef choice",
-      "raw beef",
-      "beef raw",
       "chuck"
     ],
     "category": "meat",
-    "emoji": "🐮",
+    "emoji": "🥩",
     "fdc_id": 2646174
   },
   {
-    "canonical": "flank beef",
+    "canonical": "beef flank",
     "synonyms": [
       "beef, flank, steak, boneless, choice, raw",
-      "beef",
       "beef flank",
-      "steak beef",
-      "beef steak",
-      "boneless beef",
-      "beef boneless",
-      "choice beef",
-      "beef choice",
-      "raw beef",
-      "beef raw",
       "flank"
     ],
     "category": "meat",
-    "emoji": "🐮",
+    "emoji": "🥩",
     "fdc_id": 2646175
   },
   {
     "canonical": "monterey jack cheese",
     "synonyms": [
       "cheese, monterey jack, solid",
-      "cheese",
       "cheese monterey jack",
-      "solid cheese",
-      "cheese solid",
       "monterey",
       "jack"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 2647438
   },
   {
-    "canonical": "pasteurized process cheese food or product cheese",
+    "canonical": "american cheese singles",
     "synonyms": [
       "cheese, pasteurized process cheese food or product, american, singles",
-      "cheese",
       "cheese pasteurized process cheese food or product",
-      "american cheese",
-      "cheese american",
       "singles cheese",
       "cheese singles",
-      "pasteurized",
-      "process",
       "food",
       "product"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 2647439
   },
   {
     "canonical": "provolone cheese",
     "synonyms": [
       "cheese, provolone, sliced",
-      "cheese",
       "cheese provolone",
       "sliced cheese",
       "cheese sliced",
       "provolone"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 2647440
   },
   {
     "canonical": "oaxaca cheese",
     "synonyms": [
       "cheese, oaxaca, solid",
-      "cheese",
       "cheese oaxaca",
-      "solid cheese",
-      "cheese solid",
       "oaxaca"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 2647441
   },
   {
     "canonical": "queso fresco cheese",
     "synonyms": [
       "cheese, queso fresco, solid",
-      "cheese",
       "cheese queso fresco",
-      "solid cheese",
-      "cheese solid",
       "queso",
       "fresco"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 2647442
   },
   {
     "canonical": "cotija cheese",
     "synonyms": [
       "cheese, cotija, solid",
-      "cheese",
       "cheese cotija",
-      "solid cheese",
-      "cheese solid",
       "cotija"
     ],
     "category": "dairy",
-    "emoji": "🥯",
+    "emoji": "🧀",
     "fdc_id": 2647443
   },
   {
     "canonical": "salmon fish",
     "synonyms": [
       "fish, salmon, sockeye, wild caught, raw",
-      "fish",
       "fish salmon",
       "sockeye fish",
       "fish sockeye",
-      "wild caught fish",
-      "fish wild caught",
-      "raw fish",
-      "fish raw",
       "salmon"
     ],
     "category": "seafood",
-    "emoji": "🐬",
+    "emoji": "🐟",
     "fdc_id": 2684440
   },
   {
     "canonical": "tilapia fish",
     "synonyms": [
       "fish, tilapia, farm raised, raw",
-      "fish",
       "fish tilapia",
-      "farm raised fish",
-      "fish farm raised",
-      "raw fish",
-      "fish raw",
       "tilapia"
     ],
     "category": "seafood",
-    "emoji": "🐬",
+    "emoji": "🐟",
     "fdc_id": 2684442
   },
   {
     "canonical": "shrimp crustaceans",
     "synonyms": [
       "crustaceans, shrimp, farm raised, raw",
-      "crustaceans",
       "crustaceans shrimp",
       "farm raised crustaceans",
       "crustaceans farm raised",
@@ -3182,40 +2593,29 @@
     "canonical": "cod fish",
     "synonyms": [
       "fish, cod, atlantic, wild caught, raw",
-      "fish",
       "fish cod",
       "atlantic fish",
-      "fish atlantic",
-      "wild caught fish",
-      "fish wild caught",
-      "raw fish",
-      "fish raw"
+      "fish atlantic"
     ],
     "category": "seafood",
-    "emoji": "🐬",
+    "emoji": "🐟",
     "fdc_id": 2684444
   },
   {
     "canonical": "catfish fish",
     "synonyms": [
       "fish, catfish, farm raised, raw",
-      "fish",
       "fish catfish",
-      "farm raised fish",
-      "fish farm raised",
-      "raw fish",
-      "fish raw",
       "catfish"
     ],
     "category": "seafood",
-    "emoji": "🐬",
+    "emoji": "🐟",
     "fdc_id": 2684445
   },
   {
     "canonical": "crab crustaceans",
     "synonyms": [
       "crustaceans, crab, blue swimming, lump, pasteurized, refrigerated",
-      "crustaceans",
       "crustaceans crab",
       "blue swimming crustaceans",
       "crustaceans blue swimming",
@@ -3235,7 +2635,6 @@
     "canonical": "summer squash",
     "synonyms": [
       "squash, summer, green, zucchini, includes skin, raw",
-      "squash",
       "squash summer",
       "green squash",
       "squash green",
@@ -3243,38 +2642,30 @@
       "squash zucchini",
       "includes skin squash",
       "squash includes skin",
-      "raw squash",
-      "squash raw",
       "summer"
     ],
     "category": "produce",
-    "emoji": "😎",
+    "emoji": "🥦",
     "fdc_id": 2685568
   },
   {
     "canonical": "winter squash",
     "synonyms": [
       "squash, winter, butternut, raw",
-      "squash",
       "squash winter",
       "butternut squash",
       "squash butternut",
-      "raw squash",
-      "squash raw",
       "winter"
     ],
     "category": "produce",
-    "emoji": "⛷️",
+    "emoji": "🥦",
     "fdc_id": 2685570
   },
   {
     "canonical": "bok choy cabbage",
     "synonyms": [
       "cabbage, bok choy, raw",
-      "cabbage",
       "cabbage bok choy",
-      "raw cabbage",
-      "cabbage raw",
       "choy"
     ],
     "category": "produce",
@@ -3300,7 +2691,7 @@
       "collards raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥬",
     "fdc_id": 2685574
   },
   {
@@ -3311,7 +2702,7 @@
       "brussels sprouts raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥬",
     "fdc_id": 2685575
   },
   {
@@ -3322,7 +2713,7 @@
       "beets raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍽️",
     "fdc_id": 2685576
   },
   {
@@ -3340,77 +2731,61 @@
     "canonical": "whole tomatoes",
     "synonyms": [
       "tomatoes, whole, canned, solids and liquids, with salt added",
-      "tomatoes",
       "tomatoes whole",
-      "canned tomatoes",
-      "tomatoes canned",
       "solids and liquids tomatoes",
       "tomatoes solids and liquids",
       "with salt added tomatoes",
       "tomatoes with salt added"
     ],
     "category": "produce",
-    "emoji": "🥫",
+    "emoji": "🍅",
     "fdc_id": 2685578
   },
   {
     "canonical": "sauce tomato",
     "synonyms": [
       "tomato, sauce, canned, with salt added",
-      "tomato",
       "tomato sauce",
-      "canned tomato",
-      "tomato canned",
       "with salt added tomato",
-      "tomato with salt added",
-      "sauce"
+      "tomato with salt added"
     ],
     "category": "produce",
-    "emoji": "🫙",
+    "emoji": "🫗",
     "fdc_id": 2685579
   },
   {
     "canonical": "paste tomato",
     "synonyms": [
       "tomato, paste, canned, without salt added",
-      "tomato",
       "tomato paste",
-      "canned tomato",
-      "tomato canned",
       "without salt added tomato",
       "tomato without salt added",
       "paste"
     ],
     "category": "produce",
-    "emoji": "🍅",
+    "emoji": "🫗",
     "fdc_id": 2685580
   },
   {
     "canonical": "crushed tomatoes",
     "synonyms": [
       "tomatoes, crushed, canned",
-      "tomatoes",
       "tomatoes crushed",
-      "canned tomatoes",
-      "tomatoes canned",
       "crushed"
     ],
     "category": "produce",
-    "emoji": "🥫",
+    "emoji": "🍅",
     "fdc_id": 2685581
   },
   {
     "canonical": "puree tomato",
     "synonyms": [
       "tomato, puree, canned",
-      "tomato",
       "tomato puree",
-      "canned tomato",
-      "tomato canned",
       "puree"
     ],
     "category": "produce",
-    "emoji": "🍅",
+    "emoji": "🫗",
     "fdc_id": 2685582
   },
   {
@@ -3424,17 +2799,14 @@
       "skin"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍑",
     "fdc_id": 2710815
   },
   {
     "canonical": "honeydew melons",
     "synonyms": [
       "melons, honeydew, raw",
-      "melons",
       "melons honeydew",
-      "raw melons",
-      "melons raw",
       "honeydew"
     ],
     "category": "produce",
@@ -3445,28 +2817,21 @@
     "canonical": "ripe plantains",
     "synonyms": [
       "plantains, ripe, raw",
-      "plantains",
-      "plantains ripe",
-      "raw plantains",
-      "plantains raw",
-      "ripe"
+      "plantains ripe"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍌",
     "fdc_id": 2710817
   },
   {
     "canonical": "underripe plantains",
     "synonyms": [
       "plantains, underripe, raw",
-      "plantains",
       "plantains underripe",
-      "raw plantains",
-      "plantains raw",
       "underripe"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍌",
     "fdc_id": 2710818
   },
   {
@@ -3479,7 +2844,7 @@
       "chia seeds raw"
     ],
     "category": "dry_goods",
-    "emoji": "🌾",
+    "emoji": "🥜",
     "fdc_id": 2710819
   },
   {
@@ -3505,7 +2870,7 @@
       "wild rice raw"
     ],
     "category": "dry_goods",
-    "emoji": "🤪",
+    "emoji": "🍚",
     "fdc_id": 2710821
   },
   {
@@ -3515,11 +2880,10 @@
       "arugula",
       "arugula baby",
       "raw arugula",
-      "arugula raw",
-      "baby"
+      "arugula raw"
     ],
     "category": "produce",
-    "emoji": "👶",
+    "emoji": "🥬",
     "fdc_id": 2710822
   },
   {
@@ -3529,11 +2893,10 @@
       "asparagus",
       "asparagus green",
       "raw asparagus",
-      "asparagus raw",
-      "green"
+      "asparagus raw"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🥦",
     "fdc_id": 2710823
   },
   {
@@ -3556,34 +2919,26 @@
     "canonical": "black rice",
     "synonyms": [
       "rice, black, unenriched, raw",
-      "rice",
-      "rice black",
-      "unenriched rice",
-      "rice unenriched",
-      "raw rice",
-      "rice raw",
-      "black"
+      "rice black"
     ],
     "category": "dry_goods",
-    "emoji": "❤️",
+    "emoji": "🍚",
     "fdc_id": 2710825
   },
   {
     "canonical": "sweet corn",
     "synonyms": [
       "corn, sweet, yellow and white kernels,  fresh, raw",
-      "corn",
       "corn sweet",
       "yellow and white kernels corn",
       "corn yellow and white kernels",
       "fresh corn",
       "corn fresh",
       "raw corn",
-      "corn raw",
-      "sweet"
+      "corn raw"
     ],
     "category": "produce",
-    "emoji": "🍡",
+    "emoji": "🌽",
     "fdc_id": 2710826
   },
   {
@@ -3595,8 +2950,7 @@
       "dry einkorn",
       "einkorn dry",
       "raw einkorn",
-      "einkorn raw",
-      "grain"
+      "einkorn raw"
     ],
     "category": "dry_goods",
     "emoji": "🌾",
@@ -3627,8 +2981,7 @@
       "dry fonio",
       "fonio dry",
       "raw fonio",
-      "fonio raw",
-      "grain"
+      "fonio raw"
     ],
     "category": "dry_goods",
     "emoji": "🌾",
@@ -3643,8 +2996,7 @@
       "dry khorasan",
       "khorasan dry",
       "raw khorasan",
-      "khorasan raw",
-      "grain"
+      "khorasan raw"
     ],
     "category": "dry_goods",
     "emoji": "🌾",
@@ -3659,11 +3011,10 @@
       "peeled kiwifruit (kiwi)",
       "kiwifruit (kiwi) peeled",
       "raw kiwifruit (kiwi)",
-      "kiwifruit (kiwi) raw",
-      "green"
+      "kiwifruit (kiwi) raw"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🥝",
     "fdc_id": 2710831
   },
   {
@@ -3675,8 +3026,7 @@
       "peeled mandarin",
       "mandarin peeled",
       "raw mandarin",
-      "mandarin raw",
-      "seedless"
+      "mandarin raw"
     ],
     "category": "produce",
     "emoji": "🍊",
@@ -3686,12 +3036,7 @@
     "canonical": "tommy atkins mango",
     "synonyms": [
       "mango, tommy atkins, peeled, raw",
-      "mango",
       "mango tommy atkins",
-      "peeled mango",
-      "mango peeled",
-      "raw mango",
-      "mango raw",
       "tommy",
       "atkins"
     ],
@@ -3703,12 +3048,7 @@
     "canonical": "ataulfo mango",
     "synonyms": [
       "mango, ataulfo, peeled, raw",
-      "mango",
       "mango ataulfo",
-      "peeled mango",
-      "mango peeled",
-      "raw mango",
-      "mango raw",
       "ataulfo"
     ],
     "category": "produce",
@@ -3731,7 +3071,7 @@
       "harina"
     ],
     "category": "dry_goods",
-    "emoji": "🫔",
+    "emoji": "🌾",
     "fdc_id": 2710835
   },
   {
@@ -3761,28 +3101,22 @@
       "with skin plum",
       "plum with skin",
       "raw plum",
-      "plum raw",
-      "black"
+      "plum raw"
     ],
     "category": "produce",
-    "emoji": "❤️",
+    "emoji": "🍑",
     "fdc_id": 2710837
   },
   {
     "canonical": "red rice",
     "synonyms": [
       "rice, red, unenriched, dry, raw",
-      "rice",
       "rice red",
-      "unenriched rice",
-      "rice unenriched",
       "dry rice",
-      "rice dry",
-      "raw rice",
-      "rice raw"
+      "rice dry"
     ],
     "category": "dry_goods",
-    "emoji": "🥵",
+    "emoji": "🍚",
     "fdc_id": 2710838
   },
   {
@@ -3796,11 +3130,10 @@
       "dry sorghum bran",
       "sorghum bran dry",
       "raw sorghum bran",
-      "sorghum bran raw",
-      "white"
+      "sorghum bran raw"
     ],
     "category": "dry_goods",
-    "emoji": "☺️",
+    "emoji": "🌾",
     "fdc_id": 2710839
   },
   {
@@ -3816,11 +3149,10 @@
       "dry sorghum flour",
       "sorghum flour dry",
       "raw sorghum flour",
-      "sorghum flour raw",
-      "white"
+      "sorghum flour raw"
     ],
     "category": "dry_goods",
-    "emoji": "☺️",
+    "emoji": "🌾",
     "fdc_id": 2710840
   },
   {
@@ -3836,26 +3168,23 @@
       "dry sorghum grain",
       "sorghum grain dry",
       "raw sorghum grain",
-      "sorghum grain raw",
-      "white"
+      "sorghum grain raw"
     ],
     "category": "dry_goods",
-    "emoji": "☺️",
+    "emoji": "🌾",
     "fdc_id": 2710841
   },
   {
     "canonical": "whole grain sorghum",
     "synonyms": [
       "sorghum, whole grain, white, dry, raw",
-      "sorghum",
       "sorghum whole grain",
       "white sorghum",
       "sorghum white",
       "dry sorghum",
       "sorghum dry",
       "raw sorghum",
-      "sorghum raw",
-      "grain"
+      "sorghum raw"
     ],
     "category": "dry_goods",
     "emoji": "🌾",
@@ -3865,46 +3194,31 @@
     "canonical": "overripe plantains",
     "synonyms": [
       "plantains, overripe, raw",
-      "plantains",
-      "plantains overripe",
-      "raw plantains",
-      "plantains raw",
-      "overripe"
+      "plantains overripe"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍌",
     "fdc_id": 2710843
   },
   {
     "canonical": "drumstick chicken",
     "synonyms": [
       "chicken, drumstick, meat and skin, raw",
-      "chicken",
-      "chicken drumstick",
-      "meat and skin chicken",
-      "chicken meat and skin",
-      "raw chicken",
-      "chicken raw",
       "drumstick"
     ],
     "category": "meat",
-    "emoji": "🍖",
+    "emoji": "🍗",
     "fdc_id": 2727566
   },
   {
     "canonical": "wing chicken",
     "synonyms": [
       "chicken, wing, meat and skin, raw",
-      "chicken",
       "chicken wing",
-      "meat and skin chicken",
-      "chicken meat and skin",
-      "raw chicken",
-      "chicken raw",
       "wing"
     ],
     "category": "meat",
-    "emoji": "🪽",
+    "emoji": "🍗",
     "fdc_id": 2727568
   },
   {
@@ -3917,7 +3231,7 @@
       "lamb raw"
     ],
     "category": "meat",
-    "emoji": "🐑",
+    "emoji": "🥩",
     "fdc_id": 2727570
   },
   {
@@ -3930,66 +3244,50 @@
       "bison raw"
     ],
     "category": "meat",
-    "emoji": "🦬",
+    "emoji": "🥩",
     "fdc_id": 2727571
   },
   {
-    "canonical": "short loin (ny strip steak) beef",
+    "canonical": "beef short loin (ny strip steak)",
     "synonyms": [
       "beef, short loin (ny strip steak), raw",
-      "beef",
       "beef short loin (ny strip steak)",
-      "raw beef",
-      "beef raw",
-      "short",
-      "loin",
       "strip",
       "steak)"
     ],
     "category": "meat",
-    "emoji": "🎞️",
+    "emoji": "🥩",
     "fdc_id": 2727572
   },
   {
-    "canonical": "tenderloin steak beef",
+    "canonical": "beef tenderloin steak",
     "synonyms": [
       "beef, tenderloin steak, raw",
-      "beef",
       "beef tenderloin steak",
-      "raw beef",
-      "beef raw",
-      "tenderloin",
-      "steak"
+      "tenderloin"
     ],
     "category": "meat",
     "emoji": "🥩",
     "fdc_id": 2727573
   },
   {
-    "canonical": "top sirloin steak beef",
+    "canonical": "beef top sirloin steak",
     "synonyms": [
       "beef, top sirloin steak, raw",
-      "beef",
       "beef top sirloin steak",
-      "raw beef",
-      "beef raw",
-      "sirloin",
-      "steak"
+      "sirloin"
     ],
     "category": "meat",
-    "emoji": "🎪",
+    "emoji": "🥩",
     "fdc_id": 2727574
   },
   {
     "canonical": "chop pork",
     "synonyms": [
       "pork, chop, center cut, raw",
-      "pork",
       "pork chop",
       "center cut pork",
       "pork center cut",
-      "raw pork",
-      "pork raw",
       "chop"
     ],
     "category": "meat",
@@ -4000,16 +3298,13 @@
     "canonical": "belly pork",
     "synonyms": [
       "pork, belly, with skin, raw",
-      "pork",
       "pork belly",
       "with skin pork",
       "pork with skin",
-      "raw pork",
-      "pork raw",
       "belly"
     ],
     "category": "meat",
-    "emoji": "🫃",
+    "emoji": "🥩",
     "fdc_id": 2727576
   },
   {
@@ -4021,47 +3316,31 @@
       "seeded pawpaw",
       "pawpaw seeded",
       "raw pawpaw",
-      "pawpaw raw",
-      "peeled"
+      "pawpaw raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍑",
     "fdc_id": 2727577
   },
   {
     "canonical": "pie pumpkin squash",
     "synonyms": [
       "squash, pie pumpkin, peeled, seeded, raw",
-      "squash",
-      "squash pie pumpkin",
-      "peeled squash",
-      "squash peeled",
-      "seeded squash",
-      "squash seeded",
-      "raw squash",
-      "squash raw",
-      "pumpkin"
+      "squash pie pumpkin"
     ],
     "category": "produce",
-    "emoji": "🥧",
+    "emoji": "🍽️",
     "fdc_id": 2727578
   },
   {
     "canonical": "spaghetti squash",
     "synonyms": [
       "squash, spaghetti, peeled, seeded, raw",
-      "squash",
       "squash spaghetti",
-      "peeled squash",
-      "squash peeled",
-      "seeded squash",
-      "squash seeded",
-      "raw squash",
-      "squash raw",
       "spaghetti"
     ],
     "category": "produce",
-    "emoji": "🍝",
+    "emoji": "🍽️",
     "fdc_id": 2727579
   },
   {
@@ -4071,11 +3350,10 @@
       "rutabaga",
       "rutabaga peeled",
       "raw rutabaga",
-      "rutabaga raw",
-      "peeled"
+      "rutabaga raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥔",
     "fdc_id": 2727580
   },
   {
@@ -4086,7 +3364,7 @@
       "blackberries raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🫐",
     "fdc_id": 2727581
   },
   {
@@ -4100,21 +3378,18 @@
       "dehusked"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🍅",
     "fdc_id": 2727582
   },
   {
     "canonical": "napa cabbage",
     "synonyms": [
       "cabbage, napa, leaf, destemmed, raw",
-      "cabbage",
       "cabbage napa",
       "leaf cabbage",
       "cabbage leaf",
       "destemmed cabbage",
       "cabbage destemmed",
-      "raw cabbage",
-      "cabbage raw",
       "napa"
     ],
     "category": "produce",
@@ -4131,11 +3406,10 @@
       "leeks root removed",
       "raw leeks",
       "leeks raw",
-      "bulb",
       "greens"
     ],
     "category": "produce",
-    "emoji": "🥬",
+    "emoji": "🧅",
     "fdc_id": 2727584
   },
   {
@@ -4153,7 +3427,7 @@
       "(scallion)"
     ],
     "category": "produce",
-    "emoji": "🤢",
+    "emoji": "🧅",
     "fdc_id": 2727585
   },
   {
@@ -4167,58 +3441,44 @@
       "root removed shallots",
       "shallots root removed",
       "raw shallots",
-      "shallots raw",
-      "bulb"
+      "shallots raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🧅",
     "fdc_id": 2727586
   },
   {
     "canonical": "prune juice",
     "synonyms": [
       "juice, prune, shelf-stable",
-      "juice",
       "juice prune",
-      "shelf-stable juice",
-      "juice shelf-stable",
       "prune"
     ],
     "category": "produce",
-    "emoji": "🥤",
+    "emoji": "🧃",
     "fdc_id": 2727587
   },
   {
     "canonical": "pomegranate juice",
     "synonyms": [
       "juice, pomegranate, from concentrate, shelf-stable",
-      "juice",
       "juice pomegranate",
-      "from concentrate juice",
-      "juice from concentrate",
-      "shelf-stable juice",
-      "juice shelf-stable",
       "pomegranate"
     ],
     "category": "produce",
-    "emoji": "🥤",
+    "emoji": "🧃",
     "fdc_id": 2727588
   },
   {
     "canonical": "tart cherry juice",
     "synonyms": [
       "juice, tart cherry, from concentrate, shelf-stable",
-      "juice",
       "juice tart cherry",
-      "from concentrate juice",
-      "juice from concentrate",
-      "shelf-stable juice",
-      "juice shelf-stable",
       "tart",
       "cherry"
     ],
     "category": "produce",
-    "emoji": "💮",
+    "emoji": "🧃",
     "fdc_id": 2727589
   },
   {
@@ -4230,11 +3490,10 @@
       "with salt anchovies",
       "anchovies with salt",
       "drained anchovies",
-      "anchovies drained",
-      "olive"
+      "anchovies drained"
     ],
     "category": "seafood",
-    "emoji": "🇮🇳",
+    "emoji": "🐟",
     "fdc_id": 2747652
   },
   {
@@ -4262,7 +3521,7 @@
       "alaskan"
     ],
     "category": "seafood",
-    "emoji": "🕵️",
+    "emoji": "🐟",
     "fdc_id": 2747654
   },
   {
@@ -4272,11 +3531,10 @@
       "fennel",
       "fennel bulb",
       "raw fennel",
-      "fennel raw",
-      "bulb"
+      "fennel raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🧅",
     "fdc_id": 2747655
   },
   {
@@ -4289,7 +3547,7 @@
       "halibut wild caught"
     ],
     "category": "seafood",
-    "emoji": "🤪",
+    "emoji": "🐟",
     "fdc_id": 2747656
   },
   {
@@ -4302,8 +3560,7 @@
       "lobster frozen",
       "wild caught lobster",
       "lobster wild caught",
-      "tail",
-      "only"
+      "tail"
     ],
     "category": "seafood",
     "emoji": "🦞",
@@ -4319,7 +3576,7 @@
       "mahi mahi wild caught"
     ],
     "category": "seafood",
-    "emoji": "🤪",
+    "emoji": "🐟",
     "fdc_id": 2747658
   },
   {
@@ -4330,72 +3587,52 @@
       "parsnips raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥕",
     "fdc_id": 2747659
   },
   {
-    "canonical": "banana or hungarian wax peppers",
+    "canonical": "banana peppers",
     "synonyms": [
       "peppers, banana or hungarian wax, seeded, raw",
-      "peppers",
       "peppers banana or hungarian wax",
-      "seeded peppers",
-      "peppers seeded",
-      "raw peppers",
-      "peppers raw",
       "banana",
       "hungarian"
     ],
     "category": "produce",
-    "emoji": "🐒",
+    "emoji": "🌶️",
     "fdc_id": 2747660
   },
   {
     "canonical": "jalapeno peppers",
     "synonyms": [
       "peppers, jalapeno, seeded, raw",
-      "peppers",
       "peppers jalapeno",
-      "seeded peppers",
-      "peppers seeded",
-      "raw peppers",
-      "peppers raw",
       "jalapeno"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🌶️",
     "fdc_id": 2747661
   },
   {
     "canonical": "poblano peppers",
     "synonyms": [
       "peppers, poblano, seeded, raw",
-      "peppers",
       "peppers poblano",
-      "seeded peppers",
-      "peppers seeded",
-      "raw peppers",
-      "peppers raw",
       "poblano"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🌶️",
     "fdc_id": 2747662
   },
   {
     "canonical": "serrano peppers",
     "synonyms": [
       "peppers, serrano, seeded, raw",
-      "peppers",
       "peppers serrano",
-      "seeded peppers",
-      "peppers seeded",
-      "raw peppers",
-      "peppers raw",
       "serrano"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🌶️",
     "fdc_id": 2747663
   },
   {
@@ -4406,7 +3643,7 @@
       "radicchio raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥬",
     "fdc_id": 2747664
   },
   {
@@ -4419,39 +3656,29 @@
       "radishes raw"
     ],
     "category": "produce",
-    "emoji": "🥵",
+    "emoji": "🥕",
     "fdc_id": 2747665
   },
   {
     "canonical": "bay scallops",
     "synonyms": [
       "scallops, bay, patagonian, frozen, wild caught",
-      "scallops",
       "scallops bay",
       "patagonian scallops",
-      "scallops patagonian",
-      "frozen scallops",
-      "scallops frozen",
-      "wild caught scallops",
-      "scallops wild caught"
+      "scallops patagonian"
     ],
     "category": "seafood",
-    "emoji": "🤪",
+    "emoji": "🦐",
     "fdc_id": 2747666
   },
   {
     "canonical": "sea scallops",
     "synonyms": [
       "scallops, sea, frozen, wild caught",
-      "scallops",
-      "scallops sea",
-      "frozen scallops",
-      "scallops frozen",
-      "wild caught scallops",
-      "scallops wild caught"
+      "scallops sea"
     ],
     "category": "seafood",
-    "emoji": "🧜",
+    "emoji": "🦐",
     "fdc_id": 2747667
   },
   {
@@ -4467,7 +3694,7 @@
       "chilean"
     ],
     "category": "seafood",
-    "emoji": "🇨🇱",
+    "emoji": "🐟",
     "fdc_id": 2747668
   },
   {
@@ -4480,7 +3707,7 @@
       "snapper wild caught"
     ],
     "category": "seafood",
-    "emoji": "🤪",
+    "emoji": "🐟",
     "fdc_id": 2747669
   },
   {
@@ -4491,11 +3718,10 @@
       "snow crab legs only",
       "frozen snow crab",
       "snow crab frozen",
-      "legs",
-      "only"
+      "legs"
     ],
     "category": "seafood",
-    "emoji": "⛷️",
+    "emoji": "🦀",
     "fdc_id": 2747670
   },
   {
@@ -4508,7 +3734,7 @@
       "squid (calamari) tubes only"
     ],
     "category": "seafood",
-    "emoji": "🦑",
+    "emoji": "🦐",
     "fdc_id": 2747671
   },
   {
@@ -4521,14 +3747,13 @@
       "swordfish wild caught"
     ],
     "category": "seafood",
-    "emoji": "🤪",
+    "emoji": "🐟",
     "fdc_id": 2747672
   },
   {
     "canonical": "ahi or yellowfin tuna",
     "synonyms": [
       "tuna, ahi or yellowfin, frozen, wild caught",
-      "tuna",
       "tuna ahi or yellowfin",
       "frozen tuna",
       "tuna frozen",
@@ -4537,7 +3762,7 @@
       "yellowfin"
     ],
     "category": "seafood",
-    "emoji": "🕵️",
+    "emoji": "🐟",
     "fdc_id": 2747673
   },
   {
@@ -4548,7 +3773,7 @@
       "turnips raw"
     ],
     "category": "produce",
-    "emoji": "🥦",
+    "emoji": "🥕",
     "fdc_id": 2747674
   },
   {
@@ -4560,8 +3785,7 @@
       "flesh only watermelon",
       "watermelon flesh only",
       "raw watermelon",
-      "watermelon raw",
-      "seedless"
+      "watermelon raw"
     ],
     "category": "produce",
     "emoji": "🍉",

@@ -56,14 +56,20 @@ def _build_lookup_index() -> dict[str, CatalogEntry]:
     return index
 
 
-def lookup(name: str, threshold: int = 80) -> CatalogEntry | None:
+def lookup(name: str, threshold: int = 80, fuzzy: bool = True) -> CatalogEntry | None:
     """
-    Look up a food item by name with fuzzy matching.
+    Look up a food item by name, optionally with fuzzy matching.
 
     1. Exact match in canonical/synonym index
-    2. rapidfuzz WRatio fuzzy match (score >= threshold)
+    2. rapidfuzz WRatio fuzzy match (score >= threshold) — only when fuzzy=True
 
     Returns None if no match above threshold.
+
+    Pass fuzzy=False for callers that need an exact-only hit. WRatio scores a
+    short string contained in a longer one very highly (e.g. "chicken" against
+    "broilers or fryers chicken"), which is really substring matching under
+    another name — fine for the lenient callers below, wrong for a canonical
+    display name.
     """
     name_lower = name.lower().strip()
     if not name_lower:
@@ -74,6 +80,9 @@ def lookup(name: str, threshold: int = 80) -> CatalogEntry | None:
     # Exact match
     if name_lower in index:
         return index[name_lower]
+
+    if not fuzzy:
+        return None
 
     # Fuzzy match against all keys
     result = process.extractOne(

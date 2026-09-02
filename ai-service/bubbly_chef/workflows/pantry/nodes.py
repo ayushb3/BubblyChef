@@ -144,13 +144,15 @@ def normalize_items(state: WorkflowState) -> WorkflowState:
 
     No LLM calls here - pure rule-based normalization.
 
-    Uses domain/normalizer.py's ``normalize_food_name`` (head-noun matcher)
-    instead of tools/normalizer.py's ``FoodNormalizer.normalize`` (bidirectional
-    substring). The bidirectional matcher collapses distinct products a chat
-    user might type — "milk chocolate" -> "milk", "red pepper flakes" ->
-    "bell pepper" — because any synonym that is a substring of the input (or
-    vice versa) wins. See ``receipt_ingest.normalize_receipt_items`` for the
-    same fix applied to receipts.
+    The display name a chat user typed is written to the pantry unchanged —
+    see issue #257. ``normalize_food_name`` is a *match key* for internal
+    lookups (category, unit/density resolution), not a display-name rewriter:
+    it used to overwrite "chicken" with "chicken breast" and similar, which is
+    data loss the user never asked for. It is still used here, but only to
+    resolve those internal lookups; ``normalized_name`` never reaches the
+    ``name`` field written to the pantry row. See
+    ``receipt_ingest.normalize_receipt_items`` for the same fix applied to
+    receipts.
     """
     parsed_items = state.get("parsed_items", [])
 
@@ -162,11 +164,9 @@ def normalize_items(state: WorkflowState) -> WorkflowState:
         name = item.get("name", "")
         original_name = name
 
-        # Normalize name through the head-noun matcher in domain/normalizer.py.
+        # Match key only (category/unit lookups below) — never written back as
+        # the display name. See the node docstring.
         normalized_name = normalize_food_name(name)
-
-        # Track if heavy normalization occurred (may lower confidence)
-        heavy_normalization = normalized_name.lower() != original_name.lower()
 
         # Get category (use resolve_category's head-noun/catalog fallback if
         # the LLM didn't provide a good one)
@@ -190,10 +190,6 @@ def normalize_items(state: WorkflowState) -> WorkflowState:
             # Default unit - might need clarification
             pass  # Keep confidence as-is for now
 
-        if heavy_normalization:
-            item_confidence = min(item_confidence, 0.70)
-            warnings.append(f"Normalized '{original_name}' to '{normalized_name}'")
-
         if category == FoodCategory.OTHER:
             item_confidence = min(item_confidence, 0.65)
 
@@ -205,7 +201,7 @@ def normalize_items(state: WorkflowState) -> WorkflowState:
 
         normalized_item = {
             **item,
-            "name": normalized_name,
+            "name": name,
             "original_name": original_name,
             "category": category.value,
             "confidence": item_confidence,

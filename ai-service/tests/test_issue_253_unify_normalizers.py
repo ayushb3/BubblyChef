@@ -190,4 +190,10 @@ def test_normalize_items_keeps_prefix_and_quantity_stripping() -> None:
         }
     ]
     normalized = _run_normalize_items(items)
-    assert normalized[0]["name"] == "milk"
+    # issue #257: the display name written to the pantry is the item's own
+    # name, unchanged — normalize_food_name is a match key for internal
+    # lookups (category, unit) only, not a display-name rewriter. Category
+    # resolution still benefits from the same prefix/quantity-stripping and
+    # synonym matching that used to (wrongly) get written into "name".
+    assert normalized[0]["name"] == "organic whole milk"
+    assert normalized[0]["category"] == "dairy"

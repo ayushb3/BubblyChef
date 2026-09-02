@@ -186,6 +186,22 @@ for normalized, synonyms in SYNONYMS.items():
         _REVERSE_SYNONYMS[syn.lower()] = normalized
 
 
+def _word_set(text: str) -> set[str]:
+    """Lowercase word set for *text*, stripping a trailing plural "s"."""
+    words = re.split(r"[\s,]+", text.lower().strip())
+    return {w[:-1] if w.endswith("s") and len(w) > 1 else w for w in words if w}
+
+
+def _same_head_words(cleaned: str, canonical: str) -> bool:
+    """True when *canonical* is the same words as *cleaned* (order/plural aside).
+
+    Guards the catalog exact-match fallback in `normalize_food_name` against
+    accepting a hit that merely shares a synonym with a more specific product
+    row — see the comment at that call site.
+    """
+    return _word_set(cleaned) == _word_set(canonical)
+
+
 def normalize_food_name(name: str) -> str:
     """
     Normalize a food name to canonical form.
@@ -206,9 +222,12 @@ def normalize_food_name(name: str) -> str:
         if cleaned.startswith(prefix):
             cleaned = cleaned[len(prefix) :]
 
-    # Remove quantity words at the start or end
+    # Remove quantity words at the start or end. The negative lookahead keeps a
+    # leading number that is immediately followed by "%" (e.g. "2% milk") intact
+    # — that digit is part of the product name, not a quantity to strip, and
+    # without it "2% milk" degrades to "% milk".
     cleaned = re.sub(
-        r"^\d+\s*(?:lb|lbs|oz|g|kg|ml|l|pk|pack|ct|count|gallon|gal|qt|quart|dozen)?\s*(?:of\s+)?",
+        r"^\d+(?!%)\s*(?:lb|lbs|oz|g|kg|ml|l|pk|pack|ct|count|gallon|gal|qt|quart|dozen)?\s*(?:of\s+)?",
         "",
         cleaned,
     )
@@ -222,16 +241,26 @@ def normalize_food_name(name: str) -> str:
     if cleaned in _REVERSE_SYNONYMS:
         return _REVERSE_SYNONYMS[cleaned]
 
-    # Try partial match: only if the input contains a known synonym as its full value
-    # (i.e., the synonym equals the cleaned input — already handled above — or
-    # the cleaned input is contained within a longer known synonym)
-    for synonym, normalized in _REVERSE_SYNONYMS.items():
-        if len(synonym) > len(cleaned) and cleaned in synonym:
-            return normalized
-
-    # Check catalog for canonical form (data-driven, USDA-backed, high threshold)
-    catalog_entry = catalog_lookup(cleaned, threshold=95)
-    if catalog_entry:
+    # Check catalog for an *exact* canonical/synonym hit only (data-driven,
+    # USDA-backed). Fuzzy matching is deliberately not used here: rapidfuzz's
+    # WRatio scores a short string contained in a longer one very highly, which
+    # is substring matching under another name (e.g. "chicken" -> "broilers or
+    # fryers chicken", "ham" -> "ground beef"). A name this exact lookup misses
+    # falls through to resolve_aliases_with_llm in services/cook_matcher.py,
+    # which resolves it far better than a fuzzy string score can — refuse
+    # rather than guess, the same rule domain/density.py already states for
+    # itself.
+    #
+    # An exact index hit alone is not enough of a guard: the catalog's raw USDA
+    # synonym lists attach bare generic words ("ham", "oil", "corn", "chicken")
+    # to one specific product row each (a sliced deli ham, a coconut oil, a
+    # corn oil, a braised chicken drumstick), so an exact hit can still silently
+    # inject descriptive words the input never had. Only trust the catalog when
+    # the canonical is the same set of words as the input (plurals aside) — a
+    # spelling/ordering normalization, not a guess at which specific product
+    # variant was meant.
+    catalog_entry = catalog_lookup(cleaned, fuzzy=False)
+    if catalog_entry and _same_head_words(cleaned, catalog_entry.canonical):
         return catalog_entry.canonical
 
     return cleaned

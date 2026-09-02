@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bubbly_chef.domain.normalizer import resolve_category
+from bubbly_chef.domain.normalizer import normalize_food_name, resolve_category
 from bubbly_chef.models.pantry import FoodCategory
 from bubbly_chef.workflows.shared_state import map_category
 
@@ -25,7 +25,23 @@ def test_resolve_category_eggs() -> None:
 
 
 def test_resolve_category_egg() -> None:
-    assert resolve_category("egg") == "dairy"
+    """Bare "egg" reaches dairy through normalization, not the catalog (#257c).
+
+    "egg" was an ambiguous catalog synonym — claimed by whole egg, egg white,
+    egg yolk, grade a eggs and others — so it was deleted rather than left to
+    resolve to whichever canonical dict ordering happened to favour. Called
+    directly on the raw string, resolve_category therefore returns None.
+
+    That is not the path any caller uses. All three ingest nodes
+    (receipt_ingest, product_ingest, pantry/nodes) pass ``normalized_name``,
+    and normalize_food_name maps "egg" -> "eggs" via the hand-curated SYNONYMS
+    table, which is unambiguous and untouched by the catalog cleanup. This
+    test pins both halves so the capability cannot regress unnoticed: if
+    someone makes the ingest nodes pass a raw name, the second assertion still
+    holds but the first stops describing reality.
+    """
+    assert resolve_category("egg") is None
+    assert resolve_category(normalize_food_name("egg")) == "dairy"
 
 
 def test_resolve_category_milk() -> None:
