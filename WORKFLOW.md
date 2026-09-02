@@ -76,6 +76,34 @@ BubblyChef's remote has legacy branches under other naming schemes (hash-suffixe
 `ui-wN-*`) — don't bulk-rename them. Just use the convention above for everything
 new; retire old branches naturally as they come up for merge or cleanup.
 
+### The PR body carries the review
+
+Write every PR body on the assumption that **it is the only thing the reviewer
+reads.** That is the real review surface here — the issue and the PR body get read;
+the diff usually does not. A body that says "implements #123" pushes the entire
+review onto a step that will not happen, and the change lands unexamined.
+
+So the body must let someone approve or reject **without opening the diff**:
+
+- **What changed, in plain language** — behaviour, not file names. "Approving a
+  pantry proposal now writes to the pantry" beats "updated `useChat.ts`".
+- **Evidence it works.** For anything visual, attach before/after screenshots or a
+  short clip — drive the app and capture it; Chromium and Playwright are available
+  in cloud sessions, so "I couldn't run it" is rarely true. For anything else, name
+  the tests that cover it and show the relevant output.
+- **What you verified, and how.** Distinguish "tests pass" from "I reproduced the
+  original bug and watched it stop happening" — only the second is evidence the
+  bug is fixed.
+- **What this does *not* cover.** Known gaps, deferred cases, anything you chose
+  not to handle. A reviewer who cannot see the diff cannot infer the edges, and
+  an unstated gap reads as a claim it was handled.
+- **The closing keyword** per the linking rules in `CLAUDE.md` — one per issue,
+  each on its own line.
+
+Screenshots are not decoration; for a UI change they are the review. A reviewer
+glancing at a before/after pair catches a broken layout instantly and would never
+have caught it in a diff.
+
 ## 5. Agent team shape
 
 Every project gets a `pm` role (the human) plus 2–5 domain-specific dev roles. The
@@ -181,11 +209,30 @@ Three layers, increasing in cost and decreasing in frequency:
    documented-but-absent everywhere except one machine.
 
    Mechanically it is a gate, not a notifier: it denies the call unless a marker
-   for the current HEAD exists at `.git/thermo-nuclear-review-<sha>`, which the
-   review records once it has run. The marker is per-commit, so a later push
-   re-arms the gate, and it lives in `.git/` so it is never committed. Bypass it
-   deliberately (`touch` the marker) only when you have a reason you would defend
-   in review.
+   for the current HEAD exists, which the review records once it has run. Markers
+   are per-commit, so a later push re-arms the gate, and they live in `.git/` so
+   they are never committed. Bypass deliberately (`touch` the marker) only when
+   you have a reason you would defend in review.
+
+   **Two tiers, because create and merge differ in risk and in who can satisfy
+   them.** `thermo-nuclear-review` is user-invocation-only — an agent cannot run
+   it. Gating PR *creation* on it therefore deadlocked every autonomous session at
+   the exact moment its work would have become visible, which is the worst possible
+   place to stop: the work is finished, and stranded.
+
+   | Action | Satisfied by |
+   |---|---|
+   | PR **create** | `.git/code-review-<sha>` *or* `.git/thermo-nuclear-review-<sha>` |
+   | PR **merge** | `.git/thermo-nuclear-review-<sha>` only |
+
+   Opening a draft PR is not the dangerous act — it is how work becomes reviewable.
+   Merging is the irreversible one, and `main` auto-deploys to Vercel and Railway,
+   so merge keeps the strong gate. `/code-review` **is** agent-invocable, which is
+   what makes the create tier satisfiable without a human in the loop.
+
+   In practice this means **every merge needs a thermo-nuclear pass**. On a major
+   PR that is obviously worth it. On a small bug fix it is quick — a small diff is
+   cheap to validate, so the gate costs little; it is not a reason to skip it.
 
    Kept as a local hook rather than a GitHub Actions bot because the latter needs
    API-key plumbing and per-repo billing setup — worth revisiting later, not bundled

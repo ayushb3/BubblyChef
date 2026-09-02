@@ -351,6 +351,20 @@ only in prose, so all six stayed open after merge and had to be closed by hand.
 Prefer the keyword over manual closing — a merged PR should leave the tracker
 correct with no follow-up step.
 
+**The PR body is the review surface — write it as if the diff will not be read,
+because it usually won't be.** The issue and the PR body get read; the diff does
+not. So a body must let someone approve or reject without opening it: what changed
+in plain behavioural language, before/after screenshots or a clip for anything
+visual, what you actually verified and how (reproducing the original bug and
+watching it stop is evidence; "tests pass" alone is not), and what the change
+explicitly does *not* cover. An unstated gap reads as a claim it was handled.
+Full rules in `WORKFLOW.md` §4.
+
+**Review tiers are enforced by a hook, and they differ.** Opening a PR needs a
+`/code-review` marker (agent-invocable). Merging needs a `thermo-nuclear-review`
+marker — `main` auto-deploys, so every merge gets the deep pass; on a small fix
+it's quick. See `WORKFLOW.md` §7.
+
 ---
 
 ## Environment Variables
