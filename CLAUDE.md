@@ -99,7 +99,8 @@ BubblyChef/
 │       ├── ai/                      # manager.py, gemini.py, ollama.py, provider.py
 │       ├── services/                # ocr.py, receipt_parser.py, image_preprocessor.py
 │       ├── domain/                  # normalizer.py, expiry.py, catalog.py (304 entries)
-│       ├── models/                  # pantry.py, recipes.py, proposals.py
+│       ├── models/                  # base, cook, pantry, proposals, recipe,
+│       │                            #   requests, session, user
 │       └── repository/supabase_repo.py  # SupabaseRepository (30+ methods, service_role)
 │
 ├── supabase/migrations/             # SQL migrations (schema + RLS policies)

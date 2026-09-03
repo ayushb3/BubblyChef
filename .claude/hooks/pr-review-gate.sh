@@ -9,8 +9,16 @@
 # The Bash branch matches only where `gh` sits in *command position* — the start of
 # the line or straight after a separator. A substring match is not good enough: the
 # first version of this hook used one and blocked an ordinary `git commit` whose
-# message quoted the phrase. Prose, heredoc bodies and quoted strings mentioning
-# `gh pr create` must not arm the gate; a real invocation must.
+# message quoted the phrase. Inline prose and quoted strings mentioning
+# `gh pr create` therefore do not arm the gate; a real invocation does.
+#
+# KNOWN LIMITATION: a heredoc body still can. The matcher splits on newlines and
+# separators, so a line inside a heredoc that begins with `gh pr create` looks
+# identical to a real invocation — recognising it would need an actual shell
+# parser, not a sed pipeline. This fails in the safe direction: a false positive
+# blocks a legitimate call (re-run it without the heredoc, or record the marker),
+# whereas a false negative would let an unreviewed PR through. Do not "fix" this
+# by loosening the match.
 #
 # Contract: allow silently unless this is a PR create/merge and no review marker
 # exists for the current HEAD. The marker lives in .git/ (never committed) and is

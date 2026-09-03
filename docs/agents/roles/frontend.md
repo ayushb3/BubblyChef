@@ -41,13 +41,13 @@ route calls `requireAuth()` — never touch the DB without extracting the user f
 - Strict TypeScript, functional components + hooks only.
 - Tailwind only — no custom CSS files (that's `ui-ux`'s design-token layer, not
   ad hoc component styles).
-- React Query for server state, Zustand for client state. Avoid `useState` for
-  fetched data.
+- React Query for server state; React hooks and context for client state. Avoid
+  `useState` for fetched data. **Zustand is not a dependency** — do not reach for
+  it; this rule previously named it and no such package has ever been installed.
 - All API calls go through the per-domain clients in `nextjs/src/lib/api/`
   (`chat.ts`, `pantry.ts`, `recipes.ts`, `scan.ts`, `ai-proxy.ts`) — no ad hoc
-  `fetch` calls in components. There is no single `client.ts`; add a new call to
-  the file for its domain, or add a new domain file alongside them.
-  scattered through components.
+  `fetch` calls scattered through components. There is no single `client.ts`; add
+  a new call to the file for its domain, or add a new domain file alongside them.
 
 ## Verification
 
