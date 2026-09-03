@@ -7,6 +7,7 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 import FadeInView from '@/components/ui/FadeInView'
 import { titleCase } from '@/lib/format'
 import { cookThisHref, tipChatHref } from '@/lib/chat-seed'
+import { pickRandomRecipe } from '@/lib/recipe-helpers'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
 
 interface Recipe {
@@ -127,10 +128,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
           totalCount: pantryData.total_count ?? allItems.length,
           expiringCount,
           urgentItem,
-          recipe:
-            recipes.length > 0
-              ? recipes[Math.floor(Math.random() * recipes.length)]
-              : null,
+          recipe: pickRandomRecipe(recipes),
         })
       } catch {
         // silent
@@ -173,7 +171,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
     : totalCount === 0
       ? "Your pantry is empty — let's stock up!"
       : recipe
-        ? `How about ${recipe.title}${mealTimeWord ? ` ${mealTimeWord}` : ''}?${recipe.total_time_minutes ? ` Only ${recipe.total_time_minutes} min!` : ''}`
+        ? `Feel like trying ${recipe.title}${mealTimeWord ? ` ${mealTimeWord}` : ''}?${recipe.total_time_minutes ? ` Only ${recipe.total_time_minutes} min!` : ''}`
         : expiringCount > 0
           ? "Check the 'Use Soon' tile — some items need your attention!"
           : 'Your kitchen is looking great!'
@@ -185,7 +183,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
     : totalCount === 0
       ? { label: 'Scan receipt', href: '/pantry?add=scan' }
       : recipe
-        ? { label: 'Open recipe', href: '/recipes' }
+        ? { label: 'Open recipe', href: `/recipes/${recipe.id}` }
         : expiringCount > 0
           ? { label: 'View pantry', href: '/pantry' }
           : { label: 'Ask Bubbles', href: '/chat' }

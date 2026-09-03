@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import BubbleMessage from './BubbleMessage'
 import { titleCase } from '@/lib/format'
+import { pickRandomRecipe } from '@/lib/recipe-helpers'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
 
 interface Recipe {
@@ -111,11 +112,9 @@ export default function BubblesFeed({ displayName }: BubblesFeedProps) {
               item.days_until_expiry <= 7)
         ).length
 
-        // Random recipe from the fetched list
-        const recipe =
-          recipes.length > 0
-            ? recipes[Math.floor(Math.random() * recipes.length)]
-            : null
+        // Random recipe from the fetched list — selection logic lives in
+        // pickRandomRecipe (recipe-helpers.ts), shared with HeroHome.
+        const recipe = pickRandomRecipe(recipes)
 
         setFeedData({
           totalCount: pantryData.total_count ?? allItems.length,
@@ -138,6 +137,13 @@ export default function BubblesFeed({ displayName }: BubblesFeedProps) {
   }
 
   const greeting = getTimeGreeting()
+  // Derive the meal-time word from the already-computed greeting so there is
+  // no second clock read.  Mirrors the same derivation in HeroHome.
+  const mealTimeWord = greeting.includes('morning')
+    ? 'this morning'
+    : greeting.includes('afternoon')
+      ? 'this afternoon'
+      : 'tonight'
   const tip = tips[new Date().getDay() % tips.length]
   const { totalCount, expiringWeekCount, urgentItem, recipe } = feedData
 
@@ -219,11 +225,12 @@ export default function BubblesFeed({ displayName }: BubblesFeedProps) {
           delay={delays[Math.min(hasUrgent ? 3 : 2, 4)]}
           bubbleState="happy"
           actions={[
-            { label: 'Open recipe 📖', href: '/recipes' },
+            { label: 'Open recipe 📖', href: `/recipes/${recipe.id}` },
             { label: 'Something else', href: '/chat?mode=recipe' },
           ]}
         >
-          How about <strong className="font-semibold">{recipe.title}</strong> tonight?{' '}
+          Feel like trying <strong className="font-semibold">{recipe.title}</strong>{' '}
+          {mealTimeWord}?{' '}
           {recipe.total_time_minutes
             ? `Only ${recipe.total_time_minutes} minutes!`
             : 'Looks delicious!'}
