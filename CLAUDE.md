@@ -76,7 +76,6 @@ BubblyChef/
 │       │   ├── login/page.tsx       # Auth (sign in / sign up)
 │       │   ├── recipes/page.tsx     # Recipe library
 │       │   ├── pantry/page.tsx
-│       │   ├── scan/page.tsx
 │       │   ├── chat/page.tsx
 │       │   └── api/                 # CRUD route handlers
 │       │       ├── pantry/          # GET/POST, expiring/, [id]/, [id]/slot/
@@ -87,7 +86,8 @@ BubblyChef/
 │       ├── components/              # React components
 │       └── lib/
 │           ├── supabase/            # client.ts, server.ts, middleware.ts
-│           ├── api/client.ts        # API client + React Query hooks
+│           ├── api/                 # per-domain clients: chat, pantry,
+│           │                        #   recipes, scan, ai-proxy
 │           ├── pantry-helpers.ts    # Computed fields (expiry, is_expired, etc.)
 │           └── response-helpers.ts  # requireAuth(), errorResponse()
 │
@@ -99,7 +99,8 @@ BubblyChef/
 │       ├── ai/                      # manager.py, gemini.py, ollama.py, provider.py
 │       ├── services/                # ocr.py, receipt_parser.py, image_preprocessor.py
 │       ├── domain/                  # normalizer.py, expiry.py, catalog.py (304 entries)
-│       ├── models/                  # pantry.py, recipes.py, proposals.py
+│       ├── models/                  # base, cook, pantry, proposals, recipe,
+│       │                            #   requests, session, user
 │       └── repository/supabase_repo.py  # SupabaseRepository (30+ methods, service_role)
 │
 ├── supabase/migrations/             # SQL migrations (schema + RLS policies)
@@ -115,11 +116,16 @@ BubblyChef/
 |---|---|---|
 | `/` | Dashboard | Expiring items widget, quick actions |
 | `/pantry` | Pantry | Browse/manage all items |
-| `/scan` | Scan | Receipt OCR upload + review flow |
 | `/recipes` | Recipe library | Search, save, edit, favourite |
 | `/chat` | Chat | AI assistant — general or recipe mode |
 | `/profile` | Profile | User settings, dietary preferences |
 | `/login` | Auth | Sign in / sign up (Supabase) |
+
+**There is no `/scan` route.** Receipt scanning is not a page — it is a tab inside
+the pantry add sheet (`components/pantry/PantryAddSheet.tsx`, tabs `scan` and
+`type`), reached as `/pantry?add=scan`. The scan UI lives in
+`components/pantry/ScanTab.tsx`. Issue #259 tracks decoupling that review surface
+from this entry point.
 
 ---
 
@@ -151,28 +157,35 @@ GET               /api/foods/search
 
 ### AI microservice routes (`http://localhost:8888`)
 
+Every AI-service route sits under a `/v1` prefix except the health checks.
+
 ```
 GET   /health | /health/ai
 
 # Chat (LangGraph intent router)
-POST  /v1/chat
-GET   /v1/chat/history
+POST  /v1/chat/stream                    # SSE — the path the UI actually uses
+POST  /v1/chat                           # non-streaming fallback
+GET   /v1/chat/history/{conversation_id}
+GET   /v1/chat/sessions
 
 # Scan (OCR + AI parse)
-GET   /scan/ocr-status
-POST  /scan/preprocess
-POST  /scan/receipt
-POST  /scan/confirm
+POST  /v1/scan/receipt
 
-# Recipe generation
-POST  /recipes/generate
-GET   /recipes/suggestions
+# Recipes (generation + cook/deduction)
+POST  /v1/recipes/generate
+POST  /v1/recipes/refine
+POST  /v1/recipes/cook
+POST  /v1/recipes/cook/confirm
 
-# Ingest workflows
-POST  /ingest/chat | /ingest/receipt | /ingest/product | /ingest/recipe
+# Pantry estimation helpers (called by the Next.js write paths)
+POST  /v1/pantry/estimate-expiry
+POST  /v1/pantry/estimate-category
+
+# Unified ingest dispatcher (receipt + barcode + URL)
+POST  /v1/ingest
 
 # Apply proposal (human-reviewed → DB)
-POST  /apply
+POST  /v1/workflows/apply
 ```
 
 ---
@@ -263,7 +276,8 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 - Strict mode, functional components + hooks only
 - Tailwind only (no custom CSS files)
 - React Query for server state; React hooks/context for client state (Zustand is NOT a dependency)
-- All API calls through `nextjs/src/lib/api/client.ts`
+- All API calls through the per-domain clients in `nextjs/src/lib/api/`
+  (`chat.ts`, `pantry.ts`, `recipes.ts`, `scan.ts`) — no ad hoc `fetch` in components
 - Every API route calls `requireAuth()` — never access DB without extracting user
 
 ---
@@ -271,6 +285,16 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 ## Working with Claude Code
 
 **Session orientation:** Read `ROADMAP.md` for current phase + open issues.
+
+**Never cite a bare issue or PR number.** Every time you mention an issue or PR
+in conversation — in a status table, a recommendation, a batch summary, a merge
+suggestion — give a one-line summary of what it actually is alongside the number,
+in plain language rather than the title verbatim. `#288` is useless on its own;
+"#288 — brainstorming forces expiring fruit into savoury dishes" is reviewable
+without leaving the terminal. For a PR, say what the change does and what it
+affects, so a merge decision can be made from the message itself. This applies
+however many you list: a table of ten issues gets ten summaries. The point is
+that the human never has to open GitHub to follow what you're proposing.
 
 **Full workflow reference:** See `WORKFLOW.md` at the repo root for the complete
 process model (issue lifecycle, autonomy gate, layered review, orchestration
@@ -333,6 +357,20 @@ Getting this wrong is a silent failure: #251 fixed six issues with the numbers
 only in prose, so all six stayed open after merge and had to be closed by hand.
 Prefer the keyword over manual closing — a merged PR should leave the tracker
 correct with no follow-up step.
+
+**The PR body is the review surface — write it as if the diff will not be read,
+because it usually won't be.** The issue and the PR body get read; the diff does
+not. So a body must let someone approve or reject without opening it: what changed
+in plain behavioural language, before/after screenshots or a clip for anything
+visual, what you actually verified and how (reproducing the original bug and
+watching it stop is evidence; "tests pass" alone is not), and what the change
+explicitly does *not* cover. An unstated gap reads as a claim it was handled.
+Full rules in `WORKFLOW.md` §4.
+
+**Review tiers are enforced by a hook, and they differ.** Opening a PR needs a
+`/code-review` marker (agent-invocable). Merging needs a `thermo-nuclear-review`
+marker — `main` auto-deploys, so every merge gets the deep pass; on a small fix
+it's quick. See `WORKFLOW.md` §7.
 
 ---
 

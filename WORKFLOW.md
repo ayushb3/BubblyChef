@@ -76,6 +76,34 @@ BubblyChef's remote has legacy branches under other naming schemes (hash-suffixe
 `ui-wN-*`) — don't bulk-rename them. Just use the convention above for everything
 new; retire old branches naturally as they come up for merge or cleanup.
 
+### The PR body carries the review
+
+Write every PR body on the assumption that **it is the only thing the reviewer
+reads.** That is the real review surface here — the issue and the PR body get read;
+the diff usually does not. A body that says "implements #123" pushes the entire
+review onto a step that will not happen, and the change lands unexamined.
+
+So the body must let someone approve or reject **without opening the diff**:
+
+- **What changed, in plain language** — behaviour, not file names. "Approving a
+  pantry proposal now writes to the pantry" beats "updated `useChat.ts`".
+- **Evidence it works.** For anything visual, attach before/after screenshots or a
+  short clip — drive the app and capture it; Chromium and Playwright are available
+  in cloud sessions, so "I couldn't run it" is rarely true. For anything else, name
+  the tests that cover it and show the relevant output.
+- **What you verified, and how.** Distinguish "tests pass" from "I reproduced the
+  original bug and watched it stop happening" — only the second is evidence the
+  bug is fixed.
+- **What this does *not* cover.** Known gaps, deferred cases, anything you chose
+  not to handle. A reviewer who cannot see the diff cannot infer the edges, and
+  an unstated gap reads as a claim it was handled.
+- **The closing keyword** per the linking rules in `CLAUDE.md` — one per issue,
+  each on its own line.
+
+Screenshots are not decoration; for a UI change they are the review. A reviewer
+glancing at a before/after pair catches a broken layout instantly and would never
+have caught it in a diff.
+
 ## 5. Agent team shape
 
 Every project gets a `pm` role (the human) plus 2–5 domain-specific dev roles. The
@@ -133,18 +161,35 @@ Concretely:
 
 ## 6. Autonomy gate
 
-Not everything needs to wait for a human. The split:
+Not everything needs to wait for a human. The line sits at **merge**, and only at
+merge:
 
-- **Sub-PRs** (scoped implementation slices feeding a parent feature/ticket) — agents
-  may merge autonomously once CI is green and a legible summary/demo is posted to the
-  PR. No human wait.
-- **Feature-level or large PRs** (anything closing a top-level spec ticket, or
-  touching more than one role's ownership boundary) — always wait for human review of
-  the posted summary/demo before merge.
+- **Everything up to and including opening a draft PR is autonomous.** Picking up a
+  `ready-for-agent` ticket, branching, implementing, running the quality gates,
+  running `/code-review`, recording its marker, pushing, and opening a draft PR with
+  a legible summary and demo — none of that waits for a human.
+- **Merging always waits for a human.** `main` auto-deploys to Vercel and Railway, so
+  a merge is a production deploy. The §7 gate enforces this mechanically: merge
+  requires a `thermo-nuclear-review` marker, and that skill is user-invocation-only.
+  An agent cannot produce it, by design.
 
-This is a deliberate application of **never-block-on-the-human**: reversible,
-scoped work proceeds without a permission pause; only the things that are expensive
-to undo (a feature landing wrong, ownership boundaries blurring) wait for a human.
+This is still **never-block-on-the-human**, applied where it belongs: the expensive
+thing to undo is a bad deploy, not a draft PR nobody has read yet. Work never
+strands half-finished waiting for permission — it strands, if at all, in a reviewable
+state with the diff, the demo and the review findings already attached.
+
+> **Changed from the earlier policy.** This section previously allowed agents to
+> merge sub-PRs autonomously once CI was green. That is no longer true and the gate
+> now prevents it. The reason is honest rather than theoretical: CI green plus an
+> agent's own review is weaker evidence than it feels like, because the reviewing
+> agent shares the implementing agent's blind spots — their failures correlate. A
+> defect that typechecks, passes tests, and reads plausibly is exactly the kind this
+> repo has already shipped (a chat action posting to a route that did not exist,
+> reporting success, and losing every item the user added). One human at the
+> irreversible step is cheap; an unnoticed bad deploy is not.
+
+Because the human at merge may not read the diff, **the PR body carries the review**
+— see §4. That is what makes a merge-only gate safe rather than a rubber stamp.
 
 **Guard the context window:** agents post *summaries* to the issue/PR, not full
 transcripts or diffs. Detail lives in linked artifacts (a demo doc, a decisions log,
@@ -181,11 +226,30 @@ Three layers, increasing in cost and decreasing in frequency:
    documented-but-absent everywhere except one machine.
 
    Mechanically it is a gate, not a notifier: it denies the call unless a marker
-   for the current HEAD exists at `.git/thermo-nuclear-review-<sha>`, which the
-   review records once it has run. The marker is per-commit, so a later push
-   re-arms the gate, and it lives in `.git/` so it is never committed. Bypass it
-   deliberately (`touch` the marker) only when you have a reason you would defend
-   in review.
+   for the current HEAD exists, which the review records once it has run. Markers
+   are per-commit, so a later push re-arms the gate, and they live in `.git/` so
+   they are never committed. Bypass deliberately (`touch` the marker) only when
+   you have a reason you would defend in review.
+
+   **Two tiers, because create and merge differ in risk and in who can satisfy
+   them.** `thermo-nuclear-review` is user-invocation-only — an agent cannot run
+   it. Gating PR *creation* on it therefore deadlocked every autonomous session at
+   the exact moment its work would have become visible, which is the worst possible
+   place to stop: the work is finished, and stranded.
+
+   | Action | Satisfied by |
+   |---|---|
+   | PR **create** | `.git/code-review-<sha>` *or* `.git/thermo-nuclear-review-<sha>` |
+   | PR **merge** | `.git/thermo-nuclear-review-<sha>` only |
+
+   Opening a draft PR is not the dangerous act — it is how work becomes reviewable.
+   Merging is the irreversible one, and `main` auto-deploys to Vercel and Railway,
+   so merge keeps the strong gate. `/code-review` **is** agent-invocable, which is
+   what makes the create tier satisfiable without a human in the loop.
+
+   In practice this means **every merge needs a thermo-nuclear pass**. On a major
+   PR that is obviously worth it. On a small bug fix it is quick — a small diff is
+   cheap to validate, so the gate costs little; it is not a reason to skip it.
 
    Kept as a local hook rather than a GitHub Actions bot because the latter needs
    API-key plumbing and per-repo billing setup — worth revisiting later, not bundled
