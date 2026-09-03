@@ -76,7 +76,6 @@ BubblyChef/
 │       │   ├── login/page.tsx       # Auth (sign in / sign up)
 │       │   ├── recipes/page.tsx     # Recipe library
 │       │   ├── pantry/page.tsx
-│       │   ├── scan/page.tsx
 │       │   ├── chat/page.tsx
 │       │   └── api/                 # CRUD route handlers
 │       │       ├── pantry/          # GET/POST, expiring/, [id]/, [id]/slot/
@@ -87,7 +86,8 @@ BubblyChef/
 │       ├── components/              # React components
 │       └── lib/
 │           ├── supabase/            # client.ts, server.ts, middleware.ts
-│           ├── api/client.ts        # API client + React Query hooks
+│           ├── api/                 # per-domain clients: chat, pantry,
+│           │                        #   recipes, scan, ai-proxy
 │           ├── pantry-helpers.ts    # Computed fields (expiry, is_expired, etc.)
 │           └── response-helpers.ts  # requireAuth(), errorResponse()
 │
@@ -115,11 +115,16 @@ BubblyChef/
 |---|---|---|
 | `/` | Dashboard | Expiring items widget, quick actions |
 | `/pantry` | Pantry | Browse/manage all items |
-| `/scan` | Scan | Receipt OCR upload + review flow |
 | `/recipes` | Recipe library | Search, save, edit, favourite |
 | `/chat` | Chat | AI assistant — general or recipe mode |
 | `/profile` | Profile | User settings, dietary preferences |
 | `/login` | Auth | Sign in / sign up (Supabase) |
+
+**There is no `/scan` route.** Receipt scanning is not a page — it is a tab inside
+the pantry add sheet (`components/pantry/PantryAddSheet.tsx`, tabs `scan` and
+`type`), reached as `/pantry?add=scan`. The scan UI lives in
+`components/pantry/ScanTab.tsx`. Issue #259 tracks decoupling that review surface
+from this entry point.
 
 ---
 
@@ -270,7 +275,8 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 - Strict mode, functional components + hooks only
 - Tailwind only (no custom CSS files)
 - React Query for server state; React hooks/context for client state (Zustand is NOT a dependency)
-- All API calls through `nextjs/src/lib/api/client.ts`
+- All API calls through the per-domain clients in `nextjs/src/lib/api/`
+  (`chat.ts`, `pantry.ts`, `recipes.ts`, `scan.ts`) — no ad hoc `fetch` in components
 - Every API route calls `requireAuth()` — never access DB without extracting user
 
 ---

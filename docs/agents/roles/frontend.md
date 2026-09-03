@@ -43,7 +43,10 @@ route calls `requireAuth()` — never touch the DB without extracting the user f
   ad hoc component styles).
 - React Query for server state, Zustand for client state. Avoid `useState` for
   fetched data.
-- All API calls go through `nextjs/src/lib/api/client.ts` — no ad hoc `fetch` calls
+- All API calls go through the per-domain clients in `nextjs/src/lib/api/`
+  (`chat.ts`, `pantry.ts`, `recipes.ts`, `scan.ts`, `ai-proxy.ts`) — no ad hoc
+  `fetch` calls in components. There is no single `client.ts`; add a new call to
+  the file for its domain, or add a new domain file alongside them.
   scattered through components.
 
 ## Verification

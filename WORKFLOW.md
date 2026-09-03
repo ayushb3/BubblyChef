@@ -161,18 +161,35 @@ Concretely:
 
 ## 6. Autonomy gate
 
-Not everything needs to wait for a human. The split:
+Not everything needs to wait for a human. The line sits at **merge**, and only at
+merge:
 
-- **Sub-PRs** (scoped implementation slices feeding a parent feature/ticket) — agents
-  may merge autonomously once CI is green and a legible summary/demo is posted to the
-  PR. No human wait.
-- **Feature-level or large PRs** (anything closing a top-level spec ticket, or
-  touching more than one role's ownership boundary) — always wait for human review of
-  the posted summary/demo before merge.
+- **Everything up to and including opening a draft PR is autonomous.** Picking up a
+  `ready-for-agent` ticket, branching, implementing, running the quality gates,
+  running `/code-review`, recording its marker, pushing, and opening a draft PR with
+  a legible summary and demo — none of that waits for a human.
+- **Merging always waits for a human.** `main` auto-deploys to Vercel and Railway, so
+  a merge is a production deploy. The §7 gate enforces this mechanically: merge
+  requires a `thermo-nuclear-review` marker, and that skill is user-invocation-only.
+  An agent cannot produce it, by design.
 
-This is a deliberate application of **never-block-on-the-human**: reversible,
-scoped work proceeds without a permission pause; only the things that are expensive
-to undo (a feature landing wrong, ownership boundaries blurring) wait for a human.
+This is still **never-block-on-the-human**, applied where it belongs: the expensive
+thing to undo is a bad deploy, not a draft PR nobody has read yet. Work never
+strands half-finished waiting for permission — it strands, if at all, in a reviewable
+state with the diff, the demo and the review findings already attached.
+
+> **Changed from the earlier policy.** This section previously allowed agents to
+> merge sub-PRs autonomously once CI was green. That is no longer true and the gate
+> now prevents it. The reason is honest rather than theoretical: CI green plus an
+> agent's own review is weaker evidence than it feels like, because the reviewing
+> agent shares the implementing agent's blind spots — their failures correlate. A
+> defect that typechecks, passes tests, and reads plausibly is exactly the kind this
+> repo has already shipped (a chat action posting to a route that did not exist,
+> reporting success, and losing every item the user added). One human at the
+> irreversible step is cheap; an unnoticed bad deploy is not.
+
+Because the human at merge may not read the diff, **the PR body carries the review**
+— see §4. That is what makes a merge-only gate safe rather than a rubber stamp.
 
 **Guard the context window:** agents post *summaries* to the issue/PR, not full
 transcripts or diffs. Detail lives in linked artifacts (a demo doc, a decisions log,
