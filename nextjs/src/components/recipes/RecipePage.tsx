@@ -1,12 +1,15 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import { ingredientLabel } from '@/lib/recipe-helpers'
+import type { RecipeIngredient } from '@/types/recipes'
 
-export interface Ingredient {
-  name: string
-  quantity?: string | number | null
-  unit?: string | null
-}
+/**
+ * Re-exported as `Ingredient` for back-compat with existing imports
+ * (RecipeEditModal, RecipeImportModal, etc.) — same shape as the shared
+ * `RecipeIngredient` used across the recipe types.
+ */
+export type Ingredient = RecipeIngredient
 
 export interface Recipe {
   id: string
@@ -67,10 +70,7 @@ export default function RecipeDetail({ recipe }: RecipeDetailProps) {
           </h3>
           <ul>
             {recipe.ingredients.map((ing, i) => {
-              const label =
-                typeof ing === 'string'
-                  ? ing
-                  : [ing.quantity, ing.unit, ing.name].filter(Boolean).join(' ')
+              const label = ingredientLabel(ing)
               return (
                 <motion.li
                   key={i}

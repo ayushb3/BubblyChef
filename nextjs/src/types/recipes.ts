@@ -14,6 +14,7 @@ export interface RecipeConstraints {
 
 export interface RecipeIngredient {
   name: string
+  /** Matches the backend contract (`quantity: float | None`) — never a string. */
   quantity?: number | null
   unit?: string | null
   preparation?: string | null
@@ -34,7 +35,13 @@ export interface GeneratedRecipe {
   cook_time_minutes?: number | null
   total_time_minutes?: number | null
   servings?: number | null
-  ingredients: RecipeIngredient[]
+  /**
+   * Ingredients are stored as `RecipeIngredient` objects when a recipe is
+   * AI-generated or URL-imported, but `RecipeEditModal` flattens them to
+   * plain strings on save — both shapes exist in the DB (#315). Use
+   * `ingredientLabel()` from `@/lib/recipe-helpers` to render either.
+   */
+  ingredients: (string | RecipeIngredient)[]
   instructions: string[]
   cuisine?: string | null
   meal_type?: string | null
