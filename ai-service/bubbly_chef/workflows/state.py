@@ -109,6 +109,10 @@ class WorkflowState(TypedDict, total=False):
     # ==========================================================================
     actions: list[PantryUpsertAction]
     proposal: PantryProposal | HandoffProposal | RecipeCardProposal | None
+    # Category-level words ("veggies", "dairy stuff") the user mentioned that
+    # were deliberately excluded from `actions` — too vague to write to the
+    # pantry as a literal item name. Surfaced as a clarifying question instead.
+    generic_pantry_terms: list[str]
 
     # ==========================================================================
     # Recipe-specific

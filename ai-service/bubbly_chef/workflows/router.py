@@ -698,6 +698,27 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
         elif intent == Intent.PANTRY_UPDATE.value:
             if state.get("requires_review"):
                 session.active_mode = SessionMode.INGESTING
+                # Remember what's still unresolved so the next turn's
+                # review_gate can acknowledge it instead of reading like a
+                # fresh conversation (#307-followup) — `pending_proposal`
+                # was declared on the session model for exactly this but was
+                # never actually written before now.
+                item_names = [a.item.name for a in state.get("actions", [])]
+                unclear_terms = state.get("generic_pantry_terms", [])
+                existing = session.pending_proposal or {}
+                merged_items = list(existing.get("item_names", []))
+                for name in item_names:
+                    if name.lower() not in {m.lower() for m in merged_items}:
+                        merged_items.append(name)
+                merged_terms = list(existing.get("unclear_terms", []))
+                for term in unclear_terms:
+                    if term.lower() not in {m.lower() for m in merged_terms}:
+                        merged_terms.append(term)
+                if merged_items or merged_terms:
+                    session.pending_proposal = {
+                        "item_names": merged_items[-20:],
+                        "unclear_terms": merged_terms[-20:],
+                    }
             else:
                 session.active_mode = SessionMode.DEFAULT
                 session.pending_proposal = None

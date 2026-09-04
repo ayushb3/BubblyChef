@@ -756,9 +756,15 @@ function MessageRenderer({
     )
   }
 
-  // Pantry proposal intent
-  if (intent === 'pantry_update' && message.response?.proposal) {
-    const proposal = message.response.proposal as PantryProposalData
+  // Pantry proposal intent — only render the card when there's at least one
+  // actionable item. A proposal can legitimately carry zero actions (every
+  // item the user mentioned was too generic — "veggies", "dairy stuff" — to
+  // write to the pantry); in that case fall through to the plain text
+  // bubble below, which already carries the assistant's clarifying question.
+  const pantryProposal =
+    intent === 'pantry_update' ? (message.response?.proposal as PantryProposalData | undefined) : undefined
+  if (pantryProposal && pantryProposal.actions.length > 0) {
+    const proposal = pantryProposal
     return (
       <motion.div
         initial={{ opacity: 0, y: 8 }}
