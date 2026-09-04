@@ -13,17 +13,19 @@
 import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
 import type { ChatIntent } from '@/types/chat'
 
-// All valid values from the ChatIntent union.  When a new intent is added to
-// ChatIntent this list will need updating — the test below then enforces that
-// the resolver also handles it (or intentionally falls through to default).
-const VALID_INTENTS: ChatIntent[] = [
-  'pantry_update',
-  'recipe_card',
-  'recipe_generation',
-  'cooking_help',
-  'general_chat',
-  'recipe_brainstorm',
-]
+// Derive VALID_INTENTS from the ChatIntent union via an exhaustive Record.
+// tsc errors if a union member is missing from the object literal, so adding
+// a new intent without updating this file causes a type error rather than a
+// silent false pass (the exact failure mode this PR exists to fix).
+const INTENT_SET: Record<ChatIntent, true> = {
+  pantry_update: true,
+  recipe_card: true,
+  recipe_generation: true,
+  cooking_help: true,
+  general_chat: true,
+  recipe_brainstorm: true,
+}
+const VALID_INTENTS = Object.keys(INTENT_SET) as ChatIntent[]
 
 // ─── cooking_help resolves to the cooking chips ───────────────────────────────
 
@@ -52,6 +54,37 @@ describe('resolveChips — cooking_help intent (#304)', () => {
 
   it('COOKING_CHIPS has exactly the three cooking chip entries', () => {
     expect(COOKING_CHIPS).toHaveLength(3)
+  })
+
+  // ── emoji-in-message guard (#313) ────────────────────────────────────────────
+  // The `message` field is sent to the LLM and shown in the chat bubble.
+  // Emojis belong in `emoji` (rendered separately by PostMessageChips) or in
+  // `suggestion` (empty-state display string only) — never appended to `message`.
+  it('no COOKING_CHIPS message contains an emoji character', () => {
+    // Unicode emoji regex — covers the common Emoji_Presentation + modifier
+    // sequences used in this component.
+    const emojiPattern = /\p{Emoji_Presentation}/u
+    COOKING_CHIPS.forEach((chip) => {
+      expect(chip.message).not.toMatch(emojiPattern)
+    })
+  })
+
+  // ── empty-state composition guard (#313) ────────────────────────────────────
+  // The empty-state row renders `chip.suggestion ?? chip.message`.  It must
+  // produce the same three strings, in the same order, with the same tones, as
+  // before the emoji fix landed — the user must see no visual change there.
+  it('empty-state suggestions compose to the exact expected strings', () => {
+    const emptyStateSuggestions = COOKING_CHIPS.map((c) => c.suggestion ?? c.message)
+    expect(emptyStateSuggestions).toEqual([
+      'What can I substitute? 🔁',
+      'How do I prep this? 🔪',
+      'How long does this take? ⏱️',
+    ])
+  })
+
+  it('empty-state suggestion tones are primary / accent / fresh', () => {
+    const tones = COOKING_CHIPS.map((c) => c.tone ?? 'primary')
+    expect(tones).toEqual(['primary', 'accent', 'fresh'])
   })
 })
 
