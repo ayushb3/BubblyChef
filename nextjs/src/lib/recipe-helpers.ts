@@ -157,13 +157,21 @@ export function ingredientRowsToPayload(
 
   for (const row of rows) {
     const trimmedText = row.text.trim()
-    if (trimmedText === '') continue
 
+    // The untouched check comes FIRST, before the empty-row drop. A row the
+    // user never edited is preserved verbatim even when its label renders
+    // empty — a malformed object (no usable `name`, but real `quantity`/`unit`)
+    // labels as '' and would otherwise be silently deleted by a save the user
+    // never intended as a deletion. Only a row the user actually cleared, or
+    // an empty row they added, is dropped.
     if (row.original !== null && trimmedText === ingredientLabel(row.original).trim()) {
       payload.push(row.original)
-    } else {
-      payload.push(trimmedText)
+      continue
     }
+
+    if (trimmedText === '') continue
+
+    payload.push(trimmedText)
   }
 
   return payload

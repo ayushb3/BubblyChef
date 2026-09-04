@@ -23,6 +23,11 @@ const baseRecipe: Recipe = {
     { name: 'flour', quantity: 2, unit: 'cups', preparation: null, optional: false },
     { name: 'egg', quantity: 1, unit: null, preparation: 'beaten', optional: false },
     { name: 'vanilla extract', quantity: null, unit: null, preparation: null, optional: true },
+    // quantity 0 is load-bearing: the deleted `toIngStr` used `.filter(Boolean)`
+    // and dropped it, while `ingredientLabel` keeps it. Without a 0 in this
+    // fixture the two agree everywhere, and a regression to the old
+    // initialiser would pass the whole suite. See #322.
+    { name: 'chili flakes', quantity: 0, unit: 'tsp', preparation: 'crushed', optional: true },
   ],
   instructions: ['Mix dry ingredients', 'Whisk in egg', 'Cook on griddle'],
 }
@@ -47,7 +52,7 @@ describe('RecipeEditModal ingredient rows (#322)', () => {
     render(<RecipeEditModal recipe={baseRecipe} onSave={onSave} onClose={jest.fn()} />)
 
     const removeButtons = screen.getAllByRole('button', { name: /remove ingredient/i })
-    expect(removeButtons).toHaveLength(3)
+    expect(removeButtons).toHaveLength(4)
 
     // Delete the middle row ("egg").
     fireEvent.click(removeButtons[1])
@@ -59,6 +64,7 @@ describe('RecipeEditModal ingredient rows (#322)', () => {
     expect(payload.ingredients).toEqual([
       baseRecipe.ingredients[0],
       baseRecipe.ingredients[2],
+      baseRecipe.ingredients[3],
     ])
     expect(payload.ingredients[0]).toBe(baseRecipe.ingredients[0])
     expect(payload.ingredients[1]).toBe(baseRecipe.ingredients[2])
@@ -86,6 +92,7 @@ describe('RecipeEditModal ingredient rows (#322)', () => {
     expect(payload.ingredients).toEqual([
       '2 eggs, beaten well',
       baseRecipe.ingredients[2],
+      baseRecipe.ingredients[3],
     ])
     expect(payload.ingredients[1]).toBe(baseRecipe.ingredients[2])
   })
