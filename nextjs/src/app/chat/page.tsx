@@ -30,42 +30,12 @@ import type {
   PantryProposalData,
 } from '@/types/chat'
 import { getBrainstormIdeas } from '@/types/chat'
-import type { ChipConfig } from '@/components/chat/PostMessageChips'
+import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
 
 // ---------------------------------------------------------------------------
-// Intent-aware chip resolver
+// Intent-aware chip resolver — logic lives in lib/chat-chips.ts (testable
+// without the component tree).
 // ---------------------------------------------------------------------------
-
-function resolveChips(intent: string | undefined): ChipConfig[] {
-  switch (intent) {
-    case 'recipe_generation':
-    case 'recipe_card':
-      return [
-        { label: 'Try another recipe', message: 'Give me a different recipe', tone: 'accent', emoji: '🔄' },
-        { label: 'Tell me more', message: 'Tell me more about that recipe', tone: 'primary', emoji: '💬' },
-      ]
-    case 'pantry_update':
-      return [
-        { label: 'Add more items', message: 'I have more items to add to my pantry', tone: 'fresh', emoji: '➕' },
-        { label: 'What expires soon?', message: 'What items in my pantry are expiring soon?', tone: 'expiring', emoji: '⏰' },
-      ]
-    case 'cooking_question':
-      return [
-        { label: 'Ask another question', message: 'I have another cooking question', tone: 'primary', emoji: '❓' },
-        { label: 'Tell me more', message: 'Tell me more about that', tone: 'accent', emoji: '💬' },
-      ]
-    case 'recipe_brainstorm':
-      return [
-        { label: 'Explore this idea', message: 'Tell me more about this recipe idea', tone: 'accent', emoji: '✨' },
-        { label: 'Try a different direction', message: 'Give me some different recipe ideas', tone: 'primary', emoji: '🔀' },
-      ]
-    default:
-      return [
-        { label: 'Try another', message: 'Give me a different answer', tone: 'accent', emoji: '🔄' },
-        { label: 'Tell me more', message: 'Tell me more about that', tone: 'primary', emoji: '💬' },
-      ]
-  }
-}
 
 const SUGGESTIONS = [
   'What can I make tonight? 🌙',
@@ -82,13 +52,9 @@ const SUGGESTIONS = [
  */
 const SUGGESTION_TONES: ChipTone[] = ['primary', 'accent', 'expiring', 'fresh']
 
-const COOKING_SUGGESTIONS = [
-  'What can I substitute? 🔁',
-  'How do I prep this? 🔪',
-  'How long does this take? ⏱️',
-]
+const COOKING_SUGGESTIONS = COOKING_CHIPS.map((c) => c.suggestion ?? c.message)
 
-const COOKING_SUGGESTION_TONES: ChipTone[] = ['primary', 'accent', 'fresh']
+const COOKING_SUGGESTION_TONES: ChipTone[] = COOKING_CHIPS.map((c) => c.tone ?? 'primary')
 
 /**
  * `useSearchParams` opts the tree into client-side rendering, so the page shell
