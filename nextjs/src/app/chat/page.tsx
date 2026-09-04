@@ -34,11 +34,8 @@ import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
 
 // ---------------------------------------------------------------------------
 // Intent-aware chip resolver — logic lives in lib/chat-chips.ts (testable
-// without the component tree). Re-exported here for backward compat if any
-// sibling module imported directly from this page.
+// without the component tree).
 // ---------------------------------------------------------------------------
-
-export { resolveChips, COOKING_CHIPS }
 
 const SUGGESTIONS = [
   'What can I make tonight? 🌙',
@@ -55,7 +52,7 @@ const SUGGESTIONS = [
  */
 const SUGGESTION_TONES: ChipTone[] = ['primary', 'accent', 'expiring', 'fresh']
 
-const COOKING_SUGGESTIONS = COOKING_CHIPS.map((c) => c.message)
+const COOKING_SUGGESTIONS = COOKING_CHIPS.map((c) => c.suggestion ?? c.message)
 
 const COOKING_SUGGESTION_TONES: ChipTone[] = COOKING_CHIPS.map((c) => c.tone ?? 'primary')
 
