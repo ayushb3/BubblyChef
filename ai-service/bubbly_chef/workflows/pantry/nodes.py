@@ -232,9 +232,13 @@ def normalize_items(state: WorkflowState) -> WorkflowState:
 
         is_generic = _is_generic_pantry_term(original_name)
         if is_generic:
-            # Too vague to write to the pantry as-is — never let this ride
-            # through on a high LLM confidence score. See create_actions,
-            # which drops these from the actionable proposal entirely.
+            # create_actions drops is_generic_term items from the proposal
+            # outright, regardless of confidence — this cap isn't what keeps
+            # the item off the card. It exists because `confidence` below is
+            # an average over every parsed item including this one: without
+            # it, a batch like "veggies" + "2 apples" (apples scored 0.9)
+            # could average out high enough to slip past review_gate's
+            # overall-confidence threshold even though a term went unresolved.
             item_confidence = min(item_confidence, 0.1)
 
         # Update confidence
@@ -516,17 +520,25 @@ def review_gate(state: WorkflowState) -> WorkflowState:
 
     # Generic category terms ("veggies", "dairy stuff") never made it into
     # `actions` (create_actions drops them) — surface them as their own
-    # clarifying question rather than silently going unaddressed.
+    # clarifying question rather than silently going unaddressed. Inserted
+    # at the front: assistant_message below only ever shows
+    # clarifying_questions[0], and explaining a dropped item outranks a
+    # quantity nuance on an item that's still in the proposal — otherwise a
+    # message mixing "2 eggs" (low-confidence quantity) with "veggies"
+    # (dropped entirely) could surface the eggs question and never mention
+    # that veggies didn't make it in at all.
     if generic_pantry_terms:
         if len(generic_pantry_terms) == 1:
-            clarifying_questions.append(
+            clarifying_questions.insert(
+                0,
                 f"'{generic_pantry_terms[0]}' is pretty broad — what did you actually pick up?"
-                " (e.g. onions, broccoli, milk, yogurt)"
+                " (e.g. onions, broccoli, milk, yogurt)",
             )
         else:
-            clarifying_questions.append(
+            clarifying_questions.insert(
+                0,
                 f"{', '.join(generic_pantry_terms)} are pretty broad — what did you actually"
-                " pick up? Naming the specific items lets me add them for real."
+                " pick up? Naming the specific items lets me add them for real.",
             )
         needs_clarification = True
 

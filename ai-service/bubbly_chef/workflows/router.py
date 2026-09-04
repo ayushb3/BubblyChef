@@ -193,6 +193,21 @@ EXIT_PHRASES = {
 }
 
 
+def _merge_dedup_case_insensitive(existing: list[str], new: list[str]) -> list[str]:
+    """Append `new` names onto `existing`, skipping case-insensitive repeats.
+
+    Preserves `existing`'s order and casing; a name already present (in any
+    case) is not re-added.
+    """
+    merged = list(existing)
+    seen = {name.lower() for name in merged}
+    for name in new:
+        if name.lower() not in seen:
+            merged.append(name)
+            seen.add(name.lower())
+    return merged
+
+
 async def load_session(state: WorkflowState) -> WorkflowState:
     """
     Node: Load or create the conversation session.
@@ -706,14 +721,12 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 item_names = [a.item.name for a in state.get("actions", [])]
                 unclear_terms = state.get("generic_pantry_terms", [])
                 existing = session.pending_proposal or {}
-                merged_items = list(existing.get("item_names", []))
-                for name in item_names:
-                    if name.lower() not in {m.lower() for m in merged_items}:
-                        merged_items.append(name)
-                merged_terms = list(existing.get("unclear_terms", []))
-                for term in unclear_terms:
-                    if term.lower() not in {m.lower() for m in merged_terms}:
-                        merged_terms.append(term)
+                merged_items = _merge_dedup_case_insensitive(
+                    existing.get("item_names", []), item_names
+                )
+                merged_terms = _merge_dedup_case_insensitive(
+                    existing.get("unclear_terms", []), unclear_terms
+                )
                 if merged_items or merged_terms:
                     session.pending_proposal = {
                         "item_names": merged_items[-20:],

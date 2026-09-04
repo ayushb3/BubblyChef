@@ -129,6 +129,20 @@ def test_specific_item_alongside_generic_still_proposes_the_specific_one() -> No
     assert "veggies" in result["assistant_message"].lower()
 
 
+def test_generic_term_question_not_crowded_out_by_a_low_confidence_item() -> None:
+    """A dropped generic term must stay visible even when another item in the
+    same batch also needs a quantity/confidence clarification — assistant_message
+    only ever surfaces clarifying_questions[0], so the generic-term question has
+    to win that slot rather than silently losing to an unrelated question.
+    """
+    murky_eggs = {
+        "name": "eggs", "quantity": 1, "unit": "item",
+        "category": "dairy", "confidence": 0.4,
+    }
+    result = _run_pipeline([murky_eggs, VEGGIES])
+    assert "veggies" in result["assistant_message"].lower()
+
+
 # ---------------------------------------------------------------------------
 # review_gate: context continuity via session.pending_proposal
 # ---------------------------------------------------------------------------
