@@ -95,3 +95,26 @@ jobs:
           BUBBLY_GEMINI_API_KEY: ${{ secrets.BUBBLY_GEMINI_API_KEY }}
           BUBBLY_RUN_LIVE_TESTS: "1"
         run: pytest tests/test_intent_live.py -v
+
+  # ── Demo media budget ────────────────────────────────────────────────────
+  # PR evidence screenshots land in docs/media/ and are never deleted by the
+  # session that adds them, so the directory only grows. Images are permanent
+  # in git history — deleting them later frees the working tree but not the
+  # repo — so the cheap moment to catch bloat is before it merges.
+  #
+  # This job reports; it does not fail the build. A PR blocked because its own
+  # evidence pushed the total over a line would push agents toward attaching
+  # less evidence, which is the opposite of what §4 wants. It fails only on a
+  # single oversized file, which is always a mistake (an unresized retina
+  # capture or a video), never a judgment call.
+  media-budget:
+    name: Demo media budget
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Report size, flag staleness, fail on oversized files
+        run: bash scripts/check-media-budget.sh
