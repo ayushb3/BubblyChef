@@ -87,7 +87,7 @@ export async function confirmScanItems(items: ConfirmedItem[]): Promise<void> {
       intent: 'pantry_update',
       proposal: {
         actions: items.map((item) => ({
-          action_type: item.action,
+          action: item.action,
           name: item.name,
           quantity: item.quantity,
           unit: item.unit,
