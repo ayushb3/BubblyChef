@@ -16,9 +16,9 @@ import type { RecipeIngredient } from '@/types/recipes'
  * Pick one recipe at random from an array.
  *
  * Returns `null` when the array is empty so callers don't need to guard the
- * length themselves.  Both dashboard components (HeroHome, BubblesFeed) use
- * this as the single source of random selection; having it here means the
- * rule can't drift between them.
+ * length themselves.  `HeroHome` (the live dashboard) uses this as the single
+ * source of random selection. Issue #168 will replace this with pantry-aware
+ * selection.
  */
 export function pickRandomRecipe<T>(recipes: T[]): T | null {
   if (recipes.length === 0) return null
