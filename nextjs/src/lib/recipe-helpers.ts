@@ -113,3 +113,58 @@ export function ingredientLabel(
 ): string {
   return ingredientParts(ing).label
 }
+
+/**
+ * One editable ingredient row in `RecipeEditModal`.
+ *
+ * `original` is the element exactly as loaded from the recipe — `null` for a
+ * row the user added in the modal. `text` is the current textarea contents,
+ * initialised from `ingredientLabel(original)`.
+ */
+export interface IngredientRow {
+  original: string | RecipeIngredient | null
+  text: string
+}
+
+/**
+ * Build the `ingredients` payload for a recipe save from the modal's row
+ * state.
+ *
+ * A row the user never touched is emitted as its `original` element,
+ * verbatim — this is what preserves `preparation`, `optional`, and object
+ * shape for untouched rows, rather than flattening every row to a string on
+ * every save (issue #322). "Untouched" means `text.trim()` equals
+ * `ingredientLabel(original).trim()`: trimming so incidental whitespace
+ * doesn't count as an edit, and comparing against `ingredientLabel` — the
+ * same function used to initialise `text` — so the round-trip is exact even
+ * for a `quantity` of `0` (see `ingredientParts` docs; a naive
+ * `.filter(Boolean)`-based label would drop it and every such row would
+ * wrongly compare as edited).
+ *
+ * A row with edited text is emitted as that trimmed string. A user-added row
+ * (`original: null`) is always emitted as its trimmed string. A row whose
+ * trimmed text is empty is dropped.
+ *
+ * Row identity is by array position within `rows`, not a stable key — the
+ * caller (`RecipeEditModal`) must pass the current row array (after any
+ * add/remove), never re-derive rows from an index into a stale array, or
+ * deleting a row will corrupt the identity of the rows after it.
+ */
+export function ingredientRowsToPayload(
+  rows: IngredientRow[],
+): (string | RecipeIngredient)[] {
+  const payload: (string | RecipeIngredient)[] = []
+
+  for (const row of rows) {
+    const trimmedText = row.text.trim()
+    if (trimmedText === '') continue
+
+    if (row.original !== null && trimmedText === ingredientLabel(row.original).trim()) {
+      payload.push(row.original)
+    } else {
+      payload.push(trimmedText)
+    }
+  }
+
+  return payload
+}
