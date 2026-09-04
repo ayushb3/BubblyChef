@@ -8,6 +8,7 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 import FadeInView from '@/components/ui/FadeInView'
 import SpringButton from '@/components/ui/SpringButton'
 import RecipeRefinementModal from '@/components/recipes/RecipeRefinementModal'
+import { ingredientParts } from '@/lib/recipe-helpers'
 import type { GeneratedRecipe } from '@/types/recipes'
 
 // ─── Meta badge ──────────────────────────────────────────────────────────────
@@ -320,9 +321,7 @@ export default function RecipeDetailPage() {
                 >
                   {recipe.ingredients.map((ing, i) => {
                     const checked = checkedIngredients.has(i)
-                    const quantityPart = [ing.quantity, ing.unit].filter(Boolean).join(' ')
-                    const label = [quantityPart, ing.name].filter(Boolean).join(' ')
-                    const preparation = ing.preparation ?? null
+                    const { label, preparation, optional } = ingredientParts(ing)
                     return (
                       <motion.label
                         key={i}
@@ -372,7 +371,7 @@ export default function RecipeDetailPage() {
                           {preparation && (
                             <span style={{ color: 'var(--color-muted)' }}> ({preparation})</span>
                           )}
-                          {ing.optional && (
+                          {optional && (
                             <span
                               className="ml-1 text-xs italic"
                               style={{ color: 'var(--color-muted)' }}

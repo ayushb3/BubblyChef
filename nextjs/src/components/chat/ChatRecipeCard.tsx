@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
 import { titleCase } from '@/lib/format'
+import { ingredientParts } from '@/lib/recipe-helpers'
 import type { ChatRecipeData, IngredientAvailability } from '@/types/chat'
 
 interface ChatRecipeCardProps {
@@ -148,9 +149,17 @@ export default function ChatRecipeCard({
             </p>
             <ul className="flex flex-col gap-1">
               {recipe.ingredients.map((ing, i) => {
-                const key = ing.name.toLowerCase()
+                // `ing` is only ever the object shape here — chat recipes
+                // come straight from AI generation. Routed through
+                // `ingredientParts` anyway so the dual-shape rule lives in
+                // one module (#315) and a future string-shaped caller cannot
+                // reintroduce the unguarded `.name` access this replaced.
+                const { name, quantityText: qtyStr } = ingredientParts(ing)
+                // Availability lookup keys on the bare name, not the full
+                // label — must stay in sync with how `ingredient_availability`
+                // is built server-side.
+                const key = name.toLowerCase()
                 const avail = availabilityMap.get(key)
-                const qtyStr = [ing.quantity, ing.unit].filter(Boolean).join(' ')
                 return (
                   <li key={i} className="flex flex-col">
                     <div className="flex items-start gap-1.5 text-sm text-[var(--color-text)]">
@@ -163,7 +172,7 @@ export default function ChatRecipeCard({
                       )}
                       <span>
                         {qtyStr && <span className="font-semibold">{qtyStr} </span>}
-                        {titleCase(ing.name)}
+                        {titleCase(name)}
                       </span>
                     </div>
                     {avail?.status === 'substitute' && avail.substitute_note && (
