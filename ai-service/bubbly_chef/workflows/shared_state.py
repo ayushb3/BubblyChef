@@ -81,6 +81,22 @@ class LLMGeneralChatResult(BaseModel):
     follow_ups: list[str] = Field(default_factory=list, description="Suggested follow-up topics")
 
 
+class TermSuggestion(BaseModel):
+    """One vague term paired with concrete grocery items it might mean."""
+
+    term: str = Field(description="The vague term the user used, e.g. 'veggies'")
+    suggestions: list[str] = Field(
+        default_factory=list,
+        description="3-5 concrete, commonly-bought grocery items this term could mean",
+    )
+
+
+class LLMClarificationResult(BaseModel):
+    """Schema for the LLM's contextual suggestions for vague pantry terms."""
+
+    items: list[TermSuggestion] = Field(default_factory=list)
+
+
 class LLMRecipeResult(BaseModel):
     """Schema for LLM recipe parse response."""
 

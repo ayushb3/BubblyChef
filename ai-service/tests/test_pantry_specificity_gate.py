@@ -20,16 +20,19 @@ This file pins two fixes:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.workflows.pantry.nodes import (
     _is_generic_pantry_term,
     create_actions,
     normalize_items,
     review_gate,
+    suggest_specifics,
 )
+from bubbly_chef.workflows.state import LLMClarificationResult, TermSuggestion
 
 
 def _fake_expiry() -> MagicMock:
@@ -188,3 +191,75 @@ def test_no_stale_reference_once_items_are_in_the_current_batch() -> None:
     result = review_gate(state)  # type: ignore[arg-type]
 
     assert "still with" not in result["assistant_message"].lower()
+
+
+# ---------------------------------------------------------------------------
+# suggest_specifics — contextual pill suggestions for vague terms
+# ---------------------------------------------------------------------------
+
+
+def _mock_ai_manager(result) -> AsyncMock:
+    ai = MagicMock()
+    ai.complete = AsyncMock(return_value=result)
+    return ai
+
+
+@pytest.mark.asyncio
+async def test_suggest_specifics_is_noop_without_generic_terms() -> None:
+    state: dict = {"generic_pantry_terms": []}
+    with patch("bubbly_chef.workflows.pantry.nodes.get_ai_manager") as mock_get_mgr:
+        result = await suggest_specifics(state)  # type: ignore[arg-type]
+    mock_get_mgr.assert_not_called()
+    assert result["clarification_suggestions"] == []
+
+
+@pytest.mark.asyncio
+async def test_suggest_specifics_returns_per_term_suggestions() -> None:
+    llm_result = LLMClarificationResult(
+        items=[
+            TermSuggestion(term="veggies", suggestions=["onion", "broccoli", "carrot"]),
+            TermSuggestion(term="dairy things", suggestions=["milk", "yogurt", "butter"]),
+        ]
+    )
+    state: dict = {
+        "input_text": "got a few veggies and some dairy things",
+        "generic_pantry_terms": ["veggies", "dairy things"],
+    }
+    with patch(
+        "bubbly_chef.workflows.pantry.nodes.get_ai_manager",
+        return_value=_mock_ai_manager(llm_result),
+    ):
+        result = await suggest_specifics(state)  # type: ignore[arg-type]
+
+    assert result["clarification_suggestions"] == [
+        {"term": "veggies", "suggestions": ["onion", "broccoli", "carrot"]},
+        {"term": "dairy things", "suggestions": ["milk", "yogurt", "butter"]},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_suggest_specifics_degrades_gracefully_without_a_provider() -> None:
+    ai = MagicMock()
+    ai.complete = AsyncMock(side_effect=NoProviderAvailableError("no provider"))
+    state: dict = {
+        "input_text": "got some veggies",
+        "generic_pantry_terms": ["veggies"],
+    }
+    with patch("bubbly_chef.workflows.pantry.nodes.get_ai_manager", return_value=ai):
+        result = await suggest_specifics(state)  # type: ignore[arg-type]
+
+    assert result["clarification_suggestions"] == []
+
+
+@pytest.mark.asyncio
+async def test_suggest_specifics_degrades_gracefully_on_malformed_response() -> None:
+    ai = MagicMock()
+    ai.complete = AsyncMock(return_value="not a LLMClarificationResult")
+    state: dict = {
+        "input_text": "got some veggies",
+        "generic_pantry_terms": ["veggies"],
+    }
+    with patch("bubbly_chef.workflows.pantry.nodes.get_ai_manager", return_value=ai):
+        result = await suggest_specifics(state)  # type: ignore[arg-type]
+
+    assert result["clarification_suggestions"] == []

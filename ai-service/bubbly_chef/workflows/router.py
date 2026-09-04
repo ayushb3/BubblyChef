@@ -61,6 +61,7 @@ from bubbly_chef.workflows.pantry.nodes import (
     normalize_items,
     parse_pantry_items,
     review_gate,
+    suggest_specifics,
 )
 from bubbly_chef.workflows.recipe.nodes import (
     brainstorm_recipe_ideas,
@@ -785,7 +786,8 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
     1. initialize_state: Set up IDs and defaults
     2. classify_intent: Determine what the user wants
     3. Route based on intent:
-       - pantry_update: parse -> normalize -> expiry -> dedup -> actions -> review_gate -> finalize
+       - pantry_update: parse -> normalize -> expiry -> dedup -> actions -> review_gate
+         -> suggest_specifics -> finalize
        - receipt/product/recipe: build_handoff_*
        - cooking_help (recipe gen): extract_constraints -> score_pantry -> brainstorm -> END
        - recipe_card (brainstorm follow-up): research_recipe -> generate_grounded_recipe -> END
@@ -805,6 +807,7 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
     workflow.add_node("dedup_check", check_for_duplicates)
     workflow.add_node("create_actions", create_actions)
     workflow.add_node("review_gate", review_gate)
+    workflow.add_node("suggest_specifics", suggest_specifics)
     workflow.add_node("finalize_pantry", finalize_pantry_proposal)
 
     # Handoff paths
@@ -859,7 +862,8 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
     workflow.add_edge("expiry", "dedup_check")
     workflow.add_edge("dedup_check", "create_actions")
     workflow.add_edge("create_actions", "review_gate")
-    workflow.add_edge("review_gate", "finalize_pantry")
+    workflow.add_edge("review_gate", "suggest_specifics")
+    workflow.add_edge("suggest_specifics", "finalize_pantry")
     workflow.add_edge("finalize_pantry", "update_session")
 
     # Handoff paths → update_session → END
@@ -960,7 +964,7 @@ async def run_chat_workflow(
         if proposal is None:
             proposal = PantryProposal(actions=[], source_text=message)
 
-        return create_pantry_envelope(
+        pantry_envelope = create_pantry_envelope(
             proposal=proposal,
             confidence=final_state.get("confidence", 0.0),
             field_confidences=final_state.get("field_confidences", {}),
@@ -974,6 +978,10 @@ async def run_chat_workflow(
             clarifying_questions=final_state.get("clarifying_questions", []),
             per_item_confidences=final_state.get("per_item_confidences", []),
         )
+        pantry_envelope.metadata["clarification_suggestions"] = final_state.get(
+            "clarification_suggestions", []
+        )
+        return pantry_envelope
 
     elif intent == Intent.RECEIPT_INGEST.value:
         return create_handoff_envelope(
@@ -1097,6 +1105,9 @@ def _build_envelope_from_state(
             conversation_id=final_state.get("conversation_id"),
             clarifying_questions=final_state.get("clarifying_questions", []),
             per_item_confidences=final_state.get("per_item_confidences", []),
+        )
+        envelope.metadata["clarification_suggestions"] = final_state.get(
+            "clarification_suggestions", []
         )
     elif intent == Intent.RECEIPT_INGEST.value:
         envelope = create_handoff_envelope(

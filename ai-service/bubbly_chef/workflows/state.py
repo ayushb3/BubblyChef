@@ -17,6 +17,7 @@ from bubbly_chef.models.recipe import RecipeCard, RecipeCardProposal
 # ---------------------------------------------------------------------------
 from bubbly_chef.workflows.shared_state import (  # noqa: F401
     ChatSubState,
+    LLMClarificationResult,
     LLMGeneralChatResult,
     LLMIntentResult,
     LLMParsedItem,
@@ -24,6 +25,7 @@ from bubbly_chef.workflows.shared_state import (  # noqa: F401
     LLMRecipeResult,
     PantrySubState,
     RecipeSubState,
+    TermSuggestion,
     create_general_chat_envelope,
     create_handoff_envelope,
     create_pantry_envelope,
@@ -34,6 +36,7 @@ from bubbly_chef.workflows.shared_state import (  # noqa: F401
 
 __all__ = [
     "ChatSubState",
+    "LLMClarificationResult",
     "LLMGeneralChatResult",
     "LLMIntentResult",
     "LLMParsedItem",
@@ -41,6 +44,7 @@ __all__ = [
     "LLMRecipeResult",
     "PantrySubState",
     "RecipeSubState",
+    "TermSuggestion",
     "WorkflowState",
     "create_general_chat_envelope",
     "create_handoff_envelope",
@@ -113,6 +117,10 @@ class WorkflowState(TypedDict, total=False):
     # were deliberately excluded from `actions` — too vague to write to the
     # pantry as a literal item name. Surfaced as a clarifying question instead.
     generic_pantry_terms: list[str]
+    # Per-term concrete suggestions ({"term": "veggies", "suggestions": [...]})
+    # for the clarification card — populated only when generic_pantry_terms
+    # is non-empty. See pantry.nodes.suggest_specifics.
+    clarification_suggestions: list[dict[str, Any]]
 
     # ==========================================================================
     # Recipe-specific

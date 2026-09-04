@@ -28,6 +28,7 @@ from bubbly_chef.models.pantry import (
 )
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 from bubbly_chef.workflows.state import (
+    LLMClarificationResult,
     LLMParseResult,
     WorkflowState,
     map_action_type,
@@ -647,6 +648,61 @@ def review_gate(state: WorkflowState) -> WorkflowState:
         if requires_review
         else WorkflowStatus.COMPLETED.value,
     }
+
+
+SUGGEST_SPECIFICS_SYSTEM_PROMPT = """You help a grocery/pantry app turn vague terms into
+concrete suggestions. For each vague term below, list 3-5 concrete, commonly-bought
+grocery items it could plausibly mean. Be specific (e.g. "onion", "broccoli", not
+"vegetable"). Keep each suggestion to 1-3 words."""
+
+SUGGEST_SPECIFICS_USER_PROMPT = """The user said: "{text}"
+
+These terms from that message were too vague to add to their pantry directly: {terms}
+
+For each term, suggest 3-5 concrete grocery items it could mean."""
+
+
+async def suggest_specifics(state: WorkflowState) -> WorkflowState:
+    """
+    Node: For each generic term review_gate excluded from the proposal, ask
+    the LLM for concrete example items (e.g. "veggies" -> onion, broccoli,
+    carrot) so the chat UI can offer them as tappable suggestions instead of
+    just a text question.
+
+    A no-op (no LLM call) when there's nothing vague to clarify.
+    """
+    generic_pantry_terms = state.get("generic_pantry_terms", [])
+    if not generic_pantry_terms:
+        return {**state, "clarification_suggestions": []}
+
+    ai_manager = get_ai_manager()
+    prompt = (
+        SUGGEST_SPECIFICS_SYSTEM_PROMPT
+        + "\n\n"
+        + SUGGEST_SPECIFICS_USER_PROMPT.format(
+            text=state.get("input_text", ""),
+            terms=", ".join(generic_pantry_terms),
+        )
+    )
+
+    try:
+        result = await ai_manager.complete(
+            prompt=prompt,
+            response_schema=LLMClarificationResult,
+            temperature=0.3,
+        )
+        if not isinstance(result, LLMClarificationResult):
+            return {**state, "clarification_suggestions": []}
+
+        suggestions = [item.model_dump() for item in result.items]
+        return {**state, "clarification_suggestions": suggestions}
+
+    except NoProviderAvailableError as e:
+        logger.warning(f"No AI provider available for term suggestions: {e}")
+        return {**state, "clarification_suggestions": []}
+    except Exception as e:
+        logger.warning(f"Term suggestion error: {e}")
+        return {**state, "clarification_suggestions": []}
 
 
 def finalize_pantry_proposal(state: WorkflowState) -> WorkflowState:

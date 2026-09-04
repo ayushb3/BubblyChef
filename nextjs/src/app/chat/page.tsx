@@ -14,6 +14,7 @@ import ChatContextCard from '@/components/chat/ChatContextCard'
 import TypingIndicator from '@/components/chat/TypingIndicator'
 import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
+import ClarificationCard from '@/components/chat/ClarificationCard'
 import BrainstormOptions from '@/components/chat/BrainstormOptions'
 import CookModal from '@/components/recipes/CookModal'
 import ThemePicker from '@/components/ui/ThemePicker'
@@ -29,7 +30,7 @@ import type {
   ChatRecipeData,
   PantryProposalData,
 } from '@/types/chat'
-import { getBrainstormIdeas } from '@/types/chat'
+import { getBrainstormIdeas, getClarificationSuggestions } from '@/types/chat'
 import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
 
 // ---------------------------------------------------------------------------
@@ -756,13 +757,18 @@ function MessageRenderer({
     )
   }
 
-  // Pantry proposal intent — only render the card when there's at least one
-  // actionable item. A proposal can legitimately carry zero actions (every
-  // item the user mentioned was too generic — "veggies", "dairy stuff" — to
-  // write to the pantry); in that case fall through to the plain text
-  // bubble below, which already carries the assistant's clarifying question.
+  // Pantry proposal intent — a proposal can legitimately carry zero actions
+  // (every item the user mentioned was too generic — "veggies", "dairy
+  // stuff" — to write to the pantry). In that case render ClarificationCard
+  // (tappable concrete suggestions from suggest_specifics) instead of an
+  // empty, semi-actionable PantryProposalCard. If there are no suggestions
+  // either (LLM call failed, or none were vague), fall through to the plain
+  // text bubble below, which still carries the assistant's clarifying
+  // question.
   const pantryProposal =
     intent === 'pantry_update' ? (message.response?.proposal as PantryProposalData | undefined) : undefined
+  const clarificationTerms =
+    intent === 'pantry_update' ? getClarificationSuggestions(message.response) : []
   if (pantryProposal && pantryProposal.actions.length > 0) {
     const proposal = pantryProposal
     return (
@@ -782,6 +788,29 @@ function MessageRenderer({
               onApprove={onApprove}
               onReject={onReject}
               state={proposalState ?? 'pending'}
+            />
+          </div>
+        </div>
+      </motion.div>
+    )
+  }
+  if (pantryProposal && clarificationTerms.length > 0) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      >
+        <div className="flex items-end gap-2">
+          <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+          <div className="flex flex-col gap-2 items-start">
+            {message.content && (
+              <MessageBubble message={message} />
+            )}
+            <ClarificationCard
+              terms={clarificationTerms}
+              onPick={onChipTap}
+              disabled={!isLastSettledAssistant}
             />
           </div>
         </div>

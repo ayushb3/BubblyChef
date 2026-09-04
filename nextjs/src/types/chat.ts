@@ -186,6 +186,30 @@ export function getBrainstormIdeas(response?: ChatResponse | null): string[] {
   return raw.filter((item): item is string => typeof item === 'string')
 }
 
+// ─── Pantry clarification helpers ──────────────────────────────────────────────
+
+export interface TermSuggestion {
+  term: string
+  suggestions: string[]
+}
+
+/**
+ * Extract per-term concrete suggestions for vague pantry words ("veggies" ->
+ * onion, broccoli, carrot) from a ChatResponse's metadata. Returns an empty
+ * array when the field is absent, null, or malformed.
+ */
+export function getClarificationSuggestions(response?: ChatResponse | null): TermSuggestion[] {
+  const raw = response?.metadata?.clarification_suggestions
+  if (!Array.isArray(raw)) return []
+  return raw.filter(
+    (item): item is TermSuggestion =>
+      !!item &&
+      typeof item === 'object' &&
+      typeof (item as TermSuggestion).term === 'string' &&
+      Array.isArray((item as TermSuggestion).suggestions)
+  )
+}
+
 // ─── AI Health ────────────────────────────────────────────────────────────────
 
 export interface AIHealthStatus {
