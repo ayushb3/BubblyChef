@@ -97,6 +97,18 @@ class LLMClarificationResult(BaseModel):
     items: list[TermSuggestion] = Field(default_factory=list)
 
 
+class PendingProposalMemory(TypedDict):
+    """Shape of ``ConversationSession.pending_proposal`` for pantry-update
+    turns — the one shared contract between the two files that touch it:
+    written by ``update_session_node`` (router.py), read back by
+    ``review_gate`` (workflows/pantry/nodes.py) to acknowledge unresolved
+    items/terms from earlier turns.
+    """
+
+    item_names: list[str]
+    unclear_terms: list[str]
+
+
 class LLMRecipeResult(BaseModel):
     """Schema for LLM recipe parse response."""
 

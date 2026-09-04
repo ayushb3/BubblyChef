@@ -8,6 +8,7 @@ they can be dropped directly into the existing StateGraph.
 
 import logging
 from datetime import date
+from typing import cast
 from uuid import uuid4
 
 from bubbly_chef.ai.manager import NoProviderAvailableError
@@ -30,6 +31,7 @@ from bubbly_chef.tools.expiry import get_expiry_heuristics
 from bubbly_chef.workflows.state import (
     LLMClarificationResult,
     LLMParseResult,
+    PendingProposalMemory,
     WorkflowState,
     map_action_type,
     map_category,
@@ -529,18 +531,15 @@ def review_gate(state: WorkflowState) -> WorkflowState:
     # (dropped entirely) could surface the eggs question and never mention
     # that veggies didn't make it in at all.
     if generic_pantry_terms:
-        if len(generic_pantry_terms) == 1:
-            clarifying_questions.insert(
-                0,
-                f"'{generic_pantry_terms[0]}' is pretty broad — what did you actually pick up?"
-                " (e.g. onions, broccoli, milk, yogurt)",
-            )
-        else:
-            clarifying_questions.insert(
-                0,
-                f"{', '.join(generic_pantry_terms)} are pretty broad — what did you actually"
-                " pick up? Naming the specific items lets me add them for real.",
-            )
+        is_plural = len(generic_pantry_terms) > 1
+        terms_desc = (
+            ", ".join(generic_pantry_terms) if is_plural else f"'{generic_pantry_terms[0]}'"
+        )
+        clarifying_questions.insert(
+            0,
+            f"{terms_desc} {'are' if is_plural else 'is'} pretty broad — what did you actually"
+            " pick up? Naming the specific items lets me add them for real.",
+        )
         needs_clarification = True
 
     # Determine overall status based on confidence
@@ -606,7 +605,7 @@ def review_gate(state: WorkflowState) -> WorkflowState:
     # this, each pantry-update turn reads as if it started a brand new
     # conversation.
     session = state.get("session") or {}
-    pending = session.get("pending_proposal") or {}
+    pending = cast(PendingProposalMemory, session.get("pending_proposal") or {})
     current_names_lower = {action.item.name.lower() for action in actions}
     current_generic_lower = {term.lower() for term in generic_pantry_terms}
 
@@ -621,18 +620,12 @@ def review_gate(state: WorkflowState) -> WorkflowState:
         if term.lower() not in current_generic_lower
     ]
 
-    context_note = None
-    if still_pending_items and still_unclear_terms:
-        context_note = (
-            f"(Still with {', '.join(still_pending_items)} from earlier, and I still "
-            f"don't know what you meant by {', '.join(still_unclear_terms)}.)"
-        )
-    elif still_pending_items:
-        context_note = f"(Still with {', '.join(still_pending_items)} from earlier in this chat.)"
-    elif still_unclear_terms:
-        context_note = (
-            f"(Also still waiting to hear what you meant by {', '.join(still_unclear_terms)}.)"
-        )
+    note_clauses = []
+    if still_pending_items:
+        note_clauses.append(f"still with {', '.join(still_pending_items)} from earlier in this chat")
+    if still_unclear_terms:
+        note_clauses.append(f"still don't know what you meant by {', '.join(still_unclear_terms)}")
+    context_note = f"({'; '.join(note_clauses)}.)" if note_clauses else None
 
     if context_note:
         assistant_message = f"{context_note} {assistant_message}"

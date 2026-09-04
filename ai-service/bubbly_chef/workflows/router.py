@@ -18,7 +18,7 @@ import logging
 import re
 from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from langgraph.graph import END, StateGraph
@@ -74,6 +74,7 @@ from bubbly_chef.workflows.recipe.nodes import (
 )
 from bubbly_chef.workflows.state import (
     LLMIntentResult,
+    PendingProposalMemory,
     WorkflowState,
     create_general_chat_envelope,
     create_handoff_envelope,
@@ -84,6 +85,11 @@ from bubbly_chef.workflows.state import (
 logger = logging.getLogger(__name__)
 
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+
+# Rolling cap on session.pending_proposal's two lists — bounds how much
+# cross-turn pantry context a single conversation can accumulate in
+# session.metadata (persisted to the DB on every pantry-update turn).
+_PENDING_PROPOSAL_HISTORY_LIMIT = 20
 
 
 def _extract_url(text: str) -> str | None:
@@ -721,7 +727,11 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 # never actually written before now.
                 item_names = [a.item.name for a in state.get("actions", [])]
                 unclear_terms = state.get("generic_pantry_terms", [])
-                existing = session.pending_proposal or {}
+                # session.pending_proposal is a loosely-typed dict[str, Any] on
+                # the Pydantic model (JSON column); PendingProposalMemory
+                # (shared_state.py) documents its actual shape for this and
+                # review_gate, the two places that read/write it.
+                existing = cast(PendingProposalMemory, session.pending_proposal or {})
                 merged_items = _merge_dedup_case_insensitive(
                     existing.get("item_names", []), item_names
                 )
@@ -730,8 +740,8 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 )
                 if merged_items or merged_terms:
                     session.pending_proposal = {
-                        "item_names": merged_items[-20:],
-                        "unclear_terms": merged_terms[-20:],
+                        "item_names": merged_items[-_PENDING_PROPOSAL_HISTORY_LIMIT:],
+                        "unclear_terms": merged_terms[-_PENDING_PROPOSAL_HISTORY_LIMIT:],
                     }
             else:
                 session.active_mode = SessionMode.DEFAULT
