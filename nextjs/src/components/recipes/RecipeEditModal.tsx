@@ -2,10 +2,8 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { type Recipe, type Ingredient } from './RecipePage'
-
-const toIngStr = (i: string | Ingredient): string =>
-  typeof i === 'string' ? i : [i.quantity, i.unit, i.name].filter(Boolean).join(' ')
+import { type Recipe } from './RecipePage'
+import { ingredientLabel, ingredientRowsToPayload, type IngredientRow } from '@/lib/recipe-helpers'
 
 const toStepStr = (s: string | { text?: string; step?: string }): string =>
   typeof s === 'string' ? s : (s.text ?? s.step ?? '')
@@ -22,8 +20,8 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
   const [title, setTitle] = useState(recipe.title)
   const [description, setDescription] = useState(recipe.description ?? '')
   const [tags, setTags] = useState((recipe.tags ?? []).join(', '))
-  const [ingredients, setIngredients] = useState<string[]>(
-    (recipe.ingredients ?? []).map(toIngStr)
+  const [ingredientRows, setIngredientRows] = useState<IngredientRow[]>(
+    (recipe.ingredients ?? []).map((original) => ({ original, text: ingredientLabel(original) }))
   )
   const [instructions, setInstructions] = useState<string[]>(
     (recipe.instructions ?? []).map(toStepStr)
@@ -44,6 +42,15 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
   const addItem = (setter: React.Dispatch<React.SetStateAction<string[]>>) =>
     setter(prev => [...prev, ''])
 
+  const updateIngredient = (index: number, value: string) =>
+    setIngredientRows(prev => prev.map((row, i) => (i === index ? { ...row, text: value } : row)))
+
+  const removeIngredient = (index: number) =>
+    setIngredientRows(prev => prev.filter((_, i) => i !== index))
+
+  const addIngredient = () =>
+    setIngredientRows(prev => [...prev, { original: null, text: '' }])
+
   const handleSave = async () => {
     setSaving(true)
     try {
@@ -51,7 +58,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
         title,
         description,
         tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
-        ingredients: ingredients.filter(Boolean),
+        ingredients: ingredientRowsToPayload(ingredientRows),
         instructions: instructions.filter(Boolean),
       })
     } finally {
@@ -191,12 +198,12 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
                 Ingredients
               </label>
               <div className="space-y-1.5">
-                {ingredients.map((item, i) => (
+                {ingredientRows.map((row, i) => (
                   <div key={i} className="flex gap-2 items-center">
                     <input
                       type="text"
-                      value={item}
-                      onChange={(e) => updateItem(setIngredients, i, e.target.value)}
+                      value={row.text}
+                      onChange={(e) => updateIngredient(i, e.target.value)}
                       className="flex-1 rounded-xl px-3 py-2 text-sm border focus:border-[var(--color-primary)]"
                       style={{
                         background: 'var(--color-bg)',
@@ -206,7 +213,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
                       }}
                     />
                     <button
-                      onClick={() => removeItem(setIngredients, i)}
+                      onClick={() => removeIngredient(i)}
                       className="w-7 h-7 rounded-full flex items-center justify-center text-xs hover:opacity-70 flex-shrink-0"
                       style={{ background: 'var(--color-bg)', color: 'var(--color-muted)', border: '1.5px solid var(--color-border)' }}
                       aria-label="Remove ingredient"
@@ -216,7 +223,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
                   </div>
                 ))}
                 <button
-                  onClick={() => addItem(setIngredients)}
+                  onClick={addIngredient}
                   className="text-xs font-bold px-3 py-1.5 rounded-full"
                   style={{ color: 'var(--color-primary)', background: 'var(--color-bg)', border: '1.5px solid var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
                 >
