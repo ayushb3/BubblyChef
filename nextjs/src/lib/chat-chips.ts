@@ -17,13 +17,18 @@ export { type ChipConfig }
 /**
  * Cooking-help chips — substitution / prep / timing.
  * Covers the `cooking_help` intent that the backend emits during a pinned
- * cook session. The messages match the empty-state suggestion strings so
- * both surfaces feel consistent.
+ * cook session.
+ *
+ * `message` is clean prose — this is what lands in the chat bubble and is
+ * sent to the LLM.  `suggestion` is the emoji-decorated string shown in the
+ * empty-state chip row (a display surface, not a prompt).  `emoji` is
+ * rendered separately by PostMessageChips so it must not also appear in
+ * `message`.
  */
 export const COOKING_CHIPS: ChipConfig[] = [
-  { label: 'What can I substitute?', message: 'What can I substitute? 🔁', tone: 'primary', emoji: '🔁' },
-  { label: 'How do I prep this?', message: 'How do I prep this? 🔪', tone: 'accent', emoji: '🔪' },
-  { label: 'How long does this take?', message: 'How long does this take? ⏱️', tone: 'fresh', emoji: '⏱️' },
+  { label: 'What can I substitute?', message: 'What can I substitute?', suggestion: 'What can I substitute? 🔁', tone: 'primary', emoji: '🔁' },
+  { label: 'How do I prep this?', message: 'How do I prep this?', suggestion: 'How do I prep this? 🔪', tone: 'accent', emoji: '🔪' },
+  { label: 'How long does this take?', message: 'How long does this take?', suggestion: 'How long does this take? ⏱️', tone: 'fresh', emoji: '⏱️' },
 ]
 
 /**

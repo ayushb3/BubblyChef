@@ -7,6 +7,13 @@ export interface ChipConfig {
   label: string
   /** The text sent to the AI when the chip is tapped. */
   message: string
+  /**
+   * Display string for the empty-state suggestion row.  When present, the
+   * empty-state row renders this string instead of `message`, so the row can
+   * show the emoji-decorated prompt while `message` stays clean prose for the
+   * chat bubble and the LLM.  Defaults to `message` when absent.
+   */
+  suggestion?: string
   tone?: ChipTone
   emoji?: string
 }
