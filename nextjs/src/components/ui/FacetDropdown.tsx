@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { springs } from '@/lib/motion'
+import { useMotionConfig } from '@/lib/motion'
 
 export interface FacetOption {
   value: string
@@ -43,6 +43,7 @@ export default function FacetDropdown({
   triggerEmoji,
   iconOnly = false,
 }: FacetDropdownProps) {
+  const { springs } = useMotionConfig()
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
