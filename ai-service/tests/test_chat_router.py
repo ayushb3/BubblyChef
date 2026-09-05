@@ -700,6 +700,7 @@ async def test_pending_proposal_populated_when_review_required():
     assert saved.pending_proposal == {
         "item_names": ["Apples", "Eggs"],
         "unclear_terms": [],
+        "suggestions": {},
     }
 
 
@@ -731,6 +732,7 @@ async def test_pending_proposal_accumulates_and_dedupes_across_turns():
     assert saved.pending_proposal == {
         "item_names": ["Apples", "Eggs"],
         "unclear_terms": ["veggies", "dairy things"],
+        "suggestions": {},
     }
 
 

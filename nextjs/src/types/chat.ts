@@ -258,6 +258,29 @@ export function mergeActions(
 
 
 /**
+ * Drop any TermSuggestion whose suggestions have all been acted on — i.e.
+ * at least one of the term's concrete options now appears in the merged
+ * actions list (case-insensitive). A term is considered resolved the moment
+ * the user picks any item from it; any remaining unpicked alternatives are
+ * noise once the card already lists the chosen items above.
+ *
+ * Called in useChat's onDone after mergeTermSuggestions so the component
+ * receives a clean list and stays dumb — it never needs to re-derive which
+ * terms are still open.
+ */
+export function filterResolvedTerms(
+  terms: TermSuggestion[],
+  actions: PantryProposalAction[],
+): TermSuggestion[] {
+  if (actions.length === 0) return terms
+  const actionNames = new Set(actions.map((a) => a.item.name.toLowerCase()))
+  return terms.filter(
+    ({ suggestions }) => !suggestions.some((s) => actionNames.has(s.toLowerCase())),
+  )
+}
+
+
+/**
  * Build natural-language text from a clarification selection map.
  * {veggies: ["Broccoli","Spinach"], dairy: ["Yogurt"]}
  * → "I got broccoli and spinach for veggies, and yogurt for dairy"

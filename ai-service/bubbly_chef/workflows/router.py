@@ -738,10 +738,75 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 merged_terms = _merge_dedup_case_insensitive(
                     existing.get("unclear_terms", []), unclear_terms
                 )
-                if merged_items or merged_terms:
+
+                # Build / update the suggestions map: term.lower() → list of
+                # concrete suggestions produced by suggest_specifics this turn.
+                # Kept so the resolution filter below (issue #342) can check
+                # overlap against actual suggestion lists rather than guessing.
+                existing_suggestions: dict[str, list[str]] = existing.get("suggestions", {})
+                new_suggestions: dict[str, list[str]] = {
+                    item["term"].lower(): item["suggestions"]
+                    for item in state.get("clarification_suggestions", [])
+                    if isinstance(item, dict)
+                    and isinstance(item.get("term"), str)
+                    and isinstance(item.get("suggestions"), list)
+                }
+                merged_suggestions = {**existing_suggestions, **new_suggestions}
+
+                # Issue #342 — drop resolved terms from unclear_terms.
+                # A term is resolved when at least one of ITS OWN suggestions
+                # appears in this turn's action names (case-insensitive). This
+                # mirrors exactly what the frontend filterResolvedTerms does.
+                # A term the user never addressed (e.g. "vegetables" when the
+                # user only added "eggs") must NOT be dropped — only terms
+                # where the user picked a concrete item from that term's pill
+                # row are removed.
+                if item_names:
+                    action_names_lower = {n.lower() for n in item_names}
+                    resolved: set[str] = set()
+                    for term in merged_terms:
+                        term_suggestions = merged_suggestions.get(term.lower(), [])
+                        if any(s.lower() in action_names_lower for s in term_suggestions):
+                            resolved.add(term.lower())
+                            matched = [
+                                s for s in term_suggestions
+                                if s.lower() in action_names_lower
+                            ]
+                            logger.info(
+                                f"unclear_term '{term}' resolved via "
+                                f"matched suggestions: {matched}"
+                            )
+                    merged_terms = [t for t in merged_terms if t.lower() not in resolved]
+                    # Also remove resolved terms from the suggestions map.
+                    merged_suggestions = {
+                        k: v for k, v in merged_suggestions.items() if k not in resolved
+                    }
+
+                # When all vague terms are resolved (there were some before and
+                # now none remain), clear pending_proposal entirely so
+                # review_gate no longer prepends the context note. A turn
+                # that never had any unclear terms (merged_terms was already
+                # empty) must NOT clear pending_proposal — it still needs to
+                # carry the item_names for context continuity.
+                had_unclear_terms = bool(existing.get("unclear_terms"))
+                if merged_items and not merged_terms and had_unclear_terms:
+                    session.pending_proposal = None
+                    logger.info(
+                        "pending_proposal cleared: all unclear_terms resolved"
+                    )
+                elif merged_items or merged_terms:
+                    sliced_terms = merged_terms[-_PENDING_PROPOSAL_HISTORY_LIMIT:]
+                    # Prune suggestions to only the terms that survived slicing,
+                    # so orphaned entries never accumulate in the JSON column.
+                    surviving_keys = {t.lower() for t in sliced_terms}
+                    pruned_suggestions = {
+                        k: v for k, v in merged_suggestions.items()
+                        if k in surviving_keys
+                    }
                     session.pending_proposal = {
                         "item_names": merged_items[-_PENDING_PROPOSAL_HISTORY_LIMIT:],
-                        "unclear_terms": merged_terms[-_PENDING_PROPOSAL_HISTORY_LIMIT:],
+                        "unclear_terms": sliced_terms,
+                        "suggestions": pruned_suggestions,
                     }
             else:
                 session.active_mode = SessionMode.DEFAULT
