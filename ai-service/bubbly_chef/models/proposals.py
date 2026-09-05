@@ -200,3 +200,36 @@ class GeneralChatResponse(BaseModel):
     follow_up_suggestions: list[str] = Field(
         default_factory=list, description="Suggested follow-up topics or actions"
     )
+
+
+class RecipeIngredientAmendment(BaseModel):
+    """A single ingredient in a user-amended recipe ingredient list."""
+
+    name: str = Field(description="Ingredient name")
+    quantity: float = Field(default=1.0, description="Quantity")
+    unit: str = Field(default="item", description="Unit of measurement")
+    optional: bool = Field(default=False, description="Whether the ingredient is optional")
+    notes: str | None = Field(default=None, description="Free-text notes (e.g. 'or milk')")
+
+
+class RecipeAmendmentDetection(BaseModel):
+    """Structured output schema for the amendment-detection pass.
+
+    Produced by a second LLM pass after the cooking-help prose reply is
+    generated.  When ``is_amendment`` is True and ``amended_ingredients`` is
+    populated the caller wraps this in a ``ProposalEnvelope`` with
+    ``requires_review=True`` so the frontend can show it for user confirmation
+    before the pantry-deduction step runs against the updated list.
+    """
+
+    is_amendment: bool = Field(
+        description="True if this turn modifies the recipe ingredients"
+    )
+    amended_ingredients: list[RecipeIngredientAmendment] | None = Field(
+        default=None,
+        description="Full amended ingredient list when is_amendment is True",
+    )
+    change_summary: str | None = Field(
+        default=None,
+        description="Short human-readable summary of what changed (1-2 sentences)",
+    )

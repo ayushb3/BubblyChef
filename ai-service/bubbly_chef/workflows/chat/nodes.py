@@ -14,6 +14,7 @@ import bubbly_chef.tools.cooking  # noqa: F401 — registers check_pantry on imp
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
+from bubbly_chef.models.proposals import RecipeAmendmentDetection
 from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.tools.registry import get_tool, get_tool_schemas
 from bubbly_chef.workflows.state import WorkflowState
@@ -423,6 +424,73 @@ what they can make, give concrete suggestions from their pantry and \
 mention they can switch to Recipe mode for a full step-by-step recipe."""
 
 
+_AMENDMENT_DETECTION_PROMPT = """\
+You are a structured-output classifier. Given the conversation context below,
+determine whether the user's message requests a change to the recipe ingredients.
+
+Pinned recipe ingredients:
+{ingredient_list}
+
+User message: {user_message}
+
+Assistant prose reply (already produced): {prose_reply}
+
+If the user requested an ingredient substitution, addition, or removal,
+set is_amendment=True and return the FULL amended ingredient list reflecting
+that change. If it was a general technique or timing question, set
+is_amendment=False.
+
+Return ONLY the JSON fields defined in the schema — no extra text."""
+
+
+async def _detect_amendment(
+    state: WorkflowState,
+    ai_manager: Any,
+    prose_reply: str,
+) -> RecipeAmendmentDetection | None:
+    """Run a second structured-output pass to detect recipe ingredient amendments.
+
+    Called after the prose reply is produced so there is no added latency to the
+    user-visible response. Returns None on any failure so the caller can degrade
+    gracefully to prose-only behavior.
+    """
+    raw_recipe = get_cooking_recipe(state)
+    if not raw_recipe:
+        # No pinned recipe — amendment detection is not applicable.
+        return None
+
+    recipe = normalize_cooking_recipe(raw_recipe)
+    ingredients = recipe.get("ingredients") or []
+    if not ingredients:
+        return None
+
+    ingredient_list = "\n".join(f"- {ing}" for ing in ingredients)
+    user_message = state.get("input_text", "")
+
+    prompt = _AMENDMENT_DETECTION_PROMPT.format(
+        ingredient_list=ingredient_list,
+        user_message=user_message,
+        prose_reply=prose_reply,
+    )
+
+    try:
+        result = await ai_manager.complete(
+            prompt=prompt,
+            response_schema=RecipeAmendmentDetection,
+            temperature=0.0,
+        )
+        if isinstance(result, RecipeAmendmentDetection):
+            return result
+        # Some providers return a dict; coerce it.
+        if isinstance(result, dict):
+            return RecipeAmendmentDetection(**result)
+        logger.warning("_detect_amendment: unexpected result type %s", type(result))
+        return None
+    except Exception as exc:
+        logger.warning("_detect_amendment failed (degrading to prose-only): %s", exc)
+        return None
+
+
 async def _cooking_help_single_shot(
     state: WorkflowState,
     ai_manager: Any,
@@ -441,6 +509,21 @@ async def _cooking_help_single_shot(
             result if isinstance(result, str) else getattr(result, "response", str(result))
         )
         suggested_mode = detect_mode_suggestion(response_text, state.get("input_mode", "chat"))
+
+        amendment = await _detect_amendment(state, ai_manager, response_text)
+        if amendment and amendment.is_amendment and amendment.amended_ingredients:
+            return {
+                **state,
+                "intent": Intent.COOKING_HELP.value,
+                "assistant_message": response_text,
+                "next_action": NextAction.REVIEW_PROPOSAL.value,
+                "proposal": amendment.model_dump(),
+                "requires_review": True,
+                "confidence": 1.0,
+                "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
+                "suggested_mode": suggested_mode,
+            }
+
         return {
             **state,
             "intent": Intent.COOKING_HELP.value,
@@ -653,6 +736,21 @@ async def _cooking_help_react(
             )
 
         suggested_mode = detect_mode_suggestion(last_text, state.get("input_mode", "chat"))
+
+        amendment = await _detect_amendment(state, ai_manager, last_text)
+        if amendment and amendment.is_amendment and amendment.amended_ingredients:
+            return {
+                **state,
+                "intent": Intent.COOKING_HELP.value,
+                "assistant_message": last_text,
+                "next_action": NextAction.REVIEW_PROPOSAL.value,
+                "proposal": amendment.model_dump(),
+                "requires_review": True,
+                "confidence": 1.0,
+                "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
+                "suggested_mode": suggested_mode,
+            }
+
         return {
             **state,
             "intent": Intent.COOKING_HELP.value,
