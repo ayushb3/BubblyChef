@@ -30,8 +30,15 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: 'npm run dev',
+    // Run against a production build, not `next dev`. The dev server's HMR
+    // websocket can fail to connect in headless CI/agent runs, which leaves the
+    // page only partially hydrated — input onChange binds but some onClick
+    // handlers do not — silently flaking any spec that drives a client-side
+    // click (e.g. the auth sign-up toggle). `next build && next start` has no
+    // HMR socket and hydrates deterministically.
+    command: 'npm run build && npm start',
     url: 'http://127.0.0.1:3000',
     reuseExistingServer: !process.env.CI,
+    timeout: 180_000,
   },
 });

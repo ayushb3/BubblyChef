@@ -111,7 +111,24 @@ describe('dashboard hero ignores already-expired items', () => {
 
 describe('dashboard tip card (#143)', () => {
   beforeEach(() => {
-    global.fetch = jest.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch
+    // The tip now skeletons until the fetches resolve (#225 spec-review
+    // finding 1) rather than rendering the fallback tip immediately, so
+    // (unlike other describe blocks in this file) the mock here must
+    // actually resolve for the tip link to ever appear.
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/pantry/expiring')) return jsonResponse({ items: [], count: 0 })
+      if (url.includes('/api/pantry')) return jsonResponse({ items: [], total_count: 0 })
+      if (url.includes('/api/ai/dashboard/daily')) {
+        return jsonResponse({
+          tip: { text: 'Zest citrus before juicing it.', category: 'technique' },
+          suggestion: null,
+          generated_at: '2026-09-05T08:00:00Z',
+          source: 'ai',
+        })
+      }
+      return jsonResponse({ recipes: [], total_count: 0 })
+    }) as unknown as typeof fetch
   })
 
   it('carries the tip the user is actually looking at', async () => {
@@ -122,7 +139,7 @@ describe('dashboard tip card (#143)', () => {
     // The accessible name is an explicit aria-label ("Ask Bubbles about today's
     // tip: …") rather than the raw tip text, so screen-reader users are told
     // what activating the card actually does.
-    const tipLink = screen.getByRole('link', { name: /Ask Bubbles about today's tip/i })
+    const tipLink = await screen.findByRole('link', { name: /Ask Bubbles about today's tip/i })
     await waitFor(() => expect(hrefParams(tipLink).get('tip')).toBeTruthy())
 
     const rendered = (tipLink.textContent ?? '').split('Tip:')[1]?.trim()

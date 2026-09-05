@@ -130,7 +130,15 @@ Rules:
 - Each idea should be a recipe name (2-5 words), not a full recipe
 - If "Must use" ingredients are listed, EVERY idea must actually use them — \
 this overrides every other preference
-- Prioritize ingredients marked as expiring soon
+- Ingredients marked as expiring soon are a strong preference, not a \
+requirement: try to build at least one idea around them, but it's fine to \
+leave an expiring item out of a specific idea when it doesn't belong there. \
+If none of your ideas can sensibly use the expiring items, say so briefly \
+instead of forcing one in.
+- Every idea has to make culinary sense on its own terms — don't weld an \
+ingredient into a dish just because it's expiring. In particular, don't \
+wedge a sweet ingredient like fruit into a savoury dish unless the user \
+asked for that combination or it's a genuine part of the cuisine in play.
 - Match the cuisine/mood if specified
 - ALL suggestions must be for the same meal type — if meal_type is specified, \
 every idea must fit that meal (don't mix breakfast and dinner)
@@ -169,9 +177,18 @@ Generate a complete recipe card for "{recipe_name}".
 Constraints: {constraints_json}
 Must-use ingredients (the user asked to cook with these — the recipe MUST \
 include them): {must_use_items}
-Priority ingredients (expiring soon — use first): {priority_items}
+Priority ingredients (expiring soon — a strong preference, not a \
+requirement): {priority_items}
 Supporting ingredients available: {supporting_items}
 Context: {context}
+
+Priority ingredients are a strong preference, not a requirement: favor \
+building this recipe around them, but it's fine to leave one out if it \
+doesn't belong in "{recipe_name}" — include a priority ingredient only if it \
+genuinely fits the dish. In particular, don't wedge a sweet ingredient like \
+fruit into a savoury dish unless the user asked for that combination or it's \
+a genuine part of the cuisine in play. This does not apply to must-use \
+ingredients above, which remain a hard requirement regardless of fit.
 
 Generate a full recipe with:
 - title, description
@@ -191,7 +208,7 @@ Generate a full recipe with:
 - cuisine, meal_type, dietary_tags
 - tips
 
-Prioritize using the listed available ingredients. \
+Build the recipe from the listed ingredients where you can. \
 For any missing ingredients, suggest pantry substitutes where possible.\
 """
 
@@ -365,14 +382,17 @@ def score_and_rank(
 
     Scoring:
     - item in must_use_ingredients: +20 (also tagged `_must_use`)
-    - days_until_expiry <= 3: +10
-    - days_until_expiry <= 7: +5
-    - item name matches cuisine keywords: +3
+    - days_until_expiry <= 3: +4
+    - days_until_expiry <= 7: +2
     - item in preferred_ingredients: +5
+    - item name matches cuisine keywords: +3
     - item in excluded_ingredients: -100
 
-    Scores compose — a must-use item that is also expiring outranks one that
-    isn't, so expiry urgency still orders items within the must-use group.
+    Expiry is now a tiebreaker, not the dominant axis. A strong cuisine +
+    preference match (3 + 5 = 8) outranks a bare expiring item with no fit
+    (4), aligning the ranking with the softened prompt wording from #288/#336.
+    Must-use (20) still dominates everything; within the must-use group,
+    expiry urgency still orders items.
     """
     cuisine = (constraints.get("cuisine") or "").lower()
     preferred = {p.lower() for p in (constraints.get("preferred_ingredients") or [])}
@@ -407,9 +427,9 @@ def score_and_rank(
                 if days_left < 0:
                     is_expired = True
                 elif days_left <= 3:
-                    score += 10
+                    score += 4
                 elif days_left <= 7:
-                    score += 5
+                    score += 2
             except (ValueError, TypeError):
                 pass
 
@@ -433,6 +453,17 @@ def score_and_rank(
     # Filter out excluded items (negative score)
     scored = [s for s in scored if s.get("_score", 0) >= 0]
     return scored[:15]
+
+
+def _days_until_expiry(item: dict[str, Any]) -> int | None:
+    """Return days from today to item's expiry_date, or None if no date."""
+    expiry_str = item.get("expiry_date")
+    if not expiry_str:
+        return None
+    try:
+        return (date.fromisoformat(str(expiry_str)) - date.today()).days
+    except (ValueError, TypeError):
+        return None
 
 
 # =============================================================================
@@ -679,21 +710,23 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         # still let the model build a dish around two-week-old spinach — and on
         # a real pantry (29 of 49 items expired) it crowded out good ingredients.
         # A must-use item is an explicit user request, so it survives.
+        # Partition requires expiry_date to be present on scored items
+        # (score_and_rank spreads {**item, ...} so original fields are preserved).
         rest = [
             i for i in scored_items if not i.get("_must_use") and not i.get("_expired")
         ]
-        expiring = [i for i in rest if i.get("_score", 0) >= 10]
-        supporting = [
+        expiring = [
             i for i in rest
-            if i.get("_score", 0) < 10 and i.get("_score", 0) >= 0
+            if (d := _days_until_expiry(i)) is not None and 0 <= d <= 7
         ]
+        supporting = [i for i in rest if i not in expiring]
         expiring_str = ", ".join(i.get("name", "") for i in expiring[:5])
         supporting_str = ", ".join(i.get("name", "") for i in supporting[:10])
         pantry_context = ""
         if must_use:
             must_use_str = ", ".join(i.get("name", "") for i in must_use[:5])
             pantry_context += f"\nMust use (the user asked to cook with these): {must_use_str}"
-        pantry_context += f"\nExpiring soon (prioritize): {expiring_str or 'none'}"
+        pantry_context += f"\nExpiring soon (weave in where it fits, not mandatory): {expiring_str or 'none'}"
         pantry_context += f"\nOther available: {supporting_str or 'none'}"
     else:
         pantry_context = "\nNo pantry items available — suggest general recipes."

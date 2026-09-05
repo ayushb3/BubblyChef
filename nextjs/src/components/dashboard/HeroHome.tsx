@@ -7,23 +7,25 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 import FadeInView from '@/components/ui/FadeInView'
 import { titleCase } from '@/lib/format'
 import { cookThisHref, tipChatHref } from '@/lib/chat-seed'
-import { pickRandomRecipe } from '@/lib/recipe-helpers'
+import { fetchDashboardDaily } from '@/lib/api/dashboard'
+import type { DashboardTip, DashboardSuggestion } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
-
-interface Recipe {
-  id: string
-  title: string
-  total_time_minutes: number | null
-}
 
 interface HomeData {
   totalCount: number
   expiringCount: number
   urgentItem: EnrichedPantryItem | null
-  recipe: Recipe | null
+  tip: DashboardTip | null
+  suggestion: DashboardSuggestion | null
 }
 
-const tips = [
+// Client-side fallback only — used when `GET /v1/dashboard/daily` (#225, #168)
+// can't be reached at all (network error, proxy 401, etc). The backend has
+// its own, separately-maintained fallback list for when *it* can't reach an
+// AI provider (see `ai-service/bubbly_chef/services/dashboard_service.py`);
+// this list exists purely so the dashboard never shows a blank tip or an
+// error when the client can't even complete the request.
+const FALLBACK_TIPS = [
   'Season your pan, not just your food!',
   'Let meat rest after cooking — way more tender.',
   'Freeze herbs in olive oil ice cubes!',
@@ -32,6 +34,15 @@ const tips = [
   'Green onions regrow in a glass of water.',
   'Taste as you cook — adjust seasoning throughout.',
 ]
+
+/**
+ * True when `copy` already states `minutes` as a time figure (e.g. "ready in
+ * 25 min" or "...in 25 minutes"). Used to avoid appending "Only N min!" onto
+ * copy that already says the number — see #225 spec-review finding 2.
+ */
+function copyMentionsMinutes(copy: string, minutes: number): boolean {
+  return new RegExp(`\\b${minutes}\\b\\s*min`, 'i').test(copy)
+}
 
 function getGreeting(): string {
   const hour = new Date().getHours()
@@ -80,26 +91,27 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
     totalCount: 0,
     expiringCount: 0,
     urgentItem: null,
-    recipe: null,
+    tip: null,
+    suggestion: null,
   })
 
   useEffect(() => {
     const fetchAll = async () => {
       try {
-        const [pantryRes, expiringRes, recipesRes] = await Promise.all([
+        const [pantryRes, expiringRes, dashboardDaily] = await Promise.all([
           fetch('/api/pantry'),
           fetch('/api/pantry/expiring?days=3'),
-          fetch('/api/recipes?limit=5'),
+          // Failure here degrades to the static FALLBACK_TIPS list and no
+          // suggestion card — it must never take down the rest of the hero.
+          fetchDashboardDaily().catch(() => null),
         ])
-        const [pantryData, expiringData, recipesData] = await Promise.all([
+        const [pantryData, expiringData] = await Promise.all([
           pantryRes.ok ? pantryRes.json() : { items: [], total_count: 0 },
           expiringRes.ok ? expiringRes.json() : { items: [], count: 0 },
-          recipesRes.ok ? recipesRes.json() : { recipes: [], total_count: 0 },
         ])
 
         const allItems: EnrichedPantryItem[] = pantryData.items ?? []
         const expiringItems: EnrichedPantryItem[] = expiringData.items ?? []
-        const recipes: Recipe[] = recipesData.recipes ?? []
 
         // Both windows need a lower bound. days_until_expiry goes negative once an
         // item is past its date, so an unbounded `<= n` also matches food that
@@ -128,7 +140,8 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
           totalCount: pantryData.total_count ?? allItems.length,
           expiringCount,
           urgentItem,
-          recipe: pickRandomRecipe(recipes),
+          tip: dashboardDaily?.tip ?? null,
+          suggestion: dashboardDaily?.suggestion ?? null,
         })
       } catch {
         // silent
@@ -151,39 +164,52 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
 
   const greeting = clockReady ? getGreeting() : 'Hello'
   const emoji = clockReady ? getGreetingEmoji() : '👋'
-  const tip = tips[(clockReady ? new Date().getDay() : 0) % tips.length]
-  const { totalCount, expiringCount, urgentItem, recipe } = data
+  const { totalCount, expiringCount, urgentItem, tip: dashboardTip, suggestion } = data
 
-  // Derive a time-of-day word from the already-computed greeting so we don't
-  // add a second new Date() call. SSR renders 'Hello' → mealTimeWord stays
-  // empty until clockReady flips, which avoids a hydration mismatch.
-  const mealTimeWord = clockReady
-    ? greeting.includes('morning')
-      ? 'this morning'
-      : greeting.includes('afternoon')
-        ? 'this afternoon'
-        : 'tonight'
-    : ''
+  // Tip text now comes from `GET /v1/dashboard/daily` (#225) — per-user,
+  // grounded in that user's own pantry. FALLBACK_TIPS only renders when the
+  // request itself failed (dashboardTip stays null), or before it resolves.
+  // Weekday indexing into the static list is gone; it's just a fallback pick
+  // now, so any stable index is fine — clockReady gates it purely to avoid an
+  // SSR/client hydration mismatch, same as the greeting above.
+  const tip = dashboardTip?.text ?? FALLBACK_TIPS[(clockReady ? new Date().getDay() : 0) % FALLBACK_TIPS.length]
 
-  // Compute the single hero message (most important)
-  const heroMessage = urgentItem
-    ? `Your ${titleCase(urgentItem.name)} expires ${urgentItem.days_until_expiry === 0 ? 'today' : 'tomorrow'}! Let's cook it up.`
-    : totalCount === 0
-      ? "Your pantry is empty — let's stock up!"
-      : recipe
-        ? `Feel like trying ${recipe.title}${mealTimeWord ? ` ${mealTimeWord}` : ''}?${recipe.total_time_minutes ? ` Only ${recipe.total_time_minutes} min!` : ''}`
+  // Compute the single hero message (most important). `suggestion.copy` is
+  // AI-written (or templated by the backend's own fallback) and already
+  // grounded in why this recipe won (#168) — the frontend no longer composes
+  // its own "Feel like trying X?" sentence. The design doc's "Only N min!"
+  // note means don't change the number's correctness, not keep concatenating
+  // it onto a sentence that already states it: the backend's own fallback
+  // copy template ends with "... ready in {N} min.", so appending
+  // unconditionally always duplicated the figure on that path. Only append
+  // when `copy` doesn't already mention the minute count (see
+  // `copyMentionsMinutes` and dashboard-recipe-suggestion.test.tsx).
+  //
+  // Priority order (#347): the AI-ranked suggestion leads whenever it exists —
+  // expiry urgency is a signal, not the headline. Urgent-expiry copy surfaces
+  // only when there is no suggestion to show.
+  const heroMessage = totalCount === 0
+    ? "Your pantry is empty — let's stock up!"
+    : suggestion
+      ? `${suggestion.copy}${
+          suggestion.total_time_minutes && !copyMentionsMinutes(suggestion.copy, suggestion.total_time_minutes)
+            ? ` Only ${suggestion.total_time_minutes} min!`
+            : ''
+        }`
+      : urgentItem
+        ? `Your ${titleCase(urgentItem.name)} expires ${urgentItem.days_until_expiry === 0 ? 'today' : 'tomorrow'}! Let's cook it up.`
         : expiringCount > 0
           ? "Check the 'Use Soon' tile — some items need your attention!"
           : 'Your kitchen is looking great!'
 
   // The urgent-item CTA deep-links into a chat seeded with that ingredient
   // (#138), so one tap lands on a recipe that actually uses it.
-  const heroAction = urgentItem
-    ? { label: 'Find a recipe', href: cookThisHref(urgentItem.name, urgentItem.expiry_date) }
-    : totalCount === 0
-      ? { label: 'Scan receipt', href: '/pantry?add=scan' }
-      : recipe
-        ? { label: 'Open recipe', href: `/recipes/${recipe.id}` }
+  const heroAction = totalCount === 0
+    ? { label: 'Scan receipt', href: '/pantry?add=scan' }
+    : suggestion
+      ? { label: 'Open recipe', href: `/recipes/${suggestion.recipe_id}` }
+      : urgentItem
+        ? { label: 'Find a recipe', href: cookThisHref(urgentItem.name, urgentItem.expiry_date) }
         : expiringCount > 0
           ? { label: 'View pantry', href: '/pantry' }
           : { label: 'Ask Bubbles', href: '/chat' }
@@ -200,7 +226,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
       {/* Hero Bubbles */}
       <FadeInView delay={0.1}>
         <div className="flex flex-col items-center mt-2 mb-4">
-          <BubblesMascot state={urgentItem ? 'surprised' : 'happy'} size={120} />
+          <BubblesMascot state={!suggestion && urgentItem ? 'surprised' : 'happy'} size={120} />
         </div>
       </FadeInView>
 
@@ -291,28 +317,48 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
         ))}
       </div>
 
-      {/* Tip of the day — compact */}
+      {/* Tip of the day — compact. Gated on `loading` like its three siblings
+          above: without this, the fallback tip renders on first paint and gets
+          swapped for the AI tip once the fetch lands, reflowing the
+          `line-clamp-2` card and changing `tipChatHref` out from under a fast
+          click. */}
       <FadeInView delay={0.6}>
-        {/* href is derived from the same `tip` the card renders, so the
-            post-hydration correction moves both together (#143). */}
-        {/* Without an explicit label the accessible name is just the raw tip
-            text, which gives no hint that activating it opens a chat. */}
-        <Link
-          href={tipChatHref(tip)}
-          aria-label={`Ask Bubbles about today's tip: ${tip}`}
-          className="block max-w-sm w-full"
-        >
+        {loading ? (
           <div
-            className="flex items-center gap-3 rounded-2xl px-4 py-3 border border-[var(--color-border)]"
+            className="flex items-center gap-3 rounded-2xl px-4 py-3 border border-[var(--color-border)] max-w-sm w-full"
             style={{ background: 'var(--color-surface)' }}
+            aria-busy="true"
           >
             <span className="text-lg flex-shrink-0">💡</span>
-            <p className="text-xs text-[var(--color-muted)] leading-snug line-clamp-2">
-              <strong className="text-[var(--color-text)] font-semibold">Tip: </strong>
-              {tip}
-            </p>
+            <div className="flex-1 flex flex-col gap-1.5">
+              <Skeleton className="w-11/12 h-2.5" />
+              <Skeleton className="w-2/3 h-2.5" />
+            </div>
           </div>
-        </Link>
+        ) : (
+          <>
+            {/* href is derived from the same `tip` the card renders, so the
+                post-hydration correction moves both together (#143). */}
+            {/* Without an explicit label the accessible name is just the raw tip
+                text, which gives no hint that activating it opens a chat. */}
+            <Link
+              href={tipChatHref(tip)}
+              aria-label={`Ask Bubbles about today's tip: ${tip}`}
+              className="block max-w-sm w-full"
+            >
+              <div
+                className="flex items-center gap-3 rounded-2xl px-4 py-3 border border-[var(--color-border)]"
+                style={{ background: 'var(--color-surface)' }}
+              >
+                <span className="text-lg flex-shrink-0">💡</span>
+                <p className="text-xs text-[var(--color-muted)] leading-snug line-clamp-2">
+                  <strong className="text-[var(--color-text)] font-semibold">Tip: </strong>
+                  {tip}
+                </p>
+              </div>
+            </Link>
+          </>
+        )}
       </FadeInView>
 
       {/* Pantry status bar — data-dependent, so it skeletons until the fetches land */}

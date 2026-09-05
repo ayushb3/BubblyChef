@@ -1,11 +1,15 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { streamChatMessage, fetchChatHistory } from '@/lib/api/chat'
-import type { ChatMessage, ChatResponse } from '@/types/chat'
+import { streamChatMessage, fetchChatHistory, applyPantryProposal } from '@/lib/api/chat'
+import type { ChatMessage, ChatResponse, PantryProposalData, PantryProposalAction } from '@/types/chat'
+import { getClarificationSuggestions, mergeTermSuggestions, mergeActions } from '@/types/chat'
 
-const AI_SERVICE_URL =
-  process.env.NEXT_PUBLIC_AI_SERVICE_URL || 'http://localhost:8888'
+/** Everything needed to apply a pantry proposal once the user approves it. */
+interface PendingProposal {
+  requestId: string
+  actions: PantryProposalAction[]
+}
 
 /**
  * Issue #265 — the active conversation survives navigation.
@@ -73,9 +77,19 @@ export function useChat(options?: UseChatOptions) {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const streamAbortRef = useRef<AbortController | null>(null)
   const [proposalStates, setProposalStates] = useState<
-    Record<string, 'pending' | 'approved' | 'rejected'>
+    Record<string, 'pending' | 'approving' | 'approved' | 'rejected' | 'failed'>
   >({})
-  const [workflowIds, setWorkflowIds] = useState<Record<string, string>>({})
+  const [proposalErrors, setProposalErrors] = useState<Record<string, string>>({})
+  /**
+   * Stores the requestId + actions needed to call applyPantryProposal when the
+   * user clicks "Add to Pantry". Keyed by the message ID that owns the card.
+   *
+   * Replaces the old `workflowIds` map — there is no `/v1/workflows/{id}/events`
+   * route; approval goes through `POST /v1/workflows/apply` instead.
+   */
+  const [pendingProposals, setPendingProposals] = useState<
+    Record<string, PendingProposal>
+  >({})
   const historyLoaded = useRef(false)
   // Guards against `sendMessage` racing the in-flight history fetch below: if
   // the user sends before the fetch resolves, the resolution must not clobber
@@ -83,6 +97,19 @@ export function useChat(options?: UseChatOptions) {
   const hasSentRef = useRef(false)
 
   // ── History loading / resume ─────────────────────────────────────────────
+  // Mirror messages/proposalStates for synchronous reads in onDone (below) —
+  // sendMessage's closure over `messages`/`proposalStates` from render time
+  // would otherwise be stale by the time a streamed response completes.
+  const messagesRef = useRef(messages)
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+  const proposalStatesRef = useRef(proposalStates)
+  useEffect(() => {
+    proposalStatesRef.current = proposalStates
+  }, [proposalStates])
+
+  // ── History loading ──────────────────────────────────────────────────────
 
   useEffect(() => {
     // `skipResume` is derived from URL params the page deliberately strips
@@ -217,25 +244,171 @@ export function useChat(options?: UseChatOptions) {
             response.assistant_message ||
             "I'm not sure how to help with that. Try asking about recipes or groceries!"
 
-          setMessages((prev) =>
-            prev.map((msg) =>
+          const proposal = response.proposal as PantryProposalData | null
+          const hasActions = !!proposal && proposal.actions.length > 0
+          const clarificationTerms = getClarificationSuggestions(response)
+          const isPantryTurn = response.intent === 'pantry_update'
+
+          // Find the nearest earlier pantry card that's still open (pending).
+          // Both vague-only turns (0 actions, new clarification pills) AND
+          // pill-tap turns (real actions from a resolved term) merge here —
+          // the goal is one card per "add session", not one card per turn.
+          //
+          // Absent from proposalStatesRef means setProposalStates hasn't
+          // flushed yet (useEffect re-sync lags one render behind the setter).
+          // Absent = never approved/rejected = still pending.
+          let mergeTargetId: string | null = null
+          if (isPantryTurn) {
+            const priorMessages = messagesRef.current
+            for (let i = priorMessages.length - 1; i >= 0; i--) {
+              const candidate = priorMessages[i]
+              if (candidate.id === assistantMsgId) continue
+              const candidateProposal = candidate.response?.proposal as
+                | PantryProposalData
+                | undefined
+              const candidateState = proposalStatesRef.current[candidate.id]
+              if (
+                candidate.intent === 'pantry_update' &&
+                (candidateProposal?.actions.length ?? 0) > 0 &&
+                (candidateState === 'pending' || candidateState === undefined)
+              ) {
+                mergeTargetId = candidate.id
+                break
+              }
+            }
+          }
+
+          setMessages((prev) => {
+            if (mergeTargetId) {
+              // Move the card to this turn (the latest message) rather than
+              // leaving it anchored at the earlier turn. The user just said
+              // something new — the card should follow the conversation forward.
+              // Strip it from the old turn (null out proposal + clarifications)
+              // and attach the merged state here.
+              const targetId = mergeTargetId
+              const targetMsg = prev.find((m) => m.id === targetId)
+              const targetProposal = targetMsg?.response?.proposal as PantryProposalData | undefined
+
+              const mergedProposal: PantryProposalData | null = targetProposal
+                ? {
+                    ...targetProposal,
+                    actions: hasActions
+                      ? mergeActions(targetProposal.actions, proposal!.actions)
+                      : targetProposal.actions,
+                  }
+                : null
+
+              const mergedClarifications = mergeTermSuggestions(
+                getClarificationSuggestions(targetMsg?.response),
+                clarificationTerms,
+              )
+
+              return prev.map((msg) => {
+                // Old card owner: strip its proposal and clarifications so no
+                // card renders there anymore. Keep the reply bubble text.
+                if (msg.id === targetId && msg.response) {
+                  return {
+                    ...msg,
+                    response: {
+                      ...msg.response,
+                      proposal: null,
+                      metadata: { ...msg.response.metadata, clarification_suggestions: [] },
+                    },
+                  }
+                }
+                // This turn: attach the merged card. Strip the verbose
+                // "(still with X from earlier...)" prefix the backend prepends —
+                // the card itself makes the context clear; the note is noise.
+                if (msg.id === assistantMsgId) {
+                  const cleanContent = (msg.content || fallbackContent)
+                    .replace(/^\(still (with|don't know)[^)]*\)\s*/i, '')
+                    .trim()
+                  return {
+                    ...msg,
+                    content: cleanContent,
+                    intent: response.intent,
+                    response: {
+                      ...response,
+                      proposal: mergedProposal,
+                      metadata: {
+                        ...response.metadata,
+                        clarification_suggestions: mergedClarifications,
+                      },
+                    },
+                  }
+                }
+                return msg
+              })
+            }
+
+            return prev.map((msg) =>
               msg.id === assistantMsgId
                 ? {
                     ...msg,
-                    // Keep streamed content if tokens arrived, otherwise use envelope
                     content: msg.content || fallbackContent,
                     intent: response.intent,
                     response,
                   }
                 : msg,
-            ),
-          )
+            )
+          })
 
-          // Track workflow for proposal approval
-          if (response.workflow_id && response.requires_review) {
-            setWorkflowIds((prev) => ({
+          // The card is now owned by this turn (assistantMsgId), whether it
+          // started fresh or was merged from an earlier one. Register the
+          // pending proposal here so approve/reject callbacks resolve correctly.
+          //
+          // When merging: migrate the original card's pending proposal
+          // (mergeTargetId → assistantMsgId) so clicking "Add to Pantry" on
+          // the merged-forward card finds the accumulated actions. Without this,
+          // `pending === undefined` on the new owner and the button silently
+          // no-ops. Also layer in any new actions from this turn on top.
+          if (mergeTargetId) {
+            const targetId = mergeTargetId
+            setPendingProposals((prev) => {
+              const originalPending = prev[targetId]
+              const next = { ...prev }
+              delete next[targetId]
+              // Build the merged action list: start from the original pending
+              // actions and layer in any new actions from this turn.
+              if (originalPending) {
+                const mergedActions = hasActions
+                  ? mergeActions(originalPending.actions, proposal!.actions)
+                  : originalPending.actions
+                next[assistantMsgId] = {
+                  requestId: response.request_id ?? originalPending.requestId,
+                  actions: mergedActions,
+                }
+              } else if (
+                response.requires_review &&
+                response.intent === 'pantry_update' &&
+                proposal &&
+                'actions' in proposal
+              ) {
+                next[assistantMsgId] = {
+                  requestId: response.request_id,
+                  actions: proposal.actions,
+                }
+              }
+              return next
+            })
+            setProposalStates((prev) => {
+              const next = { ...prev }
+              delete next[targetId]
+              next[assistantMsgId] = 'pending'
+              return next
+            })
+          } else if (
+            response.requires_review &&
+            response.intent === 'pantry_update' &&
+            proposal &&
+            'actions' in proposal
+          ) {
+            setPendingProposals((prev) => ({
               ...prev,
-              [assistantMsgId]: response.workflow_id,
+              [assistantMsgId]: {
+                requestId: response.request_id,
+                actions: proposal.actions,
+              },
             }))
             setProposalStates((prev) => ({
               ...prev,
@@ -285,71 +458,100 @@ export function useChat(options?: UseChatOptions) {
     setProposalStates({})
     setWorkflowIds({})
     clearStoredConversationId()
+    setProposalErrors({})
+    setPendingProposals({})
     historyLoaded.current = false
   }, [cancelStream])
 
   // ── Proposal approval/rejection ──────────────────────────────────────────
 
-  const approveProposal = useCallback(
-    async (msgId: string) => {
-      const wfId = workflowIds[msgId]
-      if (!wfId) return
+  /**
+   * Approve a chat-proposed pantry update.
+   *
+   * Goes through the same `/api/ai/workflows/apply` proxy the receipt-scan
+   * confirmation flow uses (see `lib/api/scan.ts#confirmScanItems`), so chat
+   * and scan persist items via the same mechanism. The AI service registers
+   * only `POST /v1/workflows/apply` — there is no `/v1/workflows/{id}/events`
+   * route, so this must never target one.
+   *
+   * A non-success response (network error, non-2xx, or `success: false` in
+   * the envelope) must not render as approved — it flips to 'failed' with an
+   * error message and stays retryable via the same button.
+   *
+   * Retry safety: on partial failure (some actions succeeded, some failed) the
+   * response includes a `failedActions` list derived from error messages. On
+   * retry, only those failed actions are resent — the ones that already
+   * succeeded are not replayed (the backend `add` path does
+   * `new_qty = existing + qty`, so replaying would double-count).
+   */
+  const approveProposal = useCallback(async (msgId: string) => {
+    const pending = pendingProposals[msgId]
+    if (!pending) return
 
-      try {
-        const { createClient } = await import('@/lib/supabase/client')
-        const supabase = createClient()
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
+    setProposalStates((prev) => ({ ...prev, [msgId]: 'approving' }))
+    setProposalErrors((prev) => {
+      const next = { ...prev }
+      delete next[msgId]
+      return next
+    })
 
-        await fetch(`${AI_SERVICE_URL}/v1/workflows/${wfId}/events`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session?.access_token ?? ''}`,
-          },
-          body: JSON.stringify({
-            event_type: 'submit_review',
-            decision: 'approve',
-          }),
-        })
-        setProposalStates((prev) => ({ ...prev, [msgId]: 'approved' }))
-      } catch {
-        // Approval failed — keep as pending
+    try {
+      const result = await applyPantryProposal(pending.requestId, pending.actions)
+
+      if (!result.success) {
+        // If only some actions failed, update pendingProposals to hold only
+        // the failed actions so a retry doesn't double-count the ones that
+        // already succeeded.
+        if (result.failedActions && result.failedActions.length > 0) {
+          setPendingProposals((prev) => ({
+            ...prev,
+            [msgId]: { ...pending, actions: result.failedActions! },
+          }))
+        }
+        setProposalErrors((prev) => ({
+          ...prev,
+          [msgId]: result.errors[0] ?? 'Some items could not be added. Please try again.',
+        }))
+        setProposalStates((prev) => ({ ...prev, [msgId]: 'failed' }))
+        return
       }
-    },
-    [workflowIds],
-  )
 
-  const rejectProposal = useCallback(
-    async (msgId: string) => {
-      const wfId = workflowIds[msgId]
-      if (!wfId) return
+      setProposalStates((prev) => ({ ...prev, [msgId]: 'approved' }))
+    } catch (err) {
+      setProposalErrors((prev) => ({
+        ...prev,
+        [msgId]: err instanceof Error ? err.message : 'Failed to add items. Please try again.',
+      }))
+      setProposalStates((prev) => ({ ...prev, [msgId]: 'failed' }))
+    }
+  }, [pendingProposals])
 
-      try {
-        const { createClient } = await import('@/lib/supabase/client')
-        const supabase = createClient()
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
+  /**
+   * Reject a chat-proposed pantry update.
+   *
+   * The AI service has no reject/skip operation for proposals (only
+   * `POST /v1/workflows/apply`, which writes to the DB) — rejection is a
+   * client-side dismissal only. It does not call the AI service, so a failed
+   * "rejection" can never happen and this is synchronous.
+   */
+  const rejectProposal = useCallback((msgId: string) => {
+    setProposalStates((prev) => ({ ...prev, [msgId]: 'rejected' }))
+  }, [])
 
-        await fetch(`${AI_SERVICE_URL}/v1/workflows/${wfId}/events`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session?.access_token ?? ''}`,
-          },
-          body: JSON.stringify({
-            event_type: 'submit_review',
-            decision: 'skip',
-          }),
-        })
-        setProposalStates((prev) => ({ ...prev, [msgId]: 'rejected' }))
-      } catch {
-        // Rejection failed — keep as pending
+  // ── Chip tap send (interrupts streaming) ────────────────────────────────
+  // Clarification pill taps need to send even while a prior response is
+  // streaming — the user has already seen enough to respond. Abort the
+  // current stream first so sendMessage's isStreaming guard doesn't block it.
+  const sendChipMessage = useCallback(
+    (text: string) => {
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort()
+        streamAbortRef.current = null
+        setIsStreaming(false)
       }
+      sendMessage(text)
     },
-    [workflowIds],
+    [sendMessage],
   )
 
   return {
@@ -357,7 +559,9 @@ export function useChat(options?: UseChatOptions) {
     isStreaming,
     conversationId,
     proposalStates,
+    proposalErrors,
     sendMessage,
+    sendChipMessage,
     cancelStream,
     startNewChat,
     approveProposal,

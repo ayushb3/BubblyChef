@@ -18,7 +18,7 @@ import logging
 import re
 from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from langgraph.graph import END, StateGraph
@@ -61,6 +61,7 @@ from bubbly_chef.workflows.pantry.nodes import (
     normalize_items,
     parse_pantry_items,
     review_gate,
+    suggest_specifics,
 )
 from bubbly_chef.workflows.recipe.nodes import (
     brainstorm_recipe_ideas,
@@ -73,6 +74,7 @@ from bubbly_chef.workflows.recipe.nodes import (
 )
 from bubbly_chef.workflows.state import (
     LLMIntentResult,
+    PendingProposalMemory,
     WorkflowState,
     create_general_chat_envelope,
     create_handoff_envelope,
@@ -83,6 +85,11 @@ from bubbly_chef.workflows.state import (
 logger = logging.getLogger(__name__)
 
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+
+# Rolling cap on session.pending_proposal's two lists — bounds how much
+# cross-turn pantry context a single conversation can accumulate in
+# session.metadata (persisted to the DB on every pantry-update turn).
+_PENDING_PROPOSAL_HISTORY_LIMIT = 20
 
 
 def _extract_url(text: str) -> str | None:
@@ -191,6 +198,21 @@ EXIT_PHRASES = {
     "exit", "stop", "quit", "cancel", "go back", "never mind", "nevermind",
     "done", "back", "end", "leave",
 }
+
+
+def _merge_dedup_case_insensitive(existing: list[str], new: list[str]) -> list[str]:
+    """Append `new` names onto `existing`, skipping case-insensitive repeats.
+
+    Preserves `existing`'s order and casing; a name already present (in any
+    case) is not re-added.
+    """
+    merged = list(existing)
+    seen = {name.lower() for name in merged}
+    for name in new:
+        if name.lower() not in seen:
+            merged.append(name)
+            seen.add(name.lower())
+    return merged
 
 
 async def load_session(state: WorkflowState) -> WorkflowState:
@@ -698,6 +720,29 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
         elif intent == Intent.PANTRY_UPDATE.value:
             if state.get("requires_review"):
                 session.active_mode = SessionMode.INGESTING
+                # Remember what's still unresolved so the next turn's
+                # review_gate can acknowledge it instead of reading like a
+                # fresh conversation (#307-followup) — `pending_proposal`
+                # was declared on the session model for exactly this but was
+                # never actually written before now.
+                item_names = [a.item.name for a in state.get("actions", [])]
+                unclear_terms = state.get("generic_pantry_terms", [])
+                # session.pending_proposal is a loosely-typed dict[str, Any] on
+                # the Pydantic model (JSON column); PendingProposalMemory
+                # (shared_state.py) documents its actual shape for this and
+                # review_gate, the two places that read/write it.
+                existing = cast(PendingProposalMemory, session.pending_proposal or {})
+                merged_items = _merge_dedup_case_insensitive(
+                    existing.get("item_names", []), item_names
+                )
+                merged_terms = _merge_dedup_case_insensitive(
+                    existing.get("unclear_terms", []), unclear_terms
+                )
+                if merged_items or merged_terms:
+                    session.pending_proposal = {
+                        "item_names": merged_items[-_PENDING_PROPOSAL_HISTORY_LIMIT:],
+                        "unclear_terms": merged_terms[-_PENDING_PROPOSAL_HISTORY_LIMIT:],
+                    }
             else:
                 session.active_mode = SessionMode.DEFAULT
                 session.pending_proposal = None
@@ -751,7 +796,8 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
     1. initialize_state: Set up IDs and defaults
     2. classify_intent: Determine what the user wants
     3. Route based on intent:
-       - pantry_update: parse -> normalize -> expiry -> dedup -> actions -> review_gate -> finalize
+       - pantry_update: parse -> normalize -> expiry -> dedup -> actions -> review_gate
+         -> suggest_specifics -> finalize
        - receipt/product/recipe: build_handoff_*
        - cooking_help (recipe gen): extract_constraints -> score_pantry -> brainstorm -> END
        - recipe_card (brainstorm follow-up): research_recipe -> generate_grounded_recipe -> END
@@ -771,6 +817,7 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
     workflow.add_node("dedup_check", check_for_duplicates)
     workflow.add_node("create_actions", create_actions)
     workflow.add_node("review_gate", review_gate)
+    workflow.add_node("suggest_specifics", suggest_specifics)
     workflow.add_node("finalize_pantry", finalize_pantry_proposal)
 
     # Handoff paths
@@ -825,7 +872,8 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
     workflow.add_edge("expiry", "dedup_check")
     workflow.add_edge("dedup_check", "create_actions")
     workflow.add_edge("create_actions", "review_gate")
-    workflow.add_edge("review_gate", "finalize_pantry")
+    workflow.add_edge("review_gate", "suggest_specifics")
+    workflow.add_edge("suggest_specifics", "finalize_pantry")
     workflow.add_edge("finalize_pantry", "update_session")
 
     # Handoff paths → update_session → END
@@ -926,7 +974,7 @@ async def run_chat_workflow(
         if proposal is None:
             proposal = PantryProposal(actions=[], source_text=message)
 
-        return create_pantry_envelope(
+        pantry_envelope = create_pantry_envelope(
             proposal=proposal,
             confidence=final_state.get("confidence", 0.0),
             field_confidences=final_state.get("field_confidences", {}),
@@ -940,6 +988,10 @@ async def run_chat_workflow(
             clarifying_questions=final_state.get("clarifying_questions", []),
             per_item_confidences=final_state.get("per_item_confidences", []),
         )
+        pantry_envelope.metadata["clarification_suggestions"] = final_state.get(
+            "clarification_suggestions", []
+        )
+        return pantry_envelope
 
     elif intent == Intent.RECEIPT_INGEST.value:
         return create_handoff_envelope(
@@ -1063,6 +1115,9 @@ def _build_envelope_from_state(
             conversation_id=final_state.get("conversation_id"),
             clarifying_questions=final_state.get("clarifying_questions", []),
             per_item_confidences=final_state.get("per_item_confidences", []),
+        )
+        envelope.metadata["clarification_suggestions"] = final_state.get(
+            "clarification_suggestions", []
         )
     elif intent == Intent.RECEIPT_INGEST.value:
         envelope = create_handoff_envelope(

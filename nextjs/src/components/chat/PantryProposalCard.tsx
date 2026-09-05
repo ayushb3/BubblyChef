@@ -1,15 +1,31 @@
 'use client'
 
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
+import Chip from '@/components/ui/Chip'
 import { titleCase } from '@/lib/format'
-import type { PantryProposalData, PantryProposalAction } from '@/types/chat'
+import type { PantryProposalData, PantryProposalAction, TermSuggestion } from '@/types/chat'
 
 interface PantryProposalCardProps {
   proposal: PantryProposalData
   onApprove: () => void
   onReject: () => void
-  state: 'pending' | 'approved' | 'rejected'
+  state: 'pending' | 'approving' | 'approved' | 'rejected' | 'failed'
+  /** Error message to show when `state` is 'failed'. */
+  error?: string
+  /**
+   * Vague terms ("veggies", "dairy things") raised in this turn or a later
+   * one in the same still-open thread — merged in here (see useChat's
+   * onDone) rather than opening a second card, so the confirmed items and
+   * the still-unresolved ones read as one pantry update, not two.
+   */
+  clarificationTerms?: TermSuggestion[]
+  /**
+   * Called whenever the selection changes. Receives the full current selection
+   * map (term → selected item names) so the parent can build the staged text.
+   */
+  onStagePick?: (selections: Record<string, string[]>) => void
 }
 
 const ACTION_ICONS: Record<PantryProposalAction['action_type'], { icon: string; colorClass: string }> = {
@@ -48,9 +64,36 @@ export default function PantryProposalCard({
   onApprove,
   onReject,
   state,
+  error,
+  clarificationTerms = [],
+  onStagePick,
 }: PantryProposalCardProps) {
   const isPending = state === 'pending'
+  const isApproving = state === 'approving'
   const isApproved = state === 'approved'
+  const isFailed = state === 'failed'
+
+  // Multi-select: track which items the user has tapped per vague term.
+  // Tapping toggles the item; the updated selection map is forwarded to the
+  // parent so it can stage the natural-language text in the input field.
+  const [selections, setSelections] = useState<Record<string, string[]>>({})
+
+  const togglePill = (term: string, item: string) => {
+    setSelections((prev) => {
+      const current = prev[term] ?? []
+      const next = current.includes(item)
+        ? current.filter((i) => i !== item)
+        : [...current, item]
+      const updated = { ...prev }
+      if (next.length > 0) {
+        updated[term] = next
+      } else {
+        delete updated[term]
+      }
+      onStagePick?.(updated)
+      return updated
+    })
+  }
 
   return (
     <motion.div
@@ -75,21 +118,61 @@ export default function PantryProposalCard({
         ))}
       </div>
 
+      {/* Still-vague terms from this turn or a later one. Tapping a pill toggles
+          selection; the parent stages the accumulated natural-language text in
+          the input field so the user can review/edit before sending. */}
+      {isPending && clarificationTerms.length > 0 && (
+        <div className="px-4 py-3 border-t border-[var(--color-border)] flex flex-col gap-3">
+          <span className="text-xs text-[var(--color-muted)]">
+            🤔 Still not sure what you meant by:
+          </span>
+          {clarificationTerms.map(({ term, suggestions }) => (
+            <div key={term} className="flex flex-col gap-1.5">
+              <span className="text-xs text-[var(--color-muted)]">
+                By &ldquo;{term}&rdquo; did you mean:
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {suggestions.map((item) => {
+                  const isSelected = (selections[term] ?? []).includes(item)
+                  return (
+                    <Chip
+                      key={item}
+                      tone={isSelected ? 'fresh' : 'accent'}
+                      onClick={() => togglePill(term, item)}
+                      ariaLabel={`${isSelected ? 'Deselect' : 'Select'} ${item}`}
+                    >
+                      {titleCase(item)}
+                    </Chip>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Footer */}
       <div className="px-4 py-3 border-t border-[var(--color-border)]">
-        {isPending ? (
+        {isFailed && (
+          <p className="text-xs text-red-600 mb-2">
+            {error ?? 'Could not add items. Please try again.'}
+          </p>
+        )}
+        {isPending || isApproving || isFailed ? (
           <div className="flex gap-2">
             <SpringButton
               onClick={onApprove}
-              className="flex-1 py-2 px-3 rounded-full text-sm font-semibold bg-green-100 text-green-700 hover:bg-green-200"
+              disabled={isApproving}
+              className="flex-1 py-2 px-3 rounded-full text-sm font-semibold bg-green-100 text-green-700 hover:bg-green-200 disabled:opacity-60"
             >
-              Add to Pantry
+              {isApproving ? 'Adding…' : isFailed ? 'Try again' : 'Add to Pantry'}
             </SpringButton>
             <SpringButton
               onClick={onReject}
-              className="flex-1 py-2 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)]"
+              disabled={isApproving}
+              className="flex-1 py-2 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)] disabled:opacity-60"
             >
-              Skip
+              Dismiss
             </SpringButton>
           </div>
         ) : isApproved ? (
