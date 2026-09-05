@@ -184,28 +184,32 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
   // unconditionally always duplicated the figure on that path. Only append
   // when `copy` doesn't already mention the minute count (see
   // `copyMentionsMinutes` and dashboard-recipe-suggestion.test.tsx).
-  const heroMessage = urgentItem
-    ? `Your ${titleCase(urgentItem.name)} expires ${urgentItem.days_until_expiry === 0 ? 'today' : 'tomorrow'}! Let's cook it up.`
-    : totalCount === 0
-      ? "Your pantry is empty — let's stock up!"
-      : suggestion
-        ? `${suggestion.copy}${
-            suggestion.total_time_minutes && !copyMentionsMinutes(suggestion.copy, suggestion.total_time_minutes)
-              ? ` Only ${suggestion.total_time_minutes} min!`
-              : ''
-          }`
+  //
+  // Priority order (#347): the AI-ranked suggestion leads whenever it exists —
+  // expiry urgency is a signal, not the headline. Urgent-expiry copy surfaces
+  // only when there is no suggestion to show.
+  const heroMessage = totalCount === 0
+    ? "Your pantry is empty — let's stock up!"
+    : suggestion
+      ? `${suggestion.copy}${
+          suggestion.total_time_minutes && !copyMentionsMinutes(suggestion.copy, suggestion.total_time_minutes)
+            ? ` Only ${suggestion.total_time_minutes} min!`
+            : ''
+        }`
+      : urgentItem
+        ? `Your ${titleCase(urgentItem.name)} expires ${urgentItem.days_until_expiry === 0 ? 'today' : 'tomorrow'}! Let's cook it up.`
         : expiringCount > 0
           ? "Check the 'Use Soon' tile — some items need your attention!"
           : 'Your kitchen is looking great!'
 
   // The urgent-item CTA deep-links into a chat seeded with that ingredient
   // (#138), so one tap lands on a recipe that actually uses it.
-  const heroAction = urgentItem
-    ? { label: 'Find a recipe', href: cookThisHref(urgentItem.name, urgentItem.expiry_date) }
-    : totalCount === 0
-      ? { label: 'Scan receipt', href: '/pantry?add=scan' }
-      : suggestion
-        ? { label: 'Open recipe', href: `/recipes/${suggestion.recipe_id}` }
+  const heroAction = totalCount === 0
+    ? { label: 'Scan receipt', href: '/pantry?add=scan' }
+    : suggestion
+      ? { label: 'Open recipe', href: `/recipes/${suggestion.recipe_id}` }
+      : urgentItem
+        ? { label: 'Find a recipe', href: cookThisHref(urgentItem.name, urgentItem.expiry_date) }
         : expiringCount > 0
           ? { label: 'View pantry', href: '/pantry' }
           : { label: 'Ask Bubbles', href: '/chat' }

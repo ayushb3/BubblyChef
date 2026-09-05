@@ -10,6 +10,7 @@ the constraint is extracted, the prompts actually drop the pantry when it is off
 and the choice survives a follow-up turn that doesn't repeat it.
 """
 
+from datetime import date, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -252,7 +253,13 @@ class TestBrainstormPrompt:
         state = _state(
             input_text="what can I make?",
             scored_pantry_items=[
-                {"name": "spinach", "_score": 12, "_must_use": False, "_expired": False},
+                {
+                    "name": "spinach",
+                    "_score": 4,
+                    "_must_use": False,
+                    "_expired": False,
+                    "expiry_date": (date.today() + timedelta(days=2)).isoformat(),
+                },
             ],
             recipe_constraints={},
         )
