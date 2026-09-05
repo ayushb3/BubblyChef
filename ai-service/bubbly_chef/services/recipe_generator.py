@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from bubbly_chef.ai import AIManager
 from bubbly_chef.ai.provider import StructuredOutputError
 from bubbly_chef.domain.normalizer import normalize_food_name
+from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.models.recipe import Ingredient, RecipeCard
 
@@ -316,6 +317,14 @@ def match_ingredient_to_pantry(
                 best_score = score
 
     if best_match is None or best_score < 0.3:
+        # Culinary staples absent from pantry are assumed on hand (#305)
+        if is_staple(ingredient_normalized):
+            return IngredientStatus(
+                ingredient_name=ingredient.name,
+                status="assumed",
+                need_quantity=ingredient.quantity,
+                need_unit=ingredient.unit,
+            )
         return IngredientStatus(
             ingredient_name=ingredient.name,
             status="missing",
@@ -363,6 +372,8 @@ def calculate_pantry_match_score(statuses: list[IngredientStatus]) -> float:
             score += 1.0
         elif status.status == "partial":
             score += 0.5
+        elif status.status == "assumed":
+            score += 1.0  # assumed staples count as available (#305)
         # missing = 0
 
     return score / len(statuses)
@@ -489,6 +500,7 @@ async def generate_recipe(
     have_count = sum(1 for s in statuses if s.status == "have")
     partial_count = sum(1 for s in statuses if s.status == "partial")
     missing_count = sum(1 for s in statuses if s.status == "missing")
+    # "assumed" statuses are not missing — they are staples treated as on hand (#305)
 
     # Calculate match score
     match_score = calculate_pantry_match_score(statuses)

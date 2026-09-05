@@ -82,6 +82,13 @@ export type IngredientMatchStatus =
   | 'imprecise'
   | 'unit_conflict'
   | 'missing'
+  /**
+   * A culinary staple (salt, pepper, oil, …) presumed on hand even when not
+   * in the pantry. Collapsed into one summary line in the cook UI (#305).
+   * Never counted as missing — a recipe whose only absent ingredients are
+   * staples is fully makeable.
+   */
+  | 'assumed'
 
 /** How the pantry item was found, recorded separately from status. */
 export type IngredientMatchType = 'exact' | 'substitute' | 'none'

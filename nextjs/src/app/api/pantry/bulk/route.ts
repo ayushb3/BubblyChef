@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse } from '@/lib/response-helpers'
 import { enrichPantryItem } from '@/lib/pantry-helpers'
-import { estimateExpiry, estimateCategory } from '@/lib/api/ai-proxy'
+import { estimateExpiry, estimateCategory, normalizeBaseUnit } from '@/lib/api/ai-proxy'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
 
 interface BulkItemInput {
@@ -26,7 +26,8 @@ export async function POST(request: Request) {
   }
 
   // Fill in category and expiry for items the user left at defaults (#177, #158).
-  // Both come from the AI service's Python catalog/heuristic (single source of
+  // Also derive base units at write time (#224).
+  // All three come from the AI service's Python catalog/heuristic (single source of
   // truth); failures fall back to 'other'/null and never block the add.
   const rows = await Promise.all(
     items.map(async (item) => {
@@ -42,16 +43,28 @@ export async function POST(request: Request) {
           category,
           location: item.storage_location,
         }))
+
+      const qty = item.quantity ?? 1.0
+      const unit = item.unit || 'item'
+      const { quantity_base, unit_base } = await normalizeBaseUnit({
+        name: item.name,
+        quantity: qty,
+        unit,
+        category,
+      })
+
       return {
         user_id: user.id,
         name: item.name,
         name_normalized: item.name.toLowerCase().trim(),
         category,
         location: item.storage_location || 'pantry',
-        quantity: item.quantity ?? 1.0,
-        unit: item.unit || 'item',
+        quantity: qty,
+        unit,
         expiry_date: expiry || null,
         slot_index: null,
+        quantity_base: quantity_base ?? null,
+        unit_base: unit_base ?? null,
       }
     }),
   )

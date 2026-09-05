@@ -133,7 +133,7 @@ class IngredientAvailability(BaseModel):
     """Per-ingredient pantry match status for a grounded recipe."""
 
     name: str
-    status: Literal["have", "missing", "substitute"]
+    status: Literal["have", "missing", "substitute", "assumed"]
     pantry_item_name: str | None = None
     substitute_note: str | None = None
 
