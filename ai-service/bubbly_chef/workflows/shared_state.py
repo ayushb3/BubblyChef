@@ -103,10 +103,18 @@ class PendingProposalMemory(TypedDict):
     written by ``update_session_node`` (router.py), read back by
     ``review_gate`` (workflows/pantry/nodes.py) to acknowledge unresolved
     items/terms from earlier turns.
+
+    ``suggestions`` maps each unclear term (lowercased) to the concrete items
+    the LLM suggested for it — e.g. ``{"vegetables": ["onion", "broccoli",
+    "carrot"]}``. This is required by the #342 resolution filter in
+    ``update_session_node``: a term is only removed when one of ITS OWN
+    suggestions appears in the current turn's actions, not just because the
+    user happened to add any item this turn.
     """
 
     item_names: list[str]
     unclear_terms: list[str]
+    suggestions: dict[str, list[str]]  # term.lower() → concrete suggestion list
 
 
 class LLMRecipeResult(BaseModel):
