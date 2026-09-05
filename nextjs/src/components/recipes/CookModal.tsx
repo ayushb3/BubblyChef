@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
 import type { CookProposal, CompoundSuggestion, IngredientMatch, DeductionItem } from '@/types/recipes'
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
 interface CookModalProps {
   recipeId: string
@@ -264,6 +265,8 @@ export default function CookModal({
   const [overrides, setOverrides] = useState<Record<string, string>>({})
   const [loadingStage, setLoadingStage] = useState(0)
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  useModalFocusTrap(true, onClose, panelRef)
 
   // Advance the loading copy while the match runs, stopping on the last stage
   // rather than looping — a cycling message would suggest repeated work.
@@ -344,7 +347,12 @@ export default function CookModal({
       >
         {/* Sheet */}
         <motion.div
-          className="w-full max-w-md mx-2 mb-4 sm:mb-0 rounded-2xl overflow-hidden flex flex-col"
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cook-modal-title"
+          tabIndex={-1}
+          className="w-full max-w-md mx-2 mb-4 sm:mb-0 rounded-2xl overflow-hidden flex flex-col outline-none"
           style={{
             background: 'var(--color-surface)',
             boxShadow: '0 8px 32px color-mix(in srgb, var(--color-primary) 25%, transparent)',
@@ -362,6 +370,7 @@ export default function CookModal({
           >
             <div>
               <h2
+                id="cook-modal-title"
                 className="text-base font-extrabold text-[var(--color-text)]"
                 style={{ fontFamily: 'Nunito, sans-serif' }}
               >

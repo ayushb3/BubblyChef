@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { type Recipe } from './RecipePage'
 import { ingredientLabel, ingredientRowsToPayload, type IngredientRow } from '@/lib/recipe-helpers'
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
 const toStepStr = (s: string | { text?: string; step?: string }): string =>
   typeof s === 'string' ? s : (s.text ?? s.step ?? '')
@@ -27,6 +28,14 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
     (recipe.instructions ?? []).map(toStepStr)
   )
   const [saving, setSaving] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+  // Close is blocked while saving/disabled — this hook still traps Tab and
+  // restores focus, it just won't ever fire onClose via Escape in that state
+  // because handleClose below is a no-op then, same as the header/footer
+  // buttons.
+  useModalFocusTrap(true, () => {
+    if (!saving && !disabled) onClose()
+  }, panelRef)
 
   const updateItem = (
     setter: React.Dispatch<React.SetStateAction<string[]>>,
@@ -84,7 +93,12 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
         {/* Modal panel */}
         <motion.div
           key="edit-panel"
-          className="fixed inset-x-4 top-1/2 z-[60] rounded-2xl overflow-hidden"
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="recipe-edit-modal-title"
+          tabIndex={-1}
+          className="fixed inset-x-4 top-1/2 z-[60] rounded-2xl overflow-hidden outline-none"
           style={{
             background: 'var(--color-surface)',
             border: '1px solid var(--color-border)',
@@ -104,6 +118,7 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
             style={{ borderColor: 'var(--color-border)' }}
           >
             <h2
+              id="recipe-edit-modal-title"
               className="text-base font-extrabold"
               style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
             >
