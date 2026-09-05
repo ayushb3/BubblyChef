@@ -8,6 +8,7 @@ they can be dropped directly into the existing StateGraph.
 
 import logging
 from datetime import date
+from typing import cast
 from uuid import uuid4
 
 from bubbly_chef.ai.manager import NoProviderAvailableError
@@ -28,7 +29,9 @@ from bubbly_chef.models.pantry import (
 )
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 from bubbly_chef.workflows.state import (
+    LLMClarificationResult,
     LLMParseResult,
+    PendingProposalMemory,
     WorkflowState,
     map_action_type,
     map_category,
@@ -65,6 +68,43 @@ PANTRY_PARSE_USER_PROMPT = """Extract grocery items from:
 "{text}"
 
 Return a list of items with name, quantity, unit, category, action, and confidence."""
+
+
+# =============================================================================
+# Generic-term detection
+# =============================================================================
+
+# Category-level words that don't identify a specific food — "veggies" or
+# "dairy" can't be given an expiry estimate or matched against a recipe
+# ingredient list the way "broccoli" or "yogurt" can.
+_GENERIC_CATEGORY_WORDS = {
+    "veggie", "veggies", "vegetable", "vegetables", "produce",
+    "dairy", "meat", "meats", "fruit", "fruits", "snack", "snacks",
+    "drink", "drinks", "beverage", "beverages", "seafood",
+    "condiment", "condiments", "grocery", "groceries",
+    "food", "foods", "supplies", "ingredient", "ingredients",
+}
+# Filler nouns that turn a category word into an even vaguer phrase
+# ("dairy stuff", "dairy things") without adding any specificity.
+_GENERIC_FILLER_WORDS = {"stuff", "things", "products", "items", "item"}
+
+
+def _is_generic_pantry_term(name: str) -> bool:
+    """True for a category-level word with no specific food identified.
+
+    Catches "veggies", "dairy stuff", "dairy things", bare "stuff" — terms
+    broad enough that writing them to the pantry as a literal item name
+    would be meaningless. Specific foods ("greek yogurt", "cheddar cheese")
+    are untouched.
+    """
+    words = name.strip().lower().split()
+    if not words:
+        return False
+    if len(words) == 1:
+        return words[0] in _GENERIC_CATEGORY_WORDS or words[0] in _GENERIC_FILLER_WORDS
+    if len(words) == 2 and words[1] in _GENERIC_FILLER_WORDS:
+        return words[0] in _GENERIC_CATEGORY_WORDS
+    return False
 
 
 # =============================================================================
@@ -193,6 +233,17 @@ def normalize_items(state: WorkflowState) -> WorkflowState:
         if category == FoodCategory.OTHER:
             item_confidence = min(item_confidence, 0.65)
 
+        is_generic = _is_generic_pantry_term(original_name)
+        if is_generic:
+            # create_actions drops is_generic_term items from the proposal
+            # outright, regardless of confidence — this cap isn't what keeps
+            # the item off the card. It exists because `confidence` below is
+            # an average over every parsed item including this one: without
+            # it, a batch like "veggies" + "2 apples" (apples scored 0.9)
+            # could average out high enough to slip past review_gate's
+            # overall-confidence threshold even though a term went unresolved.
+            item_confidence = min(item_confidence, 0.1)
+
         # Update confidence
         if idx < len(updated_confidences):
             updated_confidences[idx] = item_confidence
@@ -205,6 +256,7 @@ def normalize_items(state: WorkflowState) -> WorkflowState:
             "original_name": original_name,
             "category": category.value,
             "confidence": item_confidence,
+            "is_generic_term": is_generic,
         }
 
         # Compute base unit quantities for math operations (dual-store)
@@ -319,15 +371,28 @@ def check_for_duplicates(state: WorkflowState) -> WorkflowState:
 def create_actions(state: WorkflowState) -> WorkflowState:
     """
     Node: Convert normalized items to PantryUpsertAction objects.
+
+    Items flagged ``is_generic_term`` by ``normalize_items`` (e.g. "veggies",
+    "dairy stuff") are excluded here rather than merely down-weighted — a
+    generic term must never reach the proposal actions list, because that
+    list is exactly what the "Add to Pantry" button on the chat card writes
+    to the database. They're surfaced instead as a name in
+    ``generic_pantry_terms`` for review_gate to turn into a clarifying
+    question.
     """
     normalized_items = state.get("normalized_items", [])
     per_item_confidences = state.get("per_item_confidences", [])
 
     actions = []
     field_confidences = {}
+    generic_pantry_terms: list[str] = []
     seen_keys: dict[str, int] = {}  # Track key counts for dedup
 
     for idx, item_data in enumerate(normalized_items):
+        if item_data.get("is_generic_term"):
+            generic_pantry_terms.append(item_data.get("original_name") or item_data.get("name", ""))
+            continue
+
         category = map_category(item_data.get("category"))
         name = item_data.get("name", "unknown")
 
@@ -385,6 +450,7 @@ def create_actions(state: WorkflowState) -> WorkflowState:
         **state,
         "actions": actions,
         "field_confidences": field_confidences,
+        "generic_pantry_terms": generic_pantry_terms,
     }
 
 
@@ -404,7 +470,7 @@ def review_gate(state: WorkflowState) -> WorkflowState:
     actions = state.get("actions", [])
     confidence = state.get("confidence", 0.0)
     errors = state.get("errors", [])
-    per_item_confidences = state.get("per_item_confidences", [])
+    generic_pantry_terms = state.get("generic_pantry_terms", [])
 
     clarifying_questions = []
     requires_review = False
@@ -414,11 +480,15 @@ def review_gate(state: WorkflowState) -> WorkflowState:
     # Threshold for per-item "we're not sure" flag
     item_clarification_threshold = 0.6
 
-    # Check for low confidence items that need clarification
-    low_confidence_items = []
-    for idx, conf in enumerate(per_item_confidences):
-        if conf < item_clarification_threshold and idx < len(actions):
-            low_confidence_items.append(actions[idx].item.name)
+    # Check for low confidence items that need clarification. Reads
+    # action.confidence (set per-action in create_actions) rather than
+    # zipping per_item_confidences back onto actions by index — actions can
+    # be shorter than the normalized/per-item lists now that generic terms
+    # are dropped before this point, so a positional zip would silently pair
+    # the wrong confidence with the wrong item.
+    low_confidence_items = [
+        action.item.name for action in actions if action.confidence < item_clarification_threshold
+    ]
 
     if low_confidence_items:
         # Ask about specific ambiguous items
@@ -450,6 +520,27 @@ def review_gate(state: WorkflowState) -> WorkflowState:
                 f" of {item.name}. Did you mean this quantity?"
             )
             needs_clarification = True
+
+    # Generic category terms ("veggies", "dairy stuff") never made it into
+    # `actions` (create_actions drops them) — surface them as their own
+    # clarifying question rather than silently going unaddressed. Inserted
+    # at the front: assistant_message below only ever shows
+    # clarifying_questions[0], and explaining a dropped item outranks a
+    # quantity nuance on an item that's still in the proposal — otherwise a
+    # message mixing "2 eggs" (low-confidence quantity) with "veggies"
+    # (dropped entirely) could surface the eggs question and never mention
+    # that veggies didn't make it in at all.
+    if generic_pantry_terms:
+        is_plural = len(generic_pantry_terms) > 1
+        terms_desc = (
+            ", ".join(generic_pantry_terms) if is_plural else f"'{generic_pantry_terms[0]}'"
+        )
+        clarifying_questions.insert(
+            0,
+            f"{terms_desc} {'are' if is_plural else 'is'} pretty broad — what did you actually"
+            " pick up? Naming the specific items lets me add them for real.",
+        )
+        needs_clarification = True
 
     # Determine overall status based on confidence
     if not actions:
@@ -488,7 +579,12 @@ def review_gate(state: WorkflowState) -> WorkflowState:
     # Build assistant message
     num_items = len(actions)
     if num_items == 0:
-        assistant_message = "I couldn't identify any pantry items. Could you be more specific?"
+        if generic_pantry_terms:
+            assistant_message = (
+                "I don't want to add anything that vague to your pantry."
+            )
+        else:
+            assistant_message = "I couldn't identify any pantry items. Could you be more specific?"
     elif num_items == 1:
         item = actions[0].item
         action_verb = "add" if actions[0].action_type == ActionType.ADD else "update"
@@ -501,6 +597,39 @@ def review_gate(state: WorkflowState) -> WorkflowState:
     if clarifying_questions:
         assistant_message += f" {clarifying_questions[0]}"
 
+    # Context continuity: `session.pending_proposal` (written by
+    # update_session_node the *previous* turn — this node runs before this
+    # turn's own session update) carries item names raised earlier in the
+    # conversation that the user hasn't resolved yet, either a real proposal
+    # still sitting unapproved or a generic term never clarified. Without
+    # this, each pantry-update turn reads as if it started a brand new
+    # conversation.
+    session = state.get("session") or {}
+    pending = cast(PendingProposalMemory, session.get("pending_proposal") or {})
+    current_names_lower = {action.item.name.lower() for action in actions}
+    current_generic_lower = {term.lower() for term in generic_pantry_terms}
+
+    still_pending_items = [
+        name
+        for name in pending.get("item_names", [])
+        if name.lower() not in current_names_lower
+    ]
+    still_unclear_terms = [
+        term
+        for term in pending.get("unclear_terms", [])
+        if term.lower() not in current_generic_lower
+    ]
+
+    note_clauses = []
+    if still_pending_items:
+        note_clauses.append(f"still with {', '.join(still_pending_items)} from earlier in this chat")
+    if still_unclear_terms:
+        note_clauses.append(f"still don't know what you meant by {', '.join(still_unclear_terms)}")
+    context_note = f"({'; '.join(note_clauses)}.)" if note_clauses else None
+
+    if context_note:
+        assistant_message = f"{context_note} {assistant_message}"
+
     return {
         **state,
         "requires_review": requires_review,
@@ -512,6 +641,61 @@ def review_gate(state: WorkflowState) -> WorkflowState:
         if requires_review
         else WorkflowStatus.COMPLETED.value,
     }
+
+
+SUGGEST_SPECIFICS_SYSTEM_PROMPT = """You help a grocery/pantry app turn vague terms into
+concrete suggestions. For each vague term below, list 3-5 concrete, commonly-bought
+grocery items it could plausibly mean. Be specific (e.g. "onion", "broccoli", not
+"vegetable"). Keep each suggestion to 1-3 words."""
+
+SUGGEST_SPECIFICS_USER_PROMPT = """The user said: "{text}"
+
+These terms from that message were too vague to add to their pantry directly: {terms}
+
+For each term, suggest 3-5 concrete grocery items it could mean."""
+
+
+async def suggest_specifics(state: WorkflowState) -> WorkflowState:
+    """
+    Node: For each generic term review_gate excluded from the proposal, ask
+    the LLM for concrete example items (e.g. "veggies" -> onion, broccoli,
+    carrot) so the chat UI can offer them as tappable suggestions instead of
+    just a text question.
+
+    A no-op (no LLM call) when there's nothing vague to clarify.
+    """
+    generic_pantry_terms = state.get("generic_pantry_terms", [])
+    if not generic_pantry_terms:
+        return {**state, "clarification_suggestions": []}
+
+    ai_manager = get_ai_manager()
+    prompt = (
+        SUGGEST_SPECIFICS_SYSTEM_PROMPT
+        + "\n\n"
+        + SUGGEST_SPECIFICS_USER_PROMPT.format(
+            text=state.get("input_text", ""),
+            terms=", ".join(generic_pantry_terms),
+        )
+    )
+
+    try:
+        result = await ai_manager.complete(
+            prompt=prompt,
+            response_schema=LLMClarificationResult,
+            temperature=0.3,
+        )
+        if not isinstance(result, LLMClarificationResult):
+            return {**state, "clarification_suggestions": []}
+
+        suggestions = [item.model_dump() for item in result.items]
+        return {**state, "clarification_suggestions": suggestions}
+
+    except NoProviderAvailableError as e:
+        logger.warning(f"No AI provider available for term suggestions: {e}")
+        return {**state, "clarification_suggestions": []}
+    except Exception as e:
+        logger.warning(f"Term suggestion error: {e}")
+        return {**state, "clarification_suggestions": []}
 
 
 def finalize_pantry_proposal(state: WorkflowState) -> WorkflowState:
