@@ -94,4 +94,26 @@ describe('urgencyTier', () => {
   it('returns nothing for an undated item', () => {
     expect(urgencyTier(null)).toBeNull()
   })
+
+  // #182: a subtle "(est.)" marker when the date is a heuristic guess, not
+  // one read from a receipt/label or entered by hand. Purely cosmetic — must
+  // never touch the tier's colour/urgency.
+  describe('estimated marker (#182)', () => {
+    it('does not appear by default or when estimated_expiry is false', () => {
+      expect(urgencyTier(3)?.label).toBe('3 days left')
+      expect(urgencyTier(3, false)?.label).toBe('3 days left')
+    })
+
+    it('appears when estimated_expiry is true, without changing colour', () => {
+      const tier = urgencyTier(3, true)
+      expect(tier?.label).toBe('3 days left (est.)')
+      expect(tier?.color).toBe(urgencyTier(3, false)?.color)
+    })
+
+    it('appears on the overdue and same-day/tomorrow label variants too', () => {
+      expect(urgencyTier(-4, true)?.label).toBe('Expired 4d ago (est.)')
+      expect(urgencyTier(0, true)?.label).toBe('Today (est.)')
+      expect(urgencyTier(1, true)?.label).toBe('Tomorrow (est.)')
+    })
+  })
 })
