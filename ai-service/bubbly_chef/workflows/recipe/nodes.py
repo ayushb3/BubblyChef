@@ -177,9 +177,18 @@ Generate a complete recipe card for "{recipe_name}".
 Constraints: {constraints_json}
 Must-use ingredients (the user asked to cook with these — the recipe MUST \
 include them): {must_use_items}
-Priority ingredients (expiring soon — use first): {priority_items}
+Priority ingredients (expiring soon — a strong preference, not a \
+requirement): {priority_items}
 Supporting ingredients available: {supporting_items}
 Context: {context}
+
+Priority ingredients are a strong preference, not a requirement: favor \
+building this recipe around them, but it's fine to leave one out if it \
+doesn't belong in "{recipe_name}" — include a priority ingredient only if it \
+genuinely fits the dish. In particular, don't wedge a sweet ingredient like \
+fruit into a savoury dish unless the user asked for that combination or it's \
+a genuine part of the cuisine in play. This does not apply to must-use \
+ingredients above, which remain a hard requirement regardless of fit.
 
 Generate a full recipe with:
 - title, description

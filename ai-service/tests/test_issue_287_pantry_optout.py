@@ -295,4 +295,7 @@ class TestGroundedRecipePrompt:
         repo.assert_not_awaited()
         prompt = _captured_prompt(ai)
         assert "use_pantry" not in prompt
-        assert "Priority ingredients (expiring soon — use first): none specified" in prompt
+        assert (
+            "Priority ingredients (expiring soon — a strong preference, not a "
+            "requirement): none specified"
+        ) in prompt
