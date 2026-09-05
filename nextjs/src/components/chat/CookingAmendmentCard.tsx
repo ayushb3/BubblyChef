@@ -7,9 +7,9 @@ import type { RecipeAmendmentProposal, RecipeIngredientAmendment } from '@/types
 
 export interface CookingAmendmentCardProps {
   proposal: RecipeAmendmentProposal
-  onApply: () => void
+  onApply: (amendedIngredients: RecipeIngredientAmendment[]) => void
   onDismiss: () => void
-  state: 'pending' | 'applying' | 'applied' | 'dismissed'
+  state: 'pending' | 'applied' | 'dismissed'
 }
 
 function IngredientRow({ ingredient }: { ingredient: RecipeIngredientAmendment }) {
@@ -36,11 +36,10 @@ export default function CookingAmendmentCard({
   state,
 }: CookingAmendmentCardProps) {
   const isPending = state === 'pending'
-  const isApplying = state === 'applying'
   const isApplied = state === 'applied'
   const isDismissed = state === 'dismissed'
 
-  const ingredients = proposal.amended_ingredients ?? []
+  const ingredients = proposal.amended_ingredients
   const summary = proposal.change_summary ?? 'Recipe updated'
 
   return (
@@ -69,26 +68,24 @@ export default function CookingAmendmentCard({
       {/* Ingredient list */}
       {ingredients.length > 0 && (
         <div className="px-4 py-2 flex flex-col divide-y divide-[var(--color-border)]">
-          {ingredients.map((ing, i) => (
-            <IngredientRow key={i} ingredient={ing} />
+          {ingredients.map((ing) => (
+            <IngredientRow key={`${ing.name}-${ing.quantity}-${ing.unit}`} ingredient={ing} />
           ))}
         </div>
       )}
 
       {/* Footer */}
       <div className="px-4 py-3 border-t border-[var(--color-border)]">
-        {isPending || isApplying ? (
+        {isPending ? (
           <div className="flex gap-2">
             <SpringButton
-              onClick={onApply}
-              disabled={isApplying}
+              onClick={() => onApply(ingredients)}
               className="flex-1 py-2 px-3 rounded-full text-sm font-semibold bg-[var(--color-primary)] text-white hover:opacity-90 disabled:opacity-60"
             >
-              {isApplying ? 'Updating…' : 'Update what I\'m cooking'}
+              Update what I&apos;m cooking
             </SpringButton>
             <SpringButton
               onClick={onDismiss}
-              disabled={isApplying}
               className="flex-1 py-2 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)] disabled:opacity-60"
             >
               Keep original

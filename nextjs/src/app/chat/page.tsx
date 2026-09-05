@@ -883,7 +883,7 @@ function MessageRenderer({
     message.response?.next_action === 'review_proposal'
   ) {
     const amendmentProposal = message.response.proposal as RecipeAmendmentProposal | null
-    if (amendmentProposal?.is_amendment && amendmentProposal.amended_ingredients?.length) {
+    if (amendmentProposal?.is_amendment && amendmentProposal.amended_ingredients.length > 0) {
       return (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -897,7 +897,7 @@ function MessageRenderer({
               <CookingAmendmentCard
                 proposal={amendmentProposal}
                 state={amendmentState}
-                onApply={() => onApplyAmendment(amendmentProposal.amended_ingredients!)}
+                onApply={(ingredients) => onApplyAmendment(ingredients)}
                 onDismiss={onDismissAmendment}
               />
             </div>

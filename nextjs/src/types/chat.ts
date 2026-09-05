@@ -81,7 +81,7 @@ export interface RecipeIngredientAmendment {
 
 export interface RecipeAmendmentProposal {
   is_amendment: boolean
-  amended_ingredients: RecipeIngredientAmendment[] | null
+  amended_ingredients: RecipeIngredientAmendment[]
   change_summary: string | null
 }
 
