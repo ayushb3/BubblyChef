@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from bubbly_chef.models.base import Intent
+from bubbly_chef.models.pantry import ActionType, PantryItem, PantryUpsertAction
 from bubbly_chef.models.session import ConversationSession, SessionMode
 from bubbly_chef.workflows.chat.nodes import (
     _flatten_ingredient,
@@ -661,3 +662,101 @@ async def test_exit_phrase_still_exits_cooking_mode():
         )
     assert result["intent"] == Intent.GENERAL_CHAT.value
     assert result.get("_exit_mode") is True
+
+
+# ---------------------------------------------------------------------------
+# pending_proposal — the session field was declared for cross-turn pantry
+# context but never actually written. See test_pantry_specificity_gate.py
+# for review_gate reading it back.
+# ---------------------------------------------------------------------------
+
+
+def _pantry_action(name: str) -> PantryUpsertAction:
+    return PantryUpsertAction(
+        action_type=ActionType.ADD,
+        item=PantryItem(name=name),
+        confidence=0.7,
+    )
+
+
+@pytest.mark.asyncio
+async def test_pending_proposal_populated_when_review_required():
+    repo = _session_repo(mode=SessionMode.DEFAULT)
+    state = _state(
+        input_text="add 2 apples and a dozen eggs",
+        conversation_id="conv-1",
+        user_id="user-1",
+        intent=Intent.PANTRY_UPDATE.value,
+        requires_review=True,
+        actions=[_pantry_action("Apples"), _pantry_action("Eggs")],
+        generic_pantry_terms=[],
+    )
+
+    with _patch_repo(repo):
+        await update_session_node(state)
+
+    saved = repo.update_session.await_args.args[1]
+    assert saved.active_mode == SessionMode.INGESTING
+    assert saved.pending_proposal == {
+        "item_names": ["Apples", "Eggs"],
+        "unclear_terms": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_pending_proposal_accumulates_and_dedupes_across_turns():
+    """A second pantry-update turn should keep the first turn's unresolved names."""
+    repo = _session_repo(mode=SessionMode.INGESTING)
+    repo.get_or_create_session = AsyncMock(
+        return_value=ConversationSession(
+            conversation_id="conv-1",
+            active_mode=SessionMode.INGESTING,
+            pending_proposal={"item_names": ["Apples", "Eggs"], "unclear_terms": []},
+        )
+    )
+    state = _state(
+        input_text="also got some veggies and dairy things",
+        conversation_id="conv-1",
+        user_id="user-1",
+        intent=Intent.PANTRY_UPDATE.value,
+        requires_review=True,
+        actions=[_pantry_action("Apples")],  # re-mentioned; should not duplicate
+        generic_pantry_terms=["veggies", "dairy things"],
+    )
+
+    with _patch_repo(repo):
+        await update_session_node(state)
+
+    saved = repo.update_session.await_args.args[1]
+    assert saved.pending_proposal == {
+        "item_names": ["Apples", "Eggs"],
+        "unclear_terms": ["veggies", "dairy things"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_pending_proposal_cleared_once_review_no_longer_required():
+    repo = _session_repo(mode=SessionMode.INGESTING)
+    repo.get_or_create_session = AsyncMock(
+        return_value=ConversationSession(
+            conversation_id="conv-1",
+            active_mode=SessionMode.INGESTING,
+            pending_proposal={"item_names": ["Apples"], "unclear_terms": []},
+        )
+    )
+    state = _state(
+        input_text="yes add the apples",
+        conversation_id="conv-1",
+        user_id="user-1",
+        intent=Intent.PANTRY_UPDATE.value,
+        requires_review=False,
+        actions=[_pantry_action("Apples")],
+        generic_pantry_terms=[],
+    )
+
+    with _patch_repo(repo):
+        await update_session_node(state)
+
+    saved = repo.update_session.await_args.args[1]
+    assert saved.active_mode == SessionMode.DEFAULT
+    assert saved.pending_proposal is None
