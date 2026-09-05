@@ -14,6 +14,7 @@ import ChatContextCard from '@/components/chat/ChatContextCard'
 import TypingIndicator from '@/components/chat/TypingIndicator'
 import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
+import ClarificationCard from '@/components/chat/ClarificationCard'
 import BrainstormOptions from '@/components/chat/BrainstormOptions'
 import CookModal from '@/components/recipes/CookModal'
 import ThemePicker from '@/components/ui/ThemePicker'
@@ -29,7 +30,7 @@ import type {
   ChatRecipeData,
   PantryProposalData,
 } from '@/types/chat'
-import { getBrainstormIdeas } from '@/types/chat'
+import { getBrainstormIdeas, getClarificationSuggestions, buildClarificationText } from '@/types/chat'
 import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
 
 // ---------------------------------------------------------------------------
@@ -74,6 +75,7 @@ function ChatSurface() {
     isStreaming,
     proposalStates,
     sendMessage,
+    sendChipMessage,
     cancelStream,
     startNewChat,
     approveProposal,
@@ -349,7 +351,12 @@ function ChatSurface() {
   }
 
   const handleChipTap = (message: string) => {
-    sendMessage(message)
+    sendChipMessage(message)
+  }
+
+  const handleStageText = (text: string) => {
+    setInput(text)
+    inputRef.current?.focus()
   }
 
   const handlePickIdea = (idea: string) => {
@@ -507,6 +514,7 @@ function ChatSurface() {
                 onTryAnother={handleChipTap.bind(null, 'Give me a different recipe')}
                 onChipTap={handleChipTap}
                 onPickIdea={handlePickIdea}
+                onStageText={handleStageText}
               />
             ))}
 
@@ -654,6 +662,8 @@ interface MessageRendererProps {
   onTryAnother: () => void
   onChipTap: (message: string) => void
   onPickIdea: (idea: string) => void
+  /** Stage text in the input field (clarification pill selections). */
+  onStageText: (text: string) => void
 }
 
 function MessageRenderer({
@@ -674,6 +684,7 @@ function MessageRenderer({
   onTryAnother,
   onChipTap,
   onPickIdea,
+  onStageText,
 }: MessageRendererProps) {
   // User messages — simple bubble
   if (message.role === 'user') {
@@ -756,9 +767,23 @@ function MessageRenderer({
     )
   }
 
-  // Pantry proposal intent
-  if (intent === 'pantry_update' && message.response?.proposal) {
-    const proposal = message.response.proposal as PantryProposalData
+  // Pantry proposal intent — a proposal can legitimately carry zero actions
+  // (every item the user mentioned was too generic — "veggies", "dairy
+  // stuff" — to write to the pantry). useChat's onDone already merges that
+  // turn's clarification terms into an earlier still-open card when one
+  // exists (message.response.metadata.clarification_suggestions carries the
+  // accumulated set), so the two render branches below are: a card with
+  // actions (optionally plus merged clarification pills), or — only when
+  // there was nothing earlier to merge into — ClarificationCard standalone.
+  // If there are no suggestions either (LLM call failed, or none were
+  // vague), fall through to the plain text bubble, which still carries the
+  // assistant's clarifying question.
+  const pantryProposal =
+    intent === 'pantry_update' ? (message.response?.proposal as PantryProposalData | undefined) : undefined
+  const clarificationTerms =
+    intent === 'pantry_update' ? getClarificationSuggestions(message.response) : []
+  if (pantryProposal && pantryProposal.actions.length > 0) {
+    const proposal = pantryProposal
     return (
       <motion.div
         initial={{ opacity: 0, y: 8 }}
@@ -776,6 +801,31 @@ function MessageRenderer({
               onApprove={onApprove}
               onReject={onReject}
               state={proposalState ?? 'pending'}
+              clarificationTerms={clarificationTerms}
+              onStagePick={(sel) => onStageText(buildClarificationText(sel))}
+            />
+          </div>
+        </div>
+      </motion.div>
+    )
+  }
+  if (pantryProposal && clarificationTerms.length > 0) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      >
+        <div className="flex items-end gap-2">
+          <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+          <div className="flex flex-col gap-2 items-start">
+            {message.content && (
+              <MessageBubble message={message} />
+            )}
+            <ClarificationCard
+              terms={clarificationTerms}
+              onStagePick={(sel) => onStageText(buildClarificationText(sel))}
+              disabled={proposalState !== undefined && proposalState !== 'pending'}
             />
           </div>
         </div>
