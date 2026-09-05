@@ -219,3 +219,50 @@ describe('HeroHome tip fallback when the dashboard request fails (#225)', () => 
     expect(screen.queryByRole('link', { name: /open recipe/i })).toBeNull()
   })
 })
+
+describe('HeroHome hero priority — suggestion beats urgent expiry (#347)', () => {
+  const suggestion = {
+    recipe_id: 'recipe-xyz-999',
+    title: 'Spinach Frittata',
+    total_time_minutes: 20,
+    copy: 'A quick frittata for your spinach.',
+    reason: 'expiring' as const,
+  }
+  const urgentExpiringItem = {
+    id: 'item-1',
+    name: 'spinach',
+    days_until_expiry: 0,
+    is_expiring_soon: true,
+    expiry_date: new Date().toISOString().slice(0, 10),
+  }
+
+  beforeEach(() => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/pantry/expiring'))
+        return jsonResponse({ items: [urgentExpiringItem], count: 1 })
+      if (url.includes('/api/pantry'))
+        return jsonResponse({ items: [urgentExpiringItem], total_count: 1 })
+      if (url.includes('/api/ai/dashboard/daily'))
+        return jsonResponse({ tip: { text: 'Great tip!' }, suggestion })
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as unknown as typeof fetch
+  })
+
+  it('shows suggestion copy, not the expiry headline, when both exist', async () => {
+    render(<HeroHome displayName="ayush" />)
+
+    await waitFor(() => screen.getByText('A quick frittata for your spinach. Only 20 min!'))
+    // Urgent-expiry headline must be suppressed
+    expect(screen.queryByText(/expires today/i)).toBeNull()
+    expect(screen.queryByText(/expires tomorrow/i)).toBeNull()
+  })
+
+  it('links to the recipe, not the cook-this-now deep-link, when suggestion exists', async () => {
+    render(<HeroHome displayName="ayush" />)
+
+    await waitFor(() => screen.getByRole('link', { name: /open recipe/i }))
+    const link = screen.getByRole('link', { name: /open recipe/i }) as HTMLAnchorElement
+    expect(link.href).toContain('/recipes/recipe-xyz-999')
+  })
+})

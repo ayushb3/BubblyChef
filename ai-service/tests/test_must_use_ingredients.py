@@ -115,7 +115,7 @@ def test_must_use_composes_with_expiry_rather_than_replacing_it() -> None:
     items = [_item("eggs", days_until_expiry=20), _item("egg noodles", days_until_expiry=1)]
     ranked = score_and_rank(items, {"must_use_ingredients": ["egg"]})
     assert [i["name"] for i in ranked] == ["egg noodles", "eggs"]
-    assert ranked[0]["_score"] == 30  # 20 must-use + 10 expiring
+    assert ranked[0]["_score"] == 24  # 20 must-use + 4 expiring ≤3d
     assert ranked[1]["_score"] == 20
 
 
@@ -141,8 +141,44 @@ def test_empty_must_use_leaves_existing_ranking_unchanged() -> None:
     baseline = score_and_rank(items, {"cuisine": "italian"})
     with_empty = score_and_rank(items, {"cuisine": "italian", "must_use_ingredients": []})
     assert [i["name"] for i in baseline] == [i["name"] for i in with_empty]
-    assert [i["_score"] for i in baseline] == [10, 3, 0]  # milk, basil, flour
+    assert [i["_score"] for i in baseline] == [4, 3, 0]  # milk ≤3d, basil (italian), flour
     assert all(i["_must_use"] is False for i in baseline)
+
+
+def test_fit_beats_bare_expiry() -> None:
+    """Issue #347: a strong cuisine + preference match must outrank a bare
+    expiring item with no fit. Expiry ≤3d = +4; cuisine + preferred = 3 + 5 = 8."""
+    items = [
+        # expiring soon but no cuisine/preference fit
+        _item("banana", days_until_expiry=2),
+        # not expiring but matches cuisine + preferred
+        _item("tomato", days_until_expiry=30),
+    ]
+    ranked = score_and_rank(
+        items,
+        {"cuisine": "italian", "preferred_ingredients": ["tomato"]},
+    )
+    assert ranked[0]["name"] == "tomato"   # 3 + 5 = 8
+    assert ranked[1]["name"] == "banana"   # 4
+    assert ranked[0]["_score"] == 8
+    assert ranked[1]["_score"] == 4
+
+
+def test_expiring_preferred_item_still_leads_non_expiring_cuisine_match() -> None:
+    """Expiry as tiebreaker within similar fit: expiring preferred (4 + 5 = 9)
+    beats non-expiring cuisine-only match (3)."""
+    items = [
+        _item("parmesan", days_until_expiry=60),  # cuisine match only
+        _item("tofu", days_until_expiry=2),        # preferred + expiring (not in italian keywords)
+    ]
+    ranked = score_and_rank(
+        items,
+        {"cuisine": "italian", "preferred_ingredients": ["tofu"]},
+    )
+    assert ranked[0]["name"] == "tofu"     # 5 preferred + 4 expiring ≤3d = 9
+    assert ranked[1]["name"] == "parmesan" # cuisine match only = 3
+    assert ranked[0]["_score"] == 9
+    assert ranked[1]["_score"] == 3
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +201,7 @@ def test_fresh_item_is_not_flagged_expired() -> None:
     )
     by_name = {i["name"]: i for i in ranked}
     assert by_name["milk"]["_expired"] is False
-    assert by_name["milk"]["_score"] == 10  # expiring soon
+    assert by_name["milk"]["_score"] == 4  # expiring ≤3d
     assert by_name["rice"]["_expired"] is False
 
 

@@ -382,14 +382,17 @@ def score_and_rank(
 
     Scoring:
     - item in must_use_ingredients: +20 (also tagged `_must_use`)
-    - days_until_expiry <= 3: +10
-    - days_until_expiry <= 7: +5
-    - item name matches cuisine keywords: +3
+    - days_until_expiry <= 3: +4
+    - days_until_expiry <= 7: +2
     - item in preferred_ingredients: +5
+    - item name matches cuisine keywords: +3
     - item in excluded_ingredients: -100
 
-    Scores compose — a must-use item that is also expiring outranks one that
-    isn't, so expiry urgency still orders items within the must-use group.
+    Expiry is now a tiebreaker, not the dominant axis. A strong cuisine +
+    preference match (3 + 5 = 8) outranks a bare expiring item with no fit
+    (4), aligning the ranking with the softened prompt wording from #288/#336.
+    Must-use (20) still dominates everything; within the must-use group,
+    expiry urgency still orders items.
     """
     cuisine = (constraints.get("cuisine") or "").lower()
     preferred = {p.lower() for p in (constraints.get("preferred_ingredients") or [])}
@@ -424,9 +427,9 @@ def score_and_rank(
                 if days_left < 0:
                     is_expired = True
                 elif days_left <= 3:
-                    score += 10
+                    score += 4
                 elif days_left <= 7:
-                    score += 5
+                    score += 2
             except (ValueError, TypeError):
                 pass
 
@@ -450,6 +453,17 @@ def score_and_rank(
     # Filter out excluded items (negative score)
     scored = [s for s in scored if s.get("_score", 0) >= 0]
     return scored[:15]
+
+
+def _days_until_expiry(item: dict[str, Any]) -> int | None:
+    """Return days from today to item's expiry_date, or None if no date."""
+    expiry_str = item.get("expiry_date")
+    if not expiry_str:
+        return None
+    try:
+        return (date.fromisoformat(str(expiry_str)) - date.today()).days
+    except (ValueError, TypeError):
+        return None
 
 
 # =============================================================================
@@ -696,14 +710,16 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         # still let the model build a dish around two-week-old spinach — and on
         # a real pantry (29 of 49 items expired) it crowded out good ingredients.
         # A must-use item is an explicit user request, so it survives.
+        # Partition requires expiry_date to be present on scored items
+        # (score_and_rank spreads {**item, ...} so original fields are preserved).
         rest = [
             i for i in scored_items if not i.get("_must_use") and not i.get("_expired")
         ]
-        expiring = [i for i in rest if i.get("_score", 0) >= 10]
-        supporting = [
+        expiring = [
             i for i in rest
-            if i.get("_score", 0) < 10 and i.get("_score", 0) >= 0
+            if (d := _days_until_expiry(i)) is not None and 0 <= d <= 7
         ]
+        supporting = [i for i in rest if i not in expiring]
         expiring_str = ", ".join(i.get("name", "") for i in expiring[:5])
         supporting_str = ", ".join(i.get("name", "") for i in supporting[:10])
         pantry_context = ""

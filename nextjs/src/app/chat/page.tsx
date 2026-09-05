@@ -70,19 +70,6 @@ export default function ChatPage() {
 }
 
 function ChatSurface() {
-  const {
-    messages,
-    isStreaming,
-    proposalStates,
-    proposalErrors,
-    sendMessage,
-    sendChipMessage,
-    cancelStream,
-    startNewChat,
-    approveProposal,
-    rejectProposal,
-  } = useChat()
-
   const router = useRouter()
   const searchParams = useSearchParams()
   // Set by the Cook flow: /chat?cooking=<recipeId>. Changing recipes changes
@@ -96,6 +83,25 @@ function ChatSurface() {
     () => (cookingRecipeId ? null : deriveChatSeed(searchParams)),
     [cookingRecipeId, searchParams],
   )
+
+  // #265 — a deep link that seeds a purpose-built first message (or the cook
+  // handoff) should start a fresh conversation rather than silently resuming
+  // whatever was last open; the seed/handoff *is* the intent for this visit.
+  // A bare `/chat` (bottom nav, back button, refresh) resumes the persisted
+  // conversation instead.
+  const {
+    messages,
+    isStreaming,
+    isResuming,
+    proposalStates,
+    proposalErrors,
+    sendMessage,
+    sendChipMessage,
+    cancelStream,
+    startNewChat,
+    approveProposal,
+    rejectProposal,
+  } = useChat({ skipResume: Boolean(seed) || Boolean(cookingRecipeId) })
 
   const [input, setInput] = useState('')
   const [aiAvailable, setAiAvailable] = useState(true)
@@ -451,7 +457,7 @@ function ChatSurface() {
           )}
         </AnimatePresence>
 
-        {hasMessages ? (
+        {(hasMessages || isResuming) ? (
           <div className="flex flex-col gap-3">
             {messages.map((msg, index) => (
               <MessageRenderer
@@ -581,7 +587,7 @@ function ChatSurface() {
           />
           {/* Placeholder hides once anything is typed; no longer tied to streaming,
               since the field is now usable mid-stream. */}
-          <RotatingPlaceholder visible={!input && !hasMessages} />
+          <RotatingPlaceholder visible={!input && !hasMessages && !isResuming} />
         </div>
         {isStreaming ? (
           <SpringButton
