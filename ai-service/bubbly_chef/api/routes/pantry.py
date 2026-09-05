@@ -1,14 +1,15 @@
 """Pantry helper HTTP routes for the BubblyChef AI microservice.
 
 Exposes:
-- POST /v1/pantry/estimate-expiry   — estimate an expiry date for an item
-- POST /v1/pantry/estimate-category — categorize an item name via the catalog
+- POST /v1/pantry/estimate-expiry      — estimate an expiry date for an item
+- POST /v1/pantry/estimate-category    — categorize an item name via the catalog
+- POST /v1/pantry/normalize-base-unit  — derive quantity_base / unit_base (#224)
 
 The expiry heuristic (`tools/expiry`) and catalog categorizer
 (`domain/catalog`) are Python-only and are the single source of truth shared by
 the AI ingest paths. These endpoints let the Next.js CRUD routes (manual add,
 bulk add) reuse them instead of forking the logic into TypeScript, so items
-added by hand get the same defaults as AI-parsed items (#158, #159).
+added by hand get the same defaults as AI-parsed items (#158, #159, #224).
 """
 
 import logging
@@ -17,7 +18,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from bubbly_chef.api.auth import get_current_user_id
-from bubbly_chef.domain.normalizer import resolve_category
+from bubbly_chef.domain.normalizer import normalize_to_base_unit, resolve_category
 from bubbly_chef.models.pantry import FoodCategory, StorageLocation
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 
@@ -112,3 +113,65 @@ async def estimate_category(
     fall back to 'other' so a failed estimate never blocks the add.
     """
     return EstimateCategoryResponse(category=resolve_category(request.name))
+
+
+# ---------------------------------------------------------------------------
+# Normalize base unit (#224)
+# ---------------------------------------------------------------------------
+
+
+class NormalizeBaseUnitRequest(BaseModel):
+    name: str = Field(..., description="Item name (normalized form preferred)")
+    quantity: float = Field(..., description="Display quantity from the pantry row")
+    unit: str = Field(..., description="Display unit from the pantry row")
+    category: str = Field(
+        default="other",
+        description="Food category — improves density-based conversions",
+    )
+
+
+class NormalizeBaseUnitResponse(BaseModel):
+    quantity_base: float | None = Field(
+        ...,
+        description="Quantity in the canonical base unit, or null when conversion is not possible",
+    )
+    unit_base: str | None = Field(
+        ...,
+        description="Canonical base unit (count | ml | g), or null when conversion is not possible",
+    )
+
+
+@router.post(
+    "/normalize-base-unit",
+    summary="Derive quantity_base / unit_base for a pantry row (#224)",
+    response_model=NormalizeBaseUnitResponse,
+    responses={
+        200: {"description": "Base-unit pair, or nulls when conversion is impossible"},
+        401: {"description": "Missing or invalid JWT"},
+    },
+)
+async def normalize_base_unit(
+    request: NormalizeBaseUnitRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> NormalizeBaseUnitResponse:
+    """Convert (name, quantity, unit) into the canonical base unit.
+
+    Delegates to ``normalize_to_base_unit`` in ``domain/normalizer``, which is
+    the single source of truth used by the cook-matcher and the ingest workflows.
+    Returns ``(null, null)`` when no defensible conversion exists (e.g. "1 tbsp
+    matcha" — no density entry for matcha so g-to-ml is impossible) — callers
+    must leave ``quantity_base``/``unit_base`` as NULL rather than blocking the write.
+
+    Failure modes that leave the response as nulls:
+    - Unknown unit not in any conversion table.
+    - Cross-dimension conversion for an ingredient with no density entry.
+    The write succeeds regardless; the cook flow derives the values at runtime
+    from the raw ``(quantity, unit)`` when base values are absent.
+    """
+    qty_base, ub = normalize_to_base_unit(
+        name=request.name,
+        quantity=request.quantity,
+        unit=request.unit,
+        category=request.category,
+    )
+    return NormalizeBaseUnitResponse(quantity_base=qty_base, unit_base=ub)

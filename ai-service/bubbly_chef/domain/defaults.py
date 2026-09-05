@@ -108,6 +108,7 @@ INGREDIENT_CANONICAL_UNIT: dict[str, str] = {
     "breadcrumbs": "g",
     "cornstarch": "g",
     "yeast": "g",
+    "garlic": "g",
 }
 
 # Default canonical unit for unmapped items by category
