@@ -232,7 +232,30 @@ export function mergeTermSuggestions(
   return merged
 }
 
-// ─── AI Health ────────────────────────────────────────────────────────────────
+/**
+ * Merge new proposal actions onto existing ones, deduping by item name
+ * (case-insensitive). Incoming actions for an already-present item replace
+ * the existing one (the newer turn has fresher confidence/quantity info).
+ */
+export function mergeActions(
+  existing: PantryProposalAction[],
+  incoming: PantryProposalAction[]
+): PantryProposalAction[] {
+  const merged = [...existing]
+  for (const next of incoming) {
+    const i = merged.findIndex(
+      (a) => a.item.name.toLowerCase() === next.item.name.toLowerCase()
+    )
+    if (i >= 0) {
+      merged[i] = next
+    } else {
+      merged.push(next)
+    }
+  }
+  return merged
+}
+
+
 
 export interface AIHealthStatus {
   ai_available: boolean

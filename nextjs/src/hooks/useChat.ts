@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { streamChatMessage, fetchChatHistory } from '@/lib/api/chat'
 import type { ChatMessage, ChatResponse, PantryProposalData } from '@/types/chat'
-import { getClarificationSuggestions, mergeTermSuggestions } from '@/types/chat'
+import { getClarificationSuggestions, mergeTermSuggestions, mergeActions } from '@/types/chat'
 
 const AI_SERVICE_URL =
   process.env.NEXT_PUBLIC_AI_SERVICE_URL || 'http://localhost:8888'
@@ -127,24 +127,21 @@ export function useChat(initialConversationId?: string) {
             response.assistant_message ||
             "I'm not sure how to help with that. Try asking about recipes or groceries!"
 
-          // A pantry-update turn with zero real items (every item mentioned
-          // was too vague — "veggies", "dairy things") but real clarification
-          // suggestions. If an earlier turn in this conversation still has an
-          // unapproved pantry card, fold these terms into THAT card instead
-          // of opening a second one — one pantry update reads as one card,
-          // not a growing stack of them each time the user clarifies.
           const proposal = response.proposal as PantryProposalData | null
           const hasActions = !!proposal && proposal.actions.length > 0
           const clarificationTerms = getClarificationSuggestions(response)
-          const isVagueOnlyPantryTurn =
-            response.intent === 'pantry_update' && !hasActions && clarificationTerms.length > 0
+          const isPantryTurn = response.intent === 'pantry_update'
 
-          // Scans messagesRef, not `messages` — one useChat instance is one
-          // conversation (a new conversation starts a fresh hook instance
-          // via startNewChat), so no explicit conversation_id check is
-          // needed here; don't reuse this search across multiple conversations.
+          // Find the nearest earlier pantry card that's still open (pending).
+          // Both vague-only turns (0 actions, new clarification pills) AND
+          // pill-tap turns (real actions from a resolved term) merge here —
+          // the goal is one card per "add session", not one card per turn.
+          //
+          // Absent from proposalStatesRef means setProposalStates hasn't
+          // flushed yet (useEffect re-sync lags one render behind the setter).
+          // Absent = never approved/rejected = still pending.
           let mergeTargetId: string | null = null
-          if (isVagueOnlyPantryTurn) {
+          if (isPantryTurn) {
             const priorMessages = messagesRef.current
             for (let i = priorMessages.length - 1; i >= 0; i--) {
               const candidate = priorMessages[i]
@@ -152,10 +149,11 @@ export function useChat(initialConversationId?: string) {
               const candidateProposal = candidate.response?.proposal as
                 | PantryProposalData
                 | undefined
+              const candidateState = proposalStatesRef.current[candidate.id]
               if (
                 candidate.intent === 'pantry_update' &&
                 (candidateProposal?.actions.length ?? 0) > 0 &&
-                proposalStatesRef.current[candidate.id] === 'pending'
+                (candidateState === 'pending' || candidateState === undefined)
               ) {
                 mergeTargetId = candidate.id
                 break
@@ -165,36 +163,59 @@ export function useChat(initialConversationId?: string) {
 
           setMessages((prev) => {
             if (mergeTargetId) {
-              // This turn still gets its own reply bubble — its streamed
-              // text already rendered as it arrived, and dropping the
-              // message once onDone fires would make it flash and vanish.
-              // Its own card is suppressed by stripping clarification_suggestions
-              // (0 actions + 0 suggestions falls through to the plain-text
-              // render) since those pills now live on the merge target below.
+              // Move the card to this turn (the latest message) rather than
+              // leaving it anchored at the earlier turn. The user just said
+              // something new — the card should follow the conversation forward.
+              // Strip it from the old turn (null out proposal + clarifications)
+              // and attach the merged state here.
               const targetId = mergeTargetId
-              return prev.map((msg) => {
-                if (msg.id === assistantMsgId) {
-                  return {
-                    ...msg,
-                    content: msg.content || fallbackContent,
-                    intent: response.intent,
-                    response: {
-                      ...response,
-                      metadata: { ...response.metadata, clarification_suggestions: [] },
-                    },
+              const targetMsg = prev.find((m) => m.id === targetId)
+              const targetProposal = targetMsg?.response?.proposal as PantryProposalData | undefined
+
+              const mergedProposal: PantryProposalData | null = targetProposal
+                ? {
+                    ...targetProposal,
+                    actions: hasActions
+                      ? mergeActions(targetProposal.actions, proposal!.actions)
+                      : targetProposal.actions,
                   }
-                }
+                : null
+
+              const mergedClarifications = mergeTermSuggestions(
+                getClarificationSuggestions(targetMsg?.response),
+                clarificationTerms,
+              )
+
+              return prev.map((msg) => {
+                // Old card owner: strip its proposal and clarifications so no
+                // card renders there anymore. Keep the reply bubble text.
                 if (msg.id === targetId && msg.response) {
                   return {
                     ...msg,
                     response: {
                       ...msg.response,
+                      proposal: null,
+                      metadata: { ...msg.response.metadata, clarification_suggestions: [] },
+                    },
+                  }
+                }
+                // This turn: attach the merged card. Strip the verbose
+                // "(still with X from earlier...)" prefix the backend prepends —
+                // the card itself makes the context clear; the note is noise.
+                if (msg.id === assistantMsgId) {
+                  const cleanContent = (msg.content || fallbackContent)
+                    .replace(/^\(still (with|don't know)[^)]*\)\s*/i, '')
+                    .trim()
+                  return {
+                    ...msg,
+                    content: cleanContent,
+                    intent: response.intent,
+                    response: {
+                      ...response,
+                      proposal: mergedProposal,
                       metadata: {
-                        ...msg.response.metadata,
-                        clarification_suggestions: mergeTermSuggestions(
-                          getClarificationSuggestions(msg.response),
-                          clarificationTerms,
-                        ),
+                        ...response.metadata,
+                        clarification_suggestions: mergedClarifications,
                       },
                     },
                   }
@@ -207,7 +228,6 @@ export function useChat(initialConversationId?: string) {
               msg.id === assistantMsgId
                 ? {
                     ...msg,
-                    // Keep streamed content if tokens arrived, otherwise use envelope
                     content: msg.content || fallbackContent,
                     intent: response.intent,
                     response,
@@ -216,9 +236,27 @@ export function useChat(initialConversationId?: string) {
             )
           })
 
-          // Track workflow for proposal approval — skip for a turn that got
-          // merged into an earlier card; it has no actions of its own to approve.
-          if (response.workflow_id && response.requires_review && !mergeTargetId) {
+          // The card is now owned by this turn (assistantMsgId), whether it
+          // started fresh or was merged from an earlier one. Register the
+          // workflow ID here so approve/reject callbacks resolve correctly.
+          // When merging: transfer the original card's workflow ID (mergeTargetId)
+          // to the new owner and clear the old one — the original workflow handles
+          // the DB write regardless of which message the card visually sits under.
+          if (mergeTargetId) {
+            setWorkflowIds((prev) => {
+              const originalWfId = prev[mergeTargetId]
+              const next = { ...prev }
+              delete next[mergeTargetId]
+              if (originalWfId) next[assistantMsgId] = originalWfId
+              return next
+            })
+            setProposalStates((prev) => {
+              const next = { ...prev }
+              delete next[mergeTargetId]
+              next[assistantMsgId] = 'pending'
+              return next
+            })
+          } else if (response.workflow_id && response.requires_review) {
             setWorkflowIds((prev) => ({
               ...prev,
               [assistantMsgId]: response.workflow_id,
@@ -337,12 +375,29 @@ export function useChat(initialConversationId?: string) {
     [workflowIds],
   )
 
+  // ── Chip tap send (interrupts streaming) ────────────────────────────────
+  // Clarification pill taps need to send even while a prior response is
+  // streaming — the user has already seen enough to respond. Abort the
+  // current stream first so sendMessage's isStreaming guard doesn't block it.
+  const sendChipMessage = useCallback(
+    (text: string) => {
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort()
+        streamAbortRef.current = null
+        setIsStreaming(false)
+      }
+      sendMessage(text)
+    },
+    [sendMessage],
+  )
+
   return {
     messages,
     isStreaming,
     conversationId,
     proposalStates,
     sendMessage,
+    sendChipMessage,
     cancelStream,
     startNewChat,
     approveProposal,

@@ -75,6 +75,7 @@ function ChatSurface() {
     isStreaming,
     proposalStates,
     sendMessage,
+    sendChipMessage,
     cancelStream,
     startNewChat,
     approveProposal,
@@ -350,7 +351,7 @@ function ChatSurface() {
   }
 
   const handleChipTap = (message: string) => {
-    sendMessage(message)
+    sendChipMessage(message)
   }
 
   const handlePickIdea = (idea: string) => {
@@ -815,7 +816,7 @@ function MessageRenderer({
             <ClarificationCard
               terms={clarificationTerms}
               onPick={onChipTap}
-              disabled={!isLastSettledAssistant}
+              disabled={proposalState !== undefined && proposalState !== 'pending'}
             />
           </div>
         </div>
