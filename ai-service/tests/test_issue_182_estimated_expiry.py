@@ -41,6 +41,33 @@ class _FakeInsertQuery:
         return type("Result", (), {"data": [row]})()
 
 
+class _FakeUpdateQuery:
+    """Records the update payload and echoes it back as the updated row."""
+
+    def __init__(self, store: dict[str, Any]) -> None:
+        self._store = store
+        self._payload: dict[str, Any] | None = None
+
+    def update(self, payload: dict[str, Any]) -> _FakeUpdateQuery:
+        self._payload = payload
+        self._store["updates"].append(payload)
+        return self
+
+    def eq(self, *_args: Any, **_kwargs: Any) -> _FakeUpdateQuery:
+        return self
+
+    def execute(self) -> Any:
+        assert self._payload is not None
+        row = {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "name": "item",
+            "added_at": "2026-09-05T00:00:00+00:00",
+            "updated_at": "2026-09-05T00:00:00+00:00",
+            **self._payload,
+        }
+        return type("Result", (), {"data": [row]})()
+
+
 class _FakeSelectQuery:
     """Chain for find_similar_item — always reports no existing match."""
 
@@ -61,20 +88,23 @@ class _FakeClient:
     """Dispatches insert vs. select chains for the "pantry_items" table."""
 
     def __init__(self) -> None:
-        self.store: dict[str, Any] = {"inserts": []}
+        self.store: dict[str, Any] = {"inserts": [], "updates": []}
 
     def table(self, _name: str) -> Any:
         return _FakeTableProxy(self.store)
 
 
 class _FakeTableProxy:
-    """Returns an insert or select chain lazily depending on which is called."""
+    """Returns an insert, update, or select chain lazily depending on which is called."""
 
     def __init__(self, store: dict[str, Any]) -> None:
         self._store = store
 
     def insert(self, payload: dict[str, Any]) -> _FakeInsertQuery:
         return _FakeInsertQuery(self._store).insert(payload)
+
+    def update(self, payload: dict[str, Any]) -> _FakeUpdateQuery:
+        return _FakeUpdateQuery(self._store).update(payload)
 
     def select(self, *args: Any, **kwargs: Any) -> _FakeSelectQuery:
         return _FakeSelectQuery().select(*args, **kwargs)
@@ -261,3 +291,49 @@ class TestApplyPantryProposalEstimatedExpiry:
         assert failed == 0 and applied == 1
         assert errors == []
         assert client.store["inserts"][0]["estimated_expiry"] is False
+
+
+# ---------------------------------------------------------------------------
+# update_pantry_item — a client-driven expiry_date edit clears the flag
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestUpdatePantryItemEstimatedExpiry:
+    async def test_expiry_date_alone_clears_estimated_expiry(self) -> None:
+        repo, client = _repo()
+
+        await repo.update_pantry_item(
+            user_id="u1",
+            item_id="11111111-1111-1111-1111-111111111111",
+            updates={"expiry_date": "2026-09-20"},
+        )
+
+        payload = client.store["updates"][0]
+        assert payload["expiry_date"] == "2026-09-20"
+        assert payload["estimated_expiry"] is False
+
+    async def test_unrelated_field_does_not_touch_estimated_expiry(self) -> None:
+        repo, client = _repo()
+
+        await repo.update_pantry_item(
+            user_id="u1",
+            item_id="11111111-1111-1111-1111-111111111111",
+            updates={"name": "bananas", "quantity": 3},
+        )
+
+        payload = client.store["updates"][0]
+        assert "estimated_expiry" not in payload
+
+    async def test_explicit_estimated_expiry_true_with_date_is_respected(self) -> None:
+        repo, client = _repo()
+
+        await repo.update_pantry_item(
+            user_id="u1",
+            item_id="11111111-1111-1111-1111-111111111111",
+            updates={"expiry_date": "2026-09-20", "estimated_expiry": True},
+        )
+
+        payload = client.store["updates"][0]
+        assert payload["expiry_date"] == "2026-09-20"
+        assert payload["estimated_expiry"] is True

@@ -137,6 +137,11 @@ class SupabaseRepository:
             updates["location"] = updates.pop("storage_location")
         if "name" in updates:
             updates["name_normalized"] = updates["name"].lower().strip()
+        # A caller-supplied expiry_date is a real date, not a heuristic guess —
+        # clear the estimated_expiry flag unless the caller explicitly set it
+        # themselves in this same update (see #182 follow-up).
+        if "expiry_date" in updates and "estimated_expiry" not in updates:
+            updates["estimated_expiry"] = False
 
         result = (
             self.client.table("pantry_items")
