@@ -95,6 +95,14 @@ export function useChat(options?: UseChatOptions) {
   // the user sends before the fetch resolves, the resolution must not clobber
   // the message(s) that arrived in the meantime.
   const hasSentRef = useRef(false)
+  // True only while a stored conversation id exists and its history fetch is
+  // in flight. Gates the empty-state UI so the welcome screen doesn't flash
+  // before the restored messages appear. Resolves to false whether the fetch
+  // succeeds, fails, or is skipped (no stored id / skipResume).
+  const [isResuming, setIsResuming] = useState(() => {
+    if (skipResume) return false
+    return Boolean(readStoredConversationId())
+  })
 
   // ── History loading / resume ─────────────────────────────────────────────
   // Mirror messages/proposalStates for synchronous reads in onDone (below) —
@@ -138,7 +146,7 @@ export function useChat(options?: UseChatOptions) {
       .then((turns) => {
         // A send that happened while this fetch was in flight already owns
         // the thread — restoring history now would discard it.
-        if (hasSentRef.current) return
+        if (hasSentRef.current) { setIsResuming(false); return }
 
         // Stale id handling: a persisted id that no longer resolves to any
         // history must not silently attach new messages to invisible prior
@@ -146,6 +154,7 @@ export function useChat(options?: UseChatOptions) {
         if (!turns || turns.length === 0) {
           clearStoredConversationId()
           setConversationId(null)
+          setIsResuming(false)
           return
         }
 
@@ -157,16 +166,18 @@ export function useChat(options?: UseChatOptions) {
           timestamp: new Date(turn.created_at),
         }))
         setMessages(restored)
+        setIsResuming(false)
       })
       .catch(() => {
         // A send that happened while this fetch was in flight already owns
         // the thread — the fetch failing now doesn't make that id invalid.
-        if (hasSentRef.current) return
+        if (hasSentRef.current) { setIsResuming(false); return }
 
         // History fetch failed — the id is unusable. Clear it rather than
         // starting fresh with a dangling id still in storage.
         clearStoredConversationId()
         setConversationId(null)
+        setIsResuming(false)
       })
   }, [skipResume])
 
@@ -556,6 +567,7 @@ export function useChat(options?: UseChatOptions) {
   return {
     messages,
     isStreaming,
+    isResuming,
     conversationId,
     proposalStates,
     proposalErrors,

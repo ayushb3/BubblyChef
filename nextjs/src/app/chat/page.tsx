@@ -92,6 +92,7 @@ function ChatSurface() {
   const {
     messages,
     isStreaming,
+    isResuming,
     proposalStates,
     proposalErrors,
     sendMessage,
@@ -456,7 +457,7 @@ function ChatSurface() {
           )}
         </AnimatePresence>
 
-        {hasMessages ? (
+        {(hasMessages || isResuming) ? (
           <div className="flex flex-col gap-3">
             {messages.map((msg, index) => (
               <MessageRenderer
@@ -586,7 +587,7 @@ function ChatSurface() {
           />
           {/* Placeholder hides once anything is typed; no longer tied to streaming,
               since the field is now usable mid-stream. */}
-          <RotatingPlaceholder visible={!input && !hasMessages} />
+          <RotatingPlaceholder visible={!input && !hasMessages && !isResuming} />
         </div>
         {isStreaming ? (
           <SpringButton
