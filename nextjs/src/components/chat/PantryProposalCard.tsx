@@ -79,7 +79,12 @@ export default function PantryProposalCard({
       const next = current.includes(item)
         ? current.filter((i) => i !== item)
         : [...current, item]
-      const updated = next.length > 0 ? { ...prev, [term]: next } : (({ [term]: _, ...rest }) => rest)(prev)
+      const updated = { ...prev }
+      if (next.length > 0) {
+        updated[term] = next
+      } else {
+        delete updated[term]
+      }
       onStagePick?.(updated)
       return updated
     })

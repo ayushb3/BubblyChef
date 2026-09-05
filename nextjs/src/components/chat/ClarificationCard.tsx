@@ -23,9 +23,11 @@ interface ClarificationCardProps {
  * in the input field rather than auto-sending.
  */
 export default function ClarificationCard({ terms, onStagePick, disabled = false }: ClarificationCardProps) {
-  if (terms.length === 0) return null
-
+  // Hooks must run unconditionally on every render — declared before the
+  // terms.length early return below (React rules-of-hooks).
   const [selections, setSelections] = useState<Record<string, string[]>>({})
+
+  if (terms.length === 0) return null
 
   const togglePill = (term: string, item: string) => {
     if (disabled) return
@@ -34,7 +36,12 @@ export default function ClarificationCard({ terms, onStagePick, disabled = false
       const next = current.includes(item)
         ? current.filter((i) => i !== item)
         : [...current, item]
-      const updated = next.length > 0 ? { ...prev, [term]: next } : (({ [term]: _, ...rest }) => rest)(prev)
+      const updated = { ...prev }
+      if (next.length > 0) {
+        updated[term] = next
+      } else {
+        delete updated[term]
+      }
       onStagePick?.(updated)
       return updated
     })
