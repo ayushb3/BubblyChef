@@ -4,10 +4,12 @@
  * vague turn, stacked below the first — apples/eggs and the still-unresolved
  * terms read as two separate things instead of one pantry update.
  *
- * useChat's onDone now folds a vague-only turn's clarification terms into
- * the nearest earlier still-pending pantry card instead of opening a new one.
- * These tests pin that merge at the hook level (no rendering needed — the
- * behavior lives entirely in state, not JSX).
+ * useChat's onDone now folds a vague-only (or pill-tap) turn's clarification
+ * terms/actions into the nearest earlier still-pending pantry card instead of
+ * opening a new one — and moves the card to sit under the LATEST turn rather
+ * than staying anchored at the first one, so the card always follows the
+ * conversation forward. These tests pin that merge at the hook level (no
+ * rendering needed — the behavior lives entirely in state, not JSX).
  */
 
 import { act, renderHook } from '@testing-library/react'
@@ -81,7 +83,7 @@ function respondWith(response: ChatResponse) {
 }
 
 describe('pantry card merge across turns', () => {
-  it('folds a vague-only turn into the earlier still-pending card instead of opening a second one', () => {
+  it('moves the pantry card to the latest turn when a vague turn merges in', () => {
     const { result } = renderHook(() => useChat())
 
     act(() => {
@@ -100,32 +102,39 @@ describe('pantry card merge across turns', () => {
     respondWith(TURN2_RESPONSE)
 
     // Turn 2 still gets its own reply bubble (its streamed text already
-    // rendered — dropping it would make it flash and vanish) but not its
-    // own card: [user1, assistant1(merged card), user2, assistant2(text-only)].
+    // rendered — dropping it would make it flash and vanish), and the card
+    // now sits under IT instead of staying anchored on turn 1:
+    // [user1, assistant1(stripped), user2, assistant2(merged card)].
     expect(result.current.messages).toHaveLength(4)
     expect(result.current.messages.map((m) => m.role)).toEqual([
       'user', 'assistant', 'user', 'assistant',
     ])
 
-    const mergedAssistant = result.current.messages[1]
-    expect(mergedAssistant.id).toBe(turn1AssistantId)
-    // Original actions untouched.
-    expect((mergedAssistant.response?.proposal as { actions: unknown[] }).actions).toHaveLength(2)
-    // New terms merged in.
-    expect(mergedAssistant.response?.metadata?.clarification_suggestions).toEqual(
+    // Old card owner: proposal + clarifications stripped so no card renders
+    // there anymore — the reply bubble text is untouched.
+    const turn1Assistant = result.current.messages[1]
+    expect(turn1Assistant.id).toBe(turn1AssistantId)
+    expect(turn1Assistant.response?.proposal).toBeNull()
+    expect(turn1Assistant.response?.metadata?.clarification_suggestions).toEqual([])
+
+    // New owner: the latest turn now carries the merged card — original
+    // actions preserved, new terms merged in.
+    const turn2Assistant = result.current.messages[3]
+    const turn2AssistantId = turn2Assistant.id
+    expect(
+      (turn2Assistant.response?.proposal as { actions: unknown[] } | null)?.actions,
+    ).toHaveLength(2)
+    expect(turn2Assistant.response?.metadata?.clarification_suggestions).toEqual(
       TURN2_RESPONSE.metadata?.clarification_suggestions,
     )
+    // The "(Still with X from earlier...)" prefix is stripped from the
+    // reply text — the card itself now shows the accumulated items, so the
+    // note would just be redundant noise.
+    expect(turn2Assistant.content).toBe('veggies, dairy things are pretty broad...')
 
-    // Turn 2's own message keeps its text but not its own clarification
-    // terms — those moved to the merge target, so it won't also render a
-    // standalone ClarificationCard.
-    const turn2Assistant = result.current.messages[3]
-    expect(turn2Assistant.content).toBe(TURN2_RESPONSE.assistant_message)
-    expect(turn2Assistant.response?.metadata?.clarification_suggestions).toEqual([])
-
-    // No new proposal/workflow tracked for the merged-away turn.
-    expect(Object.keys(result.current.proposalStates)).toEqual([turn1AssistantId])
-    expect(result.current.proposalStates[turn1AssistantId]).toBe('pending')
+    // Workflow/proposal tracking transfers to the new owner, not the old one.
+    expect(Object.keys(result.current.proposalStates)).toEqual([turn2AssistantId])
+    expect(result.current.proposalStates[turn2AssistantId]).toBe('pending')
   })
 
   it('does not merge into a card that has already been approved or rejected', async () => {
