@@ -226,7 +226,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
       {/* Hero Bubbles */}
       <FadeInView delay={0.1}>
         <div className="flex flex-col items-center mt-2 mb-4">
-          <BubblesMascot state={urgentItem ? 'surprised' : 'happy'} size={120} />
+          <BubblesMascot state={!suggestion && urgentItem ? 'surprised' : 'happy'} size={120} />
         </div>
       </FadeInView>
 

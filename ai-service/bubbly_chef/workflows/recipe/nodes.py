@@ -710,12 +710,14 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         # still let the model build a dish around two-week-old spinach — and on
         # a real pantry (29 of 49 items expired) it crowded out good ingredients.
         # A must-use item is an explicit user request, so it survives.
+        # Partition requires expiry_date to be present on scored items
+        # (score_and_rank spreads {**item, ...} so original fields are preserved).
         rest = [
             i for i in scored_items if not i.get("_must_use") and not i.get("_expired")
         ]
         expiring = [
             i for i in rest
-            if _days_until_expiry(i) is not None and 0 <= (_days_until_expiry(i) or 999) <= 7
+            if (d := _days_until_expiry(i)) is not None and 0 <= d <= 7
         ]
         supporting = [i for i in rest if i not in expiring]
         expiring_str = ", ".join(i.get("name", "") for i in expiring[:5])
