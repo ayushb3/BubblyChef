@@ -15,6 +15,8 @@ from typing import Any
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.domain.mealtime import meal_time_bucket
+from bubbly_chef.domain.normalizer import normalize_food_name
+from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
 from bubbly_chef.models.recipe import (
     Ingredient,
@@ -1015,12 +1017,19 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
                     pantry_item_name=sub_match,
                     substitute_note=f"use {sub_match} instead",
                 ))
+            elif is_staple(normalize_food_name(ing.name)):
+                availability.append(IngredientAvailability(name=ing.name, status="assumed"))
+                available.append(ing.name)
             else:
                 availability.append(IngredientAvailability(name=ing.name, status="missing"))
                 missing.append(ing.name)
         else:
-            availability.append(IngredientAvailability(name=ing.name, status="missing"))
-            missing.append(ing.name)
+            if is_staple(normalize_food_name(ing.name)):
+                availability.append(IngredientAvailability(name=ing.name, status="assumed"))
+                available.append(ing.name)
+            else:
+                availability.append(IngredientAvailability(name=ing.name, status="missing"))
+                missing.append(ing.name)
 
     pantry_match_score = len(available) / len(ingredients_list) if ingredients_list else 0.0
 

@@ -23,6 +23,7 @@ from bubbly_chef.domain.normalizer import (
     normalize_to_base_unit,
 )
 from bubbly_chef.domain.normalizer import SIZE_ADJECTIVE_UNITS  # noqa: F401  re-export: single source of truth
+from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.models.cook import CompoundSuggestion, CookProposal, IngredientMatch
 from bubbly_chef.models.pantry import PantryItem
 
@@ -413,8 +414,26 @@ def match_ingredients(
                     alias = None
 
         if pantry_item is None:
-            # No match at all
-            missing.append(raw_name)
+            # No match at all — but a culinary staple (salt, pepper, oil, …)
+            # is presumed on hand even when not in the pantry (#305).
+            if is_staple(norm_name):
+                matches.append(
+                    IngredientMatch(
+                        ingredient_name=raw_name,
+                        ingredient_qty=ing_qty,
+                        ingredient_unit=ing_unit,
+                        pantry_item_id=None,
+                        pantry_item_name=None,
+                        pantry_qty_available=None,
+                        deduct_qty=None,
+                        base_unit=None,
+                        status="assumed",
+                        match_type="none",
+                        substitution_note=None,
+                    )
+                )
+            else:
+                missing.append(raw_name)
             continue
 
         # A stand-in is surfaced as its own status so the user can see the swap,
@@ -609,6 +628,10 @@ def _unmatched_ingredient_names(
 
     Name resolution only — no quantity or unit logic — so this can run before the
     real matching pass without disturbing its consumption accounting.
+
+    Culinary staples (#305) are excluded: they are classified ``assumed`` rather
+    than sent to the LLM substitution tier, and advertising them to the model
+    as "missing" would invite unnecessary substitution notes.
     """
     pantry_names = {_normalize_ingredient_name(item.name) for item in pantry_items}
 
@@ -623,6 +646,8 @@ def _unmatched_ingredient_names(
         norm = _normalize_ingredient_name(raw_name)
         if norm in pantry_names or norm in seen:
             continue
+        if is_staple(norm):
+            continue  # assumed on hand — never send to the LLM
         seen.add(norm)
         unmatched.append(raw_name)
     return unmatched
