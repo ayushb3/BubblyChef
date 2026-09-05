@@ -69,22 +69,6 @@ export interface ChatRecipeData {
   ingredient_availability?: IngredientAvailability[]
 }
 
-// ─── Recipe Amendment Proposal ───────────────────────────────────────────────
-
-export interface RecipeIngredientAmendment {
-  name: string
-  quantity: number
-  unit: string
-  optional: boolean
-  notes: string | null
-}
-
-export interface RecipeAmendmentProposal {
-  is_amendment: boolean
-  amended_ingredients: RecipeIngredientAmendment[] | null
-  change_summary: string | null
-}
-
 // ─── Chat Response ────────────────────────────────────────────────────────────
 
 export interface ChatResponse {
@@ -93,7 +77,7 @@ export interface ChatResponse {
   conversation_id: string | null
   intent: ChatIntent
   assistant_message: string
-  proposal: PantryProposalData | ChatRecipeData | RecipeAmendmentProposal | null
+  proposal: PantryProposalData | ChatRecipeData | null
   confidence: { overall: number }
   requires_review: boolean
   next_action: ChatNextAction
