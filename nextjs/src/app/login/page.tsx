@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [checkEmail, setCheckEmail] = useState(false)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const supabase = createClient()
@@ -19,11 +20,12 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+    setCheckEmail(false)
     setLoading(true)
 
     try {
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -31,6 +33,13 @@ export default function LoginPage() {
           },
         })
         if (error) throw error
+        // When email confirmation is enabled, signUp succeeds but returns no
+        // session. Pushing to `/` would bounce off the auth middleware with no
+        // message. Stay put and tell the user to confirm their email instead.
+        if (!data.session) {
+          setCheckEmail(true)
+          return
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -98,6 +107,12 @@ export default function LoginPage() {
               />
             </div>
 
+            {checkEmail && (
+              <p className="text-sm text-[var(--color-text)] bg-[var(--color-accent)]/10 px-4 py-2 rounded-2xl">
+                Almost there! Check your inbox for a confirmation link, then sign in.
+              </p>
+            )}
+
             {error && (
               <p className="text-sm text-[#ff9aa2] bg-[#ff9aa2]/10 px-4 py-2 rounded-2xl">
                 {error}
@@ -117,7 +132,7 @@ export default function LoginPage() {
             {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
             <button
               type="button"
-              onClick={() => { setIsSignUp(!isSignUp); setError(null) }}
+              onClick={() => { setIsSignUp(!isSignUp); setError(null); setCheckEmail(false) }}
               className="text-[var(--color-accent)] underline font-medium"
             >
               {isSignUp ? 'Sign In' : 'Sign Up'}
