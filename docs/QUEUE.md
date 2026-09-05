@@ -1,6 +1,6 @@
 # Queue
 
-**Updated:** 2026-09-02 22:40 · by an agent session · after opening PR #313 (#304) and finishing #306 through review
+**Updated:** 2026-09-04 · by an agent session · after #315, #322 landed on `main`; #325 (delete `BubblesFeed`) and #328 (`/v1/dashboard/daily` backend) opened
 
 > Rewritten whenever queue state changes. It is a checkpoint, not a live feed — nothing
 > updates it while no session is running, so trust the timestamp above. If two sessions
@@ -10,48 +10,24 @@
 
 ## Needs you
 
-Three flags, in the order I'd spend your attention.
+### 🟢 Ready to merge — #325 (delete dead dashboard component)
 
-### 🔴 Blocked — PR for #306 cannot be opened
+[PR #325](https://github.com/ayushb3/BubblyChef/pull/325) deletes `BubblesFeed` and its
+orphaned `BubbleMessage` — 330 lines that never rendered. Clean deletion, reviewed, gates
+green, retargeted to `main`. Closes #314.
 
-The dashboard fix is finished, pushed, and reviewed. The review-gate hook is blocking the
-draft PR because **it reads the wrong commit**: it resolves HEAD from the session's working
-directory rather than from the branch being proposed, so in a worktree session it gates on an
-unrelated commit (here, untouched `main`) that has no marker and never will.
+### 🟡 Needs your review — #328 (dashboard daily endpoint, backend half)
 
-The only marker that satisfies it as invoked is a `thermo-nuclear-review` one, which only you
-can produce. **I did not create that file** — forging it would fake the one signal in this
-workflow that means a human looked.
+[PR #328](https://github.com/ayushb3/BubblyChef/pull/328) — `GET /v1/dashboard/daily`.
+Backend for #225 (AI-generated tip) and #168 (pantry-aware suggestion). Two review passes
+found and fixed four blockers before this PR existed (UTC-only meal bucket, a hand-rolled
+clock rule that disagreed with the recipe tagger 7 hours in 24, a tip prompt that wasn't
+actually pantry-grounded, and a cache that kept suggesting a deleted ingredient) — details
+in the PR body. `Related to`, not `Fixes`, on both issues: no UI change lands here, so the
+user-visible bug is still present until the frontend PR follows.
 
-To unblock, either run thermo-nuclear-review on `fix/issue-306-dashboard-suggestion`, or, if
-two passing code-review axes are enough for a *draft*, record the create-tier marker:
-
-```bash
-touch "/Users/I589687/Documents/Personal/BubblyChef/.git/worktrees/caveman-ultra-8ce828/code-review-2b128dc8753cafbeaa753c65327722487ff0288f"
-```
-
-The hook bug is filed as **#316**. It blocks every worktree session identically, and the
-escape hatch it suggests is one an agent must not take — worth fixing before the next
-worktree-based ticket, not after.
-
-### 🟠 Found something worse — #315 outranks most of the queue
-
-While screenshotting #306 I landed on a recipe detail page whose **ingredient list renders
-three empty rows** — right row count, no text. Steps render fine.
-
-This is the page you cook from. A saved recipe is unusable at the exact moment it is needed,
-and it fails silently: no error, correct row count, so it reads as a styling glitch. Pre-existing,
-not caused by any current work. Plausibly higher value than several `ready-for-agent` tickets
-sitting ahead of it. Currently `needs-triage`.
-
-### 🟡 Judgment call — #314, mount or delete `BubblesFeed`
-
-`BubblesFeed.tsx` is not imported or rendered anywhere. It reads as a live dashboard surface,
-so #306's fix was applied to it — correct, but unexercised and unscreenshottable.
-
-Mount it or delete it is a product-intent question, not a cleanup, so I filed it rather than
-picking. Until it's decided, "selection logic exists in one place" has two callers and one
-live one.
+**Frontend contract to remember:** the caller must send
+`tz_offset_minutes = -date.getTimezoneOffset()` — negated, not raw.
 
 ---
 
@@ -59,11 +35,25 @@ live one.
 
 | # | What it does for a user | Value | State |
 |---|---|---|---|
-| **306** | Suggestion card sends you to the recipe it named, and stops saying "tonight" at breakfast | Acting on the suggestion currently loses it | Reviewed, pushed, **PR blocked** ↑ |
-| **304** | Mid-cook replies stop offering brainstorm chips that never fire | Wrong chips mid-cook | [PR #313](https://github.com/ayushb3/BubblyChef/pull/313) draft — other session |
-| **307** | Approving a pantry proposal actually writes to the pantry | Silent data loss — reported success, saved nothing | [PR #312](https://github.com/ayushb3/BubblyChef/pull/312) draft, **awaiting your merge** |
+| **225** + **168** | Dashboard tip becomes AI-generated and pantry-grounded; suggestion becomes ranked, not random | Same tip for everyone forever; suggestion ignores pantry | Backend: [PR #328](https://github.com/ayushb3/BubblyChef/pull/328). Frontend (wires `HeroHome`, deletes `pickRandomRecipe`) not started. |
+| **314** | Remove a dead second dashboard surface carrying duplicate tip/greeting logic | Correctness tax on every future dashboard change | [PR #325](https://github.com/ayushb3/BubblyChef/pull/325), ready to merge |
 
-Merging #312 unblocks #243.
+---
+
+## Recently landed (since the 2026-09-02 queue)
+
+- **#306** — dashboard suggestion opens the right recipe, matches the clock, shares one
+  picker. [PR #318](https://github.com/ayushb3/BubblyChef/pull/318), merged.
+- **#315** — recipe detail page rendered blank ingredient rows for string-shaped
+  ingredients (the shape `RecipeEditModal` writes). [PR #323](https://github.com/ayushb3/BubblyChef/pull/323), merged.
+- **#322** — editing a recipe destroyed `preparation`/`optional` on every save, even
+  untouched rows. [PR #324](https://github.com/ayushb3/BubblyChef/pull/324), merged.
+- **#304** — mid-cook brainstorm chips that never fired. [PR #313](https://github.com/ayushb3/BubblyChef/pull/313).
+- **#307** — pantry proposal approval silently no-op'd. [PR #312](https://github.com/ayushb3/BubblyChef/pull/312).
+
+## New tickets filed this session
+
+- **#322** (now landed, see above) — split from #315's triage.
 
 ---
 
@@ -77,11 +67,11 @@ Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
 | **288** | Stops forcing expiring fruit into savoury dishes ("Chicken Potato Banana Fritters") | Suggestions are embarrassing and unusable | S |
 | **224** | Pantry writes populate `quantity_base`/`unit_base` | Silent data gap; **do before #305** | S |
 | **305** | Salt/pepper/oil stop showing as "Not in pantry" | Makeable recipes look broken | S |
-| **309** | New type errors fail the build | Ratchet — errors grew 73 → 168 in ~5 weeks because nothing gates them; every ticket added first makes this bigger | S |
+| **309** | New type errors fail the build | Ratchet — errors grew 73 → 168 in ~5 weeks because nothing gates them | S |
 | **308** | Real OpenFoodFacts lookup instead of the stub | Product scan returns nothing useful | S |
 | **182** | Estimated expiry dates distinguishable from real ones | **Must precede #183** — otherwise the backfill is irreversible | S |
+| **311** | High-confidence pantry proposals render an approve button that silently no-ops | More user-visible half of #307 | S |
 | **228** | Pantry filters by expiry and category | Large pantries unusable without them | M |
-| **225** | Dashboard tips generated per user, not a hardcoded weekday array | **After #306** — same hero | M |
 | **302** | Cooking-mode turns propose structured recipe amendments | Deductions currently run against the wrong recipe | M |
 | **291** | Focus trap on modals, landmark structure | Keyboard and screen-reader users blocked | M |
 | **259** | Ingest review surface split from its entry point | Refactor; no user-visible change | M |
@@ -90,18 +80,15 @@ Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
 - **#183** — backfill expiry estimates. Blocked by **#182** (one-way data loss if reversed).
 - **#243** — empty pantry should prompt to scan, not invent recipes. Blocked until **#312 merges**.
 
-**Serialize, do not run concurrently:** #224 → #305 (pantry/cook matching) · #306 → #225 (dashboard hero).
+**Serialize, do not run concurrently:** #224 → #305 (pantry/cook matching).
 
 ---
 
-## Recently filed, awaiting triage
+## Awaiting triage
 
 | # | What |
 |---|---|
-| **315** | Recipe detail page: blank ingredient rows ↑ |
-| **314** | `BubblesFeed` dead code: mount or delete ↑ |
-| **311** | High-confidence pantry proposals render an approve button that silently no-ops — arguably the more user-visible half of #307 |
-| **316** | PR review gate blocks every worktree session and asks for a human-only marker ↑ |
+| **316** | PR review gate blocks every worktree session and asks for a human-only marker. Diagnosed this session: it fires correctly when the marker path matches real HEAD; the false-positive is worktree-specific (HEAD resolves from the session's working directory, not the branch being proposed). Avoidable today by not using a worktree — worth fixing before the next worktree-based ticket. |
 
 ---
 

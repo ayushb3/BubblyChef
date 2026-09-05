@@ -239,9 +239,8 @@ describe('GET /api/recipes — draft filter default', () => {
     //
     // The implementation default (is_draft=false when the param is absent) matches:
     //   RecipeBookLoader uses /api/recipes (no param)
-    //   BubblesFeed uses /api/recipes (no param)
     //   HeroHome uses /api/recipes (no param)
-    // All three receive only real library entries — drafts are invisible.
+    // Both receive only real library entries — drafts are invisible.
     const url = new URL('http://localhost/api/recipes')
     const isDraft = url.searchParams.get('is_draft')
     // No caller passes the param → null → route defaults to is_draft=false filter.

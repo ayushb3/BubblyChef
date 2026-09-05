@@ -6,7 +6,7 @@ Replaces SQLiteRepository. Uses supabase-py with the service_role key
 
 import logging
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, cast
 
 from supabase import Client, create_client
 
@@ -308,6 +308,30 @@ class SupabaseRepository:
         }
         self.client.table("recipes").insert(data).execute()
         return recipe  # Return as-is; ID comes from Supabase
+
+    async def get_user_recipes(
+        self, user_id: str, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """Return raw rows for all of a user's saved recipes, newest first.
+
+        Raw dicts, like `get_recipe` — callers that need `RecipeCard` shape
+        construct it themselves. Used by the dashboard daily endpoint
+        (#225, #168) to rank the user's own saved recipes; a candidate list
+        that never leaves this table is what keeps the suggestion from ever
+        naming a recipe the user doesn't actually have.
+        """
+        result = (
+            self.client.table("recipes")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        # supabase-py types row data as list[JSON]; every row from a `.select("*")`
+        # on this table is actually an object, matching every other raw-dict
+        # accessor in this class (e.g. get_recipe below).
+        return cast("list[dict[str, Any]]", result.data or [])
 
     async def get_recipe(self, user_id: str, recipe_id: str) -> RecipeCard | None:
         result = (

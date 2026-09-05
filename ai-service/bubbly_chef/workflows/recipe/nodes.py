@@ -14,6 +14,7 @@ from typing import Any
 
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.api.deps import get_ai_manager
+from bubbly_chef.domain.mealtime import meal_time_bucket
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
 from bubbly_chef.models.recipe import (
     Ingredient,
@@ -449,18 +450,13 @@ def is_pantry_grounded(constraints: dict[str, Any] | None) -> bool:
 
 
 def _default_meal_type() -> str:
-    """Infer meal type from current time of day."""
-    hour = datetime.now().hour
-    if 5 <= hour < 10:
-        return "breakfast"
-    elif 10 <= hour < 14:
-        return "lunch"
-    elif 14 <= hour < 17:
-        return "snack"
-    elif 17 <= hour < 21:
-        return "dinner"
-    else:
-        return "late-night snack"
+    """Infer meal type from current time of day.
+
+    Delegates to `domain/mealtime.py` — the single shared hour-to-bucket rule,
+    also used by the dashboard suggestion ranking. See that module's docstring
+    for why there must be exactly one such rule.
+    """
+    return meal_time_bucket(datetime.now().hour)
 
 
 def _merge_constraints(

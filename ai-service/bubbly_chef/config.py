@@ -39,6 +39,18 @@ class Settings(BaseSettings):
     # Testing
     run_live_tests: bool = False
 
+    # Dashboard daily tip + suggestion (#225, #168) — deterministic ranking weights.
+    # score = w_expiry*expiry_urgency + w_pantry*pantry_coverage + w_mealtime*meal_type_match
+    dashboard_weight_expiry: float = 0.6
+    dashboard_weight_pantry: float = 0.3
+    dashboard_weight_mealtime: float = 0.1
+    # Expiry-urgency thresholds (days until expiry) feeding expiry_urgency above.
+    # <= urgent_days -> urgency 1.0, <= soon_days -> urgency 0.5. Tunable for the
+    # same reason the weights are: they carry real behavioural weight (they
+    # decide what counts as "expiring soon" for ranking purposes).
+    dashboard_expiry_urgent_days: int = 3
+    dashboard_expiry_soon_days: int = 7
+
     @property
     def auto_apply_confidence_threshold(self) -> float:
         """Alias used by ingest workflows."""
