@@ -1,4 +1,6 @@
 /**
+ * @jest-environment node
+ *
  * Tests for normalizeBaseUnit in lib/api/ai-proxy (#224).
  *
  * The function is server-side only (calls aiProxyFetch which reads Supabase
