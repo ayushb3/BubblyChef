@@ -2,14 +2,24 @@
 
 import { motion } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
+import Chip from '@/components/ui/Chip'
 import { titleCase } from '@/lib/format'
-import type { PantryProposalData, PantryProposalAction } from '@/types/chat'
+import type { PantryProposalData, PantryProposalAction, TermSuggestion } from '@/types/chat'
 
 interface PantryProposalCardProps {
   proposal: PantryProposalData
   onApprove: () => void
   onReject: () => void
   state: 'pending' | 'approved' | 'rejected'
+  /**
+   * Vague terms ("veggies", "dairy things") raised in this turn or a later
+   * one in the same still-open thread — merged in here (see useChat's
+   * onDone) rather than opening a second card, so the confirmed items and
+   * the still-unresolved ones read as one pantry update, not two.
+   */
+  clarificationTerms?: TermSuggestion[]
+  /** Called with the specific item name a clarification pill's tap resolved to. */
+  onPickClarification?: (item: string) => void
 }
 
 const ACTION_ICONS: Record<PantryProposalAction['action_type'], { icon: string; colorClass: string }> = {
@@ -48,6 +58,8 @@ export default function PantryProposalCard({
   onApprove,
   onReject,
   state,
+  clarificationTerms = [],
+  onPickClarification,
 }: PantryProposalCardProps) {
   const isPending = state === 'pending'
   const isApproved = state === 'approved'
@@ -74,6 +86,36 @@ export default function PantryProposalCard({
           <ActionRow key={i} action={action} />
         ))}
       </div>
+
+      {/* Still-vague terms from this turn or a later one — resolving one just
+          sends it as the next message, same tap-to-send mechanism as the
+          rest of chat (see onChipTap in chat/page.tsx). */}
+      {isPending && clarificationTerms.length > 0 && (
+        <div className="px-4 py-3 border-t border-[var(--color-border)] flex flex-col gap-3">
+          <span className="text-xs text-[var(--color-muted)]">
+            🤔 Still not sure what you meant by:
+          </span>
+          {clarificationTerms.map(({ term, suggestions }) => (
+            <div key={term} className="flex flex-col gap-1.5">
+              <span className="text-xs text-[var(--color-muted)]">
+                By &ldquo;{term}&rdquo; did you mean:
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {suggestions.map((item) => (
+                  <Chip
+                    key={item}
+                    tone="accent"
+                    onClick={onPickClarification ? () => onPickClarification(item) : undefined}
+                    ariaLabel={`Add ${item}`}
+                  >
+                    {titleCase(item)}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Footer */}
       <div className="px-4 py-3 border-t border-[var(--color-border)]">

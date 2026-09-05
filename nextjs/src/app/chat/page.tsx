@@ -759,12 +759,15 @@ function MessageRenderer({
 
   // Pantry proposal intent — a proposal can legitimately carry zero actions
   // (every item the user mentioned was too generic — "veggies", "dairy
-  // stuff" — to write to the pantry). In that case render ClarificationCard
-  // (tappable concrete suggestions from suggest_specifics) instead of an
-  // empty, semi-actionable PantryProposalCard. If there are no suggestions
-  // either (LLM call failed, or none were vague), fall through to the plain
-  // text bubble below, which still carries the assistant's clarifying
-  // question.
+  // stuff" — to write to the pantry). useChat's onDone already merges that
+  // turn's clarification terms into an earlier still-open card when one
+  // exists (message.response.metadata.clarification_suggestions carries the
+  // accumulated set), so the two render branches below are: a card with
+  // actions (optionally plus merged clarification pills), or — only when
+  // there was nothing earlier to merge into — ClarificationCard standalone.
+  // If there are no suggestions either (LLM call failed, or none were
+  // vague), fall through to the plain text bubble, which still carries the
+  // assistant's clarifying question.
   const pantryProposal =
     intent === 'pantry_update' ? (message.response?.proposal as PantryProposalData | undefined) : undefined
   const clarificationTerms =
@@ -788,6 +791,8 @@ function MessageRenderer({
               onApprove={onApprove}
               onReject={onReject}
               state={proposalState ?? 'pending'}
+              clarificationTerms={clarificationTerms}
+              onPickClarification={onChipTap}
             />
           </div>
         </div>

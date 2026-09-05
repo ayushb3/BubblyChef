@@ -2,7 +2,8 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { streamChatMessage, fetchChatHistory } from '@/lib/api/chat'
-import type { ChatMessage, ChatResponse } from '@/types/chat'
+import type { ChatMessage, ChatResponse, PantryProposalData } from '@/types/chat'
+import { getClarificationSuggestions, mergeTermSuggestions } from '@/types/chat'
 
 const AI_SERVICE_URL =
   process.env.NEXT_PUBLIC_AI_SERVICE_URL || 'http://localhost:8888'
@@ -25,6 +26,18 @@ export function useChat(initialConversationId?: string) {
   >({})
   const [workflowIds, setWorkflowIds] = useState<Record<string, string>>({})
   const historyLoaded = useRef(false)
+
+  // Mirror messages/proposalStates for synchronous reads in onDone (below) —
+  // sendMessage's closure over `messages`/`proposalStates` from render time
+  // would otherwise be stale by the time a streamed response completes.
+  const messagesRef = useRef(messages)
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+  const proposalStatesRef = useRef(proposalStates)
+  useEffect(() => {
+    proposalStatesRef.current = proposalStates
+  }, [proposalStates])
 
   // ── History loading ──────────────────────────────────────────────────────
 
@@ -114,8 +127,66 @@ export function useChat(initialConversationId?: string) {
             response.assistant_message ||
             "I'm not sure how to help with that. Try asking about recipes or groceries!"
 
-          setMessages((prev) =>
-            prev.map((msg) =>
+          // A pantry-update turn with zero real items (every item mentioned
+          // was too vague — "veggies", "dairy things") but real clarification
+          // suggestions. If an earlier turn in this conversation still has an
+          // unapproved pantry card, fold these terms into THAT card instead
+          // of opening a second one — one pantry update reads as one card,
+          // not a growing stack of them each time the user clarifies.
+          const proposal = response.proposal as PantryProposalData | null
+          const hasActions = !!proposal && proposal.actions.length > 0
+          const clarificationTerms = getClarificationSuggestions(response)
+          const isVagueOnlyPantryTurn =
+            response.intent === 'pantry_update' && !hasActions && clarificationTerms.length > 0
+
+          let mergeTargetId: string | null = null
+          if (isVagueOnlyPantryTurn) {
+            const priorMessages = messagesRef.current
+            for (let i = priorMessages.length - 1; i >= 0; i--) {
+              const candidate = priorMessages[i]
+              if (candidate.id === assistantMsgId) continue
+              const candidateProposal = candidate.response?.proposal as
+                | PantryProposalData
+                | undefined
+              if (
+                candidate.intent === 'pantry_update' &&
+                (candidateProposal?.actions.length ?? 0) > 0 &&
+                proposalStatesRef.current[candidate.id] === 'pending'
+              ) {
+                mergeTargetId = candidate.id
+                break
+              }
+            }
+          }
+
+          setMessages((prev) => {
+            if (mergeTargetId) {
+              // Drop this turn's own placeholder — its card would be empty
+              // (0 actions) and its clarifying text is now redundant with
+              // the pills appended to the target card below.
+              const targetId = mergeTargetId
+              return prev
+                .filter((msg) => msg.id !== assistantMsgId)
+                .map((msg) =>
+                  msg.id === targetId && msg.response
+                    ? {
+                        ...msg,
+                        response: {
+                          ...msg.response,
+                          metadata: {
+                            ...msg.response.metadata,
+                            clarification_suggestions: mergeTermSuggestions(
+                              getClarificationSuggestions(msg.response),
+                              clarificationTerms,
+                            ),
+                          },
+                        },
+                      }
+                    : msg,
+                )
+            }
+
+            return prev.map((msg) =>
               msg.id === assistantMsgId
                 ? {
                     ...msg,
@@ -125,11 +196,12 @@ export function useChat(initialConversationId?: string) {
                     response,
                   }
                 : msg,
-            ),
-          )
+            )
+          })
 
-          // Track workflow for proposal approval
-          if (response.workflow_id && response.requires_review) {
+          // Track workflow for proposal approval — skip for a turn that got
+          // merged into an earlier card; it has no actions of its own to approve.
+          if (response.workflow_id && response.requires_review && !mergeTargetId) {
             setWorkflowIds((prev) => ({
               ...prev,
               [assistantMsgId]: response.workflow_id,
