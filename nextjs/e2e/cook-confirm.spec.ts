@@ -274,7 +274,10 @@ test.describe('4b — cook confirm (stubbed, CI-safe)', () => {
     await expect(page.getByText('Unit conflict')).toBeVisible();
     await expect(page.getByText('black pepper')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Yes, I cooked this' }).click();
+    // An un-overridden unit_conflict row maps to a skipped/needs_quantity entry,
+    // leaving `hasUnresolved` true, so CookModal renders "Cook anyway" instead of
+    // "Yes, I cooked this" (CookModal.tsx — hasUnresolved branch).
+    await page.getByRole('button', { name: 'Cook anyway' }).click();
     await expect(page.getByText('Pantry updated!')).toBeVisible({ timeout: 8_000 });
 
     const body = captured();
