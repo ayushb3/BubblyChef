@@ -245,7 +245,7 @@ async def test_brainstorm_prompt_omits_must_use_when_unset() -> None:
     prompt = mock_mgr.return_value.complete.call_args.kwargs["prompt"]
     # The static rule mentions "Must use", but no must-use data line is emitted
     assert not any(li.startswith("Must use") for li in prompt.splitlines())
-    assert "Expiring soon (prioritize): milk" in prompt
+    assert "Expiring soon (weave in where it fits, not mandatory): milk" in prompt
 
 
 @pytest.mark.asyncio
