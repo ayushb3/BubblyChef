@@ -208,7 +208,7 @@ Generate a full recipe with:
 - cuisine, meal_type, dietary_tags
 - tips
 
-Prioritize using the listed available ingredients. \
+Build the recipe from the listed ingredients where you can. \
 For any missing ingredients, suggest pantry substitutes where possible.\
 """
 

@@ -82,6 +82,15 @@ class TestGroundedRecipePromptRuleText:
         assert "unless the user asked for that combination" in GROUNDED_RECIPE_SYSTEM_PROMPT
         assert "genuine part of the cuisine" in GROUNDED_RECIPE_SYSTEM_PROMPT
 
+    def test_no_reflattening_prioritize_instruction(self) -> None:
+        """The prompt's closing line used to say 'Prioritize using the listed
+        available ingredients' — a bare 'prioritize' collides with the
+        softened 'strong preference, not a requirement' framing above it and
+        reads as re-strengthening the very rule this issue softened. No line
+        in this prompt may reintroduce that word as an instruction."""
+        assert "Prioritize" not in GROUNDED_RECIPE_SYSTEM_PROMPT
+        assert "prioritize" not in GROUNDED_RECIPE_SYSTEM_PROMPT
+
     def test_must_use_precedence_is_unweakened(self) -> None:
         """Must-use ingredients stay a hard requirement, unaffected by the
         softened priority-ingredient rule."""
