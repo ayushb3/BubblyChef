@@ -1,6 +1,8 @@
 # Queue
 
-**Updated:** 2026-09-05 · by an agent session · draft PRs opened for #243/#340/#341/#342/#224/#305 (all CI-green, awaiting review on another machine)
+**Updated:** 2026-09-05 · by an agent session · cleared 5 tickets (#182, #309, #308, #228,
+#291) to PRs; three are green and ready to merge, two are drafts waiting on you for
+different reasons.
 
 > Rewritten whenever queue state changes. It is a checkpoint, not a live feed — nothing
 > updates it while no session is running, so trust the timestamp above. If two sessions
@@ -10,81 +12,88 @@
 
 ## Needs you
 
-### 🔴 Local-session work — #334 still needs eyes
+### 🟢 Ready to merge — green CI, no blockers
 
-**#334 — dashboard needs eyes.** Tests are green but nothing has been visually confirmed.
-Watch whether the suggestion card ever contradicts the greeting above it ("Good morning" over
-a card saying "tonight"). That's the #306 regression risk — no test can settle it because
-the copy is LLM-written and the prompt constraint is a preference, not a guarantee.
+- [PR #364](https://github.com/ayushb3/BubblyChef/pull/364) — docs: queue refresh.
+- [PR #366](https://github.com/ayushb3/BubblyChef/pull/366) — **#308**: real OpenFoodFacts
+  barcode lookup replaces the 4-item mock. One caveat: the live API itself couldn't be
+  reached from this sandbox (network policy blocks it) — the implementation follows
+  OpenFoodFacts' documented response shape and passed two review passes, but nobody has
+  pointed it at the real API yet. Worth a quick manual check before leaning on it in prod.
+- [PR #367](https://github.com/ayushb3/BubblyChef/pull/367) — **#228**: pantry filter bar
+  becomes three multi-select facets (location/category/expiry) instead of one single-select
+  location row. Not interactively tested (headless env, no auth session) — recommend a
+  quick click-through of the three dropdowns before merge.
 
-Supabase/Gemini creds are container env vars, not `nextjs/.env.local` — `npm run dev` works
-as-is.
+### 🟡 Draft, needs a migration applied — #182
+
+[PR #362](https://github.com/ayushb3/BubblyChef/pull/362) adds
+`supabase/migrations/00008_add_pantry_estimated_expiry.sql` (additive, `ADD COLUMN IF NOT
+EXISTS ... DEFAULT false`). An agent session can't apply it — needs the Supabase dashboard
+SQL Editor or `supabase db push`. Code on both sides already tolerates the column not
+existing yet, so merging before applying won't break anything — the UI feature just won't
+show up until you apply it.
+
+### 🟡 Draft, CI-config change — #309
+
+[PR #365](https://github.com/ayushb3/BubblyChef/pull/365) adds a mypy baseline gate to CI
+(94 pre-existing errors snapshotted, only new ones fail the build). Held as draft
+deliberately — a CI-pipeline change, even a green one, is treated as feature-level here
+rather than auto-flipped to ready.
+
+### 🟡 Draft, feature-level (8-component scope) — #291
+
+[PR #368](https://github.com/ayushb3/BubblyChef/pull/368) — every modal in the app
+(`AddItemModal`, `PantryAddSheet`, `CookModal`, `RecipeEditModal`, `RecipeImportModal`,
+`RecipeRefinementModal`, `RecipeDeleteConfirm`, `ThemePicker`) gets a shared focus trap:
+Tab-cycling, Escape-to-close, focus restore on close, dialog ARIA. Two review passes (the
+second specifically re-scrutinizing the shared hook's React correctness under concurrent
+rendering) found and fixed two latent — not live — risks before this PR existed. Held as
+draft: cross-cutting, 8 components, worth `/interrogate` before merge per its own checklist.
+Screen-reader behavior (VoiceOver/NVDA) couldn't be verified headlessly — worth a manual
+pass.
 
 ---
 
-## In flight
+## Recently landed (confirmed on `main` this session, before the batch above)
 
-| # | What it does for a user | State |
-|---|---|---|
-| **347** | Expiry weighting root cause — `score_and_rank` and dashboard hero | [PR #348](https://github.com/ayushb3/BubblyChef/pull/348) open, thermo-nuclear review passed, ready to merge |
-| **243** | Empty pantry prompts to scan/type/tell instead of inventing a recipe (skips the short-circuit when the user names ingredients) | [PR #349](https://github.com/ayushb3/BubblyChef/pull/349) draft, CI green |
-| **340** | Inline editable qty/unit on `unit:"item"` rows; editor stays open through a qty→unit edit | [PR #350](https://github.com/ayushb3/BubblyChef/pull/350) draft, CI green |
-| **341 + 342** | Resolved clarification pills disappear from the card; raw `(still with…; still don't know…)` context prefix stripped from reply | [PR #353](https://github.com/ayushb3/BubblyChef/pull/353) draft, CI green |
-| **224 + 305** | Pantry writes populate `quantity_base`/`unit_base`; absent salt/pepper/oil counted as `assumed`, not "Not in pantry" | [PR #354](https://github.com/ayushb3/BubblyChef/pull/354) draft, CI green |
-| **265** | Chat survives navigating away instead of losing the thread | Ready to pick up |
-
----
-
-## Recently landed
-
-- **#347** — expiry demoted from dominant axis to tiebreaker in `score_and_rank` (±10/±5 → ±4/±2);
-  dashboard hero now leads with the AI suggestion instead of the expiry headline; prompt context
-  partitioning fixed to use date window instead of stale score threshold.
-  [PR #348](https://github.com/ayushb3/BubblyChef/pull/348), thermo-nuclear review passed.
-- **#330** — sign-up no longer silently bounces when Supabase email confirmation is on; user sees
-  a "check your inbox" message instead of landing back at login with no feedback.
-  [PR #346](https://github.com/ayushb3/BubblyChef/pull/346), merged 2026-09-05.
-- **#312** — pantry proposal approval actually writes to the pantry (was routing to the wrong endpoint).
-  [PR #312](https://github.com/ayushb3/BubblyChef/pull/312), merged 2026-09-05.
-- **#336** — recipe-card generation stops forcing expiring items into a coherent dish.
-  [PR #339](https://github.com/ayushb3/BubblyChef/pull/339), merged 2026-09-05.
-- **#288** — expiring stock becomes a preference, not a requirement, in brainstorm.
-  [PR #335](https://github.com/ayushb3/BubblyChef/pull/335), merged 2026-09-05.
-- **#225** + **#168** — dashboard tip is per-user and pantry-grounded; suggestion is ranked, not
-  random. Backend [#328](https://github.com/ayushb3/BubblyChef/pull/328) merged; frontend
-  [#334](https://github.com/ayushb3/BubblyChef/pull/334) merged 2026-09-05.
-- **#327** — chat gates vague pantry terms ("veggies", "dairy") instead of silently adding them;
-  remembers pending items across turns; clarification pills now multi-select and stage text in
-  the input instead of auto-sending; Skip renamed Dismiss.
-  [PR #327](https://github.com/ayushb3/BubblyChef/pull/327), merged.
-- **#306** — suggestion card opens the recipe it names and matches the clock. [PR #318](https://github.com/ayushb3/BubblyChef/pull/318).
-- **#314** — `BubblesFeed` and its orphaned `BubbleMessage` deleted. [PR #325](https://github.com/ayushb3/BubblyChef/pull/325).
-- **#315** — recipe detail page rendered blank ingredient rows for string-shaped ingredients.
-  [PR #323](https://github.com/ayushb3/BubblyChef/pull/323).
-- **#322** — editing a recipe destroyed `preparation`/`optional` on every row. [PR #324](https://github.com/ayushb3/BubblyChef/pull/324).
-- **#304**, **#307** — earlier session.
+#347, #330, #312, #336, #288, #225+#168, #327, #306, #314, #315, #322, #243, #340, #224+#305
+— see `git log origin/main --oneline` for the merge commits if detail is needed.
 
 ---
 
 ## Ready to pick up
 
-Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
+Everything that was "ready to pick up" at the start of this session is now either merged,
+drafted, or taken by another session — except one:
 
 | # | What it does for a user | Value | Size |
 |---|---|---|---|
-| **309** | New type errors fail the build | Ratchet — errors grew 73 → 168; every ticket adds more | S |
-| **308** | Real OpenFoodFacts lookup instead of the stub | Product scan returns nothing useful | S |
-| **182** | Estimated expiry dates distinguishable from real ones | **Must precede #183** — backfill is irreversible; also reduces false urgency on expiry surfaces | S |
-| **311** | High-confidence pantry proposals render an approve button that silently no-ops | More user-visible half of #307 | S |
-| **228** | Pantry filters by expiry and category | Large pantries unusable without them | M |
-| **302** | Cooking-mode turns propose structured recipe amendments | Deductions run against the wrong recipe | M |
-| **291** | Focus trap on modals, landmark structure | Keyboard and screen-reader users blocked | M |
-| **259** | Ingest review surface split from its entry point | Refactor; no user-visible change | M |
+| **259** | Ingest review surface split from its entry point (container/presenter split) | Refactor; no user-visible change | M |
 
 **Held:**
-- **#183** — backfill expiry estimates. Blocked by **#182**.
+- **#183** — backfill expiry estimates onto existing null-expiry rows. Blocked by **#182**
+  — specifically, blocked until #182's migration is *applied* (writing unflagged estimates
+  before the column exists loses the distinction permanently).
 
-**Serialize, do not run concurrently:** (both in-flight pairs above now landed together in one branch each — nothing left to serialize here).
+**Taken (open PR from another session, not touched here):**
+- **#302** → [PR #355](https://github.com/ayushb3/BubblyChef/pull/355) (behind `main`, needs
+  rebase)
+- **#303** → [PR #360](https://github.com/ayushb3/BubblyChef/pull/360) (dirty — real
+  conflict, blocked on #355 anyway)
+- **#341 + #342** → [PR #353](https://github.com/ayushb3/BubblyChef/pull/353) (behind
+  `main`, needs rebase)
+
+None of these three were touched this session, to avoid duplicating in-flight work. If
+nobody is actively driving them, they need attention before they can move.
+
+---
+
+## New tickets filed this session
+
+- **#363** — the manual "type it in" pantry-add path (`POST /api/pantry`) never sets
+  `estimated_expiry` on a heuristically-guessed date, unlike every other add path. Found
+  while implementing #182; the fix is small but depends on #182's migration landing first.
 
 ---
 
@@ -94,37 +103,42 @@ Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
 |---|---|
 | **331** | No sign-out anywhere in the app. Also blocks manual per-user testing. |
 | **332** | Hard login wall — no landing page, no demo, no guest mode. Product decision. |
-| **337** | `middleware` file convention deprecated — on next Next.js upgrade it silently stops running and every protected route opens. Fails open. |
+| **337** | `middleware` file convention deprecated — fails open on next Next.js upgrade. |
 | **316** | PR review gate. Worktree-specific false positive. Avoidable by working in main checkout. |
-| **356** | Pantry merge-on-add collapses distinct lots and discards the new lot's expiry (buy chicken twice → fresh pound inherits the old expiry). Also unit-blind sum. Subsumes #127, related to #6. Chat + scan. |
-| **357** | Non-blocking expiry field on the chat/scan add card (mirror of #340's qty editor). Supplies the user-stated expiry #356 needs. |
-| **358** | Unapproved pantry proposal cards vanish on chat remount — history restore rebuilds text turns only, not the proposal envelope. Follow-up gap from #265. |
+| **356** | Pantry merge-on-add collapses distinct lots, discards new lot's expiry; unit-blind sum. |
+| **357** | Non-blocking expiry field on the chat/scan add card — supplies #356's needed input. |
+| **358** | Unapproved pantry proposal cards vanish on chat remount (history restore gap from #265). |
+| **363** | *(new — see above)* |
 
 ---
 
 ## Not yet filed
 
-- **Recent-chats list UI.** #265's triage split this out — persistence only. Browsing and
-  switching past conversations is a larger UX surface that needs designing first.
-- **Behavioural eval for expiry-vs-coherence.** #288, #336, and now #347 are all prompt/weight
-  fixes verified structurally — LLM behaviour can't be pinned by unit tests. One eval would
-  answer whether the changes are sufficient in practice.
-- **Stale `priority_items` label in `GROUNDED_RECIPE_SYSTEM_PROMPT`.** After the #347 reweight,
-  bare expiring items no longer reach `priority_items` (they land in `supporting`); the prompt
-  label "Priority ingredients (expiring soon…)" is now misleading. Cosmetic only — no impact on
-  output — but should be cleaned up.
+- **Recent-chats list UI.** #265's triage split this out — persistence only.
+- **Behavioural eval for expiry-vs-coherence.** #288, #336, #347 are all prompt/weight
+  fixes verified structurally. Nobody has measured the actual model output yet.
+- **Stale `priority_items` label in `GROUNDED_RECIPE_SYSTEM_PROMPT`.** Cosmetic only,
+  post-#347.
 
 ---
 
 ## Notes for the next session
 
-- **`ai-service` tests need the venv interpreter**: `./.venv/bin/python -m pytest -q`. System
-  `pytest` lacks `httpx` and fails at collection — that is the environment, not the code.
-- **`mypy --strict` has ~94 pre-existing errors** (#128), not run in CI. Do not fix them;
-  confirm new files add none.
+- **`ai-service` tests need the venv interpreter**: `./.venv/bin/python -m pytest -q`.
+  System `pytest` lacks `httpx` and fails at collection.
+- **`mypy --strict` has 94 pre-existing errors** (#128), gated (not blocking) once #309
+  merges — until then it's still not run in CI at all. Once #309 lands, use
+  `cd ai-service && ./scripts/mypy_gate.sh` (same command CI runs) instead of raw
+  `mypy --strict`.
 - **`npm run lint` has 2 pre-existing `e2e/` errors.** Expected baseline.
-- **`chat-deep-links.test.tsx:156`** — 1 pre-existing Jest failure on `main` (unrelated to recent
-  work). Do not treat as a regression.
+- **This sandbox's network policy blocks `world.openfoodfacts.org`** (confirmed via the
+  proxy status endpoint — a policy denial, not a bug). #308's implementation is untested
+  against the live API for that reason; check `curl "$HTTPS_PROXY/__agentproxy/status"` if
+  you hit the same wall on a different host.
+- **Multiple sessions are working this repo concurrently.** Check live PR state
+  (`list_pull_requests`) before branching on anything, not just this doc — it can be stale
+  between writes, and three PRs from another session (#353/#355/#360) were found mid-session
+  this way.
 
 ---
 
