@@ -150,9 +150,9 @@ class TestDetectAmendmentUnit:
 
     @pytest.mark.asyncio
     async def test_returns_none_on_exception(self):
-        """Any exception inside complete() must be swallowed; result is None."""
+        """ValueError/TypeError/ValidationError inside complete() must be swallowed; result is None."""
         manager = _make_manager()
-        manager.complete = AsyncMock(side_effect=RuntimeError("LLM error"))
+        manager.complete = AsyncMock(side_effect=ValueError("bad structured output"))
         state = _state()
         result = await _detect_amendment(state, manager, "Some prose")
         assert result is None
@@ -228,13 +228,13 @@ class TestCookingHelpAmendmentSingleShot:
 
     @pytest.mark.asyncio
     async def test_amendment_detection_failure_degrades_gracefully_single_shot(self):
-        """If _detect_amendment raises internally, the turn still succeeds with proposal=None."""
+        """If _detect_amendment raises a validation error, the turn still succeeds with proposal=None."""
         manager = _make_manager(supports_tool_calling=False)
-        # Prose call succeeds; detection call fails.
+        # Prose call succeeds; detection call fails with a structured-output error.
         manager.complete = AsyncMock(
             side_effect=[
                 "Milk is a fine substitute for cream here.",
-                RuntimeError("structured output failed"),
+                ValueError("structured output failed"),
             ]
         )
 
@@ -333,12 +333,12 @@ class TestCookingHelpAmendmentReact:
 
     @pytest.mark.asyncio
     async def test_amendment_detection_failure_degrades_gracefully_react(self):
-        """ReAct path: _detect_amendment failure → turn still succeeds, proposal=None."""
+        """ReAct path: _detect_amendment ValueError → turn still succeeds, proposal=None."""
         manager = _make_manager(supports_tool_calling=True)
         manager.complete_with_tools = AsyncMock(
             return_value=ToolCallResponse(text="Milk is fine here.")
         )
-        manager.complete = AsyncMock(side_effect=RuntimeError("boom"))
+        manager.complete = AsyncMock(side_effect=ValueError("structured output error"))
 
         with patch("bubbly_chef.workflows.chat.nodes.get_ai_manager", return_value=manager):
             result = await cooking_help_response(_state())

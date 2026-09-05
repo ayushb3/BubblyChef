@@ -11,13 +11,14 @@ from datetime import date
 from typing import Any
 
 import bubbly_chef.tools.cooking  # noqa: F401 — registers check_pantry on import
-from bubbly_chef.ai.manager import NoProviderAvailableError
+from bubbly_chef.ai.manager import AIManager, NoProviderAvailableError
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
 from bubbly_chef.models.proposals import RecipeAmendmentDetection
 from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.tools.registry import get_tool, get_tool_schemas
 from bubbly_chef.workflows.state import WorkflowState
+from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -445,7 +446,7 @@ Return ONLY the JSON fields defined in the schema — no extra text."""
 
 async def _detect_amendment(
     state: WorkflowState,
-    ai_manager: Any,
+    ai_manager: AIManager,
     prose_reply: str,
 ) -> RecipeAmendmentDetection | None:
     """Run a second structured-output pass to detect recipe ingredient amendments.
@@ -486,7 +487,7 @@ async def _detect_amendment(
             return RecipeAmendmentDetection(**result)
         logger.warning("_detect_amendment: unexpected result type %s", type(result))
         return None
-    except Exception as exc:
+    except (ValueError, TypeError, ValidationError) as exc:
         logger.warning("_detect_amendment failed (degrading to prose-only): %s", exc)
         return None
 
@@ -511,7 +512,12 @@ async def _cooking_help_single_shot(
         suggested_mode = detect_mode_suggestion(response_text, state.get("input_mode", "chat"))
 
         amendment = await _detect_amendment(state, ai_manager, response_text)
-        if amendment and amendment.is_amendment and amendment.amended_ingredients:
+        if (
+            amendment is not None
+            and amendment.is_amendment
+            and amendment.amended_ingredients is not None
+            and len(amendment.amended_ingredients) > 0
+        ):
             return {
                 **state,
                 "intent": Intent.COOKING_HELP.value,
@@ -738,7 +744,12 @@ async def _cooking_help_react(
         suggested_mode = detect_mode_suggestion(last_text, state.get("input_mode", "chat"))
 
         amendment = await _detect_amendment(state, ai_manager, last_text)
-        if amendment and amendment.is_amendment and amendment.amended_ingredients:
+        if (
+            amendment is not None
+            and amendment.is_amendment
+            and amendment.amended_ingredients is not None
+            and len(amendment.amended_ingredients) > 0
+        ):
             return {
                 **state,
                 "intent": Intent.COOKING_HELP.value,
