@@ -16,6 +16,7 @@ import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
 import ClarificationCard from '@/components/chat/ClarificationCard'
 import BrainstormOptions from '@/components/chat/BrainstormOptions'
+import CookingAmendmentCard from '@/components/chat/CookingAmendmentCard'
 import CookModal from '@/components/recipes/CookModal'
 import ThemePicker from '@/components/ui/ThemePicker'
 import Chip, { type ChipTone } from '@/components/ui/Chip'
@@ -29,6 +30,8 @@ import type {
   ChatMessage,
   ChatRecipeData,
   PantryProposalData,
+  RecipeAmendmentProposal,
+  RecipeIngredientAmendment,
 } from '@/types/chat'
 import { getBrainstormIdeas, getClarificationSuggestions, buildClarificationText } from '@/types/chat'
 import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
@@ -136,6 +139,8 @@ function ChatSurface() {
   const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
   const [dismissedRecipeId, setDismissedRecipeId] = useState<string | null>(null)
   const [dismissedSeedKey, setDismissedSeedKey] = useState<string | null>(null)
+  /** msgId → amendment block state. Stays local to the page — no async work needed. */
+  const [amendmentStates, setAmendmentStates] = useState<Record<string, 'pending' | 'applied' | 'dismissed'>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   // The recipe only needs to ride along on the first message — the backend
@@ -179,6 +184,17 @@ function ChatSurface() {
     loadedRecipe?.id === cookingRecipeId
       ? loadedRecipe
       : null
+
+  /**
+   * Update the in-memory cooking recipe with the amended ingredient list.
+   * Session-only — no DB write. The "Finished cooking" deduction reads from
+   * the updated loadedRecipe state (#303).
+   */
+  const handleApplyAmendment = (amendedIngredients: RecipeIngredientAmendment[]) => {
+    setLoadedRecipe((prev) =>
+      prev ? { ...prev, ingredients: amendedIngredients as unknown as Recipe['ingredients'] } : prev
+    )
+  }
 
   /**
    * Attach the cook context to the first message of the conversation only.
@@ -523,6 +539,14 @@ function ChatSurface() {
                 onChipTap={handleChipTap}
                 onPickIdea={handlePickIdea}
                 onStageText={handleStageText}
+                amendmentState={amendmentStates[msg.id] ?? 'pending'}
+                onApplyAmendment={(amendedIngredients) => {
+                  handleApplyAmendment(amendedIngredients)
+                  setAmendmentStates((prev) => ({ ...prev, [msg.id]: 'applied' }))
+                }}
+                onDismissAmendment={() =>
+                  setAmendmentStates((prev) => ({ ...prev, [msg.id]: 'dismissed' }))
+                }
               />
             ))}
 
@@ -673,6 +697,10 @@ interface MessageRendererProps {
   onPickIdea: (idea: string) => void
   /** Stage text in the input field (clarification pill selections). */
   onStageText: (text: string) => void
+  /** Amendment block state for this message. */
+  amendmentState: 'pending' | 'applied' | 'dismissed'
+  onApplyAmendment: (amendedIngredients: RecipeIngredientAmendment[]) => void
+  onDismissAmendment: () => void
 }
 
 function MessageRenderer({
@@ -695,6 +723,9 @@ function MessageRenderer({
   onChipTap,
   onPickIdea,
   onStageText,
+  amendmentState,
+  onApplyAmendment,
+  onDismissAmendment,
 }: MessageRendererProps) {
   // User messages — simple bubble
   if (message.role === 'user') {
@@ -842,6 +873,38 @@ function MessageRenderer({
         </div>
       </motion.div>
     )
+  }
+
+  // Cooking amendment proposal — shown for cooking_help intent when the backend
+  // proposes ingredient substitutions the user can accept or decline (#303).
+  if (
+    intent === 'cooking_help' &&
+    message.response?.requires_review &&
+    message.response?.next_action === 'review_proposal'
+  ) {
+    const amendmentProposal = message.response.proposal as RecipeAmendmentProposal | null
+    if (amendmentProposal?.is_amendment && amendmentProposal.amended_ingredients?.length) {
+      return (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+        >
+          <div className="flex items-end gap-2">
+            <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+            <div className="flex flex-col gap-2 items-start">
+              {message.content && <MessageBubble message={message} />}
+              <CookingAmendmentCard
+                proposal={amendmentProposal}
+                state={amendmentState}
+                onApply={() => onApplyAmendment(amendmentProposal.amended_ingredients!)}
+                onDismiss={onDismissAmendment}
+              />
+            </div>
+          </div>
+        </motion.div>
+      )
+    }
   }
 
   // Default: text message with markdown (skip empty streaming messages — typing indicator handles those)
