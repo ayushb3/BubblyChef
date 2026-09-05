@@ -30,7 +30,7 @@ import type {
   ChatRecipeData,
   PantryProposalData,
 } from '@/types/chat'
-import { getBrainstormIdeas, getClarificationSuggestions } from '@/types/chat'
+import { getBrainstormIdeas, getClarificationSuggestions, buildClarificationText } from '@/types/chat'
 import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
 
 // ---------------------------------------------------------------------------
@@ -354,6 +354,11 @@ function ChatSurface() {
     sendChipMessage(message)
   }
 
+  const handleStageText = (text: string) => {
+    setInput(text)
+    inputRef.current?.focus()
+  }
+
   const handlePickIdea = (idea: string) => {
     sendMessage(idea)
   }
@@ -509,6 +514,7 @@ function ChatSurface() {
                 onTryAnother={handleChipTap.bind(null, 'Give me a different recipe')}
                 onChipTap={handleChipTap}
                 onPickIdea={handlePickIdea}
+                onStageText={handleStageText}
               />
             ))}
 
@@ -656,6 +662,8 @@ interface MessageRendererProps {
   onTryAnother: () => void
   onChipTap: (message: string) => void
   onPickIdea: (idea: string) => void
+  /** Stage text in the input field (clarification pill selections). */
+  onStageText: (text: string) => void
 }
 
 function MessageRenderer({
@@ -676,6 +684,7 @@ function MessageRenderer({
   onTryAnother,
   onChipTap,
   onPickIdea,
+  onStageText,
 }: MessageRendererProps) {
   // User messages — simple bubble
   if (message.role === 'user') {
@@ -793,7 +802,7 @@ function MessageRenderer({
               onReject={onReject}
               state={proposalState ?? 'pending'}
               clarificationTerms={clarificationTerms}
-              onPickClarification={onChipTap}
+              onStagePick={(sel) => onStageText(buildClarificationText(sel))}
             />
           </div>
         </div>
@@ -815,7 +824,7 @@ function MessageRenderer({
             )}
             <ClarificationCard
               terms={clarificationTerms}
-              onPick={onChipTap}
+              onStagePick={(sel) => onStageText(buildClarificationText(sel))}
               disabled={proposalState !== undefined && proposalState !== 'pending'}
             />
           </div>

@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
 import Chip from '@/components/ui/Chip'
@@ -18,8 +19,11 @@ interface PantryProposalCardProps {
    * the still-unresolved ones read as one pantry update, not two.
    */
   clarificationTerms?: TermSuggestion[]
-  /** Called with the specific item name a clarification pill's tap resolved to. */
-  onPickClarification?: (item: string) => void
+  /**
+   * Called whenever the selection changes. Receives the full current selection
+   * map (term → selected item names) so the parent can build the staged text.
+   */
+  onStagePick?: (selections: Record<string, string[]>) => void
 }
 
 const ACTION_ICONS: Record<PantryProposalAction['action_type'], { icon: string; colorClass: string }> = {
@@ -59,10 +63,27 @@ export default function PantryProposalCard({
   onReject,
   state,
   clarificationTerms = [],
-  onPickClarification,
+  onStagePick,
 }: PantryProposalCardProps) {
   const isPending = state === 'pending'
   const isApproved = state === 'approved'
+
+  // Multi-select: track which items the user has tapped per vague term.
+  // Tapping toggles the item; the updated selection map is forwarded to the
+  // parent so it can stage the natural-language text in the input field.
+  const [selections, setSelections] = useState<Record<string, string[]>>({})
+
+  const togglePill = (term: string, item: string) => {
+    setSelections((prev) => {
+      const current = prev[term] ?? []
+      const next = current.includes(item)
+        ? current.filter((i) => i !== item)
+        : [...current, item]
+      const updated = next.length > 0 ? { ...prev, [term]: next } : (({ [term]: _, ...rest }) => rest)(prev)
+      onStagePick?.(updated)
+      return updated
+    })
+  }
 
   return (
     <motion.div
@@ -87,9 +108,9 @@ export default function PantryProposalCard({
         ))}
       </div>
 
-      {/* Still-vague terms from this turn or a later one — resolving one just
-          sends it as the next message, same tap-to-send mechanism as the
-          rest of chat (see onChipTap in chat/page.tsx). */}
+      {/* Still-vague terms from this turn or a later one. Tapping a pill toggles
+          selection; the parent stages the accumulated natural-language text in
+          the input field so the user can review/edit before sending. */}
       {isPending && clarificationTerms.length > 0 && (
         <div className="px-4 py-3 border-t border-[var(--color-border)] flex flex-col gap-3">
           <span className="text-xs text-[var(--color-muted)]">
@@ -101,16 +122,19 @@ export default function PantryProposalCard({
                 By &ldquo;{term}&rdquo; did you mean:
               </span>
               <div className="flex flex-wrap gap-2">
-                {suggestions.map((item) => (
-                  <Chip
-                    key={item}
-                    tone="accent"
-                    onClick={onPickClarification ? () => onPickClarification(item) : undefined}
-                    ariaLabel={`Add ${item}`}
-                  >
-                    {titleCase(item)}
-                  </Chip>
-                ))}
+                {suggestions.map((item) => {
+                  const isSelected = (selections[term] ?? []).includes(item)
+                  return (
+                    <Chip
+                      key={item}
+                      tone={isSelected ? 'fresh' : 'accent'}
+                      onClick={() => togglePill(term, item)}
+                      ariaLabel={`${isSelected ? 'Deselect' : 'Select'} ${item}`}
+                    >
+                      {titleCase(item)}
+                    </Chip>
+                  )
+                })}
               </div>
             </div>
           ))}
@@ -131,7 +155,7 @@ export default function PantryProposalCard({
               onClick={onReject}
               className="flex-1 py-2 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)]"
             >
-              Skip
+              Dismiss
             </SpringButton>
           </div>
         ) : isApproved ? (

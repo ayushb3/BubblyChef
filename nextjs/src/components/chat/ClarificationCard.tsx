@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { titleCase } from '@/lib/format'
 import Chip from '@/components/ui/Chip'
@@ -7,24 +8,37 @@ import type { TermSuggestion } from '@/types/chat'
 
 interface ClarificationCardProps {
   terms: TermSuggestion[]
-  /** Called with the specific item name the user tapped — sent as the next chat message. */
-  onPick: (item: string) => void
+  /**
+   * Called whenever the selection changes. Receives the full current selection
+   * map (term → selected item names) so the parent can build the staged text.
+   */
+  onStagePick?: (selections: Record<string, string[]>) => void
   disabled?: boolean
 }
 
 /**
  * Rendered instead of PantryProposalCard when every item in a pantry-update
- * turn was too vague to add directly (see review_gate/create_actions —
- * generic terms never reach `actions`). Rather than a plain text question,
- * offers concrete tappable suggestions per vague term (from
- * pantry.nodes.suggest_specifics) so resolving it is one tap, not a retype.
- *
- * Tapping a pill sends that item name as the next chat message, same as
- * PostMessageChips/BrainstormOptions — the backend re-parses it as a normal,
- * specific pantry item on the next turn.
+ * turn was too vague to add directly. Offers concrete tappable suggestions
+ * per vague term; tapping toggles selection and stages natural-language text
+ * in the input field rather than auto-sending.
  */
-export default function ClarificationCard({ terms, onPick, disabled = false }: ClarificationCardProps) {
+export default function ClarificationCard({ terms, onStagePick, disabled = false }: ClarificationCardProps) {
   if (terms.length === 0) return null
+
+  const [selections, setSelections] = useState<Record<string, string[]>>({})
+
+  const togglePill = (term: string, item: string) => {
+    if (disabled) return
+    setSelections((prev) => {
+      const current = prev[term] ?? []
+      const next = current.includes(item)
+        ? current.filter((i) => i !== item)
+        : [...current, item]
+      const updated = next.length > 0 ? { ...prev, [term]: next } : (({ [term]: _, ...rest }) => rest)(prev)
+      onStagePick?.(updated)
+      return updated
+    })
+  }
 
   return (
     <motion.div
@@ -45,16 +59,19 @@ export default function ClarificationCard({ terms, onPick, disabled = false }: C
               By &ldquo;{term}&rdquo; did you mean:
             </span>
             <div className="flex flex-wrap gap-2">
-              {suggestions.map((item) => (
-                <Chip
-                  key={item}
-                  tone="accent"
-                  onClick={disabled ? undefined : () => onPick(item)}
-                  ariaLabel={`Add ${item}`}
-                >
-                  {titleCase(item)}
-                </Chip>
-              ))}
+              {suggestions.map((item) => {
+                const isSelected = (selections[term] ?? []).includes(item)
+                return (
+                  <Chip
+                    key={item}
+                    tone={isSelected ? 'fresh' : 'accent'}
+                    onClick={() => togglePill(term, item)}
+                    ariaLabel={`${isSelected ? 'Deselect' : 'Select'} ${item}`}
+                  >
+                    {titleCase(item)}
+                  </Chip>
+                )
+              })}
             </div>
           </div>
         ))}

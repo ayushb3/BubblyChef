@@ -257,6 +257,22 @@ export function mergeActions(
 
 
 
+/**
+ * Build natural-language text from a clarification selection map.
+ * {veggies: ["Broccoli","Spinach"], dairy: ["Yogurt"]}
+ * → "I got broccoli and spinach for veggies, and yogurt for dairy"
+ * Empty selections → empty string.
+ */
+export function buildClarificationText(selections: Record<string, string[]>): string {
+  const entries = Object.entries(selections).filter(([, items]) => items.length > 0)
+  if (entries.length === 0) return ''
+  const parts = entries.map(([term, items]) => {
+    const itemList = items.map((i) => i.toLowerCase()).join(' and ')
+    return `${itemList} for ${term}`
+  })
+  return `I got ${parts.join(', and ')}`
+}
+
 export interface AIHealthStatus {
   ai_available: boolean
   providers: Array<{ name: string; available: boolean }>
