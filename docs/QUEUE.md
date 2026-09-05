@@ -1,6 +1,6 @@
 # Queue
 
-**Updated:** 2026-09-04 · by an agent session · after #315, #322 landed on `main`; #325 (delete `BubblesFeed`) and #328 (`/v1/dashboard/daily` backend) opened
+**Updated:** 2026-09-05 · by an agent session · after #306/#314/#315/#322 landed; #334 (dashboard frontend) and #335 (#288) opened; auth audit filed #330–#332
 
 > Rewritten whenever queue state changes. It is a checkpoint, not a live feed — nothing
 > updates it while no session is running, so trust the timestamp above. If two sessions
@@ -10,50 +10,55 @@
 
 ## Needs you
 
-### 🟢 Ready to merge — #325 (delete dead dashboard component)
+### 🔴 Local-session work — #330 and #334 need a real browser
 
-[PR #325](https://github.com/ayushb3/BubblyChef/pull/325) deletes `BubblesFeed` and its
-orphaned `BubbleMessage` — 330 lines that never rendered. Clean deletion, reviewed, gates
-green, retargeted to `main`. Closes #314.
+Neither can be finished from a cloud session.
 
-### 🟡 Needs your review — #328 (dashboard daily endpoint, backend half)
+**#330 — sign-up may fail silently.** Step one is checking whether email confirmation is
+enabled on the Supabase project. If it's **on**, signup succeeds with no session, bounces the
+user back to `/login` with no message, and their second attempt errors "User already
+registered" — looks broken, is actually nearly-successful. If it's **off**, this drops to a
+low-priority robustness fix. **Unverified either way.**
 
-[PR #328](https://github.com/ayushb3/BubblyChef/pull/328) — `GET /v1/dashboard/daily`.
-Backend for #225 (AI-generated tip) and #168 (pantry-aware suggestion). Two review passes
-found and fixed four blockers before this PR existed (UTC-only meal bucket, a hand-rolled
-clock rule that disagreed with the recipe tagger 7 hours in 24, a tip prompt that wasn't
-actually pantry-grounded, and a cache that kept suggesting a deleted ingredient) — details
-in the PR body. `Related to`, not `Fixes`, on both issues: no UI change lands here, so the
-user-visible bug is still present until the frontend PR follows.
+**#334 — dashboard needs eyes.** Tests are green but nothing has been visually confirmed. The
+thing to watch: whether the suggestion card ever contradicts the greeting above it ("Good
+morning" over a card saying "tonight"). That's the #306 regression risk and no test can settle
+it — the copy is LLM-written and the prompt constraint is a preference, not a guarantee.
 
-**Frontend contract to remember:** the caller must send
-`tz_offset_minutes = -date.getTimezoneOffset()` — negated, not raw.
+Supabase/Gemini creds are container env vars, not `nextjs/.env.local` — `npm run dev` works
+as-is.
+
+### 🟡 Awaiting review
+
+| PR | What | Note |
+|---|---|---|
+| [#334](https://github.com/ayushb3/BubblyChef/pull/334) | Dashboard tip + suggestion wired to `/v1/dashboard/daily` | `Fixes #225` + `#168`. Needs thermo-nuclear. |
+| [#335](https://github.com/ayushb3/BubblyChef/pull/335) | Expiring stock becomes a preference, not a requirement | `Fixes #288`. No blockers in review. |
 
 ---
 
 ## In flight
 
-| # | What it does for a user | Value | State |
-|---|---|---|---|
-| **225** + **168** | Dashboard tip becomes AI-generated and pantry-grounded; suggestion becomes ranked, not random | Same tip for everyone forever; suggestion ignores pantry | Backend: [PR #328](https://github.com/ayushb3/BubblyChef/pull/328). Frontend (wires `HeroHome`, deletes `pickRandomRecipe`) not started. |
-| **314** | Remove a dead second dashboard surface carrying duplicate tip/greeting logic | Correctness tax on every future dashboard change | [PR #325](https://github.com/ayushb3/BubblyChef/pull/325), ready to merge |
+| # | What it does for a user | State |
+|---|---|---|
+| **265** | Chat survives navigating away instead of losing the thread | Starting now |
+| **336** | Recipe card stops forcing expiring items into an otherwise coherent dish | Starting now |
 
 ---
 
-## Recently landed (since the 2026-09-02 queue)
+## Recently landed
 
-- **#306** — dashboard suggestion opens the right recipe, matches the clock, shares one
-  picker. [PR #318](https://github.com/ayushb3/BubblyChef/pull/318), merged.
-- **#315** — recipe detail page rendered blank ingredient rows for string-shaped
-  ingredients (the shape `RecipeEditModal` writes). [PR #323](https://github.com/ayushb3/BubblyChef/pull/323), merged.
-- **#322** — editing a recipe destroyed `preparation`/`optional` on every save, even
-  untouched rows. [PR #324](https://github.com/ayushb3/BubblyChef/pull/324), merged.
-- **#304** — mid-cook brainstorm chips that never fired. [PR #313](https://github.com/ayushb3/BubblyChef/pull/313).
-- **#307** — pantry proposal approval silently no-op'd. [PR #312](https://github.com/ayushb3/BubblyChef/pull/312).
-
-## New tickets filed this session
-
-- **#322** (now landed, see above) — split from #315's triage.
+- **#225** + **#168** — dashboard tip is per-user and pantry-grounded; suggestion is ranked, not
+  random. Backend [#328](https://github.com/ayushb3/BubblyChef/pull/328) merged; frontend in
+  [#334](https://github.com/ayushb3/BubblyChef/pull/334).
+- **#306** — suggestion card opens the recipe it names and matches the clock. [PR #318](https://github.com/ayushb3/BubblyChef/pull/318).
+- **#314** — `BubblesFeed` and its orphaned `BubbleMessage` deleted (330 lines that never
+  rendered). [PR #325](https://github.com/ayushb3/BubblyChef/pull/325).
+- **#315** — recipe detail page rendered blank ingredient rows for string-shaped ingredients.
+  [PR #323](https://github.com/ayushb3/BubblyChef/pull/323).
+- **#322** — editing a recipe destroyed `preparation`/`optional` on every row, including
+  untouched ones. [PR #324](https://github.com/ayushb3/BubblyChef/pull/324).
+- **#304**, **#307** — earlier session.
 
 ---
 
@@ -63,8 +68,6 @@ Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
 
 | # | What it does for a user | Value | Size |
 |---|---|---|---|
-| **265** | Chat survives navigating away instead of losing the thread | Every navigation destroys the conversation | S |
-| **288** | Stops forcing expiring fruit into savoury dishes ("Chicken Potato Banana Fritters") | Suggestions are embarrassing and unusable | S |
 | **224** | Pantry writes populate `quantity_base`/`unit_base` | Silent data gap; **do before #305** | S |
 | **305** | Salt/pepper/oil stop showing as "Not in pantry" | Makeable recipes look broken | S |
 | **309** | New type errors fail the build | Ratchet — errors grew 73 → 168 in ~5 weeks because nothing gates them | S |
@@ -88,7 +91,37 @@ Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
 
 | # | What |
 |---|---|
-| **316** | PR review gate blocks every worktree session and asks for a human-only marker. Diagnosed this session: it fires correctly when the marker path matches real HEAD; the false-positive is worktree-specific (HEAD resolves from the session's working directory, not the branch being proposed). Avoidable today by not using a worktree — worth fixing before the next worktree-based ticket. |
+| **330** | Sign-up appears to fail silently — user bounces back to `/login` with no message, though the account exists. **Unverified**; check the Supabase email-confirmation setting first. |
+| **331** | There is no sign-out anywhere in the app. Also blocks manual verification of anything per-user, since you cannot switch accounts without clearing storage. |
+| **332** | The app is a hard login wall — no landing page, no demo, no guest mode. A visitor sees nothing before creating an account. Product decision, not a bug. |
+| **336** | Recipe-card generation still says expiring items should be used "first". #335 fixes the brainstorm list; this is the dish still arriving with banana in it. Two paths reach it: the direct `recipe_card` intent, and a coherent chosen idea. |
+| **337** | The `middleware` file convention is deprecated. That file *is* the auth layer — on a future Next.js upgrade it silently stops running and every protected route opens. Fails open. |
+| **316** | PR review gate. Diagnosed: it fires correctly when the marker matches real HEAD; the false positive is **worktree-specific**. Avoidable by working in the main checkout. |
+
+---
+
+## Not yet filed
+
+- **A "recent chats" list UI.** #265's triage split this out deliberately — that issue is
+  persistence-only. Browsing and switching between past conversations is a larger UX surface
+  and needs designing before it is ticketed.
+- **A real behavioural eval for the expiry-vs-coherence prompts.** Both #288 and #336 are
+  prompt-level fixes verified only by asserting on the rendered prompt — LLM behaviour cannot
+  be pinned deterministically. One eval across both prompts would answer the open question in
+  #288's body: whether prompt-level is sufficient, or a compatibility signal in
+  `score_and_rank` is genuinely needed. **Nobody has measured yet.**
+
+---
+
+## Notes for the next session
+
+- **`ai-service` tests need the venv interpreter**: `./.venv/bin/python -m pytest -q`. The
+  system `pytest` lacks `httpx` and fails at collection — that is the environment, not the code.
+- **`mypy --strict` has ~94 pre-existing errors** (#128), not run in CI. Do not fix them;
+  confirm new files add none.
+- **`npm run lint` has 2 pre-existing `e2e/` errors.** Expected baseline.
+- **`nextjs/e2e/` has no auth spec at all** — relevant to #330, #331 and #337.
+- **Supabase/Gemini creds are container env vars**, not `nextjs/.env.local`. The app runs.
 
 ---
 
@@ -96,4 +129,4 @@ Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
 
 Every PR body should let you approve or reject **without opening the diff**: what changed in
 plain behaviour, screenshots for anything visual, what was actually verified and how, and an
-explicit list of what is *not* covered. If a PR body doesn't do that, it isn't finished.
+explicit list of what is *not* covered. If a PR body does not do that, it is not finished.
