@@ -1,12 +1,29 @@
 /**
- * Recipe tag + ingredient helpers.
+ * Recipe tag + ingredient helpers and dashboard utilities.
  *
  * AI-generated recipes carry dietary tags in `dietary_tags`; the DB stores a
  * single `tags` array.  This module provides the canonical merge + dedup so
  * both the API route (server) and any client-side callers use identical logic.
+ *
+ * It is also the single home for rules that would otherwise be copied across
+ * call sites: ingredient-shape handling (see `ingredientParts`) and dashboard
+ * recipe selection (see `pickRandomRecipe`).
  */
 
 import type { RecipeIngredient } from '@/types/recipes'
+
+/**
+ * Pick one recipe at random from an array.
+ *
+ * Returns `null` when the array is empty so callers don't need to guard the
+ * length themselves.  `HeroHome` (the live dashboard) uses this as the single
+ * source of random selection. Issue #168 will replace this with pantry-aware
+ * selection.
+ */
+export function pickRandomRecipe<T>(recipes: T[]): T | null {
+  if (recipes.length === 0) return null
+  return recipes[Math.floor(Math.random() * recipes.length)]
+}
 
 /**
  * Merge two tag arrays and return a deduplicated list.
@@ -112,4 +129,67 @@ export function ingredientLabel(
   ing: string | RecipeIngredient | null | undefined,
 ): string {
   return ingredientParts(ing).label
+}
+
+/**
+ * One editable ingredient row in `RecipeEditModal`.
+ *
+ * `original` is the element exactly as loaded from the recipe — `null` for a
+ * row the user added in the modal. `text` is the current textarea contents,
+ * initialised from `ingredientLabel(original)`.
+ */
+export interface IngredientRow {
+  original: string | RecipeIngredient | null
+  text: string
+}
+
+/**
+ * Build the `ingredients` payload for a recipe save from the modal's row
+ * state.
+ *
+ * A row the user never touched is emitted as its `original` element,
+ * verbatim — this is what preserves `preparation`, `optional`, and object
+ * shape for untouched rows, rather than flattening every row to a string on
+ * every save (issue #322). "Untouched" means `text.trim()` equals
+ * `ingredientLabel(original).trim()`: trimming so incidental whitespace
+ * doesn't count as an edit, and comparing against `ingredientLabel` — the
+ * same function used to initialise `text` — so the round-trip is exact even
+ * for a `quantity` of `0` (see `ingredientParts` docs; a naive
+ * `.filter(Boolean)`-based label would drop it and every such row would
+ * wrongly compare as edited).
+ *
+ * A row with edited text is emitted as that trimmed string. A user-added row
+ * (`original: null`) is always emitted as its trimmed string. A row whose
+ * trimmed text is empty is dropped.
+ *
+ * Row identity is by array position within `rows`, not a stable key — the
+ * caller (`RecipeEditModal`) must pass the current row array (after any
+ * add/remove), never re-derive rows from an index into a stale array, or
+ * deleting a row will corrupt the identity of the rows after it.
+ */
+export function ingredientRowsToPayload(
+  rows: IngredientRow[],
+): (string | RecipeIngredient)[] {
+  const payload: (string | RecipeIngredient)[] = []
+
+  for (const row of rows) {
+    const trimmedText = row.text.trim()
+
+    // The untouched check comes FIRST, before the empty-row drop. A row the
+    // user never edited is preserved verbatim even when its label renders
+    // empty — a malformed object (no usable `name`, but real `quantity`/`unit`)
+    // labels as '' and would otherwise be silently deleted by a save the user
+    // never intended as a deletion. Only a row the user actually cleared, or
+    // an empty row they added, is dropped.
+    if (row.original !== null && trimmedText === ingredientLabel(row.original).trim()) {
+      payload.push(row.original)
+      continue
+    }
+
+    if (trimmedText === '') continue
+
+    payload.push(trimmedText)
+  }
+
+  return payload
 }

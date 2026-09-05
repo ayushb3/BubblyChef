@@ -1,4 +1,38 @@
-import { mergeTags, ingredientLabel, ingredientParts } from '@/lib/recipe-helpers'
+import {
+  mergeTags,
+  pickRandomRecipe,
+  ingredientLabel,
+  ingredientParts,
+} from '@/lib/recipe-helpers'
+
+describe('pickRandomRecipe (#306)', () => {
+  it('returns null for an empty array', () => {
+    expect(pickRandomRecipe([])).toBeNull()
+  })
+
+  it('returns the only element when the array has one entry', () => {
+    const recipe = { id: 'r1', title: 'Pasta' }
+    expect(pickRandomRecipe([recipe])).toBe(recipe)
+  })
+
+  it('returns an element that is a member of the input array', () => {
+    const recipes = [
+      { id: 'r1', title: 'Pasta' },
+      { id: 'r2', title: 'Soup' },
+      { id: 'r3', title: 'Salad' },
+    ]
+    const result = pickRandomRecipe(recipes)
+    expect(recipes).toContain(result)
+  })
+
+  it('preserves the type of the element returned', () => {
+    const recipes = [{ id: 'r1', title: 'Pasta', total_time_minutes: 30 }]
+    const result = pickRandomRecipe(recipes)
+    // TypeScript narrows to T | null; at runtime we just check the shape.
+    expect(result).not.toBeNull()
+    expect(result?.id).toBe('r1')
+  })
+})
 
 describe('mergeTags', () => {
   it('returns an empty array when both inputs are absent', () => {
