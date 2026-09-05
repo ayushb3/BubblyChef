@@ -120,6 +120,73 @@ describe('useModalFocusTrap', () => {
     expect(trigger).toHaveFocus()
   })
 
+  it('skips a leading CSS display:none focusable element for initial focus placement', () => {
+    function HiddenLeadingHarness() {
+      const [open, setOpen] = useState(false)
+      const panelRef = useRef<HTMLDivElement>(null)
+      useModalFocusTrap(open, () => setOpen(false), panelRef)
+      return (
+        <div>
+          <button onClick={() => setOpen(true)}>Open</button>
+          {open && (
+            <div ref={panelRef} role="dialog" tabIndex={-1}>
+              {/* Mounted but CSS-hidden and first in DOM order — e.g. a
+                  collapsed accordion section or an advanced-options block
+                  that stays mounted rather than being removed via
+                  conditional JSX. If `getFocusable` didn't filter by
+                  visibility, this would wrongly become `focusables[0]` and
+                  initial `.focus()` on it would be a silent no-op. */}
+              <button style={{ display: 'none' }}>Hidden leading field</button>
+              <button>Visible first</button>
+              <button>Visible last</button>
+            </div>
+          )}
+        </div>
+      )
+    }
+    render(<HiddenLeadingHarness />)
+    fireEvent.click(screen.getByText('Open'))
+    expect(screen.getByText('Visible first')).toHaveFocus()
+  })
+
+  it('skips a trailing CSS display:none focusable element when Tab-wrapping to the last element', () => {
+    function HiddenTrailingHarness() {
+      const [open, setOpen] = useState(false)
+      const panelRef = useRef<HTMLDivElement>(null)
+      useModalFocusTrap(open, () => setOpen(false), panelRef)
+      return (
+        <div>
+          <button onClick={() => setOpen(true)}>Open</button>
+          {open && (
+            <div ref={panelRef} role="dialog" tabIndex={-1}>
+              <button>Visible first</button>
+              <button>Visible last</button>
+              {/* Mounted but CSS-hidden and last in DOM order. If
+                  `getFocusable` didn't filter by visibility, this would
+                  wrongly become `focusables[last]`, and Shift+Tab from
+                  "Visible first" would wrap to it instead of to the actual
+                  last visible element. */}
+              <button style={{ display: 'none' }}>Hidden trailing field</button>
+            </div>
+          )}
+        </div>
+      )
+    }
+    render(<HiddenTrailingHarness />)
+    fireEvent.click(screen.getByText('Open'))
+    expect(screen.getByText('Visible first')).toHaveFocus()
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    expect(screen.getByText('Visible last')).toHaveFocus()
+  })
+
+  it('still includes a normal visible focusable element (no false-positive filtering)', () => {
+    render(<Harness />)
+    fireEvent.click(screen.getByText('Open trigger'))
+    expect(screen.getByText('First')).toHaveFocus()
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    expect(screen.getByText('Last')).toHaveFocus()
+  })
+
   it('does not throw and does not crash focus restore when the trigger has been unmounted', () => {
     function UnmountingTriggerHarness() {
       const [showTrigger, setShowTrigger] = useState(true)

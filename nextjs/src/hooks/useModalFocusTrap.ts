@@ -36,14 +36,44 @@ import { useEffect, useRef } from 'react'
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
+// `offsetParent !== null` is the usual cheap visibility check, but every
+// modal panel in this codebase (`AddItemModal`, `PantryAddSheet`, `CookModal`,
+// `RecipeEditModal`, `RecipeImportModal`, `RecipeRefinementModal`) is itself
+// `position: fixed`, and `offsetParent` is spec'd to be `null` for a
+// fixed-position element's own layout box regardless of visibility — it would
+// misreport every focusable descendant as hidden the moment a future caller's
+// panel (or an ancestor between panel and element) is fixed-positioned too.
+// It's also always `null` under jsdom (no layout engine), which would empty
+// this list for every existing test.
+//
+// `getComputedStyle`, walked up from the element to the document root,
+// avoids both problems: it reflects `display`/`visibility` regardless of
+// positioning scheme, and jsdom *does* compute `display`/`visibility` from
+// inline styles (verified with a `style={{ display: 'none' }}` test below),
+// so a CSS-collapsed accordion section or a `display:none`'d advanced-options
+// block that stays mounted (rather than being removed via conditional JSX)
+// is correctly excluded from the tab order and never receives initial focus.
+//
+// Known gap: this only catches `display: none`, `visibility: hidden`, and the
+// `hidden` attribute. It does NOT catch an element that is technically
+// "displayed" but not actually visible/reachable for other reasons —
+// zero-size clipping (`overflow: hidden` on a zero-height ancestor),
+// `opacity: 0`, or off-screen positioning (`transform: translateX(-9999px)`).
+// None of the 8 modals currently do any of that; if a future one does, this
+// filter won't catch it and the same audit will need extending.
+function isVisible(el: HTMLElement): boolean {
+  let node: HTMLElement | null = el
+  while (node) {
+    if (node.hidden) return false
+    const style = window.getComputedStyle(node)
+    if (style.display === 'none' || style.visibility === 'hidden') return false
+    node = node.parentElement
+  }
+  return true
+}
+
 function getFocusable(panel: HTMLElement): HTMLElement[] {
-  // Deliberately not filtering by `offsetParent`/layout visibility: every
-  // modal in this codebase hides sections by not rendering them (conditional
-  // JSX per state), not by CSS-hiding a focusable element that's still in the
-  // DOM, so there's nothing here that would actually need it — and
-  // `offsetParent` is always null under jsdom (no layout engine), which would
-  // silently empty this list in tests.
-  return Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+  return Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(isVisible)
 }
 
 export function useModalFocusTrap(
@@ -73,10 +103,25 @@ export function useModalFocusTrap(
   // the modal's own field would already have stolen it, and "the trigger"
   // would wrongly resolve to the modal's own input instead of whatever
   // opened the modal. Reading it here, synchronously in the render body,
-  // guarantees it happens before that commit — this is a deliberate,
-  // guarded (`wasOpenRef`) read-during-render, not a stray side effect: it
-  // only ever runs once per open, exactly on the render where `isOpen`
-  // transitions to true.
+  // is the only way to beat that commit.
+  //
+  // This is NOT an instance of React's sanctioned lazy-init-ref pattern —
+  // that pattern is a pure, at-most-once computation with no external
+  // volatile read. This write is gated on a prop transition (`isOpen` can
+  // flip true→false→true many times over the component's life, re-arming
+  // the guard each time) and reads `document.activeElement`, which is live,
+  // external, mutable browser state, not a pure function of props. What
+  // actually makes it safe here is narrower: every modal in this codebase
+  // opens via a synchronous `useState` setter inside a plain event handler
+  // (no `startTransition`, no Suspense-driven mount), so a render is never
+  // abandoned and retried between this capture and the real commit. If a
+  // future caller ever wraps a modal-opening state update in
+  // `startTransition` (or otherwise triggers a concurrent, interruptible
+  // render) for some unrelated reason, React could re-run this render body
+  // — finding `wasOpenRef.current` already flipped from the abandoned
+  // attempt — and silently skip recapturing the trigger, or capture the
+  // wrong one. Nothing here uses concurrent features today, so this isn't a
+  // live bug; it's a constraint this hook depends on but doesn't enforce.
   if (isOpen && !wasOpenRef.current) {
     triggerRef.current = document.activeElement as HTMLElement | null
   }
