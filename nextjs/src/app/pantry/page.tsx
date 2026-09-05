@@ -19,8 +19,10 @@ import type { PantryItem } from '@/types/pantry'
 import { getFoodEmoji } from '@/lib/food-emoji'
 import { titleCase } from '@/lib/format'
 import { cookThisHref } from '@/lib/chat-seed'
-import { daysUntilExpiry } from '@/lib/pantry-helpers'
-import Chip from '@/components/ui/Chip'
+import { daysUntilExpiry, isExpiringSoon, isExpired, itemMatchesFacets } from '@/lib/pantry-helpers'
+import type { PantryFacetSelection } from '@/lib/pantry-helpers'
+import FacetDropdown from '@/components/ui/FacetDropdown'
+import { LOCATIONS } from '@/components/pantry/AddItemModal'
 
 // Category card tints — dedicated --color-cat-* tokens (globals.css). These must
 // never reference expiry/status tokens (fresh/expiring/expired): status signals
@@ -52,28 +54,36 @@ const CATEGORY_EMOJI: Record<string, string> = {
   other: '📦',
 }
 
-const LOCATION_FILTERS = [
-  { value: 'all', label: 'All Items' },
-  { value: 'fridge', label: 'Fridge' },
-  { value: 'freezer', label: 'Freezer' },
-  { value: 'pantry', label: 'Pantry' },
-  { value: 'counter', label: 'Counter' },
+// Location facet options: reuses `AddItemModal`'s `LOCATIONS` list rather than
+// carrying a second, parallel one (#228). "All Items" isn't an option anymore —
+// an empty selection means "no location constraint", handled by
+// `itemMatchesFacets`.
+const LOCATION_OPTIONS = LOCATIONS
+
+// Category facet options: reuses the exact same emoji/label source the display
+// grouping below uses for its section headers (`CATEGORY_EMOJI`), so the facet
+// list and the grouped headings can never drift apart (#228).
+const CATEGORY_OPTIONS = Object.keys(CATEGORY_EMOJI).map((value) => ({
+  value,
+  label: value.replace('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+  emoji: CATEGORY_EMOJI[value],
+}))
+
+const EXPIRY_OPTIONS = [
+  { value: 'expiring', label: 'Expiring soon', emoji: '⏳' },
+  { value: 'expired', label: 'Expired', emoji: '⚠️' },
 ]
 
-// `daysUntilExpiry` lives in `lib/pantry-helpers` — this file used to carry its
-// own copy that subtracted `Date.now()` instead of local midnight, which made
-// the badge disagree with the server-computed flags after ~18:00 (#244).
-
-/**
- * Expiring soon — the same 0–3 day window `pantry-helpers`' `is_expiring_soon`
- * uses (days_until_expiry &gt;= 0 && &lt;= 3). Day-zero items are urgent, not
- * expired — `is_expired` there is strictly `days &lt; 0` — so they keep the
- * "Cook this" deep link. `expiryBadge` below shows "Today" rather than
- * "Expired" for day-zero so the two badges never contradict each other or
- * the server-computed flags (#227).
- */
+// `daysUntilExpiry`/`isExpiringSoon`/`isExpired` live in `lib/pantry-helpers` —
+// this file used to carry its own copy of the expiry maths that subtracted
+// `Date.now()` instead of local midnight, which made the badge disagree with
+// the server-computed flags after ~18:00 (#244). `isUrgent` below is kept as a
+// thin alias so the "Cook this" deep link and card styling read the same as
+// before; it delegates to the shared `isExpiringSoon` predicate rather than
+// redefining the 0–3 day window, so the expiry facet (#228) can never drift
+// from the card badges.
 function isUrgent(days: number | null): boolean {
-  return days !== null && days >= 0 && days <= 3
+  return isExpiringSoon(days)
 }
 
 function expiryBadge(days: number | null) {
@@ -119,7 +129,9 @@ function PantryPageInner() {
   const allItems: PantryItem[] = data?.items ?? []
 
   const [search, setSearch] = useState('')
-  const [locationFilter, setLocationFilter] = useState('all')
+  const [locationFacet, setLocationFacet] = useState<string[]>([])
+  const [categoryFacet, setCategoryFacet] = useState<string[]>([])
+  const [expiryFacet, setExpiryFacet] = useState<string[]>([])
 
   // Edit modal (single item)
   const [editModalOpen, setEditModalOpen] = useState(false)
@@ -143,11 +155,19 @@ function PantryPageInner() {
     }
   }, [searchParams])
 
-  // Client-side filtering
+  // Client-side filtering: text search ANDs with the facet selection.
+  // `itemMatchesFacets` (lib/pantry-helpers) encodes OR-within/AND-across-facet
+  // semantics — an empty facet selection imposes no constraint (#228).
+  const facets: PantryFacetSelection = {
+    locations: locationFacet,
+    categories: categoryFacet,
+    expiryStatuses: expiryFacet as PantryFacetSelection['expiryStatuses'],
+  }
+  const hasActiveFacets = locationFacet.length > 0 || categoryFacet.length > 0 || expiryFacet.length > 0
   const filteredItems = allItems.filter((item) => {
     if (search && !item.name.toLowerCase().includes(search.toLowerCase())) return false
-    if (locationFilter !== 'all' && item.location !== locationFilter) return false
-    return true
+    const days = daysUntilExpiry(item.expiry_date)
+    return itemMatchesFacets(item, days, facets)
   })
 
   const grouped = groupByCategory(filteredItems)
@@ -220,18 +240,34 @@ function PantryPageInner() {
         />
       </div>
 
-      {/* Location filter chips */}
+      {/* Filter facets — location (compact icon), category, expiry status.
+          Each is independently multi-select; see `itemMatchesFacets` for the
+          OR-within/AND-across-facet combination semantics (#228). */}
       <div className="px-6 mb-4 flex gap-2 overflow-x-auto">
-        {LOCATION_FILTERS.map((loc) => (
-          <Chip
-            key={loc.value}
-            tone={locationFilter === loc.value ? 'primary' : 'muted'}
-            selected={locationFilter === loc.value}
-            onClick={() => setLocationFilter(loc.value)}
-          >
-            {loc.label}
-          </Chip>
-        ))}
+        <FacetDropdown
+          iconOnly
+          triggerEmoji="📍"
+          ariaLabel={`Filter by location${locationFacet.length > 0 ? `, ${locationFacet.length} selected` : ''}`}
+          options={LOCATION_OPTIONS}
+          selected={locationFacet}
+          onChange={setLocationFacet}
+        />
+        <FacetDropdown
+          triggerEmoji="🗂️"
+          triggerLabel="Category"
+          ariaLabel={`Filter by category${categoryFacet.length > 0 ? `, ${categoryFacet.length} selected` : ''}`}
+          options={CATEGORY_OPTIONS}
+          selected={categoryFacet}
+          onChange={setCategoryFacet}
+        />
+        <FacetDropdown
+          triggerEmoji="⏳"
+          triggerLabel="Expiry"
+          ariaLabel={`Filter by expiry status${expiryFacet.length > 0 ? `, ${expiryFacet.length} selected` : ''}`}
+          options={EXPIRY_OPTIONS}
+          selected={expiryFacet}
+          onChange={setExpiryFacet}
+        />
       </div>
 
       {isLoading ? (
@@ -249,10 +285,10 @@ function PantryPageInner() {
               <BubblesMascot state="surprised" size={100} />
             </div>
             <p className="font-semibold text-[var(--color-text)] mb-1">
-              {search || locationFilter !== 'all' ? 'No items match your filters' : 'Your pantry is empty!'}
+              {search || hasActiveFacets ? 'No items match your filters' : 'Your pantry is empty!'}
             </p>
             <p className="text-sm text-[var(--color-muted)]">
-              {search || locationFilter !== 'all' ? 'Try different search terms.' : 'Scan a receipt or add items to get started.'}
+              {search || hasActiveFacets ? 'Try different search terms.' : 'Scan a receipt or add items to get started.'}
             </p>
           </div>
         </div>
@@ -272,7 +308,7 @@ function PantryPageInner() {
                     const badge = expiryBadge(days)
                     // Expired or expiring gets the visible buttons; everything
                     // else resolves by swipe, so normal cards stay clean (#140).
-                    const urgent = isUrgent(days) || (days !== null && days < 0)
+                    const urgent = isUrgent(days) || isExpired(days)
                     const showButtons = urgent || prefersReduced
                     const pending = resolvingId === item.id
                     const card = (
