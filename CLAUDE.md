@@ -17,6 +17,12 @@ cd ai-service && uvicorn bubbly_chef.main:app --reload --port 8888
 cd ai-service && pytest
 cd ai-service && ruff check bubbly_chef/
 cd ai-service && mypy bubbly_chef/ --strict
+# CI-equivalent mypy gate: fails only on new/newly-reintroduced errors vs
+# the checked-in baseline (see mypy-baseline.txt); pre-existing errors
+# (#128) don't block. Same command CI runs.
+cd ai-service && ./scripts/mypy_gate.sh
+# Refresh the baseline after fixing (or knowingly adding) errors, then commit:
+cd ai-service && ./scripts/mypy_gate.sh --sync
 
 # TypeScript check
 cd nextjs && npx tsc --noEmit
@@ -310,7 +316,7 @@ further subagents; see `WORKFLOW.md` §5.
 1. Triage — read the relevant code, identify files affected
 2. Describe the goal; Claude enters plan mode → approve the plan
 3. Agent team implements per role boundaries (`docs/agents/roles/`)
-4. Run quality gates before committing: `cd ai-service && pytest && ruff check bubbly_chef/ && mypy bubbly_chef/ --strict` + `cd nextjs && npx tsc --noEmit`
+4. Run quality gates before committing: `cd ai-service && pytest && ruff check bubbly_chef/ && ./scripts/mypy_gate.sh` + `cd nextjs && npx tsc --noEmit`
 
 **For larger initiatives:**
 1. Explore + plan mode → design in `docs/plans/`
@@ -408,8 +414,10 @@ the same credential differently.
 
 ## Known Limitations / Tech Debt
 
-- `mypy --strict` is listed as a quality gate below but reports 73 errors and is
-  not run by CI — issue #128
+- `mypy --strict` reports 94 pre-existing errors across 13 files, baselined
+  and tolerated by CI's `mypy-baseline`-gated check (`ai-service/scripts/mypy_gate.sh`,
+  wired into `.github/workflows/ci.yml`) so the count can't grow further —
+  fixing the baselined errors themselves is issue #128
 - `tenacity` is imported by `tools/llm_client.py` but not declared in
   `ai-service/pyproject.toml`; it resolves transitively through langchain — issue #130
 - Duplicate pantry rows under-report available stock in the cook flow — issue #127
