@@ -35,7 +35,7 @@ user-visible bug is still present until the frontend PR follows.
 
 | # | What it does for a user | Value | State |
 |---|---|---|---|
-| **225** + **168** | Dashboard tip becomes AI-generated and pantry-grounded; suggestion becomes ranked, not random | Same tip for everyone forever; suggestion ignores pantry | Backend: [PR #328](https://github.com/ayushb3/BubblyChef/pull/328). Frontend (wires `HeroHome`, deletes `pickRandomRecipe`) not started. |
+| **225** + **168** | Dashboard tip becomes AI-generated and pantry-grounded; suggestion becomes ranked, not random | Same tip for everyone forever; suggestion ignores pantry | Backend: [PR #328](https://github.com/ayushb3/BubblyChef/pull/328). Frontend (wires `HeroHome`, deletes `pickRandomRecipe`) landed on `feat/issue-225-168-dashboard-frontend` (`e006794` + spec-review follow-up: tip loading skeleton, no "Only N min!" duplication, proxy route test, dashboard-daily-route.test.ts). |
 | **314** | Remove a dead second dashboard surface carrying duplicate tip/greeting logic | Correctness tax on every future dashboard change | [PR #325](https://github.com/ayushb3/BubblyChef/pull/325), ready to merge |
 
 ---

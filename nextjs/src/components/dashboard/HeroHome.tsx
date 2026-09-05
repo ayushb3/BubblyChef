@@ -35,6 +35,15 @@ const FALLBACK_TIPS = [
   'Taste as you cook — adjust seasoning throughout.',
 ]
 
+/**
+ * True when `copy` already states `minutes` as a time figure (e.g. "ready in
+ * 25 min" or "...in 25 minutes"). Used to avoid appending "Only N min!" onto
+ * copy that already says the number — see #225 spec-review finding 2.
+ */
+function copyMentionsMinutes(copy: string, minutes: number): boolean {
+  return new RegExp(`\\b${minutes}\\b\\s*min`, 'i').test(copy)
+}
+
 function getGreeting(): string {
   const hour = new Date().getHours()
   if (hour >= 5 && hour < 12) return 'Good morning'
@@ -168,15 +177,23 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
   // Compute the single hero message (most important). `suggestion.copy` is
   // AI-written (or templated by the backend's own fallback) and already
   // grounded in why this recipe won (#168) — the frontend no longer composes
-  // its own "Feel like trying X?" sentence. The "Only N min!" figure is real
-  // recipe metadata (out of scope to change per the design doc), so it's
-  // still appended when present.
+  // its own "Feel like trying X?" sentence. The design doc's "Only N min!"
+  // note means don't change the number's correctness, not keep concatenating
+  // it onto a sentence that already states it: the backend's own fallback
+  // copy template ends with "... ready in {N} min.", so appending
+  // unconditionally always duplicated the figure on that path. Only append
+  // when `copy` doesn't already mention the minute count (see
+  // `copyMentionsMinutes` and dashboard-recipe-suggestion.test.tsx).
   const heroMessage = urgentItem
     ? `Your ${titleCase(urgentItem.name)} expires ${urgentItem.days_until_expiry === 0 ? 'today' : 'tomorrow'}! Let's cook it up.`
     : totalCount === 0
       ? "Your pantry is empty — let's stock up!"
       : suggestion
-        ? `${suggestion.copy}${suggestion.total_time_minutes ? ` Only ${suggestion.total_time_minutes} min!` : ''}`
+        ? `${suggestion.copy}${
+            suggestion.total_time_minutes && !copyMentionsMinutes(suggestion.copy, suggestion.total_time_minutes)
+              ? ` Only ${suggestion.total_time_minutes} min!`
+              : ''
+          }`
         : expiringCount > 0
           ? "Check the 'Use Soon' tile — some items need your attention!"
           : 'Your kitchen is looking great!'
@@ -296,28 +313,48 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
         ))}
       </div>
 
-      {/* Tip of the day — compact */}
+      {/* Tip of the day — compact. Gated on `loading` like its three siblings
+          above: without this, the fallback tip renders on first paint and gets
+          swapped for the AI tip once the fetch lands, reflowing the
+          `line-clamp-2` card and changing `tipChatHref` out from under a fast
+          click. */}
       <FadeInView delay={0.6}>
-        {/* href is derived from the same `tip` the card renders, so the
-            post-hydration correction moves both together (#143). */}
-        {/* Without an explicit label the accessible name is just the raw tip
-            text, which gives no hint that activating it opens a chat. */}
-        <Link
-          href={tipChatHref(tip)}
-          aria-label={`Ask Bubbles about today's tip: ${tip}`}
-          className="block max-w-sm w-full"
-        >
+        {loading ? (
           <div
-            className="flex items-center gap-3 rounded-2xl px-4 py-3 border border-[var(--color-border)]"
+            className="flex items-center gap-3 rounded-2xl px-4 py-3 border border-[var(--color-border)] max-w-sm w-full"
             style={{ background: 'var(--color-surface)' }}
+            aria-busy="true"
           >
             <span className="text-lg flex-shrink-0">💡</span>
-            <p className="text-xs text-[var(--color-muted)] leading-snug line-clamp-2">
-              <strong className="text-[var(--color-text)] font-semibold">Tip: </strong>
-              {tip}
-            </p>
+            <div className="flex-1 flex flex-col gap-1.5">
+              <Skeleton className="w-11/12 h-2.5" />
+              <Skeleton className="w-2/3 h-2.5" />
+            </div>
           </div>
-        </Link>
+        ) : (
+          <>
+            {/* href is derived from the same `tip` the card renders, so the
+                post-hydration correction moves both together (#143). */}
+            {/* Without an explicit label the accessible name is just the raw tip
+                text, which gives no hint that activating it opens a chat. */}
+            <Link
+              href={tipChatHref(tip)}
+              aria-label={`Ask Bubbles about today's tip: ${tip}`}
+              className="block max-w-sm w-full"
+            >
+              <div
+                className="flex items-center gap-3 rounded-2xl px-4 py-3 border border-[var(--color-border)]"
+                style={{ background: 'var(--color-surface)' }}
+              >
+                <span className="text-lg flex-shrink-0">💡</span>
+                <p className="text-xs text-[var(--color-muted)] leading-snug line-clamp-2">
+                  <strong className="text-[var(--color-text)] font-semibold">Tip: </strong>
+                  {tip}
+                </p>
+              </div>
+            </Link>
+          </>
+        )}
       </FadeInView>
 
       {/* Pantry status bar — data-dependent, so it skeletons until the fetches land */}

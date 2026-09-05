@@ -32,11 +32,14 @@ const nonEmptyPantry = () => jsonResponse({ items: [{ id: 'p1', name: 'eggs' }],
 const noExpiring = () => jsonResponse({ items: [], count: 0 })
 
 describe('HeroHome suggestion href (#168, #306 no-regression)', () => {
+  // Deliberately does NOT already state the time figure, so this fixture
+  // exercises the "Only N min!" append path distinctly from the
+  // no-duplication fixture below.
   const suggestion = {
     recipe_id: 'recipe-abc-123',
     title: 'Lemon Garlic Pasta',
     total_time_minutes: 25,
-    copy: 'Your lemon is about to turn — this pasta uses it up in 25 minutes.',
+    copy: 'Your lemon is about to turn — this pasta uses it up fast.',
     reason: 'expiring' as const,
   }
 
@@ -69,8 +72,58 @@ describe('HeroHome suggestion href (#168, #306 no-regression)', () => {
     render(<HeroHome displayName="ayush" />)
 
     await waitFor(() =>
-      expect(screen.getByText(/uses it up in 25 minutes/i)).toBeInTheDocument()
+      expect(screen.getByText(/uses it up fast/i)).toBeInTheDocument()
     )
+  })
+
+  it('appends "Only N min!" once when the copy does not already state the time', async () => {
+    render(<HeroHome displayName="ayush" />)
+
+    const message = await screen.findByText(/uses it up fast/i)
+    expect(message.textContent).toBe(
+      'Your lemon is about to turn — this pasta uses it up fast. Only 25 min!'
+    )
+  })
+})
+
+describe('HeroHome suggestion copy that already states the time (#225 spec-review finding 2)', () => {
+  // The backend's own templated fallback copy ends with "... ready in {N} min.",
+  // so an unconditional append duplicates the figure:
+  // "Lemon Garlic Pasta — ready in 25 min. Only 25 min!" This fixture pins that
+  // the frontend does not append a second, redundant mention of the same number.
+  const suggestion = {
+    recipe_id: 'recipe-abc-123',
+    title: 'Lemon Garlic Pasta',
+    total_time_minutes: 25,
+    copy: 'Lemon Garlic Pasta — ready in 25 min.',
+    reason: 'fallback' as const,
+  }
+
+  beforeEach(() => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/pantry/expiring')) return noExpiring()
+      if (url.includes('/api/pantry')) return nonEmptyPantry()
+      if (url.includes('/api/ai/dashboard/daily')) {
+        return jsonResponse({
+          tip: { text: 'Zest citrus before juicing it.', category: 'technique' },
+          suggestion,
+          generated_at: '2026-09-05T08:00:00Z',
+          source: 'fallback',
+        })
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as unknown as typeof fetch
+  })
+
+  it('does not duplicate the minute figure when the copy already states it', async () => {
+    render(<HeroHome displayName="ayush" />)
+
+    const message = await screen.findByText(/ready in 25 min/i)
+    // The number "25" must appear exactly once in the rendered message.
+    expect(message.textContent?.match(/25/g)?.length).toBe(1)
+    expect(message.textContent).toBe('Lemon Garlic Pasta — ready in 25 min.')
+    expect(message.textContent).not.toMatch(/Only 25 min!/)
   })
 })
 
