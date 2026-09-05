@@ -70,19 +70,6 @@ export default function ChatPage() {
 }
 
 function ChatSurface() {
-  const {
-    messages,
-    isStreaming,
-    proposalStates,
-    proposalErrors,
-    sendMessage,
-    sendChipMessage,
-    cancelStream,
-    startNewChat,
-    approveProposal,
-    rejectProposal,
-  } = useChat()
-
   const router = useRouter()
   const searchParams = useSearchParams()
   // Set by the Cook flow: /chat?cooking=<recipeId>. Changing recipes changes
@@ -106,7 +93,9 @@ function ChatSurface() {
     messages,
     isStreaming,
     proposalStates,
+    proposalErrors,
     sendMessage,
+    sendChipMessage,
     cancelStream,
     startNewChat,
     approveProposal,

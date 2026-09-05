@@ -456,7 +456,6 @@ export function useChat(options?: UseChatOptions) {
     setMessages([])
     setConversationId(null)
     setProposalStates({})
-    setWorkflowIds({})
     clearStoredConversationId()
     setProposalErrors({})
     setPendingProposals({})
