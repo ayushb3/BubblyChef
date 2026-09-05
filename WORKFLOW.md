@@ -104,6 +104,18 @@ Screenshots are not decoration; for a UI change they are the review. A reviewer
 glancing at a before/after pair catches a broken layout instantly and would never
 have caught it in a diff.
 
+**Commit screenshots into `docs/media/` on the PR branch — always.** A PR body
+that references an image by a local absolute path (or a `docs/media/…` path that
+was never committed) renders as a broken link on GitHub: the reviewer sees the
+alt text and a 404, not the screenshot. So capture into `docs/media/`, commit the
+files on the same branch, and reference them from the body with the repo-relative
+path (`![Loaded](docs/media/dash-loaded.png)`), which GitHub resolves against the
+branch blob. Do not paste `file:///…` paths — those only work in the terminal that
+made them. Committing the PNGs is not clutter: CI prunes orphaned media, so lean
+toward committing over leaving them uncommitted. Note that pushing screenshots
+advances the PR HEAD, so a merge-gate review keyed on HEAD sha must run against
+the new HEAD.
+
 ## 5. Agent team shape
 
 Every project gets a `pm` role (the human) plus 2–5 domain-specific dev roles. The
