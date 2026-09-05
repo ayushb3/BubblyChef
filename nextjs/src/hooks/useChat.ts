@@ -116,6 +116,13 @@ export function useChat(options?: UseChatOptions) {
   useEffect(() => {
     proposalStatesRef.current = proposalStates
   }, [proposalStates])
+  // Mirror pendingProposals for synchronous reads in setMessages — the merge
+  // path needs the EDITED actions (which live only in pendingProposals after
+  // updateProposalActions) to build the display-correct merged card.
+  const pendingProposalsRef = useRef(pendingProposals)
+  useEffect(() => {
+    pendingProposalsRef.current = pendingProposals
+  }, [pendingProposals])
 
   // ── History loading ──────────────────────────────────────────────────────
 
@@ -300,12 +307,20 @@ export function useChat(options?: UseChatOptions) {
               const targetMsg = prev.find((m) => m.id === targetId)
               const targetProposal = targetMsg?.response?.proposal as PantryProposalData | undefined
 
+              // Fix #340 display/write desync: use the edited actions from
+              // pendingProposals (which updateProposalActions patches) as the
+              // merge base — NOT targetProposal.actions from the message, which
+              // still holds the original un-edited backend values. Without this,
+              // an edit-then-merge remounts the card showing the original qty.
+              const editedBaseActions =
+                pendingProposalsRef.current[targetId]?.actions ?? targetProposal?.actions ?? []
+
               const mergedProposal: PantryProposalData | null = targetProposal
                 ? {
                     ...targetProposal,
                     actions: hasActions
-                      ? mergeActions(targetProposal.actions, proposal!.actions)
-                      : targetProposal.actions,
+                      ? mergeActions(editedBaseActions, proposal!.actions)
+                      : editedBaseActions,
                   }
                 : null
 
@@ -537,6 +552,21 @@ export function useChat(options?: UseChatOptions) {
   }, [pendingProposals])
 
   /**
+   * Update the pending actions for a proposal in place (no AI round-trip).
+   *
+   * Called by PantryProposalCard whenever the user edits a quantity/unit
+   * inline. The edited actions are what get sent to the DB on approve, not
+   * the original backend values.
+   */
+  const updateProposalActions = useCallback((msgId: string, actions: PantryProposalAction[]) => {
+    setPendingProposals((prev) => {
+      const existing = prev[msgId]
+      if (!existing) return prev
+      return { ...prev, [msgId]: { ...existing, actions } }
+    })
+  }, [])
+
+  /**
    * Reject a chat-proposed pantry update.
    *
    * The AI service has no reject/skip operation for proposals (only
@@ -577,5 +607,6 @@ export function useChat(options?: UseChatOptions) {
     startNewChat,
     approveProposal,
     rejectProposal,
+    updateProposalActions,
   }
 }
