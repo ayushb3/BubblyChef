@@ -63,7 +63,13 @@ interface ActionRowProps {
 
 function ActionRow({ action, disabled, onQtyChange }: ActionRowProps) {
   const { icon, colorClass } = ACTION_ICONS[action.action_type]
-  const showEditor = needsQtyEdit(action)
+  // Once the editor is shown on mount (backend gave a vague unit/null qty), it
+  // must stay mounted for the life of this row so the user can fill in both
+  // fields sequentially without the component unmounting between blurs.
+  // `wasEverEditable` is frozen at mount; `needsQtyEdit(action)` catches the
+  // initial render for rows that were always concrete (stays false → no editor).
+  const [wasEverEditable] = useState(() => needsQtyEdit(action))
+  const showEditor = wasEverEditable || needsQtyEdit(action)
 
   // Local controlled state for the inline editor fields — only rendered when
   // showEditor is true. Initialised from whatever the backend gave us (or
