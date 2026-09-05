@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence, useDragControls } from 'framer-motion'
 import ScanTab from './ScanTab'
 import TypeTab from './TypeTab'
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
 export interface AddItem {
   name: string
@@ -36,6 +37,8 @@ export default function PantryAddSheet({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const dragControls = useDragControls()
+  const panelRef = useRef<HTMLDivElement>(null)
+  useModalFocusTrap(isOpen, onClose, panelRef)
 
   // Update tab when prop changes (e.g. URL param triggers re-open)
   useEffect(() => {
@@ -102,7 +105,12 @@ export default function PantryAddSheet({
 
           {/* Sheet — slides up from bottom, sits above the bottom nav */}
           <motion.div
-            className="fixed bottom-16 left-0 right-0 z-[60] rounded-t-3xl flex flex-col select-none"
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pantry-add-sheet-title"
+            tabIndex={-1}
+            className="fixed bottom-16 left-0 right-0 z-[60] rounded-t-3xl flex flex-col select-none outline-none"
             style={{
               background: 'var(--color-surface)',
               maxHeight: 'calc(92vh - 64px)',
@@ -131,7 +139,7 @@ export default function PantryAddSheet({
             {/* Header */}
             <div className="px-6 pb-3 flex-shrink-0">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-extrabold text-[var(--color-text)]">
+                <h2 id="pantry-add-sheet-title" className="text-lg font-extrabold text-[var(--color-text)]">
                   Add to Pantry
                 </h2>
                 <button

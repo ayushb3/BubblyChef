@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useTheme } from '@/components/ThemeProvider'
 import type { ThemeKey } from '@/components/ThemeProvider'
 import { useMotionConfig } from '@/lib/motion'
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
 // ─── Static palette data ──────────────────────────────────────────────────────
 // WHY static hex values instead of CSS variables: we need each swatch to always
@@ -40,11 +41,16 @@ export default function ThemePicker() {
   const { springs } = useMotionConfig()
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   const active = PALETTES.find((p) => p.key === theme) ?? PALETTES[0]
 
-  // Dismiss on outside click or Escape. Escape matters here because the popover
-  // is keyboard-reachable and would otherwise trap the user's attention.
+  // Dismiss on outside click. Escape-to-close, Tab-trap-while-open, and
+  // focus-restore-to-trigger are now handled by the shared hook (issue
+  // #291) — this popover keeps its own `role="group"` / `aria-label`
+  // (below) rather than `role="dialog"`, since it's a lightweight anchored
+  // menu with no backdrop, not a page-blocking dialog; the trap/Escape/
+  // restore behaviour is what's shared, not the ARIA role.
   useEffect(() => {
     if (!open) return
 
@@ -53,17 +59,14 @@ export default function ThemePicker() {
         setOpen(false)
       }
     }
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
 
     document.addEventListener('mousedown', handleMouseDown)
-    document.addEventListener('keydown', handleKeyDown)
     return () => {
       document.removeEventListener('mousedown', handleMouseDown)
-      document.removeEventListener('keydown', handleKeyDown)
     }
   }, [open])
+
+  useModalFocusTrap(open, () => setOpen(false), panelRef)
 
   return (
     <div className="relative" ref={containerRef}>
@@ -92,11 +95,12 @@ export default function ThemePicker() {
       <AnimatePresence>
         {open && (
           <motion.div
+            ref={panelRef}
             initial={{ opacity: 0, scale: 0.9, y: -4 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: -4 }}
             transition={springs.snappy}
-            className="absolute right-0 top-12 z-20 rounded-2xl overflow-hidden"
+            className="absolute right-0 top-12 z-20 rounded-2xl overflow-hidden outline-none"
             style={{
               background: 'var(--color-surface)',
               border: '1px solid var(--color-border)',
@@ -105,6 +109,7 @@ export default function ThemePicker() {
             }}
             role="group"
             aria-label="Theme picker"
+            tabIndex={-1}
           >
             {PALETTES.map(({ key, hex, name, label }) => {
               const isActive = theme === key
