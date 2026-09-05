@@ -182,7 +182,7 @@ class TestBrainstormPrompt:
 
         prompt = _captured_prompt(ai)
         assert "Expiring soon" not in prompt
-        assert "Prioritize ingredients marked as expiring soon" not in prompt
+        assert "expiring soon" not in prompt
         assert "Other available" not in prompt
         # The "no pantry items available" fallback would still invite pantry talk.
         assert "No pantry items available" not in prompt
@@ -246,7 +246,7 @@ class TestBrainstormPrompt:
 
     @pytest.mark.asyncio
     async def test_default_prompt_is_unchanged(self) -> None:
-        """The grounded path must behave exactly as before."""
+        """The grounded path still surfaces expiring stock — as a preference (#288)."""
         ai = MagicMock()
         ai.complete = AsyncMock(return_value="**Chicken Bake**")
         state = _state(
@@ -261,8 +261,8 @@ class TestBrainstormPrompt:
         ):
             await brainstorm_recipe_ideas(state)  # type: ignore[arg-type]
         prompt = _captured_prompt(ai)
-        assert "Expiring soon (prioritize): spinach" in prompt
-        assert "Prioritize ingredients marked as expiring soon" in prompt
+        assert "Expiring soon (weave in where it fits, not mandatory): spinach" in prompt
+        assert "strong preference, not a" in prompt
 
 
 class TestGroundedRecipePrompt:
@@ -295,4 +295,7 @@ class TestGroundedRecipePrompt:
         repo.assert_not_awaited()
         prompt = _captured_prompt(ai)
         assert "use_pantry" not in prompt
-        assert "Priority ingredients (expiring soon — use first): none specified" in prompt
+        assert (
+            "Priority ingredients (expiring soon — a strong preference, not a "
+            "requirement): none specified"
+        ) in prompt

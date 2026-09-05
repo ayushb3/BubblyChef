@@ -85,7 +85,7 @@ describe('HeroHome progressive paint', () => {
     jest.restoreAllMocks()
   })
 
-  it('paints the greeting, mascot and tip while the data fetches are still pending', () => {
+  it('paints the greeting and mascot while the data fetches are still pending', () => {
     // Never-resolving fetches: this is the "still loading" frame.
     global.fetch = jest.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch
 
@@ -94,17 +94,22 @@ describe('HeroHome progressive paint', () => {
     // Greeting + name are known server-side, so they must be on screen already.
     expect(screen.getByText('ayush')).toBeInTheDocument()
     expect(screen.getByAltText(/^Bubbles /)).toBeInTheDocument()
-    expect(screen.getByText(/Tip:/)).toBeInTheDocument()
 
-    // ...while the data-dependent hero message is still a skeleton.
+    // ...while the data-dependent hero message AND the tip (sourced from
+    // `GET /v1/dashboard/daily`, #225 spec-review finding 1) are still
+    // skeletons — the tip is data-dependent too, unlike the greeting, so it
+    // must not paint the fallback tip on this frame only to reflow once the
+    // AI tip lands.
     expect(screen.queryByText(/How about|expires|pantry is empty|looking great/)).toBeNull()
+    expect(screen.queryByText(/Tip:/)).toBeNull()
   })
 
-  it('fills in the data-dependent hero message once the fetches resolve', async () => {
+  it('fills in the data-dependent hero message and tip once the fetches resolve', async () => {
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes('/api/pantry/expiring')) return jsonResponse({ items: [], count: 0 })
       if (url.includes('/api/pantry')) return jsonResponse({ items: [], total_count: 0 })
+      if (url.includes('/api/ai/dashboard/daily')) return jsonResponse({ error: 'unreachable' })
       return jsonResponse({ recipes: [], total_count: 0 })
     }) as unknown as typeof fetch
 
@@ -113,6 +118,7 @@ describe('HeroHome progressive paint', () => {
     await waitFor(() =>
       expect(screen.getByText(/Your pantry is empty/)).toBeInTheDocument()
     )
+    expect(screen.getByText(/Tip:/)).toBeInTheDocument()
     // Greeting never disappeared during the transition.
     expect(screen.getByText('ayush')).toBeInTheDocument()
   })

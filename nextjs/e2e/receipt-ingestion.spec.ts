@@ -178,8 +178,11 @@ test.describe('3b — receipt ingestion (stubbed, CI-safe)', () => {
     // The section header button contains "Ready to Add"
     await expect(page.getByRole('button', { name: /Ready to Add/ })).toBeVisible({ timeout: 10_000 });
 
-    // ── 8. All 8 items should be listed (section shows count in parens)
-    await expect(page.getByRole('button', { name: /Ready to Add.*\(8\)/ })).toBeVisible();
+    // ── 8. All 8 items should be listed. The section header's accessible name
+    // comes from aria-label (`${label} section, ${count} items` in
+    // ScanResults.tsx TierSection), which overrides the visible chip text — so
+    // the count reads "8 items", not "(8)".
+    await expect(page.getByRole('button', { name: /Ready to Add section, 8 items/ })).toBeVisible();
 
     // ── 9. Spot-check a few item names are visible in the card list ───────
     // Source: ScannedItemCard renders item.name — we check a cross-section

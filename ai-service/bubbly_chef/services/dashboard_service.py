@@ -197,10 +197,17 @@ platitudes. Vary it day to day and ground it in THIS user's own pantry below \
 whenever it fits naturally — different pantries should get different tips, \
 not the same tip reworded.
 
-2. A one-sentence line about why the suggested recipe makes sense right now \
-(only if a recipe is given below) — appealing, specific, grounded in the \
-ingredients that made it win. Do not invent ingredients or facts not given \
-here. Leave suggestion_copy null if no recipe is given.
+2. A one-sentence line about why the suggested recipe suits this user's \
+pantry and situation (only if a recipe is given below) — appealing, specific, \
+grounded in the ingredients that made it win. Do not invent ingredients or \
+facts not given here. Leave suggestion_copy null if no recipe is given.
+
+Do not use time-of-day or meal-naming words anywhere in this line — no \
+"tonight", "this morning", "for dinner", "breakfast", "lunch", or similar. \
+You are not given the current time, so any such word is a guess, and the \
+dashboard renders its own time-of-day greeting directly above this card — a \
+guessed time word here can contradict it. (#306 — this is the exact defect \
+that issue exists to prevent from recurring; do not remove this constraint.)
 
 Dietary preferences: {dietary}
 
@@ -258,8 +265,37 @@ def _build_recipe_section(top: RankedRecipe | None) -> str:
         lines.append(
             "Other pantry ingredients this recipe uses: " + ", ".join(top.matched_pantry_names)
         )
-    lines.append(f"Why it was picked (do not repeat verbatim): {top.reason}")
+    reason_phrase = _reason_phrase(top.reason)
+    if reason_phrase is not None:
+        lines.append(f"Why it was picked (do not repeat verbatim): {reason_phrase}")
     return "\n".join(lines)
+
+
+# Maps each `RankedRecipe.reason` value to a prompt-safe phrase — but only for
+# the two values where a pantry-grounded phrase is actually true.
+#
+# `expiring` and `pantry_match` really are about pantry contents, so a phrase
+# describing that is accurate. `meal_time` and `fallback` are NOT pantry
+# reasons: `meal_time` means the recipe's stored `meal_type` matched the
+# time-of-day bucket — a recipe can win on `meal_time` with zero pantry
+# matches — and `fallback` means every weighted signal scored 0 and the
+# recipe won purely on a recency tie-break, i.e. there is no rationale at
+# all. Substituting a pantry-sounding phrase for either would have the
+# prompt (which explicitly tells the model to ground its sentence in what
+# it's given) assert a rationale that did not drive the pick — a falsehood,
+# and a worse failure mode than the bare enum token this replaced (#306):
+# the token was at least true. So those two values (and anything
+# unexpected) map to `None`, and `_build_recipe_section` omits the "why it
+# was picked" line entirely rather than emit something untrue — the recipe
+# title, time, and pantry section are still there to ground the sentence.
+_REASON_PHRASES: dict[str, str] = {
+    "expiring": "uses pantry items that are expiring soon",
+    "pantry_match": "makes good use of ingredients already in the pantry",
+}
+
+
+def _reason_phrase(reason: str) -> str | None:
+    return _REASON_PHRASES.get(reason)
 
 
 async def _generate_ai_copy(

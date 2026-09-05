@@ -69,8 +69,10 @@ class DashboardCopyResult(BaseModel):
     suggestion_copy: str | None = Field(
         default=None,
         description=(
-            "One short, appealing sentence about why the chosen recipe makes sense "
-            "right now, grounded in the pantry items and dietary preferences given. "
-            "Null if no recipe was provided."
+            "One short, appealing sentence about why the chosen recipe suits the "
+            "user's pantry and situation, grounded in the pantry items and dietary "
+            "preferences given. Must not contain time-of-day or meal-naming words "
+            "(e.g. 'tonight', 'breakfast', 'for dinner') — see #306. Null if no "
+            "recipe was provided."
         ),
     )
