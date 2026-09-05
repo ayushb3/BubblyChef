@@ -81,6 +81,34 @@ class LLMGeneralChatResult(BaseModel):
     follow_ups: list[str] = Field(default_factory=list, description="Suggested follow-up topics")
 
 
+class TermSuggestion(BaseModel):
+    """One vague term paired with concrete grocery items it might mean."""
+
+    term: str = Field(description="The vague term the user used, e.g. 'veggies'")
+    suggestions: list[str] = Field(
+        default_factory=list,
+        description="3-5 concrete, commonly-bought grocery items this term could mean",
+    )
+
+
+class LLMClarificationResult(BaseModel):
+    """Schema for the LLM's contextual suggestions for vague pantry terms."""
+
+    items: list[TermSuggestion] = Field(default_factory=list)
+
+
+class PendingProposalMemory(TypedDict):
+    """Shape of ``ConversationSession.pending_proposal`` for pantry-update
+    turns — the one shared contract between the two files that touch it:
+    written by ``update_session_node`` (router.py), read back by
+    ``review_gate`` (workflows/pantry/nodes.py) to acknowledge unresolved
+    items/terms from earlier turns.
+    """
+
+    item_names: list[str]
+    unclear_terms: list[str]
+
+
 class LLMRecipeResult(BaseModel):
     """Schema for LLM recipe parse response."""
 

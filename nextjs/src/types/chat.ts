@@ -186,7 +186,92 @@ export function getBrainstormIdeas(response?: ChatResponse | null): string[] {
   return raw.filter((item): item is string => typeof item === 'string')
 }
 
-// ─── AI Health ────────────────────────────────────────────────────────────────
+// ─── Pantry clarification helpers ──────────────────────────────────────────────
+
+export interface TermSuggestion {
+  term: string
+  suggestions: string[]
+}
+
+/**
+ * Extract per-term concrete suggestions for vague pantry words ("veggies" ->
+ * onion, broccoli, carrot) from a ChatResponse's metadata. Returns an empty
+ * array when the field is absent, null, or malformed.
+ */
+export function getClarificationSuggestions(response?: ChatResponse | null): TermSuggestion[] {
+  const raw = response?.metadata?.clarification_suggestions
+  if (!Array.isArray(raw)) return []
+  return raw.filter(
+    (item): item is TermSuggestion =>
+      !!item &&
+      typeof item === 'object' &&
+      typeof (item as TermSuggestion).term === 'string' &&
+      Array.isArray((item as TermSuggestion).suggestions)
+  )
+}
+
+/**
+ * Merge a later turn's clarification terms into an earlier turn's, so a
+ * still-open pantry card can accumulate vague terms across turns instead of
+ * each turn opening its own card. A term reappearing (case-insensitive)
+ * takes the newer suggestion list rather than duplicating the row.
+ */
+export function mergeTermSuggestions(
+  existing: TermSuggestion[],
+  incoming: TermSuggestion[]
+): TermSuggestion[] {
+  const merged = [...existing]
+  for (const next of incoming) {
+    const i = merged.findIndex((t) => t.term.toLowerCase() === next.term.toLowerCase())
+    if (i >= 0) {
+      merged[i] = next
+    } else {
+      merged.push(next)
+    }
+  }
+  return merged
+}
+
+/**
+ * Merge new proposal actions onto existing ones, deduping by item name
+ * (case-insensitive). Incoming actions for an already-present item replace
+ * the existing one (the newer turn has fresher confidence/quantity info).
+ */
+export function mergeActions(
+  existing: PantryProposalAction[],
+  incoming: PantryProposalAction[]
+): PantryProposalAction[] {
+  const merged = [...existing]
+  for (const next of incoming) {
+    const i = merged.findIndex(
+      (a) => a.item.name.toLowerCase() === next.item.name.toLowerCase()
+    )
+    if (i >= 0) {
+      merged[i] = next
+    } else {
+      merged.push(next)
+    }
+  }
+  return merged
+}
+
+
+
+/**
+ * Build natural-language text from a clarification selection map.
+ * {veggies: ["Broccoli","Spinach"], dairy: ["Yogurt"]}
+ * → "I got broccoli and spinach for veggies, and yogurt for dairy"
+ * Empty selections → empty string.
+ */
+export function buildClarificationText(selections: Record<string, string[]>): string {
+  const entries = Object.entries(selections).filter(([, items]) => items.length > 0)
+  if (entries.length === 0) return ''
+  const parts = entries.map(([term, items]) => {
+    const itemList = items.map((i) => i.toLowerCase()).join(' and ')
+    return `${itemList} for ${term}`
+  })
+  return `I got ${parts.join(', and ')}`
+}
 
 export interface AIHealthStatus {
   ai_available: boolean
