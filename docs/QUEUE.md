@@ -1,6 +1,6 @@
 # Queue
 
-**Updated:** 2026-09-04 · by an agent session · after #327 merged; #340/#341/#342 filed
+**Updated:** 2026-09-05 · by an agent session · after #312/#334/#335/#339 merged; #347/#348 filed; #330 fixed
 
 > Rewritten whenever queue state changes. It is a checkpoint, not a live feed — nothing
 > updates it while no session is running, so trust the timestamp above. If two sessions
@@ -10,15 +10,7 @@
 
 ## Needs you
 
-### 🔴 Local-session work — #330 and #334 need a real browser
-
-Neither can be finished from a cloud session.
-
-**#330 — sign-up may fail silently.** Step one: check whether email confirmation is enabled
-on the Supabase project. If **on**, signup succeeds with no session, bounces the user back to
-`/login` with no message, and their second attempt errors "User already registered" — looks
-broken, is actually nearly-successful. If **off**, drops to a low-priority robustness fix.
-**Unverified either way.**
+### 🔴 Local-session work — #334 still needs eyes
 
 **#334 — dashboard needs eyes.** Tests are green but nothing has been visually confirmed.
 Watch whether the suggestion card ever contradicts the greeting above it ("Good morning" over
@@ -28,42 +20,39 @@ the copy is LLM-written and the prompt constraint is a preference, not a guarant
 Supabase/Gemini creds are container env vars, not `nextjs/.env.local` — `npm run dev` works
 as-is.
 
-### 🟡 Awaiting review
-
-| PR | What | Note |
-|---|---|---|
-| [#334](https://github.com/ayushb3/BubblyChef/pull/334) | Dashboard tip + suggestion wired to `/v1/dashboard/daily` | `Fixes #225` + `#168`. Needs thermo-nuclear. |
-| [#335](https://github.com/ayushb3/BubblyChef/pull/335) | Expiring stock becomes a preference, not a requirement | `Fixes #288`. No blockers in review. |
-| [#339](https://github.com/ayushb3/BubblyChef/pull/339) | Recipe-card generation stops forcing expiring items into an otherwise coherent dish | `Fixes #336`. Stacks with #335. |
-
-### 🟢 Draft queue doc — #338
-
-[PR #338](https://github.com/ayushb3/BubblyChef/pull/338) is a queue refresh that predates
-this session. Close it — this file supersedes it.
-
 ---
 
 ## In flight
 
 | # | What it does for a user | State |
 |---|---|---|
-| **225** + **168** | Dashboard tip becomes AI-generated and pantry-grounded; suggestion becomes ranked, not random | [PR #334](https://github.com/ayushb3/BubblyChef/pull/334) open, awaiting merge |
+| **347** | Expiry weighting root cause — `score_and_rank` and dashboard hero | [PR #348](https://github.com/ayushb3/BubblyChef/pull/348) open, thermo-nuclear review passed, ready to merge |
 | **265** | Chat survives navigating away instead of losing the thread | Ready to pick up |
-| **312** | Pantry proposal approval actually writes to the pantry | [PR #312](https://github.com/ayushb3/BubblyChef/pull/312) open, awaiting merge |
-
-Merging #312 unblocks #243.
 
 ---
 
 ## Recently landed
 
+- **#347** — expiry demoted from dominant axis to tiebreaker in `score_and_rank` (±10/±5 → ±4/±2);
+  dashboard hero now leads with the AI suggestion instead of the expiry headline; prompt context
+  partitioning fixed to use date window instead of stale score threshold.
+  [PR #348](https://github.com/ayushb3/BubblyChef/pull/348), thermo-nuclear review passed.
+- **#330** — sign-up no longer silently bounces when Supabase email confirmation is on; user sees
+  a "check your inbox" message instead of landing back at login with no feedback.
+  [PR #346](https://github.com/ayushb3/BubblyChef/pull/346), merged 2026-09-05.
+- **#312** — pantry proposal approval actually writes to the pantry (was routing to the wrong endpoint).
+  [PR #312](https://github.com/ayushb3/BubblyChef/pull/312), merged 2026-09-05.
+- **#336** — recipe-card generation stops forcing expiring items into a coherent dish.
+  [PR #339](https://github.com/ayushb3/BubblyChef/pull/339), merged 2026-09-05.
+- **#288** — expiring stock becomes a preference, not a requirement, in brainstorm.
+  [PR #335](https://github.com/ayushb3/BubblyChef/pull/335), merged 2026-09-05.
+- **#225** + **#168** — dashboard tip is per-user and pantry-grounded; suggestion is ranked, not
+  random. Backend [#328](https://github.com/ayushb3/BubblyChef/pull/328) merged; frontend
+  [#334](https://github.com/ayushb3/BubblyChef/pull/334) merged 2026-09-05.
 - **#327** — chat gates vague pantry terms ("veggies", "dairy") instead of silently adding them;
   remembers pending items across turns; clarification pills now multi-select and stage text in
   the input instead of auto-sending; Skip renamed Dismiss.
   [PR #327](https://github.com/ayushb3/BubblyChef/pull/327), merged.
-- **#225** + **#168** — dashboard tip is per-user and pantry-grounded; suggestion is ranked, not
-  random. Backend [#328](https://github.com/ayushb3/BubblyChef/pull/328) merged; frontend in
-  [#334](https://github.com/ayushb3/BubblyChef/pull/334).
 - **#306** — suggestion card opens the recipe it names and matches the clock. [PR #318](https://github.com/ayushb3/BubblyChef/pull/318).
 - **#314** — `BubblesFeed` and its orphaned `BubbleMessage` deleted. [PR #325](https://github.com/ayushb3/BubblyChef/pull/325).
 - **#315** — recipe detail page rendered blank ingredient rows for string-shaped ingredients.
@@ -79,6 +68,7 @@ Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
 
 | # | What it does for a user | Value | Size |
 |---|---|---|---|
+| **243** | Empty pantry prompts to scan, not invent | Unblocked by #312 merge | XS |
 | **341** | Clarification pills for already-resolved terms disappear from the card | Stale pills persist after user resolves them | XS |
 | **342** | Strip `(still with…; still don't know…)` prefix — frontend regex + backend `unclear_terms` cleanup | Raw context note leaks into reply bubbles | S |
 | **340** | Inline editable quantity/unit on action rows where backend defaulted to `unit: "item"` | Card shows "Eggs 1 item" even when user said "a dozen" | S |
@@ -86,7 +76,7 @@ Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
 | **305** | Salt/pepper/oil stop showing as "Not in pantry" | Makeable recipes look broken | S |
 | **309** | New type errors fail the build | Ratchet — errors grew 73 → 168; every ticket adds more | S |
 | **308** | Real OpenFoodFacts lookup instead of the stub | Product scan returns nothing useful | S |
-| **182** | Estimated expiry dates distinguishable from real ones | **Must precede #183** — backfill is irreversible | S |
+| **182** | Estimated expiry dates distinguishable from real ones | **Must precede #183** — backfill is irreversible; also reduces false urgency on expiry surfaces | S |
 | **311** | High-confidence pantry proposals render an approve button that silently no-ops | More user-visible half of #307 | S |
 | **228** | Pantry filters by expiry and category | Large pantries unusable without them | M |
 | **302** | Cooking-mode turns propose structured recipe amendments | Deductions run against the wrong recipe | M |
@@ -95,7 +85,6 @@ Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
 
 **Held:**
 - **#183** — backfill expiry estimates. Blocked by **#182**.
-- **#243** — empty pantry prompts to scan, not invent. Blocked until **#312 merges**.
 
 **Serialize, do not run concurrently:** #224 → #305 · #341 → #342 (same pending_proposal flow).
 
@@ -105,7 +94,6 @@ Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
 
 | # | What |
 |---|---|
-| **330** | Sign-up appears to fail silently. Check Supabase email-confirmation setting first — priority depends on the answer. |
 | **331** | No sign-out anywhere in the app. Also blocks manual per-user testing. |
 | **332** | Hard login wall — no landing page, no demo, no guest mode. Product decision. |
 | **337** | `middleware` file convention deprecated — on next Next.js upgrade it silently stops running and every protected route opens. Fails open. |
@@ -117,11 +105,13 @@ Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
 
 - **Recent-chats list UI.** #265's triage split this out — persistence only. Browsing and
   switching past conversations is a larger UX surface that needs designing first.
-- **Behavioural eval for expiry-vs-coherence.** Both #288 and #336 are prompt-level fixes
-  verified only by asserting on the rendered prompt — LLM behaviour can't be pinned. One eval
-  across both would answer the open question in #288's body: whether prompt-level is
-  sufficient, or a compatibility signal in `score_and_rank` is genuinely needed. Nobody has
-  measured yet.
+- **Behavioural eval for expiry-vs-coherence.** #288, #336, and now #347 are all prompt/weight
+  fixes verified structurally — LLM behaviour can't be pinned by unit tests. One eval would
+  answer whether the changes are sufficient in practice.
+- **Stale `priority_items` label in `GROUNDED_RECIPE_SYSTEM_PROMPT`.** After the #347 reweight,
+  bare expiring items no longer reach `priority_items` (they land in `supporting`); the prompt
+  label "Priority ingredients (expiring soon…)" is now misleading. Cosmetic only — no impact on
+  output — but should be cleaned up.
 
 ---
 
@@ -132,7 +122,8 @@ Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
 - **`mypy --strict` has ~94 pre-existing errors** (#128), not run in CI. Do not fix them;
   confirm new files add none.
 - **`npm run lint` has 2 pre-existing `e2e/` errors.** Expected baseline.
-- **`nextjs/e2e/` has no auth spec at all** — relevant to #330, #331 and #337.
+- **`chat-deep-links.test.tsx:156`** — 1 pre-existing Jest failure on `main` (unrelated to recent
+  work). Do not treat as a regression.
 
 ---
 
