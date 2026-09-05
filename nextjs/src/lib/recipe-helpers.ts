@@ -6,24 +6,10 @@
  * both the API route (server) and any client-side callers use identical logic.
  *
  * It is also the single home for rules that would otherwise be copied across
- * call sites: ingredient-shape handling (see `ingredientParts`) and dashboard
- * recipe selection (see `pickRandomRecipe`).
+ * call sites: ingredient-shape handling (see `ingredientParts`).
  */
 
 import type { RecipeIngredient } from '@/types/recipes'
-
-/**
- * Pick one recipe at random from an array.
- *
- * Returns `null` when the array is empty so callers don't need to guard the
- * length themselves.  `HeroHome` (the live dashboard) uses this as the single
- * source of random selection. Issue #168 will replace this with pantry-aware
- * selection.
- */
-export function pickRandomRecipe<T>(recipes: T[]): T | null {
-  if (recipes.length === 0) return null
-  return recipes[Math.floor(Math.random() * recipes.length)]
-}
 
 /**
  * Merge two tag arrays and return a deduplicated list.

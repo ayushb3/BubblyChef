@@ -47,6 +47,7 @@ this session. Close it — this file supersedes it.
 
 | # | What it does for a user | State |
 |---|---|---|
+| **225** + **168** | Dashboard tip becomes AI-generated and pantry-grounded; suggestion becomes ranked, not random | [PR #334](https://github.com/ayushb3/BubblyChef/pull/334) open, awaiting merge |
 | **265** | Chat survives navigating away instead of losing the thread | Ready to pick up |
 | **312** | Pantry proposal approval actually writes to the pantry | [PR #312](https://github.com/ayushb3/BubblyChef/pull/312) open, awaiting merge |
 

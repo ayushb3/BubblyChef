@@ -312,6 +312,87 @@ async def test_prompt_includes_pantry_even_without_a_suggestion() -> None:
 
 
 # ---------------------------------------------------------------------------
+# #306 regression: dashboard suggestion copy must not carry time-of-day
+# language, since the frontend now renders `suggestion.copy` verbatim
+# directly under a time-derived greeting.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_prompt_forbids_time_of_day_language() -> None:
+    """The rendered prompt sent to the LLM must explicitly forbid time-of-day
+    / meal-naming words (#306). This asserts on the actual prompt text, not
+    the mocked return value — the bug is that nothing tells the model not to
+    guess a time, so checking the mocked response would pass even if the
+    constraint were deleted."""
+    ai_manager = _fake_ai_manager_success()
+    pantry = [_pantry_item("chicken", expiry_days=1)]
+    recipes = [_recipe_row("r1", "Chicken soup", ["chicken"])]
+    repo = _fake_repo(pantry, recipes)
+
+    await dashboard_service.get_dashboard_daily(
+        TEST_USER_ID, ai_manager=ai_manager, repo=repo, now=datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    )
+
+    prompt = ai_manager.complete.call_args.kwargs["prompt"]
+    assert "tonight" in prompt.lower()  # the forbidden-word example is spelled out
+    assert "time-of-day" in prompt.lower()
+    assert "right now" not in prompt.lower()
+
+
+@pytest.mark.asyncio
+async def test_prompt_does_not_leak_bare_meal_time_reason_token() -> None:
+    """`RankedRecipe.reason == "meal_time"` must never reach the prompt as the
+    bare enum token — that verbatim string is what invited the model to name
+    a specific meal/time-of-day (#306)."""
+    ai_manager = _fake_ai_manager_success()
+    pantry: list[PantryItem] = []
+    breakfast_recipe = _recipe_row("bfast", "Pancakes", [])
+    breakfast_recipe["meal_type"] = "breakfast"
+    repo = _fake_repo(pantry, [breakfast_recipe])
+
+    await dashboard_service.get_dashboard_daily(
+        TEST_USER_ID,
+        ai_manager=ai_manager,
+        repo=repo,
+        now=datetime(2026, 1, 1, 7, 0, tzinfo=UTC),  # breakfast bucket
+        tz_offset_minutes=0,
+    )
+
+    prompt = ai_manager.complete.call_args.kwargs["prompt"]
+    assert "meal_time" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_prompt_does_not_assert_a_false_pantry_reason_for_meal_time_pick() -> None:
+    """A `meal_time` pick can win with zero pantry overlap — the recipe's
+    `meal_type` matched the time-of-day bucket, nothing about the pantry. The
+    prompt must not substitute a pantry-sounding phrase for that reason (that
+    would tell the model something untrue, which it's instructed to repeat)
+    — it must omit the "why it was picked" line instead."""
+    ai_manager = _fake_ai_manager_success()
+    pantry: list[PantryItem] = []  # no pantry items at all -> no pantry-match possible
+    breakfast_recipe = _recipe_row("bfast", "Pancakes", [])
+    breakfast_recipe["meal_type"] = "breakfast"
+    repo = _fake_repo(pantry, [breakfast_recipe])
+
+    response = await dashboard_service.get_dashboard_daily(
+        TEST_USER_ID,
+        ai_manager=ai_manager,
+        repo=repo,
+        now=datetime(2026, 1, 1, 7, 0, tzinfo=UTC),  # breakfast bucket
+        tz_offset_minutes=0,
+    )
+
+    assert response.suggestion is not None
+    assert response.suggestion.reason == "meal_time"
+
+    prompt = ai_manager.complete.call_args.kwargs["prompt"]
+    assert "Why it was picked" not in prompt
+    assert "meal_time" not in prompt
+
+
+# ---------------------------------------------------------------------------
 # Finding 4 (BLOCKER): cache must invalidate when a non-newest pantry row is
 # deleted
 # ---------------------------------------------------------------------------

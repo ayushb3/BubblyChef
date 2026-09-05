@@ -21,6 +21,12 @@ const streamChatMessage = jest.fn()
 jest.mock('@/lib/api/chat', () => ({
   streamChatMessage: (...args: unknown[]) => streamChatMessage(...args),
   fetchChatHistory: jest.fn().mockResolvedValue([]),
+  applyPantryProposal: jest.fn().mockResolvedValue({
+    success: true,
+    appliedCount: 2,
+    failedCount: 0,
+    errors: [],
+  }),
 }))
 
 jest.mock('@/lib/supabase/client', () => ({

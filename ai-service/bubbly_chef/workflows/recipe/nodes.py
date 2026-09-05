@@ -130,7 +130,15 @@ Rules:
 - Each idea should be a recipe name (2-5 words), not a full recipe
 - If "Must use" ingredients are listed, EVERY idea must actually use them — \
 this overrides every other preference
-- Prioritize ingredients marked as expiring soon
+- Ingredients marked as expiring soon are a strong preference, not a \
+requirement: try to build at least one idea around them, but it's fine to \
+leave an expiring item out of a specific idea when it doesn't belong there. \
+If none of your ideas can sensibly use the expiring items, say so briefly \
+instead of forcing one in.
+- Every idea has to make culinary sense on its own terms — don't weld an \
+ingredient into a dish just because it's expiring. In particular, don't \
+wedge a sweet ingredient like fruit into a savoury dish unless the user \
+asked for that combination or it's a genuine part of the cuisine in play.
 - Match the cuisine/mood if specified
 - ALL suggestions must be for the same meal type — if meal_type is specified, \
 every idea must fit that meal (don't mix breakfast and dinner)
@@ -169,9 +177,18 @@ Generate a complete recipe card for "{recipe_name}".
 Constraints: {constraints_json}
 Must-use ingredients (the user asked to cook with these — the recipe MUST \
 include them): {must_use_items}
-Priority ingredients (expiring soon — use first): {priority_items}
+Priority ingredients (expiring soon — a strong preference, not a \
+requirement): {priority_items}
 Supporting ingredients available: {supporting_items}
 Context: {context}
+
+Priority ingredients are a strong preference, not a requirement: favor \
+building this recipe around them, but it's fine to leave one out if it \
+doesn't belong in "{recipe_name}" — include a priority ingredient only if it \
+genuinely fits the dish. In particular, don't wedge a sweet ingredient like \
+fruit into a savoury dish unless the user asked for that combination or it's \
+a genuine part of the cuisine in play. This does not apply to must-use \
+ingredients above, which remain a hard requirement regardless of fit.
 
 Generate a full recipe with:
 - title, description
@@ -191,7 +208,7 @@ Generate a full recipe with:
 - cuisine, meal_type, dietary_tags
 - tips
 
-Prioritize using the listed available ingredients. \
+Build the recipe from the listed ingredients where you can. \
 For any missing ingredients, suggest pantry substitutes where possible.\
 """
 
@@ -693,7 +710,7 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         if must_use:
             must_use_str = ", ".join(i.get("name", "") for i in must_use[:5])
             pantry_context += f"\nMust use (the user asked to cook with these): {must_use_str}"
-        pantry_context += f"\nExpiring soon (prioritize): {expiring_str or 'none'}"
+        pantry_context += f"\nExpiring soon (weave in where it fits, not mandatory): {expiring_str or 'none'}"
         pantry_context += f"\nOther available: {supporting_str or 'none'}"
     else:
         pantry_context = "\nNo pantry items available — suggest general recipes."
