@@ -139,6 +139,10 @@ export function useChat(initialConversationId?: string) {
           const isVagueOnlyPantryTurn =
             response.intent === 'pantry_update' && !hasActions && clarificationTerms.length > 0
 
+          // Scans messagesRef, not `messages` — one useChat instance is one
+          // conversation (a new conversation starts a fresh hook instance
+          // via startNewChat), so no explicit conversation_id check is
+          // needed here; don't reuse this search across multiple conversations.
           let mergeTargetId: string | null = null
           if (isVagueOnlyPantryTurn) {
             const priorMessages = messagesRef.current
@@ -161,29 +165,42 @@ export function useChat(initialConversationId?: string) {
 
           setMessages((prev) => {
             if (mergeTargetId) {
-              // Drop this turn's own placeholder — its card would be empty
-              // (0 actions) and its clarifying text is now redundant with
-              // the pills appended to the target card below.
+              // This turn still gets its own reply bubble — its streamed
+              // text already rendered as it arrived, and dropping the
+              // message once onDone fires would make it flash and vanish.
+              // Its own card is suppressed by stripping clarification_suggestions
+              // (0 actions + 0 suggestions falls through to the plain-text
+              // render) since those pills now live on the merge target below.
               const targetId = mergeTargetId
-              return prev
-                .filter((msg) => msg.id !== assistantMsgId)
-                .map((msg) =>
-                  msg.id === targetId && msg.response
-                    ? {
-                        ...msg,
-                        response: {
-                          ...msg.response,
-                          metadata: {
-                            ...msg.response.metadata,
-                            clarification_suggestions: mergeTermSuggestions(
-                              getClarificationSuggestions(msg.response),
-                              clarificationTerms,
-                            ),
-                          },
-                        },
-                      }
-                    : msg,
-                )
+              return prev.map((msg) => {
+                if (msg.id === assistantMsgId) {
+                  return {
+                    ...msg,
+                    content: msg.content || fallbackContent,
+                    intent: response.intent,
+                    response: {
+                      ...response,
+                      metadata: { ...response.metadata, clarification_suggestions: [] },
+                    },
+                  }
+                }
+                if (msg.id === targetId && msg.response) {
+                  return {
+                    ...msg,
+                    response: {
+                      ...msg.response,
+                      metadata: {
+                        ...msg.response.metadata,
+                        clarification_suggestions: mergeTermSuggestions(
+                          getClarificationSuggestions(msg.response),
+                          clarificationTerms,
+                        ),
+                      },
+                    },
+                  }
+                }
+                return msg
+              })
             }
 
             return prev.map((msg) =>

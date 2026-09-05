@@ -99,10 +99,13 @@ describe('pantry card merge across turns', () => {
     })
     respondWith(TURN2_RESPONSE)
 
-    // Turn 2's own assistant placeholder is dropped — not appended as a 4th
-    // message — leaving [user1, assistant1(merged), user2].
-    expect(result.current.messages).toHaveLength(3)
-    expect(result.current.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user'])
+    // Turn 2 still gets its own reply bubble (its streamed text already
+    // rendered — dropping it would make it flash and vanish) but not its
+    // own card: [user1, assistant1(merged card), user2, assistant2(text-only)].
+    expect(result.current.messages).toHaveLength(4)
+    expect(result.current.messages.map((m) => m.role)).toEqual([
+      'user', 'assistant', 'user', 'assistant',
+    ])
 
     const mergedAssistant = result.current.messages[1]
     expect(mergedAssistant.id).toBe(turn1AssistantId)
@@ -112,6 +115,13 @@ describe('pantry card merge across turns', () => {
     expect(mergedAssistant.response?.metadata?.clarification_suggestions).toEqual(
       TURN2_RESPONSE.metadata?.clarification_suggestions,
     )
+
+    // Turn 2's own message keeps its text but not its own clarification
+    // terms — those moved to the merge target, so it won't also render a
+    // standalone ClarificationCard.
+    const turn2Assistant = result.current.messages[3]
+    expect(turn2Assistant.content).toBe(TURN2_RESPONSE.assistant_message)
+    expect(turn2Assistant.response?.metadata?.clarification_suggestions).toEqual([])
 
     // No new proposal/workflow tracked for the merged-away turn.
     expect(Object.keys(result.current.proposalStates)).toEqual([turn1AssistantId])
