@@ -1,6 +1,6 @@
 # Queue
 
-**Updated:** 2026-09-05 · by an agent session · after #312/#334/#335/#339 merged; #347/#348 filed; #330 fixed
+**Updated:** 2026-09-05 · by an agent session · draft PRs opened for #243/#340/#341/#342/#224/#305 (all CI-green, awaiting review on another machine)
 
 > Rewritten whenever queue state changes. It is a checkpoint, not a live feed — nothing
 > updates it while no session is running, so trust the timestamp above. If two sessions
@@ -27,6 +27,10 @@ as-is.
 | # | What it does for a user | State |
 |---|---|---|
 | **347** | Expiry weighting root cause — `score_and_rank` and dashboard hero | [PR #348](https://github.com/ayushb3/BubblyChef/pull/348) open, thermo-nuclear review passed, ready to merge |
+| **243** | Empty pantry prompts to scan/type/tell instead of inventing a recipe (skips the short-circuit when the user names ingredients) | [PR #349](https://github.com/ayushb3/BubblyChef/pull/349) draft, CI green |
+| **340** | Inline editable qty/unit on `unit:"item"` rows; editor stays open through a qty→unit edit | [PR #350](https://github.com/ayushb3/BubblyChef/pull/350) draft, CI green |
+| **341 + 342** | Resolved clarification pills disappear from the card; raw `(still with…; still don't know…)` context prefix stripped from reply | [PR #353](https://github.com/ayushb3/BubblyChef/pull/353) draft, CI green |
+| **224 + 305** | Pantry writes populate `quantity_base`/`unit_base`; absent salt/pepper/oil counted as `assumed`, not "Not in pantry" | [PR #354](https://github.com/ayushb3/BubblyChef/pull/354) draft, CI green |
 | **265** | Chat survives navigating away instead of losing the thread | Ready to pick up |
 
 ---
@@ -68,12 +72,6 @@ Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
 
 | # | What it does for a user | Value | Size |
 |---|---|---|---|
-| **243** | Empty pantry prompts to scan, not invent | Unblocked by #312 merge | XS |
-| **341** | Clarification pills for already-resolved terms disappear from the card | Stale pills persist after user resolves them | XS |
-| **342** | Strip `(still with…; still don't know…)` prefix — frontend regex + backend `unclear_terms` cleanup | Raw context note leaks into reply bubbles | S |
-| **340** | Inline editable quantity/unit on action rows where backend defaulted to `unit: "item"` | Card shows "Eggs 1 item" even when user said "a dozen" | S |
-| **224** | Pantry writes populate `quantity_base`/`unit_base` | Silent data gap; **do before #305** | S |
-| **305** | Salt/pepper/oil stop showing as "Not in pantry" | Makeable recipes look broken | S |
 | **309** | New type errors fail the build | Ratchet — errors grew 73 → 168; every ticket adds more | S |
 | **308** | Real OpenFoodFacts lookup instead of the stub | Product scan returns nothing useful | S |
 | **182** | Estimated expiry dates distinguishable from real ones | **Must precede #183** — backfill is irreversible; also reduces false urgency on expiry surfaces | S |
@@ -86,7 +84,7 @@ Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
 **Held:**
 - **#183** — backfill expiry estimates. Blocked by **#182**.
 
-**Serialize, do not run concurrently:** #224 → #305 · #341 → #342 (same pending_proposal flow).
+**Serialize, do not run concurrently:** (both in-flight pairs above now landed together in one branch each — nothing left to serialize here).
 
 ---
 
@@ -98,6 +96,9 @@ Ordered by value, not by number. "Blocks" are load-bearing, not preferences.
 | **332** | Hard login wall — no landing page, no demo, no guest mode. Product decision. |
 | **337** | `middleware` file convention deprecated — on next Next.js upgrade it silently stops running and every protected route opens. Fails open. |
 | **316** | PR review gate. Worktree-specific false positive. Avoidable by working in main checkout. |
+| **356** | Pantry merge-on-add collapses distinct lots and discards the new lot's expiry (buy chicken twice → fresh pound inherits the old expiry). Also unit-blind sum. Subsumes #127, related to #6. Chat + scan. |
+| **357** | Non-blocking expiry field on the chat/scan add card (mirror of #340's qty editor). Supplies the user-stated expiry #356 needs. |
+| **358** | Unapproved pantry proposal cards vanish on chat remount — history restore rebuilds text turns only, not the proposal envelope. Follow-up gap from #265. |
 
 ---
 
