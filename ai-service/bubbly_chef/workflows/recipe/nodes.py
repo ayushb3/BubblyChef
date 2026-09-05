@@ -728,10 +728,15 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
             pantry_context += f"\nMust use (the user asked to cook with these): {must_use_str}"
         pantry_context += f"\nExpiring soon (weave in where it fits, not mandatory): {expiring_str or 'none'}"
         pantry_context += f"\nOther available: {supporting_str or 'none'}"
-    else:
-        # Reaching this branch means pantry_grounded is True and scored_items is
-        # empty — don't invent recipes. Surface the three ingest paths so the user
+    elif not constraints.get("must_use_ingredients"):
+        # Reaching this branch means pantry_grounded is True, scored_items is
+        # empty, AND the user has not named any specific ingredients to cook with.
+        # Don't invent recipes — surface the three ingest paths so the user
         # can stock up first.
+        #
+        # When must_use_ingredients is set the user explicitly named what they
+        # want to cook with, so we fall through to normal LLM generation even
+        # though the pantry is empty (#265 regression fix).
         #
         # NOTE (known limitation): score_pantry_ingredients sets scored_pantry_items=[]
         # when the DB fetch raises an exception, so a transient Supabase error on a
@@ -767,6 +772,11 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
             "workflow_status": WorkflowStatus.COMPLETED.value,
             "suggested_action": NextAction.NONE.value,
         }
+    else:
+        # pantry_grounded=True, scored_items=[], must_use_ingredients set.
+        # The user named specific ingredients — let the LLM generate around them.
+        # No pantry items to list; constraints_str below will inject Must use:.
+        pantry_context = ""
 
     constraints_str = ""
     # Named ingredients that aren't in the pantry still bind the suggestions.
