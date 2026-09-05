@@ -11,7 +11,9 @@ interface PantryProposalCardProps {
   proposal: PantryProposalData
   onApprove: () => void
   onReject: () => void
-  state: 'pending' | 'approved' | 'rejected'
+  state: 'pending' | 'approving' | 'approved' | 'rejected' | 'failed'
+  /** Error message to show when `state` is 'failed'. */
+  error?: string
   /**
    * Vague terms ("veggies", "dairy things") raised in this turn or a later
    * one in the same still-open thread — merged in here (see useChat's
@@ -62,11 +64,14 @@ export default function PantryProposalCard({
   onApprove,
   onReject,
   state,
+  error,
   clarificationTerms = [],
   onStagePick,
 }: PantryProposalCardProps) {
   const isPending = state === 'pending'
+  const isApproving = state === 'approving'
   const isApproved = state === 'approved'
+  const isFailed = state === 'failed'
 
   // Multi-select: track which items the user has tapped per vague term.
   // Tapping toggles the item; the updated selection map is forwarded to the
@@ -148,17 +153,24 @@ export default function PantryProposalCard({
 
       {/* Footer */}
       <div className="px-4 py-3 border-t border-[var(--color-border)]">
-        {isPending ? (
+        {isFailed && (
+          <p className="text-xs text-red-600 mb-2">
+            {error ?? 'Could not add items. Please try again.'}
+          </p>
+        )}
+        {isPending || isApproving || isFailed ? (
           <div className="flex gap-2">
             <SpringButton
               onClick={onApprove}
-              className="flex-1 py-2 px-3 rounded-full text-sm font-semibold bg-green-100 text-green-700 hover:bg-green-200"
+              disabled={isApproving}
+              className="flex-1 py-2 px-3 rounded-full text-sm font-semibold bg-green-100 text-green-700 hover:bg-green-200 disabled:opacity-60"
             >
-              Add to Pantry
+              {isApproving ? 'Adding…' : isFailed ? 'Try again' : 'Add to Pantry'}
             </SpringButton>
             <SpringButton
               onClick={onReject}
-              className="flex-1 py-2 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)]"
+              disabled={isApproving}
+              className="flex-1 py-2 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)] disabled:opacity-60"
             >
               Dismiss
             </SpringButton>

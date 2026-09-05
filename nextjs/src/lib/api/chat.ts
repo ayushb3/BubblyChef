@@ -12,6 +12,7 @@ import type {
   ConversationHistoryTurn,
   ConversationSession,
   AIHealthStatus,
+  PantryProposalAction,
 } from '@/types/chat'
 
 const AI_SERVICE_URL =
@@ -185,4 +186,105 @@ export async function checkAIHealth(): Promise<AIHealthStatus> {
   const res = await fetch(`${AI_SERVICE_URL}/health/ai`)
   if (!res.ok) throw new Error(`Health check failed: ${res.status}`)
   return res.json()
+}
+
+/**
+ * Result of applying a chat-proposed pantry update.
+ */
+export interface ApplyProposalResult {
+  success: boolean
+  appliedCount: number
+  failedCount: number
+  errors: string[]
+  /**
+   * Subset of the original actions that failed to apply.
+   *
+   * The AI service does not return failed action objects directly — it returns
+   * error strings like `"Item not found: eggs"`. We reconstruct this list by
+   * matching error messages against the original action names so the retry path
+   * in useChat can resend only the failed subset and avoid double-counting the
+   * ones that already succeeded (`add` is not idempotent: it does
+   * `new_qty = existing + qty`).
+   *
+   * When no names can be extracted (e.g. an unexpected error format), this is
+   * undefined — callers fall back to resending all original actions.
+   */
+  failedActions?: PantryProposalAction[]
+}
+
+/**
+ * Apply a pantry-update proposal surfaced by chat.
+ *
+ * Routes through the same Next.js proxy the receipt-scan confirmation flow
+ * uses (`POST /api/ai/workflows/apply` → AI service `POST /v1/workflows/apply`),
+ * so chat approval and scan confirmation persist items the same way. The
+ * proxy forwards the Supabase session server-side, so no token handling is
+ * needed here (unlike the direct-to-service calls above).
+ *
+ * The AI service's `apply_pantry_proposal` reads a flat action shape
+ * (`action`, `name`, `quantity`, `unit`, `category`, `location`), not the
+ * nested `{ action_type, item }` shape chat's `PantryProposalAction` uses —
+ * this maps between the two.
+ */
+export async function applyPantryProposal(
+  requestId: string,
+  actions: PantryProposalAction[],
+): Promise<ApplyProposalResult> {
+  const res = await fetch('/api/ai/workflows/apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      request_id: requestId,
+      intent: 'pantry_update',
+      proposal: {
+        actions: actions.map((action) => ({
+          action: action.action_type,
+          name: action.item.name,
+          quantity: action.item.quantity,
+          unit: action.item.unit,
+          category: action.item.category,
+          location: action.item.storage_location,
+        })),
+      },
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Failed to add items' }))
+    throw new Error(err.error ?? `Failed to add items: ${res.status}`)
+  }
+
+  const data = await res.json()
+  const errors: string[] = Array.isArray(data.errors) ? data.errors : []
+  const failedCount: number = typeof data.failed_count === 'number' ? data.failed_count : 0
+
+  // Derive the failed action objects from error strings so the retry path can
+  // resend only what failed. The backend emits "Item not found: <name>" and
+  // similar patterns — extract the name after ": " and match against the
+  // original action list (case-insensitive).
+  let failedActions: PantryProposalAction[] | undefined
+  if (failedCount > 0 && errors.length > 0) {
+    const failedNames = new Set(
+      errors
+        .map((e) => {
+          const m = e.match(/:\s*(.+)$/)
+          return m ? m[1].trim().toLowerCase() : null
+        })
+        .filter((n): n is string => n !== null),
+    )
+    const matched = failedNames.size > 0
+      ? actions.filter((a) => failedNames.has(a.item.name.toLowerCase()))
+      : undefined
+    // If we couldn't match any names, leave failedActions undefined so the
+    // caller falls back to resending all actions (better than silently dropping).
+    failedActions = matched && matched.length > 0 ? matched : undefined
+  }
+
+  return {
+    success: Boolean(data.success),
+    appliedCount: typeof data.applied_count === 'number' ? data.applied_count : 0,
+    failedCount,
+    errors,
+    failedActions,
+  }
 }

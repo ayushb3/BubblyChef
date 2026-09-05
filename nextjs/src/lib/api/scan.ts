@@ -77,6 +77,11 @@ export async function uploadReceipt(
 
 /**
  * Confirm scanned items and add them to the pantry.
+ *
+ * Throws if the request itself fails (network error or non-2xx status).
+ * Also throws on a `success: false` envelope (partial or total failure) so
+ * callers get a consistent error signal — matching how the chat flow handles
+ * the same `/api/ai/workflows/apply` endpoint.
  */
 export async function confirmScanItems(items: ConfirmedItem[]): Promise<void> {
   const res = await fetch('/api/ai/workflows/apply', {
@@ -101,5 +106,18 @@ export async function confirmScanItems(items: ConfirmedItem[]): Promise<void> {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Failed to add items' }))
     throw new Error(err.error ?? `Failed to add items: ${res.status}`)
+  }
+
+  const data = await res.json().catch(() => null) as {
+    success?: boolean
+    failed_count?: number
+    errors?: string[]
+  } | null
+
+  if (data && data.success === false) {
+    const failedCount = data.failed_count ?? 0
+    const errors = data.errors ?? []
+    const detail = errors[0] ?? `${failedCount} item${failedCount !== 1 ? 's' : ''} could not be added`
+    throw new Error(detail)
   }
 }
