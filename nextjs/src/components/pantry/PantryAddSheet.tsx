@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence, useDragControls } from 'framer-motion'
 import ScanTab from './ScanTab'
 import TypeTab from './TypeTab'
+import { bulkAddPantryItems } from '@/lib/api/pantry'
 
 export interface AddItem {
   name: string
@@ -61,22 +62,13 @@ export default function PantryAddSheet({
     setError(null)
 
     try {
-      const res = await fetch('/api/pantry/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: allItems.map((item) => {
-            const { source, ...rest } = item
-            void source
-            return rest
-          }),
+      await bulkAddPantryItems(
+        allItems.map((item) => {
+          const { source, ...rest } = item
+          void source
+          return rest
         }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: 'Failed to add items' }))
-        throw new Error(data.error ?? `Failed to add items: ${res.status}`)
-      }
+      )
 
       onItemsAdded()
       onClose()

@@ -38,7 +38,9 @@ const CATEGORIES = [
   { value: 'other', label: 'Other 📦' },
 ]
 
-const LOCATIONS = [
+// Exported so the pantry filter bar's location facet (#228) reuses the exact
+// same value set instead of carrying a second, parallel list.
+export const LOCATIONS = [
   { value: 'fridge', label: 'Fridge' },
   { value: 'freezer', label: 'Freezer' },
   { value: 'pantry', label: 'Pantry' },

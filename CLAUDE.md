@@ -120,12 +120,16 @@ BubblyChef/
 | `/chat` | Chat | AI assistant — general or recipe mode |
 | `/profile` | Profile | User settings, dietary preferences |
 | `/login` | Auth | Sign in / sign up (Supabase) |
+| `/scan` | Scan | Receipt OCR upload + review flow |
 
-**There is no `/scan` route.** Receipt scanning is not a page — it is a tab inside
+Receipt scanning has two entry points that share the same review UI and the
+same confirm semantics (nothing is written without an explicit confirm):
+the full-page `/scan` route (`app/scan/page.tsx`) and the quick path inside
 the pantry add sheet (`components/pantry/PantryAddSheet.tsx`, tabs `scan` and
-`type`), reached as `/pantry?add=scan`. The scan UI lives in
-`components/pantry/ScanTab.tsx`. Issue #259 tracks decoupling that review surface
-from this entry point.
+`type`, reached as `/pantry?add=scan`). Both mount the presentation-only
+`components/scan/ReviewSurface.tsx` for the tiered review; `ScanTab.tsx` still
+owns the sheet's own upload/processing state machine, and `/scan` owns its own
+(issue #259).
 
 ---
 
@@ -406,7 +410,7 @@ BUBBLY_SUPABASE_URL=...
 BUBBLY_SUPABASE_SECRET_KEY=...          # NOT ..._SERVICE_ROLE_KEY — see note below
 BUBBLY_SUPABASE_JWT_SECRET=...
 BUBBLY_GEMINI_API_KEY=...
-BUBBLY_GEMINI_MODEL=gemini-2.5-flash    # optional
+BUBBLY_GEMINI_MODEL=gemini-3.1-flash-lite    # optional
 BUBBLY_OLLAMA_BASE_URL=http://localhost:11434   # optional
 BUBBLY_AUTO_ADD_CONFIDENCE_THRESHOLD=0.8
 BUBBLY_REVIEW_CONFIDENCE_THRESHOLD=0.5

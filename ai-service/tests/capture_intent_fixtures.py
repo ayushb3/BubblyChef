@@ -131,7 +131,7 @@ async def _capture_all() -> dict[str, Any]:
         "_meta": {
             "prompt_hash": _prompt_hash(),
             "captured_at": datetime.now(timezone.utc).isoformat(),
-            "model": os.getenv("BUBBLY_GEMINI_MODEL", "gemini-2.5-flash"),
+            "model": os.getenv("BUBBLY_GEMINI_MODEL", "gemini-3.1-flash-lite"),
         }
     }
 
