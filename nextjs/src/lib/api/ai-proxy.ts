@@ -125,3 +125,42 @@ export async function estimateCategory(name: string): Promise<string | null> {
     return null
   }
 }
+
+/**
+ * Derive quantity_base / unit_base for a pantry row via the Python normalizer
+ * (the single source of truth — see #224). Returns both values, or `null`
+ * for both when conversion is impossible. Callers must leave the DB columns
+ * NULL rather than blocking the write — the cook flow can derive them at
+ * runtime from the raw (quantity, unit) when base values are absent.
+ */
+export async function normalizeBaseUnit(item: {
+  name: string
+  quantity: number
+  unit: string
+  category?: string | null
+}): Promise<{ quantity_base: number | null; unit_base: string | null }> {
+  try {
+    const res = await aiProxyFetch('/v1/pantry/normalize-base-unit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: item.name,
+        quantity: item.quantity,
+        unit: item.unit,
+        category: item.category || 'other',
+      }),
+    })
+    if (res instanceof NextResponse || !res.ok) return { quantity_base: null, unit_base: null }
+    const data = (await res.json()) as {
+      quantity_base?: number | null
+      unit_base?: string | null
+    }
+    return {
+      quantity_base: data.quantity_base ?? null,
+      unit_base: data.unit_base ?? null,
+    }
+  } catch {
+    // Base-unit derivation is best-effort — never let it block adding the item.
+    return { quantity_base: null, unit_base: null }
+  }
+}

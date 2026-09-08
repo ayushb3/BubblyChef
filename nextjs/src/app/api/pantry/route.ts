@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse } from '@/lib/response-helpers'
 import { enrichPantryItem, buildPantryListResponse } from '@/lib/pantry-helpers'
-import { estimateExpiry, estimateCategory } from '@/lib/api/ai-proxy'
+import { estimateExpiry, estimateCategory, normalizeBaseUnit } from '@/lib/api/ai-proxy'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
 
 export async function GET(request: Request) {
@@ -55,6 +55,18 @@ export async function POST(request: Request) {
       location: body.storage_location || body.location,
     }))
 
+  // Derive base unit at write time so cook-flow deduction works immediately
+  // on new rows (#224). Best-effort: leaves columns NULL when conversion is
+  // not possible (e.g. "1 bag baby spinach") rather than blocking the add.
+  const qty = body.quantity ?? 1.0
+  const unit = body.unit || 'item'
+  const { quantity_base, unit_base } = await normalizeBaseUnit({
+    name: body.name,
+    quantity: qty,
+    unit,
+    category,
+  })
+
   const { data, error } = await supabase
     .from('pantry_items')
     .insert({
@@ -63,10 +75,12 @@ export async function POST(request: Request) {
       name_normalized: (body.name as string).toLowerCase().trim(),
       category,
       location: body.storage_location || body.location || 'pantry',
-      quantity: body.quantity || 1.0,
-      unit: body.unit || 'item',
+      quantity: qty,
+      unit,
       expiry_date: expiry || null,
       slot_index: body.slot_index ?? null,
+      quantity_base: quantity_base ?? null,
+      unit_base: unit_base ?? null,
     })
     .select()
     .single()

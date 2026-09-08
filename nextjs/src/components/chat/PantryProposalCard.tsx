@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { useState, useEffect, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
 import Chip from '@/components/ui/Chip'
 import { titleCase } from '@/lib/format'
@@ -26,6 +26,12 @@ interface PantryProposalCardProps {
    * map (term → selected item names) so the parent can build the staged text.
    */
   onStagePick?: (selections: Record<string, string[]>) => void
+  /**
+   * Called whenever the user edits a quantity or unit inline. Receives the
+   * full updated action list so the parent (useChat) can patch its pending
+   * proposal before the user approves.
+   */
+  onActionsChange?: (actions: PantryProposalAction[]) => void
 }
 
 const ACTION_ICONS: Record<PantryProposalAction['action_type'], { icon: string; colorClass: string }> = {
@@ -35,26 +41,116 @@ const ACTION_ICONS: Record<PantryProposalAction['action_type'], { icon: string; 
   update: { icon: '✏', colorClass: 'bg-orange-100 text-orange-600' },
 }
 
-function ActionRow({ action }: { action: PantryProposalAction }) {
+/**
+ * Returns true when the action's quantity/unit are genuinely unknown and the
+ * user should be offered an inline editor to clarify before approving.
+ *
+ * Triggers when:
+ *  - `unit` is "item" (the backend's meaningless default when it couldn't parse)
+ *  - `quantity` is null or undefined (backend returned nothing meaningful)
+ */
+function needsQtyEdit(action: PantryProposalAction): boolean {
+  const qty = action.item.quantity
+  const unit = action.item.unit
+  return qty == null || unit === 'item'
+}
+
+interface ActionRowProps {
+  action: PantryProposalAction
+  disabled: boolean
+  onQtyChange: (quantity: number | undefined, unit: string | undefined) => void
+}
+
+function ActionRow({ action, disabled, onQtyChange }: ActionRowProps) {
   const { icon, colorClass } = ACTION_ICONS[action.action_type]
-  const qtyStr = [action.item.quantity, action.item.unit].filter(Boolean).join(' ')
+  // Once the editor is shown on mount (backend gave a vague unit/null qty), it
+  // must stay mounted for the life of this row so the user can fill in both
+  // fields sequentially without the component unmounting between blurs.
+  // `wasEverEditable` is frozen at mount; `needsQtyEdit(action)` catches the
+  // initial render for rows that were always concrete (stays false → no editor).
+  const [wasEverEditable] = useState(() => needsQtyEdit(action))
+  const showEditor = wasEverEditable || needsQtyEdit(action)
+
+  // Local controlled state for the inline editor fields — only rendered when
+  // showEditor is true. Initialised from whatever the backend gave us (or
+  // sensible defaults) so the fields aren't blank when they first appear.
+  const [editQty, setEditQty] = useState<string>(
+    action.item.quantity != null ? String(action.item.quantity) : '1',
+  )
+  const [editUnit, setEditUnit] = useState<string>(
+    action.item.unit && action.item.unit !== 'item' ? action.item.unit : '',
+  )
+
+  const qtyStr = !showEditor
+    ? [action.item.quantity, action.item.unit].filter(Boolean).join(' ')
+    : null
+
+  const handleQtyBlur = () => {
+    const parsed = parseFloat(editQty)
+    onQtyChange(isNaN(parsed) ? undefined : parsed, editUnit.trim() || undefined)
+  }
+
+  const handleUnitBlur = () => {
+    const parsed = parseFloat(editQty)
+    onQtyChange(isNaN(parsed) ? undefined : parsed, editUnit.trim() || undefined)
+  }
 
   return (
-    <div className="flex items-center gap-2 py-1.5">
-      <span className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${colorClass}`}>
-        {icon}
-      </span>
-      <div className="flex-1 min-w-0">
-        <span className="font-semibold text-sm text-[var(--color-text)]">{titleCase(action.item.name)}</span>
-        {qtyStr && (
-          <span className="text-sm text-[var(--color-muted)] ml-1.5">{qtyStr}</span>
+    <div className="flex flex-col gap-1 py-1.5">
+      <div className="flex items-center gap-2">
+        <span className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${colorClass}`}>
+          {icon}
+        </span>
+        <div className="flex-1 min-w-0">
+          <span className="font-semibold text-sm text-[var(--color-text)]">{titleCase(action.item.name)}</span>
+          {qtyStr && (
+            <span className="text-sm text-[var(--color-muted)] ml-1.5">{qtyStr}</span>
+          )}
+        </div>
+        {action.confidence < 0.9 && (
+          <span className="text-xs text-[var(--color-muted)] shrink-0">
+            {Math.round(action.confidence * 100)}%
+          </span>
         )}
       </div>
-      {action.confidence < 0.9 && (
-        <span className="text-xs text-[var(--color-muted)] shrink-0">
-          {Math.round(action.confidence * 100)}%
-        </span>
-      )}
+
+      <AnimatePresence>
+        {showEditor && (
+          <motion.div
+            key="qty-editor"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="overflow-hidden"
+          >
+            <div className="flex items-center gap-1.5 pl-8" aria-label={`Edit quantity for ${action.item.name}`}>
+              <span className="text-xs text-[var(--color-muted)] shrink-0">how much?</span>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={editQty}
+                onChange={(e) => setEditQty(e.target.value)}
+                onBlur={handleQtyBlur}
+                disabled={disabled}
+                aria-label={`Quantity for ${action.item.name}`}
+                className="w-16 text-xs px-2 py-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] focus:border-[var(--color-accent)] disabled:opacity-50"
+              />
+              <input
+                type="text"
+                placeholder="unit"
+                value={editUnit}
+                onChange={(e) => setEditUnit(e.target.value)}
+                onBlur={handleUnitBlur}
+                disabled={disabled}
+                aria-label={`Unit for ${action.item.name}`}
+                className="w-20 text-xs px-2 py-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] focus:border-[var(--color-accent)] placeholder:text-[var(--color-muted)] disabled:opacity-50"
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -67,11 +163,13 @@ export default function PantryProposalCard({
   error,
   clarificationTerms = [],
   onStagePick,
+  onActionsChange,
 }: PantryProposalCardProps) {
   const isPending = state === 'pending'
   const isApproving = state === 'approving'
   const isApproved = state === 'approved'
   const isFailed = state === 'failed'
+  const isEditable = isPending || isFailed
 
   // Multi-select: track which items the user has tapped per vague term.
   // Tapping toggles the item; the updated selection map is forwarded to the
@@ -95,6 +193,56 @@ export default function PantryProposalCard({
     })
   }
 
+  // Local edits — mirrors proposal.actions but with any qty/unit changes the
+  // user has made inline. Initialised from the incoming proposal actions.
+  const [localActions, setLocalActions] = useState<PantryProposalAction[]>(
+    () => proposal.actions,
+  )
+
+  // Track which item names the user has already edited so reconciliation can
+  // preserve in-flight edits when the proposal prop changes (e.g. a later turn
+  // merges a new item into the same still-mounted card).
+  const editedNamesRef = useRef<Set<string>>(new Set())
+
+  // Reconcile localActions when proposal.actions changes on the same mounted
+  // instance (e.g. partial-failure retry trims actions, or a future same-id
+  // merge). Rules:
+  //  - New items in proposal → add with backend defaults (no local edit yet).
+  //  - Items the user has already edited → keep the edited version.
+  //  - Items removed from proposal → drop.
+  // This keeps display rows always in sync with the authoritative proposal list
+  // while never clobbering an in-flight user edit.
+  useEffect(() => {
+    setLocalActions((prev) => {
+      return proposal.actions.map((incoming) => {
+        const key = incoming.item.name.toLowerCase()
+        const existing = prev.find((a) => a.item.name.toLowerCase() === key)
+        // If the user has edited this item's qty/unit, keep their version.
+        if (existing && editedNamesRef.current.has(key)) return existing
+        // Otherwise take the fresh backend action (handles new items and resets
+        // items whose edits haven't been made yet).
+        return incoming
+      })
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposal.actions])
+
+  const handleQtyChange = (index: number, quantity: number | undefined, unit: string | undefined) => {
+    // Capture the computed next state synchronously from the functional updater
+    // so we can call onActionsChange with it — no ref needed.
+    let next: PantryProposalAction[] = []
+    setLocalActions((prev) => {
+      next = prev.map((action, i) => {
+        if (i !== index) return action
+        return { ...action, item: { ...action.item, quantity, unit } }
+      })
+      // Mark this item name as user-edited so the reconcile effect preserves it.
+      editedNamesRef.current.add(prev[index]?.item.name.toLowerCase() ?? '')
+      return next
+    })
+    onActionsChange?.(next)
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -113,8 +261,13 @@ export default function PantryProposalCard({
 
       {/* Actions list */}
       <div className="px-4 py-2 flex flex-col divide-y divide-[var(--color-border)]">
-        {proposal.actions.map((action, i) => (
-          <ActionRow key={i} action={action} />
+        {localActions.map((action, i) => (
+          <ActionRow
+            key={i}
+            action={action}
+            disabled={!isEditable}
+            onQtyChange={(qty, unit) => handleQtyChange(i, qty, unit)}
+          />
         ))}
       </div>
 
