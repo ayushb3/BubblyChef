@@ -26,18 +26,11 @@ def _as_row(value: JSON) -> dict[str, Any]:
 
     supabase-py types every row of `result.data` as `JSON` — a
     `bool | str | int | float | Sequence[JSON] | Mapping[str, JSON] | None`
-    union — because postgrest can't know our schema. Every table this
-    repository queries always returns JSON *objects* per row, so at this
-    call site the value is a dict in practice; this function expresses that
-    invariant to mypy.
-
-    This is a `cast`, not an `isinstance` check, on purpose: it changes
-    nothing at runtime. If a row ever *weren't* a dict, the `.get()`/`[]`
-    calls that follow would still raise exactly the `AttributeError` /
-    `TypeError` they would have raised before this helper existed — the
-    failure surfaces immediately at the point of misuse instead of being
-    swallowed into a silently-empty `{}`, which would hide a real schema or
-    query bug behind "item not found"-shaped behaviour.
+    union — because postgrest can't know our schema. A `.select()` over a
+    table can't return a scalar row, so the "not actually a dict" case is
+    dead by construction; a runtime `isinstance` guard here would be
+    unreachable and untestable. `cast`, unlike `# type: ignore`, keeps every
+    downstream `row["..."]` / `row.get(...)` access type-checked.
     """
     return cast("dict[str, Any]", value)
 
@@ -45,8 +38,8 @@ def _as_row(value: JSON) -> dict[str, Any]:
 def _as_rows(value: list[JSON]) -> list[dict[str, Any]]:
     """Narrow a Supabase result list (`result.data`) to a list of dict rows.
 
-    Same reasoning as `_as_row`, applied to the list-returning queries
-    (`.select(...).execute()` without `.single()`).
+    Same reasoning as `_as_row`. A per-row `isinstance` guard would also run
+    on every pantry fetch for a condition PostgREST can't produce.
     """
     return cast("list[dict[str, Any]]", value)
 
