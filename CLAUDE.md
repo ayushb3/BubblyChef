@@ -290,15 +290,44 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 
 **Session orientation:** Read `ROADMAP.md` for current phase + open issues.
 
-**Never cite a bare issue or PR number.** Every time you mention an issue or PR
-in conversation — in a status table, a recommendation, a batch summary, a merge
-suggestion — give a one-line summary of what it actually is alongside the number,
-in plain language rather than the title verbatim. `#288` is useless on its own;
-"#288 — brainstorming forces expiring fruit into savoury dishes" is reviewable
-without leaving the terminal. For a PR, say what the change does and what it
-affects, so a merge decision can be made from the message itself. This applies
-however many you list: a table of ten issues gets ten summaries. The point is
-that the human never has to open GitHub to follow what you're proposing.
+**Never cite a bare issue or PR number.** Every time you mention one — in a status
+table, a recommendation, a batch summary, a merge suggestion — carry three things
+with the number:
+
+1. **Whether it is an issue or a PR.** Never leave this to inference. `#356` and
+   `#362` look identical and are not the same kind of thing; "issue #356" and
+   "PR #362" are unambiguous. A number alone forces a trip to GitHub just to find
+   out what sort of object it is.
+2. **Its title**, so it can be recognised and searched for.
+3. **A plain-language line on what it actually is** — not the title reworded. The
+   title says what it's called; this says what it means.
+
+So: `#288` is useless on its own. "Issue #288, *expiring items forced into every
+suggestion* — brainstorming wedges expiring fruit into savoury dishes" is
+reviewable without leaving the terminal.
+
+For a PR, that third part says what the change does and what it affects, so a
+merge decision can be made from the message itself. For a closed issue, say it's
+closed — a reference to something already resolved reads as live work otherwise.
+
+This applies however many you list: a table of ten gets ten. The point is that
+the human never has to open GitHub to follow what you're proposing.
+
+**End every message with a TL;DR and action items.** However short or long the
+message, close it with two things, in this order:
+
+1. **TL;DR** — the whole message compressed to a few lines. Someone who reads only
+   this should know what happened and what it means. Not a restatement of the
+   headings; the actual conclusions.
+2. **Action items** — what *the human* has to resolve, as a list. Each one names
+   the specific thing to do and what it unblocks. Decisions waiting on them,
+   merges to approve, questions to answer, things only they can run. If there is
+   genuinely nothing for them to do, say "Nothing needed from you" rather than
+   inventing filler or padding the list with work the agent is already doing.
+
+Keep them distinct: the TL;DR is what happened, the action items are what happens
+next and who owns it. This is the part of the message that gets read on a phone
+between other things — the rest of the message is context for when it's needed.
 
 **Full workflow reference:** See `WORKFLOW.md` at the repo root for the complete
 process model (issue lifecycle, autonomy gate, layered review, orchestration
