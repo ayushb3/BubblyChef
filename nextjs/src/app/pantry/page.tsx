@@ -19,7 +19,13 @@ import type { PantryItem } from '@/types/pantry'
 import { getFoodEmoji } from '@/lib/food-emoji'
 import { titleCase } from '@/lib/format'
 import { cookThisHref } from '@/lib/chat-seed'
-import { daysUntilExpiry, isExpiringSoon, isExpired, itemMatchesFacets } from '@/lib/pantry-helpers'
+import {
+  daysUntilExpiry,
+  estimatedExpirySuffix,
+  isExpiringSoon,
+  isExpired,
+  itemMatchesFacets,
+} from '@/lib/pantry-helpers'
 import type { PantryFacetSelection } from '@/lib/pantry-helpers'
 import FacetDropdown from '@/components/ui/FacetDropdown'
 import { LOCATIONS } from '@/components/pantry/AddItemModal'
@@ -86,13 +92,18 @@ function isUrgent(days: number | null): boolean {
   return isExpiringSoon(days)
 }
 
-function expiryBadge(days: number | null) {
+// `estimated` appends a subtle " · est." suffix (#182) when the expiry date
+// is a heuristic guess rather than one read from a receipt/label or entered
+// by hand — a provenance signal, so it must not affect the badge's
+// fresh/expiring/expired colouring.
+export function expiryBadge(days: number | null, estimated?: boolean) {
   if (days === null) return null
-  if (days < 0) return { label: 'Expired', color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
-  if (days === 0) return { label: 'Today', color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
-  if (days <= 2) return { label: `${days}d left`, color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
-  if (days <= 5) return { label: `${days}d left`, color: 'bg-[var(--color-expiring)] text-[var(--color-expiring-text)]' }
-  return { label: `${days}d left`, color: 'bg-[var(--color-fresh)] text-[var(--color-fresh-text)]' }
+  const suffix = estimatedExpirySuffix(estimated)
+  if (days < 0) return { label: `Expired${suffix}`, color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
+  if (days === 0) return { label: `Today${suffix}`, color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
+  if (days <= 2) return { label: `${days}d left${suffix}`, color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
+  if (days <= 5) return { label: `${days}d left${suffix}`, color: 'bg-[var(--color-expiring)] text-[var(--color-expiring-text)]' }
+  return { label: `${days}d left${suffix}`, color: 'bg-[var(--color-fresh)] text-[var(--color-fresh-text)]' }
 }
 
 function groupByCategory(items: PantryItem[]) {
@@ -305,7 +316,7 @@ function PantryPageInner() {
                 <div className="grid grid-cols-2 gap-2 p-3">
                   {grouped[cat].map((item, i) => {
                     const days = daysUntilExpiry(item.expiry_date)
-                    const badge = expiryBadge(days)
+                    const badge = expiryBadge(days, item.estimated_expiry)
                     // Expired or expiring gets the visible buttons; everything
                     // else resolves by swipe, so normal cards stay clean (#140).
                     const urgent = isUrgent(days) || isExpired(days)
