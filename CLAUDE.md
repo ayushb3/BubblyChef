@@ -296,6 +296,22 @@ affects, so a merge decision can be made from the message itself. This applies
 however many you list: a table of ten issues gets ten summaries. The point is
 that the human never has to open GitHub to follow what you're proposing.
 
+**End every message with a TL;DR and action items.** However short or long the
+message, close it with two things, in this order:
+
+1. **TL;DR** — the whole message compressed to a few lines. Someone who reads only
+   this should know what happened and what it means. Not a restatement of the
+   headings; the actual conclusions.
+2. **Action items** — what *the human* has to resolve, as a list. Each one names
+   the specific thing to do and what it unblocks. Decisions waiting on them,
+   merges to approve, questions to answer, things only they can run. If there is
+   genuinely nothing for them to do, say "Nothing needed from you" rather than
+   inventing filler or padding the list with work the agent is already doing.
+
+Keep them distinct: the TL;DR is what happened, the action items are what happens
+next and who owns it. This is the part of the message that gets read on a phone
+between other things — the rest of the message is context for when it's needed.
+
 **Full workflow reference:** See `WORKFLOW.md` at the repo root for the complete
 process model (issue lifecycle, autonomy gate, layered review, orchestration
 depth), and `docs/WORKFLOW.md` for BubblyChef's own operational quick-reference
