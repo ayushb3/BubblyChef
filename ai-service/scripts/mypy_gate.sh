@@ -20,6 +20,19 @@
 #
 #   cd ai-service && ./scripts/mypy_gate.sh --sync
 #
+# The filter run passes `--allow-unsynced` to mypy-baseline. Without it,
+# mypy-baseline's own exit code is `new_count + fixed_count` — it fails the
+# build not just for new errors but also for baselined errors that no longer
+# appear (i.e. someone fixed them), because the baseline file itself is now
+# "out of sync" with reality until `--sync` regenerates it. That would make
+# the gate go red as a *reward* for reducing type debt (acceptance criterion
+# #4 on issue #309: fixing a pre-existing error must not fail CI), and it
+# would actively discourage the #128 cleanup work. `--allow-unsynced` drops
+# `fixed_count` from the exit code while still failing on `new_count`, so a
+# fix is silently fine here and only shows up next time someone runs --sync.
+# Do not remove this flag "for strictness" — that reintroduces exactly the
+# bug it exists to prevent.
+#
 # mypy strictness itself (see pyproject.toml [tool.mypy]) is never touched
 # by this script — it only decides which of mypy's own findings are new.
 # Deliberately no `set -o pipefail`: mypy itself exits 1 whenever it finds
@@ -74,7 +87,7 @@ if [[ "${1:-}" == "--sync" ]]; then
     exit 0
 fi
 
-if "$PYTHON" -m mypy bubbly_chef/ --strict | "$PYTHON" -m mypy_baseline filter; then
+if "$PYTHON" -m mypy bubbly_chef/ --strict | "$PYTHON" -m mypy_baseline filter --allow-unsynced; then
     statuses=("${PIPESTATUS[@]}")
 else
     statuses=("${PIPESTATUS[@]}")
