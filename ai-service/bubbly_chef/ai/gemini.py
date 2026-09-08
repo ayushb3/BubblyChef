@@ -27,7 +27,7 @@ class GeminiProvider(AIProvider):
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-3.1-flash-lite",
         timeout: float = 60.0,
     ):
         """
@@ -35,7 +35,9 @@ class GeminiProvider(AIProvider):
 
         Args:
             api_key: Google AI API key
-            model: Model to use (gemini-2.5-flash recommended for free tier)
+            model: Model to use (gemini-3.1-flash-lite recommended for free tier —
+                fastest and most token-efficient of the current Flash lineup;
+                gemini-2.5-flash is deprecated, retiring no earlier than 2026-10-16)
             timeout: Request timeout in seconds
         """
         self.api_key = api_key

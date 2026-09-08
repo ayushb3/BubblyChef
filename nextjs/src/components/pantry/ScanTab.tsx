@@ -3,8 +3,9 @@
 import { useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
-import ScanResults from '@/components/scan/ScanResults'
+import ReviewSurface from '@/components/scan/ReviewSurface'
 import { uploadReceipt } from '@/lib/api/scan'
+import { scannedToBulkAddItem } from '@/lib/scan-helpers'
 import type { ScannedItem, ScanResult } from '@/types/scan'
 import type { AddItem } from './PantryAddSheet'
 
@@ -15,15 +16,7 @@ interface ScanTabProps {
 }
 
 function scannedToAddItem(item: ScannedItem): AddItem {
-  return {
-    name: item.name,
-    quantity: item.quantity ?? 1,
-    unit: item.unit ?? 'item',
-    category: item.category ?? 'other',
-    storage_location: item.location ?? 'pantry',
-    expiry_date: null,
-    source: 'scan',
-  }
+  return { ...scannedToBulkAddItem(item), source: 'scan' }
 }
 
 export default function ScanTab({ onItemsReady }: ScanTabProps) {
@@ -189,7 +182,7 @@ export default function ScanTab({ onItemsReady }: ScanTabProps) {
             </div>
 
             {/* Render results without their built-in confirm button — PantryAddSheet owns confirm */}
-            <ScanResults
+            <ReviewSurface
               readyToAdd={readyToAdd}
               needsReview={needsReview}
               skipped={skipped}
