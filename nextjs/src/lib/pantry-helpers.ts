@@ -16,6 +16,13 @@ export interface PantryItemRow {
   slot_index: number | null
   added_at: string
   updated_at: string
+  /**
+   * True when `expiry_date` is a heuristic guess rather than one read from a
+   * receipt/label or entered by hand (#182). Optional because rows fetched
+   * before the backing column existed simply omit it — treat missing as
+   * `false`, never crash.
+   */
+  estimated_expiry?: boolean
 }
 
 export interface EnrichedPantryItem extends PantryItemRow {
@@ -55,6 +62,76 @@ export function daysUntilExpiry(expiryDate: string | null): number | null {
   return Math.round(diffMs / (1000 * 60 * 60 * 24))
 }
 
+/**
+ * Subtle suffix appended to an expiry label when the date behind it is a
+ * heuristic guess (#182) rather than one read from a receipt/label or
+ * entered by the user — e.g. "3d left" → "3d left (est.)". A missing
+ * `estimated_expiry` (rows fetched before the column existed) is treated as
+ * "not estimated" rather than throwing.
+ *
+ * Deliberately a plain string, not a colour/tone change: this is a secondary
+ * signal about provenance, not an urgency signal, so it must not compete
+ * with the expiry badge's fresh/expiring/expired colouring.
+ */
+export function estimatedExpirySuffix(estimated: boolean | undefined | null): string {
+  return estimated ? ' (est.)' : ''
+}
+
+/**
+ * Expiring soon — the 0–3 day urgency window. Single source of truth shared by
+ * `enrichPantryItem` below and the pantry page's facet filter (#228), so the
+ * threshold can never drift between the two the way `daysUntilExpiry` once did
+ * between two independent copies (#244).
+ */
+export function isExpiringSoon(days: number | null): boolean {
+  return days !== null && days >= 0 && days <= 3
+}
+
+/**
+ * Already expired — strictly `days < 0`. Day-zero is "expiring soon", not
+ * expired; see `isExpiringSoon` above.
+ */
+export function isExpired(days: number | null): boolean {
+  return days !== null && days < 0
+}
+
+export type ExpiryFacetOption = 'expiring' | 'expired'
+
+export interface PantryFacetSelection {
+  /** Empty array = this facet does not constrain results. */
+  locations: string[]
+  /** Empty array = this facet does not constrain results. */
+  categories: string[]
+  /** Empty array = this facet does not constrain results. */
+  expiryStatuses: ExpiryFacetOption[]
+}
+
+/**
+ * Facet-combination predicate for the pantry filter bar (#228).
+ *
+ * Semantics: OR within a facet, AND across facets. An empty selection in a
+ * facet means that facet imposes no constraint at all (not "match nothing").
+ * Expiry reuses `isExpiringSoon`/`isExpired` above — no new thresholds.
+ */
+export function itemMatchesFacets(
+  item: { location: string; category: string },
+  days: number | null,
+  facets: PantryFacetSelection
+): boolean {
+  if (facets.locations.length > 0 && !facets.locations.includes(item.location)) {
+    return false
+  }
+  if (facets.categories.length > 0 && !facets.categories.includes(item.category)) {
+    return false
+  }
+  if (facets.expiryStatuses.length > 0) {
+    const matchesExpiring = facets.expiryStatuses.includes('expiring') && isExpiringSoon(days)
+    const matchesExpired = facets.expiryStatuses.includes('expired') && isExpired(days)
+    if (!matchesExpiring && !matchesExpired) return false
+  }
+  return true
+}
+
 export function enrichPantryItem(row: PantryItemRow): EnrichedPantryItem {
   let days_until_expiry: number | null = null
   let is_expired = false
@@ -66,8 +143,8 @@ export function enrichPantryItem(row: PantryItemRow): EnrichedPantryItem {
     today.setHours(0, 0, 0, 0)
     const diffMs = expiry.getTime() - today.getTime()
     days_until_expiry = Math.round(diffMs / (1000 * 60 * 60 * 24))
-    is_expired = days_until_expiry < 0
-    is_expiring_soon = days_until_expiry >= 0 && days_until_expiry <= 3
+    is_expired = isExpired(days_until_expiry)
+    is_expiring_soon = isExpiringSoon(days_until_expiry)
   }
 
   return {

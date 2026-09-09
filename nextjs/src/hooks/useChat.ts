@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { streamChatMessage, fetchChatHistory, applyPantryProposal } from '@/lib/api/chat'
 import type { ChatMessage, ChatResponse, PantryProposalData, PantryProposalAction } from '@/types/chat'
-import { getClarificationSuggestions, mergeTermSuggestions, mergeActions } from '@/types/chat'
+import { getClarificationSuggestions, mergeTermSuggestions, mergeActions, filterResolvedTerms } from '@/types/chat'
 
 /** Everything needed to apply a pantry proposal once the user approves it. */
 interface PendingProposal {
@@ -324,9 +324,12 @@ export function useChat(options?: UseChatOptions) {
                   }
                 : null
 
-              const mergedClarifications = mergeTermSuggestions(
-                getClarificationSuggestions(targetMsg?.response),
-                clarificationTerms,
+              const mergedClarifications = filterResolvedTerms(
+                mergeTermSuggestions(
+                  getClarificationSuggestions(targetMsg?.response),
+                  clarificationTerms,
+                ),
+                mergedProposal?.actions ?? [],
               )
 
               return prev.map((msg) => {
@@ -347,7 +350,7 @@ export function useChat(options?: UseChatOptions) {
                 // the card itself makes the context clear; the note is noise.
                 if (msg.id === assistantMsgId) {
                   const cleanContent = (msg.content || fallbackContent)
-                    .replace(/^\(still (with|don't know)[^)]*\)\s*/i, '')
+                    .replace(/^\([^)]*(?:still with|still don't know)[^)]*\)\s*/i, '')
                     .trim()
                   return {
                     ...msg,

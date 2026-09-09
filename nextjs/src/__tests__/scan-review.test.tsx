@@ -7,11 +7,16 @@
  *
  * The ScanResult stub matches the pinned contract exactly from
  * docs/plans/2026-08-19-receipt-scan-rework.md.
+ *
+ * Issue #259: the tiered review UI moved from `ScanResults` to the
+ * presentation-only `ReviewSurface`. These tests target `ReviewSurface`
+ * directly; `scan-results-reexport.test.tsx` covers the backward-compatible
+ * `ScanResults` alias separately.
  */
 
 import React from 'react'
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
-import ScanResults from '@/components/scan/ScanResults'
+import ReviewSurface from '@/components/scan/ReviewSurface'
 import ScannedItemCard from '@/components/scan/ScannedItemCard'
 import type { ScannedItem, ScanResult } from '@/types/scan'
 
@@ -87,7 +92,7 @@ function renderResults(overrides: Partial<{
     isSubmitting: false,
     ...overrides,
   }
-  return render(<ScanResults {...props} />)
+  return render(<ReviewSurface {...props} />)
 }
 
 // ─── 1. Tier sections render ──────────────────────────────────────────────────
