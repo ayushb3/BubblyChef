@@ -58,6 +58,7 @@ class SupabaseRepository:
             quantity_base=float(row["quantity_base"]) if row.get("quantity_base") is not None else None,
             unit_base=row.get("unit_base"),
             expiry_date=expiry,
+            estimated_expiry=bool(row.get("estimated_expiry") or False),
             slot_index=row.get("slot_index"),
             created_at=datetime.fromisoformat(row["added_at"])
             if row.get("added_at")
@@ -122,6 +123,7 @@ class SupabaseRepository:
             "quantity_base": float(item.quantity_base) if item.quantity_base is not None else None,
             "unit_base": item.unit_base,
             "expiry_date": item.expiry_date.isoformat() if item.expiry_date else None,
+            "estimated_expiry": bool(item.estimated_expiry),
             "slot_index": item.slot_index,
         }
         result = self.client.table("pantry_items").insert(data).execute()
@@ -135,6 +137,11 @@ class SupabaseRepository:
             updates["location"] = updates.pop("storage_location")
         if "name" in updates:
             updates["name_normalized"] = updates["name"].lower().strip()
+        # A caller-supplied expiry_date is a real date, not a heuristic guess —
+        # clear the estimated_expiry flag unless the caller explicitly set it
+        # themselves in this same update (see #182 follow-up).
+        if "expiry_date" in updates and "estimated_expiry" not in updates:
+            updates["estimated_expiry"] = False
 
         result = (
             self.client.table("pantry_items")
@@ -213,17 +220,30 @@ class SupabaseRepository:
                         # action; otherwise estimate from category/location/name so the
                         # expiry→cook loop actually lights up (previously hardcoded None).
                         raw_expiry = action.get("expiry_date")
+                        # #182: track whether expiry_date was heuristically guessed
+                        # vs. explicit (from label/receipt or user entry) so the UI
+                        # can distinguish the two. An explicit "estimated_expiry" on
+                        # the action always wins (the caller — e.g. receipt/product
+                        # ingest — already knows); otherwise it follows raw_expiry:
+                        # a caller-supplied date is not estimated, a heuristically
+                        # computed one is.
                         if raw_expiry:
                             item_expiry = (
                                 date.fromisoformat(raw_expiry)
                                 if isinstance(raw_expiry, str)
                                 else raw_expiry
                             )
+                            item_estimated_expiry = action.get("estimated_expiry", False)
                         else:
-                            item_expiry, _ = get_expiry_heuristics().estimate_expiry(
-                                category=item_category,
-                                storage=item_location,
-                                name=name,
+                            item_expiry, heuristic_estimated = (
+                                get_expiry_heuristics().estimate_expiry(
+                                    category=item_category,
+                                    storage=item_location,
+                                    name=name,
+                                )
+                            )
+                            item_estimated_expiry = action.get(
+                                "estimated_expiry", heuristic_estimated
                             )
                         item = PantryItem(
                             name=name,
@@ -234,6 +254,7 @@ class SupabaseRepository:
                             quantity_base=action.get("quantity_base"),
                             unit_base=action.get("unit_base"),
                             expiry_date=item_expiry,
+                            estimated_expiry=bool(item_estimated_expiry),
                         )
                         await self.add_pantry_item(user_id, item)
                     applied += 1
