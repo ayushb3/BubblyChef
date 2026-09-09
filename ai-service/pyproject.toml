@@ -47,6 +47,10 @@ dev = [
     # turns CI red on every branch at once.
     "ruff>=0.15,<0.16",
     "mypy>=1.10,<2",
+    # Gates mypy on new/newly-reintroduced errors only, against the
+    # checked-in ai-service/mypy-baseline.txt — see scripts/mypy_gate.sh
+    # and issue #309.
+    "mypy-baseline>=0.7,<1",
 ]
 
 [tool.setuptools.packages.find]
