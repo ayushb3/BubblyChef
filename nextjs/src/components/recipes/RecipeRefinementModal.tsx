@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
 import { refineRecipe } from '@/lib/api/recipes'
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
 interface RefinementHistoryEntry {
   prompt: string
@@ -30,6 +31,8 @@ export default function RecipeRefinementModal({
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  useModalFocusTrap(isOpen, onClose, panelRef)
 
   // Reset state when modal opens with a new recipe
   useEffect(() => {
@@ -111,7 +114,12 @@ export default function RecipeRefinementModal({
           {/* Modal — slide up from bottom */}
           <motion.div
             key="modal"
-            className="fixed inset-x-0 bottom-0 z-[60] flex flex-col rounded-t-3xl overflow-hidden"
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="recipe-refinement-modal-title"
+            tabIndex={-1}
+            className="fixed inset-x-0 bottom-0 z-[60] flex flex-col rounded-t-3xl overflow-hidden outline-none"
             style={{
               background: 'var(--color-bg)',
               maxHeight: '92dvh',
@@ -136,6 +144,7 @@ export default function RecipeRefinementModal({
               style={{ borderColor: 'var(--color-border)' }}
             >
               <h2
+                id="recipe-refinement-modal-title"
                 className="text-lg font-extrabold"
                 style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
               >
