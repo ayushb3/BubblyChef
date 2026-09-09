@@ -56,7 +56,6 @@ describe('useModalFocusTrap', () => {
           {open && (
             <div ref={panelRef} role="dialog" tabIndex={-1}>
               <button>First</button>
-              {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
               <input autoFocus placeholder="autofocused field" />
             </div>
           )}
@@ -116,6 +115,39 @@ describe('useModalFocusTrap', () => {
     trigger.focus()
     fireEvent.click(trigger)
     expect(screen.getByText('First')).toHaveFocus()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(trigger).toHaveFocus()
+  })
+
+  it('restores focus to the trigger on close even when the panel auto-focused its own field on open', () => {
+    // This exercises the `previouslyFocused` branch of the module-level
+    // focus tracker: `document.activeElement` at effect-run time is the
+    // autoFocused input *inside* the panel, not the trigger, so the trigger
+    // can only be recovered via the tracker's history, not a fresh read of
+    // `document.activeElement`. If the tracker's `focusin` listener never
+    // fired under jsdom, `previouslyFocused` would stay `null` and this
+    // assertion would fail (the trigger would not regain focus) rather than
+    // passing for the wrong reason.
+    function AutoFocusRestoreHarness() {
+      const [open, setOpen] = useState(false)
+      const panelRef = useRef<HTMLDivElement>(null)
+      useModalFocusTrap(open, () => setOpen(false), panelRef)
+      return (
+        <div>
+          <button onClick={() => setOpen(true)}>Open</button>
+          {open && (
+            <div ref={panelRef} role="dialog" tabIndex={-1}>
+              <input autoFocus placeholder="autofocused field" />
+            </div>
+          )}
+        </div>
+      )
+    }
+    render(<AutoFocusRestoreHarness />)
+    const trigger = screen.getByText('Open')
+    trigger.focus()
+    fireEvent.click(trigger)
+    expect(screen.getByPlaceholderText('autofocused field')).toHaveFocus()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(trigger).toHaveFocus()
   })

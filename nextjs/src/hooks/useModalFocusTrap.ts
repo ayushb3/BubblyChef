@@ -76,6 +76,34 @@ function getFocusable(panel: HTMLElement): HTMLElement[] {
   return Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(isVisible)
 }
 
+// Module-level focus tracker, not component state — this is what lets the
+// hook resolve "the trigger" correctly even when a mounts-to-open modal's
+// first field steals focus via `autoFocus` during the commit's mutation
+// phase (e.g. RecipeImportModal's URL input), which happens before any
+// React effect runs. A `focusin` listener sees every focus change in the
+// document — including the browser's own autoFocus-on-insert — as it
+// happens, in the order it happens, regardless of which React phase (render,
+// commit, passive effect) triggered it. That sidesteps the ordering bet the
+// previous render-body-capture approach depended on (see the effect below
+// for what that bet was and why it broke `react-hooks/refs`). Guarded for
+// SSR: this module is imported during server render, where `document`
+// doesn't exist.
+let currentlyFocused: HTMLElement | null = null
+let previouslyFocused: HTMLElement | null = null
+
+if (typeof document !== 'undefined') {
+  document.addEventListener(
+    'focusin',
+    (e) => {
+      const target = e.target as HTMLElement | null
+      if (target === currentlyFocused) return
+      previouslyFocused = currentlyFocused
+      currentlyFocused = target
+    },
+    { passive: true },
+  )
+}
+
 export function useModalFocusTrap(
   isOpen: boolean,
   onClose: () => void,
@@ -93,57 +121,46 @@ export function useModalFocusTrap(
   })
 
   const triggerRef = useRef<HTMLElement | null>(null)
-  const wasOpenRef = useRef(false)
-
-  // Captured during render, not in an effect: for "mounts-to-open" modals
-  // whose first focusable field carries its own `autoFocus` (e.g.
-  // RecipeImportModal's URL input), React applies that `autoFocus` during
-  // the commit's mutation phase, which runs *before* any passive effect —
-  // so by the time a `useEffect` here could read `document.activeElement`,
-  // the modal's own field would already have stolen it, and "the trigger"
-  // would wrongly resolve to the modal's own input instead of whatever
-  // opened the modal. Reading it here, synchronously in the render body,
-  // is the only way to beat that commit.
-  //
-  // This is NOT an instance of React's sanctioned lazy-init-ref pattern —
-  // that pattern is a pure, at-most-once computation with no external
-  // volatile read. This write is gated on a prop transition (`isOpen` can
-  // flip true→false→true many times over the component's life, re-arming
-  // the guard each time) and reads `document.activeElement`, which is live,
-  // external, mutable browser state, not a pure function of props. What
-  // actually makes it safe here is narrower: every modal in this codebase
-  // opens via a synchronous `useState` setter inside a plain event handler
-  // (no `startTransition`, no Suspense-driven mount), so a render is never
-  // abandoned and retried between this capture and the real commit. If a
-  // future caller ever wraps a modal-opening state update in
-  // `startTransition` (or otherwise triggers a concurrent, interruptible
-  // render) for some unrelated reason, React could re-run this render body
-  // — finding `wasOpenRef.current` already flipped from the abandoned
-  // attempt — and silently skip recapturing the trigger, or capture the
-  // wrong one. Nothing here uses concurrent features today, so this isn't a
-  // live bug; it's a constraint this hook depends on but doesn't enforce.
-  if (isOpen && !wasOpenRef.current) {
-    triggerRef.current = document.activeElement as HTMLElement | null
-  }
-  wasOpenRef.current = isOpen
 
   useEffect(() => {
     if (!isOpen) return
 
+    const panel = panelRef.current
+
+    // Resolve "the trigger" — whatever had focus right before this modal
+    // claimed it — using the module-level tracker above, not
+    // `document.activeElement` read fresh here. By the time this effect
+    // runs, a mounts-to-open modal's own `autoFocus` field (if any) may
+    // already have stolen `document.activeElement` during commit; in that
+    // case the *actual* trigger is one step further back in the tracker's
+    // history (`previouslyFocused`), not the current value. Writing this
+    // into a ref inside an effect, rather than during render, is what the
+    // `react-hooks/refs` rule requires — refs are only safe to read/write
+    // outside render, which the tracker's own module-level state already
+    // satisfies (it's plain mutable state, not a React ref, so nothing
+    // about touching it during render would even be meaningful).
+    const activeElement = document.activeElement as HTMLElement | null
+    const activeIsInsidePanel = !!(panel && activeElement && panel.contains(activeElement))
+    const resolvedTrigger = activeIsInsidePanel ? previouslyFocused : activeElement
+    // Never restore focus into the panel itself — it's about to unmount (or
+    // is the thing capturing Tab), so a trigger resolved to a node inside it
+    // would restore focus to something that's gone by the time cleanup runs.
+    triggerRef.current =
+      resolvedTrigger && panel && panel.contains(resolvedTrigger) ? null : resolvedTrigger
+
     // Whatever had focus when the modal opened — almost always the button
-    // that triggered it — gets it back on close (captured above, during
-    // render). For the common case (a page-level button opens a modal),
-    // that is exactly the right element and it stays mounted for as long as
-    // the modal is open, so restore-on-close just works. For a modal that
-    // opens *directly* from within another modal in the very same commit
-    // (e.g. `RecipeImportModal` handing off to `RecipeEditModal` for the
-    // import-review step), the captured "trigger" can itself be a node
+    // that triggered it — gets it back on close (resolved above). For the
+    // common case (a page-level button opens a modal), that is exactly the
+    // right element and it stays mounted for as long as the modal is open,
+    // so restore-on-close just works. For a modal that opens *directly*
+    // from within another modal in the very same commit (e.g.
+    // `RecipeImportModal` handing off to `RecipeEditModal` for the
+    // import-review step), the resolved "trigger" can itself be a node
     // that's about to unmount — the `isConnected` check below is what keeps
     // that from crashing or focusing a detached element; native browser
     // behaviour (moving focus to <body>) is the honest fallback in that
     // narrower case rather than a wrong guess.
 
-    const panel = panelRef.current
     if (panel) {
       // Respect a field's own `autoFocus` (e.g. RecipeImportModal's URL
       // input) instead of always jumping to the first focusable element.
