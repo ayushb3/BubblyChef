@@ -319,8 +319,14 @@ closed — a reference to something already resolved reads as live work otherwis
 This applies however many you list: a table of ten gets ten. The point is that
 the human never has to open GitHub to follow what you're proposing.
 
-**End every message with a TL;DR and action items.** However short or long the
-message, close it with two things, in this order:
+**Close out finished work with a TL;DR and action items — not every message.**
+These belong at a genuine stopping point: work is done, a batch has landed, or
+the turn ends with something waiting on the human. A message reporting progress
+mid-task, answering a question, or handing back one small result does not get
+them — repeating the same summary every turn buries the one that matters and
+wastes the context it costs.
+
+When it *is* a stopping point, close with two things, in this order:
 
 1. **TL;DR** — the whole message compressed to a few lines. Someone who reads only
    this should know what happened and what it means. Not a restatement of the
