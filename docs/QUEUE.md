@@ -1,8 +1,7 @@
 # Queue
 
-**Updated:** 2026-09-05 · by an agent session · ready-for-agent queue fully cleared this
-session (#182, #309, #308, #228, #291, #259) — all in PRs. Also verified #353 (another
-session's PR) and found the real root cause behind part of #361.
+**Updated:** 2026-09-11 · by the cloud agent session · `main` @ `841027d` ·
+handing off to a local session — see `docs/HANDOFF.md`
 
 > Rewritten whenever queue state changes. It is a checkpoint, not a live feed — nothing
 > updates it while no session is running, so trust the timestamp above. If two sessions
@@ -12,145 +11,142 @@ session's PR) and found the real root cause behind part of #361.
 
 ## Needs you
 
-### 🟢 Ready to merge — green CI, no blockers
+### 🔴 Five merged features have never been seen working
 
-- [PR #364](https://github.com/ayushb3/BubblyChef/pull/364) — docs: queue refresh.
-- [PR #366](https://github.com/ayushb3/BubblyChef/pull/366) — **#308**: real OpenFoodFacts
-  barcode lookup. Live API itself untested (this sandbox's browser/network can't reach it —
-  see environment notes below) — worth a manual check before relying on it in prod.
-- [PR #367](https://github.com/ayushb3/BubblyChef/pull/367) — **#228**: pantry filter bar →
-  3 multi-select facets (location/category/expiry).
-- [PR #353](https://github.com/ayushb3/BubblyChef/pull/353) — **#341 + #342** (another
-  session's PR, verified this session): resolved clarification pills disappear, raw context
-  prefix stripped from replies. Rebased onto current `main` (was behind), verified correct —
-  690 pytest / 301 jest, `tsc` clean. **Does not fix #361** — see below.
-- [PR #371](https://github.com/ayushb3/BubblyChef/pull/371) — **#259**: extracts
-  `ReviewSurface` (presentation-only tiered scan review) out of the pantry-add sheet, adds
-  the `/scan` route `CLAUDE.md` already claimed existed. CI still running as of this write —
-  check before merging.
+This is the real risk right now, and it outranks everything below. #368, #367,
+#362, #371 and #366 all merged on unit tests and code reading alone — no browser,
+no screenshots, no human click-through, because the cloud sandbox can't drive one.
+**PR #366's OpenFoodFacts lookup has never called the live API even once.**
 
-### 🟡 Draft, needs a migration applied — #182
+`docs/HANDOFF.md` has the table: what to open, and what "wrong" looks like for each.
+A local session can clear all five in well under an hour.
 
-[PR #362](https://github.com/ayushb3/BubblyChef/pull/362) adds
-`supabase/migrations/00008_add_pantry_estimated_expiry.sql` (additive). Needs the Supabase
-dashboard SQL Editor or `supabase db push` — an agent session can't do this. Safe to merge
-before applying; the UI feature just won't show up until the column exists.
+### 🟡 One command, worth doing first — the mypy baseline is stale
 
-### 🟡 Draft, CI-config change — #309
+`ai-service/mypy-baseline.txt` holds **106 entries**; there are actually **36**
+errors. PR #377 fixed more than it claimed (`supabase_repo.py` went 73 → 4) and
+nobody re-synced. The gate exits 0 anyway because of `--allow-unsynced`, so
+**70 stale entries could mask a genuinely reintroduced error.** The gate prints
+the remedy on every run:
 
-[PR #365](https://github.com/ayushb3/BubblyChef/pull/365) adds a mypy baseline gate to CI.
-Held as draft on purpose — CI-pipeline changes are treated as feature-level here regardless
-of how green they are.
+```bash
+cd ai-service && ./scripts/mypy_gate.sh --sync   # then commit the baseline
+```
 
-### 🟡 Draft, feature-level (8-component scope) — #291
-
-[PR #368](https://github.com/ayushb3/BubblyChef/pull/368) — shared focus trap wired into all
-8 modals. Two review passes (one specifically re-scrutinizing the shared hook's React
-correctness) found and fixed two latent risks before this PR existed. Held as draft: worth
-`/interrogate` before merge given the scope. Screen-reader behavior (VoiceOver/NVDA)
-couldn't be verified headlessly.
+Do this before anyone picks up the rest of issue #128.
 
 ---
 
-## #361 — investigated, root cause filed separately
+## Open PRs (2)
 
-You filed #361 with screenshots showing inconsistent chat pantry-add behavior. Traced one of
-the three symptoms ("lost the previous context of apples and eggs") to a real bug: a
-cleanly-resolved pantry-add turn (nothing left unclear) explicitly wipes
-`session.pending_proposal = None` in `router.py`, which is the only place item-name
-continuity across turns lives — so a later vague turn genuinely has no memory of what was
-just added. **Filed as [#370](https://github.com/ayushb3/BubblyChef/issues/370)**, with the
-exact trace and a suggested fix shape. Confirmed this is *not* something PR #353 touches or
-was ever meant to fix — #353's own body flags the adjacent territory as #307-followup,
-out of scope. The other two symptoms in your screenshots (a proposal card not rendering, a
-missing "not sure" clarification row) look like separate frontend issues — not traced, no
-visual repro possible in this sandbox (see below).
+- **[PR #360](https://github.com/ayushb3/BubblyChef/pull/360)** — *feat: render
+  "Update what I'm cooking" block for recipe amendments*. The frontend half of the
+  cook-flow amendment loop; closes issue #303. **Draft, conflicted, 65 behind main,
+  untouched since Sep 5.** Its stated blocker has cleared (PR #355 merged), but it
+  has a real conflict in `nextjs/src/app/chat/page.tsx` and — more importantly —
+  **this code was merged and reverted once before** (`cde66fa` → `0e68d63`) with no
+  reason recorded. Settle that before resuming. You also asked for a demo of this
+  flow on Sep 5 and never got one; a local session can finally produce it.
+
+- **[PR #124](https://github.com/ayushb3/BubblyChef/pull/124)** — *docs: plan for
+  gamification + the live kitchen*. Design doc only, long-standing draft. Held
+  deliberately: high risk, medium value, not MVP. No action needed.
 
 ---
 
 ## Ready to pick up
 
-**Empty.** Everything that was on this list at the start of the session (#309, #308, #182,
-#311, #228, #302, #291, #259) is now merged, drafted, or claimed by another session —
-except #311, which wasn't re-verified this session (worth a quick check that it's still
-real before anyone picks it up next).
+### `ready-for-agent` (2)
 
-**Held:**
-- **#183** — backfill expiry estimates. Blocked by **#182**, specifically until its
-  migration is *applied*, not just merged.
+- **[#375](https://github.com/ayushb3/BubblyChef/issues/375)** —
+  *WorkflowState.proposal union doesn't include recipe amendments, and
+  `model_dump()` erases the type.* Triaged this session. **Sequence after PR #360**
+  — that PR is the consumer of the shape this fixes. Related smell:
+  `nextjs/src/hooks/useChat.ts:266` duck-types proposals via
+  `!!proposal && proposal.actions.length > 0`.
+- **[#183](https://github.com/ayushb3/BubblyChef/issues/183)** — *Backfill expiry
+  estimates for existing pantry rows with no expiry date.* **Newly unblocked** —
+  it was held until #182's migration was *applied*, not just merged, and that's
+  now done.
 
-**Taken (open PR from another session, verified or left as noted):**
-- **#341 + #342** → [PR #353](https://github.com/ayushb3/BubblyChef/pull/353) — verified
-  correct this session, see above. Ready to merge.
-- **#302** → [PR #355](https://github.com/ayushb3/BubblyChef/pull/355) — not touched, was
-  behind `main` last checked.
-- **#303** → [PR #360](https://github.com/ayushb3/BubblyChef/pull/360) — not touched, was
-  dirty (real conflict) last checked, blocked on #355 anyway.
+### `ready-for-human`, browser-dependent — the local session's lane
 
----
-
-## New tickets filed this session
-
-- **#363** — the manual "type it in" pantry-add path never sets `estimated_expiry` on a
-  guessed date. Blocked on #182's migration landing.
-- **#370** — the `pending_proposal = None`-on-clean-turn bug behind part of #361 (see above).
-
----
-
-## Awaiting triage
-
-| # | What |
-|---|---|
-| **331** | No sign-out anywhere in the app. Also blocks manual per-user testing. |
-| **332** | Hard login wall — no landing page, no demo, no guest mode. Product decision. |
-| **337** | `middleware` file convention deprecated — fails open on next Next.js upgrade. |
-| **316** | PR review gate. Worktree-specific false positive. Avoidable by working in main checkout. |
-| **356** | Pantry merge-on-add collapses distinct lots, discards new lot's expiry; unit-blind sum. |
-| **357** | Non-blocking expiry field on the chat/scan add card — supplies #356's needed input. |
-| **358** | Unapproved pantry proposal cards vanish on chat remount (history restore gap from #265). |
-| **361** | Chat pantry-update loses context / inconsistent card rendering. Root cause of one symptom filed as #370; two others (card not rendering, missing clarification row) still untraced. |
-| **363** | *(new — see above)* |
-| **370** | *(new — see above)* |
+- **[#351](https://github.com/ayushb3/BubblyChef/issues/351)** — *feat(e2e):
+  Playwright demo flows — full app happy-path walkthrough.* Highest leverage of
+  the three: it produces the demo clips that make every future PR reviewable
+  without a live session.
+- **[#352](https://github.com/ayushb3/BubblyChef/issues/352)** — *test(e2e): full
+  Playwright regression suite, CI-gated, all modules.*
+- **[#345](https://github.com/ayushb3/BubblyChef/issues/345)** — *cook-confirm +
+  receipt stubbed specs fail on a production server*, masked by dev-server partial
+  hydration. Reproducible locally; was not reproducible from the cloud.
 
 ---
 
-## Not yet filed
+## Awaiting your decision (not agent work)
 
-- **Recent-chats list UI.** #265's triage split this out — persistence only.
-- **Behavioural eval for expiry-vs-coherence.** #288, #336, #347 are all prompt/weight
-  fixes verified structurally. Nobody has measured the actual model output yet.
-- **Stale `priority_items` label in `GROUNDED_RECIPE_SYSTEM_PROMPT`.** Cosmetic only,
-  post-#347.
+| # | Kind | What it is |
+|---|---|---|
+| **376** | issue | *`get_recipe` declares `-> RecipeCard \| None` but returns a raw dict, and every caller works around it.* The fix is easy; the question is whether the contract becomes the declared type or the honest dict. Ripples to every caller. |
+| **332** | issue | *The app is a hard login wall* — no landing page, no demo, no guest mode. Product decision. Also makes demo recording harder than it needs to be. |
+| **331** | issue | *No way to sign out of the app.* Small, but it blocks multi-user manual testing — which matters more now that testing is local. |
+| **202** | issue | *Decide production AI provider(s) + tool-calling parity strategy.* Model is now `gemini-3.1-flash-lite`. Your own prior research: cost is a rounding error at this volume; tool-calling reliability is the real variable. |
 
 ---
 
-## Environment notes for the next session
+## Closed out since the last queue write
+
+Merged: **PR #368** (#291 modal focus trap), **PR #377** (#128 slice 1, Supabase
+row narrowing), **PR #378** (TL;DR rule rescope), **PR #365** (#309 mypy gate),
+**PR #362** (#182 estimated-expiry), **PR #367** (#228 pantry facets), **PR #366**
+(#308 barcode lookup), **PR #371** (#259 ReviewSurface), **PR #353** (#341 + #342),
+**PR #355** (#302 amendment proposal), plus #372, #373, #374, #359, #354, #349,
+#350, #343.
+
+Issue **#182**'s migration (`00008_add_pantry_estimated_expiry.sql`) is **applied**
+in Supabase — confirmed by you.
+
+---
+
+## Still untraced
+
+- **Two of the three symptoms in [#361](https://github.com/ayushb3/BubblyChef/issues/361)**
+  — a proposal card not rendering, and a missing "not sure" clarification row.
+  The third symptom was traced to a real deterministic bug, filed as
+  [#370](https://github.com/ayushb3/BubblyChef/issues/370). These two need a
+  browser and were never investigated.
+- **[#311](https://github.com/ayushb3/BubblyChef/issues/311)** — cause identified
+  (`useChat.ts:426-443` only populates `pendingProposals` when
+  `requires_review === true`) but not re-verified recently. Now a 2-minute check.
+- **Behavioural eval for expiry-vs-coherence.** #288, #336 and #347 are all
+  prompt/weight fixes verified *structurally*. Nobody has measured actual model
+  output.
+- **Recent-chats list UI.** #265's triage split this out; persistence only, never filed.
+
+---
+
+## Environment notes
 
 - **`ai-service` tests need the venv interpreter**: `./.venv/bin/python -m pytest -q`.
   System `pytest` lacks `httpx` and fails at collection.
-- **`mypy --strict` has 94 pre-existing errors** (#128), gated (not blocking) once #309
-  merges. Until then, still not run in CI at all.
-- **`npm run lint` has 2 pre-existing `e2e/` errors.** Expected baseline.
-- **This sandbox's browser can't reach Supabase or the live OpenFoodFacts API**, even
-  though `curl` and the Next.js dev server reach both fine from the same sandbox. Tried
-  explicit Playwright proxy config, localhost bypass, and `--ignore-certificate-errors` —
-  all hit `ERR_CONNECTION_RESET` on the actual auth/API call. This looks like a
-  browser-traffic-specific restriction in this environment's proxy, not an app bug. Means:
-  no interactive click-through verification is possible from a cloud session here —
-  verify behavioral changes by reading the code + running the real backend functions
-  directly (as this session did for #353/#361), not by trying to drive a browser.
-  `curl "$HTTPS_PROXY/__agentproxy/status"` shows the raw proxy denials if you hit the
-  same wall.
-- **Admin-level Supabase auth endpoints (listing/minting users) are blocked by this
-  session's permission classifier**, on top of the browser issue above — don't try to work
-  around either restriction; report the limitation and verify some other way instead.
-- **Multiple sessions are working this repo concurrently.** Check live PR state before
-  branching on anything, not just this doc.
+- **`nextjs` clean baseline**: `tsc` clean · `eslint src/` **0 errors, 3 warnings**
+  (all pre-existing) · `jest` **39 suites / 351 tests**.
+- **CI runs eslint and it is a real gate.** PR #368 went red on it with `tsc` and
+  jest both clean — `eslint-plugin-react-hooks` v6's `react-hooks/refs` rule is
+  strict about render-phase ref access. Run it locally before pushing.
+- **`mypy --strict`: 36 errors** (was 96), gated not blocking. Fixing them is #128.
+- **The cloud sandbox cannot drive a browser against this app** — Supabase and
+  third-party APIs are unreachable from browser traffic specifically, while `curl`
+  and the dev server reach both fine. Admin Supabase auth endpoints are separately
+  blocked by the permission classifier. Full detail in `docs/HANDOFF.md`.
+- **Multiple sessions have worked this repo concurrently.** Check live PR state
+  before branching on anything, not just this doc.
 
 ---
 
 ## How to read a PR from this queue
 
-Every PR body should let you approve or reject **without opening the diff**: what changed in
-plain behaviour, screenshots for anything visual, what was actually verified and how, and an
-explicit list of what is *not* covered. If a PR body does not do that, it is not finished.
+Every PR body should let you approve or reject **without opening the diff**: what
+changed in plain behaviour, screenshots for anything visual, what was actually
+verified and how, and an explicit list of what is *not* covered. If a PR body does
+not do that, it is not finished.
