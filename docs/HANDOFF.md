@@ -28,10 +28,12 @@ written so a fresh local session can start cold without reading the old transcri
 >    precisely because they need a working browser. They are now unblocked for
 >    you. #351 first — it produces the demo clips that make every future PR
 >    reviewable without a live session.
-> 3. **Issue #345** (*cook-confirm + receipt stubbed specs fail on a production
->    server*) — existing e2e specs pass against the dev server and fail against a
->    production build, currently masked by dev-server partial hydration. You can
->    actually reproduce this; the previous session could not.
+> 3. **Issue #345** (*test(e2e): cook-confirm + receipt stubbed specs fail on a
+>    production server*) — existing e2e specs pass against the dev server and
+>    fail against a production build, currently masked by dev-server partial
+>    hydration. You can actually reproduce this; the previous session could not.
+>    Note its labels are `tech-debt`/`frontend`/`module:infra` — **not**
+>    `ready-for-human`, so it won't show up in that filter.
 >
 > Follow the repo's process: PM delegates implementation to the dev-role
 > subagents (`backend`, `frontend`, `ui-ux`, `qa-reviewer`), two-axis
@@ -89,6 +91,23 @@ Also never verified anywhere: **screen-reader announcement** (VoiceOver/NVDA) fo
 the `role="dialog"` / `aria-modal` / `aria-labelledby` wiring. Only the DOM
 attributes were asserted.
 
+**And it's more than five.** Five smaller PRs merged in the same window also
+change behaviour and are equally unverified — the table above is the top of the
+list, not all of it:
+
+- **PR #374** — *chore(ai): default to gemini-3.1-flash-lite, refresh model docs*
+  (issue #231). **A live model swap.** Every AI response in the app now comes from
+  a different model than when most of this work was written, and nobody has
+  compared real output before and after. Issue #361's chat symptoms were reported
+  against the *old* model.
+- **PR #354** — *feat(pantry): base-unit backfill on write (#224) + assume culinary
+  staples in recipes (#305)*. Touches the pantry write path and recipe generation.
+- **PR #350** — *feat(chat): inline quantity/unit clarification on pantry proposal
+  cards* (issue #340). New chat UI.
+- **PR #349** — *fix(chat): empty pantry prompts to stock, not invent recipes*
+  (issue #243).
+- **PR #343** — *fix(chat): the active conversation survives navigating away*.
+
 ---
 
 ## Live state — 2026-09-11
@@ -99,8 +118,10 @@ attributes were asserted.
   amendments*. Frontend half of the cook-flow amendment loop; closes issue #303.
   **Draft, `mergeable_state: dirty`, untouched since Sep 5, 65 commits behind
   main.** Three things to know before touching it:
-  1. Its stated blocker **has cleared** — PR #355 (issue #302, the backend that
-     emits the amendment proposal) merged as `2739038`.
+  1. Its stated blocker **has cleared** — **PR #355** (*feat(chat): cooking-mode
+     turns emit structured recipe amendment proposals*, closing issue #302, the
+     backend that makes a cooking-mode turn return an amendment the UI can render)
+     merged as `2739038`.
   2. Real merge conflict in `nextjs/src/app/chat/page.tsx`, which has changed a
      lot on main since. Not a trivial import collision.
   3. **This code was merged to main once and reverted** — `cde66fa` then
@@ -149,8 +170,11 @@ awaiting decisions.
 Found while writing this handoff, not previously reported.
 
 `ai-service/mypy-baseline.txt` holds **106 entries**. Actual current errors:
-**36**. PR #377 fixed far more than its own slice claimed — `supabase_repo.py`
-went **73 → 4** — and the baseline was never re-synced afterward.
+**36**. **PR #377** (*fix(types): narrow Supabase result rows*, slice 1 of issue
+#128 — it added `_as_row`/`_as_rows` helpers that narrow postgrest's recursive
+`JSON` union to a dict at 15 call sites) fixed far more than its own slice
+claimed — `supabase_repo.py` went **73 → 4** — and the baseline was never
+re-synced afterward.
 
 The gate still exits 0, because `scripts/mypy_gate.sh` passes `--allow-unsynced`.
 That flag is there deliberately (without it, *resolving* a baselined error fails
@@ -186,10 +210,11 @@ Things the previous sessions established at real cost. Don't spend the time agai
 
 - **Issue #370** — *a cleanly-resolved pantry-add turn wipes item continuity.*
   This is the root cause of one of the three symptoms in your issue #361 report.
-  It is a **deterministic code bug, not LLM behaviour** — `router.py:812`, in
-  `update_session_node`: the whole `pending_proposal` block is gated on
-  `if state.get("requires_review")`, and the `else` branch sets
-  `session.pending_proposal = None`, wiping the only place cross-turn item memory
+  It is a **deterministic code bug, not LLM behaviour** — in `update_session_node`
+  (`router.py`, function starts at line 641): the whole `pending_proposal` block
+  is gated on `if state.get("requires_review")` at line 721, and the `else` branch
+  at lines 811-813 sets `session.active_mode = SessionMode.DEFAULT` then
+  `session.pending_proposal = None` — wiping the only place cross-turn item memory
   lives. **A model swap will not fix this.** The other two symptoms in your
   screenshots (a proposal card not rendering, a missing clarification row) were
   never traced — they need a browser, so they're yours now.
@@ -209,7 +234,9 @@ Things the previous sessions established at real cost. Don't spend the time agai
   concluded cost is a rounding error at this volume ($0.55–$6/month across all
   options) and that **tool-calling reliability, not price, is the real decision
   variable** — and that self-hosting is a privacy/learning choice, not an
-  economic one. Issue #202 is where that decision lives.
+  economic one. **Issue #202** (*Decide production AI provider(s) + tool-calling
+  parity strategy*) — the open decision on which provider ships to production and
+  how tool-calling parity is maintained across fallbacks — is where that lives.
 
 - **`mypy-baseline`'s exit code** is `new_count + fixed_count` unless
   `--allow-unsynced` is passed. This is not documented anywhere obvious and it

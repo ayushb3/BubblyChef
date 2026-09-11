@@ -13,10 +13,20 @@ handing off to a local session — see `docs/HANDOFF.md`
 
 ### 🔴 Five merged features have never been seen working
 
-This is the real risk right now, and it outranks everything below. #368, #367,
-#362, #371 and #366 all merged on unit tests and code reading alone — no browser,
-no screenshots, no human click-through, because the cloud sandbox can't drive one.
-**PR #366's OpenFoodFacts lookup has never called the live API even once.**
+This is the real risk right now, and it outranks everything below. Five PRs
+merged on unit tests and code reading alone — no browser, no screenshots, no human
+click-through, because the cloud sandbox can't drive one:
+
+- **PR #368** — *feat(a11y): shared focus trap + dialog semantics for all 8 modals*
+  (closes issue #291). Rewires keyboard focus in every modal in the app.
+- **PR #367** — *feat(pantry): filter bar → 3 multi-select facets* (closes issue
+  #228). Location/category/expiry filtering on `/pantry`.
+- **PR #362** — *feat(pantry): estimated-expiry flag* (closes issue #182). Marks a
+  guessed expiry date with an "(est.)" suffix so a heuristic isn't mistaken for fact.
+- **PR #371** — *refactor(scan): extract ReviewSurface + add the `/scan` route*
+  (closes issue #259). Two entry points now share one review UI.
+- **PR #366** — *feat(scan): real OpenFoodFacts barcode lookup* (closes issue #308).
+  **Its live API has never been called even once** — the sandbox couldn't reach it.
 
 `docs/HANDOFF.md` has the table: what to open, and what "wrong" looks like for each.
 A local session can clear all five in well under an hour.
@@ -69,7 +79,9 @@ Do this before anyone picks up the rest of issue #128.
   it was held until #182's migration was *applied*, not just merged, and that's
   now done.
 
-### `ready-for-human`, browser-dependent — the local session's lane
+### Browser-dependent — the local session's lane
+
+(#351 and #352 carry `ready-for-human`; #345 does not — see its note.)
 
 - **[#351](https://github.com/ayushb3/BubblyChef/issues/351)** — *feat(e2e):
   Playwright demo flows — full app happy-path walkthrough.* Highest leverage of
@@ -77,9 +89,12 @@ Do this before anyone picks up the rest of issue #128.
   without a live session.
 - **[#352](https://github.com/ayushb3/BubblyChef/issues/352)** — *test(e2e): full
   Playwright regression suite, CI-gated, all modules.*
-- **[#345](https://github.com/ayushb3/BubblyChef/issues/345)** — *cook-confirm +
-  receipt stubbed specs fail on a production server*, masked by dev-server partial
-  hydration. Reproducible locally; was not reproducible from the cloud.
+- **[#345](https://github.com/ayushb3/BubblyChef/issues/345)** — *test(e2e):
+  cook-confirm + receipt stubbed specs fail on a production server*, masked by
+  dev-server partial hydration. Reproducible locally; was not reproducible from
+  the cloud. **Labelled `tech-debt`/`frontend`/`module:infra`, not
+  `ready-for-human`** — it belongs in this lane by nature of needing a browser,
+  but it won't appear in a `ready-for-human` filter.
 
 ---
 
@@ -96,12 +111,40 @@ Do this before anyone picks up the rest of issue #128.
 
 ## Closed out since the last queue write
 
-Merged: **PR #368** (#291 modal focus trap), **PR #377** (#128 slice 1, Supabase
-row narrowing), **PR #378** (TL;DR rule rescope), **PR #365** (#309 mypy gate),
-**PR #362** (#182 estimated-expiry), **PR #367** (#228 pantry facets), **PR #366**
-(#308 barcode lookup), **PR #371** (#259 ReviewSurface), **PR #353** (#341 + #342),
-**PR #355** (#302 amendment proposal), plus #372, #373, #374, #359, #354, #349,
-#350, #343.
+All merged, all PRs. Titles are exact.
+
+| PR | What it was |
+|---|---|
+| **#368** | *feat(a11y): shared focus trap + dialog semantics for all 8 modals (#291)* — keyboard focus no longer escapes an open modal |
+| **#377** | *fix(types): narrow Supabase rows at the boundary — 96 → 36 mypy errors (#128 slice 1)* |
+| **#378** | *docs: TL;DR belongs at stopping points, not on every message* — rescoped a CLAUDE.md rule that was causing summary spam |
+| **#365** | *ci(ai-service): gate new mypy errors behind a checked-in baseline (#309)* — new type errors fail CI; pre-existing ones don't |
+| **#362** | *feat(pantry): persist estimated_expiry flag, show it in the UI (#182)* — "(est.)" marks a guessed date |
+| **#367** | *feat(pantry): multi-select filter facets for location, category, expiry (#228)* |
+| **#366** | *feat(ingest): replace stubbed product lookup with real OpenFoodFacts API (#308)* |
+| **#371** | *refactor(scan): extract ReviewSurface, add /scan route (#259)* — one shared review UI for both scan entry points |
+| **#353** | *fix(chat): resolved clarification pills disappear; strip combined context prefix (#341, #342)* |
+| **#355** | *feat: cooking-mode turns emit structured recipe amendment proposals (#302)* — the backend PR #360 was waiting on |
+
+Eight more merged in the same window. **Five of these change behaviour too** —
+don't read this as a docs-only tail:
+
+| PR | What it was |
+|---|---|
+| **#374** | *chore(ai): default to gemini-3.1-flash-lite, refresh model docs (#231)* — **a live model swap.** Every AI response in the app now comes from a different model than when most of this work was written. Unverified against real output. |
+| **#354** | *feat(pantry): base-unit backfill on write (#224) + assume culinary staples in recipes (#305)* — user-visible on both the pantry write path and recipe generation |
+| **#350** | *feat(chat): inline quantity/unit clarification on pantry proposal cards (#340)* — user-visible chat UI |
+| **#349** | *fix(chat): empty pantry prompts to stock, not invent recipes (#243)* — user-visible chat behaviour |
+| **#343** | *fix(chat): the active conversation survives navigating away* — user-visible chat behaviour |
+| **#372** | *docs(queue): final refresh — ready-for-agent queue cleared this session* — docs only |
+| **#373** | *docs: message-format conventions — TL;DR, action items, and unambiguous citations* — docs only |
+| **#359** | *docs(queue): refresh after 6 draft PRs opened; file #356/#357/#358* — docs only |
+
+**PR #374's model swap deserves its own look.** Nobody has compared actual model
+output before and after. Issue #361's chat symptoms were reported against the old
+model; the one symptom that was traced (issue #370) is a deterministic code bug
+that a model swap will *not* fix, but the two untraced symptoms could plausibly
+have changed behaviour either way.
 
 Issue **#182**'s migration (`00008_add_pantry_estimated_expiry.sql`) is **applied**
 in Supabase — confirmed by you.
