@@ -20,6 +20,26 @@
 -- original AFTER INSERT trigger never fires for it. A second trigger
 -- below handles exactly that transition.
 
+-- Pick a username that won't collide with user_profiles.username (NOT NULL
+-- UNIQUE, 00001). The preferred base is the caller-supplied username or the
+-- email local-part, but two accounts on the same local-part (alice@gmail.com
+-- vs alice@yahoo.com) both want "alice" — the second INSERT would raise a
+-- UNIQUE violation on username. Since these functions run inside the same
+-- transaction GoTrue uses to create/update auth.users, that violation rolls
+-- back the whole sign-up / email-attach, silently. Here we fall back to a
+-- base + short-UID suffix when the base is already taken, so the insert
+-- always succeeds. The suffix is deterministic per user, so re-running is
+-- idempotent under ON CONFLICT (user_id).
+CREATE OR REPLACE FUNCTION unique_username(preferred TEXT, user_id UUID)
+RETURNS TEXT AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM user_profiles WHERE username = preferred) THEN
+    RETURN preferred;
+  END IF;
+  RETURN preferred || '-' || left(user_id::text, 8);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -32,7 +52,10 @@ BEGIN
   INSERT INTO user_profiles (user_id, username, email)
   VALUES (
     NEW.id,
-    COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)),
+    unique_username(
+      COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)),
+      NEW.id
+    ),
     NEW.email
   )
   ON CONFLICT (user_id) DO NOTHING;
@@ -52,7 +75,10 @@ BEGIN
     INSERT INTO user_profiles (user_id, username, email)
     VALUES (
       NEW.id,
-      COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)),
+      unique_username(
+        COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)),
+        NEW.id
+      ),
       NEW.email
     )
     ON CONFLICT (user_id) DO NOTHING;
