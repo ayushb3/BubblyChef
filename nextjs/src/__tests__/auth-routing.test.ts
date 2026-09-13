@@ -35,6 +35,16 @@ describe('decideRouteAction', () => {
     expect(action).toEqual({ type: 'sign-in-anonymously' })
   })
 
+  it('does NOT auto-sign-in an unauthenticated hit to an API route — that would silently mint a real anonymous auth.users row for a bot, a stray fetch, or a health check, where requireAuth() previously just returned 401 with no side effect', () => {
+    const action = decideRouteAction({ hasUser: false, isAnonymous: false, pathname: '/api/pantry' })
+    expect(action).toEqual({ type: 'continue' })
+  })
+
+  it('does not auto-sign-in an unauthenticated hit to a nested API route either', () => {
+    const action = decideRouteAction({ hasUser: false, isAnonymous: false, pathname: '/api/recipes/123' })
+    expect(action).toEqual({ type: 'continue' })
+  })
+
   it('does not try to auto-sign-in a visitor already on /login', () => {
     const action = decideRouteAction({ hasUser: false, isAnonymous: false, pathname: '/login' })
     expect(action).toEqual({ type: 'continue' })

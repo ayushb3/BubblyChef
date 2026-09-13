@@ -28,8 +28,17 @@ export function decideRouteAction(params: {
 }): RouteAction {
   const { hasUser, isAnonymous, pathname } = params
 
-  // No session at all on a protected route — start the visitor as a guest
-  // instead of forcing a login wall.
+  // API routes gate themselves via requireAuth() and are never a page
+  // navigation a visitor "arrives at" — an unauthenticated hit here (a
+  // stray fetch, a bot, a health check) should 401 the same way it always
+  // has, not silently mint a real anonymous auth.users row as a side
+  // effect of the middleware. Guest mode only ever starts from a page load.
+  if (pathname.startsWith('/api/')) {
+    return { type: 'continue' }
+  }
+
+  // No session at all on a protected page route — start the visitor as a
+  // guest instead of forcing a login wall.
   if (!hasUser && !isPublicPath(pathname)) {
     return { type: 'sign-in-anonymously' }
   }
