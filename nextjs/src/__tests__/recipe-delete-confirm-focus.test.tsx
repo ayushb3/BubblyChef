@@ -40,6 +40,45 @@ function SwapHarness() {
   )
 }
 
+// Models RecipeBook's *actual* overflow-menu shape (RecipeBook.tsx's
+// `onClick={() => { setMenuOpen(false); setDeleteOpen(true) }}`): a
+// "More options" (⋮) toggle that stays mounted, a menu of items (including
+// "Delete") that unmounts the instant Delete is clicked, in the SAME state
+// update that mounts RecipeDeleteConfirm. `SwapHarness` above models only
+// the swap-in (requirement #5); this models the round trip back out,
+// which is what issue #381 is about.
+function OverflowMenuHarness() {
+  const [menuOpen, setMenuOpen] = React.useState(false)
+  const [deleteOpen, setDeleteOpen] = React.useState(false)
+  return (
+    <div>
+      <button aria-label="More options" onClick={() => setMenuOpen((o) => !o)}>
+        ⋮
+      </button>
+      {menuOpen && (
+        <div>
+          <button
+            onClick={() => {
+              setMenuOpen(false)
+              setDeleteOpen(true)
+            }}
+          >
+            🗑️ Delete
+          </button>
+        </div>
+      )}
+      {deleteOpen && (
+        <RecipeDeleteConfirm
+          recipeTitle="Pancakes"
+          onConfirm={async () => setDeleteOpen(false)}
+          onCancel={() => setDeleteOpen(false)}
+          deleting={false}
+        />
+      )}
+    </div>
+  )
+}
+
 describe('RecipeDeleteConfirm nested-swap focus (issue #291)', () => {
   it('moves focus onto the new view instead of stranding it on <body> when the trigger unmounts', () => {
     render(<SwapHarness />)
@@ -100,5 +139,38 @@ describe('RecipeDeleteConfirm nested-swap focus (issue #291)', () => {
     fireEvent.click(screen.getByRole('button', { name: /^delete$/i }))
 
     await waitFor(() => expect(screen.getByText('Deleted')).toBeInTheDocument())
+  })
+
+  // Regression test for issue #381: "Focus escapes to <body> (not the
+  // trigger) after closing a mounts-to-open modal". Confirmed root cause:
+  // `document.activeElement` falls back to `<body>` synchronously the
+  // instant a focused element is removed from the DOM, with no
+  // `focusin`/`focusout` fired for that transition. Here the "Delete" menu
+  // item unmounts (along with the rest of the overflow menu) in the very
+  // same commit that mounts RecipeDeleteConfirm, so by the time the shared
+  // hook's effect runs, `document.activeElement` is already `<body>` — not
+  // the "Delete" trigger, and not usable as one. Before the fix, the hook
+  // resolved the restore target straight from that already-`<body>`
+  // `activeElement`, and since `<body>.isConnected` is always `true`, its
+  // guard treated that as "found a valid trigger" and called a silent
+  // no-op `.focus()` on `<body>` — the bug. This exercises the real
+  // wiring (`SwapHarness` above only models the swap-in, not the round
+  // trip back out) and asserts focus deliberately returns to the
+  // still-mounted "More options" toggle, not `<body>`.
+  it('returns focus to the still-mounted "More options" toggle (not <body>) after cancelling', () => {
+    render(<OverflowMenuHarness />)
+    const moreOptions = screen.getByLabelText('More options')
+    moreOptions.focus()
+    fireEvent.click(moreOptions)
+
+    const deleteTrigger = screen.getByText('🗑️ Delete')
+    deleteTrigger.focus()
+    fireEvent.click(deleteTrigger)
+    expect(screen.queryByText('🗑️ Delete')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+
+    expect(document.activeElement).not.toBe(document.body)
+    expect(moreOptions).toHaveFocus()
   })
 })

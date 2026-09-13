@@ -808,12 +808,20 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         />
       )}
 
-      {importOpen && (
-        <RecipeImportModal
-          onImported={handleImported}
-          onClose={() => setImportOpen(false)}
-        />
-      )}
+      {/* RecipeImportModal declares `exit` animation props on its own root
+          motion.div, but without AnimatePresence around this conditional
+          mount, React removes the whole subtree the instant `importOpen`
+          flips false — before Framer Motion gets a chance to run that exit
+          transition, so it was previously inert. */}
+      <AnimatePresence>
+        {importOpen && (
+          <RecipeImportModal
+            key="recipe-import-modal"
+            onImported={handleImported}
+            onClose={() => setImportOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Import confirmation — review/edit extracted recipe before saving */}
       {importDraft && (
