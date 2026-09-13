@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import FloatingBubbles from '@/components/ui/FloatingBubbles'
@@ -17,6 +17,23 @@ export default function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const router = useRouter()
   const supabase = createClient()
+
+  // /auth/callback redirects failed OAuth attempts back here with
+  // ?error=<message> (missing code, a failed exchange, or the provider's own
+  // error_description) — read via window.location rather than
+  // useSearchParams() to avoid a Suspense boundary for what's otherwise a
+  // plain client page. Read once on mount and strip the param so a refresh
+  // doesn't keep re-showing a stale error.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const oauthError = params.get('error')
+    if (oauthError) {
+      setError(oauthError)
+      const url = new URL(window.location.href)
+      url.searchParams.delete('error')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, [])
 
   const handleGoogleSignIn = async () => {
     setError(null)
