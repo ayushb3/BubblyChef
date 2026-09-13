@@ -5,9 +5,8 @@
  * expiry date never clears `estimated_expiry`).
  *
  * A caller-supplied `expiry_date` is a real date, not a heuristic guess, so
- * the route should clear `estimated_expiry` unless the caller explicitly set
- * it themselves in the same update — mirroring `update_pantry_item` in
- * `ai-service/bubbly_chef/repository/supabase_repo.py`.
+ * the route always clears `estimated_expiry` when one is sent — no override,
+ * per the issue's own wording ("regardless of what the row had before").
  */
 import { PUT } from '@/app/api/pantry/[id]/route'
 
@@ -79,7 +78,7 @@ describe('PUT /api/pantry/[id] estimated_expiry clearing (#380)', () => {
     expect(body.estimated_expiry).toBe(false)
   })
 
-  it('does not stomp an explicit estimated_expiry sent alongside expiry_date', async () => {
+  it('clears estimated_expiry even if the request body also sends estimated_expiry: true — no client override exists for this route', async () => {
     const storedUpdates = { current: {} as Record<string, unknown> }
     ;(requireAuth as jest.Mock).mockResolvedValue([makeSupabaseMock(storedUpdates), mockUser])
 
@@ -87,8 +86,8 @@ describe('PUT /api/pantry/[id] estimated_expiry clearing (#380)', () => {
     const res = await PUT(request, { params: Promise.resolve({ id: 'item-1' }) })
     const body = await res.json()
 
-    expect(storedUpdates.current.estimated_expiry).toBe(true)
-    expect(body.estimated_expiry).toBe(true)
+    expect(storedUpdates.current.estimated_expiry).toBe(false)
+    expect(body.estimated_expiry).toBe(false)
   })
 
   it('leaves estimated_expiry untouched when expiry_date is not part of the update', async () => {
