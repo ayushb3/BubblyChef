@@ -87,6 +87,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP TRIGGER IF EXISTS on_auth_user_email_attached ON auth.users;
 CREATE TRIGGER on_auth_user_email_attached
   AFTER UPDATE OF email ON auth.users
   FOR EACH ROW EXECUTE FUNCTION handle_user_email_attached();
