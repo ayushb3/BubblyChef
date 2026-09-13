@@ -261,10 +261,63 @@ front-loading demo value: pull #45 and #186 (from Spec B) forward alongside Spec
 
 ---
 
-## Open decisions before drafting the `/to-spec` docs
+## Decisions (resolved 2026-09-13)
 
-1. Approve the 5-spec cut (or adjust seams).
-2. Confirm build order (rec: Spec 0 → A → B/C parallel → D).
-3. Run `/grilling` on #274 (modify vs new brainstorm) as part of Spec 0, or is the
-   behavior already decided?
-4. Which spec to draft first (rec: Spec 0).
+1. **5-spec cut — approved** (4 domain + 1 foundation).
+2. **Build order — approved:** Spec 0 → Spec A → Spec B / Spec C in parallel → Spec D.
+3. **#274 (modify vs new brainstorm)** — owner will run `/grilling` on it next; behavior
+   not yet decided. Its outcome shapes Spec 0's escape-hatch.
+4. **First spec to draft — Spec 0.**
+
+---
+
+## Addendum — 2026-09-13 (later): QA walkthrough issues + Spec B reshape
+
+### Spec B reshape — notification center as the hub
+
+Decision: build an in-app **"Activity / Inbox"** notification center as the durable
+home for signals (portable web→mobile; does not rely on flaky web push — push becomes
+a later delivery channel reading the same store). This makes **#43 the hub of Spec B**,
+with #42 and #45 feeding into it:
+
+- **Timers (#45)** — a **cooking-session dock** (glanceable on the recipe screen while
+  cooking); *completion* lands in the inbox as an entry. Timers are not managed *from*
+  the inbox.
+- **Expiry alerts (#43)** — the natural inbox content (compute-on-load or a daily job
+  over pantry `expiry` dates).
+- **Grocery list (#42)** — gets its **own `/grocery` route** (checkable, editable list
+  generated from cook depletions + manual adds). The inbox *points to* it ("5 items
+  added → View list"); the list does not live inside the inbox.
+
+Sequencing note: ship a **lite inbox first** (badge + dropdown, compute-on-load, no
+persistence), then a fully persisted inbox with read/unread only if it earns its keep.
+
+### #395 — profile cooking-context — folds into Spec B
+
+**Issue #395** — *Profile: cooking-context fields (allergies, household size, disliked
+ingredients, cuisines, expiry priority) that actually shape suggestions.* A new
+core-value pillar: **allergies are hard constraints (never suggest) — real safety
+value**, distinct from dietary preferences (prefer); household size feeds recipe
+scaling. It is a different page/surface, but its payoff is entirely in how it shapes
+recipe generation + chat, so it ties into Spec B's flows. **Placed in Spec B.**
+
+### QA walkthrough issues (#395–#406, all `needs-triage`)
+
+Filed 2026-09-13 from a parallel QA session (owner is triaging the untied ones there;
+owner is NOT QA-ing chat or recipes, since this session does the major chat/recipe work).
+Fold-in:
+
+- **Spec B:** #395 (profile cooking-context — core-value pillar, see above).
+- **Spec C (ingest/pantry input):** #404 (collapse previous manual-add rows into
+  summaries), #398 (ingredient-name autocomplete w/ auto-filled unit+expiry from
+  catalog), #402 (Scan↔Type tab switch wipes input but "ready to add" count survives),
+  #406 (scan review footer counts all found items, not checked ones), #403 (scan
+  dropzone has no drag-and-drop handlers, click-only), #400 (scan review category shown
+  twice — pill + editable field), #396 (raw error logs leaked to user on scan failure;
+  Gemini vision timeout — correctness/polish, looks broken).
+- **Spec D (demo polish):** #405 (filter bar shown on empty pantry), #401 (mascot art
+  stylistically inconsistent across screens), #399 (scan tab polish — mascot w/ camera,
+  drop emoji from tab labels, rename Type→Manual), #397 (remove kitchen-location field
+  now the gamified kitchen UI is on hold).
+
+Not relabeled or worked here — the QA session owns their triage state.
