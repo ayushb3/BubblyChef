@@ -49,4 +49,34 @@ describe('RecipeImportModal focus trap', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(trigger).toHaveFocus()
   })
+
+  // Regression test for issue #381: "Focus escapes to <body> (not the
+  // trigger) after closing a mounts-to-open modal". Confirmed root cause:
+  // Safari and Firefox-on-macOS do NOT move DOM focus to a plain <button>
+  // on mouse click by default (only text fields/links get focus-by-click
+  // there — WebKit's "focus ring" policy; Chrome does focus buttons on
+  // click, which is why this didn't reproduce with a Chrome-shaped click).
+  // `fireEvent.click` alone never focuses in jsdom either, so calling
+  // `trigger.focus()` first (as the test above and the shared hook's own
+  // suite do) accidentally always modelled the Chrome-only case. Not
+  // pre-focusing the trigger, but still firing `mousedown` (which every
+  // browser dispatches regardless of whether it goes on to move focus),
+  // models the Safari/Firefox-macOS path precisely. Before the fix this
+  // failed — `useModalFocusTrap`'s tracker never recorded the trigger via
+  // `focusin` in that scenario, so cleanup had nothing to restore focus to
+  // and it silently landed on `<body>`.
+  it('restores focus to the trigger on close even when the browser never natively focused it on click', () => {
+    render(<Harness />)
+    const trigger = screen.getByText('Import from URL')
+    fireEvent.mouseDown(trigger)
+    fireEvent.click(trigger) // deliberately no trigger.focus() — see comment above
+
+    expect(screen.getByPlaceholderText(/allrecipes\.com/i)).toHaveFocus()
+
+    fireEvent.click(screen.getByText('Cancel'))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(document.activeElement).not.toBe(document.body)
+    expect(trigger).toHaveFocus()
+  })
 })

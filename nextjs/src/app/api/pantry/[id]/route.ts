@@ -48,6 +48,15 @@ export async function PUT(
   if (body.unit !== undefined) updates.unit = body.unit
   if (body.expiry_date !== undefined) updates.expiry_date = body.expiry_date
   if (body.slot_index !== undefined) updates.slot_index = body.slot_index
+  // A caller-supplied expiry_date is a real date, not a heuristic guess —
+  // clear the estimated_expiry flag, regardless of what the row had before.
+  // (#380). No client-settable override: nothing in this app's UI ever
+  // needs to claim a date is "estimated" through this route, and adding
+  // that surface would let a stray request quietly re-trigger the exact
+  // bug this fix exists to close.
+  if (body.expiry_date !== undefined) {
+    updates.estimated_expiry = false
+  }
 
   const { data, error } = await supabase
     .from('pantry_items')

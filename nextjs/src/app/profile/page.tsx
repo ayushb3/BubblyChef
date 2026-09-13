@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import SaveAccountBanner from '@/components/auth/SaveAccountBanner'
 
 const dietaryPrefs = ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free']
 
@@ -6,7 +7,7 @@ export default async function ProfilePage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const displayName = user?.user_metadata?.username ?? user?.email?.split('@')[0] ?? 'friend'
+  const displayName = user?.user_metadata?.username || user?.email?.split('@')[0] || 'Guest'
 
   return (
     <div className="pb-24">
@@ -34,6 +35,8 @@ export default async function ProfilePage() {
       </div>
 
       <div className="px-6 space-y-6 max-w-md mx-auto">
+        <SaveAccountBanner />
+
         {/* Dietary preferences */}
         <section>
           <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">
