@@ -48,6 +48,13 @@ export async function PUT(
   if (body.unit !== undefined) updates.unit = body.unit
   if (body.expiry_date !== undefined) updates.expiry_date = body.expiry_date
   if (body.slot_index !== undefined) updates.slot_index = body.slot_index
+  if (body.estimated_expiry !== undefined) updates.estimated_expiry = body.estimated_expiry
+  // A caller-supplied expiry_date is a real date, not a heuristic guess — clear
+  // the estimated_expiry flag unless the caller explicitly set it themselves in
+  // this same update. Mirrors update_pantry_item in ai-service/.../supabase_repo.py.
+  if (body.expiry_date !== undefined && body.estimated_expiry === undefined) {
+    updates.estimated_expiry = false
+  }
 
   const { data, error } = await supabase
     .from('pantry_items')
