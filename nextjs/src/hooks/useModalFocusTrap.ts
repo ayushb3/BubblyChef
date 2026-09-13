@@ -91,15 +91,36 @@ function getFocusable(panel: HTMLElement): HTMLElement[] {
 let currentlyFocused: HTMLElement | null = null
 let previouslyFocused: HTMLElement | null = null
 
+function recordFocusCandidate(target: HTMLElement | null) {
+  if (!target || target === currentlyFocused) return
+  previouslyFocused = currentlyFocused
+  currentlyFocused = target
+}
+
 if (typeof document !== 'undefined') {
   document.addEventListener(
     'focusin',
-    (e) => {
-      const target = e.target as HTMLElement | null
-      if (target === currentlyFocused) return
-      previouslyFocused = currentlyFocused
-      currentlyFocused = target
-    },
+    (e) => recordFocusCandidate(e.target as HTMLElement | null),
+    { passive: true },
+  )
+
+  // Safari and Firefox on macOS do NOT move DOM focus to a plain <button>
+  // on mouse click by default (WebKit's "focus ring" policy only gives
+  // click-focus to text fields and links unless the user has "Full
+  // Keyboard Access" on) — Chrome does. Relying on `focusin` alone to learn
+  // "what was clicked" silently loses the trigger in those browsers
+  // whenever a mounts-to-open modal's own field steals focus via
+  // `autoFocus` right after (issue #381, RecipeImportModal): no `focusin`
+  // for the trigger is ever recorded, so `previouslyFocused` never gets set
+  // to it, and the resolution below has nothing to fall back on.
+  // `mousedown` fires for every browser regardless of whether it goes on to
+  // move DOM focus, so it's used here as a parity source for "what was
+  // interacted with" — recorded through the same helper (and the same
+  // `target === currentlyFocused` dedupe) so a browser that *also* fires a
+  // genuine `focusin` right after doesn't double-record it.
+  document.addEventListener(
+    'mousedown',
+    (e) => recordFocusCandidate((e.target as HTMLElement | null)?.closest<HTMLElement>(FOCUSABLE_SELECTOR) ?? null),
     { passive: true },
   )
 }
@@ -141,7 +162,20 @@ export function useModalFocusTrap(
     // about touching it during render would even be meaningful).
     const activeElement = document.activeElement as HTMLElement | null
     const activeIsInsidePanel = !!(panel && activeElement && panel.contains(activeElement))
-    const resolvedTrigger = activeIsInsidePanel ? previouslyFocused : activeElement
+    // `document.activeElement` falls back to <body> the instant a focused
+    // element is removed from the DOM — synchronously, in the same commit,
+    // with no `focusin`/`focusout` fired for the transition. That happens
+    // for real here: RecipeDeleteConfirm's "Delete" trigger lives inside an
+    // overflow menu that closes (unmounting itself) in the very same state
+    // update that mounts the confirm panel (issue #381). By the time this
+    // effect runs, `activeElement` is already <body> — not the trigger, and
+    // not useful as one — so it's treated the same as "focus already moved
+    // inside the panel": look one step further back in the tracker's
+    // history for the last element that meaningfully had focus (here, the
+    // overflow menu's own toggle button, which survives the menu closing).
+    const activeIsMeaningless = !activeElement || activeElement === document.body
+    const resolvedTrigger =
+      activeIsInsidePanel || activeIsMeaningless ? previouslyFocused : activeElement
     // Never restore focus into the panel itself — it's about to unmount (or
     // is the thing capturing Tab), so a trigger resolved to a node inside it
     // would restore focus to something that's gone by the time cleanup runs.
@@ -156,10 +190,10 @@ export function useModalFocusTrap(
     // from within another modal in the very same commit (e.g.
     // `RecipeImportModal` handing off to `RecipeEditModal` for the
     // import-review step), the resolved "trigger" can itself be a node
-    // that's about to unmount — the `isConnected` check below is what keeps
-    // that from crashing or focusing a detached element; native browser
-    // behaviour (moving focus to <body>) is the honest fallback in that
-    // narrower case rather than a wrong guess.
+    // that's about to unmount — the `isConnected` check in cleanup below is
+    // what keeps that from crashing or focusing a detached element, falling
+    // back to the page's `<main>` landmark rather than the browser's own
+    // silent default of leaving focus on <body> (issue #381).
 
     if (panel) {
       // Respect a field's own `autoFocus` (e.g. RecipeImportModal's URL
@@ -222,8 +256,26 @@ export function useModalFocusTrap(
       // browser, but checking `isConnected` first makes that a deliberate
       // choice rather than an accident, and keeps this branch honest about
       // requirement #6 (don't strand focus on an unmounted trigger).
-      if (triggerRef.current?.isConnected) {
-        triggerRef.current.focus()
+      // `!== document.body` is deliberate too: <body>.isConnected is always
+      // true, so without this it reads as "found a valid trigger" when it's
+      // really the resolution above giving up (issue #381) — calling
+      // `.focus()` on body is a silent no-op (body isn't focusable without
+      // an explicit tabindex), so it would masquerade as handled while
+      // actually just leaving focus wherever the browser already put it.
+      const trigger = triggerRef.current
+      if (trigger?.isConnected && trigger !== document.body) {
+        trigger.focus()
+      } else {
+        // Nothing usable survived to hand focus back to. Rather than leave
+        // that to chance (the whole point of this hook), fall back to the
+        // page's own <main> landmark — present on every route — so a
+        // keyboard user's focus deliberately lands back in the document
+        // instead of being stranded on <body> with no visible indicator.
+        const main = document.querySelector<HTMLElement>('main')
+        if (main) {
+          if (!main.hasAttribute('tabindex')) main.setAttribute('tabindex', '-1')
+          main.focus()
+        }
       }
     }
   }, [isOpen, panelRef])
