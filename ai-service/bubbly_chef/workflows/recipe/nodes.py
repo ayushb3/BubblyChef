@@ -125,6 +125,10 @@ RECIPE_CONSTRAINTS_SYSTEM_PROMPT = (
 )
 
 BRAINSTORM_SYSTEM_PROMPT = """\
+# TODO(#395): this prompt wording encodes the "Gentle" expiry-priority level.
+# When the expiry_priority profile field is wired here, swap the expiring-items
+# rule text based on Off/Gentle/Aggressive. Off = omit the rule entirely;
+# Gentle = current text; Aggressive = "try to include expiring items in every idea".
 You are a creative cooking assistant. Given the user's available ingredients \
 and constraints, suggest 3-4 recipe ideas.
 
@@ -174,6 +178,12 @@ every idea must fit that meal (don't mix breakfast and dinner)
 """
 
 GROUNDED_RECIPE_SYSTEM_PROMPT = """\
+# TODO(#395): "Priority ingredients (expiring soon...)" line below encodes Gentle level.
+# Off = omit this line entirely; Aggressive = "must try to use" rather than "strong preference".
+# The reinforcing paragraph at lines 194-200 ("a strong preference, not a requirement...
+# don't wedge a sweet ingredient...") also encodes the same Gentle level and must change
+# together: Off = remove the paragraph; Aggressive = tighten to "only omit if it truly clashes".
+# This prompt generates full recipe cards (not just names) — the primary expiry-priority touch point.
 Generate a complete recipe card for "{recipe_name}".
 
 Constraints: {constraints_json}
@@ -415,7 +425,7 @@ def score_and_rank(
         if is_must_use:
             score += 20
 
-        # Expiry urgency
+        # Expiry urgency  # TODO(#395): Off=skip this block entirely; Aggressive=raise weights (+8/+5 instead of +4/+2)
         expiry_str = item.get("expiry_date")
         if expiry_str:
             try:
@@ -728,7 +738,7 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         if must_use:
             must_use_str = ", ".join(i.get("name", "") for i in must_use[:5])
             pantry_context += f"\nMust use (the user asked to cook with these): {must_use_str}"
-        pantry_context += f"\nExpiring soon (weave in where it fits, not mandatory): {expiring_str or 'none'}"
+        pantry_context += f"\nExpiring soon (weave in where it fits, not mandatory): {expiring_str or 'none'}"  # TODO(#395): suppress entirely when expiry_priority==Off; strengthen label when Aggressive
         pantry_context += f"\nOther available: {supporting_str or 'none'}"
     elif not constraints.get("must_use_ingredients"):
         # Reaching this branch means pantry_grounded is True, scored_items is
