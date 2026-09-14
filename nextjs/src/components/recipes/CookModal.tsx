@@ -126,9 +126,9 @@ export function ExpiredIngredientsBanner({
   return (
     <div
       role="alert"
-      className="flex flex-col gap-1.5 rounded-xl px-3 py-2.5 border border-[var(--color-expiring)]"
+      className="flex flex-col gap-1.5 rounded-xl px-3 py-2.5 border border-[var(--color-expired)]"
       style={{
-        background: 'color-mix(in srgb, var(--color-expiring) 12%, var(--color-surface))',
+        background: 'color-mix(in srgb, var(--color-expired) 12%, var(--color-surface))',
         fontFamily: 'Nunito, sans-serif',
       }}
     >
@@ -146,7 +146,7 @@ export function ExpiredIngredientsBanner({
       </div>
       <ul className="flex flex-col gap-0.5">
         {expiredItems.map((item) => (
-          <li key={item.ingredient_name} className="text-[11px] text-[var(--color-text)]">
+          <li key={`${item.ingredient_name}-${item.pantry_item_name}`} className="text-[11px] text-[var(--color-text)]">
             <span className="font-semibold">{item.ingredient_name}</span>
             <span className="text-[var(--color-muted)]">
               {' '}— {item.pantry_item_name} expired {item.days_expired} day
@@ -339,6 +339,7 @@ export default function CookModal({
 
   useEffect(() => {
     let cancelled = false
+    setExpiredDismissed(false)
     cookRecipe(recipeId)
       .then((p) => {
         if (!cancelled) {
