@@ -23,12 +23,12 @@ authenticatedTest.describe('sign-out / AC1: sign out flow', () => {
   authenticatedTest(
     'clicking Sign out on /profile redirects to /login',
     async ({ page }) => {
-      // Navigate to /profile via the bottom nav "Profile" link (tests the nav
-      // item introduced in BottomNav.tsx as part of issue #331).
+      // Navigate to /profile via the profile icon in the home header
+      // (ProfileHeaderButton, aria-label "Profile", links to /profile).
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 
-      // The new Profile nav item must be present.
+      // The profile header icon must be present.
       const profileNavLink = page.getByRole('link', { name: 'Profile' });
       await expect(profileNavLink).toBeVisible();
       await profileNavLink.click();
