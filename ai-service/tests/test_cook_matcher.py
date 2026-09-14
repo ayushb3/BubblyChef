@@ -1295,6 +1295,141 @@ class TestSizeAdjectiveUnits:
 
 
 # ---------------------------------------------------------------------------
+# Table-driven test: assume-seasonings acceptance criterion (#426)
+# ---------------------------------------------------------------------------
+# AC: a recipe of {tracked item + salt + pepper} → one deductible row +
+#     assumed basics, no shortfalls.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "tracked_name, tracked_qty, tracked_unit, tracked_qty_base, tracked_unit_base, recipe_lines, expected_deductible_count",
+    [
+        # Chicken + salt: one deductible (chicken), one assumed (salt)
+        (
+            "chicken",
+            500.0,
+            "g",
+            500.0,
+            "g",
+            [
+                {"name": "chicken", "quantity": 200.0, "unit": "g"},
+                {"name": "salt", "quantity": 1.0, "unit": "tsp"},
+            ],
+            1,
+        ),
+        # Pasta + pepper: one deductible (pasta), one assumed (pepper)
+        (
+            "pasta",
+            400.0,
+            "g",
+            400.0,
+            "g",
+            [
+                {"name": "pasta", "quantity": 200.0, "unit": "g"},
+                {"name": "black pepper", "quantity": 0.5, "unit": "tsp"},
+            ],
+            1,
+        ),
+        # Eggs + salt + pepper: one deductible (eggs), two assumed (salt + pepper)
+        (
+            "eggs",
+            6.0,
+            "count",
+            6.0,
+            "count",
+            [
+                {"name": "eggs", "quantity": 3.0, "unit": "count"},
+                {"name": "salt", "quantity": 0.5, "unit": "tsp"},
+                {"name": "black pepper", "quantity": 0.25, "unit": "tsp"},
+            ],
+            1,
+        ),
+        # Beef + salt + pepper + olive oil: one deductible, three assumed
+        (
+            "beef",
+            600.0,
+            "g",
+            600.0,
+            "g",
+            [
+                {"name": "beef", "quantity": 300.0, "unit": "g"},
+                {"name": "salt", "quantity": 1.0, "unit": "tsp"},
+                {"name": "pepper", "quantity": 0.5, "unit": "tsp"},
+                {"name": "olive oil", "quantity": 1.0, "unit": "tbsp"},
+            ],
+            1,
+        ),
+    ],
+    ids=[
+        "chicken_plus_salt",
+        "pasta_plus_black_pepper",
+        "eggs_plus_salt_and_pepper",
+        "beef_plus_salt_pepper_oil",
+    ],
+)
+class TestAssumedStaplesTableDriven:
+    """Table-driven AC test for #426: tracked item + seasonings → no shortfalls.
+
+    For each row:
+    - ``missing`` must be empty (no shortfall report)
+    - exactly ``expected_deductible_count`` matches have a non-None ``deduct_qty``
+    - all seasoning ingredients land in ``assumed`` status, not ``missing``
+    - no match has ``status == 'shortfall'``
+    """
+
+    def test_no_shortfalls_and_correct_deductible_count(
+        self,
+        tracked_name: str,
+        tracked_qty: float,
+        tracked_unit: str,
+        tracked_qty_base: float,
+        tracked_unit_base: str,
+        recipe_lines: list[dict],
+        expected_deductible_count: int,
+    ) -> None:
+        pantry = [
+            _make_item(
+                tracked_name,
+                tracked_qty,
+                tracked_unit,
+                qty_base=tracked_qty_base,
+                unit_base=tracked_unit_base,
+            )
+        ]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, recipe_lines, pantry)
+
+        # AC: no missing ingredients
+        assert proposal.missing == [], (
+            f"Expected no missing ingredients, got: {proposal.missing}"
+        )
+
+        # AC: no shortfalls
+        shortfall_matches = [m for m in proposal.matches if m.status == "shortfall"]
+        assert shortfall_matches == [], (
+            f"Expected no shortfalls, got: {[m.ingredient_name for m in shortfall_matches]}"
+        )
+
+        # AC: exactly one deductible row (the tracked pantry item)
+        deductible = [m for m in proposal.matches if m.deduct_qty is not None]
+        assert len(deductible) == expected_deductible_count, (
+            f"Expected {expected_deductible_count} deductible row(s), "
+            f"got {len(deductible)}: {[m.ingredient_name for m in deductible]}"
+        )
+
+        # AC: assumed basics (the seasonings) are collapsed — status=assumed, never missing
+        assumed = [m for m in proposal.matches if m.status == "assumed"]
+        seasoning_names = {
+            ing["name"]
+            for ing in recipe_lines
+            if ing["name"] not in (tracked_name,)
+        }
+        for name in seasoning_names:
+            assert any(m.ingredient_name == name for m in assumed), (
+                f"Expected {name!r} to have status=assumed, "
+                f"but it was not in assumed matches: {[m.ingredient_name for m in assumed]}"
+            )
 # Table-driven compound-suggestion tests (#424)
 # ---------------------------------------------------------------------------
 # Each row exercises one outcome for the cream ← butter+milk+flour family of
