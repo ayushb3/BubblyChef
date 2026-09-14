@@ -10,7 +10,7 @@ import FadeInView from '@/components/ui/FadeInView'
 import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import AddItemModal from '@/components/pantry/AddItemModal'
-import ThemePicker from '@/components/ui/ThemePicker'
+import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
 import PantryAddSheet, { type PantryAddTab } from '@/components/pantry/PantryAddSheet'
 import ResolveActions from '@/components/pantry/ResolveActions'
 import SwipeToResolve from '@/components/pantry/SwipeToResolve'
@@ -235,7 +235,7 @@ function PantryPageInner() {
             <span className="bg-[var(--color-primary)] text-white text-xs font-semibold px-3 py-1 rounded-full">
               {allItems.length} item{allItems.length !== 1 ? 's' : ''}
             </span>
-            <ThemePicker />
+            <ProfileHeaderButton />
           </div>
         }
       />
