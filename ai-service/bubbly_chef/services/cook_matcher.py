@@ -556,9 +556,16 @@ def match_ingredients(
         #    recognised vocabulary (e.g. "handful" on the recipe side, or an
         #    unregistered pantry label).  The ingredient IS matched to a pantry
         #    row; we just can't express the quantity precisely.  Blocking the
-        #    whole flow on this is worse UX than pre-filling a best guess.
-        #    Emit "imprecise" with deduct_qty pre-filled to 1 pantry unit so
-        #    the user can edit it rather than face a blank mandatory field.
+        #    whole flow on this is worse UX than surfacing a soft "imprecise"
+        #    line — but we must NOT invent a deduction.  `imprecise` is a
+        #    never-auto-deduct status everywhere in the stack (the frontend
+        #    summary shows an "left as it is" notice and skips the deduction),
+        #    so the line carries deduct_qty=None and claims nothing in the
+        #    consumption ledger.  A pre-filled deduct_qty here would (a) be
+        #    silently applied by confirm despite the "left as it is" copy, and
+        #    (b) be interpreted by deduct_pantry_item as a BASE-unit quantity
+        #    while it was expressed in the display unit — corrupting stock when
+        #    display != base (1 "dozen" != 1 egg, 1 "kg" != 1 g).
         if req_base_qty is None or pantry_base_qty is None or req_base_unit != pantry_base_unit:
             req_dim = get_unit_dimension(ing_unit)
             pantry_dim = get_unit_dimension(pantry_item.unit)
@@ -592,14 +599,21 @@ def match_ingredients(
                     )
                 )
             else:
-                # Soft fallback: pre-fill deduct_qty=1.0 in the pantry's own
-                # display unit as a best-guess the user can edit.  Claim 1 unit
-                # in the consumption ledger so a second recipe line for the same
-                # row sees that stock as already spoken for (conservatively).
-                fallback_deduct: float = 1.0
-                fallback_unit: str = pantry_item.unit or "item"
-                consumed[pantry_item.id] = already_claimed + fallback_deduct
-                unclaimed = max(0.0, pantry_item.quantity - already_claimed)
+                # Soft fallback: the ingredient is matched but the quantity is
+                # not expressible in a shared unit.  Surface it as an editable,
+                # non-blocking "imprecise" line that deducts nothing on its own
+                # (deduct_qty=None) — the user has the item; we just can't say
+                # how much the recipe uses.  Claim nothing in the ledger so a
+                # later recipe line sees the full remaining stock (an imprecise
+                # line makes no reservation, matching the pieces-vs-package
+                # branch above).  base_unit reports the pantry row's base unit
+                # so if the user does fill in a deduction, confirm interprets it
+                # in the same unit deduct_pantry_item expects.
+                unclaimed = (
+                    None
+                    if pantry_base_qty is None
+                    else max(0.0, pantry_base_qty - already_claimed)
+                )
                 matches.append(
                     IngredientMatch(
                         ingredient_name=raw_name,
@@ -608,8 +622,8 @@ def match_ingredients(
                         pantry_item_id=pantry_item.id,
                         pantry_item_name=pantry_item.name,
                         pantry_qty_available=unclaimed,
-                        deduct_qty=fallback_deduct,
-                        base_unit=fallback_unit,
+                        deduct_qty=None,
+                        base_unit=pantry_base_unit or pantry_item.unit,
                         status="imprecise",
                         match_type=match_type,
                         substitution_note=note,

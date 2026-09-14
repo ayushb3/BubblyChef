@@ -536,11 +536,12 @@ class TestSalmonAvocadoToast:
     """End-to-end shape of the recipe that motivated all of this.
 
     Before: 7 of 9 matched ingredients were unit_conflict and 2 were deductible.
-    After (#209): 7 are deductible — "1 handful spinach" now produces a soft
-    imprecise fallback (deduct_qty=1.0 bag) rather than a blocking unit_conflict,
-    and the two piece-against-package pairs (4 slices of a loaf, 8 leaves of a
-    bunch) are still satisfied without a precise deduction.
-    See #222 and tests/test_issue_222_piece_vs_package.py.
+    After (#209): "1 handful spinach" no longer blocks the whole flow as a
+    unit_conflict — it becomes a soft imprecise fallback (matched, but nothing
+    auto-deducted, deduct_qty=None), and the two piece-against-package pairs
+    (4 slices of a loaf, 8 leaves of a bunch) are still satisfied without a
+    precise deduction. So 6 ingredients are cleanly deductible and 3 are
+    non-blocking imprecise. See #222 and tests/test_issue_222_piece_vs_package.py.
     """
 
     def test_most_of_the_recipe_becomes_deductible(self) -> None:
@@ -571,8 +572,9 @@ class TestSalmonAvocadoToast:
 
         assert proposal.missing == []
         deductible = [m for m in proposal.matches if m.deduct_qty is not None]
-        # 6 exact-deductions + baby spinach's soft-fallback pre-fill = 7 total
-        assert len(deductible) == 7
+        # 6 clean exact-deductions; the soft-fallback (baby spinach) and the two
+        # piece-vs-package pairs (bread, basil) deduct nothing.
+        assert len(deductible) == 6
 
         statuses = {m.ingredient_name: m.status for m in proposal.matches}
         assert statuses["butter"] == "ready"
@@ -586,10 +588,12 @@ class TestSalmonAvocadoToast:
         assert statuses["basil"] == "imprecise"
 
         # "1 handful" has no recognised unit dimension; "1 bag" is count.
-        # One side unresolvable → soft fallback (imprecise with pre-filled guess),
-        # not a hard blocking conflict (#209).
+        # One side unresolvable → soft fallback (imprecise, non-blocking, nothing
+        # auto-deducted), not a hard blocking conflict (#209).
         assert proposal.unit_conflicts == []
         assert statuses["baby spinach"] == "imprecise"
+        baby_spinach = next(m for m in proposal.matches if m.ingredient_name == "baby spinach")
+        assert baby_spinach.deduct_qty is None
 
 
 class TestPieceUnitParsing:
@@ -1264,8 +1268,14 @@ class TestUnitConflictFallback:
 
     Rule:
     - Genuine dimension mismatch (g vs count, g vs ml, …): stay unit_conflict.
-    - One or both sides have an unregistered/unresolvable unit: emit imprecise
-      with deduct_qty=1.0 (one pantry unit) pre-filled so the user can edit it.
+    - One or both sides have an unregistered/unresolvable unit: emit imprecise.
+      The ingredient IS matched, but the quantity can't be expressed in a shared
+      unit, so nothing is auto-deducted: deduct_qty is None and the line makes no
+      reservation in the consumption ledger. `imprecise` is a never-auto-deduct
+      status across the stack — pre-filling a deduction here would be silently
+      applied by confirm (against the "left as it is" UI copy) and, worse, would
+      be read by deduct_pantry_item as a BASE-unit quantity while expressed in the
+      display unit, corrupting stock when display != base.
     """
 
     # ------------------------------------------------------------------
@@ -1283,8 +1293,8 @@ class TestUnitConflictFallback:
         assert len(proposal.matches) == 1
         match = proposal.matches[0]
         assert match.status == "imprecise"
-        assert match.deduct_qty == pytest.approx(1.0)
-        assert match.base_unit == "bag"
+        # Soft fallback does not invent a deduction — never-auto-deduct status.
+        assert match.deduct_qty is None
 
     def test_bunch_pantry_unit_uses_display_unit_as_base(self) -> None:
         """Pantry in bunches, recipe in sprigs; sprig is piece and bunch is package.
@@ -1330,8 +1340,11 @@ class TestUnitConflictFallback:
         assert proposal.unit_conflicts[0]["ingredient"] == "flour"
         assert proposal.matches[0].status == "unit_conflict"
 
-    def test_soft_fallback_prefills_deduct_qty_of_one_pantry_unit(self) -> None:
-        """The pre-filled guess is exactly 1.0 in the pantry's own display unit."""
+    def test_soft_fallback_reports_pantry_base_unit_not_a_guess(self) -> None:
+        """The soft-fallback line carries the pantry row's base unit and no
+        pre-filled deduction — if the user later fills one in, confirm reads it
+        in the same unit deduct_pantry_item expects (base), so stock stays sane
+        even when display != base."""
         pantry = [_make_item("fresh herbs", 1.0, "bunch")]
         ingredients = [{"name": "fresh herbs", "quantity": 2.0, "unit": "handful"}]
 
@@ -1340,12 +1353,15 @@ class TestUnitConflictFallback:
         assert proposal.unit_conflicts == []
         match = proposal.matches[0]
         assert match.status == "imprecise"
-        assert match.deduct_qty == pytest.approx(1.0)
-        assert match.base_unit == "bunch"
+        assert match.deduct_qty is None
+        # base_unit is the pantry row's base unit, not a fabricated display guess.
+        assert match.base_unit is not None
 
-    def test_soft_fallback_updates_consumption_ledger(self) -> None:
-        """Two soft-fallback lines against the same pantry row reduce visible stock."""
-        pantry = [_make_item("mixed greens", 2.0, "bag")]
+    def test_soft_fallback_makes_no_ledger_reservation(self) -> None:
+        """Two soft-fallback lines against the same pantry row: because an
+        imprecise line claims nothing, the second line still sees the full stock
+        (no phantom reservation from the first — the old code wrongly claimed 1)."""
+        pantry = [_make_item("mixed greens", 2.0, "bag", qty_base=2.0, unit_base="count")]
         ingredients = [
             {"name": "mixed greens", "quantity": 1.0, "unit": "handful"},
             {"name": "mixed greens", "quantity": 1.0, "unit": "handful"},
@@ -1356,8 +1372,32 @@ class TestUnitConflictFallback:
         assert proposal.unit_conflicts == []
         # Both go through soft fallback.
         assert all(m.status == "imprecise" for m in proposal.matches)
-        # Second line sees 1 less bag available (first took 1).
-        assert proposal.matches[1].pantry_qty_available == pytest.approx(1.0)
+        assert all(m.deduct_qty is None for m in proposal.matches)
+        # Second line still sees all 2 bags — an imprecise line reserves nothing.
+        assert proposal.matches[1].pantry_qty_available == pytest.approx(2.0)
+
+    def test_soft_fallback_never_emits_deduction_when_display_differs_from_base(self) -> None:
+        """Stock-corruption regression (#209).
+
+        The old fallback pre-filled deduct_qty=1.0 in the pantry's *display* unit
+        (e.g. "1 dozen", "1 kg"), but deduct_pantry_item reads deduct_qty as a
+        *base*-unit quantity. When display != base, confirm would then subtract 1
+        base unit (1 egg, 1 g) while the UI said "left as it is" — silently wrong.
+        The fix emits no deduction at all, so no display/base mixup is possible.
+
+        Here the pantry row is 1 dozen eggs (display "dozen", base "count" = 12),
+        matched against an unresolvable recipe unit. The fallback must not carry a
+        positive deduct_qty in either unit interpretation."""
+        pantry = [_make_item("eggs", 1.0, "dozen", qty_base=12.0, unit_base="count")]
+        ingredients = [{"name": "eggs", "quantity": 1.0, "unit": "handful"}]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert proposal.unit_conflicts == []
+        match = proposal.matches[0]
+        assert match.status == "imprecise"
+        # No deduction → confirm can't misread a display-unit qty as a base qty.
+        assert match.deduct_qty is None
 
     # ------------------------------------------------------------------
     # Genuine conflict cases (must remain unit_conflict)
