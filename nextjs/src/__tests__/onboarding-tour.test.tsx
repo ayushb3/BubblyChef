@@ -4,11 +4,63 @@
  *  1. Step definitions — structural checks on TOUR_STEPS.
  *  2. Auto-skip — TourOverlay advances when a step's target is missing from DOM.
  *  3. Pathname guard — TourProvider only auto-opens when pathname is '/'.
+ *
+ * Mocks are declared at top level so jest hoists them above the imports; the
+ * components are imported statically so the test and the components share one
+ * React instance (a jest.resetModules()/dynamic-import split loads React twice
+ * and crashes with "Cannot read properties of null (reading 'useState')").
+ * usePathname is controlled per-test via a mutable module-level variable.
  */
 
 import React from 'react'
 import { render, screen, act, waitFor } from '@testing-library/react'
 import { TOUR_STEPS } from '@/components/onboarding/steps'
+import { TourProvider, useTour } from '@/components/onboarding/TourProvider'
+import { TourOverlay } from '@/components/onboarding/TourOverlay'
+
+// --- Controllable pathname for the next/navigation mock ---
+let mockPathname = '/'
+const pushSpy = jest.fn()
+jest.mock('next/navigation', () => ({
+  usePathname: () => mockPathname,
+  useRouter: () => ({ push: pushSpy }),
+}))
+
+// --- Supabase client mock; getUser resolution is set per-test ---
+const getUserMock = jest.fn()
+const updateUserMock = jest.fn().mockResolvedValue({})
+jest.mock('@/lib/supabase/client', () => ({
+  createClient: () => ({
+    auth: {
+      getUser: getUserMock,
+      updateUser: updateUserMock,
+    },
+  }),
+}))
+
+// jsdom has no matchMedia; TourOverlay's useReducedMotion needs it.
+beforeAll(() => {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }),
+  })
+})
+
+beforeEach(() => {
+  mockPathname = '/'
+  pushSpy.mockClear()
+  getUserMock.mockReset()
+  updateUserMock.mockClear()
+})
 
 // ---------------------------------------------------------------------------
 // 1. Step definitions
@@ -42,38 +94,18 @@ describe('TOUR_STEPS definitions', () => {
 // ---------------------------------------------------------------------------
 // 2. Auto-skip — TourOverlay advances when step target absent from DOM
 //
-// We render TourProvider + TourOverlay with isOpen=true on step 0.
+// We render TourProvider + TourOverlay and openTour() manually on step 0.
 // Step 0's selector ([data-tour="hero"]) resolves to nothing in jsdom because
-// HeroHome is not rendered. The overlay must auto-advance to step 1 rather
-// than freezing on an empty tooltip.
+// HeroHome is not rendered. The overlay must auto-advance rather than freeze.
+// getUser resolves with the flag already set so the provider does NOT also
+// auto-open — the test drives openTour() itself.
 // ---------------------------------------------------------------------------
 describe('TourOverlay: auto-skip missing target', () => {
-  // Mock the supabase client so TourProvider can mount without real network.
-  beforeEach(() => {
-    jest.mock('@/lib/supabase/client', () => ({
-      createClient: () => ({
-        auth: {
-          getUser: jest.fn().mockResolvedValue({
-            // Completed flag = true so provider does NOT auto-open;
-            // we will call openTour() manually to control the test.
-            data: { user: { user_metadata: { onboarding_completed: true } } },
-          }),
-          updateUser: jest.fn().mockResolvedValue({}),
-        },
-      }),
-    }))
-  })
-
-  afterEach(() => {
-    jest.resetModules()
-  })
-
   it('advances from step 0 to step 1 when the step-0 target is absent', async () => {
-    // Dynamic import after mock is set.
-    const { TourProvider, useTour } = await import('@/components/onboarding/TourProvider')
-    const { TourOverlay } = await import('@/components/onboarding/TourOverlay')
+    getUserMock.mockResolvedValue({
+      data: { user: { user_metadata: { onboarding_completed: true } } },
+    })
 
-    // An inspector that also triggers openTour on mount.
     function Harness() {
       const { stepIndex, openTour, isOpen } = useTour()
       React.useEffect(() => {
@@ -97,20 +129,19 @@ describe('TourOverlay: auto-skip missing target', () => {
       )
     })
 
-    // Give requestAnimationFrame a chance to fire (jsdom uses microtasks).
     await act(async () => {
       await new Promise((r) => setTimeout(r, 50))
     })
 
-    // Step 0 target is missing — the overlay should have advanced to step 1.
     await waitFor(() => {
       expect(Number(screen.getByTestId('step-index').textContent)).toBeGreaterThan(0)
     })
   })
 
   it('does NOT advance past step 1 on a missing step-0 target (re-entrancy guard)', async () => {
-    const { TourProvider, useTour } = await import('@/components/onboarding/TourProvider')
-    const { TourOverlay } = await import('@/components/onboarding/TourOverlay')
+    getUserMock.mockResolvedValue({
+      data: { user: { user_metadata: { onboarding_completed: true } } },
+    })
 
     function Harness() {
       const { stepIndex, openTour, isOpen } = useTour()
@@ -151,34 +182,13 @@ describe('TourOverlay: auto-skip missing target', () => {
 
 // ---------------------------------------------------------------------------
 // 3. TourProvider: pathname guard blocks auto-open off '/'
-//
-// TourProvider reads usePathname() (Next.js hook). In tests usePathname() is
-// mocked via jest.mock('next/navigation').
 // ---------------------------------------------------------------------------
 describe('TourProvider: pathname guard', () => {
-  afterEach(() => {
-    jest.resetModules()
-  })
-
   it('does NOT call getUser when pathname is not "/"', async () => {
-    jest.mock('next/navigation', () => ({
-      usePathname: () => '/recipes',
-      useRouter: () => ({ push: jest.fn() }),
-    }))
-
-    const supabaseMock = {
-      auth: {
-        getUser: jest.fn().mockResolvedValue({
-          data: { user: { user_metadata: {} } },
-        }),
-        updateUser: jest.fn(),
-      },
-    }
-    jest.mock('@/lib/supabase/client', () => ({
-      createClient: () => supabaseMock,
-    }))
-
-    const { TourProvider, useTour } = await import('@/components/onboarding/TourProvider')
+    mockPathname = '/recipes'
+    getUserMock.mockResolvedValue({
+      data: { user: { user_metadata: {} } },
+    })
 
     function Inspector() {
       const { isOpen } = useTour()
@@ -197,29 +207,15 @@ describe('TourProvider: pathname guard', () => {
       expect(screen.getByTestId('open-state')).toBeDefined()
     })
 
-    expect(supabaseMock.auth.getUser).not.toHaveBeenCalled()
+    expect(getUserMock).not.toHaveBeenCalled()
     expect(screen.getByTestId('open-state').textContent).toBe('false')
   })
 
   it('calls getUser on "/" but keeps tour closed when flag is set', async () => {
-    jest.mock('next/navigation', () => ({
-      usePathname: () => '/',
-      useRouter: () => ({ push: jest.fn() }),
-    }))
-
-    const supabaseMock = {
-      auth: {
-        getUser: jest.fn().mockResolvedValue({
-          data: { user: { user_metadata: { onboarding_completed: true } } },
-        }),
-        updateUser: jest.fn(),
-      },
-    }
-    jest.mock('@/lib/supabase/client', () => ({
-      createClient: () => supabaseMock,
-    }))
-
-    const { TourProvider, useTour } = await import('@/components/onboarding/TourProvider')
+    mockPathname = '/'
+    getUserMock.mockResolvedValue({
+      data: { user: { user_metadata: { onboarding_completed: true } } },
+    })
 
     function Inspector() {
       const { isOpen } = useTour()
@@ -235,7 +231,7 @@ describe('TourProvider: pathname guard', () => {
     })
 
     await waitFor(() => {
-      expect(supabaseMock.auth.getUser).toHaveBeenCalled()
+      expect(getUserMock).toHaveBeenCalled()
     })
 
     expect(screen.getByTestId('open-state').textContent).toBe('false')
