@@ -16,7 +16,7 @@ Architecture:
 
 import logging
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Hashable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -1196,7 +1196,8 @@ def build_chat_router_graph(
     workflow.set_entry_point(entry_point)
 
     # Route map shared by both entry points (classify_intent and dispatch).
-    _route_map = {
+    # Typed as dict[Hashable, str] to satisfy StateGraph.add_conditional_edges.
+    _route_map: dict[Hashable, str] = {
         "parse_pantry_items": "parse_pantry_items",
         "build_handoff_receipt": "build_handoff_receipt",
         "build_handoff_product": "build_handoff_product",
