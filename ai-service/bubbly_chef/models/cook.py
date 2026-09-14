@@ -69,6 +69,14 @@ class CompoundSuggestion(BaseModel):
     )
 
 
+class ExpiredMatchedItem(BaseModel):
+    """A matched ingredient whose backing pantry row is expired."""
+
+    ingredient_name: str = Field(description="Ingredient name from the recipe")
+    pantry_item_name: str = Field(description="Name of the expired pantry row")
+    days_expired: int = Field(description="How many days past expiry (always >= 1)")
+
+
 class CookProposal(BaseModel):
     """Proposal returned to the user before confirming a cook action."""
 
@@ -99,6 +107,14 @@ class CookProposal(BaseModel):
             "Advisory compound substitutions for missing ingredients — "
             "e.g. heavy cream ← butter + milk + flour. "
             "Nothing is deducted; the ingredient remains in missing."
+        ),
+    )
+    expired_items: list[ExpiredMatchedItem] = Field(
+        default_factory=list,
+        description=(
+            "Matched ingredients whose backing pantry row is expired. "
+            "Non-blocking — the user may still proceed. "
+            "Empty when no matched ingredient comes from an expired row."
         ),
     )
 

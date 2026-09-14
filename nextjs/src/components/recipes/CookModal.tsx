@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
-import type { CookProposal, CompoundSuggestion, IngredientMatch, DeductionItem } from '@/types/recipes'
+import type { CookProposal, CompoundSuggestion, IngredientMatch, DeductionItem, ExpiredMatchedItem } from '@/types/recipes'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
 interface CookModalProps {
@@ -107,6 +107,64 @@ function formatQty(qty: number | null, unit: string | null): string {
   if (qty == null) return '—'
   const rounded = Math.round(qty * 100) / 100
   return unit ? `${rounded} ${unit}` : String(rounded)
+}
+
+/**
+ * Pre-review warning banner for matched ingredients that come from expired
+ * pantry rows.  Non-blocking — the user can dismiss and proceed.
+ *
+ * Exported for unit testing.
+ */
+export function ExpiredIngredientsBanner({
+  expiredItems,
+  onDismiss,
+}: {
+  expiredItems: ExpiredMatchedItem[]
+  onDismiss: () => void
+}) {
+  if (expiredItems.length === 0) return null
+  return (
+    <div
+      role="alert"
+      className="flex flex-col gap-1.5 rounded-xl px-3 py-2.5 border border-[var(--color-expiring)]"
+      style={{
+        background: 'color-mix(in srgb, var(--color-expiring) 12%, var(--color-surface))',
+        fontFamily: 'Nunito, sans-serif',
+      }}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-bold text-[var(--color-text)]">
+          Expired ingredients in this recipe
+        </p>
+        <button
+          onClick={onDismiss}
+          className="text-[var(--color-muted)] hover:text-[var(--color-text)] text-xs leading-none shrink-0 px-1"
+          aria-label="Dismiss expired ingredients warning"
+        >
+          ✕
+        </button>
+      </div>
+      <ul className="flex flex-col gap-0.5">
+        {expiredItems.map((item) => (
+          <li key={item.ingredient_name} className="text-[11px] text-[var(--color-text)]">
+            <span className="font-semibold">{item.ingredient_name}</span>
+            <span className="text-[var(--color-muted)]">
+              {' '}— {item.pantry_item_name} expired {item.days_expired} day
+              {item.days_expired === 1 ? '' : 's'} ago
+            </span>
+          </li>
+        ))}
+      </ul>
+      <a
+        href="/pantry"
+        className="text-[11px] font-bold underline"
+        style={{ color: 'var(--color-primary-dark)' }}
+        aria-label="Go to pantry to clear expired items"
+      >
+        Go to Pantry to clear them →
+      </a>
+    </div>
+  )
 }
 
 /**
@@ -264,6 +322,7 @@ export default function CookModal({
   const [addingToLibrary, setAddingToLibrary] = useState(false)
   const [overrides, setOverrides] = useState<Record<string, string>>({})
   const [loadingStage, setLoadingStage] = useState(0)
+  const [expiredDismissed, setExpiredDismissed] = useState(false)
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   useModalFocusTrap(true, onClose, panelRef)
@@ -497,6 +556,14 @@ export default function CookModal({
 
             {(state === 'review' || state === 'confirming') && proposal && (
               <div className="flex flex-col gap-4">
+                {/* Expired-ingredient pre-cook warning — non-blocking */}
+                {!expiredDismissed && (proposal.expired_items ?? []).length > 0 && (
+                  <ExpiredIngredientsBanner
+                    expiredItems={proposal.expired_items ?? []}
+                    onDismiss={() => setExpiredDismissed(true)}
+                  />
+                )}
+
                 {/* Ingredient table — assumed staples are collapsed into a summary line below */}
                 {proposal.matches.filter((m: IngredientMatch) => m.status !== 'assumed').length > 0 && (
                   <table className="w-full text-xs" style={{ fontFamily: 'Nunito, sans-serif' }}>
