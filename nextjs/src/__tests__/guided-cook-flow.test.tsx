@@ -130,7 +130,8 @@ describe('GuidedCookFlow — step navigation', () => {
     // skip prep
     fireEvent.click(screen.getByTestId('guided-cook-next'))
 
-    for (let i = 1; i <= RECIPE.instructions.length - 1; i++) {
+    // Click through every step; clicking "next" on the last step lands on done.
+    for (let i = 1; i <= RECIPE.instructions.length; i++) {
       expect(screen.getByTestId(`guided-cook-step-${i}`)).toBeInTheDocument()
       fireEvent.click(screen.getByTestId('guided-cook-next'))
     }
@@ -156,9 +157,9 @@ describe('GuidedCookFlow — step navigation', () => {
 
   it('"Next" label says "Finish cooking" on the last step', () => {
     renderFlow()
-    // skip to last step
+    // skip prep, then advance to the last step (idx = length - 1)
     fireEvent.click(screen.getByTestId('guided-cook-next'))
-    for (let i = 1; i < RECIPE.instructions.length - 1; i++) {
+    for (let i = 1; i < RECIPE.instructions.length; i++) {
       fireEvent.click(screen.getByTestId('guided-cook-next'))
     }
     expect(screen.getByTestId('guided-cook-next')).toHaveTextContent(/finish cooking/i)
@@ -189,7 +190,9 @@ describe('GuidedCookFlow — done state', () => {
       fireEvent.click(screen.getByTestId('guided-cook-next'))
     }
     expect(screen.getByTestId('guided-cook-done')).toBeInTheDocument()
-    expect(screen.getByText(RECIPE.title)).toBeInTheDocument()
+    // The done copy embeds the title in a sentence ("You cooked <title>."),
+    // so match on a substring rather than an exact-text node.
+    expect(screen.getByTestId('guided-cook-done')).toHaveTextContent(RECIPE.title)
   })
 
   it('"Back to recipe" calls onExit from done state', () => {
