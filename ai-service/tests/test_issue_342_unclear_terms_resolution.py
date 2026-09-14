@@ -27,7 +27,11 @@ from bubbly_chef.models.pantry import (
     PantryUpsertAction,
     StorageLocation,
 )
-from bubbly_chef.models.session import ConversationSession, SessionMode
+from bubbly_chef.models.session import (
+    ConversationSession,
+    PendingProposalMemory,
+    SessionMode,
+)
 from bubbly_chef.workflows.router import update_session_node
 
 
@@ -61,11 +65,11 @@ def _session_with_pending(
     return ConversationSession(
         conversation_id="conv-1",
         active_mode=mode,
-        pending_proposal={
-            "item_names": item_names,
-            "unclear_terms": unclear_terms,
-            "suggestions": suggestions or {},
-        },
+        pending_proposal=PendingProposalMemory(
+            item_names=item_names,
+            unclear_terms=unclear_terms,
+            suggestions=suggestions or {},
+        ),
     )
 
 
@@ -137,8 +141,8 @@ async def test_pill_tap_resolves_term_whose_suggestions_were_picked() -> None:
 
     repo.update_session.assert_awaited_once()
     saved: ConversationSession = repo.update_session.await_args.args[1]
-    pending = saved.pending_proposal or {}
-    remaining = [t.lower() for t in pending.get("unclear_terms", [])]
+    pending = saved.pending_proposal or PendingProposalMemory()
+    remaining = [t.lower() for t in pending.unclear_terms]
     assert "vegetables" not in remaining, (
         "vegetables should be resolved: onion/broccoli are its suggestions"
     )
@@ -171,8 +175,8 @@ async def test_unrelated_action_does_not_resolve_unclear_term() -> None:
         await update_session_node(state)  # type: ignore[arg-type]
 
     saved: ConversationSession = repo.update_session.await_args.args[1]
-    pending = saved.pending_proposal or {}
-    remaining = [t.lower() for t in pending.get("unclear_terms", [])]
+    pending = saved.pending_proposal or PendingProposalMemory()
+    remaining = [t.lower() for t in pending.unclear_terms]
     assert "vegetables" in remaining, (
         "vegetables must survive: 'eggs' is not one of its suggestions"
     )
@@ -243,8 +247,8 @@ async def test_pending_proposal_not_cleared_while_unclear_terms_remain() -> None
     assert saved.pending_proposal is not None, (
         "pending_proposal must not be cleared while some unclear_terms remain"
     )
-    pending = saved.pending_proposal or {}
-    assert "dairy products" in [t.lower() for t in pending.get("unclear_terms", [])]
+    pending = saved.pending_proposal or PendingProposalMemory()
+    assert "dairy products" in [t.lower() for t in pending.unclear_terms]
 
 
 # ---------------------------------------------------------------------------
@@ -274,8 +278,8 @@ async def test_suggestions_written_to_pending_proposal() -> None:
         await update_session_node(state)  # type: ignore[arg-type]
 
     saved: ConversationSession = repo.update_session.await_args.args[1]
-    pending = saved.pending_proposal or {}
-    stored_suggestions = pending.get("suggestions", {})
+    pending = saved.pending_proposal or PendingProposalMemory()
+    stored_suggestions = pending.suggestions
     assert "vegetables" in stored_suggestions, (
         "suggestions for 'vegetables' must be persisted for next-turn resolution"
     )
@@ -309,8 +313,8 @@ async def test_zero_action_turn_does_not_resolve_unclear_terms() -> None:
         await update_session_node(state)  # type: ignore[arg-type]
 
     saved: ConversationSession = repo.update_session.await_args.args[1]
-    pending = saved.pending_proposal or {}
-    assert "vegetables" in [t.lower() for t in pending.get("unclear_terms", [])]
+    pending = saved.pending_proposal or PendingProposalMemory()
+    assert "vegetables" in [t.lower() for t in pending.unclear_terms]
 
 
 # ---------------------------------------------------------------------------
@@ -336,5 +340,5 @@ async def test_no_unclear_terms_leaves_pending_proposal_unchanged() -> None:
         await update_session_node(state)  # type: ignore[arg-type]
 
     saved: ConversationSession = repo.update_session.await_args.args[1]
-    pending = saved.pending_proposal or {}
-    assert pending.get("unclear_terms", []) == []
+    pending = saved.pending_proposal or PendingProposalMemory()
+    assert pending.unclear_terms == []
