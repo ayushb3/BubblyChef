@@ -523,7 +523,7 @@ async def _cooking_help_single_shot(
                 "intent": Intent.COOKING_HELP.value,
                 "assistant_message": response_text,
                 "next_action": NextAction.REVIEW_PROPOSAL.value,
-                "proposal": amendment.model_dump(),
+                "proposal": amendment.model_dump(),  # type: ignore[typeddict-item]
                 "requires_review": True,
                 "confidence": 1.0,
                 "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
@@ -755,7 +755,7 @@ async def _cooking_help_react(
                 "intent": Intent.COOKING_HELP.value,
                 "assistant_message": last_text,
                 "next_action": NextAction.REVIEW_PROPOSAL.value,
-                "proposal": amendment.model_dump(),
+                "proposal": amendment.model_dump(),  # type: ignore[typeddict-item]
                 "requires_review": True,
                 "confidence": 1.0,
                 "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,

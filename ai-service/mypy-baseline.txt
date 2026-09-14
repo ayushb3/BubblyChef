@@ -8,8 +8,6 @@ bubbly_chef/repository/supabase_repo.py:0: error: "RecipeCard" has no attribute 
 bubbly_chef/workflows/recipe/nodes.py:0: error: Argument 1 to "get_all_pantry_items" of "SupabaseRepository" has incompatible type "str | None"; expected "str"  [arg-type]
 bubbly_chef/workflows/recipe/nodes.py:0: error: Argument 1 to "get_all_pantry_items" of "SupabaseRepository" has incompatible type "str | None"; expected "str"  [arg-type]
 bubbly_chef/workflows/chat/nodes.py:0: error: Argument 1 to "get_all_pantry_items" of "SupabaseRepository" has incompatible type "str | None"; expected "str"  [arg-type]
-bubbly_chef/workflows/chat/nodes.py:0: error: Incompatible types (expression has type "dict[str, Any]", TypedDict item "proposal" has type "PantryProposal | HandoffProposal | RecipeCardProposal | None")  [typeddict-item]
-bubbly_chef/workflows/chat/nodes.py:0: error: Incompatible types (expression has type "dict[str, Any]", TypedDict item "proposal" has type "PantryProposal | HandoffProposal | RecipeCardProposal | None")  [typeddict-item]
 bubbly_chef/workflows/router.py:0: error: Argument 1 to "get_or_create_session" of "SupabaseRepository" has incompatible type "str | None"; expected "str"  [arg-type]
 bubbly_chef/workflows/router.py:0: error: Argument 1 to "update_session" of "SupabaseRepository" has incompatible type "str | None"; expected "str"  [arg-type]
 bubbly_chef/workflows/router.py:0: error: Argument 1 to "get_or_create_session" of "SupabaseRepository" has incompatible type "str | None"; expected "str"  [arg-type]
