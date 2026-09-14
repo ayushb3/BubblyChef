@@ -687,6 +687,9 @@ def route_by_intent(state: WorkflowState) -> str:
     elif intent == Intent.COOKING_HELP.value:
         return "cooking_help_response"
     elif intent == Intent.RECIPE_GENERATION.value:
+        # Generation and brainstorm share constraint extraction + pantry scoring;
+        # they diverge AFTER score_pantry (see route_after_scoring). Generation
+        # yields ONE grounded recipe, not an idea list (#408 / #416 AC4).
         return "extract_recipe_constraints"
     elif intent == Intent.RECIPE_BRAINSTORM.value:
         return "extract_recipe_constraints"
@@ -696,6 +699,21 @@ def route_by_intent(state: WorkflowState) -> str:
         return "cooking_help_response"  # fallback
     else:
         return "general_chat_response"
+
+
+def route_after_scoring(state: WorkflowState) -> str:
+    """Split the shared constraints+scoring path by intent (#408 / #416 AC4).
+
+    recipe_generation and recipe_brainstorm both run extract_recipe_constraints
+    then score_pantry, but they diverge here: generation produces ONE grounded
+    recipe (research_recipe -> generate_grounded_recipe), brainstorm produces an
+    idea list (brainstorm_recipes). Before this split both intents fell through
+    to brainstorm_recipes, so an explicit "recipe for X" was silently served as a
+    brainstorm menu and restamped intent=recipe_brainstorm.
+    """
+    if state.get("intent") == Intent.RECIPE_GENERATION.value:
+        return "research_recipe"
+    return "brainstorm_recipes"
 
 
 
@@ -1251,8 +1269,17 @@ def build_chat_router_graph(
     workflow.add_edge("confirm_choice_response", "update_session")
 
     # Brainstorm path → update_session → END
+    # Shared prefix: constraints + pantry scoring. Then split by intent —
+    # generation → single grounded recipe, brainstorm → idea list (#408/#416 AC4).
     workflow.add_edge("extract_recipe_constraints", "score_pantry")
-    workflow.add_edge("score_pantry", "brainstorm_recipes")
+    workflow.add_conditional_edges(
+        "score_pantry",
+        route_after_scoring,
+        {
+            "research_recipe": "research_recipe",
+            "brainstorm_recipes": "brainstorm_recipes",
+        },
+    )
     workflow.add_edge("brainstorm_recipes", "update_session")
 
     # Grounded generation path → update_session → END

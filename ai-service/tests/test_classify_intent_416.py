@@ -727,6 +727,60 @@ async def test_high_confidence_brainstorm_graph_runs_pipeline_and_invalidates_se
 
 
 @pytest.mark.asyncio
+async def test_generation_graph_runs_grounded_recipe_not_brainstorm():
+    """
+    CRITICAL (#408 / AC4): a high-confidence recipe_generation ("recipe for
+    spaghetti creamy and garlicky") must reach generate_grounded_recipe and
+    produce ONE recipe — it must NOT run brainstorm_recipe_ideas and get served
+    as an idea menu. Before the score_pantry split, route_by_intent sent both
+    generation and brainstorm to the same node and generation always fell through
+    to brainstorm, restamping intent=recipe_brainstorm. This is the graph-level
+    seam the node-mocked classify tests could not catch.
+    """
+    _reset_graphs()
+    repo = _graph_repo()
+
+    passthrough = AsyncMock(side_effect=lambda s: s)
+
+    # brainstorm node must NOT run on a generation turn.
+    brainstorm_spy = AsyncMock(
+        side_effect=AssertionError("brainstorm_recipe_ideas ran on a generation turn")
+    )
+
+    async def _fake_generate(state):
+        return {
+            **state,
+            "intent": Intent.RECIPE_CARD.value,  # single-recipe render
+            "assistant_message": "Here is your Creamy Garlic Spaghetti recipe.",
+            "next_action": NextAction.NONE.value,
+            "requires_review": False,
+        }
+
+    generate_spy = AsyncMock(side_effect=_fake_generate)
+
+    with (
+        _mock_ai("recipe_generation", confidence=1.0),
+        patch("bubbly_chef.workflows.router.get_repository", new_callable=AsyncMock, return_value=repo),
+        patch("bubbly_chef.workflows.router.extract_recipe_constraints", passthrough),
+        patch("bubbly_chef.workflows.router.score_pantry_ingredients", passthrough),
+        patch("bubbly_chef.workflows.router.research_recipe", passthrough),
+        patch("bubbly_chef.workflows.router.brainstorm_recipe_ideas", brainstorm_spy),
+        patch("bubbly_chef.workflows.router.generate_grounded_recipe", generate_spy),
+    ):
+        envelope = await run_chat_workflow(
+            message="recipe for spaghetti creamy and garlicky",
+            conversation_id=_CONV_ID,
+            user_id="user-1",
+        )
+    _reset_graphs()
+
+    # Generation reached the single-recipe node, never the brainstorm menu.
+    brainstorm_spy.assert_not_awaited()
+    generate_spy.assert_awaited_once()
+    assert envelope.next_action != NextAction.CONFIRM_CHOICE
+
+
+@pytest.mark.asyncio
 async def test_forced_intent_generation_rejected_by_request_model():
     """
     #5 safety: recipe_generation is no longer an accepted forced_intent value —
