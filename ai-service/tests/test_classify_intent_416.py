@@ -359,6 +359,40 @@ async def test_brainstorm_followup_repick_uses_stored_set_no_regen():
 
 
 @pytest.mark.asyncio
+async def test_pinned_recipe_blocks_repick_even_after_confirm_turn():
+    """
+    Regression (#416 finding #1d): the confirm-band turn saves its assistant
+    history entry with a telemetry intent of ``recipe_brainstorm``. On the NEXT
+    turn detect_brainstorm_followup would fire on that intent — but a recipe is
+    pinned, so the follow-up is a modification, never a re-pick. The stored-set
+    fuzzy match must NOT hijack it, even though the follow-up text names a stored
+    idea. Routes to the LLM classifier (recipe_card here), not the re-pick shortcut.
+    """
+    history = [
+        {
+            "role": "assistant",
+            "content": "Did you want to tweak this recipe or start fresh with new ideas?",
+            "intent": "recipe_brainstorm",  # telemetry-only value from confirm turn
+        }
+    ]
+    with _mock_ai("recipe_card") as mock_mgr:
+        result = await classify_intent(
+            _state(
+                input_text="make the Pesto Pasta one spicier",  # names a stored idea
+                session_mode=SessionMode.RECIPE_EXPLORING.value,
+                session=_session_with_pin(),  # PINNED
+                brainstorm_ideas=["Pesto Pasta", "Carbonara", "Tomato Soup"],
+                conversation_history=history,
+            )
+        )
+    # Re-pick shortcut must be skipped — classifier runs (not the 0.95-confidence
+    # "Follow-up to recipe brainstorm" shortcut that would fire without the LLM).
+    mock_mgr.return_value.complete.assert_awaited_once()
+    assert result["intent"] == Intent.RECIPE_CARD.value
+    assert result.get("intent_reasoning") != "Follow-up to recipe brainstorm"
+
+
+@pytest.mark.asyncio
 async def test_brainstorm_set_invalidated_on_new_brainstorm():
     """A genuinely new brainstorm (high confidence) invalidates the stored set (Q6)."""
     with _mock_ai("recipe_brainstorm", confidence=0.92):

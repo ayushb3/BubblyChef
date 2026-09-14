@@ -383,10 +383,16 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
     # bias applies (follow-ups are modifications, handled by the classifier), so
     # we do NOT let a stored-set fuzzy match hijack "add pesto to it" into a
     # re-pick.
+    # A pin makes follow-ups modifications, full stop — neither the
+    # last-assistant-was-brainstorm signal nor a live stored set may re-pick.
+    # This also seals the confirm-band leak (#416): confirm_choice_response saves
+    # its history entry with a telemetry intent of recipe_brainstorm, which would
+    # otherwise make detect_brainstorm_followup fire on the *next* turn against the
+    # pinned recipe and hijack a modification into a re-pick (#266-flavoured).
     stored_ideas = state.get("brainstorm_ideas") or []
     _has_pin = bool((state.get("session") or {}).get("pinned_recipe_id"))
-    _repick_by_stored_set = bool(stored_ideas) and not _has_pin
-    if detect_brainstorm_followup(state) or _repick_by_stored_set:
+    _repick_ok = not _has_pin and (detect_brainstorm_followup(state) or bool(stored_ideas))
+    if _repick_ok:
         selected_name = extract_selected_recipe(
             input_text,
             state.get("conversation_history") or [],
