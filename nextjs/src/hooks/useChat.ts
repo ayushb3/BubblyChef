@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { streamChatMessage, fetchChatHistory, applyPantryProposal } from '@/lib/api/chat'
-import type { ChatMessage, ChatResponse, PantryProposalData, PantryProposalAction } from '@/types/chat'
+import type { ChatMessage, ChatResponse, ChatIntent, PantryProposalData, PantryProposalAction } from '@/types/chat'
 import { getClarificationSuggestions, mergeTermSuggestions, mergeActions, filterResolvedTerms } from '@/types/chat'
 
 /** Everything needed to apply a pantry proposal once the user approves it. */
@@ -165,13 +165,34 @@ export function useChat(options?: UseChatOptions) {
           return
         }
 
-        const restored: ChatMessage[] = turns.map((turn) => ({
-          id: crypto.randomUUID(),
-          role: turn.role as 'user' | 'assistant',
-          content: turn.content,
-          intent: (turn.intent as ChatMessage['intent']) ?? undefined,
-          timestamp: new Date(turn.created_at),
-        }))
+        const restored: ChatMessage[] = turns.map((turn) => {
+          const base = {
+            id: crypto.randomUUID(),
+            role: turn.role as 'user' | 'assistant',
+            content: turn.content,
+            intent: (turn.intent as ChatMessage['intent']) ?? undefined,
+            timestamp: new Date(turn.created_at),
+          }
+          if (turn.role === 'assistant' && (turn.proposal || turn.metadata)) {
+            return {
+              ...base,
+              response: {
+                intent: (turn.intent ?? 'general_chat') as ChatIntent,
+                assistant_message: turn.content,
+                proposal: turn.proposal ?? null,
+                metadata: turn.metadata ?? null,
+                // fill required-but-display-only fields with safe defaults
+                request_id: '',
+                workflow_id: '',
+                conversation_id: storedId,
+                confidence: { overall: 1 },
+                requires_review: false,
+                next_action: 'none',
+              } as ChatResponse,
+            }
+          }
+          return base
+        })
         setMessages(restored)
         setIsResuming(false)
       })
@@ -263,7 +284,7 @@ export function useChat(options?: UseChatOptions) {
             "I'm not sure how to help with that. Try asking about recipes or groceries!"
 
           const proposal = response.proposal as PantryProposalData | null
-          const hasActions = !!proposal && proposal.actions.length > 0
+          const hasActions = !!proposal && Array.isArray(proposal.actions) && proposal.actions.length > 0
           const clarificationTerms = getClarificationSuggestions(response)
           const isPantryTurn = response.intent === 'pantry_update'
 

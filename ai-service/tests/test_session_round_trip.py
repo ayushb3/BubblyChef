@@ -462,3 +462,143 @@ def test_recipe_exploring_pin_round_trips() -> None:
 
     # last_recipe_title survives
     assert restored.metadata.last_recipe_title == "Spaghetti Aglio e Olio"
+
+
+# ---------------------------------------------------------------------------
+# save_message / get_history proposal round-trip (#floating-prancing-rain fix)
+# Verifies that proposal + metadata written by save_message are returned
+# verbatim by get_history (the select("*") path).
+# ---------------------------------------------------------------------------
+
+
+class _FakeHistoryQuery:
+    """Fluent query stub that records inserts and returns rows from a shared store."""
+
+    def __init__(self, store: list[dict[str, Any]], client: "_FakeHistoryClient") -> None:
+        self._store = store
+        self._client = client
+        self.inserted: dict[str, Any] | None = None
+
+    def select(self, *_args: Any, **_kwargs: Any) -> "_FakeHistoryQuery":
+        return self
+
+    def insert(self, payload: dict[str, Any]) -> "_FakeHistoryQuery":
+        self.inserted = payload
+        self._store.append(payload)
+        self._client.last_inserted = payload
+        return self
+
+    def eq(self, *_args: Any, **_kwargs: Any) -> "_FakeHistoryQuery":
+        return self
+
+    def order(self, *_args: Any, **_kwargs: Any) -> "_FakeHistoryQuery":
+        return self
+
+    def limit(self, *_args: Any, **_kwargs: Any) -> "_FakeHistoryQuery":
+        return self
+
+    def execute(self) -> Any:
+        return type("Result", (), {"data": list(self._store)})()
+
+
+class _FakeHistoryClient:
+    def __init__(self) -> None:
+        self._store: list[dict[str, Any]] = []
+        self.last_inserted: dict[str, Any] | None = None
+
+    def table(self, _name: str) -> _FakeHistoryQuery:
+        return _FakeHistoryQuery(self._store, self)
+
+
+def _history_repo() -> tuple[SupabaseRepository, _FakeHistoryClient]:
+    """Return a SupabaseRepository + the client so tests can inspect inserts."""
+    client = _FakeHistoryClient()
+    repo = SupabaseRepository.__new__(SupabaseRepository)
+    repo.client = client  # type: ignore[assignment]
+    return repo, client
+
+
+@pytest.mark.asyncio
+class TestSaveMessageProposalRoundTrip:
+    """save_message persists proposal + metadata; get_history returns them."""
+
+    async def test_recipe_card_proposal_round_trips(self) -> None:
+        """An assistant message saved with a recipe_card proposal dict must be
+        returned intact by get_history (both proposal and metadata fields)."""
+        recipe_card_proposal = {
+            "proposal_type": "recipe_card",
+            "recipe": {
+                "title": "Tomato Pasta",
+                "ingredients": [{"name": "pasta", "quantity": 200.0, "unit": "g"}],
+                "instructions": ["Boil pasta", "Add sauce"],
+            },
+            "pantry_match_score": 0.85,
+        }
+        meta = {"intent": "recipe_card", "workflow_id": "wf-abc123"}
+
+        repo, client = _history_repo()
+
+        await repo.save_message(
+            user_id="u-test",
+            conversation_id="conv-test",
+            role="assistant",
+            content="Here is a pasta recipe for you.",
+            intent="recipe_card",
+            proposal=recipe_card_proposal,
+            metadata=meta,
+        )
+
+        # The insert payload must carry proposal + metadata
+        assert client.last_inserted is not None
+        inserted = client.last_inserted
+        assert inserted["proposal"] == recipe_card_proposal
+        assert inserted["metadata"] == meta
+        assert inserted["role"] == "assistant"
+        assert inserted["intent"] == "recipe_card"
+
+        # get_history returns the same row (fake client returns what was inserted)
+        history = await repo.get_history(
+            user_id="u-test", conversation_id="conv-test"
+        )
+        assert len(history) == 1
+        row = history[0]
+        assert row["proposal"] == recipe_card_proposal
+        assert row["metadata"] == meta
+        assert row["role"] == "assistant"
+
+    async def test_user_message_saves_without_proposal(self) -> None:
+        """A user-turn save (no proposal/metadata args) must still work and
+        leave proposal + metadata as None in the inserted row."""
+        repo, client = _history_repo()
+
+        await repo.save_message(
+            user_id="u-test",
+            conversation_id="conv-test",
+            role="user",
+            content="Make me a pasta recipe",
+        )
+
+        assert client.last_inserted is not None
+        inserted = client.last_inserted
+        assert inserted["proposal"] is None
+        assert inserted["metadata"] is None
+        assert inserted["role"] == "user"
+
+    async def test_assistant_message_none_proposal_saves_cleanly(self) -> None:
+        """Explicit None for proposal/metadata (plain-chat assistant turn) inserts None."""
+        repo, client = _history_repo()
+
+        await repo.save_message(
+            user_id="u-test",
+            conversation_id="conv-test",
+            role="assistant",
+            content="Sure, here are some tips.",
+            intent="general_chat",
+            proposal=None,
+            metadata=None,
+        )
+
+        assert client.last_inserted is not None
+        inserted = client.last_inserted
+        assert inserted["proposal"] is None
+        assert inserted["metadata"] is None

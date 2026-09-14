@@ -162,6 +162,8 @@ export interface ConversationHistoryTurn {
   role: 'user' | 'assistant'
   content: string
   intent: string | null
+  proposal?: PantryProposalData | ChatRecipeData | null
+  metadata?: Record<string, unknown> | null
   created_at: string
 }
 
