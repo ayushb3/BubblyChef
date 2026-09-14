@@ -79,10 +79,8 @@ export function TourOverlay() {
   // --- (a) Initial measure-for-step — MAY auto-skip, but at most once per stepIndex ---
   useEffect(() => {
     if (!isOpen || !step) return
-    const vpW = window.innerWidth
-    const vpH = window.innerHeight
-    setVp({ w: vpW, h: vpH })
     const rafId = requestAnimationFrame(() => {
+      setVp({ w: window.innerWidth, h: window.innerHeight })
       const r = measureTarget(step.selector, step.id)
       if (!r) {
         // Guard: only skip once per stepIndex to prevent re-entrancy loops.
@@ -103,10 +101,8 @@ export function TourOverlay() {
   // --- (b) Re-measure on resize/scroll — ONLY updates the existing rect, never skips ---
   const remeasureOnly = useCallback(() => {
     if (!step) return
-    const vpW = window.innerWidth
-    const vpH = window.innerHeight
-    setVp({ w: vpW, h: vpH })
     requestAnimationFrame(() => {
+      setVp({ w: window.innerWidth, h: window.innerHeight })
       const r = measureTarget(step.selector, step.id)
       if (r) setRect(r)
       // Missing target on resize/scroll is transient (e.g. in-progress animation);
