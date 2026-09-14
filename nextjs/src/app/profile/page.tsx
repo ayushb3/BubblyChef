@@ -38,6 +38,29 @@ export default async function ProfilePage() {
       )}
 
       <div className="px-6 space-y-6 max-w-md mx-auto">
+        {/* Account — permanent save-account for guests + sign-out for all */}
+        <section>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">
+            Account
+          </p>
+          <div className="space-y-3">
+            {/* Persistent save-account: stays visible even after the floating banner is dismissed */}
+            <SaveAccountBanner persistent />
+            <SignOutButton />
+          </div>
+        </section>
+
+        {/* Appearance */}
+        <section>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">
+            Appearance
+          </p>
+          <div className="flex items-center justify-between bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] px-4 py-3">
+            <span className="text-sm text-[var(--color-text)]">Theme</span>
+            <ThemePicker />
+          </div>
+        </section>
+
         {/* Dietary preferences */}
         <section>
           <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">
@@ -69,29 +92,6 @@ export default async function ProfilePage() {
               <span className="text-[var(--color-muted)]">App</span>
               <span className="text-[var(--color-text)] font-medium">BubblyChef ✨</span>
             </div>
-          </div>
-        </section>
-
-        {/* Appearance */}
-        <section>
-          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">
-            Appearance
-          </p>
-          <div className="flex items-center justify-between bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] px-4 py-3">
-            <span className="text-sm text-[var(--color-text)]">Theme</span>
-            <ThemePicker />
-          </div>
-        </section>
-
-        {/* Account — permanent save-account for guests + sign-out for all */}
-        <section>
-          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">
-            Account
-          </p>
-          <div className="space-y-3">
-            {/* Persistent save-account: stays visible even after the floating banner is dismissed */}
-            <SaveAccountBanner persistent />
-            <SignOutButton />
           </div>
         </section>
       </div>
