@@ -315,6 +315,37 @@ def detect_brainstorm_followup(state: WorkflowState) -> bool:
     return False
 
 
+# Word-boundary containment — a keyword/phrase must appear as a whole word (or
+# whole phrase) in the text, never as a bare substring (e.g. "any" inside
+# "many", "one" inside "someone"). #436 finding 1: the old `kw in text_lower`
+# checks let "how many eggs do I need" match "any" and misfire a re-pick.
+def _has_word(text_lower: str, phrase: str) -> bool:
+    return re.search(r"\b" + re.escape(phrase) + r"\b", text_lower) is not None
+
+
+# Pantry-update indicator words — mirrors the vocabulary the intent
+# classifier prompt itself uses to detect pantry_update ("bought", "got",
+# "purchased", "used", "consumed", "threw away", "add", "remove"). A message
+# using this vocabulary is describing groceries, not selecting a brainstormed
+# dish, even when a stored idea's name happens to appear in it as a literal
+# substring (#436 finding 1: "add tomato soup to my pantry" and "I bought
+# chicken curry paste" both fuzzy-match a stored idea at ~100 but are pantry
+# statements, not picks). Erring toward excluding is safe: it only skips the
+# repick shortcut, falling through to the LLM classifier rather than
+# mis-selecting.
+_PANTRY_UPDATE_WORDS = {
+    "bought", "buy", "buying", "got", "purchased", "purchase",
+    "used", "consumed", "add", "adding", "remove", "removing", "removed",
+}
+_PANTRY_UPDATE_PHRASES = {"threw away", "ran out"}
+
+
+def _looks_like_pantry_update(text_lower: str) -> bool:
+    return any(_has_word(text_lower, w) for w in _PANTRY_UPDATE_WORDS) or any(
+        p in text_lower for p in _PANTRY_UPDATE_PHRASES
+    )
+
+
 def extract_selected_recipe(
     user_text: str,
     history: list[dict[str, Any]],
@@ -323,7 +354,9 @@ def extract_selected_recipe(
     """Extract which recipe the user selected from the last brainstorm response.
 
     Returns the matched recipe name, or None when the message is a conversational
-    follow-up (informational question) rather than a selection.
+    follow-up (informational question), an unrelated statement that merely
+    mentions an idea's name (e.g. "add tomato soup to my pantry"), rather than
+    an actual selection.
 
     `stored_ideas` is the retained brainstorm set from the session (Q6). When the
     conversation history has been truncated and carries no **bold** idea names,
@@ -367,10 +400,15 @@ def extract_selected_recipe(
         "first", "second", "third", "fourth",
         "1st", "2nd", "3rd", "4th",
         "one", "two", "three", "four",
-        "surprise", "any", "random", "you pick", "all of them",
     }
+    # Multi-word/unambiguous quick-pick phrases only — a bare "any" or
+    # "random" is too generic a word to ever safely stand for "pick one for
+    # me" (#436 finding 1: "is any of this gluten free" is not a pick).
+    quick_pick_phrases = {"surprise me", "any of them", "pick any", "you pick", "all of them"}
     has_informational = any(phrase in text_lower for phrase in informational_phrases)
-    has_ordinal = any(word in text_lower for word in ordinal_words)
+    has_ordinal = any(_has_word(text_lower, word) for word in ordinal_words) or any(
+        phrase in text_lower for phrase in quick_pick_phrases
+    )
     if has_informational and not has_ordinal:
         return None
 
@@ -384,15 +422,20 @@ def extract_selected_recipe(
     }
 
     for word, idx in ordinal_map.items():
-        if word in text_lower and idx < len(ideas):
+        if _has_word(text_lower, word) and idx < len(ideas):
             return ideas[idx]
 
-    if any(kw in text_lower for kw in ["surprise", "any", "random", "you pick", "all of them"]):
+    if any(phrase in text_lower for phrase in quick_pick_phrases):
         return ideas[0]
 
-    # Fuzzy match against idea names — raised threshold (>=80) to avoid false positives
+    # Fuzzy match against idea names — raised threshold (>=80) to avoid false
+    # positives, and excluded when the message reads as a pantry statement
+    # rather than a pick (#436 finding 1).
     best_match = max(ideas, key=lambda idea: fuzz.partial_ratio(text_lower, idea.lower()))
-    if fuzz.partial_ratio(text_lower, best_match.lower()) >= 80:
+    if (
+        fuzz.partial_ratio(text_lower, best_match.lower()) >= 80
+        and not _looks_like_pantry_update(text_lower)
+    ):
         return best_match
 
     return None

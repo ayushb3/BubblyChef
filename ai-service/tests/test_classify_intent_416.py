@@ -58,8 +58,18 @@ def _mock_ai(intent: str, confidence: float = 0.9):
 
 
 def _session_with_pin(recipe_id: str = "pin-123") -> dict:
-    """Simulate a session dict with a pinned recipe (post-#415)."""
-    return {"pinned_recipe_id": recipe_id}
+    """Simulate a session dict with a pinned recipe (post-#415).
+
+    Sets BOTH pinned_recipe_id and metadata.picked_recipe. classify_intent's
+    "is a recipe pinned" checks (confirm band, re-pick gate, mode-bias prompt)
+    read metadata.picked_recipe, not pinned_recipe_id (#436 finding 3) — the
+    two diverge only in the specific stale-pin regression exercised by
+    test_new_brainstorm_clears_stale_picked_recipe_pin below.
+    """
+    return {
+        "pinned_recipe_id": recipe_id,
+        "metadata": {"picked_recipe": {"title": "Test Recipe", "id": recipe_id}},
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -409,6 +419,88 @@ async def test_brainstorm_set_invalidated_on_new_brainstorm():
 
 
 # ---------------------------------------------------------------------------
+# #436 finding 1: the widened re-pick gate (`or bool(stored_ideas)`) must not
+# hijack ordinary turns. extract_selected_recipe's old loose substring/fuzzy
+# matcher misrouted these to recipe_card *before* the LLM classifier ever ran
+# (reproduced against pre-fix bubbly_chef.workflows.recipe.nodes with
+# ideas=['Pesto Pasta', 'Chicken Curry', 'Tomato Soup']:
+#   'how many eggs do I need'      -> 'Pesto Pasta'  ("any" substring of "many")
+#   'is any of this gluten free'   -> 'Pesto Pasta'
+#   'add tomato soup to my pantry' -> 'Tomato Soup'
+#   'I bought chicken curry paste' -> 'Chicken Curry'
+# ). Genuine re-picks (demonstrative / ordinal / explicit selection language)
+# must still resolve from the stored set with no regeneration (issue #410
+# Implementation Decisions §5, Q6).
+# ---------------------------------------------------------------------------
+
+_STORED_IDEAS_436 = ["Pesto Pasta", "Chicken Curry", "Tomato Soup"]
+
+
+@pytest.mark.parametrize(
+    "input_text,mocked_llm_intent",
+    [
+        ("how many eggs do I need", "cooking_help"),
+        ("is any of this gluten free", "cooking_help"),
+        ("add tomato soup to my pantry", "pantry_update"),
+        ("I bought chicken curry paste", "pantry_update"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_repick_gate_does_not_hijack_ordinary_turns(
+    input_text: str, mocked_llm_intent: str
+):
+    """These must reach the LLM classifier, not short-circuit to recipe_card.
+
+    Pre-fix: the repick shortcut fired on every one of these (see reproduction
+    above) and never called the LLM at all — this test asserts the LLM WAS
+    called, which fails against the pre-fix code (it isn't; the shortcut
+    returns before Priority 5 / the LLM call).
+    """
+    with _mock_ai(mocked_llm_intent) as mock_mgr:
+        result = await classify_intent(
+            _state(
+                input_text=input_text,
+                session_mode=SessionMode.RECIPE_EXPLORING.value,
+                session=None,  # no pin — still browsing the stored set
+                brainstorm_ideas=list(_STORED_IDEAS_436),
+                conversation_history=[],  # widened trigger path: stored_ideas alone
+            )
+        )
+    mock_mgr.return_value.complete.assert_called_once()
+    assert result["intent"] != Intent.RECIPE_CARD.value
+
+
+@pytest.mark.parametrize(
+    "input_text,expected_selection",
+    [
+        ("show me the pesto one instead", "Pesto Pasta"),
+        ("let's do the pesto one", "Pesto Pasta"),
+        ("the second one", "Chicken Curry"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_repick_gate_still_resolves_genuine_selections(
+    input_text: str, expected_selection: str
+):
+    """Genuine re-picks must still resolve from the stored set with NO
+    regeneration — the narrowed matcher must not overcorrect into blocking
+    these (issue #410 §5)."""
+    with _mock_ai("cooking_help") as mock_mgr:  # would be the wrong answer if reached
+        result = await classify_intent(
+            _state(
+                input_text=input_text,
+                session_mode=SessionMode.RECIPE_EXPLORING.value,
+                session=None,
+                brainstorm_ideas=list(_STORED_IDEAS_436),
+                conversation_history=[],
+            )
+        )
+    mock_mgr.return_value.complete.assert_not_called()
+    assert result["intent"] == Intent.RECIPE_CARD.value
+    assert result.get("selected_recipe_name") == expected_selection
+
+
+# ---------------------------------------------------------------------------
 # Table-driven matrix: mode × confidence × expected_intent × expect_confirm
 # ---------------------------------------------------------------------------
 
@@ -653,7 +745,14 @@ async def test_confirm_band_graph_does_not_run_brainstorm_pipeline():
     pick and the stored brainstorm set survive.
     """
     _reset_graphs()
-    repo = _graph_repo(brainstorm_ideas=["Pesto Pasta", "Carbonara"])
+    from bubbly_chef.models.recipe import RecipeCard
+
+    repo = _graph_repo(
+        brainstorm_ideas=["Pesto Pasta", "Carbonara"],
+        # A pin is required for the confirm band to fire (#436 finding 3: it
+        # reads metadata.picked_recipe, not the default pinned_recipe_id).
+        picked_recipe=RecipeCard(title="Pesto Pasta"),
+    )
 
     # Spies on the generation nodes — must NOT be invoked on the confirm path.
     extract_spy = AsyncMock(side_effect=AssertionError("extract_constraints ran on confirm turn"))
@@ -972,7 +1071,18 @@ def test_route_by_intent_recipe_card_no_session_falls_back_to_cooking_help():
 async def test_new_brainstorm_clears_stale_picked_recipe_pin():
     """update_session_node must clear metadata.picked_recipe when a genuinely
     new brainstorm ran this turn (next_action=PICK_RECIPE with ideas) -- the
-    old pin is stale the moment a fresh idea set replaces it."""
+    old pin is stale the moment a fresh idea set replaces it.
+
+    pinned_recipe_id is deliberately left untouched -- clearing it would
+    re-enable the deterministic re-pick path (#415 territory), which is out
+    of scope here. This intentionally locks in a pinned_recipe_id /
+    metadata.picked_recipe divergence, but it is now SAFE (#436 finding 3):
+    classify_intent's "is a recipe pinned" checks (confirm band, re-pick gate,
+    mode-bias prompt) all read metadata.picked_recipe via
+    _session_has_picked_recipe, never the stale pinned_recipe_id. See
+    test_confirm_band_not_fired_after_new_brainstorm_clears_pin below, which
+    exercises exactly that read path against the state this test produces.
+    """
     from bubbly_chef.workflows.router import update_session_node
 
     repo = _graph_repo(
@@ -999,6 +1109,32 @@ async def test_new_brainstorm_clears_stale_picked_recipe_pin():
     # pinned_recipe_id is untouched -- clearing it would re-enable the
     # deterministic re-pick path (#415 territory), which is out of scope here.
     assert saved.pinned_recipe_id == "pin-123"
+
+
+@pytest.mark.asyncio
+async def test_confirm_band_not_fired_after_new_brainstorm_clears_pin():
+    """#436 finding 3 regression: pick A -> "show me different options" (new
+    brainstorm, clears metadata.picked_recipe but leaves pinned_recipe_id
+    stale) -> an ambiguous follow-up must NOT trip the confirm band ("Did you
+    want to tweak this recipe or start fresh?") since there is no "this
+    recipe" any more. Before the fix, classify_intent read the stale
+    pinned_recipe_id and fired the confirm band anyway.
+    """
+    with _mock_ai("recipe_brainstorm", confidence=0.60):
+        result = await classify_intent(
+            _state(
+                input_text="something with noodles maybe?",
+                session_mode=SessionMode.RECIPE_EXPLORING.value,
+                # pinned_recipe_id stale from the earlier pick; picked_recipe
+                # already cleared by update_session_node on the new brainstorm.
+                session={
+                    "pinned_recipe_id": "pin-123",
+                    "metadata": {"picked_recipe": None},
+                },
+            )
+        )
+    assert result.get("next_action") != NextAction.CONFIRM_CHOICE.value
+    assert result.get("requires_review") is not True
 
 
 def test_fresh_pick_after_new_brainstorm_routes_to_research_recipe_not_refine():
