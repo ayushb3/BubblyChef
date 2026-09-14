@@ -555,3 +555,79 @@ describe('MissingItemsList — missing_notes (#281)', () => {
     expect(screen.getByText(/Saffron/)).toBeInTheDocument()
   })
 })
+
+// ─── CookModal — none-match note rendering (#425) ─────────────────────────────
+//
+// A missing ingredient whose model returned match_type="none" with a
+// substitution_note must surface that note in the "Not in pantry" strip
+// instead of a bare warning chip.  The proposal carries the note in
+// missing_notes; CookModal must wire it through to MissingItemsList.
+
+describe('CookModal — none-match note rendered instead of bare chip (#425)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('displays the model note for a none-match ingredient, not just a bare chip', async () => {
+    const proposal: CookProposal = {
+      recipe_id: 'r-sauce',
+      recipe_title: 'Cream Sauce',
+      matches: [],
+      missing: ['heavy cream'],
+      unit_conflicts: [],
+      compound_suggestions: [],
+      missing_notes: {
+        'heavy cream': 'No good stand-in — the sauce will be thinner.',
+      },
+    } as unknown as CookProposal
+
+    mockCookRecipe.mockResolvedValue(proposal)
+
+    render(
+      <CookModal
+        recipeId="r-sauce"
+        recipeTitle="Cream Sauce"
+        onClose={jest.fn()}
+        onCooked={jest.fn()}
+      />,
+    )
+
+    // Wait for the review state to load.
+    await screen.findByText(/Not in pantry/i)
+
+    // The model's note must appear.
+    expect(
+      screen.getByText(/No good stand-in — the sauce will be thinner\./i),
+    ).toBeInTheDocument()
+  })
+
+  it('bare chip renders when no note is provided for a none-match ingredient', async () => {
+    const proposal: CookProposal = {
+      recipe_id: 'r-sauce',
+      recipe_title: 'Cream Sauce',
+      matches: [],
+      missing: ['truffle oil'],
+      unit_conflicts: [],
+      compound_suggestions: [],
+      missing_notes: {},
+    } as unknown as CookProposal
+
+    mockCookRecipe.mockResolvedValue(proposal)
+
+    render(
+      <CookModal
+        recipeId="r-sauce"
+        recipeTitle="Cream Sauce"
+        onClose={jest.fn()}
+        onCooked={jest.fn()}
+      />,
+    )
+
+    await screen.findByText(/Not in pantry/i)
+
+    // Ingredient name appears — only as a chip (no extra note block).
+    expect(screen.getByText(/truffle oil/i)).toBeInTheDocument()
+    // No note text beyond the name.
+    expect(screen.queryByText(/no good stand-in/i)).not.toBeInTheDocument()
+  })
+})

@@ -1174,6 +1174,37 @@ class TestMissingNotes:
         assert "heavy cream" in proposal.missing
         assert proposal.missing_notes == {}
 
+    @pytest.mark.asyncio
+    async def test_none_match_without_note_does_not_add_spurious_entry(self) -> None:
+        """match_type='none' with no substitution_note must not put anything in missing_notes.
+
+        The model sometimes returns a none match with no note (e.g. it truly has no
+        idea). The missing_notes dict must stay sparse — no empty-string or None entry
+        for that ingredient (#425).
+        """
+        pantry = [_make_item("pasta", 500, "g", 500, "g")]
+        manager = self._manager([
+            _LLMIngredientMatch(
+                ingredient_name="truffle oil",
+                best_match=None,
+                match_type="none",
+                confidence=0.9,
+                substitution_note=None,  # explicitly no note
+            )
+        ])
+
+        proposal = await match_ingredients_with_llm(
+            recipe_id=RECIPE_ID,
+            recipe_title=RECIPE_TITLE,
+            recipe_ingredients=["1 tbsp truffle oil"],
+            pantry_items=pantry,
+            ai_manager=manager,
+        )
+
+        assert "truffle oil" in proposal.missing
+        # Sparse: no entry at all, not even an empty string.
+        assert "truffle oil" not in proposal.missing_notes
+
 
 class TestSizeAdjectiveUnits:
     """Size adjectives in the unit field must not produce spurious unit_conflicts (#223).
