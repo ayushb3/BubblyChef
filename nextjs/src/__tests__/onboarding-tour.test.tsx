@@ -53,6 +53,9 @@ beforeAll(() => {
       dispatchEvent: jest.fn(),
     }),
   })
+  // jsdom does not implement scrollIntoView; measureTarget calls it on
+  // non-fixed targets (e.g. the quick-actions step).
+  Element.prototype.scrollIntoView = jest.fn()
 })
 
 beforeEach(() => {
