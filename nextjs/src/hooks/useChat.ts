@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { streamChatMessage, fetchChatHistory, applyPantryProposal } from '@/lib/api/chat'
-import type { ChatMessage, ChatResponse, PantryProposalData, PantryProposalAction } from '@/types/chat'
+import type { ChatMessage, ChatResponse, ChatIntent, PantryProposalData, PantryProposalAction } from '@/types/chat'
 import { getClarificationSuggestions, mergeTermSuggestions, mergeActions, filterResolvedTerms } from '@/types/chat'
 
 /** Everything needed to apply a pantry proposal once the user approves it. */
@@ -165,13 +165,47 @@ export function useChat(options?: UseChatOptions) {
           return
         }
 
-        const restored: ChatMessage[] = turns.map((turn) => ({
-          id: crypto.randomUUID(),
-          role: turn.role as 'user' | 'assistant',
-          content: turn.content,
-          intent: (turn.intent as ChatMessage['intent']) ?? undefined,
-          timestamp: new Date(turn.created_at),
-        }))
+        const restored: ChatMessage[] = turns.map((turn) => {
+          const base = {
+            id: crypto.randomUUID(),
+            role: turn.role as 'user' | 'assistant',
+            content: turn.content,
+            intent: (turn.intent as ChatMessage['intent']) ?? undefined,
+            timestamp: new Date(turn.created_at),
+          }
+          // Rebuild response so the card render branches fire on reload.
+          // Exclude pantry_update: a restored pantry proposal has no entry in
+          // pendingProposalsRef, so its Approve/Reject buttons would no-op — a
+          // dead button is worse than the prior no-card state. Persisting the
+          // interactive approve/reject state across reload is a separate pass.
+          // Recipe cards and brainstorm cards are read-only, so they restore
+          // fully and safely.
+          const canRestoreCard =
+            turn.role === 'assistant' &&
+            turn.intent !== 'pantry_update' &&
+            (turn.proposal || turn.metadata)
+          if (canRestoreCard) {
+            return {
+              ...base,
+              response: {
+                intent: (turn.intent ?? 'general_chat') as ChatIntent,
+                assistant_message: turn.content,
+                proposal: turn.proposal ?? null,
+                metadata: turn.metadata ?? null,
+                // fill required fields with safe defaults; the real confidence
+                // is not persisted, so restored turns report unknown (0), not a
+                // fabricated 1.0 that a future confidence indicator would trust.
+                request_id: '',
+                workflow_id: '',
+                conversation_id: storedId,
+                confidence: { overall: 0 },
+                requires_review: false,
+                next_action: 'none',
+              } as ChatResponse,
+            }
+          }
+          return base
+        })
         setMessages(restored)
         setIsResuming(false)
       })
@@ -193,9 +227,15 @@ export function useChat(options?: UseChatOptions) {
   /**
    * Send a message. `context` is optional extra payload for the AI workflow
    * (e.g. `{ cooking_recipe: {...} }` after the Cook flow hands off to chat).
+   * `forcedIntent` is set by the confirm-band to deterministically route the
+   * turn without going through the classifier.
    */
   const sendMessage = useCallback(
-    (text: string, context?: Record<string, unknown> | null) => {
+    (
+      text: string,
+      context?: Record<string, unknown> | null,
+      forcedIntent?: 'recipe_card' | 'recipe_brainstorm' | null,
+    ) => {
       const trimmed = text.trim()
       if (!trimmed || isStreaming) return
 
@@ -240,6 +280,7 @@ export function useChat(options?: UseChatOptions) {
           message: trimmed,
           conversation_id: convId,
           ...(context ? { context } : {}),
+          ...(forcedIntent ? { forced_intent: forcedIntent } : {}),
         },
 
         // onToken — append each token to the placeholder
@@ -263,7 +304,7 @@ export function useChat(options?: UseChatOptions) {
             "I'm not sure how to help with that. Try asking about recipes or groceries!"
 
           const proposal = response.proposal as PantryProposalData | null
-          const hasActions = !!proposal && proposal.actions.length > 0
+          const hasActions = !!proposal && Array.isArray(proposal.actions) && proposal.actions.length > 0
           const clarificationTerms = getClarificationSuggestions(response)
           const isPantryTurn = response.intent === 'pantry_update'
 
@@ -597,6 +638,23 @@ export function useChat(options?: UseChatOptions) {
     [sendMessage],
   )
 
+  // ── Confirm-band send ────────────────────────────────────────────────────
+  // Called when the user taps a confirm-band button. Aborts any in-flight
+  // stream (same as sendChipMessage), then sends the button label as the
+  // visible user turn with forced_intent set so the backend bypasses the
+  // classifier entirely and routes deterministically.
+  const sendConfirmChoice = useCallback(
+    (label: string, forcedIntent: 'recipe_card' | 'recipe_brainstorm') => {
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort()
+        streamAbortRef.current = null
+        setIsStreaming(false)
+      }
+      sendMessage(label, null, forcedIntent)
+    },
+    [sendMessage],
+  )
+
   return {
     messages,
     isStreaming,
@@ -606,6 +664,7 @@ export function useChat(options?: UseChatOptions) {
     proposalErrors,
     sendMessage,
     sendChipMessage,
+    sendConfirmChoice,
     cancelStream,
     startNewChat,
     approveProposal,
