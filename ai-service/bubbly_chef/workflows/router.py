@@ -74,6 +74,7 @@ from bubbly_chef.workflows.recipe.nodes import (
     detect_brainstorm_followup,
     extract_recipe_constraints,
     extract_selected_recipe,
+    extract_selected_recipe_by_name,
     generate_grounded_recipe,
     refine_recipe_node,
     research_recipe,
@@ -445,6 +446,48 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             }
         # No confident selection — fall through to LLM intent classification
         # so informational questions expand on the brainstorm ideas.
+
+    # ── Priority 4b: Pinned re-pick to a DIFFERENT already-offered idea ──
+    # Only when a recipe is pinned (not COOKING) and there are stored ideas.
+    # Uses name-only matching so positional/ordinal/cardinal references ("the
+    # first one", "number two") cannot override a pin — too ambiguous with
+    # modification intent. A distinctive-name match that resolves to an idea
+    # OTHER than the pinned dish is allowed through; same-dish references fall
+    # through to the LLM so "the garlic toast one" still means "tweak this".
+    _recipe_pin_only = _session_has_picked_recipe(state) and (
+        state.get("session_mode") != SessionMode.COOKING.value
+    )
+    if _recipe_pin_only and stored_ideas:
+        picked_title = (
+            (state.get("session") or {})
+            .get("metadata", {})
+            .get("picked_recipe", {})
+            .get("title", "")
+            or ""
+        )
+        name_only_match = extract_selected_recipe_by_name(
+            input_text,
+            state.get("conversation_history") or [],
+            stored_ideas=stored_ideas,
+            picked_title=picked_title or None,
+        )
+        if name_only_match:
+            if name_only_match.strip().lower() != picked_title.strip().lower():
+                logger.info(
+                    f"Intent classified: recipe_card "
+                    f"(source=pinned_repick_to_different_idea, selected='{name_only_match}')"
+                )
+                return {
+                    **state,
+                    "intent": Intent.RECIPE_CARD.value,
+                    "intent_confidence": 0.95,
+                    "intent_reasoning": (
+                        "Re-pick to a different already-offered idea (pinned session)"
+                    ),
+                    "detected_entities": [],
+                    "selected_recipe_name": name_only_match,
+                }
+        # No name match, ambiguous, or same-dish reference — fall through to LLM
 
     # ── Priority 5: LLM classifier — with session mode bias injected ──
     ai_manager = get_ai_manager()

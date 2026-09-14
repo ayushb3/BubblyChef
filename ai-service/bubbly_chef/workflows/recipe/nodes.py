@@ -346,6 +346,53 @@ def _looks_like_pantry_update(text_lower: str) -> bool:
     )
 
 
+# Modification-intent indicator words — words that signal the user wants to
+# CHANGE the current dish rather than switch to a different offered idea.
+# These comparative adjectives and modification verbs are clear enough to
+# block a name-only re-pick under a pin (e.g. "make the Pesto Pasta one
+# spicier" → modification, not a switch to Pesto Pasta from a different pin).
+# Erring toward excluding is safe: it only skips the re-pick shortcut, falling
+# through to the LLM classifier rather than mis-categorizing a modification as
+# a dish switch.
+#
+# Comparatives — two-part approach to avoid false-positive food nouns:
+#
+# 1. -ier suffix regex: almost no food names end -ier, so a wildcard is safe.
+#    Minimum 4 root chars (total word >= 7) avoids "tier", "pier".
+#    Catches: spicier, creamier, gooier, zestier, smokier, crispier, saltier…
+_MODIFICATION_COMPARATIVE_IER_RE = re.compile(r"\b\w{4,}ier\b")
+#
+# 2. Explicit -er comparatives: we can't wildcard -er because common food
+#    nouns end -er (burger, butter, pepper, lobster, cheeseburger, chowder…).
+#    Keep only adjectives that are unambiguously comparative in cooking context.
+_MODIFICATION_COMPARATIVE_ER = {
+    "sweeter", "hotter", "milder", "richer", "softer",
+    "thicker", "warmer", "cooler", "drier", "lighter",
+    "heavier", "stronger",
+}
+_MODIFICATION_WORDS = {
+    "without", "substitute", "swap", "replace", "tweak",
+    "adjust", "change",
+}
+_MODIFICATION_PHRASES = {"make it", "make this"}
+
+
+def _looks_like_modification(text_lower: str) -> bool:
+    """True when the text is clearly a request to modify an attribute of the
+    current dish — not a switch to a different offered idea."""
+    if _MODIFICATION_COMPARATIVE_IER_RE.search(text_lower):
+        return True
+    if any(_has_word(text_lower, w) for w in _MODIFICATION_COMPARATIVE_ER):
+        return True
+    if any(_has_word(text_lower, w) for w in _MODIFICATION_WORDS):
+        return True
+    if any(phrase in text_lower for phrase in _MODIFICATION_PHRASES):
+        return True
+    if _has_word(text_lower, "less") or _has_word(text_lower, "more"):
+        return True
+    return False
+
+
 def extract_selected_recipe(
     user_text: str,
     history: list[dict[str, Any]],
@@ -476,6 +523,140 @@ def extract_selected_recipe(
     for word, idx in cardinal_map.items():
         if _has_word(text_lower, word) and idx < len(ideas):
             return ideas[idx]
+
+    return None
+
+
+def extract_selected_recipe_by_name(
+    user_text: str,
+    history: list[dict[str, Any]],
+    stored_ideas: list[str] | None = None,
+    picked_title: str | None = None,
+) -> str | None:
+    """Name-match-only variant of extract_selected_recipe.
+
+    Runs ONLY the two name-based passes (whole-phrase fuzzy >=80 and
+    single-hit distinctive-word overlap) — positional passes (ordinal_map,
+    quick_pick_phrases, bare-cardinal fallback) are deliberately excluded.
+
+    This is used when a recipe is already pinned: a bare ordinal or cardinal
+    ("the first one", "number two") is too weak to override a pin and is
+    ambiguous with modification intent.  Only a distinctive-name reference may
+    trigger a switch to a different already-offered idea.
+
+    `picked_title` — the title of the currently-pinned recipe. When provided,
+    Pass 1 returns None if the pinned dish scores within 10 fuzzy points of the
+    winner (near-tie = ambiguous; fall through to LLM).  Pass 2 returns None if
+    the pinned dish shares any of the same decisive distinctive tokens as the
+    winner (shared token = ambiguous).  This prevents a sibling idea that shares
+    a token with the pinned dish from being silently substituted for it.
+
+    Returns the matched idea name, or None when positional, informational,
+    a pantry or modification statement, ambiguous with the pinned dish, or
+    unresolvable.
+
+    The caller still checks that the resolved name differs from the currently-
+    picked recipe as a second belt.
+    """
+    from rapidfuzz import fuzz  # local import — optional dep already in pyproject.toml
+
+    brainstorm_text = ""
+    for turn in reversed(history):
+        if turn.get("role") == "assistant" and turn.get("intent") == Intent.RECIPE_BRAINSTORM.value:
+            brainstorm_text = turn.get("content", "")
+            break
+
+    ideas: list[str] = re.findall(r"\*\*(.+?)\*\*", brainstorm_text)
+    if not ideas and stored_ideas:
+        ideas = list(stored_ideas)
+
+    if not ideas:
+        return None
+
+    text_lower = user_text.lower()
+
+    # Informational guard (identical to the full function): if it reads as an
+    # elaboration request and carries no selection cue, it is not a pick.
+    informational_phrases = {
+        "tell me more",
+        "more info",
+        "more about",
+        "explain",
+        "what's in",
+        "whats in",
+        "how do i make",
+        "how do you make",
+        "what are",
+        "details",
+    }
+    # For the informational guard we deliberately do NOT include cardinals here:
+    # a bare cardinal alone does NOT constitute a name match, and if the guard
+    # would fire we want it to fire (return None) rather than a cardinal
+    # rescuing a name match that doesn't exist.
+    selection_words = {
+        "first", "second", "third", "fourth",
+        "1st", "2nd", "3rd", "4th",
+    }
+    has_informational = any(phrase in text_lower for phrase in informational_phrases)
+    has_selection = any(_has_word(text_lower, word) for word in selection_words)
+    if has_informational and not has_selection:
+        return None
+
+    _GENERIC = {
+        "recipe", "dish", "bowl", "plate", "style", "quick", "easy",
+        "fresh", "creamy", "savory", "sweet", "spicy", "with", "over",
+    }
+
+    # Pass 1: Whole-phrase fuzzy match (threshold >=80, pantry-update guard,
+    # modification-intent guard, near-tie-with-pinned guard).
+    best_match = max(ideas, key=lambda idea: fuzz.partial_ratio(text_lower, idea.lower()))
+    winner_score = fuzz.partial_ratio(text_lower, best_match.lower())
+    if (
+        winner_score >= 80
+        and not _looks_like_pantry_update(text_lower)
+        and not _looks_like_modification(text_lower)
+    ):
+        # Ambiguity guard: if the pinned dish scores within 10 of the winner it
+        # is a near-tie — the user may mean the pinned dish, not the sibling.
+        # Return None so the LLM resolves the ambiguity rather than silently
+        # switching to the wrong idea.
+        if picked_title:
+            pinned_score = fuzz.partial_ratio(text_lower, picked_title.lower())
+            if pinned_score >= winner_score - 10:
+                return None
+        return best_match
+
+    # Pass 2: Distinctive-word overlap (single-hit, pantry-update guard,
+    # modification-intent guard, shared-token-with-pinned guard).
+    text_words = set(re.findall(r"\b\w{4,}\b", text_lower))
+    name_hits = [
+        idea
+        for idea in ideas
+        if {
+            w for w in re.findall(r"\b\w{4,}\b", idea.lower()) if w not in _GENERIC
+        }
+        & text_words
+    ]
+    if (
+        len(name_hits) == 1
+        and not _looks_like_pantry_update(text_lower)
+        and not _looks_like_modification(text_lower)
+    ):
+        # Ambiguity guard: if the pinned dish shares any of the same decisive
+        # non-generic tokens that caused the single hit, the match is ambiguous
+        # (the user may be referring to the pinned dish, not the sibling).
+        if picked_title:
+            winning_tokens = {
+                w for w in re.findall(r"\b\w{4,}\b", name_hits[0].lower())
+                if w not in _GENERIC
+            } & text_words
+            pinned_tokens = {
+                w for w in re.findall(r"\b\w{4,}\b", picked_title.lower())
+                if w not in _GENERIC
+            }
+            if winning_tokens & pinned_tokens:
+                return None
+        return name_hits[0]
 
     return None
 

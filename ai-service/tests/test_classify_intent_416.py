@@ -1240,3 +1240,168 @@ def test_cooking_help_with_pin_answers_not_refine():
         session={"metadata": {"picked_recipe": {"title": "Beef Stroganoff"}}},
     )
     assert route_by_intent(state) == "cooking_help_response"
+
+
+# ---------------------------------------------------------------------------
+# #442 defect 3: pinned re-pick to a DIFFERENT already-offered idea
+# "show me the porridge one instead" while spaghetti is pinned must switch
+# to the porridge idea, not regenerate or modify the pinned dish.
+# ---------------------------------------------------------------------------
+
+_PINNED_REPICK_IDEAS = [
+    "Thai-Style Garlic Toast",
+    "Sweet Coconut Milk Toast",
+    "Savory Thai Rice Porridge",
+]
+_PINNED_REPICK_HISTORY = [
+    {
+        "role": "assistant",
+        "content": (
+            "Here are some ideas:\n"
+            "**Thai-Style Garlic Toast** - crispy toast with garlic\n"
+            "**Sweet Coconut Milk Toast** - a sweet breakfast toast\n"
+            "**Savory Thai Rice Porridge** - comforting congee-style porridge\n"
+        ),
+        "intent": "recipe_brainstorm",
+    },
+]
+
+
+def _session_with_picked(title: str) -> dict:
+    """Simulate a pinned session where `title` is the currently-picked recipe."""
+    return {
+        "pinned_recipe_id": "pin-456",
+        "metadata": {"picked_recipe": {"title": title, "id": "pin-456"}},
+    }
+
+
+@pytest.mark.asyncio
+async def test_pinned_repick_different_idea_short_circuits():
+    """'show me the porridge one instead' while Thai-Style Garlic Toast is pinned
+    → deterministic re-pick to 'Savory Thai Rice Porridge' without calling the LLM.
+    """
+    with _mock_ai("recipe_card") as mock_mgr:
+        result = await classify_intent(
+            _state(
+                input_text="show me the porridge one instead",
+                session_mode=SessionMode.RECIPE_EXPLORING.value,
+                session=_session_with_picked("Thai-Style Garlic Toast"),
+                brainstorm_ideas=list(_PINNED_REPICK_IDEAS),
+                conversation_history=_PINNED_REPICK_HISTORY,
+            )
+        )
+    mock_mgr.return_value.complete.assert_not_called()
+    assert result["intent"] == Intent.RECIPE_CARD.value
+    assert result.get("selected_recipe_name") == "Savory Thai Rice Porridge"
+
+
+@pytest.mark.asyncio
+async def test_pinned_modification_falls_through_to_llm():
+    """'add pesto to it' while pinned → not a stored idea name → LLM is called
+    (should modify the pinned dish, not re-pick).
+    """
+    with _mock_ai("recipe_card") as mock_mgr:
+        result = await classify_intent(
+            _state(
+                input_text="add pesto to it",
+                session_mode=SessionMode.RECIPE_EXPLORING.value,
+                session=_session_with_picked("Thai-Style Garlic Toast"),
+                brainstorm_ideas=list(_PINNED_REPICK_IDEAS),
+                conversation_history=_PINNED_REPICK_HISTORY,
+            )
+        )
+    mock_mgr.return_value.complete.assert_awaited_once()
+    assert result.get("intent_reasoning") != "Re-pick to a different already-offered idea (pinned session)"
+
+
+# ---------------------------------------------------------------------------
+# MEDIUM regression: sibling near-tie / shared-token in router (integration)
+# ---------------------------------------------------------------------------
+
+_SIBLING_ROUTER_IDEAS = ["Garlic Toast Supreme", "Garlic Bread Twists", "Tomato Basil Soup"]
+_SIBLING_ROUTER_HISTORY = [
+    {
+        "role": "assistant",
+        "content": (
+            "**Garlic Toast Supreme** - rich garlic toast\n"
+            "**Garlic Bread Twists** - twisted garlic bread\n"
+            "**Tomato Basil Soup** - classic tomato soup\n"
+        ),
+        "intent": "recipe_brainstorm",
+    },
+]
+
+
+@pytest.mark.asyncio
+async def test_sibling_garlic_ambiguous_falls_through_to_llm():
+    """'the garlic one' while 'Garlic Bread Twists' is pinned -- both sibling
+    ideas share 'garlic' with the pin -> ambiguous -> must NOT re-pick to the
+    sibling; LLM is called instead.
+    """
+    with _mock_ai("recipe_card") as mock_mgr:
+        result = await classify_intent(
+            _state(
+                input_text="the garlic one",
+                session_mode=SessionMode.RECIPE_EXPLORING.value,
+                session=_session_with_picked("Garlic Bread Twists"),
+                brainstorm_ideas=list(_SIBLING_ROUTER_IDEAS),
+                conversation_history=_SIBLING_ROUTER_HISTORY,
+            )
+        )
+    mock_mgr.return_value.complete.assert_awaited_once()
+    assert result.get("intent_reasoning") != "Re-pick to a different already-offered idea (pinned session)"
+
+
+@pytest.mark.asyncio
+async def test_sibling_tomato_unambiguous_repicks():
+    """'show me the tomato one instead' while 'Garlic Bread Twists' is pinned --
+    'tomato' does not appear in the pinned title -> unambiguous -> re-picks to
+    'Tomato Basil Soup' without calling the LLM.
+    """
+    with _mock_ai("recipe_card") as mock_mgr:
+        result = await classify_intent(
+            _state(
+                input_text="show me the tomato one instead",
+                session_mode=SessionMode.RECIPE_EXPLORING.value,
+                session=_session_with_picked("Garlic Bread Twists"),
+                brainstorm_ideas=list(_SIBLING_ROUTER_IDEAS),
+                conversation_history=_SIBLING_ROUTER_HISTORY,
+            )
+        )
+    mock_mgr.return_value.complete.assert_not_called()
+    assert result["intent"] == Intent.RECIPE_CARD.value
+    assert result.get("selected_recipe_name") == "Tomato Basil Soup"
+
+
+@pytest.mark.asyncio
+async def test_novel_comparative_falls_through_to_llm():
+    """'make it gooier' -- novel comparative matched by the regex guard -> LLM is called."""
+    with _mock_ai("recipe_card") as mock_mgr:
+        result = await classify_intent(
+            _state(
+                input_text="make it gooier",
+                session_mode=SessionMode.RECIPE_EXPLORING.value,
+                session=_session_with_picked("Thai-Style Garlic Toast"),
+                brainstorm_ideas=list(_PINNED_REPICK_IDEAS),
+                conversation_history=_PINNED_REPICK_HISTORY,
+            )
+        )
+    mock_mgr.return_value.complete.assert_awaited_once()
+    assert result.get("intent_reasoning") != "Re-pick to a different already-offered idea (pinned session)"
+@pytest.mark.asyncio
+async def test_pinned_same_dish_reference_falls_through_to_llm():
+    """'the garlic toast one' names the CURRENTLY pinned dish → no re-pick;
+    falls through to LLM (treated as a modification of the current dish).
+    """
+    with _mock_ai("recipe_card") as mock_mgr:
+        result = await classify_intent(
+            _state(
+                input_text="the garlic toast one",
+                session_mode=SessionMode.RECIPE_EXPLORING.value,
+                session=_session_with_picked("Thai-Style Garlic Toast"),
+                brainstorm_ideas=list(_PINNED_REPICK_IDEAS),
+                conversation_history=_PINNED_REPICK_HISTORY,
+            )
+        )
+    mock_mgr.return_value.complete.assert_awaited_once()
+    assert result.get("intent_reasoning") != "Re-pick to a different already-offered idea (pinned session)"
