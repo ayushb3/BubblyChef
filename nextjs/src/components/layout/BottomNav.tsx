@@ -8,7 +8,6 @@ import {
   Archive,
   ChatCircle,
   BookOpen,
-  UserCircle,
 } from '@phosphor-icons/react/dist/ssr'
 import type { ComponentType } from 'react'
 import { springs } from '@/lib/motion'
@@ -30,7 +29,6 @@ const tabs: TabDef[] = [
   { href: '/pantry', icon: Archive, label: 'Pantry' },
   { href: '/chat', icon: ChatCircle, label: 'Chat' },
   { href: '/recipes', icon: BookOpen, label: 'Recipes' },
-  { href: '/profile', icon: UserCircle, label: 'Profile' },
 ]
 
 export default function BottomNav() {
