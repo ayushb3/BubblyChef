@@ -103,6 +103,29 @@ def _extract_url(text: str) -> str | None:
     return m.group(0) if m else None
 
 
+def _session_has_picked_recipe(state: WorkflowState) -> bool:
+    """Single source of truth for "is a recipe pinned" in RECIPE_EXPLORING (#436
+    finding 3).
+
+    Reads ``session.metadata.picked_recipe`` rather than
+    ``session.pinned_recipe_id``. The two used to diverge:
+    ``update_session_node`` clears ``metadata.picked_recipe`` on a genuinely
+    new brainstorm but deliberately leaves ``pinned_recipe_id`` stale (clearing
+    it would re-enable the deterministic re-pick path and widen into #415) —
+    see the comment above ``session.metadata.picked_recipe = None`` in
+    ``update_session_node``. Reading ``pinned_recipe_id`` here meant the
+    confirm band and the re-pick gate kept firing as if a recipe were still
+    pinned after a fresh brainstorm had cleared it.
+
+    NOT a general "does this session have a pin" check: ``pinned_recipe_id``
+    remains the correct field for the COOKING-mode pin (set on cook handoff,
+    independent of the recipe_card pick flow) — this helper is only used at
+    RECIPE_EXPLORING call sites.
+    """
+    metadata = (state.get("session") or {}).get("metadata") or {}
+    return bool(metadata.get("picked_recipe"))
+
+
 # =============================================================================
 # LLM Prompts
 # =============================================================================
@@ -390,8 +413,16 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
     # its history entry with a telemetry intent of recipe_brainstorm, which would
     # otherwise make detect_brainstorm_followup fire on the *next* turn against the
     # pinned recipe and hijack a modification into a re-pick (#266-flavoured).
+    # "Pinned" here is the recipe_card pin (session.metadata.picked_recipe,
+    # via _session_has_picked_recipe — #436 finding 3), OR an active COOKING
+    # session: COOKING always sets pinned_recipe_id on cook handoff without
+    # necessarily setting picked_recipe (e.g. cooking a saved recipe started
+    # outside the recipe_card flow), and there is nothing to re-pick from
+    # mid-cook regardless.
     stored_ideas = state.get("brainstorm_ideas") or []
-    _has_pin = bool((state.get("session") or {}).get("pinned_recipe_id"))
+    _has_pin = _session_has_picked_recipe(state) or (
+        state.get("session_mode") == SessionMode.COOKING.value
+    )
     _repick_ok = not _has_pin and (detect_brainstorm_followup(state) or bool(stored_ideas))
     if _repick_ok:
         selected_name = extract_selected_recipe(
@@ -468,14 +499,16 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
 
         # ── Post-classify: mode-aware adjustments ─────────────────────────────
 
-        # #408 fix: a high-confidence recipe_generation must be served as
-        # generation, not silently downgraded to brainstorm by the mode override.
-        # We apply this check BEFORE the COOKING gate so generation escapes correctly.
-
         # COOKING mode gate (Q3/#279): only narrow amendments allowed mid-cook.
         # Full brainstorm/generation is blocked; route to cooking_help instead.
         # This must be explicit — _detect_amendment runs on any cooking-help turn
         # with a pinned recipe, NOT COOKING-scoped; the gate is here.
+        # This conversion is UNCONDITIONAL — it runs regardless of the
+        # classifier's confidence. The #408 fix (a high-confidence
+        # recipe_generation must be served as generation, not downgraded to
+        # brainstorm) does not live here; it is the RECIPE_GENERATION
+        # fall-through inside the RECIPE_EXPLORING branch below, which this
+        # COOKING gate runs BEFORE, not after.
         if session_mode == SessionMode.COOKING.value:
             if intent in (Intent.RECIPE_BRAINSTORM.value, Intent.RECIPE_GENERATION.value):
                 logger.info(
@@ -493,9 +526,10 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
 
         # RECIPE_EXPLORING mode: conservative bias + confirm band (Q1/Q2/Q5).
         if session_mode == SessionMode.RECIPE_EXPLORING.value:
-            has_pinned = bool(
-                (state.get("session") or {}).get("pinned_recipe_id")
-            )
+            # #436 finding 3: read the same predicate as the re-pick gate
+            # above (_session_has_picked_recipe), not pinned_recipe_id — see
+            # that helper's docstring for why the two diverge.
+            has_pinned = _session_has_picked_recipe(state)
 
             if intent == Intent.RECIPE_BRAINSTORM.value:
                 # Conservative bias (Q2): ambiguous → stay on the recipe.
@@ -661,9 +695,9 @@ def _build_mode_bias_prompt(session_mode: str | None, state: WorkflowState) -> s
     if not session_mode or session_mode == SessionMode.DEFAULT.value:
         return ""
 
-    has_pinned = bool(
-        (state.get("session") or {}).get("pinned_recipe_id")
-    )
+    # #436 finding 3: same predicate as classify_intent's confirm band /
+    # re-pick gate (_session_has_picked_recipe), not pinned_recipe_id.
+    has_pinned = _session_has_picked_recipe(state)
 
     if session_mode == SessionMode.RECIPE_EXPLORING.value:
         if has_pinned:
@@ -1249,7 +1283,10 @@ def build_chat_router_graph(
        - pantry_update: parse -> normalize -> expiry -> dedup -> actions -> review_gate
          -> suggest_specifics -> finalize
        - receipt/product/recipe: build_handoff_*
-       - cooking_help (recipe gen): extract_constraints -> score_pantry -> brainstorm -> END
+       - recipe_generation / recipe_brainstorm: extract_constraints -> score_pantry
+         -> route_after_scoring splits by intent: recipe_generation ->
+         research_recipe -> generate_grounded_recipe -> END; recipe_brainstorm ->
+         brainstorm_recipes -> END (#408 / #416 AC4)
        - recipe_card (first pick from brainstorm): research_recipe -> generate_grounded_recipe -> END
        - recipe_card (follow-up on an already-pinned recipe, #416 AC1): refine_recipe -> END
        - general_chat: generate response
