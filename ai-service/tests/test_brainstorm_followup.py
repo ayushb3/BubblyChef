@@ -137,11 +137,15 @@ def test_extract_returns_none_for_explain() -> None:
 
 
 def test_extract_returns_none_for_whats_in() -> None:
-    result = extract_selected_recipe("what's in the first idea?", _BRAINSTORM_HISTORY)
-    # "what's in" is informational but "first" is ordinal → ordinal wins; returns first idea
-    # This tests that ordinal takes precedence even with informational phrasing
-    result2 = extract_selected_recipe("what's in them", _BRAINSTORM_HISTORY)
-    assert result2 is None  # no ordinal → informational guard fires
+    # "what's in the first idea?" is informational but "first" is an ordinal →
+    # ordinal wins; this documents that ordinals take precedence over the
+    # informational guard.
+    assert (
+        extract_selected_recipe("what's in the first idea?", _BRAINSTORM_HISTORY)
+        == "Cheesy Chicken Bites"
+    )
+    # No ordinal → informational guard fires → no selection.
+    assert extract_selected_recipe("what's in them", _BRAINSTORM_HISTORY) is None
 
 
 def test_extract_returns_none_for_how_do_i_make_no_ordinal() -> None:
@@ -190,6 +194,50 @@ def test_extract_returns_none_when_no_history() -> None:
 def test_extract_surprise_keyword_returns_first() -> None:
     result = extract_selected_recipe("surprise me!", _BRAINSTORM_HISTORY)
     assert result == "Cheesy Chicken Bites"
+
+
+# ---------------------------------------------------------------------------
+# #442: "the <name> one instead" must select by NAME, not fall to idea[0]
+# because the bare word "one" used to be treated as ordinal index 0.
+# ---------------------------------------------------------------------------
+
+
+def test_extract_name_plus_one_selects_by_name_not_first() -> None:
+    """'show me the pasta one instead' → Pasta Primavera, NOT the first idea.
+
+    Regression for #442: 'one' was in the ordinal map and matched before the
+    fuzzy name pass, so any 'the <name> one' phrase returned ideas[0]."""
+    result = extract_selected_recipe(
+        "show me the pasta one instead", _BRAINSTORM_HISTORY
+    )
+    assert result == "Pasta Primavera"
+
+
+def test_extract_name_plus_one_selects_third_by_name() -> None:
+    """'the tacos one' names the third idea — must not resolve to idea[0]."""
+    result = extract_selected_recipe("actually the tacos one", _BRAINSTORM_HISTORY)
+    assert result == "Beef Tacos"
+
+
+def test_extract_bare_one_still_selects_first_when_no_name_matches() -> None:
+    """With no name in the text, a bare 'give me number one' still means idx 0
+    (fallback path preserved)."""
+    result = extract_selected_recipe("give me number one", _BRAINSTORM_HISTORY)
+    assert result == "Cheesy Chicken Bites"
+
+
+def test_extract_ordinal_still_wins_over_name() -> None:
+    """'the first one' keeps ordinal precedence → idx 0, unchanged by the fix."""
+    result = extract_selected_recipe("the first one", _BRAINSTORM_HISTORY)
+    assert result == "Cheesy Chicken Bites"
+
+
+def test_extract_one_inside_word_does_not_trigger_selection() -> None:
+    """Word-boundary match: 'one' inside 'someone'/'done' must not pick idx 0."""
+    result = extract_selected_recipe(
+        "has anyone done these before?", _BRAINSTORM_HISTORY
+    )
+    assert result is None
 
 
 # ---------------------------------------------------------------------------

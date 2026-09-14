@@ -363,37 +363,75 @@ def extract_selected_recipe(
         "what are",
         "details",
     }
-    ordinal_words = {
+    # Unambiguous ordinals ("the first", "2nd one") and pick-any words. Bare
+    # cardinals ("one"/"two"/...) are deliberately NOT here: "the porridge one"
+    # is a name selection, not a request for idea index 0 (issue #442).
+    selection_words = {
         "first", "second", "third", "fourth",
         "1st", "2nd", "3rd", "4th",
-        "one", "two", "three", "four",
         "surprise", "any", "random", "you pick", "all of them",
     }
+
+    def _has_word(word: str) -> bool:
+        # Word-boundary match so "one" doesn't fire inside "done"/"someone" and a
+        # multi-word phrase ("you pick") still matches literally.
+        return re.search(rf"\b{re.escape(word)}\b", text_lower) is not None
+
     has_informational = any(phrase in text_lower for phrase in informational_phrases)
-    has_ordinal = any(word in text_lower for word in ordinal_words)
-    if has_informational and not has_ordinal:
+    has_selection = any(_has_word(word) for word in selection_words)
+    if has_informational and not has_selection:
         return None
 
     if not ideas:
         return None  # no brainstorm context to match against
 
+    # 1. Explicit ordinals win — unambiguous positional reference.
     ordinal_map = {
         "first": 0, "second": 1, "third": 2, "fourth": 3,
         "1st": 0, "2nd": 1, "3rd": 2, "4th": 3,
-        "one": 0, "two": 1, "three": 2, "four": 3,
     }
-
     for word, idx in ordinal_map.items():
-        if word in text_lower and idx < len(ideas):
+        if _has_word(word) and idx < len(ideas):
             return ideas[idx]
 
-    if any(kw in text_lower for kw in ["surprise", "any", "random", "you pick", "all of them"]):
+    if any(_has_word(kw) for kw in ["surprise", "any", "random", "you pick", "all of them"]):
         return ideas[0]
 
-    # Fuzzy match against idea names — raised threshold (>=80) to avoid false positives
+    # 2. Whole-phrase fuzzy match — high bar, catches when the user typed most
+    #    of the idea name ("I want pasta primavera", "beef tacos sound great").
     best_match = max(ideas, key=lambda idea: fuzz.partial_ratio(text_lower, idea.lower()))
     if fuzz.partial_ratio(text_lower, best_match.lower()) >= 80:
         return best_match
+
+    # 3. Distinctive-word match — a name buried in filler ("the tacos one
+    #    instead", "show me the porridge one") dilutes the whole-phrase score
+    #    below the bar, but a distinctive content word of the idea still names
+    #    it unambiguously. Match when exactly ONE idea shares a content word
+    #    (>=4 chars, not a generic food/filler word) with the text; ambiguous
+    #    overlaps (two ideas both matching) fall through rather than guess (#442).
+    _GENERIC = {
+        "recipe", "dish", "bowl", "plate", "style", "quick", "easy",
+        "fresh", "creamy", "savory", "sweet", "spicy", "with", "over",
+    }
+    text_words = set(re.findall(r"\b\w{4,}\b", text_lower))
+    name_hits = [
+        idea
+        for idea in ideas
+        if {
+            w for w in re.findall(r"\b\w{4,}\b", idea.lower()) if w not in _GENERIC
+        }
+        & text_words
+    ]
+    if len(name_hits) == 1:
+        return name_hits[0]
+
+    # 4. Bare-cardinal fallback, last: only when no name matched does "give me
+    #    number two" mean an index. Word-boundary so "the <name> one" handled
+    #    above never reaches here for idx 0.
+    cardinal_map = {"one": 0, "two": 1, "three": 2, "four": 3}
+    for word, idx in cardinal_map.items():
+        if _has_word(word) and idx < len(ideas):
+            return ideas[idx]
 
     return None
 
