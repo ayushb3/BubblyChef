@@ -1,7 +1,7 @@
 # Queue
 
-**Updated:** 2026-09-11 · by the cloud agent session · `main` @ `841027d` ·
-handing off to a local session — see `docs/HANDOFF.md`
+**Updated:** 2026-09-13 · triage session · `main` @ `2c5615d` ·
+deep triage complete for pantry/scan/ingest, auth/demo-polish, cook-flow, deferred tech-debt — see issue #409 for full report, dependency map, and implementation sequence
 
 > Rewritten whenever queue state changes. It is a checkpoint, not a live feed — nothing
 > updates it while no session is running, so trust the timestamp above. If two sessions
