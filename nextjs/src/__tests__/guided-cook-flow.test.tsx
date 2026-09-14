@@ -284,11 +284,19 @@ describe('GuidedCookFlow — Ask Bubbles sends a valid ChatRequest', () => {
     fireEvent.click(screen.getByRole('button', { name: /send question/i }))
   }
 
-  it('never sends the invalid "cooking_help" mode', () => {
+  const VALID_MODES = ['chat', 'recipe', 'learn', 'text', 'voice']
+
+  it('sends no invalid mode (omitted, or one of the valid Literals)', () => {
     openOverlayAndSend('why al dente?')
     expect(chatApi.streamChatMessage).toHaveBeenCalledTimes(1)
     const request = chatApi.streamChatMessage.mock.calls[0][0]
-    expect(request.mode).not.toBe('cooking_help')
+    // The fix omits `mode` entirely; assert it is either absent or a valid
+    // Literal — this also catches a regression that sets a *different*
+    // invalid string (e.g. 'cooking_question'), which `!== 'cooking_help'`
+    // would have let through.
+    if (request.mode !== undefined) {
+      expect(VALID_MODES).toContain(request.mode)
+    }
   })
 
   it('folds the step context into the message body', () => {
