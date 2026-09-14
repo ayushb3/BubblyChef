@@ -100,7 +100,8 @@ export default function SaveAccountBanner({ persistent = false }: SaveAccountBan
       if (linkError) throw linkError
       // On success the browser is redirected to Google, then back to /auth/callback
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      console.error(err)
+      setError("Couldn't connect Google right now. Try email and password, or try again later.")
       setGoogleLoading(false)
     }
   }

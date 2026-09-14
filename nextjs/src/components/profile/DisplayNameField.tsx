@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { PencilSimple, Check, X } from '@phosphor-icons/react/dist/ssr'
 import { createClient } from '@/lib/supabase/client'
@@ -18,6 +18,10 @@ export default function DisplayNameField({ initialName, hasRealName }: DisplayNa
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const router = useRouter()
+
+  useEffect(() => {
+    if (!editing) setDisplayName(initialName)
+  }, [initialName, editing])
 
   const handleEdit = () => {
     setValue(hasRealName ? displayName : '')
