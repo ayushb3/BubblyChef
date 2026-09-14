@@ -849,11 +849,19 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         />
       )}
 
-      {/* Guided cook flow — step-by-step Variant E flow (#263) */}
+      {/* Guided cook flow — step-by-step Variant E flow (#263).
+          Finishing the flow hands off to CookModal so pantry deduction (the
+          coherent end of the cook story) stays reachable from the library —
+          without it the guided flow would displace the only deduction path. */}
       {guidedCookOpen && selectedRecipe && (
         <GuidedCookFlow
+          key={selectedRecipe.id}
           recipe={selectedRecipe}
           onExit={() => setGuidedCookOpen(false)}
+          onFinish={() => {
+            setGuidedCookOpen(false)
+            setCookOpen(true)
+          }}
         />
       )}
     </div>

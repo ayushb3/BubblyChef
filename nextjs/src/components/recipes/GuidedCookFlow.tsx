@@ -250,20 +250,21 @@ function AskBubblesOverlay({ stepN, stepText: stepBodyText, recipeTitle, onClose
 
     let accumulated = ''
 
+    // Fold the step context into the message body. The backend ChatRequest
+    // only accepts mode ∈ chat|recipe|learn|text|voice and does not read a
+    // structured `context` field, so a bespoke `mode`/`context` payload would
+    // 422 (or be silently ignored). We default to the "chat" mode and prepend
+    // the step framing as plain text so Bubbles answers about this step.
     // TODO(#410): when Spec 0 session state lands, pass the pinned
     // conversation_id here so the step question threads into the cooking session.
+    const framedMessage =
+      `While cooking "${recipeTitle}", on step ${stepN} ("${stepBodyText}"), ` +
+      `I have a question: ${text}`
+
     await streamChatMessage(
       {
-        message: text,
+        message: framedMessage,
         conversation_id: null, // TODO(#410): use pinned session conversation_id
-        mode: 'cooking_help',
-        context: {
-          // Step context helps Bubbles answer specifically about this step.
-          cooking_step: stepN,
-          cooking_step_text: stepBodyText,
-          cooking_recipe_title: recipeTitle,
-          // TODO(#410): pass cooking_recipe_id from Spec 0 pinned state.
-        },
       },
       (token) => {
         accumulated += token
@@ -421,7 +422,7 @@ function ChatBubble({ who, children }: { who: 'user' | 'assistant'; children: Re
 // Done state
 // ---------------------------------------------------------------------------
 
-function DoneState({ recipe, onExit }: { recipe: Recipe; onExit: () => void }) {
+function DoneState({ recipe, onExit, onFinish }: { recipe: Recipe; onExit: () => void; onFinish?: () => void }) {
   return (
     <div
       className="rounded-3xl text-center py-8 px-6"
@@ -439,16 +440,34 @@ function DoneState({ recipe, onExit }: { recipe: Recipe; onExit: () => void }) {
       </h2>
       <p className="text-sm mb-5" style={{ color: 'var(--color-muted)' }}>
         You cooked {recipe.title}.
-        {/* Pantry deduction happens via the CookModal flow (issue #263 scope);
-            this screen exits guided mode cleanly. */}
+        {onFinish
+          ? ' Update your pantry to reflect what you used.'
+          : ''}
       </p>
+      {/* Primary action: hand off to the CookModal deduction flow so the
+          guided path ends where the pantry gets updated (issue #263). Falls
+          back to a plain exit when no deduction handoff is wired. */}
+      {onFinish && (
+        <button
+          onClick={onFinish}
+          className="rounded-full px-6 py-2.5 font-bold text-sm active:scale-95 transition-transform mb-3 w-full"
+          style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
+          data-testid="guided-cook-deduct"
+        >
+          Update my pantry 🧺
+        </button>
+      )}
       <button
         onClick={onExit}
         className="rounded-full px-6 py-2.5 font-bold text-sm active:scale-95 transition-transform"
-        style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
+        style={
+          onFinish
+            ? { background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }
+            : { background: 'var(--color-primary)', color: 'var(--color-text)' }
+        }
         data-testid="guided-cook-exit"
       >
-        Back to recipe
+        {onFinish ? 'Skip for now' : 'Back to recipe'}
       </button>
     </div>
   )
@@ -462,9 +481,16 @@ export interface GuidedCookFlowProps {
   recipe: Recipe
   /** Called when the user exits the done-state — returns them to the recipe view. */
   onExit: () => void
+  /**
+   * Called when the user finishes cooking and chooses to update their pantry.
+   * Wires the guided flow's done-state into the CookModal deduction flow so the
+   * cook story ends where stock is adjusted (issue #263). When omitted, the
+   * done-state shows only a plain exit.
+   */
+  onFinish?: () => void
 }
 
-export default function GuidedCookFlow({ recipe, onExit }: GuidedCookFlowProps) {
+export default function GuidedCookFlow({ recipe, onExit, onFinish }: GuidedCookFlowProps) {
   const { springs } = useMotionConfig()
   const steps = buildSteps(recipe)
   const [idx, setIdx] = useState<number>(PREP)
@@ -493,7 +519,7 @@ export default function GuidedCookFlow({ recipe, onExit }: GuidedCookFlowProps) 
         data-testid="guided-cook-flow"
       >
         <div className="flex-1 flex items-center justify-center px-5">
-          <DoneState recipe={recipe} onExit={onExit} />
+          <DoneState recipe={recipe} onExit={onExit} onFinish={onFinish} />
         </div>
       </div>
     )
@@ -649,7 +675,7 @@ export default function GuidedCookFlow({ recipe, onExit }: GuidedCookFlowProps) 
                 animate={{ opacity: 1, scale: 1 }}
                 transition={springs.snappy}
               >
-                <DoneState recipe={recipe} onExit={onExit} />
+                <DoneState recipe={recipe} onExit={onExit} onFinish={onFinish} />
               </motion.div>
             )}
           </AnimatePresence>

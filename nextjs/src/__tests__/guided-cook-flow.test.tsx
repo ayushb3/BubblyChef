@@ -261,3 +261,94 @@ describe('GuidedCookFlow — Ask Bubbles overlay', () => {
     expect(screen.queryByTestId('guided-cook-ask-bubbles')).not.toBeInTheDocument()
   })
 })
+
+describe('GuidedCookFlow — Ask Bubbles sends a valid ChatRequest', () => {
+  // Regression for the #263 bug: the overlay used to send `mode: 'cooking_help'`,
+  // which is not in the ChatRequest mode Literal (chat|recipe|learn|text|voice),
+  // so the backend 422'd and the stream never started. The tests here mock
+  // streamChatMessage, so the 422 was invisible — assert the payload directly.
+  const chatApi = jest.requireMock('@/lib/api/chat') as {
+    streamChatMessage: jest.Mock
+  }
+
+  beforeEach(() => {
+    chatApi.streamChatMessage.mockReset()
+  })
+
+  function openOverlayAndSend(question: string) {
+    renderFlow()
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // skip prep → step 1
+    fireEvent.click(screen.getByTestId('guided-cook-ask-bubbles'))
+    const input = screen.getByPlaceholderText(/ask about this step/i)
+    fireEvent.change(input, { target: { value: question } })
+    fireEvent.click(screen.getByRole('button', { name: /send question/i }))
+  }
+
+  it('never sends the invalid "cooking_help" mode', () => {
+    openOverlayAndSend('why al dente?')
+    expect(chatApi.streamChatMessage).toHaveBeenCalledTimes(1)
+    const request = chatApi.streamChatMessage.mock.calls[0][0]
+    expect(request.mode).not.toBe('cooking_help')
+  })
+
+  it('folds the step context into the message body', () => {
+    openOverlayAndSend('why al dente?')
+    const request = chatApi.streamChatMessage.mock.calls[0][0]
+    // Step number, step text, recipe title, and the raw question all present.
+    expect(request.message).toMatch(/step 1/i)
+    expect(request.message).toMatch(/boil salted water/i)
+    expect(request.message).toMatch(/creamy tomato pasta/i)
+    expect(request.message).toMatch(/why al dente\?/i)
+  })
+
+  it('sends a null conversation_id (no pinned session yet)', () => {
+    openOverlayAndSend('why al dente?')
+    const request = chatApi.streamChatMessage.mock.calls[0][0]
+    expect(request.conversation_id).toBeNull()
+  })
+})
+
+describe('GuidedCookFlow — done-state deduction handoff (#263)', () => {
+  function renderWithFinish() {
+    const onExit = jest.fn()
+    const onFinish = jest.fn()
+    render(<GuidedCookFlow recipe={RECIPE} onExit={onExit} onFinish={onFinish} />)
+    return { onExit, onFinish }
+  }
+
+  it('shows the "Update my pantry" button when onFinish is wired', () => {
+    renderWithFinish()
+    for (let i = 0; i <= RECIPE.instructions.length; i++) {
+      fireEvent.click(screen.getByTestId('guided-cook-next'))
+    }
+    expect(screen.getByTestId('guided-cook-deduct')).toBeInTheDocument()
+  })
+
+  it('"Update my pantry" fires onFinish, not onExit', () => {
+    const { onExit, onFinish } = renderWithFinish()
+    for (let i = 0; i <= RECIPE.instructions.length; i++) {
+      fireEvent.click(screen.getByTestId('guided-cook-next'))
+    }
+    fireEvent.click(screen.getByTestId('guided-cook-deduct'))
+    expect(onFinish).toHaveBeenCalledTimes(1)
+    expect(onExit).not.toHaveBeenCalled()
+  })
+
+  it('"Skip for now" still fires onExit', () => {
+    const { onExit, onFinish } = renderWithFinish()
+    for (let i = 0; i <= RECIPE.instructions.length; i++) {
+      fireEvent.click(screen.getByTestId('guided-cook-next'))
+    }
+    fireEvent.click(screen.getByTestId('guided-cook-exit'))
+    expect(onExit).toHaveBeenCalledTimes(1)
+    expect(onFinish).not.toHaveBeenCalled()
+  })
+
+  it('hides the deduct button when onFinish is not wired', () => {
+    renderFlow() // no onFinish
+    for (let i = 0; i <= RECIPE.instructions.length; i++) {
+      fireEvent.click(screen.getByTestId('guided-cook-next'))
+    }
+    expect(screen.queryByTestId('guided-cook-deduct')).not.toBeInTheDocument()
+  })
+})
