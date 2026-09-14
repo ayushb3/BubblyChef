@@ -254,11 +254,18 @@ async def load_session(state: WorkflowState) -> WorkflowState:
             f"Session loaded: mode={session.active_mode.value}, "
             f"conversation={conversation_id}"
         )
-        return {
+        # Q6: carry the retained brainstorm set into workflow state so a re-pick
+        # ("show me the pesto one instead") can resolve against the stored ideas
+        # without regeneration, even when conversation_history was truncated.
+        # Only seed when the caller didn't already pass a set for this turn.
+        loaded_state: WorkflowState = {
             **state,
             "session": session.model_dump(mode="json"),
             "session_mode": session.active_mode.value,
         }
+        if not state.get("brainstorm_ideas"):
+            loaded_state["brainstorm_ideas"] = list(session.metadata.brainstorm_ideas)
+        return loaded_state
     except Exception as e:
         logger.warning(f"Failed to load session: {e}")
         return {**state, "session": None, "session_mode": None}
@@ -296,33 +303,34 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
 
     # ── Priority 1: forced_intent from an explicit UI action (chip tap) ──────
     # [Start over] chip sends forced_intent=recipe_brainstorm; the set is
-    # invalidated by the caller (the chip always wins regardless of confidence).
+    # invalidated below (the chip always wins regardless of confidence).
     # [Edit this recipe] chip sends forced_intent=recipe_card.
+    #
+    # Allow-list only: recipe_card / recipe_brainstorm are the two chips that
+    # exist. recipe_generation is deliberately NOT honoured here — no chip emits
+    # it, and accepting it would let a client bypass the COOKING amendment gate
+    # (Q3). The ChatRequest.forced_intent Literal already rejects other values at
+    # the API boundary; this set is the defence-in-depth check.
     forced_intent_raw = state.get("forced_intent")
-    if forced_intent_raw:
-        _forced_chip_map: dict[str, str] = {
-            Intent.RECIPE_CARD.value: Intent.RECIPE_CARD.value,
-            Intent.RECIPE_BRAINSTORM.value: Intent.RECIPE_BRAINSTORM.value,
-            Intent.RECIPE_GENERATION.value: Intent.RECIPE_GENERATION.value,
+    _FORCED_INTENT_ALLOW = {
+        Intent.RECIPE_CARD.value,
+        Intent.RECIPE_BRAINSTORM.value,
+    }
+    if forced_intent_raw and forced_intent_raw in _FORCED_INTENT_ALLOW:
+        forced = forced_intent_raw
+        logger.info(f"classify_intent: forced_intent override via chip: {forced}")
+        forced_state: WorkflowState = {
+            **state,
+            "intent": forced,
+            "intent_confidence": 1.0,
+            "intent_reasoning": f"Explicit chip override: {forced}",
+            "detected_entities": [],
         }
-        forced = _forced_chip_map.get(forced_intent_raw)
-        if forced:
-            logger.info(
-                f"classify_intent: forced_intent override via chip: {forced_intent_raw}"
-            )
-            extra: dict[str, object] = {}
-            if forced == Intent.RECIPE_BRAINSTORM.value:
-                # [Start over] — invalidate the stored brainstorm set so follow-up
-                # turns don't re-pick from a stale menu (Q6).
-                extra["brainstorm_ideas"] = []
-            return {
-                **state,
-                "intent": forced,
-                "intent_confidence": 1.0,
-                "intent_reasoning": f"Explicit chip override: {forced_intent_raw}",
-                "detected_entities": [],
-                **extra,
-            }
+        if forced == Intent.RECIPE_BRAINSTORM.value:
+            # [Start over] — invalidate the stored brainstorm set so follow-up
+            # turns don't re-pick from a stale menu (Q6).
+            forced_state["brainstorm_ideas"] = []
+        return forced_state
 
     # ── R2: Mode-aware routing ──
     session_mode = state.get("session_mode")
@@ -369,10 +377,20 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
 
     # ── Priority 4: Brainstorm set re-pick (before LLM) ──
     # Retain brainstorm_ideas across follow-ups; re-pick with no regeneration (Q6).
-    if detect_brainstorm_followup(state):
+    # Fires when the last assistant turn was a brainstorm OR (history truncated)
+    # when a stored brainstorm set is live AND no recipe is pinned yet — i.e. the
+    # user is still browsing the menu.  Once a recipe is pinned the conservative
+    # bias applies (follow-ups are modifications, handled by the classifier), so
+    # we do NOT let a stored-set fuzzy match hijack "add pesto to it" into a
+    # re-pick.
+    stored_ideas = state.get("brainstorm_ideas") or []
+    _has_pin = bool((state.get("session") or {}).get("pinned_recipe_id"))
+    _repick_by_stored_set = bool(stored_ideas) and not _has_pin
+    if detect_brainstorm_followup(state) or _repick_by_stored_set:
         selected_name = extract_selected_recipe(
             input_text,
             state.get("conversation_history") or [],
+            stored_ideas=stored_ideas,
         )
         if selected_name:
             logger.info(
@@ -479,6 +497,12 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
                 # new ideas (confidence is already the LLM's own reading).
                 if has_pinned and confidence < settings.confirm_band_confidence_threshold:
                     # Ambiguous — could be modify or new dish; ask rather than guess (Q5).
+                    # CRITICAL: this must NOT run any generation. We keep the
+                    # classifier's intent for logging/telemetry but set
+                    # next_action=CONFIRM_CHOICE, which route_by_intent honours
+                    # BEFORE reading intent — routing straight to the
+                    # confirm_choice node (no extract/score/brainstorm), so the
+                    # pick and the stored brainstorm set are preserved (#266/Q6).
                     logger.info(
                         f"RECIPE_EXPLORING confirm band: confidence={confidence:.2f} "
                         f"< {settings.confirm_band_confidence_threshold} → CONFIRM_CHOICE"
@@ -491,10 +515,21 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
                         "detected_entities": result.entities,
                         "next_action": NextAction.CONFIRM_CHOICE.value,
                         "requires_review": True,
-                        # Frontend reads these two choices from metadata
                         "assistant_message": (
                             "Did you want to tweak this recipe or start fresh with new ideas?"
                         ),
+                        # The two one-tap choices the frontend renders as buttons;
+                        # each carries the forced_intent to POST back on tap.
+                        "confirm_options": [
+                            {
+                                "label": "Tweak this recipe",
+                                "forced_intent": Intent.RECIPE_CARD.value,
+                            },
+                            {
+                                "label": "Start fresh",
+                                "forced_intent": Intent.RECIPE_BRAINSTORM.value,
+                            },
+                        ],
                     }
                 # High confidence brainstorm: user clearly wants something new.
                 # Invalidate brainstorm set so stale picks aren't offered (Q6).
@@ -624,6 +659,15 @@ def route_by_intent(state: WorkflowState) -> str:
 
     Returns the name of the next node.
     """
+    # CONFIRM_CHOICE short-circuit (#416 Q5): the confirm band emits a one-tap
+    # "tweak / start fresh" prompt and must NOT run any recipe generation. This
+    # check comes BEFORE the intent dispatch below — the classifier leaves
+    # intent=recipe_brainstorm for telemetry, but next_action=CONFIRM_CHOICE
+    # routes straight to the non-generating confirm node so the pick and the
+    # stored brainstorm set survive (root cause of #266).
+    if state.get("next_action") == NextAction.CONFIRM_CHOICE.value:
+        return "confirm_choice_response"
+
     intent = state.get("intent", Intent.GENERAL_CHAT.value)
 
     if intent == Intent.PANTRY_UPDATE.value:
@@ -684,6 +728,28 @@ def build_handoff_product(state: WorkflowState) -> WorkflowState:
         "proposal": None,
         "requires_review": False,
         "workflow_status": WorkflowStatus.AWAITING_INPUT.value,
+    }
+
+
+def confirm_choice_response(state: WorkflowState) -> WorkflowState:
+    """
+    Node: Emit the modify-vs-new confirm prompt WITHOUT running any generation.
+
+    This is the terminal node for the confirm band (#416 Q5). classify_intent has
+    already set assistant_message, next_action=CONFIRM_CHOICE and confirm_options;
+    this node exists only so the confirm turn has a dedicated non-generating path
+    to update_session → END. It deliberately does NOT touch brainstorm_ideas,
+    proposal, or the pinned recipe — the pick and the stored set are preserved so
+    the follow-up (tweak / start fresh) can act on them (root fix for #266).
+    """
+    return {
+        **state,
+        "intent": Intent.RECIPE_BRAINSTORM.value,
+        "next_action": NextAction.CONFIRM_CHOICE.value,
+        "requires_review": True,
+        "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
+        "assistant_message": state.get("assistant_message")
+        or "Did you want to tweak this recipe or start fresh with new ideas?",
     }
 
 
@@ -831,7 +897,19 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
         # Mode transition rules
         if intent in (Intent.RECIPE_BRAINSTORM.value, Intent.RECIPE_GENERATION.value):
             session.active_mode = SessionMode.RECIPE_EXPLORING
-            session.metadata.brainstorm_ideas = state.get("brainstorm_ideas", [])
+            # Q6: invalidate/replace the stored brainstorm set ONLY when a
+            # genuinely new brainstorm actually generated ideas this turn. The
+            # brainstorm node is the only path that sets next_action=PICK_RECIPE,
+            # so that flag distinguishes "new ideas generated" from a bare
+            # generation turn or the confirm band (next_action=CONFIRM_CHOICE) —
+            # neither of which must clobber the retained set to [] (#266/#416 #4).
+            new_ideas = state.get("brainstorm_ideas") or []
+            ran_new_brainstorm = (
+                state.get("next_action") == NextAction.PICK_RECIPE.value and bool(new_ideas)
+            )
+            if ran_new_brainstorm:
+                session.metadata.brainstorm_ideas = list(new_ideas)
+            # else: leave the retained set untouched (do not default-clobber to []).
             # Persist constraints so the follow-up turn (research_recipe) can inherit
             # them even though it bypasses extract_recipe_constraints (#144).
             constraints = state.get("recipe_constraints")
@@ -985,8 +1063,14 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
         elif intent == Intent.COOKING_HELP.value:
             # Belt-and-suspenders: if brainstorm_ideas exist in state, the brainstorm
             # pipeline ran. BUT only flip to RECIPE_EXPLORING when the session is NOT
-            # already COOKING — in COOKING mode the intent is forced at classify_intent,
+            # already COOKING — in COOKING mode the intent is gated at classify_intent,
             # so brainstorm_ideas appearing does not mean the user left the recipe.
+            #
+            # NOTE: this branch never clobbers the stored set to [] (it only writes
+            # when ideas are present), so the Q6 no-clobber concern (#416 #4) does
+            # not apply here — that was the RECIPE_BRAINSTORM/RECIPE_GENERATION
+            # branch above, which now gates its overwrite on a genuinely-new
+            # brainstorm (next_action=PICK_RECIPE).
             if state.get("brainstorm_ideas") and old_mode != SessionMode.COOKING.value:
                 session.active_mode = SessionMode.RECIPE_EXPLORING
                 session.metadata.brainstorm_ideas = state.get("brainstorm_ideas", [])
@@ -1025,9 +1109,28 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
 # =============================================================================
 
 
-def build_chat_router_graph() -> StateGraph[WorkflowState]:
+def _dispatch_passthrough(state: WorkflowState) -> WorkflowState:
+    """No-op entry node for the post-classification graph variant.
+
+    The streaming path classifies once up front (initialize → load_session →
+    classify_intent, run manually) and then resumes the graph from here so the
+    LLM classification is NOT recomputed (#416 #2). route_by_intent reads the
+    already-set intent / next_action off the incoming state.
+    """
+    return state
+
+
+def build_chat_router_graph(
+    entry_point: str = "initialize",
+) -> StateGraph[WorkflowState]:
     """
     Build the ChatRouterGraph workflow.
+
+    Args:
+        entry_point: "initialize" (default — full pipeline, used by the
+            non-streaming path and by run_chat_workflow) or "dispatch" (resume
+            from an already-classified state, used by the streaming path so
+            classify_intent is not run a second time — #416 #2).
 
     Flow:
     1. initialize_state: Set up IDs and defaults
@@ -1042,10 +1145,16 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
     """
     workflow = StateGraph(WorkflowState)
 
-    # Add all nodes
-    workflow.add_node("initialize", initialize_state)
-    workflow.add_node("load_session", load_session)
-    workflow.add_node("classify_intent", classify_intent)
+    # Classification prefix — only present on the full-pipeline entry. The
+    # streaming path classifies once up front and enters at `dispatch`, so these
+    # nodes are omitted there entirely (no orphaned/unreachable nodes).
+    if entry_point == "initialize":
+        workflow.add_node("initialize", initialize_state)
+        workflow.add_node("load_session", load_session)
+        workflow.add_node("classify_intent", classify_intent)
+    else:
+        # Alternate entry for the streaming path — resume post-classification.
+        workflow.add_node("dispatch", _dispatch_passthrough)
 
     # Pantry update path
     workflow.add_node("parse_pantry_items", parse_pantry_items)
@@ -1065,6 +1174,9 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
     # General chat path
     workflow.add_node("general_chat_response", general_chat_response)
 
+    # Confirm band (#416 Q5) — non-generating terminal node for CONFIRM_CHOICE
+    workflow.add_node("confirm_choice_response", confirm_choice_response)
+
     # Cooking help path
     workflow.add_node("cooking_help_response", cooking_help_response)
 
@@ -1081,27 +1193,31 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
     workflow.add_node("update_session", update_session_node)
 
     # Set entry point
-    workflow.set_entry_point("initialize")
+    workflow.set_entry_point(entry_point)
 
-    # Define edges: initialize → load_session → classify_intent
-    workflow.add_edge("initialize", "load_session")
-    workflow.add_edge("load_session", "classify_intent")
+    # Route map shared by both entry points (classify_intent and dispatch).
+    _route_map = {
+        "parse_pantry_items": "parse_pantry_items",
+        "build_handoff_receipt": "build_handoff_receipt",
+        "build_handoff_product": "build_handoff_product",
+        "build_handoff_recipe": "build_handoff_recipe",
+        "cooking_help_response": "cooking_help_response",
+        "general_chat_response": "general_chat_response",
+        "extract_recipe_constraints": "extract_recipe_constraints",
+        "research_recipe": "research_recipe",
+        "confirm_choice_response": "confirm_choice_response",
+    }
 
-    # Conditional routing from classify_intent
-    workflow.add_conditional_edges(
-        "classify_intent",
-        route_by_intent,
-        {
-            "parse_pantry_items": "parse_pantry_items",
-            "build_handoff_receipt": "build_handoff_receipt",
-            "build_handoff_product": "build_handoff_product",
-            "build_handoff_recipe": "build_handoff_recipe",
-            "cooking_help_response": "cooking_help_response",
-            "general_chat_response": "general_chat_response",
-            "extract_recipe_constraints": "extract_recipe_constraints",
-            "research_recipe": "research_recipe",
-        },
-    )
+    if entry_point == "initialize":
+        # Full pipeline: initialize → load_session → classify_intent → route.
+        workflow.add_edge("initialize", "load_session")
+        workflow.add_edge("load_session", "classify_intent")
+        workflow.add_conditional_edges("classify_intent", route_by_intent, _route_map)
+    else:
+        # Streaming resume: dispatch reads the intent/next_action already on the
+        # incoming classified state and routes to the same targets — no
+        # re-classification (#416 #2).
+        workflow.add_conditional_edges("dispatch", route_by_intent, _route_map)
 
     # Pantry update path edges
     workflow.add_edge("parse_pantry_items", "normalize")
@@ -1124,6 +1240,9 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
     # Cooking help → update_session → END
     workflow.add_edge("cooking_help_response", "update_session")
 
+    # Confirm band → update_session → END (no generation runs)
+    workflow.add_edge("confirm_choice_response", "update_session")
+
     # Brainstorm path → update_session → END
     workflow.add_edge("extract_recipe_constraints", "score_pantry")
     workflow.add_edge("score_pantry", "brainstorm_recipes")
@@ -1139,16 +1258,30 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
     return workflow
 
 
-# Compiled graph (singleton)
+# Compiled graph (singletons)
 _chat_router_graph = None
+_chat_dispatch_graph = None
 
 
 def get_chat_router_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
-    """Get or create the compiled chat router graph."""
+    """Get or create the compiled chat router graph (full pipeline entry)."""
     global _chat_router_graph
     if _chat_router_graph is None:
         _chat_router_graph = build_chat_router_graph().compile()
     return _chat_router_graph
+
+
+def get_chat_dispatch_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
+    """Get or create the post-classification graph (entry point = dispatch).
+
+    Used by the streaming path to resume from an already-classified state so
+    classify_intent (an LLM call) is not run a second time — the streamed
+    decision and the enveloped decision cannot diverge (#416 #2).
+    """
+    global _chat_dispatch_graph
+    if _chat_dispatch_graph is None:
+        _chat_dispatch_graph = build_chat_router_graph(entry_point="dispatch").compile()
+    return _chat_dispatch_graph
 
 
 # =============================================================================
@@ -1321,6 +1454,11 @@ async def run_chat_workflow(
         envelope.suggested_mode = final_state.get("suggested_mode")
         envelope.suggested_action = final_state.get("suggested_action")
         envelope.metadata["brainstorm_ideas"] = final_state.get("brainstorm_ideas", [])
+        # Confirm band (#416 Q5) — surface the CONFIRM_CHOICE decision + options.
+        if final_state.get("next_action") == NextAction.CONFIRM_CHOICE.value:
+            envelope.next_action = NextAction.CONFIRM_CHOICE
+            envelope.requires_review = True
+            envelope.metadata["confirm_options"] = final_state.get("confirm_options", [])
         return envelope
 
 
@@ -1450,6 +1588,15 @@ def _build_envelope_from_state(
         Intent.RECIPE_BRAINSTORM.value,
     ):
         envelope.metadata["brainstorm_ideas"] = final_state.get("brainstorm_ideas", [])
+
+    # Confirm band (#416 Q5): carry the CONFIRM_CHOICE next_action + the two
+    # one-tap options into the envelope so the frontend can render the buttons.
+    # create_general_chat_envelope hardcodes next_action=NONE / requires_review
+    # =False, so override them here for the confirm turn.
+    if final_state.get("next_action") == NextAction.CONFIRM_CHOICE.value:
+        envelope.next_action = NextAction.CONFIRM_CHOICE
+        envelope.requires_review = True
+        envelope.metadata["confirm_options"] = final_state.get("confirm_options", [])
     return envelope
 
 
@@ -1477,7 +1624,10 @@ async def run_chat_workflow_streaming(
     """
     import json as _json
 
-    graph = get_chat_router_graph()
+    # Post-classification graph: resumes at `dispatch`, so classify_intent is not
+    # rerun on the graph path (#416 #2). We classify once, manually, below and
+    # feed the resulting state straight in.
+    dispatch_graph = get_chat_dispatch_graph()
 
     initial_state: WorkflowState = {
         "request_id": str(uuid4()),
@@ -1520,14 +1670,27 @@ async def run_chat_workflow_streaming(
     if intent == Intent.COOKING_HELP.value and input_mode == "recipe":
         intent = Intent.RECIPE_GENERATION.value
         logger.info("Recipe mode: routing cooking_help through grounded recipe generation")
-        final_state = await graph.ainvoke(initial_state)
+        # Resume the graph from the already-classified state with the recipe-mode
+        # override applied; dispatch reads this intent and routes to generation.
+        # No re-classification, so the streamed decision and enveloped decision
+        # cannot diverge (#416 #2). next_action is cleared so a stale CONFIRM_CHOICE
+        # cannot short-circuit the forced generation path.
+        dispatch_state: WorkflowState = {
+            **classified_state,
+            "intent": intent,
+            "next_action": NextAction.NONE.value,
+        }
+        final_state = await dispatch_graph.ainvoke(dispatch_state)
         env = _build_envelope_from_state(final_state, message, conversation_id)
         yield _json.dumps({"type": "envelope", "data": env.model_dump(mode="json")})
         return
 
     if intent not in streamable_intents:
-        # Non-streamable: run full workflow, yield single envelope
-        final_state = await graph.ainvoke(initial_state)
+        # Non-streamable (incl. the confirm band and forced_intent results): resume
+        # the graph from the classified state — never re-invoke from raw
+        # initial_state, which would recompute classify_intent and discard the
+        # confirm/forced-intent decision (#416 #2).
+        final_state = await dispatch_graph.ainvoke(classified_state)
         env = _build_envelope_from_state(final_state, message, conversation_id)
         yield _json.dumps({"type": "envelope", "data": env.model_dump(mode="json")})
         return

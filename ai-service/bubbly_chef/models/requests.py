@@ -106,13 +106,19 @@ class ChatRequest(BaseModel):
     # the frontend, they should POST with forced_intent set to the appropriate
     # Intent value.  The backend honours it as a deterministic override before
     # the classifier runs.  Values: "recipe_card" (edit) or "recipe_brainstorm"
-    # (start over / invalidate set).
-    forced_intent: str | None = Field(
+    # (start over / invalidate set).  recipe_generation is deliberately excluded
+    # (no chip emits it; it would bypass the COOKING gate).
+    # Constrained to the two chips that actually exist: [Edit this recipe]
+    # (recipe_card) and [Start over] (recipe_brainstorm). recipe_generation is
+    # intentionally NOT accepted — no chip emits it, and honouring it would let a
+    # client bypass the COOKING-mode amendment gate (#416 Q3 safety fix).
+    forced_intent: Literal["recipe_card", "recipe_brainstorm"] | None = Field(
         default=None,
         description=(
             "Deterministic intent override from an explicit UI action (e.g. chip tap). "
             "When set, the classifier is bypassed entirely and this intent is used. "
-            "Accepted values: 'recipe_card', 'recipe_brainstorm', 'recipe_generation'. "
+            "Accepted values: 'recipe_card' ([Edit this recipe]), "
+            "'recipe_brainstorm' ([Start over], invalidates the brainstorm set). "
             "Chip UI is not yet live — this is the extension point (#416)."
         ),
     )

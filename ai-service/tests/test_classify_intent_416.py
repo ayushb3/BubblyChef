@@ -560,3 +560,234 @@ async def test_exit_phrase_breaks_all_modes(session_mode: str):
     )
     assert result["intent"] == Intent.GENERAL_CHAT.value
     assert result.get("_exit_mode") is True
+
+
+# ---------------------------------------------------------------------------
+# GRAPH-LEVEL tests (finding #6): assert the confirm band, forced-intent gate,
+# and Q6 no-clobber behave correctly through the compiled graph / envelope, not
+# just at the classify_intent seam.  These would fail on the pre-fix code where
+# the confirm case ran the full brainstorm pipeline (#266).
+# ---------------------------------------------------------------------------
+
+import bubbly_chef.workflows.router as router_mod  # noqa: E402
+from bubbly_chef.models.session import ConversationSession  # noqa: E402
+from bubbly_chef.workflows.router import run_chat_workflow  # noqa: E402
+
+
+def _graph_repo(
+    mode: SessionMode = SessionMode.RECIPE_EXPLORING,
+    pinned_recipe_id: str | None = "pin-123",
+    brainstorm_ideas: list[str] | None = None,
+):
+    """Mock repository returning a session in `mode` with a pin + stored set."""
+    from bubbly_chef.models.session import SessionContext
+
+    session = ConversationSession(
+        conversation_id="conv-1",
+        active_mode=mode,
+        pinned_recipe_id=pinned_recipe_id,
+        metadata=SessionContext(brainstorm_ideas=list(brainstorm_ideas or [])),
+    )
+    repo = MagicMock()
+    repo.get_or_create_session = AsyncMock(return_value=session)
+    repo.update_session = AsyncMock(return_value=None)
+    repo.get_recipe = AsyncMock(return_value=None)
+    repo.get_all_pantry_items = AsyncMock(return_value=[])
+    return repo
+
+
+def _reset_graphs():
+    """Force a fresh graph compile so patched node functions take effect."""
+    router_mod._chat_router_graph = None
+    router_mod._chat_dispatch_graph = None
+
+
+@pytest.mark.asyncio
+async def test_confirm_band_graph_does_not_run_brainstorm_pipeline():
+    """
+    CRITICAL (#266 root fix): a low-confidence modify-vs-new turn in
+    RECIPE_EXPLORING with a pinned recipe must yield a CONFIRM_CHOICE envelope
+    and must NOT run the brainstorm pipeline (extract/score/brainstorm) — so the
+    pick and the stored brainstorm set survive.
+    """
+    _reset_graphs()
+    repo = _graph_repo(brainstorm_ideas=["Pesto Pasta", "Carbonara"])
+
+    # Spies on the generation nodes — must NOT be invoked on the confirm path.
+    extract_spy = AsyncMock(side_effect=AssertionError("extract_constraints ran on confirm turn"))
+    score_spy = AsyncMock(side_effect=AssertionError("score_pantry ran on confirm turn"))
+    brainstorm_spy = AsyncMock(side_effect=AssertionError("brainstorm ran on confirm turn"))
+
+    with (
+        _mock_ai("recipe_brainstorm", confidence=0.60),
+        patch("bubbly_chef.workflows.router.get_repository", new_callable=AsyncMock, return_value=repo),
+        patch("bubbly_chef.workflows.router.extract_recipe_constraints", extract_spy),
+        patch("bubbly_chef.workflows.router.score_pantry_ingredients", score_spy),
+        patch("bubbly_chef.workflows.router.brainstorm_recipe_ideas", brainstorm_spy),
+    ):
+        envelope = await run_chat_workflow(
+            message="show me something else",
+            conversation_id="conv-1",
+            user_id="user-1",
+        )
+    _reset_graphs()
+
+    # Confirm surfaced to the UI with two one-tap options.
+    assert envelope.next_action == NextAction.CONFIRM_CHOICE
+    assert envelope.requires_review is True
+    options = envelope.metadata.get("confirm_options")
+    assert options and len(options) == 2
+    forced = {o["forced_intent"] for o in options}
+    assert forced == {Intent.RECIPE_CARD.value, Intent.RECIPE_BRAINSTORM.value}
+    # The generation spies raise on call; reaching here proves none ran.
+    extract_spy.assert_not_awaited()
+    score_spy.assert_not_awaited()
+    brainstorm_spy.assert_not_awaited()
+    # The stored brainstorm set was NOT clobbered (Q6): update_session saved it intact.
+    saved = repo.update_session.await_args.args[1]
+    assert saved.metadata.brainstorm_ideas == ["Pesto Pasta", "Carbonara"]
+
+
+@pytest.mark.asyncio
+async def test_high_confidence_brainstorm_graph_runs_pipeline_and_invalidates_set():
+    """
+    Contrast case: a high-confidence brainstorm DOES run the pipeline and DOES
+    replace the stored set — confirming the confirm-band gate is confidence-keyed.
+    """
+    _reset_graphs()
+    repo = _graph_repo(brainstorm_ideas=["Old Idea"])
+
+    async def _fake_brainstorm(state):
+        return {
+            **state,
+            "intent": Intent.RECIPE_BRAINSTORM.value,
+            "assistant_message": "Here are ideas: **New Idea A**, **New Idea B**",
+            "brainstorm_ideas": ["New Idea A", "New Idea B"],
+            "next_action": NextAction.PICK_RECIPE.value,
+            "requires_review": False,
+        }
+
+    passthrough = AsyncMock(side_effect=lambda s: s)
+    with (
+        _mock_ai("recipe_brainstorm", confidence=0.95),
+        patch("bubbly_chef.workflows.router.get_repository", new_callable=AsyncMock, return_value=repo),
+        patch("bubbly_chef.workflows.router.extract_recipe_constraints", passthrough),
+        patch("bubbly_chef.workflows.router.score_pantry_ingredients", passthrough),
+        patch("bubbly_chef.workflows.router.brainstorm_recipe_ideas", AsyncMock(side_effect=_fake_brainstorm)),
+    ):
+        envelope = await run_chat_workflow(
+            message="actually something completely different",
+            conversation_id="conv-1",
+            user_id="user-1",
+        )
+    _reset_graphs()
+
+    assert envelope.next_action != NextAction.CONFIRM_CHOICE
+    saved = repo.update_session.await_args.args[1]
+    # Stored set replaced by the freshly generated one (Q6 invalidate-on-new).
+    assert saved.metadata.brainstorm_ideas == ["New Idea A", "New Idea B"]
+
+
+@pytest.mark.asyncio
+async def test_forced_intent_generation_rejected_by_request_model():
+    """
+    #5 safety: recipe_generation is no longer an accepted forced_intent value —
+    the ChatRequest Literal rejects it, so a client cannot use a chip to bypass
+    the COOKING amendment gate.
+    """
+    import pydantic
+
+    from bubbly_chef.models.requests import ChatRequest
+
+    # Allowed values validate.
+    ChatRequest(message="x", forced_intent="recipe_card")
+    ChatRequest(message="x", forced_intent="recipe_brainstorm")
+    # recipe_generation is rejected at the API boundary.
+    with pytest.raises(pydantic.ValidationError):
+        ChatRequest(message="x", forced_intent="recipe_generation")
+
+
+@pytest.mark.asyncio
+async def test_forced_generation_not_honoured_by_classifier_allow_list():
+    """
+    Defence-in-depth: even if a recipe_generation forced_intent reached
+    classify_intent (bypassing the request model), the allow-list does not honour
+    it — it falls through to the LLM classifier (COOKING gate still applies).
+    """
+    with _mock_ai("cooking_help") as mock_mgr:
+        result = await classify_intent(
+            _state(
+                input_text="what else can I make?",
+                session_mode=SessionMode.COOKING.value,
+                forced_intent="recipe_generation",
+            )
+        )
+    # LLM WAS consulted (forced value ignored) and COOKING gate mapped it.
+    mock_mgr.return_value.complete.assert_called_once()
+    assert result["intent"] == Intent.COOKING_HELP.value
+
+
+@pytest.mark.asyncio
+async def test_generation_turn_does_not_clobber_stored_brainstorm_set():
+    """
+    #4: a RECIPE_GENERATION turn (no new brainstorm ran → no PICK_RECIPE) must
+    NOT overwrite the retained brainstorm set to [] in update_session (Q6).
+    """
+    from bubbly_chef.workflows.router import update_session_node
+
+    repo = _graph_repo(brainstorm_ideas=["Kept Idea A", "Kept Idea B"])
+    state = _state(
+        input_text="give me a lasagna recipe",
+        conversation_id="conv-1",
+        user_id="user-1",
+        intent=Intent.RECIPE_GENERATION.value,
+        next_action=NextAction.NONE.value,  # no brainstorm ran this turn
+        brainstorm_ideas=[],  # state carries no new ideas
+    )
+    with patch(
+        "bubbly_chef.workflows.router.get_repository",
+        new_callable=AsyncMock,
+        return_value=repo,
+    ):
+        await update_session_node(state)
+
+    saved = repo.update_session.await_args.args[1]
+    assert saved.metadata.brainstorm_ideas == ["Kept Idea A", "Kept Idea B"]
+
+
+@pytest.mark.asyncio
+async def test_load_session_seeds_brainstorm_ideas_from_stored_set():
+    """Q6 wiring: load_session copies session.metadata.brainstorm_ideas into state."""
+    from bubbly_chef.workflows.router import load_session
+
+    repo = _graph_repo(brainstorm_ideas=["Stored A", "Stored B"])
+    with patch(
+        "bubbly_chef.workflows.router.get_repository",
+        new_callable=AsyncMock,
+        return_value=repo,
+    ):
+        result = await load_session(
+            _state(conversation_id="conv-1", user_id="user-1", brainstorm_ideas=[])
+        )
+    assert result.get("brainstorm_ideas") == ["Stored A", "Stored B"]
+
+
+@pytest.mark.asyncio
+async def test_repick_resolves_against_stored_set_when_history_truncated():
+    """
+    Q6 re-pick: with a live stored set but no bold names in history, a re-pick
+    ("show me the pesto one") still resolves to RECIPE_CARD without regeneration.
+    """
+    with _mock_ai("recipe_brainstorm") as mock_mgr:  # LLM would say brainstorm; must not be reached
+        result = await classify_intent(
+            _state(
+                input_text="show me the pesto one",
+                session_mode=SessionMode.RECIPE_EXPLORING.value,
+                session=None,
+                brainstorm_ideas=["Pesto Pasta", "Carbonara"],
+                conversation_history=[],  # truncated — no bold names to parse
+            )
+        )
+    mock_mgr.return_value.complete.assert_not_called()
+    assert result["intent"] == Intent.RECIPE_CARD.value
+    assert result.get("selected_recipe_name") == "Pesto Pasta"

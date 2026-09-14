@@ -316,11 +316,17 @@ def detect_brainstorm_followup(state: WorkflowState) -> bool:
 def extract_selected_recipe(
     user_text: str,
     history: list[dict[str, Any]],
+    stored_ideas: list[str] | None = None,
 ) -> str | None:
     """Extract which recipe the user selected from the last brainstorm response.
 
     Returns the matched recipe name, or None when the message is a conversational
     follow-up (informational question) rather than a selection.
+
+    `stored_ideas` is the retained brainstorm set from the session (Q6). When the
+    conversation history has been truncated and carries no **bold** idea names,
+    the stored set is used as the candidate list so a re-pick still resolves
+    without regeneration.
     """
     from rapidfuzz import fuzz  # local import — optional dep already in pyproject.toml
 
@@ -332,6 +338,11 @@ def extract_selected_recipe(
 
     # Extract **bold** recipe names from brainstorm
     ideas: list[str] = re.findall(r"\*\*(.+?)\*\*", brainstorm_text)
+
+    # Q6 fallback: history had no bold idea names (e.g. truncated history) —
+    # resolve against the retained session set instead so a re-pick still works.
+    if not ideas and stored_ideas:
+        ideas = list(stored_ideas)
 
     text_lower = user_text.lower()
 

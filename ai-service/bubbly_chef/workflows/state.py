@@ -143,6 +143,10 @@ class WorkflowState(TypedDict, total=False):
     # ==========================================================================
     assistant_message: str
     next_action: str  # NextAction enum value
+    # The two one-tap choices for a CONFIRM_CHOICE turn (#416 Q5). Each is
+    # {"label": str, "forced_intent": str} so the frontend can render buttons
+    # that POST forced_intent back. Empty on every non-confirm turn.
+    confirm_options: list[dict[str, str]]
 
     # ==========================================================================
     # Clarification & Review
