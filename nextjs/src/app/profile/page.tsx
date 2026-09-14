@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import SaveAccountBanner from '@/components/auth/SaveAccountBanner'
 import SignOutButton from '@/components/auth/SignOutButton'
 import DisplayNameField from '@/components/profile/DisplayNameField'
+import TakeTourButton from '@/components/profile/TakeTourButton'
 import ThemePicker from '@/components/ui/ThemePicker'
 
 const dietaryPrefs = ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free']
@@ -92,6 +93,9 @@ export default async function ProfilePage() {
               <span className="text-[var(--color-muted)]">App</span>
               <span className="text-[var(--color-text)] font-medium">BubblyChef ✨</span>
             </div>
+          </div>
+          <div className="mt-3">
+            <TakeTourButton />
           </div>
         </section>
       </div>
