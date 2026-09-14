@@ -411,3 +411,54 @@ class TestGetOrCreateSessionLegacyRows:
         assert isinstance(session.metadata.recipe_constraints, RecipeConstraints)
         assert session.metadata.recipe_constraints.cuisine == "Italian"
         assert session.metadata.recipe_constraints.max_time_minutes == 20
+
+
+# ---------------------------------------------------------------------------
+# #415 pin round-trip: the RECIPE_CARD ephemeral id + snapshot survive seam #2
+# (model_dump -> model_validate, the same seam as the existing round-trip suite)
+# ---------------------------------------------------------------------------
+
+
+def test_recipe_exploring_pin_round_trips() -> None:
+    """A session pinned to a RECIPE_EXPLORING recipe card survives model_dump -> model_validate.
+
+    This is seam #2 from issue #415 AC: the ephemeral RecipeCard id and the
+    typed CookingRecipeSnapshot both survive the serialization round-trip.
+
+    The id here is a session-local uuid (not a DB row id) — per the #415
+    design decision — but it must round-trip faithfully within the session.
+    """
+    from uuid import uuid4
+
+    ephemeral_id = str(uuid4())
+    session = ConversationSession(
+        conversation_id="conv-rt-recipe-pick",
+        active_mode=SessionMode.RECIPE_EXPLORING,
+        pinned_recipe_id=ephemeral_id,
+        metadata=SessionContext(
+            cooking_recipe=CookingRecipeSnapshot(
+                id=ephemeral_id,
+                title="Spaghetti Aglio e Olio",
+                ingredients=["200 g spaghetti", "4 garlic", "olive oil"],
+            ),
+            last_recipe_title="Spaghetti Aglio e Olio",
+        ),
+    )
+
+    dumped = session.model_dump(mode="json")
+    restored = ConversationSession.model_validate(dumped)
+
+    # Top-level pin survives
+    assert restored.pinned_recipe_id == ephemeral_id
+    assert restored.active_mode == SessionMode.RECIPE_EXPLORING
+
+    # Typed snapshot survives (not coerced to a plain dict)
+    snap = restored.metadata.cooking_recipe
+    assert snap is not None
+    assert isinstance(snap, CookingRecipeSnapshot)
+    assert snap.id == ephemeral_id
+    assert snap.title == "Spaghetti Aglio e Olio"
+    assert snap.ingredients == ["200 g spaghetti", "4 garlic", "olive oil"]
+
+    # last_recipe_title survives
+    assert restored.metadata.last_recipe_title == "Spaghetti Aglio e Olio"

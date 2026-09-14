@@ -10,6 +10,7 @@ import pytest
 
 from bubbly_chef.models.base import Intent
 from bubbly_chef.models.pantry import ActionType, PantryItem, PantryUpsertAction
+from bubbly_chef.models.recipe import RecipeCard, RecipeCardProposal
 from bubbly_chef.models.session import (
     ConversationSession,
     CookingRecipeSnapshot,
@@ -765,3 +766,124 @@ async def test_pending_proposal_cleared_once_review_no_longer_required():
     saved = repo.update_session.await_args.args[1]
     assert saved.active_mode == SessionMode.DEFAULT
     assert saved.pending_proposal is None
+
+
+# ---------------------------------------------------------------------------
+# RECIPE_CARD pin — session-local ephemeral RecipeCard id (issue #415)
+# ---------------------------------------------------------------------------
+
+
+def _recipe_card_proposal() -> RecipeCardProposal:
+    """Build a RecipeCardProposal with a concrete RecipeCard for pin tests."""
+    from bubbly_chef.models.recipe import Ingredient
+
+    card = RecipeCard(
+        title="Spaghetti Aglio e Olio",
+        ingredients=[
+            Ingredient(name="spaghetti", quantity=200, unit="g"),
+            Ingredient(name="garlic", quantity=4, unit=None),
+            Ingredient(name="olive oil", quantity=None, unit=None),
+        ],
+    )
+    return RecipeCardProposal(recipe=card)
+
+
+@pytest.mark.asyncio
+async def test_recipe_card_intent_pins_recipe_id():
+    """RECIPE_CARD pick must pin the RecipeCard's ephemeral uuid, not None.
+
+    The id is session-local (not a DB id) — see issue #415 design decision.
+    """
+    proposal = _recipe_card_proposal()
+    repo = _session_repo()
+    state = _state(
+        input_text="make me that pasta",
+        conversation_id="conv-1",
+        user_id="user-1",
+        intent=Intent.RECIPE_CARD.value,
+        proposal=proposal,
+    )
+
+    with _patch_repo(repo):
+        await update_session_node(state)
+
+    saved = repo.update_session.await_args.args[1]
+    assert saved.active_mode == SessionMode.RECIPE_EXPLORING
+    # Pin must equal the recipe's uuid stringified, never None.
+    assert saved.pinned_recipe_id == str(proposal.recipe.id)
+    assert saved.pinned_recipe_id is not None
+
+
+@pytest.mark.asyncio
+async def test_recipe_card_intent_populates_cooking_recipe_snapshot():
+    """RECIPE_CARD pick must store a full CookingRecipeSnapshot in the typed context.
+
+    This mirrors the COOKING handoff path and lets prompt nodes read the
+    picked recipe without string-parsing pinned_recipe_id.
+    """
+    proposal = _recipe_card_proposal()
+    repo = _session_repo()
+    state = _state(
+        input_text="make me that pasta",
+        conversation_id="conv-1",
+        user_id="user-1",
+        intent=Intent.RECIPE_CARD.value,
+        proposal=proposal,
+    )
+
+    with _patch_repo(repo):
+        await update_session_node(state)
+
+    saved = repo.update_session.await_args.args[1]
+    snap = saved.metadata.cooking_recipe
+    assert snap is not None
+    assert isinstance(snap, CookingRecipeSnapshot)
+    assert snap.id == str(proposal.recipe.id)
+    assert snap.title == "Spaghetti Aglio e Olio"
+    # Ingredients must be flattened to strings (quantity rendered as float via str()).
+    # e.g. Ingredient(name="spaghetti", quantity=200, unit="g") -> "200.0 g spaghetti"
+    assert any("spaghetti" in s for s in snap.ingredients)
+    assert any("garlic" in s for s in snap.ingredients)
+    # Ingredient with no quantity/unit still appears by name
+    assert "olive oil" in snap.ingredients
+
+
+@pytest.mark.asyncio
+async def test_recipe_card_intent_sets_last_recipe_title():
+    """RECIPE_CARD pick must also update SessionContext.last_recipe_title."""
+    proposal = _recipe_card_proposal()
+    repo = _session_repo()
+    state = _state(
+        input_text="make me that pasta",
+        conversation_id="conv-1",
+        user_id="user-1",
+        intent=Intent.RECIPE_CARD.value,
+        proposal=proposal,
+    )
+
+    with _patch_repo(repo):
+        await update_session_node(state)
+
+    saved = repo.update_session.await_args.args[1]
+    assert saved.metadata.last_recipe_title == "Spaghetti Aglio e Olio"
+
+
+@pytest.mark.asyncio
+async def test_recipe_card_without_proposal_leaves_session_unchanged():
+    """RECIPE_CARD with no proposal in state must not crash and must not pin."""
+    repo = _session_repo()
+    state = _state(
+        input_text="make me that pasta",
+        conversation_id="conv-1",
+        user_id="user-1",
+        intent=Intent.RECIPE_CARD.value,
+        # no 'proposal' key
+    )
+
+    with _patch_repo(repo):
+        await update_session_node(state)
+
+    saved = repo.update_session.await_args.args[1]
+    # No proposal → stays in DEFAULT, pin stays None.
+    assert saved.active_mode == SessionMode.DEFAULT
+    assert saved.pinned_recipe_id is None
