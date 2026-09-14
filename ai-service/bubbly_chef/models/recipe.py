@@ -141,6 +141,7 @@ class IngredientAvailability(BaseModel):
 class RecipeCardProposal(BaseModel):
     """A proposal containing a recipe card."""
 
+    proposal_type: Literal["recipe_card"] = "recipe_card"
     recipe: RecipeCard = Field(description="The proposed recipe card")
     source_url: str | None = Field(default=None, description="URL the recipe was extracted from")
     source_text: str | None = Field(default=None, description="Original text/transcript used")

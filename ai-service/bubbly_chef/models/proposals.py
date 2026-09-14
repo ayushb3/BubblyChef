@@ -2,10 +2,10 @@
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any, Literal, Union
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 
 class HandoffKind(StrEnum):
@@ -25,6 +25,7 @@ class HandoffProposal(BaseModel):
     the actual data yet.
     """
 
+    proposal_type: Literal["handoff"] = "handoff"
     kind: HandoffKind = Field(description="Type of handoff (receipt, product, recipe)")
     instructions: str = Field(description="User-friendly instructions for what to do next")
     required_inputs: list[str] = Field(
@@ -233,3 +234,24 @@ class RecipeAmendmentDetection(BaseModel):
         default=None,
         description="Short human-readable summary of what changed (1-2 sentences)",
     )
+
+
+# ---------------------------------------------------------------------------
+# Discriminated proposal union
+# ---------------------------------------------------------------------------
+# Imported here (not at top) to avoid circular imports with pantry/recipe/cook.
+from bubbly_chef.models.cook import CookProposal  # noqa: E402
+from bubbly_chef.models.pantry import PantryProposal  # noqa: E402
+from bubbly_chef.models.recipe import RecipeCardProposal  # noqa: E402
+
+AnyProposal = Annotated[
+    Union[PantryProposal, HandoffProposal, RecipeCardProposal, CookProposal],
+    Field(discriminator="proposal_type"),
+]
+"""Discriminated union of all concrete proposal types.
+
+Use ``AnyProposalAdapter.validate_python(data)`` to reconstruct a concrete
+proposal from a plain dict (e.g. a round-tripped ``model_dump()``).
+"""
+
+AnyProposalAdapter: TypeAdapter[AnyProposal] = TypeAdapter(AnyProposal)
