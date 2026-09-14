@@ -26,6 +26,7 @@ from bubbly_chef.models.recipe import (
     RecipeConstraints,
 )
 from bubbly_chef.repository.supabase_repo import get_repository
+from bubbly_chef.services.recipe_generator import generate_recipe as _generate_recipe_followup
 from bubbly_chef.tools.web_search import search_recipe
 from bubbly_chef.workflows.state import (
     LLMRecipeResult,
@@ -191,6 +192,7 @@ Must-use ingredients (the user asked to cook with these — the recipe MUST \
 include them): {must_use_items}
 Priority ingredients (expiring soon — a strong preference, not a \
 requirement): {priority_items}
+Preferred flavors/ingredients (include if sensible): {preferred_ingredients}
 Supporting ingredients available: {supporting_items}
 Context: {context}
 
@@ -818,6 +820,11 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         constraints_str += f"\nDietary: {', '.join(constraints['dietary'])}"
     if constraints.get("max_time_minutes"):
         constraints_str += f"\nMax time: {constraints['max_time_minutes']} minutes"
+    if constraints.get("preferred_ingredients"):
+        constraints_str += (
+            f"\nPreferred flavors/ingredients (include if sensible): "
+            f"{', '.join(constraints['preferred_ingredients'])}"
+        )
     if constraints.get("excluded_ingredients"):
         constraints_str += f"\nExclude: {', '.join(constraints['excluded_ingredients'])}"
 
@@ -951,11 +958,15 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
     constraints_json = _json.dumps(
         {k: v for k, v in constraints.items() if v and k != "use_pantry"}
     )
+    preferred_ingredients_str = (
+        ", ".join(constraints.get("preferred_ingredients") or []) or "none specified"
+    )
     prompt = GROUNDED_RECIPE_SYSTEM_PROMPT.format(
         recipe_name=recipe_name,
         constraints_json=constraints_json,
         must_use_items=", ".join(must_use_names[:5]) or "none specified",
         priority_items=", ".join(priority_items[:8]) or "none specified",
+        preferred_ingredients=preferred_ingredients_str,
         supporting_items=", ".join(supporting_items[:10]) or "none",
         context=context,
     )
@@ -1130,5 +1141,122 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
         "requires_review": True,
         "confidence": llm_result.confidence,
         "ingredient_availability": avail_dicts,
+        "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
+    }
+
+
+async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
+    """Node: refine the currently-pinned recipe in place (#416 AC1).
+
+    Reached when intent==recipe_card AND a full recipe is already pinned in
+    session (`session.metadata.picked_recipe`) — i.e. this turn is a
+    modification ("make it spicier", "add tomato") rather than a first pick
+    from brainstorm (which still routes to research_recipe ->
+    generate_grounded_recipe above).
+
+    Reuses the existing, already-shipped follow-up engine —
+    `services/recipe_generator.py::generate_recipe(previous_recipe=...)`,
+    the same function `/v1/recipes/refine` calls — instead of reimplementing
+    the follow-up prompt. Preserves the pinned recipe's id so the card
+    replaces in place (same identity) rather than rendering as a distinct
+    new card.
+    """
+    input_text = state.get("input_text", "")
+    session = state.get("session") or {}
+    picked_recipe_raw = (session.get("metadata") or {}).get("picked_recipe")
+
+    if not picked_recipe_raw:
+        # Defensive only: route_by_intent sends turns here exactly when
+        # picked_recipe is set. Guards direct state construction (tests,
+        # future callers) from crashing on a missing pin.
+        logger.warning("refine_recipe_node reached with no picked_recipe in session")
+        return {
+            **state,
+            "intent": Intent.GENERAL_CHAT.value,
+            "assistant_message": (
+                "I don't have a recipe pinned to refine yet — ask me for one first!"
+            ),
+            "next_action": NextAction.NONE.value,
+            "proposal": None,
+            "requires_review": False,
+            "confidence": 0.5,
+            "workflow_status": WorkflowStatus.COMPLETED.value,
+        }
+
+    previous_recipe = RecipeCard.model_validate(picked_recipe_raw)
+
+    pantry_items: list[Any] = []
+    try:
+        repo = await get_repository()
+        pantry_items = await repo.get_all_pantry_items(state.get("user_id") or "")
+    except Exception as e:
+        logger.warning("Could not fetch pantry for recipe refinement: %s", e)
+
+    ai_manager = get_ai_manager()
+    try:
+        result = await _generate_recipe_followup(
+            prompt=input_text,
+            pantry_items=pantry_items,
+            ai_manager=ai_manager,
+            previous_recipe=previous_recipe,
+        )
+    except Exception as e:
+        logger.error("Recipe refinement failed: %s", e)
+        return {
+            **state,
+            "intent": Intent.GENERAL_CHAT.value,
+            "assistant_message": (
+                f"Sorry, I couldn't refine '{previous_recipe.title}'. Please try again."
+            ),
+            "next_action": NextAction.NONE.value,
+            "proposal": None,
+            "requires_review": False,
+            "confidence": 0.5,
+            "errors": state.get("errors", []) + [f"Recipe refinement error: {e}"],
+            "workflow_status": WorkflowStatus.COMPLETED.value,
+        }
+
+    # Preserve the pinned recipe's id so the card replaces in place instead
+    # of rendering as a new, distinct card (identity requirement, #416 AC1).
+    refined_recipe = result.recipe.model_copy(update={"id": previous_recipe.id})
+
+    availability = [
+        IngredientAvailability(
+            name=s.ingredient_name,
+            status="have" if s.status in ("have", "partial") else "missing",
+            pantry_item_name=s.pantry_item_name,
+        )
+        for s in result.ingredients_status
+    ]
+    missing = [s.ingredient_name for s in result.ingredients_status if s.status == "missing"]
+    available = [s.ingredient_name for s in result.ingredients_status if s.status != "missing"]
+
+    proposal = RecipeCardProposal(
+        recipe=refined_recipe,
+        pantry_match_score=result.pantry_match_score,
+        missing_ingredients=missing,
+        available_ingredients=available,
+    )
+
+    envelope = create_recipe_envelope(
+        proposal=proposal,
+        confidence=0.9,
+        field_confidences={},
+        warnings=state.get("warnings", []),
+        errors=state.get("errors", []),
+        assistant_message=f"Updated {refined_recipe.title}!",
+        request_id=state.get("request_id"),
+        workflow_id=state.get("workflow_id"),
+    )
+
+    return {
+        **state,
+        "intent": Intent.RECIPE_CARD.value,
+        "assistant_message": envelope.assistant_message,
+        "next_action": NextAction.REVIEW_PROPOSAL.value,
+        "proposal": proposal,
+        "requires_review": True,
+        "confidence": 0.9,
+        "ingredient_availability": [a.model_dump() for a in availability],
         "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
     }

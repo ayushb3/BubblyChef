@@ -616,6 +616,7 @@ def _graph_repo(
     mode: SessionMode = SessionMode.RECIPE_EXPLORING,
     pinned_recipe_id: str | None = "pin-123",
     brainstorm_ideas: list[str] | None = None,
+    picked_recipe=None,
 ):
     """Mock repository returning a session in `mode` with a pin + stored set."""
     from bubbly_chef.models.session import SessionContext
@@ -624,7 +625,10 @@ def _graph_repo(
         conversation_id=_CONV_ID,
         active_mode=mode,
         pinned_recipe_id=pinned_recipe_id,
-        metadata=SessionContext(brainstorm_ideas=list(brainstorm_ideas or [])),
+        metadata=SessionContext(
+            brainstorm_ideas=list(brainstorm_ideas or []),
+            picked_recipe=picked_recipe,
+        ),
     )
     repo = MagicMock()
     repo.get_or_create_session = AsyncMock(return_value=session)
@@ -883,3 +887,129 @@ async def test_repick_resolves_against_stored_set_when_history_truncated():
     mock_mgr.return_value.complete.assert_not_called()
     assert result["intent"] == Intent.RECIPE_CARD.value
     assert result.get("selected_recipe_name") == "Pesto Pasta"
+
+
+# ---------------------------------------------------------------------------
+# route_by_intent — refine-in-place dispatch (#416 AC1)
+#
+# Bug: a recipe_card follow-up on an already-pinned recipe routed to
+# research_recipe -> generate_grounded_recipe, which builds a brand-new
+# standalone recipe and never reads the pinned recipe. It must instead route
+# to the new refine_recipe node when a full recipe is pinned in session
+# (session.metadata.picked_recipe), and keep routing to research_recipe for
+# a genuine first pick (no picked_recipe yet).
+# ---------------------------------------------------------------------------
+
+
+def _minimal_recipe_card_dict(title: str = "Creamy Garlic Spaghetti") -> dict:
+    """Minimal RecipeCard-shaped dict, enough for RecipeCard.model_validate."""
+    return {
+        "title": title,
+        "ingredients": [{"name": "garlic", "quantity": 2, "unit": "cloves"}],
+        "instructions": ["Cook pasta.", "Add garlic."],
+    }
+
+
+def test_route_by_intent_recipe_card_with_picked_recipe_routes_to_refine():
+    """A recipe_card follow-up with a full recipe already pinned in session
+    is a modification ('make it spicier') — must route to refine_recipe, not
+    research_recipe (which would generate an unrelated new dish)."""
+    from bubbly_chef.workflows.router import route_by_intent
+
+    state = _state(
+        intent=Intent.RECIPE_CARD.value,
+        input_text="something with tomato flavor instead",
+        selected_recipe_name=None,
+        session={
+            "metadata": {"picked_recipe": _minimal_recipe_card_dict()},
+        },
+    )
+    assert route_by_intent(state) == "refine_recipe"
+
+
+def test_route_by_intent_recipe_card_first_pick_routes_to_research_recipe():
+    """A recipe_card first-pick (no picked_recipe pinned yet) keeps the
+    existing brainstorm-follow-up path — no regression on #408/#266."""
+    from bubbly_chef.workflows.router import route_by_intent
+
+    state = _state(
+        intent=Intent.RECIPE_CARD.value,
+        selected_recipe_name="Pesto Pasta",
+        session={"metadata": {"picked_recipe": None}},
+    )
+    assert route_by_intent(state) == "research_recipe"
+
+
+def test_route_by_intent_recipe_card_no_session_falls_back_to_cooking_help():
+    """No session at all (session=None) and no selected_recipe_name — the
+    pre-existing fallback branch must still hold; refine must not fire on a
+    missing session."""
+    from bubbly_chef.workflows.router import route_by_intent
+
+    state = _state(
+        intent=Intent.RECIPE_CARD.value,
+        selected_recipe_name=None,
+        session=None,
+    )
+    assert route_by_intent(state) == "cooking_help_response"
+
+
+# ---------------------------------------------------------------------------
+# Regression: a genuinely new brainstorm must clear the stale picked_recipe
+# pin, or a fresh pick from the new set gets "refined" toward the OLD pinned
+# dish instead of routing to research_recipe for the new one.
+#
+# Sequence: pin spaghetti -> "what else could I make?" (new brainstorm,
+# next_action=PICK_RECIPE, ideas generated) -> "the pad thai one" (recipe_card,
+# selected_recipe_name set). Before the fix, picked_recipe survives the
+# brainstorm turn, so route_by_intent sees it set and sends the pad thai pick
+# to refine_recipe, which would "refine" the pinned spaghetti card instead of
+# generating pad thai.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_new_brainstorm_clears_stale_picked_recipe_pin():
+    """update_session_node must clear metadata.picked_recipe when a genuinely
+    new brainstorm ran this turn (next_action=PICK_RECIPE with ideas) -- the
+    old pin is stale the moment a fresh idea set replaces it."""
+    from bubbly_chef.workflows.router import update_session_node
+
+    repo = _graph_repo(
+        brainstorm_ideas=["Creamy Garlic Spaghetti"],
+        picked_recipe=_minimal_recipe_card_dict("Creamy Garlic Spaghetti"),
+    )
+    state = _state(
+        input_text="what else could I make?",
+        conversation_id=_CONV_ID,
+        user_id="user-1",
+        intent=Intent.RECIPE_BRAINSTORM.value,
+        next_action=NextAction.PICK_RECIPE.value,  # a brainstorm node actually ran
+        brainstorm_ideas=["Pad Thai", "Fried Rice"],  # new ideas generated this turn
+    )
+    with patch(
+        "bubbly_chef.workflows.router.get_repository",
+        new_callable=AsyncMock,
+        return_value=repo,
+    ):
+        await update_session_node(state)
+
+    saved = repo.update_session.await_args.args[1]
+    assert saved.metadata.picked_recipe is None
+    # pinned_recipe_id is untouched -- clearing it would re-enable the
+    # deterministic re-pick path (#415 territory), which is out of scope here.
+    assert saved.pinned_recipe_id == "pin-123"
+
+
+def test_fresh_pick_after_new_brainstorm_routes_to_research_recipe_not_refine():
+    """After a new brainstorm clears the stale pin (picked_recipe=None), a
+    recipe_card pick from the NEW set must route to research_recipe (first
+    pick), not refine_recipe (which would 'refine' the old pinned dish)."""
+    from bubbly_chef.workflows.router import route_by_intent
+
+    state = _state(
+        intent=Intent.RECIPE_CARD.value,
+        selected_recipe_name="Pad Thai",
+        session={"metadata": {"picked_recipe": None}},  # cleared by the fix above
+    )
+    assert route_by_intent(state) == "research_recipe"

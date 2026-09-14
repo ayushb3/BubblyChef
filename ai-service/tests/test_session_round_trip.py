@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from bubbly_chef.models.recipe import RecipeConstraints
+from bubbly_chef.models.recipe import Ingredient, RecipeCard, RecipeConstraints
 from bubbly_chef.models.session import (
     ConversationSession,
     CookingRecipeSnapshot,
@@ -462,6 +462,84 @@ def test_recipe_exploring_pin_round_trips() -> None:
 
     # last_recipe_title survives
     assert restored.metadata.last_recipe_title == "Spaghetti Aglio e Olio"
+
+
+# ---------------------------------------------------------------------------
+# #416 AC1: picked_recipe (full RecipeCard) survives the ACTUAL persistence
+# seam -- model_dump(mode="json") -> json.dumps -> json.loads ->
+# model_validate. picked_recipe carries a uuid4 id plus nested Ingredient
+# models; either failing to round-trip would break refine-in-place on the
+# SECOND turn in production (after a reload from the metadata JSON column)
+# even though every in-memory node test still passes.
+# ---------------------------------------------------------------------------
+
+
+def test_picked_recipe_survives_json_round_trip_through_the_db_seam() -> None:
+    """picked_recipe must survive the real persistence path: model_dump(mode="json")
+    -> json.dumps -> json.loads -> model_validate -- not just an in-memory
+    model_dump -> model_validate round-trip."""
+    import json
+
+    picked = RecipeCard(
+        title="Creamy Garlic Spaghetti",
+        description="A rich garlic pasta.",
+        ingredients=[
+            Ingredient(name="spaghetti", quantity=200, unit="g"),
+            Ingredient(name="garlic", quantity=3, unit="cloves", preparation="minced"),
+        ],
+        instructions=["Boil pasta.", "Saute garlic.", "Toss together."],
+        servings=2,
+        cuisine="Italian",
+    )
+    session = ConversationSession(
+        conversation_id="conv-rt-picked-recipe",
+        active_mode=SessionMode.RECIPE_EXPLORING,
+        pinned_recipe_id=str(picked.id),
+        metadata=SessionContext(picked_recipe=picked),
+    )
+
+    # The actual persistence seam: JSON column round-trip, not just Python
+    # dict round-trip -- model_dump(mode="json") produces JSON-safe values
+    # (str id, str datetimes), but json.dumps/json.loads is the step that
+    # would surface anything model_dump silently left non-JSON-serializable.
+    dumped = session.model_dump(mode="json")
+    as_json_text = json.dumps(dumped)
+    reloaded = json.loads(as_json_text)
+    restored = ConversationSession.model_validate(reloaded)
+
+    assert isinstance(restored.metadata.picked_recipe, RecipeCard)
+    rp = restored.metadata.picked_recipe
+    assert rp is not None
+    assert rp.id == picked.id
+    assert rp.title == "Creamy Garlic Spaghetti"
+    assert rp.description == "A rich garlic pasta."
+    assert rp.servings == 2
+    assert rp.cuisine == "Italian"
+
+    # Nested Ingredient models survive as typed models, not plain dicts,
+    # with quantities and units intact.
+    assert len(rp.ingredients) == 2
+    assert isinstance(rp.ingredients[0], Ingredient)
+    assert rp.ingredients[0].name == "spaghetti"
+    assert rp.ingredients[0].quantity == 200
+    assert rp.ingredients[0].unit == "g"
+    assert rp.ingredients[1].preparation == "minced"
+
+    assert rp.instructions == ["Boil pasta.", "Saute garlic.", "Toss together."]
+
+
+def test_picked_recipe_none_round_trips_through_the_db_seam() -> None:
+    """No pinned recipe yet -- picked_recipe stays None through the same
+    JSON-column seam, not coerced to an empty dict or missing key error."""
+    import json
+
+    session = ConversationSession(
+        conversation_id="conv-rt-no-pick",
+        metadata=SessionContext(),
+    )
+    dumped = session.model_dump(mode="json")
+    restored = ConversationSession.model_validate(json.loads(json.dumps(dumped)))
+    assert restored.metadata.picked_recipe is None
 
 
 # ---------------------------------------------------------------------------

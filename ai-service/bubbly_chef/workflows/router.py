@@ -37,7 +37,7 @@ from bubbly_chef.models.pantry import (
     PantryProposal,
 )
 from bubbly_chef.models.proposals import HandoffKind
-from bubbly_chef.models.recipe import RecipeCardProposal, RecipeConstraints
+from bubbly_chef.models.recipe import RecipeCard, RecipeCardProposal, RecipeConstraints
 from bubbly_chef.models.session import (
     CookingRecipeSnapshot,
     PendingProposalMemory,
@@ -75,6 +75,7 @@ from bubbly_chef.workflows.recipe.nodes import (
     extract_recipe_constraints,
     extract_selected_recipe,
     generate_grounded_recipe,
+    refine_recipe_node,
     research_recipe,
     score_pantry_ingredients,
 )
@@ -694,6 +695,13 @@ def route_by_intent(state: WorkflowState) -> str:
     elif intent == Intent.RECIPE_BRAINSTORM.value:
         return "extract_recipe_constraints"
     elif intent == Intent.RECIPE_CARD.value:
+        session_metadata = (state.get("session") or {}).get("metadata") or {}
+        if session_metadata.get("picked_recipe"):
+            # A recipe is already pinned in session -- this recipe_card turn is
+            # a modification of it ("make it spicier", "add tomato"), not a
+            # first pick. Refine the pinned card in place rather than
+            # generating an unrelated new dish (#416 AC1).
+            return "refine_recipe"
         if state.get("selected_recipe_name"):
             return "research_recipe"
         return "cooking_help_response"  # fallback
@@ -933,6 +941,14 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
             )
             if ran_new_brainstorm:
                 session.metadata.brainstorm_ideas = list(new_ideas)
+                # A genuinely new brainstorm makes any earlier pin stale by
+                # definition -- clear the full picked_recipe so the next pick
+                # falls back to research_recipe (a first pick from the new
+                # set) instead of "refining" the OLD pinned dish toward an
+                # unrelated new pick (#416 AC1 regression). Do NOT clear
+                # pinned_recipe_id here -- that would re-enable the
+                # deterministic re-pick path and widen this into #415.
+                session.metadata.picked_recipe = None
             # else: leave the retained set untouched (do not default-clobber to []).
             # Persist constraints so the follow-up turn (research_recipe) can inherit
             # them even though it bypasses extract_recipe_constraints (#144).
@@ -984,6 +1000,17 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                         id=str(recipe_id_raw) if recipe_id_raw is not None else None,
                         title=str(getattr(recipe_obj, "title", "") or "").strip(),
                         ingredients=flat_ingredients,
+                    )
+                    # Also carry the FULL recipe card (ingredients w/ quantities +
+                    # instructions) so a later recipe_card follow-up can refine it
+                    # in place via generate_recipe(previous_recipe=...) instead of
+                    # generating an unrelated new dish (#416 AC1). cooking_recipe
+                    # above is deliberately left as-is -- COOKING mode + prompt
+                    # nodes still read it.
+                    session.metadata.picked_recipe = (
+                        recipe_obj
+                        if isinstance(recipe_obj, RecipeCard)
+                        else RecipeCard.model_validate(recipe_obj)
                     )
                 # Keep constraints alive across further refinement turns.
                 constraints = state.get("recipe_constraints")
@@ -1164,7 +1191,8 @@ def build_chat_router_graph(
          -> suggest_specifics -> finalize
        - receipt/product/recipe: build_handoff_*
        - cooking_help (recipe gen): extract_constraints -> score_pantry -> brainstorm -> END
-       - recipe_card (brainstorm follow-up): research_recipe -> generate_grounded_recipe -> END
+       - recipe_card (first pick from brainstorm): research_recipe -> generate_grounded_recipe -> END
+       - recipe_card (follow-up on an already-pinned recipe, #416 AC1): refine_recipe -> END
        - general_chat: generate response
     """
     workflow = StateGraph(WorkflowState)
@@ -1213,6 +1241,10 @@ def build_chat_router_graph(
     workflow.add_node("research_recipe", research_recipe)
     workflow.add_node("generate_grounded_recipe", generate_grounded_recipe)
 
+    # Refine-in-place path (recipe_card follow-up on an already-pinned
+    # recipe — #416 AC1). Terminal node, mirrors generate_grounded_recipe.
+    workflow.add_node("refine_recipe", refine_recipe_node)
+
     # Session update (converge point before END)
     workflow.add_node("update_session", update_session_node)
 
@@ -1230,6 +1262,7 @@ def build_chat_router_graph(
         "general_chat_response": "general_chat_response",
         "extract_recipe_constraints": "extract_recipe_constraints",
         "research_recipe": "research_recipe",
+        "refine_recipe": "refine_recipe",
         "confirm_choice_response": "confirm_choice_response",
     }
 
@@ -1285,6 +1318,10 @@ def build_chat_router_graph(
     # Grounded generation path → update_session → END
     workflow.add_edge("research_recipe", "generate_grounded_recipe")
     workflow.add_edge("generate_grounded_recipe", "update_session")
+
+    # Refine-in-place path → update_session → END (terminal, like grounded
+    # generation — #416 AC1)
+    workflow.add_edge("refine_recipe", "update_session")
 
     # Single converge point
     workflow.add_edge("update_session", END)
