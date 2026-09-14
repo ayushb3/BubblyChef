@@ -173,7 +173,18 @@ export function useChat(options?: UseChatOptions) {
             intent: (turn.intent as ChatMessage['intent']) ?? undefined,
             timestamp: new Date(turn.created_at),
           }
-          if (turn.role === 'assistant' && (turn.proposal || turn.metadata)) {
+          // Rebuild response so the card render branches fire on reload.
+          // Exclude pantry_update: a restored pantry proposal has no entry in
+          // pendingProposalsRef, so its Approve/Reject buttons would no-op — a
+          // dead button is worse than the prior no-card state. Persisting the
+          // interactive approve/reject state across reload is a separate pass.
+          // Recipe cards and brainstorm cards are read-only, so they restore
+          // fully and safely.
+          const canRestoreCard =
+            turn.role === 'assistant' &&
+            turn.intent !== 'pantry_update' &&
+            (turn.proposal || turn.metadata)
+          if (canRestoreCard) {
             return {
               ...base,
               response: {
@@ -181,11 +192,13 @@ export function useChat(options?: UseChatOptions) {
                 assistant_message: turn.content,
                 proposal: turn.proposal ?? null,
                 metadata: turn.metadata ?? null,
-                // fill required-but-display-only fields with safe defaults
+                // fill required fields with safe defaults; the real confidence
+                // is not persisted, so restored turns report unknown (0), not a
+                // fabricated 1.0 that a future confidence indicator would trust.
                 request_id: '',
                 workflow_id: '',
                 conversation_id: storedId,
-                confidence: { overall: 1 },
+                confidence: { overall: 0 },
                 requires_review: false,
                 next_action: 'none',
               } as ChatResponse,
