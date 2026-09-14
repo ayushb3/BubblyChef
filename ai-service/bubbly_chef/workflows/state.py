@@ -84,6 +84,10 @@ class WorkflowState(TypedDict, total=False):
     pantry_snapshot: list[dict[str, Any]] | None
     context: dict[str, Any] | None  # Client-supplied context, e.g. {"cooking_recipe": {...}}
     conversation_history: list[dict[str, Any]]  # Prior turns [{role, content, intent}]
+    # Deterministic intent override from an explicit UI action (chip tap).
+    # When present, classify_intent skips the LLM and uses this directly.
+    # Extension point for [Edit this recipe] / [Start over] chips (#416).
+    forced_intent: str | None
 
     # ==========================================================================
     # Intent Classification

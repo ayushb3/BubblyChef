@@ -102,6 +102,20 @@ class ChatRequest(BaseModel):
             "({id, title, ingredients}) — still accepted, same effect."
         ),
     )
+    # TODO(#416 chips): when [Edit this recipe] / [Start over] chips are wired in
+    # the frontend, they should POST with forced_intent set to the appropriate
+    # Intent value.  The backend honours it as a deterministic override before
+    # the classifier runs.  Values: "recipe_card" (edit) or "recipe_brainstorm"
+    # (start over / invalidate set).
+    forced_intent: str | None = Field(
+        default=None,
+        description=(
+            "Deterministic intent override from an explicit UI action (e.g. chip tap). "
+            "When set, the classifier is bypassed entirely and this intent is used. "
+            "Accepted values: 'recipe_card', 'recipe_brainstorm', 'recipe_generation'. "
+            "Chip UI is not yet live — this is the extension point (#416)."
+        ),
+    )
 
     model_config = ConfigDict(json_schema_extra={
         "example": {

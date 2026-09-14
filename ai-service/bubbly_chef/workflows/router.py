@@ -26,6 +26,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.api.deps import get_ai_manager
+from bubbly_chef.config import settings
 from bubbly_chef.models.base import (
     Intent,
     NextAction,
@@ -268,6 +269,20 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
     Node: Use LLM to classify user intent.
 
     This determines where to route the conversation.
+
+    Routing priority (highest → lowest):
+    1. forced_intent — deterministic override from an explicit UI action (chip tap).
+       [Start over] = recipe_brainstorm + set invalidation; [Edit this recipe] = recipe_card.
+    2. Empty input — short-circuit to general_chat.
+    3. Exit phrase — breaks out of any active mode.
+    4. URL shortcut — unambiguous recipe_ingest (no LLM).
+    5. Brainstorm set re-pick — re-pick from stored set without regeneration.
+    6. LLM classifier — with session-mode bias injected into the prompt.
+       Post-classify logic then:
+       - RECIPE_EXPLORING + pinned recipe: conservative bias (ambiguous → stay on recipe).
+       - RECIPE_EXPLORING + modify-vs-new boundary: confirm band (low/medium → CONFIRM_CHOICE).
+       - COOKING mode: only narrow amendments allowed; brainstorm/generation blocked.
+       - #408 fix: high-confidence recipe_generation served as generation, not brainstorm.
     """
     input_text = state.get("input_text", "")
 
@@ -278,6 +293,36 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "intent_confidence": 0.0,
             "errors": state.get("errors", []) + ["Empty input text"],
         }
+
+    # ── Priority 1: forced_intent from an explicit UI action (chip tap) ──────
+    # [Start over] chip sends forced_intent=recipe_brainstorm; the set is
+    # invalidated by the caller (the chip always wins regardless of confidence).
+    # [Edit this recipe] chip sends forced_intent=recipe_card.
+    forced_intent_raw = state.get("forced_intent")
+    if forced_intent_raw:
+        _forced_chip_map: dict[str, str] = {
+            Intent.RECIPE_CARD.value: Intent.RECIPE_CARD.value,
+            Intent.RECIPE_BRAINSTORM.value: Intent.RECIPE_BRAINSTORM.value,
+            Intent.RECIPE_GENERATION.value: Intent.RECIPE_GENERATION.value,
+        }
+        forced = _forced_chip_map.get(forced_intent_raw)
+        if forced:
+            logger.info(
+                f"classify_intent: forced_intent override via chip: {forced_intent_raw}"
+            )
+            extra: dict[str, object] = {}
+            if forced == Intent.RECIPE_BRAINSTORM.value:
+                # [Start over] — invalidate the stored brainstorm set so follow-up
+                # turns don't re-pick from a stale menu (Q6).
+                extra["brainstorm_ideas"] = []
+            return {
+                **state,
+                "intent": forced,
+                "intent_confidence": 1.0,
+                "intent_reasoning": f"Explicit chip override: {forced_intent_raw}",
+                "detected_entities": [],
+                **extra,
+            }
 
     # ── R2: Mode-aware routing ──
     session_mode = state.get("session_mode")
@@ -301,72 +346,29 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
                 "_exit_mode": True,
             }
 
-        # Route based on active mode
-        mode_intent_map: dict[str, str] = {
-            SessionMode.COOKING.value: Intent.COOKING_HELP.value,
-            SessionMode.RECIPE_EXPLORING.value: Intent.RECIPE_BRAINSTORM.value,
-            SessionMode.INGESTING.value: Intent.PANTRY_UPDATE.value,
-            SessionMode.PANTRY_EDITING.value: Intent.PANTRY_UPDATE.value,
+    # ── Priority 3 (URL shortcut — no LLM needed) ──
+    text_lower = input_text.lower()
+    url_patterns = [
+        "http://",
+        "https://",
+        ".com",
+        ".org",
+        "youtube.com",
+        "tiktok.com",
+        "instagram.com",
+    ]
+    if any(p in text_lower for p in url_patterns):
+        logger.info("Intent classified: recipe_ingest (source=url_shortcut)")
+        return {
+            **state,
+            "intent": Intent.RECIPE_INGEST.value,
+            "intent_confidence": 0.95,
+            "intent_reasoning": "URL detected — recipe ingest shortcut",
+            "detected_entities": [],
         }
-        forced_intent = mode_intent_map.get(session_mode)
-        if forced_intent:
-            logger.info(
-                f"Session mode override: {session_mode} → intent={forced_intent}"
-            )
-            # For recipe_exploring, check if this is a selection or modification
-            if session_mode == SessionMode.RECIPE_EXPLORING.value:
-                # Detect recipe modification phrases like "no bacon",
-                # "less salt", "make it spicier", "without cheese"
-                modification_prefixes = (
-                    "no ", "less ", "more ", "without ", "add ",
-                    "make it ", "swap ", "replace ", "substitute ",
-                    "change ", "remove the ", "skip the ", "drop the ",
-                )
-                is_modification = any(
-                    text_lower.startswith(p) for p in modification_prefixes
-                )
-                if is_modification:
-                    logger.info(
-                        f"Recipe modification detected in RECIPE_EXPLORING: "
-                        f"'{input_text[:60]}'"
-                    )
-                    return {
-                        **state,
-                        "intent": Intent.RECIPE_CARD.value,
-                        "intent_confidence": 0.95,
-                        "intent_reasoning": (
-                            "Recipe modification follow-up (session mode)"
-                        ),
-                        "detected_entities": [],
-                        "selected_recipe_name": input_text,
-                    }
 
-                selected_name = extract_selected_recipe(
-                    input_text,
-                    state.get("conversation_history") or [],
-                )
-                if selected_name:
-                    logger.info(
-                        f"Recipe selected from session: '{selected_name}'"
-                    )
-                    return {
-                        **state,
-                        "intent": Intent.RECIPE_CARD.value,
-                        "intent_confidence": 0.95,
-                        "intent_reasoning": "Recipe selected from brainstorm (session mode)",
-                        "detected_entities": [],
-                        "selected_recipe_name": selected_name,
-                    }
-
-            return {
-                **state,
-                "intent": forced_intent,
-                "intent_confidence": 0.95,
-                "intent_reasoning": f"Continued from active {session_mode} session",
-                "detected_entities": [],
-            }
-
-    # Check for brainstorm follow-up FIRST (before any keyword matching)
+    # ── Priority 4: Brainstorm set re-pick (before LLM) ──
+    # Retain brainstorm_ideas across follow-ups; re-pick with no regeneration (Q6).
     if detect_brainstorm_followup(state):
         selected_name = extract_selected_recipe(
             input_text,
@@ -388,31 +390,16 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
         # No confident selection — fall through to LLM intent classification
         # so informational questions expand on the brainstorm ideas.
 
-    # URL shortcut: unambiguous recipe ingest signal (no LLM needed)
-    text_lower = input_text.lower()
-    url_patterns = [
-        "http://",
-        "https://",
-        ".com",
-        ".org",
-        "youtube.com",
-        "tiktok.com",
-        "instagram.com",
-    ]
-    if any(p in text_lower for p in url_patterns):
-        logger.info("Intent classified: recipe_ingest (source=url_shortcut)")
-        return {
-            **state,
-            "intent": Intent.RECIPE_INGEST.value,
-            "intent_confidence": 0.95,
-            "intent_reasoning": "URL detected — recipe ingest shortcut",
-            "detected_entities": [],
-        }
-
-    # LLM classification for all other cases
+    # ── Priority 5: LLM classifier — with session mode bias injected ──
     ai_manager = get_ai_manager()
+
+    # Build mode-bias context to inject into the prompt as a soft prior.
+    # The classifier still reads the full intent list and can override the bias.
+    mode_bias_section = _build_mode_bias_prompt(session_mode, state)
+
     prompt = (
         INTENT_CLASSIFICATION_SYSTEM_PROMPT
+        + mode_bias_section
         + "\n\n"
         + INTENT_CLASSIFICATION_USER_PROMPT.format(text=input_text)
     )
@@ -446,16 +433,119 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
         }
 
         intent = intent_mapping.get(result.intent.lower(), Intent.GENERAL_CHAT.value)
+        confidence = result.confidence
+
         logger.info(
             f"Intent classified: {intent} "
-            f"(source=llm, confidence={result.confidence}, llm_intent={result.intent})"
+            f"(source=llm, confidence={confidence}, llm_intent={result.intent})"
         )
         logger.debug(f"LLM reasoning: {result.reasoning}, entities: {result.entities}")
+
+        # ── Post-classify: mode-aware adjustments ─────────────────────────────
+
+        # #408 fix: a high-confidence recipe_generation must be served as
+        # generation, not silently downgraded to brainstorm by the mode override.
+        # We apply this check BEFORE the COOKING gate so generation escapes correctly.
+
+        # COOKING mode gate (Q3/#279): only narrow amendments allowed mid-cook.
+        # Full brainstorm/generation is blocked; route to cooking_help instead.
+        # This must be explicit — _detect_amendment runs on any cooking-help turn
+        # with a pinned recipe, NOT COOKING-scoped; the gate is here.
+        if session_mode == SessionMode.COOKING.value:
+            if intent in (Intent.RECIPE_BRAINSTORM.value, Intent.RECIPE_GENERATION.value):
+                logger.info(
+                    f"COOKING mode: blocking {intent} → cooking_help "
+                    "(brainstorm/generation not reachable mid-cook)"
+                )
+                intent = Intent.COOKING_HELP.value
+                confidence = 0.9
+                result = LLMIntentResult(
+                    intent="cooking_help",
+                    confidence=confidence,
+                    reasoning="COOKING mode: brainstorm/generation blocked; route to cooking_help",
+                    entities=result.entities,
+                )
+
+        # RECIPE_EXPLORING mode: conservative bias + confirm band (Q1/Q2/Q5).
+        if session_mode == SessionMode.RECIPE_EXPLORING.value:
+            has_pinned = bool(
+                (state.get("session") or {}).get("pinned_recipe_id")
+            )
+
+            if intent == Intent.RECIPE_BRAINSTORM.value:
+                # Conservative bias (Q2): ambiguous → stay on the recipe.
+                # Only exit to brainstorm on explicit "actually something else"
+                # phrasing — i.e. the classifier was *unambiguously* asking for
+                # new ideas (confidence is already the LLM's own reading).
+                if has_pinned and confidence < settings.confirm_band_confidence_threshold:
+                    # Ambiguous — could be modify or new dish; ask rather than guess (Q5).
+                    logger.info(
+                        f"RECIPE_EXPLORING confirm band: confidence={confidence:.2f} "
+                        f"< {settings.confirm_band_confidence_threshold} → CONFIRM_CHOICE"
+                    )
+                    return {
+                        **state,
+                        "intent": Intent.RECIPE_BRAINSTORM.value,
+                        "intent_confidence": confidence,
+                        "intent_reasoning": result.reasoning,
+                        "detected_entities": result.entities,
+                        "next_action": NextAction.CONFIRM_CHOICE.value,
+                        "requires_review": True,
+                        # Frontend reads these two choices from metadata
+                        "assistant_message": (
+                            "Did you want to tweak this recipe or start fresh with new ideas?"
+                        ),
+                    }
+                # High confidence brainstorm: user clearly wants something new.
+                # Invalidate brainstorm set so stale picks aren't offered (Q6).
+                logger.info(
+                    "RECIPE_EXPLORING: high-confidence brainstorm → "
+                    "fresh brainstorm + invalidate set"
+                )
+                return {
+                    **state,
+                    "intent": Intent.RECIPE_BRAINSTORM.value,
+                    "intent_confidence": confidence,
+                    "intent_reasoning": result.reasoning,
+                    "detected_entities": result.entities,
+                    "brainstorm_ideas": [],  # invalidate stale set (Q6)
+                }
+
+            if intent == Intent.RECIPE_CARD.value:
+                # Modification follow-up ("make it spicier", "add a fig glaze?").
+                # classifier already returns RECIPE_CARD — just log and pass through.
+                logger.info(
+                    f"RECIPE_EXPLORING: recipe modification follow-up "
+                    f"(confidence={confidence:.2f})"
+                )
+                selected_name = state.get("selected_recipe_name") or extract_selected_recipe(
+                    input_text,
+                    state.get("conversation_history") or [],
+                )
+                return {
+                    **state,
+                    "intent": Intent.RECIPE_CARD.value,
+                    "intent_confidence": confidence,
+                    "intent_reasoning": result.reasoning,
+                    "detected_entities": result.entities,
+                    "selected_recipe_name": selected_name or input_text,
+                }
+
+            # #408 fix: high-confidence generation is served as generation even
+            # in RECIPE_EXPLORING (user explicitly asked for a new specific recipe).
+            if intent == Intent.RECIPE_GENERATION.value:
+                logger.info(
+                    f"RECIPE_EXPLORING: recipe_generation at confidence={confidence:.2f} "
+                    "— serving as generation (#408 fix)"
+                )
+                # Fall through; no conversion to brainstorm.
+
+            # Other intents (cooking_help, pantry_update, etc.) fall through normally.
 
         return {
             **state,
             "intent": intent,
-            "intent_confidence": result.confidence,
+            "intent_confidence": confidence,
             "intent_reasoning": result.reasoning,
             "detected_entities": result.entities,
         }
@@ -479,6 +569,53 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "intent_reasoning": f"Error: {e}",
             "errors": state.get("errors", []) + [f"Intent classification failed: {e}"],
         }
+
+
+def _build_mode_bias_prompt(session_mode: str | None, state: WorkflowState) -> str:
+    """Build a mode-bias section to inject into the classifier prompt as a soft prior.
+
+    This biases the LLM without hard-locking intent — the classifier can still
+    return any intent if the evidence is clear.  Mode biasing replaces the old
+    mode_intent_map forcing dict (removed in #416).
+    """
+    if not session_mode or session_mode == SessionMode.DEFAULT.value:
+        return ""
+
+    has_pinned = bool(
+        (state.get("session") or {}).get("pinned_recipe_id")
+    )
+
+    if session_mode == SessionMode.RECIPE_EXPLORING.value:
+        if has_pinned:
+            return (
+                "\n\nSESSION CONTEXT: The user is in recipe-exploring mode with a picked recipe. "
+                "Bias STRONGLY toward 'recipe_card' for any follow-up that looks like a tweak, "
+                "substitution, or refinement of the current recipe (e.g. 'make it spicier', "
+                "'no cheese', 'add a fig glaze?', 'without cream'). "
+                "Only classify as 'recipe_brainstorm' if the user clearly wants to start fresh "
+                "(e.g. 'actually something else', 'show me different options', 'start over'). "
+                "A modification phrased as a question is still a modification."
+            )
+        return (
+            "\n\nSESSION CONTEXT: The user is browsing recipe brainstorm ideas. "
+            "Bias toward 'recipe_card' if the user is selecting or refining a specific idea. "
+            "Use 'recipe_brainstorm' if they want new ideas."
+        )
+
+    if session_mode == SessionMode.COOKING.value:
+        return (
+            "\n\nSESSION CONTEXT: The user is actively cooking a recipe. "
+            "Bias toward 'cooking_help' for questions about technique, timing, or substitutions. "
+            "Do NOT classify as 'recipe_brainstorm' or 'recipe_generation' mid-cook."
+        )
+
+    if session_mode in (SessionMode.INGESTING.value, SessionMode.PANTRY_EDITING.value):
+        return (
+            "\n\nSESSION CONTEXT: The user is in the middle of a pantry update. "
+            "Bias toward 'pantry_update' for grocery or food item mentions."
+        )
+
+    return ""
 
 
 def route_by_intent(state: WorkflowState) -> str:
@@ -1027,6 +1164,7 @@ async def run_chat_workflow(
     history: list[dict[str, Any]] | None = None,
     user_id: str | None = None,
     context: dict[str, Any] | None = None,
+    forced_intent: str | None = None,
 ) -> ProposalEnvelope[Any]:
     """
     Run the chat router workflow and return a ProposalEnvelope.
@@ -1059,6 +1197,7 @@ async def run_chat_workflow(
         "pantry_snapshot": pantry_snapshot,
         "conversation_history": history or [],
         "context": context,
+        "forced_intent": forced_intent,
         "warnings": [],
         "errors": [],
     }
@@ -1322,6 +1461,7 @@ async def run_chat_workflow_streaming(
     history: list[dict[str, Any]] | None = None,
     user_id: str | None = None,
     context: dict[str, Any] | None = None,
+    forced_intent: str | None = None,
 ) -> AsyncIterator[str]:
     """
     Streaming variant of run_chat_workflow.
@@ -1350,11 +1490,10 @@ async def run_chat_workflow_streaming(
         "pantry_snapshot": pantry_snapshot,
         "conversation_history": history or [],
         "context": context,
+        "forced_intent": forced_intent,
         "warnings": [],
         "errors": [],
     }
-
-    # Run initialization + session load + intent classification
     init_state = initialize_state(initial_state)
     session_state = await load_session(init_state)
     classified_state = await classify_intent(session_state)

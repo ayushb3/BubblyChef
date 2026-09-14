@@ -37,6 +37,7 @@ class NextAction(StrEnum):
     REQUEST_CLARIFICATION = "request_clarification"  # Need user to clarify something
     REVIEW_PROPOSAL = "review_proposal"  # Show proposal for user review/edit
     PICK_RECIPE = "pick_recipe"  # Hint that user should pick a brainstorm option
+    CONFIRM_CHOICE = "confirm_choice"  # Ask user to confirm between two options (modify vs new)
 
 
 class WorkflowStatus(StrEnum):
