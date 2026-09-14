@@ -244,6 +244,14 @@ from bubbly_chef.models.cook import CookProposal  # noqa: E402
 from bubbly_chef.models.pantry import PantryProposal  # noqa: E402
 from bubbly_chef.models.recipe import RecipeCardProposal  # noqa: E402
 
+ProposalUnion = PantryProposal | HandoffProposal | RecipeCardProposal | CookProposal
+"""Bare union of all concrete proposal types.
+
+Use this in TypedDict fields and plain ``isinstance`` checks.  For
+discriminated-union validation (e.g. round-tripping ``model_dump()`` dicts),
+use :data:`AnyProposal` / :data:`AnyProposalAdapter` instead.
+"""
+
 AnyProposal = Annotated[
     Union[PantryProposal, HandoffProposal, RecipeCardProposal, CookProposal],
     Field(discriminator="proposal_type"),

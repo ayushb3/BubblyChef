@@ -2,15 +2,9 @@
 
 from typing import Any, TypedDict
 
-from bubbly_chef.models.pantry import (
-    PantryProposal,
-    PantryUpsertAction,
-)
-from bubbly_chef.models.proposals import (
-    HandoffProposal,
-)
-from bubbly_chef.models.recipe import RecipeCard, RecipeCardProposal
-from bubbly_chef.models.cook import CookProposal
+from bubbly_chef.models.pantry import PantryUpsertAction
+from bubbly_chef.models.proposals import ProposalUnion
+from bubbly_chef.models.recipe import RecipeCard
 
 # ---------------------------------------------------------------------------
 # Re-exports from shared_state for backward compatibility.
@@ -115,7 +109,7 @@ class WorkflowState(TypedDict, total=False):
     # Final Actions & Proposals
     # ==========================================================================
     actions: list[PantryUpsertAction]
-    proposal: PantryProposal | HandoffProposal | RecipeCardProposal | CookProposal | None
+    proposal: ProposalUnion | None
     # Category-level words ("veggies", "dairy stuff") the user mentioned that
     # were deliberately excluded from `actions` — too vague to write to the
     # pantry as a literal item name. Surfaced as a clarifying question instead.
