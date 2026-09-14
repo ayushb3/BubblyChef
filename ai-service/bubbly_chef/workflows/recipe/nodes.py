@@ -178,6 +178,9 @@ every idea must fit that meal (don't mix breakfast and dinner)
 """
 
 GROUNDED_RECIPE_SYSTEM_PROMPT = """\
+# TODO(#395): "Priority ingredients (expiring soon...)" line below encodes Gentle level.
+# Off = omit this line entirely; Aggressive = "must try to use" rather than "strong preference".
+# This prompt generates full recipe cards (not just names) — the primary expiry-priority touch point.
 Generate a complete recipe card for "{recipe_name}".
 
 Constraints: {constraints_json}
@@ -419,7 +422,7 @@ def score_and_rank(
         if is_must_use:
             score += 20
 
-        # Expiry urgency
+        # Expiry urgency  # TODO(#395): Off=skip this block entirely; Aggressive=raise weights (+8/+5 instead of +4/+2)
         expiry_str = item.get("expiry_date")
         if expiry_str:
             try:
