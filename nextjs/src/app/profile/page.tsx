@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import SaveAccountBanner from '@/components/auth/SaveAccountBanner'
+import SignOutButton from '@/components/auth/SignOutButton'
+import DisplayNameField from '@/components/profile/DisplayNameField'
 
 const dietaryPrefs = ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free']
 
@@ -7,7 +9,9 @@ export default async function ProfilePage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const displayName = user?.user_metadata?.username || user?.email?.split('@')[0] || 'Guest'
+  const rawUsername = user?.user_metadata?.username as string | undefined
+  const displayName = rawUsername || user?.email?.split('@')[0] || 'Guest'
+  const hasRealName = !!rawUsername
 
   return (
     <div className="pb-24">
@@ -26,17 +30,13 @@ export default async function ProfilePage() {
         </div>
       </div>
 
-      {/* Name */}
-      <div className="text-center mt-14 mb-6 px-6">
-        <p className="text-xl font-extrabold text-[var(--color-text)]">{displayName}</p>
-        {user?.email && (
-          <p className="text-sm text-[var(--color-muted)] mt-0.5">{user.email}</p>
-        )}
-      </div>
+      {/* Editable display name + email */}
+      <DisplayNameField initialName={displayName} hasRealName={hasRealName} />
+      {user?.email && (
+        <p className="text-center text-sm text-[var(--color-muted)] -mt-4 mb-6 px-6">{user.email}</p>
+      )}
 
       <div className="px-6 space-y-6 max-w-md mx-auto">
-        <SaveAccountBanner />
-
         {/* Dietary preferences */}
         <section>
           <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">
@@ -68,6 +68,18 @@ export default async function ProfilePage() {
               <span className="text-[var(--color-muted)]">App</span>
               <span className="text-[var(--color-text)] font-medium">BubblyChef ✨</span>
             </div>
+          </div>
+        </section>
+
+        {/* Account — permanent save-account for guests + sign-out for all */}
+        <section>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">
+            Account
+          </p>
+          <div className="space-y-3">
+            {/* Persistent save-account: stays visible even after the floating banner is dismissed */}
+            <SaveAccountBanner persistent />
+            <SignOutButton />
           </div>
         </section>
       </div>

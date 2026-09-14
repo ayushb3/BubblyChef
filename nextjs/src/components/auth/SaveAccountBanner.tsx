@@ -18,9 +18,18 @@ import SpringButton from '@/components/ui/SpringButton'
  * until it's clicked, `is_anonymous` stays `true`, so the banner keeps
  * showing a "check your email" state rather than disappearing early.
  */
-export default function SaveAccountBanner() {
+interface SaveAccountBannerProps {
+  /**
+   * When true the dismiss/collapse affordances are hidden — use this for the
+   * permanent profile-page entry point so guests can always access save-account
+   * even after dismissing the floating banner (issue #393).
+   */
+  persistent?: boolean
+}
+
+export default function SaveAccountBanner({ persistent = false }: SaveAccountBannerProps) {
   const [isGuest, setIsGuest] = useState(false)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(persistent)
   const [dismissed, setDismissed] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -46,7 +55,7 @@ export default function SaveAccountBanner() {
     }
   }, [])
 
-  if (!isGuest || dismissed) {
+  if (!isGuest || (!persistent && dismissed)) {
     return null
   }
 
@@ -77,17 +86,19 @@ export default function SaveAccountBanner() {
         <span className="text-sm font-medium text-[var(--color-text)]">
           🫧 You&apos;re browsing as a guest — save your account to keep your pantry safe
         </span>
-        <span
-          role="button"
-          aria-label="Dismiss for now"
-          onClick={(e) => {
-            e.stopPropagation()
-            setDismissed(true)
-          }}
-          className="text-[var(--color-muted)] text-xs shrink-0"
-        >
-          ✕
-        </span>
+        {!persistent && (
+          <span
+            role="button"
+            aria-label="Dismiss for now"
+            onClick={(e) => {
+              e.stopPropagation()
+              setDismissed(true)
+            }}
+            className="text-[var(--color-muted)] text-xs shrink-0"
+          >
+            ✕
+          </span>
+        )}
       </button>
     )
   }
@@ -98,14 +109,16 @@ export default function SaveAccountBanner() {
         <p className="text-sm font-semibold text-[var(--color-text)]">
           🫧 Save your account
         </p>
-        <button
-          type="button"
-          aria-label="Collapse"
-          onClick={() => setExpanded(false)}
-          className="text-[var(--color-muted)] text-xs"
-        >
-          ✕
-        </button>
+        {!persistent && (
+          <button
+            type="button"
+            aria-label="Collapse"
+            onClick={() => setExpanded(false)}
+            className="text-[var(--color-muted)] text-xs"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {checkEmail ? (
