@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import BubblesHeader from '@/components/layout/BubblesHeader'
 import FadeInView from '@/components/ui/FadeInView'
 import EmptyState from '@/components/ui/EmptyState'
-import ThemePicker from '@/components/ui/ThemePicker'
+import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
 import ResolveActions from '@/components/pantry/ResolveActions'
 import { getFoodEmoji } from '@/lib/food-emoji'
 import { titleCase } from '@/lib/format'
@@ -103,7 +103,7 @@ export default function UseSoonPage() {
                 {items.length} to clear
               </span>
             )}
-            <ThemePicker />
+            <ProfileHeaderButton />
           </div>
         }
       />

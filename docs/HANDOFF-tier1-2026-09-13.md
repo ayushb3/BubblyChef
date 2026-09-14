@@ -8,7 +8,7 @@
 
 ## Context
 
-Deep triage just completed. All issues are labelled. Four architectural decisions are recorded on their issues. PR #411 (housekeeping: mypy baseline + numpy pin) is open — merge it first before branching for any implementation.
+Deep triage just completed. All issues are labelled. Four architectural decisions are recorded on their issues. PR #411 (housekeeping: mypy baseline + numpy pin) is **merged** — `main` is clean, start Tier 1 directly.
 
 Full triage report: **issue #409** (dependency map, priority rationale, full per-issue verdicts).
 Queue state: `docs/QUEUE.md`.
