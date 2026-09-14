@@ -292,3 +292,129 @@ class TestCookConfirmRoute:
             item_id=PANTRY_ITEM_ID,
             deduct_qty=5.0,
         )
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/recipes/cook — expired_items field (#264)
+# ---------------------------------------------------------------------------
+
+
+class TestCookProposalExpiredItems:
+    """Verify that the cook proposal flags expired matched ingredients."""
+
+    @pytest.mark.asyncio
+    async def test_expired_match_appears_in_expired_items(
+        self, client: AsyncClient
+    ) -> None:
+        """A matched ingredient from an expired pantry row is listed in expired_items."""
+        from datetime import date, timedelta
+
+        expired_item = PantryItem(
+            id=uuid.UUID(PANTRY_ITEM_ID),
+            name="milk",
+            category=FoodCategory.DAIRY,
+            storage_location=StorageLocation.FRIDGE,
+            quantity=1.0,
+            unit="litre",
+            quantity_base=1000.0,
+            unit_base="ml",
+            expiry_date=date.today() - timedelta(days=3),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        recipe_dict: dict[str, Any] = {
+            "id": RECIPE_ID,
+            "title": "Hot Chocolate",
+            "ingredients": [{"name": "milk", "quantity": 200.0, "unit": "ml"}],
+        }
+
+        mock_repo = AsyncMock()
+        mock_repo.get_recipe.return_value = recipe_dict
+        mock_repo.get_all_pantry_items.return_value = [expired_item]
+
+        with patch(
+            "bubbly_chef.api.routes.recipes_ai.get_repository",
+            return_value=mock_repo,
+        ):
+            response = await client.post(
+                "/v1/recipes/cook", json={"recipe_id": RECIPE_ID}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        expired = data.get("expired_items", [])
+        assert len(expired) == 1, f"expected 1 expired item, got {expired}"
+        assert expired[0]["ingredient_name"] == "milk"
+        assert expired[0]["pantry_item_name"] == "milk"
+        assert expired[0]["days_expired"] >= 3
+
+    @pytest.mark.asyncio
+    async def test_fresh_match_produces_empty_expired_items(
+        self, client: AsyncClient
+    ) -> None:
+        """An in-date pantry match leaves expired_items empty."""
+        from datetime import date, timedelta
+
+        fresh_item = PantryItem(
+            id=uuid.UUID(PANTRY_ITEM_ID),
+            name="butter",
+            category=FoodCategory.DAIRY,
+            storage_location=StorageLocation.FRIDGE,
+            quantity=200.0,
+            unit="g",
+            quantity_base=200.0,
+            unit_base="g",
+            expiry_date=date.today() + timedelta(days=14),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        recipe_dict: dict[str, Any] = {
+            "id": RECIPE_ID,
+            "title": "Buttered Toast",
+            "ingredients": [{"name": "butter", "quantity": 10.0, "unit": "g"}],
+        }
+
+        mock_repo = AsyncMock()
+        mock_repo.get_recipe.return_value = recipe_dict
+        mock_repo.get_all_pantry_items.return_value = [fresh_item]
+
+        with patch(
+            "bubbly_chef.api.routes.recipes_ai.get_repository",
+            return_value=mock_repo,
+        ):
+            response = await client.post(
+                "/v1/recipes/cook", json={"recipe_id": RECIPE_ID}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data.get("expired_items", []) == []
+
+    @pytest.mark.asyncio
+    async def test_missing_ingredient_not_in_expired_items(
+        self, client: AsyncClient
+    ) -> None:
+        """Unmatched (missing) ingredients are never listed in expired_items."""
+        recipe_dict: dict[str, Any] = {
+            "id": RECIPE_ID,
+            "title": "Mystery Dish",
+            "ingredients": [{"name": "dragon fruit", "quantity": 1.0, "unit": "count"}],
+        }
+
+        mock_repo = AsyncMock()
+        mock_repo.get_recipe.return_value = recipe_dict
+        mock_repo.get_all_pantry_items.return_value = []
+
+        with patch(
+            "bubbly_chef.api.routes.recipes_ai.get_repository",
+            return_value=mock_repo,
+        ):
+            response = await client.post(
+                "/v1/recipes/cook", json={"recipe_id": RECIPE_ID}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data.get("expired_items", []) == []
+        assert "dragon fruit" in data["missing"]
+
