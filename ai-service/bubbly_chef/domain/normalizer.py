@@ -612,6 +612,21 @@ _UNIT_DIMENSION: dict[str, str] = {
 }
 
 
+def get_unit_dimension(unit: str | None) -> str | None:
+    """Return the measurement dimension of *unit* ("g", "ml", or "count"), or None.
+
+    Returns None when *unit* is not in the recognised unit vocabulary — e.g.
+    "handful", or any other unit absent from _TO_COUNT / _TO_ML / _TO_G.
+    The cook matcher uses this to distinguish a genuine incommensurable-dimension
+    conflict (g vs ml, g vs count) from a merely-unresolvable conversion (unknown
+    unit on one or both sides), which gets a soft fallback instead of a blocking
+    conflict.
+    """
+    if unit is None:
+        return None
+    return _UNIT_DIMENSION.get(normalize_unit(unit))
+
+
 def _resolve_density(name: str, category: str) -> float | None:
     """Density in g/ml for *name*, retrying under its canonical name.
 
