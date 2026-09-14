@@ -573,6 +573,10 @@ import bubbly_chef.workflows.router as router_mod  # noqa: E402
 from bubbly_chef.models.session import ConversationSession  # noqa: E402
 from bubbly_chef.workflows.router import run_chat_workflow  # noqa: E402
 
+# The envelope builders in shared_state parse conversation_id with UUID(...),
+# so graph-level tests must pass a syntactically valid UUID string, not "conv-1".
+_CONV_ID = "11111111-1111-1111-1111-111111111111"
+
 
 def _graph_repo(
     mode: SessionMode = SessionMode.RECIPE_EXPLORING,
@@ -583,7 +587,7 @@ def _graph_repo(
     from bubbly_chef.models.session import SessionContext
 
     session = ConversationSession(
-        conversation_id="conv-1",
+        conversation_id=_CONV_ID,
         active_mode=mode,
         pinned_recipe_id=pinned_recipe_id,
         metadata=SessionContext(brainstorm_ideas=list(brainstorm_ideas or [])),
@@ -627,7 +631,7 @@ async def test_confirm_band_graph_does_not_run_brainstorm_pipeline():
     ):
         envelope = await run_chat_workflow(
             message="show me something else",
-            conversation_id="conv-1",
+            conversation_id=_CONV_ID,
             user_id="user-1",
         )
     _reset_graphs()
@@ -677,7 +681,7 @@ async def test_high_confidence_brainstorm_graph_runs_pipeline_and_invalidates_se
     ):
         envelope = await run_chat_workflow(
             message="actually something completely different",
-            conversation_id="conv-1",
+            conversation_id=_CONV_ID,
             user_id="user-1",
         )
     _reset_graphs()
@@ -738,7 +742,7 @@ async def test_generation_turn_does_not_clobber_stored_brainstorm_set():
     repo = _graph_repo(brainstorm_ideas=["Kept Idea A", "Kept Idea B"])
     state = _state(
         input_text="give me a lasagna recipe",
-        conversation_id="conv-1",
+        conversation_id=_CONV_ID,
         user_id="user-1",
         intent=Intent.RECIPE_GENERATION.value,
         next_action=NextAction.NONE.value,  # no brainstorm ran this turn
@@ -767,7 +771,7 @@ async def test_load_session_seeds_brainstorm_ideas_from_stored_set():
         return_value=repo,
     ):
         result = await load_session(
-            _state(conversation_id="conv-1", user_id="user-1", brainstorm_ideas=[])
+            _state(conversation_id=_CONV_ID, user_id="user-1", brainstorm_ideas=[])
         )
     assert result.get("brainstorm_ideas") == ["Stored A", "Stored B"]
 
