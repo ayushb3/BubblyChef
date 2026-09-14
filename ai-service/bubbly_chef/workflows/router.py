@@ -49,6 +49,7 @@ from bubbly_chef.workflows.chat.nodes import (
     COOKING_RECIPE_KEY,
     GENERAL_CHAT_SYSTEM_PROMPT,
     GENERAL_CHAT_USER_PROMPT,
+    _flatten_ingredient,
     cooking_help_response,
     detect_mode_suggestion,
     format_cooking_recipe_context,
@@ -713,10 +714,38 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 # rather than falling through to LLM (which misclassifies
                 # them as pantry_update).
                 session.active_mode = SessionMode.RECIPE_EXPLORING
-                session.pinned_recipe_id = None
-                session.metadata.last_recipe_title = getattr(
-                    getattr(proposal, "recipe", None), "title", None
-                )
+                recipe_obj = getattr(proposal, "recipe", None)
+                recipe_id_raw = getattr(recipe_obj, "id", None)
+                # Pin the session-local ephemeral RecipeCard uuid so follow-up
+                # turns (refine #303, escape-hatch #416) can target the exact
+                # card the user picked.
+                #
+                # NOTE: this id is the RecipeCard's default_factory=uuid4 —
+                # it is a SESSION-LOCAL identifier, NOT a persisted DB row id.
+                # The recipe is not in the DB until the user explicitly saves it,
+                # at which point it gets a different id.  Cross-session references
+                # to this pin will be stale; that is accepted and documented
+                # (issue #415 design decision).
+                session.pinned_recipe_id = str(recipe_id_raw) if recipe_id_raw is not None else None
+                session.metadata.last_recipe_title = getattr(recipe_obj, "title", None)
+                # Also populate the typed cooking_recipe snapshot so the pin
+                # lives in the typed SessionContext and is readable by prompt
+                # nodes without string-parsing pinned_recipe_id.  Mirror the
+                # COOKING handoff at router.py:681–685.
+                if recipe_obj is not None:
+                    raw_ingredients = getattr(recipe_obj, "ingredients", None) or []
+                    flat_ingredients = [
+                        line
+                        for ing in raw_ingredients
+                        if (line := _flatten_ingredient(
+                            ing.model_dump() if hasattr(ing, "model_dump") else ing
+                        ))
+                    ]
+                    session.metadata.cooking_recipe = CookingRecipeSnapshot(
+                        id=str(recipe_id_raw) if recipe_id_raw is not None else None,
+                        title=str(getattr(recipe_obj, "title", "") or "").strip(),
+                        ingredients=flat_ingredients,
+                    )
                 # Keep constraints alive across further refinement turns.
                 constraints = state.get("recipe_constraints")
                 if constraints:
