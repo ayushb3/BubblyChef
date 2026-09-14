@@ -97,16 +97,13 @@ class LLMClarificationResult(BaseModel):
     items: list[TermSuggestion] = Field(default_factory=list)
 
 
-class PendingProposalMemory(TypedDict):
-    """Shape of ``ConversationSession.pending_proposal`` for pantry-update
-    turns — the one shared contract between the two files that touch it:
-    written by ``update_session_node`` (router.py), read back by
-    ``review_gate`` (workflows/pantry/nodes.py) to acknowledge unresolved
-    items/terms from earlier turns.
-    """
-
-    item_names: list[str]
-    unclear_terms: list[str]
+# Re-exported so existing ``from bubbly_chef.workflows.shared_state import
+# PendingProposalMemory`` and ``from bubbly_chef.workflows.state import
+# PendingProposalMemory`` call-sites keep working without modification.
+# The authoritative definition is now the Pydantic model in models/session.py.
+from bubbly_chef.models.session import (  # noqa: E402
+    PendingProposalMemory as PendingProposalMemory,
+)
 
 
 class LLMRecipeResult(BaseModel):
@@ -433,6 +430,8 @@ class ChatSubState(TypedDict):
 __all__ = [
     # LLM schemas
     "LLMParsedItem",
+    # Pending proposal memory (Pydantic model, re-exported from models/session.py)
+    "PendingProposalMemory",
     "LLMParseResult",
     "LLMIntentResult",
     "LLMGeneralChatResult",

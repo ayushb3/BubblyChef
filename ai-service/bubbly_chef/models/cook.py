@@ -25,13 +25,14 @@ class IngredientMatch(BaseModel):
     base_unit: str | None = Field(default=None, description="Base unit used for comparison")
 
     status: Literal[
-        "ready", "substitute", "shortfall", "imprecise", "unit_conflict", "missing"
+        "ready", "substitute", "shortfall", "imprecise", "unit_conflict", "missing", "assumed"
     ] = Field(
         description=(
             "ready=have enough, substitute=covered by a suggested stand-in, "
             "shortfall=not enough, imprecise=have it but the recipe's pieces can't be "
             "quantified against a package row, unit_conflict=can't compare, "
-            "missing=not in pantry"
+            "missing=not in pantry, "
+            "assumed=a culinary staple presumed on hand even though it's not in the pantry"
         )
     )
     shortfall: float | None = Field(
@@ -71,6 +72,7 @@ class CompoundSuggestion(BaseModel):
 class CookProposal(BaseModel):
     """Proposal returned to the user before confirming a cook action."""
 
+    proposal_type: Literal["cook"] = "cook"
     recipe_id: UUID = Field(description="ID of the recipe being cooked")
     recipe_title: str = Field(description="Human-readable recipe title")
     matches: list[IngredientMatch] = Field(

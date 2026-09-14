@@ -32,6 +32,7 @@ import type {
   PantryProposalData,
   RecipeAmendmentProposal,
   RecipeIngredientAmendment,
+  PantryProposalAction,
 } from '@/types/chat'
 import { getBrainstormIdeas, getClarificationSuggestions, buildClarificationText } from '@/types/chat'
 import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
@@ -104,6 +105,7 @@ function ChatSurface() {
     startNewChat,
     approveProposal,
     rejectProposal,
+    updateProposalActions,
   } = useChat({ skipResume: Boolean(seed) || Boolean(cookingRecipeId) })
 
   const [input, setInput] = useState('')
@@ -495,6 +497,7 @@ function ChatSurface() {
                 saveState={saveStates[msg.id] ?? 'idle'}
                 onApprove={() => approveProposal(msg.id)}
                 onReject={() => rejectProposal(msg.id)}
+                onActionsChange={(actions) => updateProposalActions(msg.id, actions)}
                 onSave={(recipe) => handleSaveRecipe(msg.id, recipe)}
                 savedRecipeId={savedRecipeIds[msg.id] ?? null}
                 isSavedDraft={draftRecipeIds.has(msg.id)}
@@ -684,6 +687,8 @@ interface MessageRendererProps {
   saveState: 'idle' | 'saving' | 'saved' | 'error'
   onApprove: () => void
   onReject: () => void
+  /** Called when the user edits a qty/unit inline on a proposal action row. */
+  onActionsChange: (actions: PantryProposalAction[]) => void
   onSave: (recipe: ChatRecipeData) => void
   savedRecipeId: string | null
   /** True when savedRecipeId points to a draft row (not yet a real library entry). */
@@ -713,6 +718,7 @@ function MessageRenderer({
   saveState,
   onApprove,
   onReject,
+  onActionsChange,
   onSave,
   savedRecipeId,
   isSavedDraft,
@@ -845,6 +851,7 @@ function MessageRenderer({
               error={proposalError}
               clarificationTerms={clarificationTerms}
               onStagePick={(sel) => onStageText(buildClarificationText(sel))}
+              onActionsChange={onActionsChange}
             />
           </div>
         </div>

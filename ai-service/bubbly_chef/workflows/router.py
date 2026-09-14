@@ -18,7 +18,7 @@ import logging
 import re
 from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 from uuid import uuid4
 
 from langgraph.graph import END, StateGraph
@@ -36,8 +36,12 @@ from bubbly_chef.models.pantry import (
     PantryProposal,
 )
 from bubbly_chef.models.proposals import HandoffKind
-from bubbly_chef.models.recipe import RecipeCardProposal
-from bubbly_chef.models.session import SessionMode
+from bubbly_chef.models.recipe import RecipeCardProposal, RecipeConstraints
+from bubbly_chef.models.session import (
+    CookingRecipeSnapshot,
+    PendingProposalMemory,
+    SessionMode,
+)
 from bubbly_chef.repository.supabase_repo import SupabaseRepository, get_repository
 from bubbly_chef.services.recipe_url_ingestor import ingest_recipe_from_url
 from bubbly_chef.workflows.chat.nodes import (
@@ -45,6 +49,7 @@ from bubbly_chef.workflows.chat.nodes import (
     COOKING_RECIPE_KEY,
     GENERAL_CHAT_SYSTEM_PROMPT,
     GENERAL_CHAT_USER_PROMPT,
+    _flatten_ingredient,
     cooking_help_response,
     detect_mode_suggestion,
     format_cooking_recipe_context,
@@ -74,7 +79,6 @@ from bubbly_chef.workflows.recipe.nodes import (
 )
 from bubbly_chef.workflows.state import (
     LLMIntentResult,
-    PendingProposalMemory,
     WorkflowState,
     create_general_chat_envelope,
     create_handoff_envelope,
@@ -675,26 +679,29 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
         user_id = state.get("user_id") or ""
         raw_cooking_recipe = await _resolve_cook_context(context, user_id, repo)
         if isinstance(raw_cooking_recipe, dict):
-            cooking_recipe = normalize_cooking_recipe(raw_cooking_recipe)
+            cooking_recipe_dict = normalize_cooking_recipe(raw_cooking_recipe)
+            cooking_recipe_snap = CookingRecipeSnapshot.model_validate(cooking_recipe_dict)
             session.active_mode = SessionMode.COOKING
-            session.pinned_recipe_id = cooking_recipe["id"]
-            session.metadata[COOKING_RECIPE_KEY] = cooking_recipe
+            session.pinned_recipe_id = cooking_recipe_snap.id
+            session.metadata.cooking_recipe = cooking_recipe_snap
             await repo.update_session(user_id, session)
             logger.info(
                 f"Session pinned to cooking recipe: {old_mode} → cooking "
-                f"(recipe_id={cooking_recipe['id']})"
+                f"(recipe_id={cooking_recipe_snap.id})"
             )
             return state
 
         # Mode transition rules
         if intent in (Intent.RECIPE_BRAINSTORM.value, Intent.RECIPE_GENERATION.value):
             session.active_mode = SessionMode.RECIPE_EXPLORING
-            session.metadata["brainstorm_ideas"] = state.get("brainstorm_ideas", [])
+            session.metadata.brainstorm_ideas = state.get("brainstorm_ideas", [])
             # Persist constraints so the follow-up turn (research_recipe) can inherit
             # them even though it bypasses extract_recipe_constraints (#144).
             constraints = state.get("recipe_constraints")
             if constraints:
-                session.metadata["recipe_constraints"] = constraints
+                session.metadata.recipe_constraints = RecipeConstraints.model_validate(
+                    constraints
+                )
                 logger.debug(
                     "Session: persisted recipe_constraints for follow-up inheritance"
                 )
@@ -707,14 +714,44 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 # rather than falling through to LLM (which misclassifies
                 # them as pantry_update).
                 session.active_mode = SessionMode.RECIPE_EXPLORING
-                session.pinned_recipe_id = None
-                session.metadata["last_recipe_title"] = getattr(
-                    getattr(proposal, "recipe", None), "title", None
-                )
+                recipe_obj = getattr(proposal, "recipe", None)
+                recipe_id_raw = getattr(recipe_obj, "id", None)
+                # Pin the session-local ephemeral RecipeCard uuid so follow-up
+                # turns (refine #303, escape-hatch #416) can target the exact
+                # card the user picked.
+                #
+                # NOTE: this id is the RecipeCard's default_factory=uuid4 —
+                # it is a SESSION-LOCAL identifier, NOT a persisted DB row id.
+                # The recipe is not in the DB until the user explicitly saves it,
+                # at which point it gets a different id.  Cross-session references
+                # to this pin will be stale; that is accepted and documented
+                # (issue #415 design decision).
+                session.pinned_recipe_id = str(recipe_id_raw) if recipe_id_raw is not None else None
+                session.metadata.last_recipe_title = getattr(recipe_obj, "title", None)
+                # Also populate the typed cooking_recipe snapshot so the pin
+                # lives in the typed SessionContext and is readable by prompt
+                # nodes without string-parsing pinned_recipe_id.  Mirror the
+                # COOKING handoff at router.py:681–685.
+                if recipe_obj is not None:
+                    raw_ingredients = getattr(recipe_obj, "ingredients", None) or []
+                    flat_ingredients = [
+                        line
+                        for ing in raw_ingredients
+                        if (line := _flatten_ingredient(
+                            ing.model_dump() if hasattr(ing, "model_dump") else ing
+                        ))
+                    ]
+                    session.metadata.cooking_recipe = CookingRecipeSnapshot(
+                        id=str(recipe_id_raw) if recipe_id_raw is not None else None,
+                        title=str(getattr(recipe_obj, "title", "") or "").strip(),
+                        ingredients=flat_ingredients,
+                    )
                 # Keep constraints alive across further refinement turns.
                 constraints = state.get("recipe_constraints")
                 if constraints:
-                    session.metadata["recipe_constraints"] = constraints
+                    session.metadata.recipe_constraints = RecipeConstraints.model_validate(
+                        constraints
+                    )
             # else: stay in current mode
 
         elif intent == Intent.PANTRY_UPDATE.value:
@@ -727,22 +764,83 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 # never actually written before now.
                 item_names = [a.item.name for a in state.get("actions", [])]
                 unclear_terms = state.get("generic_pantry_terms", [])
-                # session.pending_proposal is a loosely-typed dict[str, Any] on
-                # the Pydantic model (JSON column); PendingProposalMemory
-                # (shared_state.py) documents its actual shape for this and
-                # review_gate, the two places that read/write it.
-                existing = cast(PendingProposalMemory, session.pending_proposal or {})
+                existing = session.pending_proposal or PendingProposalMemory()
                 merged_items = _merge_dedup_case_insensitive(
-                    existing.get("item_names", []), item_names
+                    existing.item_names, item_names
                 )
                 merged_terms = _merge_dedup_case_insensitive(
-                    existing.get("unclear_terms", []), unclear_terms
+                    existing.unclear_terms, unclear_terms
                 )
-                if merged_items or merged_terms:
-                    session.pending_proposal = {
-                        "item_names": merged_items[-_PENDING_PROPOSAL_HISTORY_LIMIT:],
-                        "unclear_terms": merged_terms[-_PENDING_PROPOSAL_HISTORY_LIMIT:],
+
+                # Build / update the suggestions map: term.lower() → list of
+                # concrete suggestions produced by suggest_specifics this turn.
+                # Kept so the resolution filter below (issue #342) can check
+                # overlap against actual suggestion lists rather than guessing.
+                existing_suggestions: dict[str, list[str]] = existing.suggestions
+                new_suggestions: dict[str, list[str]] = {
+                    item["term"].lower(): item["suggestions"]
+                    for item in state.get("clarification_suggestions", [])
+                    if isinstance(item, dict)
+                    and isinstance(item.get("term"), str)
+                    and isinstance(item.get("suggestions"), list)
+                }
+                merged_suggestions = {**existing_suggestions, **new_suggestions}
+
+                # Issue #342 — drop resolved terms from unclear_terms.
+                # A term is resolved when at least one of ITS OWN suggestions
+                # appears in this turn's action names (case-insensitive). This
+                # mirrors exactly what the frontend filterResolvedTerms does.
+                # A term the user never addressed (e.g. "vegetables" when the
+                # user only added "eggs") must NOT be dropped — only terms
+                # where the user picked a concrete item from that term's pill
+                # row are removed.
+                if item_names:
+                    action_names_lower = {n.lower() for n in item_names}
+                    resolved: set[str] = set()
+                    for term in merged_terms:
+                        term_suggestions = merged_suggestions.get(term.lower(), [])
+                        if any(s.lower() in action_names_lower for s in term_suggestions):
+                            resolved.add(term.lower())
+                            matched = [
+                                s for s in term_suggestions
+                                if s.lower() in action_names_lower
+                            ]
+                            logger.info(
+                                f"unclear_term '{term}' resolved via "
+                                f"matched suggestions: {matched}"
+                            )
+                    merged_terms = [t for t in merged_terms if t.lower() not in resolved]
+                    # Also remove resolved terms from the suggestions map.
+                    merged_suggestions = {
+                        k: v for k, v in merged_suggestions.items() if k not in resolved
                     }
+
+                # When all vague terms are resolved (there were some before and
+                # now none remain), clear pending_proposal entirely so
+                # review_gate no longer prepends the context note. A turn
+                # that never had any unclear terms (merged_terms was already
+                # empty) must NOT clear pending_proposal — it still needs to
+                # carry the item_names for context continuity.
+                had_unclear_terms = bool(existing.unclear_terms)
+                if merged_items and not merged_terms and had_unclear_terms:
+                    session.pending_proposal = None
+                    logger.info(
+                        "pending_proposal cleared: all unclear_terms resolved"
+                    )
+                elif merged_items or merged_terms:
+                    sliced_terms = merged_terms[-_PENDING_PROPOSAL_HISTORY_LIMIT:]
+                    # Prune suggestions to only the terms that survived slicing,
+                    # so orphaned entries never accumulate in the JSON column.
+                    surviving_keys = {t.lower() for t in sliced_terms}
+                    pruned_suggestions = {
+                        k: v for k, v in merged_suggestions.items()
+                        if k in surviving_keys
+                    }
+                    session.pending_proposal = PendingProposalMemory(
+                        item_names=merged_items[-_PENDING_PROPOSAL_HISTORY_LIMIT:],
+                        unclear_terms=sliced_terms,
+                        suggestions=pruned_suggestions,
+                    )
             else:
                 session.active_mode = SessionMode.DEFAULT
                 session.pending_proposal = None
@@ -754,10 +852,12 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
             # so brainstorm_ideas appearing does not mean the user left the recipe.
             if state.get("brainstorm_ideas") and old_mode != SessionMode.COOKING.value:
                 session.active_mode = SessionMode.RECIPE_EXPLORING
-                session.metadata["brainstorm_ideas"] = state.get("brainstorm_ideas", [])
+                session.metadata.brainstorm_ideas = state.get("brainstorm_ideas", [])
                 constraints = state.get("recipe_constraints")
                 if constraints:
-                    session.metadata["recipe_constraints"] = constraints
+                    session.metadata.recipe_constraints = RecipeConstraints.model_validate(
+                        constraints
+                    )
                 logger.info(
                     f"Session transition (brainstorm fallback): "
                     f"{old_mode} → recipe_exploring "

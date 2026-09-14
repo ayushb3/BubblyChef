@@ -2,10 +2,10 @@
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any, Literal, Union
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 
 class HandoffKind(StrEnum):
@@ -25,6 +25,7 @@ class HandoffProposal(BaseModel):
     the actual data yet.
     """
 
+    proposal_type: Literal["handoff"] = "handoff"
     kind: HandoffKind = Field(description="Type of handoff (receipt, product, recipe)")
     instructions: str = Field(description="User-friendly instructions for what to do next")
     required_inputs: list[str] = Field(
@@ -200,3 +201,65 @@ class GeneralChatResponse(BaseModel):
     follow_up_suggestions: list[str] = Field(
         default_factory=list, description="Suggested follow-up topics or actions"
     )
+
+
+class RecipeIngredientAmendment(BaseModel):
+    """A single ingredient in a user-amended recipe ingredient list."""
+
+    name: str = Field(description="Ingredient name")
+    quantity: float = Field(default=1.0, description="Quantity")
+    unit: str = Field(default="item", description="Unit of measurement")
+    optional: bool = Field(default=False, description="Whether the ingredient is optional")
+    notes: str | None = Field(default=None, description="Free-text notes (e.g. 'or milk')")
+
+
+class RecipeAmendmentDetection(BaseModel):
+    """Structured output schema for the amendment-detection pass.
+
+    Produced by a second LLM pass after the cooking-help prose reply is
+    generated.  When ``is_amendment`` is True and ``amended_ingredients`` is
+    populated the caller wraps this in a ``ProposalEnvelope`` with
+    ``requires_review=True`` so the frontend can show it for user confirmation
+    before the pantry-deduction step runs against the updated list.
+    """
+
+    is_amendment: bool = Field(
+        description="True if this turn modifies the recipe ingredients"
+    )
+    amended_ingredients: list[RecipeIngredientAmendment] | None = Field(
+        default=None,
+        description="Full amended ingredient list when is_amendment is True",
+    )
+    change_summary: str | None = Field(
+        default=None,
+        description="Short human-readable summary of what changed (1-2 sentences)",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Discriminated proposal union
+# ---------------------------------------------------------------------------
+# Imported here (not at top) to avoid circular imports with pantry/recipe/cook.
+from bubbly_chef.models.cook import CookProposal  # noqa: E402
+from bubbly_chef.models.pantry import PantryProposal  # noqa: E402
+from bubbly_chef.models.recipe import RecipeCardProposal  # noqa: E402
+
+ProposalUnion = PantryProposal | HandoffProposal | RecipeCardProposal | CookProposal
+"""Bare union of all concrete proposal types.
+
+Use this in TypedDict fields and plain ``isinstance`` checks.  For
+discriminated-union validation (e.g. round-tripping ``model_dump()`` dicts),
+use :data:`AnyProposal` / :data:`AnyProposalAdapter` instead.
+"""
+
+AnyProposal = Annotated[
+    Union[PantryProposal, HandoffProposal, RecipeCardProposal, CookProposal],
+    Field(discriminator="proposal_type"),
+]
+"""Discriminated union of all concrete proposal types.
+
+Use ``AnyProposalAdapter.validate_python(data)`` to reconstruct a concrete
+proposal from a plain dict (e.g. a round-tripped ``model_dump()``).
+"""
+
+AnyProposalAdapter: TypeAdapter[AnyProposal] = TypeAdapter(AnyProposal)

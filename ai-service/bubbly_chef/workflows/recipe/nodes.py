@@ -15,6 +15,8 @@ from typing import Any
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.domain.mealtime import meal_time_bucket
+from bubbly_chef.domain.normalizer import normalize_food_name
+from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
 from bubbly_chef.models.recipe import (
     Ingredient,
@@ -123,6 +125,10 @@ RECIPE_CONSTRAINTS_SYSTEM_PROMPT = (
 )
 
 BRAINSTORM_SYSTEM_PROMPT = """\
+# TODO(#395): this prompt wording encodes the "Gentle" expiry-priority level.
+# When the expiry_priority profile field is wired here, swap the expiring-items
+# rule text based on Off/Gentle/Aggressive. Off = omit the rule entirely;
+# Gentle = current text; Aggressive = "try to include expiring items in every idea".
 You are a creative cooking assistant. Given the user's available ingredients \
 and constraints, suggest 3-4 recipe ideas.
 
@@ -172,6 +178,12 @@ every idea must fit that meal (don't mix breakfast and dinner)
 """
 
 GROUNDED_RECIPE_SYSTEM_PROMPT = """\
+# TODO(#395): "Priority ingredients (expiring soon...)" line below encodes Gentle level.
+# Off = omit this line entirely; Aggressive = "must try to use" rather than "strong preference".
+# The reinforcing paragraph at lines 194-200 ("a strong preference, not a requirement...
+# don't wedge a sweet ingredient...") also encodes the same Gentle level and must change
+# together: Off = remove the paragraph; Aggressive = tighten to "only omit if it truly clashes".
+# This prompt generates full recipe cards (not just names) — the primary expiry-priority touch point.
 Generate a complete recipe card for "{recipe_name}".
 
 Constraints: {constraints_json}
@@ -413,7 +425,7 @@ def score_and_rank(
         if is_must_use:
             score += 20
 
-        # Expiry urgency
+        # Expiry urgency  # TODO(#395): Off=skip this block entirely; Aggressive=raise weights (+8/+5 instead of +4/+2)
         expiry_str = item.get("expiry_date")
         if expiry_str:
             try:
@@ -726,10 +738,57 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         if must_use:
             must_use_str = ", ".join(i.get("name", "") for i in must_use[:5])
             pantry_context += f"\nMust use (the user asked to cook with these): {must_use_str}"
-        pantry_context += f"\nExpiring soon (weave in where it fits, not mandatory): {expiring_str or 'none'}"
+        pantry_context += f"\nExpiring soon (weave in where it fits, not mandatory): {expiring_str or 'none'}"  # TODO(#395): suppress entirely when expiry_priority==Off; strengthen label when Aggressive
         pantry_context += f"\nOther available: {supporting_str or 'none'}"
+    elif not constraints.get("must_use_ingredients"):
+        # Reaching this branch means pantry_grounded is True, scored_items is
+        # empty, AND the user has not named any specific ingredients to cook with.
+        # Don't invent recipes — surface the three ingest paths so the user
+        # can stock up first.
+        #
+        # When must_use_ingredients is set the user explicitly named what they
+        # want to cook with, so we fall through to normal LLM generation even
+        # though the pantry is empty (#265 regression fix).
+        #
+        # NOTE (known limitation): score_pantry_ingredients sets scored_pantry_items=[]
+        # when the DB fetch raises an exception, so a transient Supabase error on a
+        # stocked pantry will also trigger this branch — a confidently-wrong message.
+        # That failure mode is pre-existing and tracked separately from #243.
+        logger.info("Empty pantry with grounding on — returning ingest prompt (#243)")
+        ingest_message = (
+            "Your pantry is empty right now, so I don't want to just make something up! "
+            "Here's how to stock it up so I can suggest recipes made from what you actually have:\n\n"
+            "1. **Scan a receipt** — the fastest way! Head to the pantry page and tap "
+            "\"Add items\" → \"Scan receipt\" (or go to `/pantry?add=scan`). "
+            "Snap a photo of any grocery receipt and I'll parse everything in seconds.\n\n"
+            "2. **Type items manually** — same sheet, \"Type\" tab. "
+            "Just type item names and quantities at your own pace.\n\n"
+            "3. **Tell me right here** — type something like \"I just bought milk, "
+            "eggs, and cheddar\" and I'll add them to your pantry for you!\n\n"
+            "Once you've got a few things in there, ask me again and I'll suggest "
+            "recipes tailored to what you have."
+        )
+        # Use GENERAL_CHAT intent so update_session_node leaves the session in
+        # DEFAULT mode. RECIPE_BRAINSTORM would flip to RECIPE_EXPLORING and
+        # persist brainstorm_ideas=[] — a follow-up "the first one" then routes
+        # as a brainstorm selection with no ideas to pick from (#243).
+        return {
+            **state,
+            "intent": Intent.GENERAL_CHAT.value,
+            "assistant_message": ingest_message,
+            "brainstorm_ideas": [],
+            "next_action": NextAction.NONE.value,
+            "proposal": None,
+            "requires_review": False,
+            "confidence": 1.0,
+            "workflow_status": WorkflowStatus.COMPLETED.value,
+            "suggested_action": NextAction.NONE.value,
+        }
     else:
-        pantry_context = "\nNo pantry items available — suggest general recipes."
+        # pantry_grounded=True, scored_items=[], must_use_ingredients set.
+        # The user named specific ingredients — let the LLM generate around them.
+        # No pantry items to list; constraints_str below will inject Must use:.
+        pantry_context = ""
 
     constraints_str = ""
     # Named ingredients that aren't in the pantry still bind the suggestions.
@@ -1015,12 +1074,19 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
                     pantry_item_name=sub_match,
                     substitute_note=f"use {sub_match} instead",
                 ))
+            elif is_staple(normalize_food_name(ing.name)):
+                availability.append(IngredientAvailability(name=ing.name, status="assumed"))
+                available.append(ing.name)
             else:
                 availability.append(IngredientAvailability(name=ing.name, status="missing"))
                 missing.append(ing.name)
         else:
-            availability.append(IngredientAvailability(name=ing.name, status="missing"))
-            missing.append(ing.name)
+            if is_staple(normalize_food_name(ing.name)):
+                availability.append(IngredientAvailability(name=ing.name, status="assumed"))
+                available.append(ing.name)
+            else:
+                availability.append(IngredientAvailability(name=ing.name, status="missing"))
+                missing.append(ing.name)
 
     pantry_match_score = len(available) / len(ingredients_list) if ingredients_list else 0.0
 

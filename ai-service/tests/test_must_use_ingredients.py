@@ -328,11 +328,16 @@ async def test_brainstorm_defaults_meal_type_when_unset() -> None:
     breakfast at midnight (#248). The node falls back to the time of day."""
     from bubbly_chef.workflows.recipe.nodes import _default_meal_type
 
+    # Provide a non-empty pantry so the #243 empty-pantry ingest-prompt guard
+    # doesn't short-circuit before the LLM is called. The meal-type fallback
+    # being tested is independent of pantry state, but the guard fires when
+    # scored_pantry_items=[] + no must_use, which would bypass the LLM entirely.
+    scored = score_and_rank([_item("flour"), _item("milk", days_until_expiry=3)], {})
     with _mock_ai("**Dinner Idea**") as mock_mgr:
         await brainstorm_recipe_ideas(
             {
                 "input_text": "what can I make?",
-                "scored_pantry_items": [],
+                "scored_pantry_items": scored,
                 "recipe_constraints": {},
             }
         )

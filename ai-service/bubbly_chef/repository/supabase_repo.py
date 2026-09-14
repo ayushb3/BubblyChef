@@ -8,16 +8,45 @@ import logging
 from datetime import UTC, date, datetime
 from typing import Any, cast
 
+from postgrest.types import JSON
 from supabase import Client, create_client
 
 from bubbly_chef.config import settings
 from bubbly_chef.domain.normalizer import normalize_food_name, normalize_to_base_unit
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.models.recipe import RecipeCard
-from bubbly_chef.models.session import ConversationSession, SessionMode
+from bubbly_chef.models.session import (
+    ConversationSession,
+    PendingProposalMemory,
+    SessionContext,
+    SessionMode,
+)
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 
 logger = logging.getLogger(__name__)
+
+
+def _as_row(value: JSON) -> dict[str, Any]:
+    """Narrow one Supabase result row from the recursive `JSON` union to a dict.
+
+    supabase-py types every row of `result.data` as `JSON` — a
+    `bool | str | int | float | Sequence[JSON] | Mapping[str, JSON] | None`
+    union — because postgrest can't know our schema. A `.select()` over a
+    table can't return a scalar row, so the "not actually a dict" case is
+    dead by construction; a runtime `isinstance` guard here would be
+    unreachable and untestable. `cast`, unlike `# type: ignore`, keeps every
+    downstream `row["..."]` / `row.get(...)` access type-checked.
+    """
+    return cast("dict[str, Any]", value)
+
+
+def _as_rows(value: list[JSON]) -> list[dict[str, Any]]:
+    """Narrow a Supabase result list (`result.data`) to a list of dict rows.
+
+    Same reasoning as `_as_row`. A per-row `isinstance` guard would also run
+    on every pantry fetch for a condition PostgREST can't produce.
+    """
+    return cast("list[dict[str, Any]]", value)
 
 
 class SupabaseRepository:
@@ -58,6 +87,7 @@ class SupabaseRepository:
             quantity_base=float(row["quantity_base"]) if row.get("quantity_base") is not None else None,
             unit_base=row.get("unit_base"),
             expiry_date=expiry,
+            estimated_expiry=bool(row.get("estimated_expiry") or False),
             slot_index=row.get("slot_index"),
             created_at=datetime.fromisoformat(row["added_at"])
             if row.get("added_at")
@@ -75,7 +105,7 @@ class SupabaseRepository:
             .order("name")
             .execute()
         )
-        return [self._row_to_pantry_item(r) for r in result.data]
+        return [self._row_to_pantry_item(r) for r in _as_rows(result.data)]
 
     async def get_expiring_items(self, user_id: str, days: int = 3) -> list[PantryItem]:
         from datetime import date, timedelta
@@ -90,7 +120,7 @@ class SupabaseRepository:
             .order("expiry_date")
             .execute()
         )
-        return [self._row_to_pantry_item(r) for r in result.data]
+        return [self._row_to_pantry_item(r) for r in _as_rows(result.data)]
 
     async def find_similar_item(
         self, user_id: str, name: str
@@ -105,7 +135,7 @@ class SupabaseRepository:
             .execute()
         )
         if result.data:
-            return self._row_to_pantry_item(result.data[0])
+            return self._row_to_pantry_item(_as_row(result.data[0]))
         return None
 
     async def add_pantry_item(self, user_id: str, item: PantryItem) -> PantryItem:
@@ -122,10 +152,11 @@ class SupabaseRepository:
             "quantity_base": float(item.quantity_base) if item.quantity_base is not None else None,
             "unit_base": item.unit_base,
             "expiry_date": item.expiry_date.isoformat() if item.expiry_date else None,
+            "estimated_expiry": bool(item.estimated_expiry),
             "slot_index": item.slot_index,
         }
         result = self.client.table("pantry_items").insert(data).execute()
-        return self._row_to_pantry_item(result.data[0])
+        return self._row_to_pantry_item(_as_row(result.data[0]))
 
     async def update_pantry_item(
         self, user_id: str, item_id: str, updates: dict[str, Any]
@@ -135,6 +166,11 @@ class SupabaseRepository:
             updates["location"] = updates.pop("storage_location")
         if "name" in updates:
             updates["name_normalized"] = updates["name"].lower().strip()
+        # A caller-supplied expiry_date is a real date, not a heuristic guess —
+        # clear the estimated_expiry flag unless the caller explicitly set it
+        # themselves in this same update (see #182 follow-up).
+        if "expiry_date" in updates and "estimated_expiry" not in updates:
+            updates["estimated_expiry"] = False
 
         result = (
             self.client.table("pantry_items")
@@ -144,7 +180,7 @@ class SupabaseRepository:
             .execute()
         )
         if result.data:
-            return self._row_to_pantry_item(result.data[0])
+            return self._row_to_pantry_item(_as_row(result.data[0]))
         return None
 
     async def delete_pantry_item(self, user_id: str, item_id: str) -> bool:
@@ -213,17 +249,30 @@ class SupabaseRepository:
                         # action; otherwise estimate from category/location/name so the
                         # expiry→cook loop actually lights up (previously hardcoded None).
                         raw_expiry = action.get("expiry_date")
+                        # #182: track whether expiry_date was heuristically guessed
+                        # vs. explicit (from label/receipt or user entry) so the UI
+                        # can distinguish the two. An explicit "estimated_expiry" on
+                        # the action always wins (the caller — e.g. receipt/product
+                        # ingest — already knows); otherwise it follows raw_expiry:
+                        # a caller-supplied date is not estimated, a heuristically
+                        # computed one is.
                         if raw_expiry:
                             item_expiry = (
                                 date.fromisoformat(raw_expiry)
                                 if isinstance(raw_expiry, str)
                                 else raw_expiry
                             )
+                            item_estimated_expiry = action.get("estimated_expiry", False)
                         else:
-                            item_expiry, _ = get_expiry_heuristics().estimate_expiry(
-                                category=item_category,
-                                storage=item_location,
-                                name=name,
+                            item_expiry, heuristic_estimated = (
+                                get_expiry_heuristics().estimate_expiry(
+                                    category=item_category,
+                                    storage=item_location,
+                                    name=name,
+                                )
+                            )
+                            item_estimated_expiry = action.get(
+                                "estimated_expiry", heuristic_estimated
                             )
                         item = PantryItem(
                             name=name,
@@ -234,6 +283,7 @@ class SupabaseRepository:
                             quantity_base=action.get("quantity_base"),
                             unit_base=action.get("unit_base"),
                             expiry_date=item_expiry,
+                            estimated_expiry=bool(item_estimated_expiry),
                         )
                         await self.add_pantry_item(user_id, item)
                     applied += 1
@@ -331,7 +381,7 @@ class SupabaseRepository:
         # supabase-py types row data as list[JSON]; every row from a `.select("*")`
         # on this table is actually an object, matching every other raw-dict
         # accessor in this class (e.g. get_recipe below).
-        return cast("list[dict[str, Any]]", result.data or [])
+        return _as_rows(result.data or [])
 
     async def get_recipe(self, user_id: str, recipe_id: str) -> RecipeCard | None:
         result = (
@@ -344,8 +394,12 @@ class SupabaseRepository:
         )
         if not result.data:
             return None
-        # Return raw dict — caller can construct RecipeCard if needed
-        return result.data  # type: ignore[return-value]
+        # Return raw dict — caller can construct RecipeCard if needed. The
+        # declared -> RecipeCard | None return type is aspirational for
+        # callers, not what this method actually returns; that mismatch is
+        # pre-existing and out of scope here (issue #128 slice 1 is row
+        # narrowing, not fixing return-type contracts).
+        return _as_row(result.data)  # type: ignore[return-value]
 
     async def update_recipe_cooked(self, user_id: str, recipe_id: str) -> None:
         """Increment times_cooked and set last_cooked_at to now."""
@@ -358,7 +412,7 @@ class SupabaseRepository:
             .single()
             .execute()
         )
-        current = result.data or {}
+        current = _as_row(result.data) if result.data else {}
         times_cooked = int(current.get("times_cooked", 0)) + 1
         (
             self.client.table("recipes")
@@ -408,7 +462,7 @@ class SupabaseRepository:
             logger.warning(f"deduct_pantry_item: item {item_id} not found for user {user_id}")
             return False
 
-        row = result.data
+        row = _as_row(result.data)
         current_base = float(row["quantity_base"]) if row.get("quantity_base") is not None else None
         current_qty = float(row["quantity"])
 
@@ -493,7 +547,7 @@ class SupabaseRepository:
             .limit(limit)
             .execute()
         )
-        return result.data
+        return _as_rows(result.data)
 
     # =========================================================================
     # Session operations
@@ -510,13 +564,17 @@ class SupabaseRepository:
             .execute()
         )
         if result.data:
-            row = result.data[0]
+            row = _as_row(result.data[0])
+            raw_pending = row.get("pending_proposal")
+            raw_metadata = row.get("metadata") or {}
             return ConversationSession(
                 conversation_id=row["conversation_id"],
                 active_mode=SessionMode(row.get("active_mode", "default")),
                 pinned_recipe_id=row.get("pinned_recipe_id"),
-                pending_proposal=row.get("pending_proposal"),
-                metadata=row.get("metadata", {}),
+                pending_proposal=PendingProposalMemory.model_validate(raw_pending)
+                if isinstance(raw_pending, dict)
+                else None,
+                metadata=SessionContext.model_validate(raw_metadata),
             )
 
         session = ConversationSession(conversation_id=conversation_id)
@@ -527,7 +585,7 @@ class SupabaseRepository:
                 "active_mode": session.active_mode.value
                 if hasattr(session.active_mode, "value")
                 else str(session.active_mode),
-                "metadata": session.metadata or {},
+                "metadata": session.metadata.model_dump(mode="json"),
             }
         ).execute()
         return session
@@ -540,8 +598,10 @@ class SupabaseRepository:
             if hasattr(session.active_mode, "value")
             else str(session.active_mode),
             "pinned_recipe_id": session.pinned_recipe_id,
-            "pending_proposal": session.pending_proposal,
-            "metadata": session.metadata or {},
+            "pending_proposal": session.pending_proposal.model_dump(mode="json")
+            if session.pending_proposal is not None
+            else None,
+            "metadata": session.metadata.model_dump(mode="json"),
         }
         self.client.table("conversation_sessions").update(data).eq(
             "conversation_id", session.conversation_id
@@ -584,7 +644,7 @@ class SupabaseRepository:
             .execute()
         )
         if result.data:
-            return result.data[0]
+            return _as_row(result.data[0])
         return None
 
 

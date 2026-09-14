@@ -63,6 +63,13 @@ jobs:
       - name: Ruff
         run: ruff check bubbly_chef/
 
+      # Fails only on new/newly-reintroduced errors, filtered through
+      # mypy-baseline against the checked-in mypy-baseline.txt — pre-existing
+      # errors (tracked in #128) don't block. Same command a contributor runs
+      # locally: `cd ai-service && ./scripts/mypy_gate.sh` (see #309).
+      - name: Mypy (baseline-gated)
+        run: ./scripts/mypy_gate.sh
+
       - name: Pytest
         run: pytest tests/ -x -q
 

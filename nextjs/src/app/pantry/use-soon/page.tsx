@@ -11,7 +11,7 @@ import ResolveActions from '@/components/pantry/ResolveActions'
 import { getFoodEmoji } from '@/lib/food-emoji'
 import { titleCase } from '@/lib/format'
 import { cookThisHref } from '@/lib/chat-seed'
-import { daysUntilExpiry } from '@/lib/pantry-helpers'
+import { daysUntilExpiry, estimatedExpirySuffix } from '@/lib/pantry-helpers'
 import { resolvePantryItem, type ResolveOutcome } from '@/lib/api/pantry'
 import type { PantryItem } from '@/types/pantry'
 
@@ -41,27 +41,31 @@ export function needsAttention(item: PantryItem): boolean {
   return days !== null && days <= 3
 }
 
-export function urgencyTier(days: number | null) {
+// `estimated` appends a subtle " · est." suffix (#182) when the expiry date
+// is a heuristic guess rather than one read from a receipt/label or entered
+// by hand — a provenance signal, so it must not affect the tier's colouring.
+export function urgencyTier(days: number | null, estimated?: boolean) {
   if (days === null) return null
+  const suffix = estimatedExpirySuffix(estimated)
   if (days < 0) {
     const ago = Math.abs(days)
     return {
-      label: ago === 1 ? 'Expired yesterday' : `Expired ${ago}d ago`,
+      label: (ago === 1 ? 'Expired yesterday' : `Expired ${ago}d ago`) + suffix,
       color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]',
     }
   }
   if (days === 0)
     return {
-      label: 'Today',
+      label: `Today${suffix}`,
       color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]',
     }
   if (days === 1)
     return {
-      label: 'Tomorrow',
+      label: `Tomorrow${suffix}`,
       color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]',
     }
   return {
-    label: `${days} days left`,
+    label: `${days} days left${suffix}`,
     color: 'bg-[var(--color-expiring)] text-[var(--color-expiring-text)]',
   }
 }
@@ -132,7 +136,7 @@ export default function UseSoonPage() {
         <div className="px-6 space-y-2">
           {items.map((item, i) => {
             const days = daysUntilExpiry(item.expiry_date)
-            const tier = urgencyTier(days)
+            const tier = urgencyTier(days, item.estimated_expiry)
             const pending = resolvingId === item.id
 
             return (

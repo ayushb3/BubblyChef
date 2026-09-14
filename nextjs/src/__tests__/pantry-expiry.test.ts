@@ -1,4 +1,9 @@
-import { daysUntilExpiry, enrichPantryItem, parseLocalDate } from '@/lib/pantry-helpers'
+import {
+  daysUntilExpiry,
+  enrichPantryItem,
+  estimatedExpirySuffix,
+  parseLocalDate,
+} from '@/lib/pantry-helpers'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
 
 /**
@@ -86,5 +91,37 @@ describe('enrichPantryItem expiry flags', () => {
     const item = enrichPantryItem({ ...baseRow, expiry_date: '2026-08-27' })
     expect(item.is_expired).toBe(false)
     expect(item.is_expiring_soon).toBe(true)
+  })
+
+  it('carries estimated_expiry through untouched when present', () => {
+    const item = enrichPantryItem({ ...baseRow, expiry_date: '2026-08-27', estimated_expiry: true })
+    expect(item.estimated_expiry).toBe(true)
+  })
+
+  it('does not invent estimated_expiry when the row omits it (#182)', () => {
+    // Rows fetched before the backing column existed — must not crash and
+    // must not be treated as truthy.
+    const item = enrichPantryItem({ ...baseRow, expiry_date: '2026-08-27' })
+    expect(item.estimated_expiry).toBeUndefined()
+  })
+})
+
+/**
+ * #182: a subtle "(est.)" marker on the expiry label when the date is a
+ * heuristic guess, so users can tell a guess from a fact. Purely a display
+ * suffix — must never change days-until-expiry, is_expired, or sort order.
+ */
+describe('estimatedExpirySuffix', () => {
+  it('renders nothing when the date is not estimated', () => {
+    expect(estimatedExpirySuffix(false)).toBe('')
+  })
+
+  it('renders nothing when estimated_expiry is missing (pre-migration data)', () => {
+    expect(estimatedExpirySuffix(undefined)).toBe('')
+    expect(estimatedExpirySuffix(null)).toBe('')
+  })
+
+  it('renders a subtle marker when the date is estimated', () => {
+    expect(estimatedExpirySuffix(true)).toBe(' (est.)')
   })
 })

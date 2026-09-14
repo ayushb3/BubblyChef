@@ -133,7 +133,7 @@ class IngredientAvailability(BaseModel):
     """Per-ingredient pantry match status for a grounded recipe."""
 
     name: str
-    status: Literal["have", "missing", "substitute"]
+    status: Literal["have", "missing", "substitute", "assumed"]
     pantry_item_name: str | None = None
     substitute_note: str | None = None
 
@@ -141,6 +141,7 @@ class IngredientAvailability(BaseModel):
 class RecipeCardProposal(BaseModel):
     """A proposal containing a recipe card."""
 
+    proposal_type: Literal["recipe_card"] = "recipe_card"
     recipe: RecipeCard = Field(description="The proposed recipe card")
     source_url: str | None = Field(default=None, description="URL the recipe was extracted from")
     source_text: str | None = Field(default=None, description="Original text/transcript used")

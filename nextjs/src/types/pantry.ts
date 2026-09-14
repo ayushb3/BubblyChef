@@ -19,4 +19,11 @@ export interface PantryItem {
   quantity: number
   unit: string
   expiry_date: string | null
+  /**
+   * True when `expiry_date` is a heuristic guess rather than one read from a
+   * receipt/label or entered by hand (#182). Optional because rows fetched
+   * before the backing column existed (older cached data, pre-migration
+   * fixtures) simply omit it — treat a missing value as `false`, never crash.
+   */
+  estimated_expiry?: boolean
 }

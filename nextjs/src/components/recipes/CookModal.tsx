@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
 import type { CookProposal, CompoundSuggestion, IngredientMatch, DeductionItem } from '@/types/recipes'
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
 interface CookModalProps {
   recipeId: string
@@ -74,6 +75,8 @@ function statusColor(status: IngredientMatch['status']): string {
       return 'var(--color-expiring)'
     case 'missing':
       return 'var(--color-border)'
+    case 'assumed':
+      return 'var(--color-border)'
     default:
       return 'var(--color-border)'
   }
@@ -93,6 +96,8 @@ function statusLabel(status: IngredientMatch['status']): string {
       return 'Unit conflict'
     case 'missing':
       return 'Missing'
+    case 'assumed':
+      return 'Assumed'
     default:
       return status
   }
@@ -260,6 +265,8 @@ export default function CookModal({
   const [overrides, setOverrides] = useState<Record<string, string>>({})
   const [loadingStage, setLoadingStage] = useState(0)
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  useModalFocusTrap(true, onClose, panelRef)
 
   // Advance the loading copy while the match runs, stopping on the last stage
   // rather than looping — a cycling message would suggest repeated work.
@@ -340,7 +347,12 @@ export default function CookModal({
       >
         {/* Sheet */}
         <motion.div
-          className="w-full max-w-md mx-2 mb-4 sm:mb-0 rounded-2xl overflow-hidden flex flex-col"
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cook-modal-title"
+          tabIndex={-1}
+          className="w-full max-w-md mx-2 mb-4 sm:mb-0 rounded-2xl overflow-hidden flex flex-col outline-none"
           style={{
             background: 'var(--color-surface)',
             boxShadow: '0 8px 32px color-mix(in srgb, var(--color-primary) 25%, transparent)',
@@ -358,6 +370,7 @@ export default function CookModal({
           >
             <div>
               <h2
+                id="cook-modal-title"
                 className="text-base font-extrabold text-[var(--color-text)]"
                 style={{ fontFamily: 'Nunito, sans-serif' }}
               >
@@ -484,8 +497,8 @@ export default function CookModal({
 
             {(state === 'review' || state === 'confirming') && proposal && (
               <div className="flex flex-col gap-4">
-                {/* Ingredient table */}
-                {proposal.matches.length > 0 && (
+                {/* Ingredient table — assumed staples are collapsed into a summary line below */}
+                {proposal.matches.filter((m: IngredientMatch) => m.status !== 'assumed').length > 0 && (
                   <table className="w-full text-xs" style={{ fontFamily: 'Nunito, sans-serif' }}>
                     <thead>
                       <tr className="text-[var(--color-muted)] text-left">
@@ -496,8 +509,11 @@ export default function CookModal({
                       </tr>
                     </thead>
                     <tbody>
-                      {proposal.matches.map((m: IngredientMatch, i: number) => (
-                        <tr key={i} className="border-t border-[var(--color-border)]">
+                      {proposal.matches
+                        .map((m: IngredientMatch, origIdx: number) => ({ m, origIdx }))
+                        .filter(({ m }) => m.status !== 'assumed')
+                        .map(({ m, origIdx }) => (
+                        <tr key={origIdx} className="border-t border-[var(--color-border)]">
                           <td className="py-1.5 pr-2 font-semibold text-[var(--color-text)]">
                             {m.ingredient_name}
                             {m.match_type === 'substitute' && m.substitution_note && (
@@ -518,11 +534,11 @@ export default function CookModal({
                                 type="number"
                                 min="0"
                                 step="0.1"
-                                value={overrides[String(i)] ?? ''}
+                                value={overrides[String(origIdx)] ?? ''}
                                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                                   setOverrides((prev: Record<string, string>) => ({
                                     ...prev,
-                                    [String(i)]: e.target.value,
+                                    [String(origIdx)]: e.target.value,
                                   }))
                                 }
                                 className="w-16 text-right border border-[var(--color-border)] rounded px-1 py-0.5 text-xs"
@@ -549,6 +565,23 @@ export default function CookModal({
                     </tbody>
                   </table>
                 )}
+
+                {/* Assumed staples — collapsed into one unobtrusive line (#305) */}
+                {(() => {
+                  const assumedNames = proposal.matches
+                    .filter((m: IngredientMatch) => m.status === 'assumed')
+                    .map((m: IngredientMatch) => m.ingredient_name)
+                  if (assumedNames.length === 0) return null
+                  return (
+                    <p
+                      className="text-[10px] text-[var(--color-muted)] italic"
+                      style={{ fontFamily: 'Nunito, sans-serif' }}
+                      aria-label="Assumed culinary staples"
+                    >
+                      Basics assumed: {assumedNames.join(', ')}
+                    </p>
+                  )
+                })()}
 
                 {/* Missing items */}
                 {proposal.missing.length > 0 && (

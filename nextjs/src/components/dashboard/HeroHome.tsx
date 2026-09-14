@@ -10,6 +10,7 @@ import { cookThisHref, tipChatHref } from '@/lib/chat-seed'
 import { fetchDashboardDaily } from '@/lib/api/dashboard'
 import type { DashboardTip, DashboardSuggestion } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
+import { estimatedExpirySuffix } from '@/lib/pantry-helpers'
 
 interface HomeData {
   totalCount: number
@@ -197,7 +198,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
             : ''
         }`
       : urgentItem
-        ? `Your ${titleCase(urgentItem.name)} expires ${urgentItem.days_until_expiry === 0 ? 'today' : 'tomorrow'}! Let's cook it up.`
+        ? `Your ${titleCase(urgentItem.name)} expires ${urgentItem.days_until_expiry === 0 ? 'today' : 'tomorrow'}${estimatedExpirySuffix(urgentItem.estimated_expiry)}! Let's cook it up.`
         : expiringCount > 0
           ? "Check the 'Use Soon' tile — some items need your attention!"
           : 'Your kitchen is looking great!'
