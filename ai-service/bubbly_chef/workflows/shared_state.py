@@ -71,6 +71,16 @@ class LLMIntentResult(BaseModel):
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     reasoning: str | None = Field(default=None, description="Why this intent was chosen")
     entities: list[str] = Field(default_factory=list, description="Key entities detected")
+    modify_or_new_ambiguous: bool = Field(
+        default=False,
+        description=(
+            "Set true ONLY when the user has a picked recipe and this follow-up is "
+            "genuinely ambiguous between modifying that recipe and starting a new "
+            "dish (e.g. 'hmm what about something with mushrooms'). Leave false for "
+            "a clear tweak ('make it spicier'), a clear new-idea request ('actually "
+            "something else'), or anything unrelated."
+        ),
+    )
 
 
 class LLMGeneralChatResult(BaseModel):

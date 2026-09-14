@@ -536,8 +536,13 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
                 # Only exit to brainstorm on explicit "actually something else"
                 # phrasing — i.e. the classifier was *unambiguously* asking for
                 # new ideas (confidence is already the LLM's own reading).
-                if has_pinned and confidence < settings.confirm_band_confidence_threshold:
+                if has_pinned and (
+                    result.modify_or_new_ambiguous
+                    or confidence < settings.confirm_band_confidence_threshold
+                ):
                     # Ambiguous — could be modify or new dish; ask rather than guess (Q5).
+                    # Primary trigger: LLM set modify_or_new_ambiguous=True (explicit signal).
+                    # Secondary trigger: confidence < threshold (belt-and-braces; harmless).
                     # CRITICAL: this must NOT run any generation. We keep the
                     # classifier's intent for logging/telemetry but set
                     # next_action=CONFIRM_CHOICE, which route_by_intent honours
@@ -545,8 +550,11 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
                     # confirm_choice node (no extract/score/brainstorm), so the
                     # pick and the stored brainstorm set are preserved (#266/Q6).
                     logger.info(
-                        f"RECIPE_EXPLORING confirm band: confidence={confidence:.2f} "
-                        f"< {settings.confirm_band_confidence_threshold} → CONFIRM_CHOICE"
+                        f"RECIPE_EXPLORING confirm band: "
+                        f"modify_or_new_ambiguous={result.modify_or_new_ambiguous}, "
+                        f"confidence={confidence:.2f} "
+                        f"(threshold={settings.confirm_band_confidence_threshold}) "
+                        "→ CONFIRM_CHOICE"
                     )
                     return {
                         **state,
@@ -589,6 +597,36 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
 
             if intent == Intent.RECIPE_CARD.value:
                 # Modification follow-up ("make it spicier", "add a fig glaze?").
+                # If the LLM set the ambiguity flag, the message is genuinely fuzzy —
+                # trigger the confirm band even though the LLM leaned recipe_card.
+                if has_pinned and result.modify_or_new_ambiguous:
+                    logger.info(
+                        f"RECIPE_EXPLORING confirm band: "
+                        f"modify_or_new_ambiguous=True on recipe_card "
+                        f"(confidence={confidence:.2f}) → CONFIRM_CHOICE"
+                    )
+                    return {
+                        **state,
+                        "intent": Intent.RECIPE_CARD.value,
+                        "intent_confidence": confidence,
+                        "intent_reasoning": result.reasoning,
+                        "detected_entities": result.entities,
+                        "next_action": NextAction.CONFIRM_CHOICE.value,
+                        "requires_review": True,
+                        "assistant_message": (
+                            "Did you want to tweak this recipe or start fresh with new ideas?"
+                        ),
+                        "confirm_options": [
+                            {
+                                "label": "Tweak this recipe",
+                                "forced_intent": Intent.RECIPE_CARD.value,
+                            },
+                            {
+                                "label": "Start fresh",
+                                "forced_intent": Intent.RECIPE_BRAINSTORM.value,
+                            },
+                        ],
+                    }
                 # classifier already returns RECIPE_CARD — just log and pass through.
                 logger.info(
                     f"RECIPE_EXPLORING: recipe modification follow-up "
@@ -665,12 +703,33 @@ def _build_mode_bias_prompt(session_mode: str | None, state: WorkflowState) -> s
         if has_pinned:
             return (
                 "\n\nSESSION CONTEXT: The user is in recipe-exploring mode with a picked recipe. "
-                "Bias STRONGLY toward 'recipe_card' for any follow-up that looks like a tweak, "
+                "Bias toward 'recipe_card' for a follow-up that COMMANDS a tweak, "
                 "substitution, or refinement of the current recipe (e.g. 'make it spicier', "
-                "'no cheese', 'add a fig glaze?', 'without cream'). "
+                "'no cheese', 'add a fig glaze', 'swap the cream for yoghurt'). "
                 "Only classify as 'recipe_brainstorm' if the user clearly wants to start fresh "
                 "(e.g. 'actually something else', 'show me different options', 'start over'). "
-                "A modification phrased as a question is still a modification."
+                "CRITICAL — question vs. command: a follow-up that ASKS ABOUT the current "
+                "recipe rather than telling you to change it is 'cooking_help', NOT 'recipe_card'. "
+                "Do NOT rewrite the card to answer a question. Examples that are 'cooking_help': "
+                "'does it have yogurt?', 'is this a traditional stroganoff?', 'why sourdough?', "
+                "'can I use butter instead of oil?' (asking whether, not instructing), "
+                "'how long will it keep?', 'what does the flour do?'. "
+                "The line: an IMPERATIVE that changes the recipe is 'recipe_card'; an "
+                "INTERROGATIVE about the recipe (does/is/why/what/can-I/should-I as a genuine "
+                "question) is 'cooking_help'. "
+                "A modification phrased as a question ('add a fig glaze?') is still a "
+                "command to modify — that stays 'recipe_card'. But a genuine question seeking "
+                "an answer ('does it have X?') is 'cooking_help'. "
+                "CRITICAL: adding, removing, or substituting a NAMED INGREDIENT is ALWAYS a plain "
+                "tweak (recipe_card), no matter how tentatively it is phrased — 'add mushrooms', "
+                "'can we add mushrooms', 'could we throw in some garlic', 'swap the cream for yoghurt' "
+                "are all clear tweaks and do NOT get the ambiguous flag. "
+                "IMPORTANT: set modify_or_new_ambiguous:true ONLY when the follow-up names a "
+                "DIFFERENT DISH or DISH-TYPE rather than editing the current one — i.e. it could "
+                "plausibly mean 'make me a different recipe instead' "
+                "(e.g. 'hmm what about something with mushrooms', 'what about a pasta dish?', "
+                "'could we do something lighter?'). That is the only fuzzy middle ground; "
+                "ingredient edits, clear tweaks, and clear new-dish requests all do NOT get this flag."
             )
         return (
             "\n\nSESSION CONTEXT: The user is browsing recipe brainstorm ideas. "

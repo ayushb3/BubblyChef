@@ -227,9 +227,15 @@ export function useChat(options?: UseChatOptions) {
   /**
    * Send a message. `context` is optional extra payload for the AI workflow
    * (e.g. `{ cooking_recipe: {...} }` after the Cook flow hands off to chat).
+   * `forcedIntent` is set by the confirm-band to deterministically route the
+   * turn without going through the classifier.
    */
   const sendMessage = useCallback(
-    (text: string, context?: Record<string, unknown> | null) => {
+    (
+      text: string,
+      context?: Record<string, unknown> | null,
+      forcedIntent?: 'recipe_card' | 'recipe_brainstorm' | null,
+    ) => {
       const trimmed = text.trim()
       if (!trimmed || isStreaming) return
 
@@ -274,6 +280,7 @@ export function useChat(options?: UseChatOptions) {
           message: trimmed,
           conversation_id: convId,
           ...(context ? { context } : {}),
+          ...(forcedIntent ? { forced_intent: forcedIntent } : {}),
         },
 
         // onToken — append each token to the placeholder
@@ -631,6 +638,23 @@ export function useChat(options?: UseChatOptions) {
     [sendMessage],
   )
 
+  // ── Confirm-band send ────────────────────────────────────────────────────
+  // Called when the user taps a confirm-band button. Aborts any in-flight
+  // stream (same as sendChipMessage), then sends the button label as the
+  // visible user turn with forced_intent set so the backend bypasses the
+  // classifier entirely and routes deterministically.
+  const sendConfirmChoice = useCallback(
+    (label: string, forcedIntent: 'recipe_card' | 'recipe_brainstorm') => {
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort()
+        streamAbortRef.current = null
+        setIsStreaming(false)
+      }
+      sendMessage(label, null, forcedIntent)
+    },
+    [sendMessage],
+  )
+
   return {
     messages,
     isStreaming,
@@ -640,6 +664,7 @@ export function useChat(options?: UseChatOptions) {
     proposalErrors,
     sendMessage,
     sendChipMessage,
+    sendConfirmChoice,
     cancelStream,
     startNewChat,
     approveProposal,

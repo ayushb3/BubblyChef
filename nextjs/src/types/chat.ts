@@ -16,6 +16,7 @@ export type ChatNextAction =
   | 'request_clarification'
   | 'review_proposal'
   | 'pick_recipe'
+  | 'confirm_choice'
 
 // ─── Pantry Proposals ─────────────────────────────────────────────────────────
 
@@ -111,6 +112,12 @@ export interface ChatRequest {
    * is still accepted, same effect.
    */
   context?: Record<string, unknown> | null
+  /**
+   * Deterministic intent override sent when the user taps a confirm-band
+   * button. Bypasses the classifier (Priority-1 override on the backend).
+   * Matches the backend Literal exactly: 'recipe_card' | 'recipe_brainstorm'.
+   */
+  forced_intent?: 'recipe_card' | 'recipe_brainstorm' | null
 }
 
 /**
@@ -186,6 +193,32 @@ export function getBrainstormIdeas(response?: ChatResponse | null): string[] {
   const raw = response?.metadata?.brainstorm_ideas
   if (!Array.isArray(raw)) return []
   return raw.filter((item): item is string => typeof item === 'string')
+}
+
+// ─── Confirm-choice helpers ───────────────────────────────────────────────────
+
+export interface ConfirmOption {
+  label: string
+  forced_intent: 'recipe_card' | 'recipe_brainstorm'
+}
+
+/**
+ * Extract confirm options from a ChatResponse's metadata.confirm_options.
+ * Returns an empty array when the field is absent, null, or malformed.
+ * Each entry must have a string `label` and a `forced_intent` in the
+ * allowed set; anything else is silently dropped.
+ */
+export function getConfirmOptions(response?: ChatResponse | null): ConfirmOption[] {
+  const raw = response?.metadata?.confirm_options
+  if (!Array.isArray(raw)) return []
+  return raw.filter(
+    (item): item is ConfirmOption =>
+      !!item &&
+      typeof item === 'object' &&
+      typeof (item as ConfirmOption).label === 'string' &&
+      ((item as ConfirmOption).forced_intent === 'recipe_card' ||
+        (item as ConfirmOption).forced_intent === 'recipe_brainstorm'),
+  )
 }
 
 // ─── Pantry clarification helpers ──────────────────────────────────────────────

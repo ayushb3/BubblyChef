@@ -19,7 +19,7 @@ import pytest
 
 from bubbly_chef.models.base import Intent, NextAction
 from bubbly_chef.models.session import SessionMode
-from bubbly_chef.workflows.router import classify_intent
+from bubbly_chef.workflows.router import classify_intent, route_by_intent
 from bubbly_chef.workflows.state import LLMIntentResult
 
 
@@ -45,14 +45,24 @@ def _state(**kwargs):
     return base
 
 
-def _llm_result(intent: str, confidence: float = 0.9) -> LLMIntentResult:
-    return LLMIntentResult(intent=intent, confidence=confidence, reasoning="test", entities=[])
+def _llm_result(
+    intent: str, confidence: float = 0.9, modify_or_new_ambiguous: bool = False
+) -> LLMIntentResult:
+    return LLMIntentResult(
+        intent=intent,
+        confidence=confidence,
+        reasoning="test",
+        entities=[],
+        modify_or_new_ambiguous=modify_or_new_ambiguous,
+    )
 
 
-def _mock_ai(intent: str, confidence: float = 0.9):
+def _mock_ai(intent: str, confidence: float = 0.9, modify_or_new_ambiguous: bool = False):
     """Return a context manager that patches get_ai_manager."""
     ai = MagicMock()
-    ai.complete = AsyncMock(return_value=_llm_result(intent, confidence))
+    ai.complete = AsyncMock(
+        return_value=_llm_result(intent, confidence, modify_or_new_ambiguous)
+    )
     manager = MagicMock(return_value=ai)
     return patch("bubbly_chef.workflows.router.get_ai_manager", manager)
 
@@ -245,6 +255,74 @@ async def test_confirm_band_not_fired_without_pinned_recipe():
             )
         )
     assert result["intent"] == Intent.RECIPE_BRAINSTORM.value
+    assert result.get("next_action") != NextAction.CONFIRM_CHOICE.value
+
+
+# ---------------------------------------------------------------------------
+# AC3 (flag-based trigger): modify_or_new_ambiguous fires the band regardless
+# of whether the LLM leaned recipe_card or recipe_brainstorm (#416 AC3 fix)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_flag_recipe_card_lean_triggers_confirm_band():
+    """
+    Pinned session + modify_or_new_ambiguous=True, LLM intent recipe_card →
+    CONFIRM_CHOICE with two typed options (flag is the primary trigger, not confidence).
+    """
+    with _mock_ai("recipe_card", confidence=0.9, modify_or_new_ambiguous=True):
+        result = await classify_intent(
+            _state(
+                input_text="hmm what about something with mushrooms",
+                session_mode=SessionMode.RECIPE_EXPLORING.value,
+                session=_session_with_pin(),
+            )
+        )
+    assert result.get("next_action") == NextAction.CONFIRM_CHOICE.value
+    assert result.get("requires_review") is True
+    options = result.get("confirm_options") or []
+    assert len(options) == 2
+    forced = {o["forced_intent"] for o in options}
+    assert forced == {Intent.RECIPE_CARD.value, Intent.RECIPE_BRAINSTORM.value}
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_flag_recipe_brainstorm_lean_triggers_confirm_band():
+    """
+    Pinned session + modify_or_new_ambiguous=True, LLM intent recipe_brainstorm →
+    CONFIRM_CHOICE (flag fires from either lean).
+    """
+    with _mock_ai("recipe_brainstorm", confidence=0.9, modify_or_new_ambiguous=True):
+        result = await classify_intent(
+            _state(
+                input_text="what about a pasta dish?",
+                session_mode=SessionMode.RECIPE_EXPLORING.value,
+                session=_session_with_pin(),
+            )
+        )
+    assert result.get("next_action") == NextAction.CONFIRM_CHOICE.value
+    assert result.get("requires_review") is True
+    options = result.get("confirm_options") or []
+    assert len(options) == 2
+    forced = {o["forced_intent"] for o in options}
+    assert forced == {Intent.RECIPE_CARD.value, Intent.RECIPE_BRAINSTORM.value}
+
+
+@pytest.mark.asyncio
+async def test_no_ambiguous_flag_high_confidence_recipe_card_not_confirm():
+    """
+    modify_or_new_ambiguous=False + confidence=0.9, intent recipe_card, pinned →
+    NOT CONFIRM_CHOICE (clear tweaks still act directly; regression floor).
+    """
+    with _mock_ai("recipe_card", confidence=0.9, modify_or_new_ambiguous=False):
+        result = await classify_intent(
+            _state(
+                input_text="make it spicier",
+                session_mode=SessionMode.RECIPE_EXPLORING.value,
+                session=_session_with_pin(),
+            )
+        )
+    assert result["intent"] == Intent.RECIPE_CARD.value
     assert result.get("next_action") != NextAction.CONFIRM_CHOICE.value
 
 
@@ -1149,3 +1227,16 @@ def test_fresh_pick_after_new_brainstorm_routes_to_research_recipe_not_refine():
         session={"metadata": {"picked_recipe": None}},  # cleared by the fix above
     )
     assert route_by_intent(state) == "research_recipe"
+
+
+def test_cooking_help_with_pin_answers_not_refine():
+    """A QUESTION about the pinned recipe ('does it have yogurt?') classified as
+    cooking_help must route to cooking_help_response — it answers the question
+    and NEVER rewrites the pinned card via refine_recipe. Regression for the bug
+    where any recipe_card-adjacent follow-up on a pinned recipe silently
+    rebuilt the card instead of replying."""
+    state = _state(
+        intent=Intent.COOKING_HELP.value,
+        session={"metadata": {"picked_recipe": {"title": "Beef Stroganoff"}}},
+    )
+    assert route_by_intent(state) == "cooking_help_response"
