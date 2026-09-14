@@ -6,9 +6,15 @@ populated SessionContext and pending_proposal must survive
     model_dump(mode="json") -> model_validate(...)
 
 with all typed fields intact — not silently coerced to plain dicts.
+
+Also covers the REAL reload seam in SupabaseRepository.get_or_create_session
+(the ``raw_metadata or {}`` / ``isinstance(raw_pending, dict)`` guards) so that
+stale prod rows cannot cause a site-wide chat 500 on deploy.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 import pytest
 
@@ -20,6 +26,56 @@ from bubbly_chef.models.session import (
     SessionContext,
     SessionMode,
 )
+from bubbly_chef.repository.supabase_repo import SupabaseRepository
+
+
+# ---------------------------------------------------------------------------
+# Minimal fake Supabase client — mirrors the pattern in
+# test_pantry_deduction.py and test_issue_182_estimated_expiry.py.
+#
+# get_or_create_session uses:
+#   .table("conversation_sessions").select("*").eq(...).eq(...).execute()
+# and on the new-row path:
+#   .table("conversation_sessions").insert({...}).execute()
+# ---------------------------------------------------------------------------
+
+
+class _FakeSessionQuery:
+    """Fluent query stub that returns canned rows and swallows inserts."""
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+
+    # --- fluent builder methods ---
+
+    def select(self, *_args: Any, **_kwargs: Any) -> _FakeSessionQuery:
+        return self
+
+    def insert(self, _payload: Any) -> _FakeSessionQuery:
+        return self
+
+    def eq(self, *_args: Any, **_kwargs: Any) -> _FakeSessionQuery:
+        return self
+
+    def execute(self) -> Any:
+        return type("Result", (), {"data": self._rows})()
+
+
+class _FakeSessionClient:
+    """Single-table fake client wired to return a fixed row list."""
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+
+    def table(self, _name: str) -> _FakeSessionQuery:
+        return _FakeSessionQuery(self._rows)
+
+
+def _repo_with_rows(rows: list[dict[str, Any]]) -> SupabaseRepository:
+    """Return a SupabaseRepository backed by a fake client, no __init__ called."""
+    repo = SupabaseRepository.__new__(SupabaseRepository)
+    repo.client = _FakeSessionClient(rows)  # type: ignore[assignment]
+    return repo
 
 
 # ---------------------------------------------------------------------------
@@ -161,3 +217,197 @@ def test_stale_db_row_with_unknown_metadata_key_validates_to_default() -> None:
     session = ConversationSession.model_validate(raw_row)
     assert session.metadata.last_recipe_title == "Old Dish"
     assert session.metadata.cooking_recipe is None
+
+
+# ---------------------------------------------------------------------------
+# Reload-seam tests (#414 regression): stale/legacy DB rows routed through
+# the ACTUAL SupabaseRepository.get_or_create_session deserialization path
+# (the ``raw_metadata or {}`` / ``isinstance(raw_pending, dict)`` guards).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestGetOrCreateSessionLegacyRows:
+    """Stale production rows must survive the real repo reload path without crash."""
+
+    async def test_unknown_metadata_key_dropped_valid_key_preserved(self) -> None:
+        """metadata with an unknown/removed key alongside a valid one.
+
+        Unknown key must be dropped (extra='ignore'), valid typed field must
+        survive — reproduces the scenario where a field is renamed in code
+        but old rows in the DB still carry the old key.
+        """
+        repo = _repo_with_rows(
+            [
+                {
+                    "conversation_id": "conv-legacy-1",
+                    "active_mode": "default",
+                    "pending_proposal": None,
+                    "metadata": {
+                        "legacy_key": "some_stale_value",
+                        "last_recipe_title": "Old Dish",
+                    },
+                }
+            ]
+        )
+
+        session = await repo.get_or_create_session("u1", "conv-legacy-1")
+
+        assert isinstance(session.metadata, SessionContext)
+        assert session.metadata.last_recipe_title == "Old Dish"
+        # Unknown key must be silently dropped, not raise and not appear
+        assert not hasattr(session.metadata, "legacy_key")
+        assert session.metadata.cooking_recipe is None
+        assert session.metadata.brainstorm_ideas == []
+        assert session.pending_proposal is None
+
+    async def test_null_metadata_column_loads_to_all_defaults(self) -> None:
+        """metadata is NULL in the DB row → all SessionContext fields default."""
+        for null_value in (None, {}):
+            repo = _repo_with_rows(
+                [
+                    {
+                        "conversation_id": "conv-legacy-2",
+                        "active_mode": "default",
+                        "pending_proposal": None,
+                        "metadata": null_value,
+                    }
+                ]
+            )
+
+            session = await repo.get_or_create_session("u1", "conv-legacy-2")
+
+            assert isinstance(session.metadata, SessionContext)
+            assert session.metadata.cooking_recipe is None
+            assert session.metadata.brainstorm_ideas == []
+            assert session.metadata.recipe_constraints is None
+            assert session.metadata.last_recipe_title is None
+
+    async def test_missing_metadata_key_entirely_loads_to_defaults(self) -> None:
+        """metadata key absent from row dict entirely → defaults (row.get returns None)."""
+        repo = _repo_with_rows(
+            [
+                {
+                    "conversation_id": "conv-legacy-3",
+                    "active_mode": "default",
+                    "pending_proposal": None,
+                    # "metadata" key intentionally absent
+                }
+            ]
+        )
+
+        session = await repo.get_or_create_session("u1", "conv-legacy-3")
+
+        assert isinstance(session.metadata, SessionContext)
+        assert session.metadata.last_recipe_title is None
+
+    async def test_stale_pending_proposal_dict_with_unknown_key_coerces(self) -> None:
+        """pending_proposal dict with an unknown key → loads without crashing.
+
+        PendingProposalMemory uses extra='ignore' so stale keys are dropped.
+        Known fields must be preserved.
+        """
+        repo = _repo_with_rows(
+            [
+                {
+                    "conversation_id": "conv-legacy-4",
+                    "active_mode": "default",
+                    "pending_proposal": {
+                        "item_names": ["eggs"],
+                        "unclear_terms": [],
+                        "suggestions": {},
+                        "removed_in_v2": "stale_value",
+                    },
+                    "metadata": {},
+                }
+            ]
+        )
+
+        session = await repo.get_or_create_session("u1", "conv-legacy-4")
+
+        assert isinstance(session.pending_proposal, PendingProposalMemory)
+        assert session.pending_proposal.item_names == ["eggs"]
+        assert session.pending_proposal.unclear_terms == []
+        assert not hasattr(session.pending_proposal, "removed_in_v2")
+
+    async def test_non_dict_pending_proposal_becomes_none(self) -> None:
+        """pending_proposal that is a non-dict (string, int, list) → becomes None.
+
+        The isinstance(raw_pending, dict) guard must absorb any non-dict value
+        from a corrupt or legacy row without crashing.
+        """
+        for bad_value in ("stale_string", 42, ["list", "value"]):
+            repo = _repo_with_rows(
+                [
+                    {
+                        "conversation_id": "conv-legacy-5",
+                        "active_mode": "default",
+                        "pending_proposal": bad_value,
+                        "metadata": {},
+                    }
+                ]
+            )
+
+            session = await repo.get_or_create_session("u1", "conv-legacy-5")
+
+            assert session.pending_proposal is None, (
+                f"expected None for pending_proposal={bad_value!r}, "
+                f"got {session.pending_proposal!r}"
+            )
+
+    async def test_null_pending_proposal_becomes_none(self) -> None:
+        """NULL pending_proposal in DB row → session.pending_proposal is None."""
+        repo = _repo_with_rows(
+            [
+                {
+                    "conversation_id": "conv-legacy-6",
+                    "active_mode": "default",
+                    "pending_proposal": None,
+                    "metadata": {},
+                }
+            ]
+        )
+
+        session = await repo.get_or_create_session("u1", "conv-legacy-6")
+
+        assert session.pending_proposal is None
+
+    async def test_metadata_with_extra_field_in_cooking_recipe_sub_dict(self) -> None:
+        """A nested cooking_recipe or recipe_constraints sub-dict with an extra
+        field must be dropped by extra='ignore', not crash.
+
+        Exercises the nested model deserialization inside SessionContext.model_validate.
+        """
+        repo = _repo_with_rows(
+            [
+                {
+                    "conversation_id": "conv-legacy-7",
+                    "active_mode": "cooking",
+                    "pending_proposal": None,
+                    "metadata": {
+                        "cooking_recipe": {
+                            "id": "r-1",
+                            "title": "Pasta",
+                            "ingredients": ["pasta", "tomato"],
+                            "removed_nested_field": "stale",
+                        },
+                        "recipe_constraints": {
+                            "cuisine": "Italian",
+                            "max_time_minutes": 20,
+                            "dietary": [],
+                            "old_constraint_key": "dropped",
+                        },
+                    },
+                }
+            ]
+        )
+
+        session = await repo.get_or_create_session("u1", "conv-legacy-7")
+
+        assert isinstance(session.metadata, SessionContext)
+        assert isinstance(session.metadata.cooking_recipe, CookingRecipeSnapshot)
+        assert session.metadata.cooking_recipe.title == "Pasta"
+        assert session.metadata.cooking_recipe.ingredients == ["pasta", "tomato"]
+        assert isinstance(session.metadata.recipe_constraints, RecipeConstraints)
+        assert session.metadata.recipe_constraints.cuisine == "Italian"
+        assert session.metadata.recipe_constraints.max_time_minutes == 20
