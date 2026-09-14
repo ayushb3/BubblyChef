@@ -125,6 +125,10 @@ RECIPE_CONSTRAINTS_SYSTEM_PROMPT = (
 )
 
 BRAINSTORM_SYSTEM_PROMPT = """\
+# TODO(#395): this prompt wording encodes the "Gentle" expiry-priority level.
+# When the expiry_priority profile field is wired here, swap the expiring-items
+# rule text based on Off/Gentle/Aggressive. Off = omit the rule entirely;
+# Gentle = current text; Aggressive = "try to include expiring items in every idea".
 You are a creative cooking assistant. Given the user's available ingredients \
 and constraints, suggest 3-4 recipe ideas.
 
@@ -728,7 +732,7 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         if must_use:
             must_use_str = ", ".join(i.get("name", "") for i in must_use[:5])
             pantry_context += f"\nMust use (the user asked to cook with these): {must_use_str}"
-        pantry_context += f"\nExpiring soon (weave in where it fits, not mandatory): {expiring_str or 'none'}"
+        pantry_context += f"\nExpiring soon (weave in where it fits, not mandatory): {expiring_str or 'none'}"  # TODO(#395): suppress entirely when expiry_priority==Off; strengthen label when Aggressive
         pantry_context += f"\nOther available: {supporting_str or 'none'}"
     elif not constraints.get("must_use_ingredients"):
         # Reaching this branch means pantry_grounded is True, scored_items is
