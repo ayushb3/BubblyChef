@@ -17,7 +17,7 @@ import PantryProposalCard from '@/components/chat/PantryProposalCard'
 import ClarificationCard from '@/components/chat/ClarificationCard'
 import BrainstormOptions from '@/components/chat/BrainstormOptions'
 import CookModal from '@/components/recipes/CookModal'
-import ThemePicker from '@/components/ui/ThemePicker'
+import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
 import Chip, { type ChipTone } from '@/components/ui/Chip'
 import EmptyState from '@/components/ui/EmptyState'
 import { useChat } from '@/hooks/useChat'
@@ -400,7 +400,7 @@ function ChatSurface() {
                 New Chat
               </button>
             )}
-            <ThemePicker />
+            <ProfileHeaderButton />
           </div>
         }
       />
