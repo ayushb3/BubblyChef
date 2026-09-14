@@ -17,6 +17,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from bubbly_chef.domain.normalizer import (
+    get_unit_dimension,
     is_package_unit,
     is_piece_unit,
     normalize_food_name,
@@ -541,29 +542,79 @@ def match_ingredients(
             )
             continue
 
-        # --- Unit conflict: can't convert either side ---
+        # --- Unit conflict or soft fallback: can't convert either side ---
+        #
+        # Two distinct situations both land here after normalize_to_base_unit
+        # returns (None, None) or produces mismatched base units:
+        #
+        # 1. GENUINE DIMENSION MISMATCH — both sides have a known unit dimension
+        #    (g vs ml, g vs count, …) but those dimensions are different.
+        #    No conversion is possible even in principle; keep this as a hard
+        #    unit_conflict so the user knows something is structurally wrong.
+        #
+        # 2. UNRESOLVABLE UNIT — at least one side uses a unit not in the
+        #    recognised vocabulary (e.g. "handful" on the recipe side, or an
+        #    unregistered pantry label).  The ingredient IS matched to a pantry
+        #    row; we just can't express the quantity precisely.  Blocking the
+        #    whole flow on this is worse UX than pre-filling a best guess.
+        #    Emit "imprecise" with deduct_qty pre-filled to 1 pantry unit so
+        #    the user can edit it rather than face a blank mandatory field.
         if req_base_qty is None or pantry_base_qty is None or req_base_unit != pantry_base_unit:
-            conflict_info = {
-                "ingredient": raw_name,
-                "recipe_unit": ing_unit,
-                "pantry_unit": pantry_item.unit,
-            }
-            unit_conflicts.append(conflict_info)
-            matches.append(
-                IngredientMatch(
-                    ingredient_name=raw_name,
-                    ingredient_qty=ing_qty,
-                    ingredient_unit=ing_unit,
-                    pantry_item_id=pantry_item.id,
-                    pantry_item_name=pantry_item.name,
-                    pantry_qty_available=pantry_base_qty,
-                    deduct_qty=None,
-                    base_unit=pantry_base_unit or ing_unit,
-                    status="unit_conflict",
-                    match_type=match_type,
-                    substitution_note=note,
-                )
+            req_dim = get_unit_dimension(ing_unit)
+            pantry_dim = get_unit_dimension(pantry_item.unit)
+
+            genuine_conflict = (
+                req_dim is not None
+                and pantry_dim is not None
+                and req_dim != pantry_dim
             )
+
+            if genuine_conflict:
+                conflict_info = {
+                    "ingredient": raw_name,
+                    "recipe_unit": ing_unit,
+                    "pantry_unit": pantry_item.unit,
+                }
+                unit_conflicts.append(conflict_info)
+                matches.append(
+                    IngredientMatch(
+                        ingredient_name=raw_name,
+                        ingredient_qty=ing_qty,
+                        ingredient_unit=ing_unit,
+                        pantry_item_id=pantry_item.id,
+                        pantry_item_name=pantry_item.name,
+                        pantry_qty_available=pantry_base_qty,
+                        deduct_qty=None,
+                        base_unit=pantry_base_unit or ing_unit,
+                        status="unit_conflict",
+                        match_type=match_type,
+                        substitution_note=note,
+                    )
+                )
+            else:
+                # Soft fallback: pre-fill deduct_qty=1.0 in the pantry's own
+                # display unit as a best-guess the user can edit.  Claim 1 unit
+                # in the consumption ledger so a second recipe line for the same
+                # row sees that stock as already spoken for (conservatively).
+                fallback_deduct: float = 1.0
+                fallback_unit: str = pantry_item.unit or "item"
+                consumed[pantry_item.id] = already_claimed + fallback_deduct
+                unclaimed = max(0.0, pantry_item.quantity - already_claimed)
+                matches.append(
+                    IngredientMatch(
+                        ingredient_name=raw_name,
+                        ingredient_qty=ing_qty,
+                        ingredient_unit=ing_unit,
+                        pantry_item_id=pantry_item.id,
+                        pantry_item_name=pantry_item.name,
+                        pantry_qty_available=unclaimed,
+                        deduct_qty=fallback_deduct,
+                        base_unit=fallback_unit,
+                        status="imprecise",
+                        match_type=match_type,
+                        substitution_note=note,
+                    )
+                )
             continue
 
         # --- Quantity comparison ---
