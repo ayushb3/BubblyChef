@@ -8,7 +8,7 @@ they can be dropped directly into the existing StateGraph.
 
 import logging
 from datetime import date
-from typing import cast
+
 from uuid import uuid4
 
 from bubbly_chef.ai.manager import NoProviderAvailableError
@@ -605,18 +605,23 @@ def review_gate(state: WorkflowState) -> WorkflowState:
     # this, each pantry-update turn reads as if it started a brand new
     # conversation.
     session = state.get("session") or {}
-    pending = cast(PendingProposalMemory, session.get("pending_proposal") or {})
+    raw_pending = session.get("pending_proposal")
+    pending = (
+        PendingProposalMemory.model_validate(raw_pending)
+        if isinstance(raw_pending, dict)
+        else PendingProposalMemory()
+    )
     current_names_lower = {action.item.name.lower() for action in actions}
     current_generic_lower = {term.lower() for term in generic_pantry_terms}
 
     still_pending_items = [
         name
-        for name in pending.get("item_names", [])
+        for name in pending.item_names
         if name.lower() not in current_names_lower
     ]
     still_unclear_terms = [
         term
-        for term in pending.get("unclear_terms", [])
+        for term in pending.unclear_terms
         if term.lower() not in current_generic_lower
     ]
 

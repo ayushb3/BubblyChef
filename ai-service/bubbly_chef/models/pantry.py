@@ -2,6 +2,7 @@
 
 from datetime import UTC, date, datetime
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, computed_field
@@ -159,6 +160,7 @@ class PantryAction(BaseModel):
 class PantryProposal(BaseModel):
     """A proposal containing multiple pantry actions."""
 
+    proposal_type: Literal["pantry"] = "pantry"
     actions: list[PantryUpsertAction] = Field(
         default_factory=list, description="List of proposed pantry actions"
     )

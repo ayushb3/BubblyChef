@@ -15,7 +15,12 @@ from bubbly_chef.config import settings
 from bubbly_chef.domain.normalizer import normalize_food_name, normalize_to_base_unit
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.models.recipe import RecipeCard
-from bubbly_chef.models.session import ConversationSession, SessionMode
+from bubbly_chef.models.session import (
+    ConversationSession,
+    PendingProposalMemory,
+    SessionContext,
+    SessionMode,
+)
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 
 logger = logging.getLogger(__name__)
@@ -560,12 +565,16 @@ class SupabaseRepository:
         )
         if result.data:
             row = _as_row(result.data[0])
+            raw_pending = row.get("pending_proposal")
+            raw_metadata = row.get("metadata") or {}
             return ConversationSession(
                 conversation_id=row["conversation_id"],
                 active_mode=SessionMode(row.get("active_mode", "default")),
                 pinned_recipe_id=row.get("pinned_recipe_id"),
-                pending_proposal=row.get("pending_proposal"),
-                metadata=row.get("metadata", {}),
+                pending_proposal=PendingProposalMemory.model_validate(raw_pending)
+                if isinstance(raw_pending, dict)
+                else None,
+                metadata=SessionContext.model_validate(raw_metadata),
             )
 
         session = ConversationSession(conversation_id=conversation_id)
@@ -576,7 +585,7 @@ class SupabaseRepository:
                 "active_mode": session.active_mode.value
                 if hasattr(session.active_mode, "value")
                 else str(session.active_mode),
-                "metadata": session.metadata or {},
+                "metadata": session.metadata.model_dump(mode="json"),
             }
         ).execute()
         return session
@@ -589,8 +598,10 @@ class SupabaseRepository:
             if hasattr(session.active_mode, "value")
             else str(session.active_mode),
             "pinned_recipe_id": session.pinned_recipe_id,
-            "pending_proposal": session.pending_proposal,
-            "metadata": session.metadata or {},
+            "pending_proposal": session.pending_proposal.model_dump(mode="json")
+            if session.pending_proposal is not None
+            else None,
+            "metadata": session.metadata.model_dump(mode="json"),
         }
         self.client.table("conversation_sessions").update(data).eq(
             "conversation_id", session.conversation_id

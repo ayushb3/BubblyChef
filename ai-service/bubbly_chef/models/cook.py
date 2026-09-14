@@ -72,6 +72,7 @@ class CompoundSuggestion(BaseModel):
 class CookProposal(BaseModel):
     """Proposal returned to the user before confirming a cook action."""
 
+    proposal_type: Literal["cook"] = "cook"
     recipe_id: UUID = Field(description="ID of the recipe being cooked")
     recipe_title: str = Field(description="Human-readable recipe title")
     matches: list[IngredientMatch] = Field(
