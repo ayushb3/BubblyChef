@@ -180,6 +180,9 @@ every idea must fit that meal (don't mix breakfast and dinner)
 GROUNDED_RECIPE_SYSTEM_PROMPT = """\
 # TODO(#395): "Priority ingredients (expiring soon...)" line below encodes Gentle level.
 # Off = omit this line entirely; Aggressive = "must try to use" rather than "strong preference".
+# The reinforcing paragraph at lines 194-200 ("a strong preference, not a requirement...
+# don't wedge a sweet ingredient...") also encodes the same Gentle level and must change
+# together: Off = remove the paragraph; Aggressive = tighten to "only omit if it truly clashes".
 # This prompt generates full recipe cards (not just names) — the primary expiry-priority touch point.
 Generate a complete recipe card for "{recipe_name}".
 
