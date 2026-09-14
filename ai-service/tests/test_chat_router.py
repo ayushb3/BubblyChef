@@ -10,7 +10,13 @@ import pytest
 
 from bubbly_chef.models.base import Intent
 from bubbly_chef.models.pantry import ActionType, PantryItem, PantryUpsertAction
-from bubbly_chef.models.session import ConversationSession, SessionMode
+from bubbly_chef.models.session import (
+    ConversationSession,
+    CookingRecipeSnapshot,
+    PendingProposalMemory,
+    SessionContext,
+    SessionMode,
+)
 from bubbly_chef.workflows.chat.nodes import (
     _flatten_ingredient,
     format_cooking_recipe_context,
@@ -276,8 +282,8 @@ async def test_cooking_context_sets_cooking_mode_and_pins_recipe():
     saved = repo.update_session.await_args.args[1]
     assert saved.active_mode == SessionMode.COOKING
     assert saved.pinned_recipe_id == "recipe-42"
-    assert saved.metadata["cooking_recipe"]["title"] == "Lemon Garlic Pasta"
-    assert saved.metadata["cooking_recipe"]["ingredients"] == [
+    assert saved.metadata.cooking_recipe.title == "Lemon Garlic Pasta"
+    assert saved.metadata.cooking_recipe.ingredients == [
         "spaghetti",
         "lemon",
         "garlic",
@@ -293,7 +299,7 @@ async def test_cooking_context_repins_when_user_cooks_another_recipe():
             conversation_id="conv-1",
             active_mode=SessionMode.COOKING,
             pinned_recipe_id="recipe-1",
-            metadata={"cooking_recipe": {"id": "recipe-1", "title": "Old Dish"}},
+            metadata=SessionContext(cooking_recipe=CookingRecipeSnapshot(id="recipe-1", title="Old Dish")),
         )
     )
     state = _state(
@@ -309,7 +315,7 @@ async def test_cooking_context_repins_when_user_cooks_another_recipe():
 
     saved = repo.update_session.await_args.args[1]
     assert saved.pinned_recipe_id == "recipe-99"
-    assert saved.metadata["cooking_recipe"]["title"] == "Lemon Garlic Pasta"
+    assert saved.metadata.cooking_recipe.title == "Lemon Garlic Pasta"
 
 
 @pytest.mark.asyncio
@@ -331,7 +337,7 @@ async def test_exit_phrase_clears_cooking_mode_even_with_context():
     saved = repo.update_session.await_args.args[1]
     assert saved.active_mode == SessionMode.DEFAULT
     assert saved.pinned_recipe_id is None
-    assert saved.metadata == {}
+    assert saved.metadata == SessionContext()
 
 
 @pytest.mark.asyncio
@@ -381,9 +387,9 @@ async def test_cooking_recipe_id_resolves_server_side_and_pins():
     saved = repo.update_session.await_args.args[1]
     assert saved.active_mode == SessionMode.COOKING
     assert saved.pinned_recipe_id == "recipe-42"
-    assert saved.metadata["cooking_recipe"]["title"] == "Lemon Garlic Pasta"
+    assert saved.metadata.cooking_recipe.title == "Lemon Garlic Pasta"
     # DB rows store ingredient objects; they must arrive flattened to strings.
-    assert saved.metadata["cooking_recipe"]["ingredients"] == [
+    assert saved.metadata.cooking_recipe.ingredients == [
         "200 g spaghetti",
         "1 lemon",
         "3 cloves garlic",
@@ -408,7 +414,7 @@ async def test_thin_cooking_recipe_dict_resolves_server_side():
     repo.get_recipe.assert_awaited_once_with("user-1", "recipe-42")
     saved = repo.update_session.await_args.args[1]
     assert saved.pinned_recipe_id == "recipe-42"
-    assert saved.metadata["cooking_recipe"]["title"] == "Lemon Garlic Pasta"
+    assert saved.metadata.cooking_recipe.title == "Lemon Garlic Pasta"
 
 
 @pytest.mark.asyncio
@@ -451,7 +457,7 @@ async def test_legacy_full_dict_does_not_call_get_recipe():
     repo.get_recipe.assert_not_awaited()
     saved = repo.update_session.await_args.args[1]
     assert saved.pinned_recipe_id == "recipe-42"
-    assert saved.metadata["cooking_recipe"]["ingredients"] == [
+    assert saved.metadata.cooking_recipe.ingredients == [
         "spaghetti",
         "lemon",
         "garlic",
@@ -697,11 +703,9 @@ async def test_pending_proposal_populated_when_review_required():
 
     saved = repo.update_session.await_args.args[1]
     assert saved.active_mode == SessionMode.INGESTING
-    assert saved.pending_proposal == {
-        "item_names": ["Apples", "Eggs"],
-        "unclear_terms": [],
-        "suggestions": {},
-    }
+    assert saved.pending_proposal == PendingProposalMemory(
+        item_names=["Apples", "Eggs"],
+    )
 
 
 @pytest.mark.asyncio
@@ -712,7 +716,7 @@ async def test_pending_proposal_accumulates_and_dedupes_across_turns():
         return_value=ConversationSession(
             conversation_id="conv-1",
             active_mode=SessionMode.INGESTING,
-            pending_proposal={"item_names": ["Apples", "Eggs"], "unclear_terms": []},
+            pending_proposal=PendingProposalMemory(item_names=["Apples", "Eggs"]),
         )
     )
     state = _state(
@@ -729,11 +733,10 @@ async def test_pending_proposal_accumulates_and_dedupes_across_turns():
         await update_session_node(state)
 
     saved = repo.update_session.await_args.args[1]
-    assert saved.pending_proposal == {
-        "item_names": ["Apples", "Eggs"],
-        "unclear_terms": ["veggies", "dairy things"],
-        "suggestions": {},
-    }
+    assert saved.pending_proposal == PendingProposalMemory(
+        item_names=["Apples", "Eggs"],
+        unclear_terms=["veggies", "dairy things"],
+    )
 
 
 @pytest.mark.asyncio
@@ -743,7 +746,7 @@ async def test_pending_proposal_cleared_once_review_no_longer_required():
         return_value=ConversationSession(
             conversation_id="conv-1",
             active_mode=SessionMode.INGESTING,
-            pending_proposal={"item_names": ["Apples"], "unclear_terms": []},
+            pending_proposal=PendingProposalMemory(item_names=["Apples"]),
         )
     )
     state = _state(
