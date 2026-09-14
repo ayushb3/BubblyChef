@@ -1253,3 +1253,138 @@ class TestSizeAdjectiveUnits:
         # These are the adjectives the issue references
         for adj in ("medium", "large", "small", "extra-large", "xl"):
             assert adj in SIZE_ADJECTIVE_UNITS, f"Expected {adj!r} in SIZE_ADJECTIVE_UNITS"
+
+
+# ---------------------------------------------------------------------------
+# Table-driven compound-suggestion tests (#424)
+# ---------------------------------------------------------------------------
+# Each row exercises one outcome for the cream ← butter+milk+flour family of
+# substitutions.  Parameters mirror the six acceptance criteria in issue #424:
+# the suggestion must survive the round-trip typed (not as prose), must only
+# appear when ALL components are present, must be dropped on low confidence,
+# and must never produce a deduction or an IngredientMatch.
+#
+# Row shape: (id, pantry_names, components, confidence, expect_suggestion)
+# "id" is a human-readable label shown in pytest output.
+# ---------------------------------------------------------------------------
+
+_COMPOUND_TABLE = [
+    pytest.param(
+        # All three components present → suggestion survives typed end-to-end.
+        ["butter", "milk", "flour"],
+        ["butter", "milk", "flour"],
+        0.85,
+        True,
+        id="all_components_present",
+    ),
+    pytest.param(
+        # flour absent → whole suggestion dropped.
+        ["butter", "milk"],
+        ["butter", "milk", "flour"],
+        0.85,
+        False,
+        id="one_component_absent",
+    ),
+    pytest.param(
+        # All present but confidence is too low → dropped.
+        ["butter", "milk", "flour"],
+        ["butter", "milk", "flour"],
+        0.4,
+        False,
+        id="low_confidence",
+    ),
+    pytest.param(
+        # Only two components (butter+milk) — valid subset — must also reach the proposal.
+        ["butter", "milk"],
+        ["butter", "milk"],
+        0.9,
+        True,
+        id="two_component_subset",
+    ),
+]
+
+
+class TestCompoundSuggestionTableDriven:
+    """Table-driven coverage for issue #424 — compound-sub schema round-trip.
+
+    Validates that a compound suggestion (cream ← butter + milk + flour) survives
+    the full typed pipeline: _LLMIngredientMatch → resolve_aliases_with_llm →
+    match_ingredients_with_llm → CookProposal.compound_suggestions[].
+
+    Deduction invariant is checked in every row: component items must never
+    appear in proposal.matches for the missing ingredient.
+    """
+
+    @staticmethod
+    def _make_pantry(*names: str) -> list[PantryItem]:
+        """Create pantry items for the given names (100 g each)."""
+        return [_make_item(n, 100.0, "g", qty_base=100.0, unit_base="g") for n in names]
+
+    @staticmethod
+    def _ai_for_compound(
+        ingredient_name: str,
+        components: list[str],
+        confidence: float,
+    ) -> MagicMock:
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name=ingredient_name,
+                        best_match=None,
+                        match_type="none",
+                        confidence=confidence,
+                        compound_components=components,
+                        compound_note="Melt butter, whisk in flour, stir in milk until thickened",
+                    )
+                ]
+            )
+        )
+        return ai
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "pantry_names, components, confidence, expect_suggestion",
+        _COMPOUND_TABLE,
+    )
+    async def test_compound_round_trip(
+        self,
+        pantry_names: list[str],
+        components: list[str],
+        confidence: float,
+        expect_suggestion: bool,
+    ) -> None:
+        """Compound suggestion for heavy cream survives typed round-trip or is correctly dropped."""
+        _alias_cache.clear()
+
+        pantry = self._make_pantry(*pantry_names)
+        ingredients = [{"name": "heavy cream", "quantity": 200.0, "unit": "ml"}]
+        ai = self._ai_for_compound("heavy cream", components, confidence)
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        # Ingredient stays in missing regardless of suggestion outcome.
+        assert "heavy cream" in proposal.missing
+
+        # No IngredientMatch is ever created for a missing ingredient.
+        assert not any(m.ingredient_name == "heavy cream" for m in proposal.matches)
+
+        if expect_suggestion:
+            assert len(proposal.compound_suggestions) == 1
+            sug = proposal.compound_suggestions[0]
+            # Typed fields are present and correct (not raw prose).
+            assert sug.ingredient_name == "heavy cream"
+            # Only components that exist in the pantry appear.
+            assert set(sug.components) == set(pantry_names)
+            assert sug.note  # non-empty instruction
+            # Deduction invariant: no component item appears as a deduction.
+            deducted_names = {m.pantry_item_name for m in proposal.matches if m.deduct_qty}
+            for component in sug.components:
+                assert component not in deducted_names, (
+                    f"Component '{component}' must not be deducted for a compound suggestion"
+                )
+        else:
+            assert proposal.compound_suggestions == []
