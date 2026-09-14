@@ -11,6 +11,7 @@ import RecipeEditModal from './RecipeEditModal'
 import RecipeDeleteConfirm from './RecipeDeleteConfirm'
 import RecipeImportModal from './RecipeImportModal'
 import CookModal from './CookModal'
+import GuidedCookFlow from './GuidedCookFlow'
 import { springs, heartPopVariants } from '@/lib/motion'
 import Chip from '@/components/ui/Chip'
 import { tagToTone } from '@/lib/tag-tone'
@@ -72,6 +73,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [cookOpen, setCookOpen] = useState(false)
+  const [guidedCookOpen, setGuidedCookOpen] = useState(false)
   const [importDraft, setImportDraft] = useState<Partial<Recipe> | null>(null)
   const [mutating, setMutating] = useState(false)
   // Local optimistic overrides for favorite state — avoids full re-fetch on toggle
@@ -486,14 +488,15 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   </div>
                   {/* Action buttons — Cook on left, Heart + menu on right */}
                   <div className="flex items-center justify-between">
-                    {/* Cook it — primary-tinted to signal the main action */}
+                    {/* Cook it — opens guided step-by-step cooking flow (#263) */}
                     <button
-                      onClick={() => setCookOpen(true)}
+                      onClick={() => setGuidedCookOpen(true)}
                       disabled={mutating}
                       className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                       style={{ background: 'color-mix(in srgb, var(--color-primary) 18%, var(--color-bg))', border: '1.5px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border))' }}
                       aria-label="Cook this recipe"
                       title="Cook it"
+                      data-testid="recipe-book-cook-button"
                     >
                       🍳
                     </button>
@@ -613,14 +616,15 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 <div className="flex items-center gap-2 mt-2">
                   {/* Action buttons — Cook on left, Heart + menu on right */}
                   <div className="flex items-center justify-between w-full">
-                    {/* Cook it — primary-tinted to signal the main action */}
+                    {/* Cook it — opens guided step-by-step cooking flow (#263) */}
                     <button
-                      onClick={() => setCookOpen(true)}
+                      onClick={() => setGuidedCookOpen(true)}
                       disabled={mutating}
                       className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                       style={{ background: 'color-mix(in srgb, var(--color-primary) 18%, var(--color-bg))', border: '1.5px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border))' }}
                       aria-label="Cook this recipe"
                       title="Cook it"
+                      data-testid="recipe-book-cook-button"
                     >
                       🍳
                     </button>
@@ -833,7 +837,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         />
       )}
 
-      {/* Cook modal */}
+      {/* Cook modal — pantry deduction flow (unchanged) */}
       {cookOpen && selectedRecipe && (
         <CookModal
           recipeId={selectedRecipe.id}
@@ -842,6 +846,14 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
           onCooked={() => {
             onMutate?.()
           }}
+        />
+      )}
+
+      {/* Guided cook flow — step-by-step Variant E flow (#263) */}
+      {guidedCookOpen && selectedRecipe && (
+        <GuidedCookFlow
+          recipe={selectedRecipe}
+          onExit={() => setGuidedCookOpen(false)}
         />
       )}
     </div>
