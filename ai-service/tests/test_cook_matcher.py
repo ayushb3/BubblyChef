@@ -536,10 +536,12 @@ class TestSalmonAvocadoToast:
     """End-to-end shape of the recipe that motivated all of this.
 
     Before: 7 of 9 matched ingredients were unit_conflict and 2 were deductible.
-    After: 6 are deductible, "1 handful spinach" is still refused on purpose — a
-    handful has no conventional size — and the two piece-against-package pairs
-    (4 slices of a loaf, 8 leaves of a bunch) are satisfied without a deduction.
-    See #222 and tests/test_issue_222_piece_vs_package.py.
+    After (#209): "1 handful spinach" no longer blocks the whole flow as a
+    unit_conflict — it becomes a soft imprecise fallback (matched, but nothing
+    auto-deducted, deduct_qty=None), and the two piece-against-package pairs
+    (4 slices of a loaf, 8 leaves of a bunch) are still satisfied without a
+    precise deduction. So 6 ingredients are cleanly deductible and 3 are
+    non-blocking imprecise. See #222 and tests/test_issue_222_piece_vs_package.py.
     """
 
     def test_most_of_the_recipe_becomes_deductible(self) -> None:
@@ -570,6 +572,8 @@ class TestSalmonAvocadoToast:
 
         assert proposal.missing == []
         deductible = [m for m in proposal.matches if m.deduct_qty is not None]
+        # 6 clean exact-deductions; the soft-fallback (baby spinach) and the two
+        # piece-vs-package pairs (bread, basil) deduct nothing.
         assert len(deductible) == 6
 
         statuses = {m.ingredient_name: m.status for m in proposal.matches}
@@ -583,9 +587,13 @@ class TestSalmonAvocadoToast:
         assert statuses["bread"] == "imprecise"
         assert statuses["basil"] == "imprecise"
 
-        # The one deliberate holdout.
-        assert [c["ingredient"] for c in proposal.unit_conflicts] == ["baby spinach"]
-        assert statuses["baby spinach"] == "unit_conflict"
+        # "1 handful" has no recognised unit dimension; "1 bag" is count.
+        # One side unresolvable → soft fallback (imprecise, non-blocking, nothing
+        # auto-deducted), not a hard blocking conflict (#209).
+        assert proposal.unit_conflicts == []
+        assert statuses["baby spinach"] == "imprecise"
+        baby_spinach = next(m for m in proposal.matches if m.ingredient_name == "baby spinach")
+        assert baby_spinach.deduct_qty is None
 
 
 class TestPieceUnitParsing:
@@ -1174,6 +1182,37 @@ class TestMissingNotes:
         assert "heavy cream" in proposal.missing
         assert proposal.missing_notes == {}
 
+    @pytest.mark.asyncio
+    async def test_none_match_without_note_does_not_add_spurious_entry(self) -> None:
+        """match_type='none' with no substitution_note must not put anything in missing_notes.
+
+        The model sometimes returns a none match with no note (e.g. it truly has no
+        idea). The missing_notes dict must stay sparse — no empty-string or None entry
+        for that ingredient (#425).
+        """
+        pantry = [_make_item("pasta", 500, "g", 500, "g")]
+        manager = self._manager([
+            _LLMIngredientMatch(
+                ingredient_name="truffle oil",
+                best_match=None,
+                match_type="none",
+                confidence=0.9,
+                substitution_note=None,  # explicitly no note
+            )
+        ])
+
+        proposal = await match_ingredients_with_llm(
+            recipe_id=RECIPE_ID,
+            recipe_title=RECIPE_TITLE,
+            recipe_ingredients=["1 tbsp truffle oil"],
+            pantry_items=pantry,
+            ai_manager=manager,
+        )
+
+        assert "truffle oil" in proposal.missing
+        # Sparse: no entry at all, not even an empty string.
+        assert "truffle oil" not in proposal.missing_notes
+
 
 class TestSizeAdjectiveUnits:
     """Size adjectives in the unit field must not produce spurious unit_conflicts (#223).
@@ -1253,3 +1292,446 @@ class TestSizeAdjectiveUnits:
         # These are the adjectives the issue references
         for adj in ("medium", "large", "small", "extra-large", "xl"):
             assert adj in SIZE_ADJECTIVE_UNITS, f"Expected {adj!r} in SIZE_ADJECTIVE_UNITS"
+
+
+# ---------------------------------------------------------------------------
+# Table-driven test: assume-seasonings acceptance criterion (#426)
+# ---------------------------------------------------------------------------
+# AC: a recipe of {tracked item + salt + pepper} → one deductible row +
+#     assumed basics, no shortfalls.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "tracked_name, tracked_qty, tracked_unit, tracked_qty_base, tracked_unit_base, recipe_lines, expected_deductible_count",
+    [
+        # Chicken + salt: one deductible (chicken), one assumed (salt)
+        (
+            "chicken",
+            500.0,
+            "g",
+            500.0,
+            "g",
+            [
+                {"name": "chicken", "quantity": 200.0, "unit": "g"},
+                {"name": "salt", "quantity": 1.0, "unit": "tsp"},
+            ],
+            1,
+        ),
+        # Pasta + pepper: one deductible (pasta), one assumed (pepper)
+        (
+            "pasta",
+            400.0,
+            "g",
+            400.0,
+            "g",
+            [
+                {"name": "pasta", "quantity": 200.0, "unit": "g"},
+                {"name": "black pepper", "quantity": 0.5, "unit": "tsp"},
+            ],
+            1,
+        ),
+        # Eggs + salt + pepper: one deductible (eggs), two assumed (salt + pepper)
+        (
+            "eggs",
+            6.0,
+            "count",
+            6.0,
+            "count",
+            [
+                {"name": "eggs", "quantity": 3.0, "unit": "count"},
+                {"name": "salt", "quantity": 0.5, "unit": "tsp"},
+                {"name": "black pepper", "quantity": 0.25, "unit": "tsp"},
+            ],
+            1,
+        ),
+        # Beef + salt + pepper + olive oil: one deductible, three assumed
+        (
+            "beef",
+            600.0,
+            "g",
+            600.0,
+            "g",
+            [
+                {"name": "beef", "quantity": 300.0, "unit": "g"},
+                {"name": "salt", "quantity": 1.0, "unit": "tsp"},
+                {"name": "pepper", "quantity": 0.5, "unit": "tsp"},
+                {"name": "olive oil", "quantity": 1.0, "unit": "tbsp"},
+            ],
+            1,
+        ),
+    ],
+    ids=[
+        "chicken_plus_salt",
+        "pasta_plus_black_pepper",
+        "eggs_plus_salt_and_pepper",
+        "beef_plus_salt_pepper_oil",
+    ],
+)
+class TestAssumedStaplesTableDriven:
+    """Table-driven AC test for #426: tracked item + seasonings → no shortfalls.
+
+    For each row:
+    - ``missing`` must be empty (no shortfall report)
+    - exactly ``expected_deductible_count`` matches have a non-None ``deduct_qty``
+    - all seasoning ingredients land in ``assumed`` status, not ``missing``
+    - no match has ``status == 'shortfall'``
+    """
+
+    def test_no_shortfalls_and_correct_deductible_count(
+        self,
+        tracked_name: str,
+        tracked_qty: float,
+        tracked_unit: str,
+        tracked_qty_base: float,
+        tracked_unit_base: str,
+        recipe_lines: list[dict],
+        expected_deductible_count: int,
+    ) -> None:
+        pantry = [
+            _make_item(
+                tracked_name,
+                tracked_qty,
+                tracked_unit,
+                qty_base=tracked_qty_base,
+                unit_base=tracked_unit_base,
+            )
+        ]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, recipe_lines, pantry)
+
+        # AC: no missing ingredients
+        assert proposal.missing == [], (
+            f"Expected no missing ingredients, got: {proposal.missing}"
+        )
+
+        # AC: no shortfalls
+        shortfall_matches = [m for m in proposal.matches if m.status == "shortfall"]
+        assert shortfall_matches == [], (
+            f"Expected no shortfalls, got: {[m.ingredient_name for m in shortfall_matches]}"
+        )
+
+        # AC: exactly one deductible row (the tracked pantry item)
+        deductible = [m for m in proposal.matches if m.deduct_qty is not None]
+        assert len(deductible) == expected_deductible_count, (
+            f"Expected {expected_deductible_count} deductible row(s), "
+            f"got {len(deductible)}: {[m.ingredient_name for m in deductible]}"
+        )
+
+        # AC: assumed basics (the seasonings) are collapsed — status=assumed, never missing
+        assumed = [m for m in proposal.matches if m.status == "assumed"]
+        seasoning_names = {
+            ing["name"]
+            for ing in recipe_lines
+            if ing["name"] not in (tracked_name,)
+        }
+        for name in seasoning_names:
+            assert any(m.ingredient_name == name for m in assumed), (
+                f"Expected {name!r} to have status=assumed, "
+                f"but it was not in assumed matches: {[m.ingredient_name for m in assumed]}"
+            )
+# Table-driven compound-suggestion tests (#424)
+# ---------------------------------------------------------------------------
+# Each row exercises one outcome for the cream ← butter+milk+flour family of
+# substitutions.  Parameters mirror the six acceptance criteria in issue #424:
+# the suggestion must survive the round-trip typed (not as prose), must only
+# appear when ALL components are present, must be dropped on low confidence,
+# and must never produce a deduction or an IngredientMatch.
+#
+# Row shape: (id, pantry_names, components, confidence, expect_suggestion)
+# "id" is a human-readable label shown in pytest output.
+# ---------------------------------------------------------------------------
+
+_COMPOUND_TABLE = [
+    pytest.param(
+        # All three components present → suggestion survives typed end-to-end.
+        ["butter", "milk", "flour"],
+        ["butter", "milk", "flour"],
+        0.85,
+        True,
+        id="all_components_present",
+    ),
+    pytest.param(
+        # flour absent → whole suggestion dropped.
+        ["butter", "milk"],
+        ["butter", "milk", "flour"],
+        0.85,
+        False,
+        id="one_component_absent",
+    ),
+    pytest.param(
+        # All present but confidence is too low → dropped.
+        ["butter", "milk", "flour"],
+        ["butter", "milk", "flour"],
+        0.4,
+        False,
+        id="low_confidence",
+    ),
+    pytest.param(
+        # Only two components (butter+milk) — valid subset — must also reach the proposal.
+        ["butter", "milk"],
+        ["butter", "milk"],
+        0.9,
+        True,
+        id="two_component_subset",
+    ),
+]
+
+
+class TestCompoundSuggestionTableDriven:
+    """Table-driven coverage for issue #424 — compound-sub schema round-trip.
+
+    Validates that a compound suggestion (cream ← butter + milk + flour) survives
+    the full typed pipeline: _LLMIngredientMatch → resolve_aliases_with_llm →
+    match_ingredients_with_llm → CookProposal.compound_suggestions[].
+
+    Deduction invariant is checked in every row: component items must never
+    appear in proposal.matches for the missing ingredient.
+    """
+
+    @staticmethod
+    def _make_pantry(*names: str) -> list[PantryItem]:
+        """Create pantry items for the given names (100 g each)."""
+        return [_make_item(n, 100.0, "g", qty_base=100.0, unit_base="g") for n in names]
+
+    @staticmethod
+    def _ai_for_compound(
+        ingredient_name: str,
+        components: list[str],
+        confidence: float,
+    ) -> MagicMock:
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name=ingredient_name,
+                        best_match=None,
+                        match_type="none",
+                        confidence=confidence,
+                        compound_components=components,
+                        compound_note="Melt butter, whisk in flour, stir in milk until thickened",
+                    )
+                ]
+            )
+        )
+        return ai
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "pantry_names, components, confidence, expect_suggestion",
+        _COMPOUND_TABLE,
+    )
+    async def test_compound_round_trip(
+        self,
+        pantry_names: list[str],
+        components: list[str],
+        confidence: float,
+        expect_suggestion: bool,
+    ) -> None:
+        """Compound suggestion for heavy cream survives typed round-trip or is correctly dropped."""
+        _alias_cache.clear()
+
+        pantry = self._make_pantry(*pantry_names)
+        ingredients = [{"name": "heavy cream", "quantity": 200.0, "unit": "ml"}]
+        ai = self._ai_for_compound("heavy cream", components, confidence)
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        # Ingredient stays in missing regardless of suggestion outcome.
+        assert "heavy cream" in proposal.missing
+
+        # No IngredientMatch is ever created for a missing ingredient.
+        assert not any(m.ingredient_name == "heavy cream" for m in proposal.matches)
+
+        if expect_suggestion:
+            assert len(proposal.compound_suggestions) == 1
+            sug = proposal.compound_suggestions[0]
+            # Typed fields are present and correct (not raw prose).
+            assert sug.ingredient_name == "heavy cream"
+            # Only components that exist in the pantry appear.
+            assert set(sug.components) == set(pantry_names)
+            assert sug.note  # non-empty instruction
+            # Deduction invariant: no component item appears as a deduction.
+            deducted_names = {m.pantry_item_name for m in proposal.matches if m.deduct_qty}
+            for component in sug.components:
+                assert component not in deducted_names, (
+                    f"Component '{component}' must not be deducted for a compound suggestion"
+                )
+        else:
+            assert proposal.compound_suggestions == []
+class TestUnitConflictFallback:
+    """Issue #209 — soft fallback replaces blocking unit_conflict for unresolvable units.
+
+    Rule:
+    - Genuine dimension mismatch (g vs count, g vs ml, …): stay unit_conflict.
+    - One or both sides have an unregistered/unresolvable unit: emit imprecise.
+      The ingredient IS matched, but the quantity can't be expressed in a shared
+      unit, so nothing is auto-deducted: deduct_qty is None and the line makes no
+      reservation in the consumption ledger. `imprecise` is a never-auto-deduct
+      status across the stack — pre-filling a deduction here would be silently
+      applied by confirm (against the "left as it is" UI copy) and, worse, would
+      be read by deduct_pantry_item as a BASE-unit quantity while expressed in the
+      display unit, corrupting stock when display != base.
+    """
+
+    # ------------------------------------------------------------------
+    # Soft fallback cases (previously unit_conflict, now imprecise)
+    # ------------------------------------------------------------------
+
+    def test_handful_against_bag_is_soft_fallback(self) -> None:
+        """'1 handful' is not a registered unit → soft fallback, not hard conflict."""
+        pantry = [_make_item("baby spinach", 1.0, "bag", qty_base=1.0, unit_base="count")]
+        ingredients = [{"name": "baby spinach", "quantity": 1.0, "unit": "handful"}]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert proposal.unit_conflicts == []
+        assert len(proposal.matches) == 1
+        match = proposal.matches[0]
+        assert match.status == "imprecise"
+        # Soft fallback does not invent a deduction — never-auto-deduct status.
+        assert match.deduct_qty is None
+
+    def test_bunch_pantry_unit_uses_display_unit_as_base(self) -> None:
+        """Pantry in bunches, recipe in sprigs; sprig is piece and bunch is package.
+        This hits the existing piece-vs-package path (not the new soft fallback),
+        so status is imprecise and no deduction is made."""
+        pantry = [_make_item("parsley", 1.0, "bunch")]
+        ingredients = [{"name": "parsley", "quantity": 5.0, "unit": "sprigs"}]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        # sprig (piece) against bunch (package) → existing piece-vs-package imprecise
+        assert proposal.unit_conflicts == []
+        assert len(proposal.matches) == 1
+        assert proposal.matches[0].status == "imprecise"
+        # piece-vs-package path does not pre-fill a deduction
+        assert proposal.matches[0].deduct_qty is None
+
+    def test_loaf_pantry_with_unresolvable_recipe_unit(self) -> None:
+        """Pantry is 1 loaf of bread; recipe asks for 2 slices.
+        This goes through piece-vs-package (slice→piece, loaf→package), giving
+        imprecise — confirmed the old unit_conflict does NOT fire here."""
+        pantry = [_make_item("bread", 1.0, "loaf")]
+        ingredients = [{"name": "bread", "quantity": 2.0, "unit": "slices"}]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert proposal.unit_conflicts == []
+        match = proposal.matches[0]
+        assert match.status == "imprecise"
+
+    def test_unregistered_pantry_unit_with_volume_recipe_unit(self) -> None:
+        """Pantry uses 'bag' (count dimension); recipe uses 'cup' (ml dimension).
+        'bag' → count, 'cup' → ml. Both sides' dimensions are known but differ
+        → this IS a genuine mismatch; expect unit_conflict (not soft fallback).
+        """
+        pantry = [_make_item("flour", 2.0, "bag", qty_base=2.0, unit_base="count")]
+        ingredients = [{"name": "flour", "quantity": 1.0, "unit": "cup"}]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        # count vs ml → genuine dimension mismatch → unit_conflict
+        assert len(proposal.unit_conflicts) == 1
+        assert proposal.unit_conflicts[0]["ingredient"] == "flour"
+        assert proposal.matches[0].status == "unit_conflict"
+
+    def test_soft_fallback_reports_pantry_base_unit_not_a_guess(self) -> None:
+        """The soft-fallback line carries the pantry row's base unit and no
+        pre-filled deduction — if the user later fills one in, confirm reads it
+        in the same unit deduct_pantry_item expects (base), so stock stays sane
+        even when display != base."""
+        pantry = [_make_item("fresh herbs", 1.0, "bunch")]
+        ingredients = [{"name": "fresh herbs", "quantity": 2.0, "unit": "handful"}]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert proposal.unit_conflicts == []
+        match = proposal.matches[0]
+        assert match.status == "imprecise"
+        assert match.deduct_qty is None
+        # base_unit is the pantry row's base unit, not a fabricated display guess.
+        assert match.base_unit is not None
+
+    def test_soft_fallback_makes_no_ledger_reservation(self) -> None:
+        """Two soft-fallback lines against the same pantry row: because an
+        imprecise line claims nothing, the second line still sees the full stock
+        (no phantom reservation from the first — the old code wrongly claimed 1)."""
+        pantry = [_make_item("mixed greens", 2.0, "bag", qty_base=2.0, unit_base="count")]
+        ingredients = [
+            {"name": "mixed greens", "quantity": 1.0, "unit": "handful"},
+            {"name": "mixed greens", "quantity": 1.0, "unit": "handful"},
+        ]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert proposal.unit_conflicts == []
+        # Both go through soft fallback.
+        assert all(m.status == "imprecise" for m in proposal.matches)
+        assert all(m.deduct_qty is None for m in proposal.matches)
+        # Second line still sees all 2 bags — an imprecise line reserves nothing.
+        assert proposal.matches[1].pantry_qty_available == pytest.approx(2.0)
+
+    def test_soft_fallback_never_emits_deduction_when_display_differs_from_base(self) -> None:
+        """Stock-corruption regression (#209).
+
+        The old fallback pre-filled deduct_qty=1.0 in the pantry's *display* unit
+        (e.g. "1 dozen", "1 kg"), but deduct_pantry_item reads deduct_qty as a
+        *base*-unit quantity. When display != base, confirm would then subtract 1
+        base unit (1 egg, 1 g) while the UI said "left as it is" — silently wrong.
+        The fix emits no deduction at all, so no display/base mixup is possible.
+
+        Here the pantry row is 1 dozen eggs (display "dozen", base "count" = 12),
+        matched against an unresolvable recipe unit. The fallback must not carry a
+        positive deduct_qty in either unit interpretation."""
+        pantry = [_make_item("eggs", 1.0, "dozen", qty_base=12.0, unit_base="count")]
+        ingredients = [{"name": "eggs", "quantity": 1.0, "unit": "handful"}]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert proposal.unit_conflicts == []
+        match = proposal.matches[0]
+        assert match.status == "imprecise"
+        # No deduction → confirm can't misread a display-unit qty as a base qty.
+        assert match.deduct_qty is None
+
+    # ------------------------------------------------------------------
+    # Genuine conflict cases (must remain unit_conflict)
+    # ------------------------------------------------------------------
+
+    def test_mass_vs_count_stays_unit_conflict(self) -> None:
+        """Sugar measured in grams vs pantry measured in items is a real mismatch."""
+        pantry = [_make_item("sugar", 1.0, "item", qty_base=1.0, unit_base="count")]
+        ingredients = [{"name": "sugar", "quantity": 200.0, "unit": "g"}]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert len(proposal.unit_conflicts) == 1
+        assert proposal.unit_conflicts[0]["ingredient"] == "sugar"
+        assert proposal.matches[0].status == "unit_conflict"
+        assert proposal.matches[0].deduct_qty is None
+
+    def test_volume_vs_count_stays_unit_conflict(self) -> None:
+        """Recipe asks for cups of something the pantry counts in items."""
+        pantry = [_make_item("stock", 2.0, "item", qty_base=2.0, unit_base="count")]
+        ingredients = [{"name": "stock", "quantity": 1.0, "unit": "cup"}]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        assert len(proposal.unit_conflicts) == 1
+        assert proposal.matches[0].status == "unit_conflict"
+
+    def test_matcha_tbsp_vs_gram_stays_unit_conflict(self) -> None:
+        """No density for matcha → tbsp cannot convert to g → genuine conflict."""
+        pantry = [_make_item("matcha", 30.0, "g", qty_base=30.0, unit_base="g")]
+        ingredients = [{"name": "matcha", "quantity": 1.0, "unit": "tbsp"}]
+
+        proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
+
+        # tbsp is ml-dimension, g is mass-dimension; no density to bridge → conflict.
+        assert len(proposal.unit_conflicts) == 1
+        assert proposal.matches[0].status == "unit_conflict"
+        assert proposal.matches[0].deduct_qty is None

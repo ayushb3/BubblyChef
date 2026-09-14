@@ -124,6 +124,20 @@ export interface CompoundSuggestion {
   note: string
 }
 
+/**
+ * An ingredient match that is backed by an expired pantry row.
+ * Returned inside CookProposal.expired_items — never empty unless all
+ * matched ingredients come from fresh rows.
+ */
+export interface ExpiredMatchedItem {
+  /** Ingredient name from the recipe */
+  ingredient_name: string
+  /** Name of the expired pantry row */
+  pantry_item_name: string
+  /** How many days past expiry (always >= 1) */
+  days_expired: number
+}
+
 export interface CookProposal {
   recipe_id: string
   recipe_title: string
@@ -134,6 +148,12 @@ export interface CookProposal {
   compound_suggestions?: CompoundSuggestion[]
   /** Sparse map of ingredient name → short explanation for why no pantry substitute exists. */
   missing_notes?: Record<string, string>
+  /**
+   * Matched ingredients whose backing pantry row is expired.
+   * Non-blocking — show a warning banner; user can still proceed.
+   * Absent / empty array when all matches come from fresh rows.
+   */
+  expired_items?: ExpiredMatchedItem[]
 }
 
 export interface DeductionItem {
