@@ -1,0 +1,42 @@
+# Code owners — the human gate for the agent loop.
+#
+# Agents open PRs as a bot identity; GitHub requires a code owner's review on any
+# PR touching a path below, and branch protection ("Require review from Code
+# Owners") makes that mandatory. Everything NOT listed here is auto-mergeable once
+# required checks pass. See docs/plans/2026-09-17-autonomous-agent-loop.md.
+#
+# The rule of thumb: a path is here when being wrong is expensive or hard to undo.
+# A bad deploy rolls back in minutes; a migration, a leaked auth boundary, or a
+# disabled gate does not.
+
+# Database schema — irreversible. A rollback redeploys code, not data.
+/supabase/migrations/                       @ayushb3
+/supabase/                                  @ayushb3
+
+# Auth boundary — frontend middleware, route guards, and JWT validation.
+/nextjs/src/middleware.ts                   @ayushb3
+/nextjs/src/lib/supabase/                   @ayushb3
+/nextjs/src/app/login/                      @ayushb3
+/nextjs/src/lib/response-helpers.ts         @ayushb3
+/ai-service/bubbly_chef/api/auth.py         @ayushb3
+
+# LLM prompts — tests stay green while output quality silently changes, so this is
+# the one place where a passing suite is weak evidence. (Created by step 2.)
+/ai-service/bubbly_chef/prompts/            @ayushb3
+
+# CI, the gates themselves, and agent configuration. An agent that can edit its own
+# gates can remove them.
+/.github/                                   @ayushb3
+/.claude/settings.json                      @ayushb3
+/.claude/hooks/                             @ayushb3
+/.claude/agents/                            @ayushb3
+/scripts/agent-gates/                       @ayushb3
+
+# Dependencies — supply chain.
+/nextjs/package.json                        @ayushb3
+/nextjs/package-lock.json                   @ayushb3
+/ai-service/pyproject.toml                  @ayushb3
+
+# Deploy configuration.
+/ai-service/railway.json                    @ayushb3
+/ai-service/Dockerfile                      @ayushb3
