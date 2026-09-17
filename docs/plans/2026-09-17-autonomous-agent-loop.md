@@ -25,7 +25,8 @@ migrations, auth, prompts, CI, the agents' own hooks, and dependencies.
   not by reading it.
 - **Nothing makes an agent run the app.** `nextjs/e2e/` exists but isn't in CI
   (issue #352, *full Playwright regression suite* — never wired up; issue #345,
-  *cook-confirm + receipt specs fail on a production server* — masked by dev mode).
+  *cook-confirm + receipt stubbed specs fail on a production server* — masked by
+  dev-server partial hydration).
 
 ## Research basis (summary)
 
@@ -124,6 +125,8 @@ pick issue (ready-for-agent, by priority)
   (Sonnet for small auto-tier diffs) only if usage becomes a constraint.
 - The Action also answers `@claude` mentions (useful from GitHub mobile). It only
   responds to accounts with write access.
+- **Label-triggered implementation** (the Action running the loop when an issue gets
+  `ready-for-agent`) comes later, at step 8, alongside cloud routines.
 - The local `pr-review-gate.sh` hook is **deleted**. GitHub is the gate.
 
 ### Trust ramp
@@ -211,8 +214,8 @@ would revert good merges.
 
 ### Skills and agents
 
-- **PR #445** (*vendor /start-work, /self-review and their agents* — draft) is
-  **closed**. Reuse the six review agents and the skeptic-pass design from
+- **PR #445** (*vendor /start-work, /self-review and their agents* — open draft)
+  **gets closed in step 1**. Reuse the six review agents and the skeptic-pass design from
   `/self-review` inside the loop. `/start-work` is not carried over: it's a prompt
   convention that keeps the human in the loop and depends on laptop-only setup.
 - **Prune by evidence:** an agent counts skill usage in past session transcripts and
@@ -275,7 +278,6 @@ no CODEOWNERS; one workflow (`.github/workflows/ci.yml`).
 - **Error tracking (g)** — with the above.
 - **Cloud routines** — revisited at step 8; scheduled jobs use GitHub Actions until then.
 - **Issue #352's full regression suite** — stays deferred; the smoke suite is separate.
-- **Canary releases, feature flags, blue-green** — skipped (see Deployment safety).
 - **Multi-model review** (a non-Claude reviewer) — not planned; the independence comes
   from different evidence (F2P against the base commit, clickthrough) and a
   fresh-context reviewer.
