@@ -74,12 +74,17 @@ echo "== base ($BASE_SHA)"
 base_py=$(count_python "$BASE_WT"); base_js=$(count_jest "$BASE_WT")
 echo "  pytest tests: $base_py | jest test files: $base_js"
 
-if [ "$head_py" -lt "$base_py" ]; then
-  echo "::error::pytest test count dropped: $base_py -> $head_py"; fail=1
-fi
-if [ "$head_js" -lt "$base_js" ]; then
-  echo "::error::jest test file count dropped: $base_js -> $head_js"; fail=1
-fi
+# A drop is the expected consequence of an approved removal, so the same label covers
+# it — otherwise the label would allow a removal that the count check then rejects.
+count_dropped() {
+  if has_label test-removal-approved; then
+    echo "::notice::$1 test count dropped: $2 -> $3 (allowed by 'test-removal-approved')"
+  else
+    echo "::error::$1 test count dropped: $2 -> $3"; fail=1
+  fi
+}
+[ "$head_py" -lt "$base_py" ] && count_dropped pytest "$base_py" "$head_py"
+[ "$head_js" -lt "$base_js" ] && count_dropped "jest file" "$base_js" "$head_js"
 
 # ── 2. Removed tests, independent of totals ──────────────────────────────────
 removed_files=$(git diff --diff-filter=D --name-only "$BASE_SHA" "$HEAD_SHA" -- \
