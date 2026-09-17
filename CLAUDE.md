@@ -351,6 +351,11 @@ depth), and `docs/WORKFLOW.md` for BubblyChef's own operational quick-reference
 ownership boundary. PM delegates one level deep only — dev roles don't spawn
 further subagents; see `WORKFLOW.md` §5.
 
+Alongside those five roles, `.claude/agents/` also holds seven **utility agents**
+that carry no ownership boundary and write no feature code: `explorer` (cheap
+read-only code location) and the six review specialists `/self-review` fans out
+to. They are tools the roles call, not members of the team — see `WORKFLOW.md` §5.
+
 **For non-trivial features:**
 1. Triage — read the relevant code, identify files affected
 2. Describe the goal; Claude enters plan mode → approve the plan
@@ -511,6 +516,14 @@ Single-context — `CONTEXT.md` at repo root, `docs/adr/` for architectural deci
 `docs/agents/roles/`, committed (not gitignored). See `docs/agents/roles/pm.md`
 for the orchestration mandate and `docs/agents/roles/_role-template.md` for how to
 add a new one.
+
+`.claude/agents/` additionally holds seven utility agents with no role file,
+because they own no part of the codebase: `explorer` (read-only code location,
+the cheap navigation tier `/start-work` delegates to) plus `code-reviewer`,
+`silent-failure-hunter`, `pr-test-analyzer`, `type-design-analyzer`,
+`comment-analyzer` and `code-simplifier` (the parallel fan-out behind
+`/self-review`). The last six are vendored from the upstream `pr-review-toolkit`
+plugin so they resolve in a fresh clone, CI, and cloud sessions.
 
 ### Review
 

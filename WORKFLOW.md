@@ -116,6 +116,32 @@ Role files are **committed to the repo, never gitignored.** A workflow that
 disappears on a fresh clone doesn't survive switching machines — that's the whole
 point of writing it down.
 
+### Utility agents are not roles
+
+`.claude/agents/` also contains agents that are **not** part of the 2–5 role count
+above, because they own no files and implement no features — they are tools a role
+invokes and are deliberately absent from `docs/agents/roles/`:
+
+| Utility agent | Used by | Does |
+|---|---|---|
+| `explorer` | `/start-work` | Read-only code location — "where is X", "what calls Y", subsystem maps. The cheap haiku navigation tier, so an orchestrator spends neither an implementer nor its own context on grep |
+| `code-reviewer` | `/self-review` | Style, bugs, architectural fit |
+| `silent-failure-hunter` | `/self-review` | Swallowed errors, inadequate handling, bad fallbacks |
+| `pr-test-analyzer` | `/self-review` | Test coverage quality, edge cases, assertion strength |
+| `type-design-analyzer` | `/self-review` | Type encapsulation and invariant expression |
+| `comment-analyzer` | `/self-review` | Stale comments, comment rot, misleading docs |
+| `code-simplifier` | `/self-review` | Over-engineering, premature abstraction |
+
+The six review agents are vendored from the upstream `pr-review-toolkit` plugin
+(`claude-plugins-official`, commit `b1aabc22ac99`) for the same reason skills are
+vendored — see §9.1. A plugin installed under `~/.claude/plugins` does not exist
+in a fresh clone, in CI, or in a cloud session, so `/self-review`'s fan-out would
+resolve to nothing there. Their `pr-review-toolkit:` agent-type prefixes were
+rewritten to the bare vendored names.
+
+The one-level cap still applies: a role may invoke a utility agent, and a utility
+agent spawns nothing further.
+
 Each role file states, at minimum:
 - What it owns (files/directories it may write to)
 - What it may read but not write
@@ -255,6 +281,26 @@ Three layers, increasing in cost and decreasing in frequency:
    API-key plumbing and per-repo billing setup — worth revisiting later, not bundled
    into this template.
 
+### `self-review` — optional, and not a gate
+
+`/self-review` sits outside the three layers above. Nothing requires it, no hook
+checks for it, and it satisfies neither the create nor the merge marker. It is the
+author's own pass before asking anyone else to look.
+
+It differs from `thermo-nuclear-review` in what it looks for, not just in depth.
+Thermo-nuclear is a narrow, deep audit — security, breaking changes, devex
+regressions, feature-gate leaks — and it decides whether a merge may happen.
+`self-review` is broad instead: test coverage, type design, comment rot,
+over-engineering, silent failures. It runs six agents in parallel, has a skeptic
+refute blocking and important findings before the author sees them, makes the
+author triage each survivor (fix / defer with a reason / disagree with a
+justification), and posts the result as a PR comment so a reviewer can see what was
+already considered.
+
+Neither substitutes for the other: a change can be free of security problems and
+still be untested and over-abstracted. Reach for `self-review` on a PR big enough
+that you want the gaps found before a human spends attention on it.
+
 ## 8. House rules
 
 These aren't skills you invoke — they're standing behavior, folded into `CLAUDE.md`'s
@@ -287,8 +333,9 @@ for why this changed.
 |---|---|---|
 | Planning/tracking | `wayfinder`, `triage`, `to-spec`, `to-tickets`, `handoff` | ✅ vendored |
 | Build | `implement`, `tdd`, `codebase-design`, `domain-modeling`, `prototype` | ✅ vendored |
-| Build (project) | `implement-issue` | 🏠 project-local |
+| Build (project) | `implement-issue`, `start-work` | 🏠 project-local |
 | Review | `code-review` | ✅ vendored |
+| Review (project) | `self-review` | 🏠 project-local |
 | Investigation | `diagnosing-bugs`, `research`, `improve-codebase-architecture`, `resolving-merge-conflicts` | ✅ vendored |
 | Design interviews | `grill-with-docs`, `grill-me`, `grilling` | ✅ vendored |
 | Setup | `setup-matt-pocock-skills` | ✅ vendored |
@@ -296,17 +343,34 @@ for why this changed.
 | Understanding (PM-facing) | `how`, `why`, `blast-radius` | ✅ vendored |
 | Process hygiene | `show-me-your-work`, `figure-it-out` | ✅ vendored |
 | Self-tuning | `automate-me` | ✅ vendored |
+| Repo hygiene (project) | `prune-media` | 🏠 project-local |
 | House rules | see §8 | folded into prose, not skills |
 
-27 skills total — 19 from `mattpocock/skills`, 8 from `cursor/plugins`
-(`pstack/` and `thermos/`). `skills-lock.json` records the upstream commit per
-source plus a per-skill hash, so drift stays detectable against both.
+31 skills total — 19 from `mattpocock/skills`, 8 from `cursor/plugins`
+(`pstack/` and `thermos/`), and 4 authored here. `skills-lock.json` records the
+upstream commit per source plus a per-skill hash, so drift stays detectable
+against both.
 
-`implement-issue` (🏠) is authored in this repo, not vendored from upstream —
-it has no upstream source and is deliberately absent from `skills-lock.json`.
-It codifies the pickup loop this document already specifies (§2 queue → §4
-branch → §5 delegation → §6 autonomy gate) as one invocable skill; upstream
-`implement` is the generic spec/ticket builder it delegates the actual coding to.
+The four 🏠 skills are authored in this repo rather than vendored from upstream.
+They have no upstream source and are deliberately absent from `skills-lock.json`,
+which pins upstream content and has nothing to pin for them:
+
+- **`implement-issue`** codifies the pickup loop this document already specifies
+  (§2 queue → §4 branch → §5 delegation → §6 autonomy gate) as one invocable
+  skill; upstream `implement` is the generic spec/ticket builder it delegates the
+  actual coding to.
+- **`start-work`** opens a session in the tiered-orchestrator shape: the main
+  session orchestrates and delegates navigation to `explorer`, implementation to
+  the dev roles, and review to the review layer. It prefers a repo-local team
+  where one exists, so in this repo it drives `pm`/`backend`/`frontend`/`ui-ux`/
+  `qa-reviewer` rather than a generic tier.
+- **`prune-media`** deletes PR evidence screenshots under `docs/media/` once the
+  issue they document has closed, keeping the media budget in check.
+- **`self-review`** is the author's own pre-review pass: it fans out the six
+  review agents (§5) in parallel, runs an adversarial skeptic over blocking and
+  important findings to drop false positives, walks the author through triage, and
+  posts the consolidated report as a PR comment. It does **not** replace
+  `thermo-nuclear-review` — see §7.
 
 **Naming note:** the skill is `thermo-nuclear-review` upstream, not
 `thermo-nuclear-code-quality-review` as earlier drafts of this doc called it.

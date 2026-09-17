@@ -85,6 +85,12 @@ Agent roles (see `docs/agents/roles/` for the full mandate of each):
 - **ui-ux** — design system, motion, accessibility (`nextjs/src/components/`)
 - **qa-reviewer** — test suites + Playwright e2e, reviews against the DoD
 
+Utility agents in `.claude/agents/` own no files and are not roles — they are
+tools the roles invoke (shared `WORKFLOW.md` §5): **explorer** for cheap read-only
+code location, and **code-reviewer**, **silent-failure-hunter**,
+**pr-test-analyzer**, **type-design-analyzer**, **comment-analyzer** and
+**code-simplifier** as the parallel fan-out behind `/self-review`.
+
 ### Spec-driven autonomous implementation
 When you have a thorough design doc (e.g. `docs/plans/my-feature.md`):
 
