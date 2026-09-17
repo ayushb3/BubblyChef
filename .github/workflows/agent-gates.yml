@@ -59,7 +59,8 @@ jobs:
         run: |
           bash scripts/agent-gates/test-count-guard.sh \
             "${{ github.event.pull_request.base.sha }}" \
-            "${{ github.event.pull_request.head.sha }}"
+            "${{ github.event.pull_request.head.sha }}" \
+            '${{ toJSON(github.event.pull_request.labels.*.name) }}'
 
   fail-to-pass:
     name: Bug fix fails on base
