@@ -112,6 +112,23 @@ Every project gets a `pm` role (the human) plus 2–5 domain-specific dev roles.
 `docs/agents/roles/pm.md` for the PM role file itself. BubblyChef's team:
 `pm`, `backend`, `frontend`, `ui-ux`, `qa-reviewer` — see `docs/agents/roles/`.
 
+**Model tiers are pinned in each agent's frontmatter** (`.claude/agents/*.md`), not
+left to the orchestrator's judgement: `pm` runs on Opus, the dev roles (`backend`,
+`frontend`, `ui-ux`, `qa-reviewer`) on Sonnet.
+
+**Isolation belongs to the session, not the role.** Subagent `isolation: worktree`
+branches from the *default branch*, not the parent session's HEAD — so a dev role
+delegated on a feature branch would not see the branch it is supposed to build on
+(including a failing test written moments earlier). Parallel work is therefore
+isolated one level up: one worktree per issue/session, with dev roles working inside
+it.
+
+**Utility agents** sit beside the roles. They own no files, have no role file, and
+are invoked as tools: `explorer` (Haiku, low effort, Read/Grep/Glob only) answers
+"where is X" and "how is Y wired" so no one spends an implementer on searching. They
+are leaves, so they don't count against the one-level cap below. See
+`docs/plans/2026-09-17-autonomous-agent-loop.md` for the tiering rationale.
+
 Role files are **committed to the repo, never gitignored.** A workflow that
 disappears on a fresh clone doesn't survive switching machines — that's the whole
 point of writing it down.
