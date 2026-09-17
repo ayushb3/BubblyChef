@@ -64,10 +64,10 @@ saw_failure=0
 
 if [ "${#py_tests[@]}" -gt 0 ]; then
   echo "== running ${#py_tests[@]} python test file(s) against base"
-  ( cd "$WORK/ai-service" && python -m pytest "${py_tests[@]}" -q --no-header 2>&1 | tail -n 15 )
-  status=${PIPESTATUS[0]:-0}
-  ( cd "$WORK/ai-service" && python -m pytest "${py_tests[@]}" -q --no-header >/dev/null 2>&1 )
+  # Run once: capture output for the log, keep pytest's own exit code.
+  ( cd "$WORK/ai-service" && python -m pytest "${py_tests[@]}" -q --no-header >"$WORK/py.log" 2>&1 )
   status=$?
+  tail -n 15 "$WORK/py.log"
   # pytest: 0 = all passed, 1 = failures, 2..5 = collection/usage errors (also evidence).
   if [ "$status" -ne 0 ]; then saw_failure=1; echo "  → failed on base (exit $status) ✓"; else echo "  → PASSED on base ✗"; fi
 fi
@@ -75,9 +75,9 @@ fi
 if [ "${#js_tests[@]}" -gt 0 ]; then
   echo "== running ${#js_tests[@]} jest test file(s) against base"
   ( cd "$WORK/nextjs" && npm ci --prefer-offline --no-audit >/dev/null 2>&1 || true )
-  ( cd "$WORK/nextjs" && npx jest --ci "${js_tests[@]}" 2>&1 | tail -n 15 )
-  ( cd "$WORK/nextjs" && npx jest --ci "${js_tests[@]}" >/dev/null 2>&1 )
+  ( cd "$WORK/nextjs" && npx jest --ci "${js_tests[@]}" >"$WORK/js.log" 2>&1 )
   status=$?
+  tail -n 15 "$WORK/js.log"
   if [ "$status" -ne 0 ]; then saw_failure=1; echo "  → failed on base (exit $status) ✓"; else echo "  → PASSED on base ✗"; fi
 fi
 
