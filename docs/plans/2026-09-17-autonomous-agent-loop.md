@@ -41,8 +41,8 @@ Eight background research passes, weighted by source quality:
   users report 2–3 agents is the ceiling because a human reviews everything.
 - **Scripted orchestration beats model-driven orchestration for repeatable loops.**
   Workflow scripts pause at usage limits and resume — a good fit for Max.
-- **Agent file frontmatter enforces tiers** (`model`, `effort`, `isolation: worktree`),
-  so delegation doesn't depend on prompting.
+- **Agent file frontmatter enforces tiers** (`model`, `effort`), so delegation doesn't
+  depend on prompting.
 - **Verification gaming is documented** — checks must be run by CI, not self-reported.
 - **Native Claude Code features have largely replaced third-party agent managers**;
   Conductor, the most-cited one, is macOS-only.
@@ -94,7 +94,7 @@ Saved Workflow script, run locally in desktop-app sessions while it's new:
 ```
 pick issue (ready-for-agent, by priority)
  → F2P test first (bugs)
- → implement            (Sonnet dev role, isolation: worktree)
+ → implement            (Sonnet dev role, in the session's worktree)
  → verify               (prod build, per-worktree ports, shared test user, screenshots)
  → fresh-context review (scaled to the diff)
  → open PR              (bot identity)
@@ -221,8 +221,15 @@ would revert good merges.
 - **Prune by evidence:** an agent counts skill usage in past session transcripts and
   proposes a keep/archive list; Ayush makes the final call. Archived skills move to a
   folder Claude Code doesn't load (reversible).
-- **Pin tiers in frontmatter:** `explorer` → Haiku; dev roles → Sonnet with
-  `isolation: worktree`; reviewers and the decision agent → Opus.
+- **Pin tiers in frontmatter:** `explorer` → Haiku (read-only tools); dev roles →
+  Sonnet; reviewers and the decision agent → Opus.
+
+  **Correction (2026-09-17, after PR #447):** an earlier draft put
+  `isolation: worktree` on the dev roles. Subagent worktree isolation branches from
+  the *default branch*, not the parent session's HEAD, so a delegated dev role would
+  not see the feature branch it must build on — including a failing test the loop
+  wrote moments earlier. Isolation therefore sits at the session level: one worktree
+  per issue, dev roles working inside it.
 
 ## Build order
 
