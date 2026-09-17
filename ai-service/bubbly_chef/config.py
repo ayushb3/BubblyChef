@@ -1,5 +1,7 @@
 """AI microservice configuration."""
 
+import os
+
 from pydantic_settings import BaseSettings
 
 
@@ -59,7 +61,27 @@ class Settings(BaseSettings):
     # Schema
     schema_version: str = "1.0.0"
 
+    # Deployed commit SHA (#step3 of the autonomous-agent-loop plan). Set at
+    # build/deploy time via BUBBLY_GIT_SHA (see Dockerfile's GIT_SHA build
+    # arg). Empty by default so a plain `docker build`/local run never fails.
+    git_sha: str = ""
+
     model_config = {"env_prefix": "BUBBLY_", "env_file": ".env"}
+
+    @property
+    def resolved_git_sha(self) -> str:
+        """Deployed commit SHA for health checks.
+
+        Priority: BUBBLY_GIT_SHA (set explicitly at build/deploy time) ->
+        Railway's own injected RAILWAY_GIT_COMMIT_SHA -> "unknown". Never
+        raises — an unresolved SHA must still let /health return 200.
+        """
+        if self.git_sha:
+            return self.git_sha
+        railway_sha = os.environ.get("RAILWAY_GIT_COMMIT_SHA", "")
+        if railway_sha:
+            return railway_sha
+        return "unknown"
 
 
 settings = Settings()

@@ -442,6 +442,7 @@ BUBBLY_OLLAMA_BASE_URL=http://localhost:11434   # optional
 BUBBLY_AUTO_ADD_CONFIDENCE_THRESHOLD=0.8
 BUBBLY_REVIEW_CONFIDENCE_THRESHOLD=0.5
 BUBBLY_CORS_ORIGINS=["http://localhost:3000"]
+BUBBLY_GIT_SHA=...                      # optional — deployed commit SHA, surfaced on /health and /health/ai for post-merge smoke tests; falls back to Railway's own RAILWAY_GIT_COMMIT_SHA, then "unknown"
 ```
 
 Every name here must match a field on `Settings` in `ai-service/bubbly_chef/config.py`
