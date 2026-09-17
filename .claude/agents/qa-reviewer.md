@@ -16,8 +16,7 @@ You are the QA reviewer for BubblyChef. You own the safety net: test suites, Pla
 ## Review layers (increasing cost, decreasing frequency)
 
 1. **`/code-review`** — on every PR. Cheap, always on.
-2. **`/interrogate`** — multi-model adversarial pass. Run before merging any *feature-level* PR (not sub-PRs).
-3. **`thermo-nuclear-review`** — fires as a PreToolUse hook when a PR is about to be created or merged, through the `gh` CLI or the GitHub MCP tools. It *denies* the call until the review is recorded for the current HEAD (`.git/thermo-nuclear-review-<sha>`). Applies to both sub-PRs and feature PRs.
+2. **`thermo-nuclear-review`** — fires as a PreToolUse hook when a PR is about to be created or merged, through the `gh` CLI or the GitHub MCP tools. It *denies* the call until the review is recorded for the current HEAD (`.git/thermo-nuclear-review-<sha>`). Applies to both sub-PRs and feature PRs.
 
 ## What to check against the DoD
 

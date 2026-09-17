@@ -20,8 +20,9 @@ and this was the stale one.
 | `/caveman` | — | Deleted upstream 2026-05-31 (`7d3ada9`), no successor |
 | `/zoom-out` | — | Deleted upstream, no successor |
 
-`/grill-me`, `/grill-with-docs`, `/tdd`, `/triage`, `/improve-codebase-architecture`
-and `/setup-matt-pocock-skills` kept their names and are still installed.
+`/grill-with-docs`, `/tdd`, `/triage` and `/setup-matt-pocock-skills` kept their
+names and are still installed. `/grill-me` (a one-line alias for `/grilling`) and
+`/improve-codebase-architecture` were archived on 2026-09-17 — see `WORKFLOW.md` §9.
 
 Note also that this repo's copy of the thermo-nuclear review is vendored as
 `thermo-nuclear-review`, not `thermo-nuclear-code-quality-review`.

@@ -218,18 +218,17 @@ pasted logs, full diffs, or raw agent transcript pushes the actually-relevant
 Summary/What-lands/Demo below the fold. Concretely: no pasted stack traces (link the
 CI run instead), no pasted diffs (the PR already has one), no multi-paragraph
 narration of what was tried and discarded (that belongs in a linked decisions log,
-not the PR body). If `/interrogate` or `thermo-nuclear-review` surfaced
+not the PR body). If `thermo-nuclear-review` surfaced
 findings, state the resolution in one line per finding ("fixed", "won't fix —
 reason"), not the full back-and-forth.
 
 ## 7. Review, layered
 
-Three layers, increasing in cost and decreasing in frequency:
+Two layers, increasing in cost and decreasing in frequency (a third,
+`/interrogate`, was archived on 2026-09-17 — see §9.2):
 
 1. **`/code-review`** — on every PR. Cheap, always on, standard.
-2. **`/interrogate`** — a multi-model adversarial pass. Run before merging any
-   feature-level PR (not sub-PRs).
-3. **`thermo-nuclear-review`** — wired as a Claude Code `PreToolUse` hook, not a
+2. **`thermo-nuclear-review`** — wired as a Claude Code `PreToolUse` hook, not a
    GitHub Action. It fires once per PR, at the moment the PR is about to become
    real, not on every commit or file edit inside it. This applies to both sub-PRs
    and feature PRs.
@@ -303,21 +302,39 @@ for why this changed.
 | Layer | Skills | Status |
 |---|---|---|
 | Planning/tracking | `wayfinder`, `triage`, `to-spec`, `to-tickets`, `handoff` | ✅ vendored |
-| Build | `implement`, `tdd`, `codebase-design`, `domain-modeling`, `prototype` | ✅ vendored |
+| Build | `tdd`, `domain-modeling`, `prototype` | ✅ vendored |
 | Build (project) | `implement-issue` | 🏠 project-local |
-| Review | `code-review` | ✅ vendored |
-| Investigation | `diagnosing-bugs`, `research`, `improve-codebase-architecture`, `resolving-merge-conflicts` | ✅ vendored |
-| Design interviews | `grill-with-docs`, `grill-me`, `grilling` | ✅ vendored |
+| Review | `code-review`, `thermo-nuclear-review` | ✅ vendored |
+| Investigation | `diagnosing-bugs`, `research`, `resolving-merge-conflicts` | ✅ vendored |
+| Design interviews | `grilling`, `grill-with-docs` | ✅ vendored |
+| Understanding (PM-facing) | `how`, `why` | ✅ vendored |
 | Setup | `setup-matt-pocock-skills` | ✅ vendored |
-| Review (extra layers) | `interrogate`, `thermo-nuclear-review` | ✅ vendored |
-| Understanding (PM-facing) | `how`, `why`, `blast-radius` | ✅ vendored |
-| Process hygiene | `show-me-your-work`, `figure-it-out` | ✅ vendored |
-| Self-tuning | `automate-me` | ✅ vendored |
+| Media | `prune-media` | 🏠 project-local |
 | House rules | see §8 | folded into prose, not skills |
 
-27 skills total — 19 from `mattpocock/skills`, 8 from `cursor/plugins`
-(`pstack/` and `thermos/`). `skills-lock.json` records the upstream commit per
-source plus a per-skill hash, so drift stays detectable against both.
+**20 skills loaded.** `skills-lock.json` records the upstream commit per source plus
+a per-skill hash, so drift stays detectable against both.
+
+### 9.2 Archived skills
+
+Nine skills moved to `.claude/skills-archive/` on 2026-09-17 (step 1 of
+`docs/plans/2026-09-17-autonomous-agent-loop.md`). Claude Code does not load that
+directory, so they cost no context and cannot be invoked; moving a directory back
+into `.claude/skills/` restores it. Their `skills-lock.json` entries stay, so drift
+against upstream is still detectable if one is restored.
+
+| Archived | Why |
+|---|---|
+| `implement` | The agent loop replaces it; `implement-issue` is the pickup path |
+| `interrogate` | The plan drops multi-model review — independence comes from evidence (F2P against base, clickthrough) and a fresh-context reviewer |
+| `grill-me` | One-line alias for `grilling` |
+| `figure-it-out`, `show-me-your-work` | The loop is the standing playbook and the PR is the decision trail; archived together since the first invokes the second |
+| `blast-radius`, `codebase-design`, `improve-codebase-architecture` | Never used here; `how`/`why`/`diagnosing-bugs` cover the same ground |
+| `automate-me` | Authors a personal mode skill — a laptop-level concern, not a repo one |
+
+Known inert references: vendored upstream text in `diagnosing-bugs` still suggests
+handing off to `/improve-codebase-architecture`. The files are left unedited so they
+keep matching their lockfile hashes; the suggestion simply won't resolve.
 
 `implement-issue` (🏠) is authored in this repo, not vendored from upstream —
 it has no upstream source and is deliberately absent from `skills-lock.json`.
