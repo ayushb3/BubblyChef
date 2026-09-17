@@ -59,8 +59,21 @@ Once issues exist:
   to `backend`, `frontend`, `ui-ux`, `qa-reviewer` — see each role file for its
   ownership boundary)
 - Each completed issue → quality gates → commit → push → close issue
-- Sub-PRs merge autonomously once CI is green and a summary is posted;
-  feature-level PRs always wait for your review — see the shared `WORKFLOW.md` §6
+- A PR merges itself when it touches no CODEOWNERS path and every required check
+  passes; a PR touching migrations, auth, `prompts/`, `.github/`, `.claude/` config
+  or dependency manifests waits for your review — see the shared `WORKFLOW.md` §6
+
+### If the agents need stopping
+
+1. Set the repo variable `AGENTS_ENABLED` to `false` (GitHub → Settings → Secrets
+   and variables → Actions → Variables). Agent workflows check it first, so nothing
+   new starts. Runs already in flight keep going.
+2. Settings → General → uncheck **Allow auto-merge**. Nothing already open can then
+   merge itself.
+
+Both are doable from a phone in under a minute. To roll back a bad deploy, use
+Vercel's instant rollback and Railway's redeploy-previous; the post-merge smoke test
+opens a revert PR on its own if it catches the failure first.
 
 ---
 

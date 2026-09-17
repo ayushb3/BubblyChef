@@ -414,10 +414,10 @@ watching it stop is evidence; "tests pass" alone is not), and what the change
 explicitly does *not* cover. An unstated gap reads as a claim it was handled.
 Full rules in `WORKFLOW.md` §4.
 
-**Review tiers are enforced by a hook, and they differ.** Opening a PR needs a
-`/code-review` marker (agent-invocable). Merging needs a `thermo-nuclear-review`
-marker — `main` auto-deploys, so every merge gets the deep pass; on a small fix
-it's quick. See `WORKFLOW.md` §7.
+**Review and merge are enforced by GitHub, not by a local hook.** Required checks
+must pass, and a PR touching a CODEOWNERS path needs your review; everything else
+can auto-merge. Marker files in `.git/` are gone — they were honour-system. See
+`WORKFLOW.md` §6–7.
 
 ---
 
@@ -442,6 +442,7 @@ BUBBLY_OLLAMA_BASE_URL=http://localhost:11434   # optional
 BUBBLY_AUTO_ADD_CONFIDENCE_THRESHOLD=0.8
 BUBBLY_REVIEW_CONFIDENCE_THRESHOLD=0.5
 BUBBLY_CORS_ORIGINS=["http://localhost:3000"]
+BUBBLY_GIT_SHA=...                      # optional — deployed commit SHA, surfaced on /health and /health/ai for post-merge smoke tests; falls back to Railway's own RAILWAY_GIT_COMMIT_SHA, then "unknown"
 ```
 
 Every name here must match a field on `Settings` in `ai-service/bubbly_chef/config.py`
@@ -516,11 +517,15 @@ add a new one.
 
 ### Review
 
-`/code-review` on every PR; `thermo-nuclear-review` fires automatically as a `PreToolUse` hook when a PR is
-about to be created or merged — via the `gh` CLI *or* the GitHub MCP tools. It is a
-gate: the call is denied until the review is recorded for the current HEAD. Hook
-script `.claude/hooks/pr-review-gate.sh`, registered in `.claude/settings.json`.
-See `WORKFLOW.md` §7.
+`/code-review` on every PR (agent-invocable, two axes: standards and spec). The
+Claude GitHub Action reviews each PR on open from a fresh context. Merging is gated
+by **GitHub**, not a local hook: required checks (typecheck/test both sides,
+fail-to-pass against the base commit, test-count guard, exemption check, Vercel
+build) plus `.github/CODEOWNERS` review on protected paths — migrations, auth,
+`ai-service/bubbly_chef/prompts/`, `.github/`, `.claude/` config, dependencies.
+`thermo-nuclear-review` is still available and still user-invocation-only, but is no
+longer a mechanical gate — run it before approving anything large or security-shaped.
+See `WORKFLOW.md` §6–7.
 
 ---
 
