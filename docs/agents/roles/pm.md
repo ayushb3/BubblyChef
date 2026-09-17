@@ -45,7 +45,7 @@ to the human directly.
    && mypy bubbly_chef/ --strict` + `cd nextjs && npx tsc --noEmit`), commit.
 4. Sub-PR: once CI is green and a summary is posted, merge autonomously — no wait.
 5. Feature-level PR (closes a top-level ticket, or crossed a role boundary): open
-   the PR with the standard template, run `/code-review` then `/interrogate`, post
+   the PR with the standard template, run `/code-review`, post
    the summary + demo, and **stop** — wait for explicit human go-ahead before
    `gh pr merge`. Keep the PR body skimmable from a phone: no pasted diffs/logs/full
    transcripts, one line per review finding ("fixed" / "won't fix — reason"), link
