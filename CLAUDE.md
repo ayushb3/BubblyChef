@@ -348,7 +348,9 @@ depth), and `docs/WORKFLOW.md` for BubblyChef's own operational quick-reference
 
 **Agent team:** `pm` (you, orchestrating) plus `backend`, `frontend`, `ui-ux`,
 `qa-reviewer` — see `docs/agents/roles/` for each role's full mandate and
-ownership boundary. PM delegates one level deep only — dev roles don't spawn
+ownership boundary. Dev roles run on Sonnet, in the session's
+worktree (not their own — see `WORKFLOW.md` §5). Use the `explorer` utility agent
+(Haiku, read-only) for "where is X" lookups instead of a dev role. PM delegates one level deep only — dev roles don't spawn
 further subagents; see `WORKFLOW.md` §5.
 
 **For non-trivial features:**
