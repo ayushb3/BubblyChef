@@ -23,9 +23,12 @@ scripts/dev/stack.sh up                # production build, this worktree's own p
 ```
 
 `up` builds the frontend with the AI service URL baked in, starts both services,
-and waits for `/api/health` and `/health`. Both report the commit they are running
-as `sha`: **check it matches `git rev-parse HEAD`**. If it doesn't, you are
-verifying a stale build.
+and waits for `/api/health` and `/health`. Both report the commit they are running:
+the frontend as `sha`, the AI service as `version.git_sha`. **Check both match
+`git rev-parse HEAD`.** If they don't, you are verifying a stale build.
+
+The stack runs on `127.0.0.1` (not `localhost`) on ports unique to this checkout,
+never 3000/8888, which are left for a human's own dev servers.
 
 Env files are gitignored, so a fresh worktree lacks them. Copy
 `nextjs/.env.local` and `ai-service/.env` from the main checkout. Never commit them
@@ -65,8 +68,11 @@ cd nextjs && npx playwright test e2e/smoke
 ```
 
 With `PLAYWRIGHT_BASE_URL` exported from step 1, Playwright uses the running stack
-instead of starting its own. A red smoke test means the change broke something
-core. Fix it; do not skip it.
+instead of starting its own. **Check the run's output names that URL.** If
+Playwright started its own server or tested `127.0.0.1:3000`, the result says
+nothing about your change: a green run against the wrong server is the exact
+failure this skill exists to prevent. A red smoke test means the change broke
+something core. Fix it; do not skip it.
 
 ## 4. Tear down
 
@@ -74,8 +80,10 @@ core. Fix it; do not skip it.
 scripts/dev/stack.sh down
 ```
 
-Always, including after a failure. It stops whatever is listening on this
-worktree's ports, so a crashed run is cleaned up too.
+Always, including after a failure. It stops only the processes `up` started and
+recorded, never "whatever is on the port", so it can't take down anything a human
+is running. If it reports something still listening that it didn't start, leave
+it and say so.
 
 ## 5. Put the evidence in the PR body
 

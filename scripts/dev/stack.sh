@@ -26,30 +26,26 @@ STATE="$ROOT/.verify"
 mkdir -p "$STATE"
 
 # ── Ports ────────────────────────────────────────────────────────────────────
-# The main checkout keeps the familiar 3000/8888. Every other worktree gets a slot
-# derived from its path, so the same worktree always gets the same ports and two
-# worktrees almost never share one. Collisions are still possible (50 slots), so
-# `up` refuses to start on a port that is already answering.
-slot() {
-  local main
-  main=$(git -C "$ROOT" worktree list --porcelain | awk '/^worktree /{print $2; exit}')
-  if [ "$(cd "$ROOT" && pwd -P)" = "$(cd "$main" && pwd -P)" ]; then
-    echo 0
-    return
-  fi
-  local h
-  h=$(printf '%s' "$ROOT" | cksum | awk '{print $1}')
-  echo $(( (h % 50) + 1 ))
-}
-
-SLOT=$(slot)
+# Every checkout, the main one included, gets a slot derived from its path: the
+# same checkout always gets the same ports, and two almost never share one. 3000
+# and 8888 are never used — those belong to a human's `npm run dev` / `uvicorn`,
+# and an agent verifying in the main checkout must not collide with (or, worse,
+# stop) them. Collisions between slots are still possible (50 of them), so `up`
+# refuses to start on a port that is already answering.
+SLOT=$(( ( $(printf '%s' "$ROOT" | cksum | awk '{print $1}') % 50 ) + 1 ))
 PORT=$(( 3000 + SLOT * 10 ))
 AI_PORT=$(( 8888 + SLOT * 10 ))
 SHA=$(git -C "$ROOT" rev-parse HEAD)
-WEB_URL="http://localhost:$PORT"
-AI_URL="http://localhost:$AI_PORT"
+# 127.0.0.1, not localhost: e2e/global-setup.ts scopes the auth cookie to
+# 127.0.0.1, and browsers don't send it to localhost, so sign-in would silently fail.
+WEB_URL="http://127.0.0.1:$PORT"
+AI_URL="http://127.0.0.1:$AI_PORT"
+LISTENERS="$STATE/listeners"
 
-port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && exec 3>&- 3<&- 2>/dev/null; }
+# The probe runs in a subshell, which closes the connection when it exits. Do not
+# add an `exec ... 2>/dev/null` here: outside a subshell that silences stderr for
+# the rest of the script, which hid every error message after the first probe.
+port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 
 wait_for() {
   local url=$1 name=$2 tries=${3:-60}
@@ -71,21 +67,25 @@ cmd_ports() {
 cmd_up() {
   for p in "$PORT" "$AI_PORT"; do
     if port_busy "$p"; then
-      echo "Port $p is already in use. Run '$0 down', or free the port, then retry." >&2
+      echo "Port $p is already in use. If an earlier '$0 up' started it, run '$0 down';" >&2
+      echo "otherwise something else owns it — find and stop it yourself, then retry." >&2
       exit 1
     fi
   done
+
+  # Both ports were just confirmed free, so any recorded listeners are stale.
+  : >"$LISTENERS"
 
   echo "== ai-service on $AI_PORT"
   (
     cd "$ROOT/ai-service" || exit 1
     BUBBLY_GIT_SHA="$SHA" \
-    BUBBLY_CORS_ORIGINS="[\"$WEB_URL\",\"http://127.0.0.1:$PORT\"]" \
+    BUBBLY_CORS_ORIGINS="[\"$WEB_URL\",\"http://localhost:$PORT\"]" \
       nohup python -m uvicorn bubbly_chef.main:app --host 127.0.0.1 --port "$AI_PORT" \
       >"$STATE/ai-service.log" 2>&1 &
-    echo $! >"$STATE/ai-service.pid"
   )
   wait_for "$AI_URL/health" ai-service 30 || exit 1
+  record_listener "$AI_PORT"
 
   echo "== nextjs production build (AI at $AI_URL)"
   (
@@ -98,9 +98,9 @@ cmd_up() {
     cd "$ROOT/nextjs" || exit 1
     NEXT_PUBLIC_GIT_SHA="$SHA" NEXT_PUBLIC_AI_SERVICE_URL="$AI_URL" nohup npx next start -p "$PORT" \
       >"$STATE/nextjs.log" 2>&1 &
-    echo $! >"$STATE/nextjs.pid"
   )
   wait_for "$WEB_URL/api/health" nextjs 60 || exit 1
+  record_listener "$PORT"
 
   echo
   echo "Stack is up at ${SHA:0:8}. Frontend $WEB_URL · AI service $AI_URL"
@@ -114,31 +114,60 @@ cmd_status() {
   curl -fsS -o /dev/null "$AI_URL/health" 2>/dev/null && echo up || echo down
 }
 
-# Stop whatever is LISTENING on a port. The recorded PID is not enough: `npx next
-# start` is a wrapper, and on Windows killing it left the real Next.js server
-# running on the port (found by testing `down`). Killing by port also cleans up
-# after a crashed or half-finished `up` that never wrote a PID file.
-kill_port() {
-  local port=$1 pids
+# ── Stopping only what we started ────────────────────────────────────────────
+# The PID from `$!` is not the server: `npx next start` is a wrapper, and killing
+# it on Windows left the real Next.js server running. So after each service comes
+# up, record the process actually LISTENING on its port. `up` refuses a busy port,
+# so whatever listens there right after we start it is ours.
+#
+# `down` stops only those recorded processes, and only if each is still listening
+# on the port it was recorded against (a PID the OS has since reused for something
+# else is left alone). It never kills "whatever is on the port": that is how an
+# earlier version would have stopped a human's own dev servers.
+listening_pids() {
+  local port=$1
   if command -v taskkill >/dev/null 2>&1; then
-    pids=$(netstat -ano 2>/dev/null | awk -v p=":$port" '$2 ~ p"$" && $4=="LISTENING" {print $5}' | sort -u)
-    for pid in $pids; do taskkill //F //T //PID "$pid" >/dev/null 2>&1; done
-  elif command -v fuser >/dev/null 2>&1; then
-    fuser -k "$port/tcp" >/dev/null 2>&1
+    netstat -ano 2>/dev/null | awk -v p=":$port" '$2 ~ p"$" && $4=="LISTENING" {print $5}' | sort -u
   elif command -v lsof >/dev/null 2>&1; then
-    pids=$(lsof -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null)
-    [ -n "$pids" ] && kill $pids 2>/dev/null
+    lsof -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u
+  elif command -v ss >/dev/null 2>&1; then
+    ss -Hltnp "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u
+  fi
+}
+
+record_listener() {
+  local port=$1 pid
+  for pid in $(listening_pids "$port"); do echo "$port $pid" >>"$LISTENERS"; done
+}
+
+stop_pid() {
+  local pid=$1
+  if command -v taskkill >/dev/null 2>&1; then
+    taskkill //F //T //PID "$pid" >/dev/null 2>&1
+  else
+    kill "$pid" 2>/dev/null
   fi
   return 0
 }
 
 cmd_down() {
-  kill_port "$PORT"
-  kill_port "$AI_PORT"
-  rm -f "$STATE/nextjs.pid" "$STATE/ai-service.pid"
+  if [ ! -s "$LISTENERS" ]; then
+    echo "Nothing started by stack.sh in this checkout — not touching any process."
+    return 0
+  fi
+  local port pid
+  while read -r port pid; do
+    if listening_pids "$port" | grep -qx "$pid"; then
+      stop_pid "$pid"
+      echo "stopped pid $pid on port $port"
+    else
+      echo "pid $pid is no longer on port $port — left alone"
+    fi
+  done <"$LISTENERS"
+  rm -f "$LISTENERS"
   sleep 1
   if port_busy "$PORT" || port_busy "$AI_PORT"; then
-    echo "Something is still listening on $PORT or $AI_PORT — check it by hand." >&2
+    echo "Something is still listening on $PORT or $AI_PORT that stack.sh did not start — check it by hand." >&2
     return 1
   fi
   echo "stopped: nothing listening on $PORT or $AI_PORT"
