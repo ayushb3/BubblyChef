@@ -150,6 +150,34 @@ async function stubCookFlow(page, cookProposal, confirmStatus = 200) {
 }
 
 /**
+ * Walks an already-open GuidedCookFlow (issue #263 — a step-by-step
+ * mise-en-place → per-step → done flow that now sits in front of CookModal)
+ * to its done-state and clicks through to CookModal.
+ *
+ * CookModal is only reachable from the guided flow's done-state via "Update
+ * my pantry" — see RecipeBook.tsx's `guidedCookOpen` / `onFinish` wiring. The
+ * flow is: prep (skip) → one "next" per instruction (the last of which reads
+ * "Finish cooking") → done → deduct. The footer's "next" button keeps one
+ * data-testid (`guided-cook-next`) across all three of those states, so this
+ * is driven generically off `instructionCount` rather than a hardcoded click
+ * count that would silently drift if a fixture recipe's instruction list
+ * ever changes length. Used by both the stubbed (4b) and live (4a) suites
+ * below — both go through this same UI change.
+ */
+async function walkGuidedCookFlowToDeduct(page, instructionCount: number) {
+  await expect(page.getByTestId('guided-cook-flow')).toBeVisible({ timeout: 5_000 });
+
+  for (let i = 0; i < instructionCount + 1; i++) {
+    await page.getByTestId('guided-cook-next').click();
+  }
+
+  await expect(page.getByTestId('guided-cook-done')).toBeVisible({ timeout: 5_000 });
+  await page.getByTestId('guided-cook-deduct').click();
+
+  await expect(page.getByRole('heading', { name: 'Mark as cooked' })).toBeVisible();
+}
+
+/**
  * Opens the recipe book and the cook modal.
  *
  * RecipeBook renders the cook button twice (the mobile and desktop layouts both
@@ -160,7 +188,7 @@ async function openCookModal(page) {
   await page.goto('/recipes');
   await expect(page.getByText('E2E Rice Bowl').first()).toBeVisible({ timeout: 10_000 });
   await page.getByRole('button', { name: 'Cook this recipe' }).first().click();
-  await expect(page.getByRole('heading', { name: 'Mark as cooked' })).toBeVisible();
+  await walkGuidedCookFlowToDeduct(page, STUB_RECIPE.instructions.length);
 }
 
 // ---------------------------------------------------------------------------
@@ -365,11 +393,12 @@ test.describe('4a — cook confirm (live, opt-in)', () => {
     expect(itemRes.ok()).toBeTruthy();
     const item = await itemRes.json();
 
+    const RECIPE_INSTRUCTIONS = ['Cook it.'];
     const recipeRes = await page.request.post('/api/recipes', {
       data: {
         title: 'E2E Deduction Probe',
         ingredients: [{ name: 'E2E Deduction Rice', quantity: 100, unit: 'g' }],
-        instructions: ['Cook it.'],
+        instructions: RECIPE_INSTRUCTIONS,
         servings: 1,
       },
     });
@@ -381,7 +410,10 @@ test.describe('4a — cook confirm (live, opt-in)', () => {
       await expect(page.getByText('E2E Deduction Probe').first()).toBeVisible({ timeout: 15_000 });
       await page.getByRole('button', { name: 'Cook this recipe' }).first().click();
 
-      await expect(page.getByRole('heading', { name: 'Mark as cooked' })).toBeVisible();
+      // Issue #263 rewired "Cook this recipe" to open GuidedCookFlow first —
+      // walk it to CookModal the same way the stubbed (4b) suite does.
+      await walkGuidedCookFlowToDeduct(page, RECIPE_INSTRUCTIONS.length);
+
       // The matcher must resolve g against a kg row at all — that is the
       // conversion half of #221. Without it this row reads "Unit conflict" and
       // the deduction never happens.
