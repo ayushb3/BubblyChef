@@ -38,6 +38,7 @@
           { "context": "Bug fix fails on base", "integration_id": 15368 },
           { "context": "Test suite did not shrink", "integration_id": 15368 },
           { "context": "F2P exemption is legitimate", "integration_id": 15368 },
+          { "context": "Agent loop limits hold", "integration_id": 15368 },
           { "context": "Vercel" }
         ]
       }
