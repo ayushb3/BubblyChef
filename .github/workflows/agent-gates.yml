@@ -20,6 +20,21 @@ permissions:
   issues: read
 
 jobs:
+  # The agent loop's limits (kill switch, daily cap, fix-round and attempt caps,
+  # dispute reporting, never merging in shadow mode) live in
+  # .claude/workflows/agent-loop.js. This runs that script with agent() mocked, so an
+  # edit that weakens a limit fails here before it can merge. No model is called.
+  agent-loop-harness:
+    name: Agent loop limits hold
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run the control-flow harness
+        run: node scripts/agent-gates/agent-loop-harness.cjs
+
   exemption:
     name: F2P exemption is legitimate
     runs-on: ubuntu-latest
