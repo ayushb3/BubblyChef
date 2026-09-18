@@ -1,0 +1,46 @@
+{
+  "name": "main — agent loop gates",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["~DEFAULT_BRANCH"],
+      "exclude": []
+    }
+  },
+  "bypass_actors": [],
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "require_code_owner_review": true,
+        "dismiss_stale_reviews_on_push": true,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false,
+        "allowed_merge_methods": ["merge", "squash", "rebase"]
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": [
+          { "context": "Next.js (typecheck + test)", "integration_id": 15368 },
+          { "context": "AI service (lint + typecheck + test)", "integration_id": 15368 },
+          { "context": "Bug fix fails on base", "integration_id": 15368 },
+          { "context": "Test suite did not shrink", "integration_id": 15368 },
+          { "context": "F2P exemption is legitimate", "integration_id": 15368 },
+          { "context": "Vercel" }
+        ]
+      }
+    }
+  ]
+}
