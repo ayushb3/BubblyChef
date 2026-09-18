@@ -288,13 +288,13 @@ a pure revert being the one change that is always safe.
 ### The agent loop
 
 One `ready-for-agent` issue goes end to end through a saved Workflow script,
-`.claude/workflows/agent-loop.js`, run with `{issue: <n>, runDate: "YYYY-MM-DD"}`.
+`.claude/workflows/agent-loop.js`, run with `{issue: <n>}`.
 Control flow lives in the script so it behaves the same every run; judgement lives in
 the agents it calls:
 
 | Stage | Who | Way out |
 |---|---|---|
-| Preflight | Sonnet, low effort | Stops if `AGENTS_ENABLED` isn't `true`, the day's 3-run cap is used, or the issue isn't ready |
+| Preflight | Sonnet gathers facts; **the script decides** | Stops if `AGENTS_ENABLED` isn't `true`, 3 loop PRs were opened in the last 24 hours, the issue isn't open and `ready-for-agent`, or a PR is already on it |
 | Setup | Sonnet, low effort | Fresh worktree and branch from `main` |
 | Plan | the dev role for the domain | Lists genuine ambiguities, each with its own take |
 | Decide | **Opus, high effort** | Settles each ambiguity; escalates to Ayush (`needs-decision`) only for protected paths or product behaviour beyond the issue |

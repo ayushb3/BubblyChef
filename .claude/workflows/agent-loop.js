@@ -1,7 +1,7 @@
 export const meta = {
   name: 'agent-loop',
   description: 'Take one ready-for-agent issue to a reviewed PR opened as bubblychef-bot: plan, decide, reproduce, implement, verify, review, ship',
-  whenToUse: 'One issue per run. args: {issue: <number>, runDate: "YYYY-MM-DD"}. Optional: shadow (default true), dryRun (stop after Decide). See docs/plans/2026-09-17-autonomous-agent-loop.md.',
+  whenToUse: 'One issue per run. args: {issue: <number>}. Optional: shadow (default true), dryRun (stop after Decide). See docs/plans/2026-09-17-autonomous-agent-loop.md.',
   phases: [
     { title: 'Preflight', detail: 'kill switch, daily cap, issue readiness, classify' },
     { title: 'Setup', detail: 'fresh worktree and branch from main' },
@@ -10,7 +10,7 @@ export const meta = {
     { title: 'Reproduce', detail: 'bugs: failing test first, before-screenshots' },
     { title: 'Implement', detail: 'implement and pass quality gates, max 2 attempts' },
     { title: 'Verify', detail: 'run the real app and walk the flow (verify skill)' },
-    { title: 'Review', detail: 'fresh-context Opus review, max 3 fix rounds' },
+    { title: 'Review', detail: 'fresh-context Opus review, up to 3 fix rounds' },
     { title: 'Ship', detail: 'commit and PR as bubblychef-bot; or the blocked path' },
   ],
 }
@@ -34,16 +34,17 @@ export const meta = {
 
 const A = args || {}
 const ISSUE = Number(A.issue)
-const RUN_DATE = A.runDate
 const SHADOW = A.shadow !== false
 const DRY_RUN = A.dryRun === true
 
 if (!Number.isInteger(ISSUE) || ISSUE <= 0) throw new Error('args.issue must be an issue number')
-if (!/^\d{4}-\d{2}-\d{2}$/.test(RUN_DATE || '')) throw new Error('args.runDate must be YYYY-MM-DD (scripts cannot read the clock)')
 
 const REPO = 'ayushb3/BubblyChef'
+// At most this many loop PRs in any rolling 24 hours. Rolling rather than per
+// calendar day, so it can't be sidestepped by the UTC/local date boundary.
 const DAILY_CAP = 3
 const MAX_IMPLEMENT_ATTEMPTS = 2
+// Fix rounds after review: up to 3 fixes, so up to 4 reviews.
 const MAX_REVIEW_ROUNDS = 3
 
 // How every agent acts as the bot. Kept in one place so no stage improvises it.
@@ -63,30 +64,55 @@ Read docs/agents/lessons.md in that worktree before you start; it lists mistakes
 agents have already made in this repo.`
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
+// Preflight returns RAW FACTS only. The script decides whether to proceed (see
+// "Preflight" below): the kill switch and the cap must bind in code, not rest on an
+// agent's judgement of its own limits. (Found by the independent review on PR #461.)
 const PREFLIGHT = {
   type: 'object',
   properties: {
-    ok: { type: 'boolean' },
-    reason: { type: 'string', description: 'why not ok, or "ready"' },
+    agentsEnabled: { type: 'string', description: 'exact output of gh variable get AGENTS_ENABLED, trimmed' },
+    runsLast24h: { type: 'integer' },
+    issueState: { type: 'string', description: 'OPEN or CLOSED, exactly as gh reports it' },
+    issueLabels: { type: 'array', items: { type: 'string' } },
+    openPrsForIssue: { type: 'array', items: { type: 'integer' }, description: 'open PR numbers that target this issue' },
     title: { type: 'string' },
     kind: { type: 'string', enum: ['bug', 'feature', 'refactor', 'docs'] },
     devRole: { type: 'string', enum: ['frontend', 'backend', 'ui-ux'] },
     slug: { type: 'string', description: 'kebab-case, <= 5 words' },
     summary: { type: 'string', description: 'what the issue asks for, 2-3 sentences' },
-    runsToday: { type: 'integer' },
   },
-  required: ['ok', 'reason', 'title', 'kind', 'devRole', 'slug', 'summary', 'runsToday'],
+  required: ['agentsEnabled', 'runsLast24h', 'issueState', 'issueLabels', 'openPrsForIssue', 'title', 'kind', 'devRole', 'slug', 'summary'],
 }
 
 const SETUP = {
   type: 'object',
   properties: {
     ok: { type: 'boolean' },
+    worktreeCreated: { type: 'boolean', description: 'true if git worktree add succeeded, even if a later step failed' },
     path: { type: 'string' },
     branch: { type: 'string' },
     problem: { type: 'string' },
   },
-  required: ['ok', 'path', 'branch', 'problem'],
+  required: ['ok', 'worktreeCreated', 'path', 'branch', 'problem'],
+}
+
+const FIX = {
+  type: 'object',
+  properties: {
+    gatesPassed: { type: 'boolean' },
+    gateOutput: { type: 'string' },
+    fixed: { type: 'array', items: { type: 'string' }, description: 'each finding you actually fixed, quoted, with what you changed' },
+    disputed: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { finding: { type: 'string' }, reason: { type: 'string' } },
+        required: ['finding', 'reason'],
+      },
+      description: 'findings you are certain are wrong, with why; never use this to skip hard ones',
+    },
+  },
+  required: ['gatesPassed', 'gateOutput', 'fixed', 'disputed'],
 }
 
 const PLAN = {
@@ -223,16 +249,17 @@ Return the draft PR URL, or "none".`,
 // ── Preflight ────────────────────────────────────────────────────────────────
 phase('Preflight')
 const pre = await agent(
-  `Preflight for the agent loop on ${REPO} issue #${ISSUE}. Read-only: change nothing.
+  `Gather facts for the agent loop on ${REPO} issue #${ISSUE}. Read-only: change nothing,
+and do not judge whether the run should proceed: report the raw values exactly.
 Use the default \`gh\` (Ayush's login) for these reads.
 
-Check, in order, and set ok=false with the reason at the first failure:
-1. Kill switch: \`gh variable get AGENTS_ENABLED --repo ${REPO}\` must print exactly "true".
-2. Daily cap: count PRs by bubblychef-bot labelled "agent-loop" created on ${RUN_DATE}:
-   gh pr list --repo ${REPO} --state all --author bubblychef-bot --label agent-loop --search "created:${RUN_DATE}" --json number --jq length
-   Put the count in runsToday. ok=false if it is ${DAILY_CAP} or more.
-3. The issue is open and labelled "ready-for-agent" (gh issue view ${ISSUE} --repo ${REPO} --json state,labels,title,body,comments).
-4. No open PR already works on it: gh pr list --repo ${REPO} --state open --search "${ISSUE} in:body" — ok=false if one clearly targets this issue.
+1. agentsEnabled: the trimmed output of  gh variable get AGENTS_ENABLED --repo ${REPO}
+2. runsLast24h: PRs by bubblychef-bot labelled "agent-loop" created in the last 24 hours.
+   Get the cutoff in UTC:  date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ
+   then: gh pr list --repo ${REPO} --state all --author bubblychef-bot --label agent-loop --search "created:>=<cutoff>" --json number --jq length
+3. issueState and issueLabels:  gh issue view ${ISSUE} --repo ${REPO} --json state,labels,title,body,comments
+4. openPrsForIssue: numbers of OPEN PRs that target this issue (closing keyword or clearly working on it):
+   gh pr list --repo ${REPO} --state open --search "${ISSUE} in:body" --json number,title,body
 
 Then classify from the issue's labels, title, body and comments:
 - kind: "bug" if it has the "bug" label; else feature/refactor/docs by content.
@@ -244,8 +271,20 @@ Then classify from the issue's labels, title, body and comments:
   { label: 'preflight', phase: 'Preflight', schema: PREFLIGHT, model: 'sonnet', effort: 'low' },
 )
 if (!pre) throw new Error('preflight agent died')
-log(`Issue #${ISSUE}: ${pre.title} — ${pre.kind}, ${pre.devRole}; runs today ${pre.runsToday}/${DAILY_CAP}`)
-if (!pre.ok) return { status: 'skipped', issue: ISSUE, reason: pre.reason }
+log(`Issue #${ISSUE}: ${pre.title} — ${pre.kind}, ${pre.devRole}; runs in last 24h ${pre.runsLast24h}/${DAILY_CAP}`)
+
+// The go/no-go is decided HERE, from the raw facts — not by the agent.
+const stopReason =
+  pre.agentsEnabled !== 'true' ? `kill switch: AGENTS_ENABLED is "${pre.agentsEnabled}", not "true"`
+  : pre.runsLast24h >= DAILY_CAP ? `daily cap: ${pre.runsLast24h} loop PRs in the last 24h (cap ${DAILY_CAP})`
+  : pre.issueState !== 'OPEN' ? `issue #${ISSUE} is ${pre.issueState}`
+  : !pre.issueLabels.includes('ready-for-agent') ? `issue #${ISSUE} is not labelled ready-for-agent`
+  : pre.openPrsForIssue.length ? `issue #${ISSUE} already has open PR(s): ${pre.openPrsForIssue.map(n => '#' + n).join(', ')}`
+  : ''
+if (stopReason) {
+  log(`Not starting: ${stopReason}`)
+  return { status: 'skipped', issue: ISSUE, reason: stopReason }
+}
 
 // ── Setup ────────────────────────────────────────────────────────────────────
 phase('Setup')
@@ -259,10 +298,24 @@ const wt = await agent(
 3. Copy the gitignored env files into the new worktree (never print their contents):
    <main>/nextjs/.env.local -> nextjs/.env.local ; <main>/ai-service/.env -> ai-service/.env
 4. cd into the worktree's nextjs/ and run: npm ci --prefer-offline --no-audit
-Return the absolute worktree path and the branch.`,
+Return the absolute worktree path and the branch. Set worktreeCreated=true whenever step 2
+succeeded, even if a later step failed, and always return the path and branch you used.`,
   { label: 'setup', phase: 'Setup', schema: SETUP, model: 'sonnet', effort: 'low' },
 )
-if (!wt || !wt.ok) return await blocked(null, 'Setup', wt ? wt.problem : 'setup agent died', pre)
+if (!wt || !wt.ok) {
+  // A half-finished Setup must not leave the worktree behind: the next run would hit
+  // "path already exists" and block on this issue forever. Nothing has been committed
+  // yet, so removing it loses nothing. (Found by the independent review on PR #461.)
+  if (wt && wt.worktreeCreated) {
+    await agent(
+      `A failed setup left a worktree behind. Remove it and its branch; nothing was committed there.
+git worktree remove --force "${wt.path}"  then  git branch -D "${wt.branch}"
+Run these from the main checkout (the parent of \`git rev-parse --path-format=absolute --git-common-dir\`). Nothing else.`,
+      { label: 'setup-cleanup', phase: 'Setup', model: 'haiku', effort: 'low' },
+    )
+  }
+  return await blocked(null, 'Setup', wt ? wt.problem : 'setup agent died', pre)
+}
 
 // ── Plan ─────────────────────────────────────────────────────────────────────
 phase('Plan')
@@ -444,15 +497,25 @@ if (!verify) return await blocked(wt, 'Verify', `Still failing verification afte
 // ── Review ───────────────────────────────────────────────────────────────────
 // Fresh context: the reviewer never sees the implementing session, only the diff,
 // the issue and the evidence. This is what caught the stack.sh bugs in PR #457.
+// MAX_REVIEW_ROUNDS counts FIX rounds: up to that many fixes, each followed by a
+// fresh review, so there are up to MAX_REVIEW_ROUNDS + 1 reviews in total.
+//
+// Fixed and disputed findings are tracked separately and reported separately. A
+// dispute is not a win: it goes back to the reviewer, and if the reviewer still
+// raises it, it counts against the round limit like any other unresolved finding.
+// (Earlier, every finding was reported as "fixed" whether it was or not — found by
+// the independent review on PR #461.)
 let review = null
-const resolved = []
-for (let round = 1; round <= MAX_REVIEW_ROUNDS; round++) {
+const fixedFindings = []
+const disputedFindings = []
+for (let round = 1; round <= MAX_REVIEW_ROUNDS + 1; round++) {
   phase('Review')
   review = await agent(
     `You are reviewing a change you did not write. Work in ${wt.path} (cd into it); do not edit anything.
 Diff: git diff origin/main...HEAD. The issue: gh issue view ${ISSUE} --repo ${REPO} --comments.
 What the implementer says it did: ${impl.summary}
 Verification evidence: ${verify.evidence}
+${disputedFindings.length ? `\nThe implementer disputed these earlier findings. Judge each on its merits; raise it again only if the dispute is wrong:\n${disputedFindings.map(d => `- ${d.finding} — implementer says: ${d.reason}`).join('\n')}` : ''}
 
 Review against the issue and CLAUDE.md. In priority order: behaviour that doesn't match
 the issue or the claims; bugs (anything that passes tests but is wrong); security
@@ -465,22 +528,25 @@ verdict=mergeable only if nothing blocking or important remains.`,
   if (!review) return await blocked(wt, 'Review', 'review agent died', pre)
   const serious = review.findings.filter(f => f.severity !== 'minor')
   if (review.verdict === 'mergeable' || !serious.length) break
-  if (round === MAX_REVIEW_ROUNDS) {
-    return await blocked(wt, 'Review', `Review still needs changes after ${MAX_REVIEW_ROUNDS} rounds:\n${serious.map(f => `- [${f.severity}] ${f.file}: ${f.problem}`).join('\n')}`, pre)
+  if (round > MAX_REVIEW_ROUNDS) {
+    return await blocked(wt, 'Review', `Review still needs changes after ${MAX_REVIEW_ROUNDS} fix rounds:\n${serious.map(f => `- [${f.severity}] ${f.file}: ${f.problem}`).join('\n')}`, pre)
   }
   const fix = await agent(
     `${WORKTREE_RULES(wt)}
 ${AS_BOT}
 
-An independent reviewer found these problems in your change for issue #${ISSUE}. Fix each,
-or if you are certain one is wrong, say why in fixSummary. Re-run the relevant gates.
+An independent reviewer found these problems in your change for issue #${ISSUE}.
+Fix each one. If you are CERTAIN a finding is wrong, put it in \`disputed\` with the reason
+instead; a dispute goes back to the reviewer, so never use it to skip a hard fix.
+List every finding you actually fixed in \`fixed\`, with what you changed. Re-run the gates.
 ${GATES}
 ${serious.map(f => `- [${f.severity}] ${f.file}: ${f.problem} — ${f.why}`).join('\n')}
 Commit as the bot. Do not push.`,
-    { label: `fix-${round}`, phase: 'Review', schema: IMPLEMENT, agentType: pre.devRole },
+    { label: `fix-${round}`, phase: 'Review', schema: FIX, agentType: pre.devRole },
   )
   if (!fix || !fix.gatesPassed) return await blocked(wt, 'Review', `Fixing review findings broke the gates:\n${fix ? fix.gateOutput : 'fix agent died'}`, pre)
-  resolved.push(...serious.map(f => `${f.problem} — fixed: ${fix.summary}`))
+  fixedFindings.push(...fix.fixed)
+  disputedFindings.push(...fix.disputed)
 }
 
 // ── Ship ─────────────────────────────────────────────────────────────────────
@@ -503,7 +569,10 @@ Open the PR for issue #${ISSUE}: "${pre.title}".
      Embed the screenshots (${verify.screenshots.concat(repro ? repro.beforeScreenshots : []).join(', ') || 'none'}), before/after side by side where both exist.
    ${repro ? `- Fail-to-pass: ${repro.testFiles.join(', ')} failed on the unfixed code:\n     ${repro.failureOutput.slice(0, 600)}` : ''}
    - Decisions made during the run: ${settled.length ? settled.map(d => `${d.question} → ${d.decision} (${d.reasoning})`).join('; ') : 'none needed'}
-   - Review: ${resolved.length ? resolved.join('; ') : 'passed first round'}${review && review.findings.length ? `; minor, not addressed: ${review.findings.filter(f => f.severity === 'minor').map(f => f.problem).join('; ')}` : ''}
+   - Review — report these three lists separately and truthfully; never call a disputed finding fixed:
+       fixed: ${fixedFindings.length ? fixedFindings.join('; ') : 'none'}${!fixedFindings.length && !disputedFindings.length ? ' (passed the first review)' : ''}
+       disputed and accepted by the re-review: ${disputedFindings.length ? disputedFindings.map(d => `${d.finding} (${d.reason})`).join('; ') : 'none'}
+       minor, not addressed: ${review && review.findings.length ? review.findings.filter(f => f.severity === 'minor').map(f => f.problem).join('; ') || 'none' : 'none'}
    - Not covered: ${verify.couldNotVerify || 'state explicitly what this does not handle'}
    - Lessons proposed (for the nightly curation into docs/agents/lessons.md — do NOT edit that file): anything a future run should know, or "none".
    - "Fixes #${ISSUE}" on its own line if this fully resolves it; "Related to #${ISSUE}" if only partly.
@@ -522,7 +591,8 @@ return {
   wouldAutoMerge: ship.wouldAutoMerge,
   shadow: SHADOW,
   decisions: settled.map(d => `${d.question} → ${d.decision}`),
-  reviewRounds: resolved.length,
+  findingsFixed: fixedFindings.length,
+  findingsDisputed: disputedFindings.length,
   lessonsProposed: ship.lessonsProposed,
   worktree: wt.path,
 }
