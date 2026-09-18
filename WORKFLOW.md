@@ -318,6 +318,7 @@ for why this changed.
 |---|---|---|
 | Planning/tracking | `wayfinder`, `triage`, `to-spec`, `to-tickets`, `handoff` | ✅ vendored |
 | Build | `tdd`, `domain-modeling`, `prototype` | ✅ vendored |
+| Verify (project) | `verify` — run a production build on this worktree's ports and walk the flow, with screenshots | 🏠 project-local |
 | Build (project) | `implement-issue` | 🏠 project-local |
 | Review | `code-review`, `thermo-nuclear-review` | ✅ vendored |
 | Investigation | `diagnosing-bugs`, `research`, `resolving-merge-conflicts` | ✅ vendored |
@@ -327,7 +328,7 @@ for why this changed.
 | Media | `prune-media` | 🏠 project-local |
 | House rules | see §8 | folded into prose, not skills |
 
-**20 skills loaded.** `skills-lock.json` records the upstream commit per source plus
+**21 skills loaded.** `skills-lock.json` records the upstream commit per source plus
 a per-skill hash, so drift stays detectable against both.
 
 ### 9.1 Why vendoring, and what's still broken
