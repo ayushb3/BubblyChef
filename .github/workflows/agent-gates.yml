@@ -1,0 +1,122 @@
+name: Agent gates
+
+# Gates that let an agent-authored PR merge without a human reading the diff
+# (WORKFLOW.md §7, docs/plans/2026-09-17-autonomous-agent-loop.md).
+#
+# These are deliberately *mechanical*. The reason the merge gate could move off a
+# human is not that agents got more trustworthy — it is that these checks cannot be
+# satisfied by an agent asserting that it did the work. CI re-runs the PR's own
+# tests against the base commit; CI counts the tests; CI reads the diff.
+#
+# They run on every PR, not only agent ones: a rule that applies to some authors is
+# a rule that gets forgotten.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  exemption:
+    name: F2P exemption is legitimate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check no-f2p label against the diff
+        run: |
+          bash scripts/agent-gates/exemption-check.sh \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}" \
+            '${{ toJSON(github.event.pull_request.labels.*.name) }}'
+
+  test-count:
+    name: Test suite did not shrink
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ai-service/pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: nextjs/package-lock.json
+      - name: Install (ai-service)
+        run: cd ai-service && pip install -e ".[dev]"
+      - name: Install (nextjs)
+        run: cd nextjs && npm ci
+      - name: Compare collected test counts
+        run: |
+          bash scripts/agent-gates/test-count-guard.sh \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}" \
+            '${{ toJSON(github.event.pull_request.labels.*.name) }}'
+
+  fail-to-pass:
+    name: Bug fix fails on base
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ai-service/pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: nextjs/package-lock.json
+      - name: Install (ai-service)
+        run: cd ai-service && pip install -e ".[dev]"
+      - name: Install (nextjs)
+        run: cd nextjs && npm ci
+
+      # Required only when the PR closes an issue labelled `bug`: a feature has
+      # nothing to fail against first. `no-f2p` waives it, and the exemption job
+      # above proves that waiver is honest.
+      - name: Is fail-to-pass required?
+        id: required
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BODY: ${{ github.event.pull_request.body }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -euo pipefail
+          if printf '%s' "$LABELS" | grep -q '"no-f2p"'; then
+            echo "required=false" >> "$GITHUB_OUTPUT"
+            echo "Waived by the (verified) no-f2p label."
+            exit 0
+          fi
+          required=false
+          # Closing keywords in the PR body, one issue per line (CLAUDE.md).
+          issues=$(printf '%s' "$BODY" \
+            | grep -oiE '(fixes|closes|resolves)[[:space:]]+#[0-9]+' \
+            | grep -oE '[0-9]+' | sort -u || true)
+          for n in $issues; do
+            if gh issue view "$n" --repo "${{ github.repository }}" --json labels \
+                 --jq '[.labels[].name] | index("bug")' 2>/dev/null | grep -qv '^null$'; then
+              echo "Issue #$n is labelled bug → fail-to-pass required."
+              required=true
+            fi
+          done
+          echo "required=$required" >> "$GITHUB_OUTPUT"
+
+      - name: Run the PR's tests against the base commit
+        run: |
+          bash scripts/agent-gates/f2p-check.sh \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}" \
+            "${{ steps.required.outputs.required }}"
