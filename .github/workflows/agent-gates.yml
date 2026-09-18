@@ -105,11 +105,18 @@ jobs:
           issues=$(printf '%s' "$BODY" \
             | grep -oiE '(fixes|closes|resolves)[[:space:]]+#[0-9]+' \
             | grep -oE '[0-9]+' | sort -u || true)
+          # Ask the question directly and compare the answer exactly. An earlier
+          # version piped `index("bug")` into `grep -v null`; that expression prints a
+          # blank line for every issue, a blank line is "not null", so every PR that
+          # closed any issue was treated as a bug fix (caught on PR #459).
           for n in $issues; do
-            if gh issue view "$n" --repo "${{ github.repository }}" --json labels \
-                 --jq '[.labels[].name] | index("bug")' 2>/dev/null | grep -qv '^null$'; then
+            is_bug=$(gh issue view "$n" --repo "${{ github.repository }}" --json labels \
+                       --jq 'any(.labels[]; .name == "bug")' 2>/dev/null || true)
+            if [ "$is_bug" = "true" ]; then
               echo "Issue #$n is labelled bug → fail-to-pass required."
               required=true
+            else
+              echo "Issue #$n is not labelled bug."
             fi
           done
           echo "required=$required" >> "$GITHUB_OUTPUT"
