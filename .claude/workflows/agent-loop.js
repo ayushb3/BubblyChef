@@ -258,8 +258,13 @@ Use the default \`gh\` (Ayush's login) for these reads.
    Get the cutoff in UTC:  date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ
    then: gh pr list --repo ${REPO} --state all --author bubblychef-bot --label agent-loop --search "created:>=<cutoff>" --json number --jq length
 3. issueState and issueLabels:  gh issue view ${ISSUE} --repo ${REPO} --json state,labels,title,body,comments
-4. openPrsForIssue: numbers of OPEN PRs that target this issue (closing keyword or clearly working on it):
-   gh pr list --repo ${REPO} --state open --search "${ISSUE} in:body" --json number,title,body
+4. openPrsForIssue: the union of exactly these two lists, nothing else. Do NOT search PR text
+   for the number: other PRs mention issues in passing (the dry run on #405 once matched the
+   loop's own PR, which only suggested #405 as a pilot).
+   a. Open PRs GitHub has linked to close this issue:
+      gh api graphql -f query='query{repository(owner:"ayushb3",name:"BubblyChef"){issue(number:${ISSUE}){closedByPullRequestsReferences(first:20,includeClosedPrs:false){nodes{number}}}}}' --jq '[.data.repository.issue.closedByPullRequestsReferences.nodes[].number]'
+   b. Open PRs on a branch named for this issue:
+      gh pr list --repo ${REPO} --state open --json number,headRefName --jq '[.[] | select(.headRefName | test("issue-${ISSUE}-")) | .number]'
 
 Then classify from the issue's labels, title, body and comments:
 - kind: "bug" if it has the "bug" label; else feature/refactor/docs by content.
