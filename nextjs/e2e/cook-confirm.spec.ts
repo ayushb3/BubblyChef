@@ -155,11 +155,35 @@ async function stubCookFlow(page, cookProposal, confirmStatus = 200) {
  * RecipeBook renders the cook button twice (the mobile and desktop layouts both
  * mount), so this scopes to the first — the assertion is "the cook affordance is
  * reachable", not "there is exactly one".
+ *
+ * Issue #263 rewired "Cook this recipe" to open GuidedCookFlow (a step-by-step
+ * mise-en-place → per-step → done flow) instead of jumping straight to
+ * CookModal. CookModal is still reachable, but only from the guided flow's
+ * done-state via "Update my pantry" — see RecipeBook.tsx's `guidedCookOpen` /
+ * `onFinish` wiring. STUB_RECIPE has exactly 2 instructions, so the flow is:
+ * prep (skip) → step 1 (next) → step 2 (finish) → done → deduct. The footer's
+ * "next" button keeps one data-testid (`guided-cook-next`) across all three of
+ * those states, so it's driven generically off the step count rather than
+ * hardcoding a click count that would silently drift if the fixture recipe's
+ * instruction list ever changes length.
  */
 async function openCookModal(page) {
   await page.goto('/recipes');
   await expect(page.getByText('E2E Rice Bowl').first()).toBeVisible({ timeout: 10_000 });
   await page.getByRole('button', { name: 'Cook this recipe' }).first().click();
+
+  await expect(page.getByTestId('guided-cook-flow')).toBeVisible({ timeout: 5_000 });
+
+  // Walk the guided flow to its done-state: one "next" click for the prep
+  // screen, then one per instruction (the last of which reads "Finish cooking").
+  const stepCount = STUB_RECIPE.instructions.length;
+  for (let i = 0; i < stepCount + 1; i++) {
+    await page.getByTestId('guided-cook-next').click();
+  }
+
+  await expect(page.getByTestId('guided-cook-done')).toBeVisible({ timeout: 5_000 });
+  await page.getByTestId('guided-cook-deduct').click();
+
   await expect(page.getByRole('heading', { name: 'Mark as cooked' })).toBeVisible();
 }
 
