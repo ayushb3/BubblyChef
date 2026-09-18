@@ -486,7 +486,9 @@ the same credential differently.
 
 **Installed skills live in `.claude/skills/`, committed to the repo** — so they work
 in a fresh clone, in CI, and in cloud sessions, not just on a configured laptop.
-20 skills loaded from `.claude/skills/`; 9 more sit unloaded in
+21 skills loaded from `.claude/skills/` (including the project's own `verify`,
+which runs a production build on the worktree's ports and walks the changed flow);
+9 more sit unloaded in
 `.claude/skills-archive/` (archived 2026-09-17, reversible — move a directory back
 to restore it). `skills-lock.json` records each upstream commit and per-skill hashes
 for drift detection, archived entries included. See `WORKFLOW.md` §9.
