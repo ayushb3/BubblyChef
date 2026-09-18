@@ -87,14 +87,18 @@ test.describe('smoke — pantry add/delete', () => {
 // (e) — health checks on both services
 // ---------------------------------------------------------------------------
 
+// A real commit SHA, not the health endpoints' own "unknown" fallback (which
+// both return when nothing set the SHA — a config gap must fail loud here,
+// not read as "healthy").
+const FULL_GIT_SHA = /^[0-9a-f]{40}$/i;
+
 test.describe('smoke — health', () => {
   test('GET /api/health reports a sha', async ({ request, baseURL }) => {
     const res = await request.get(`${baseURL}/api/health`);
     expect(res.status()).toBe(200);
     const body = await res.json();
     // Frontend health shape: { sha, ... } — see nextjs/src/app/api/health/route.ts.
-    expect(typeof body.sha).toBe('string');
-    expect(body.sha.length).toBeGreaterThan(0);
+    expect(body.sha).toMatch(FULL_GIT_SHA);
   });
 
   test('ai-service GET /health reports version.git_sha', async ({ request }) => {
@@ -105,8 +109,7 @@ test.describe('smoke — health', () => {
     // ai-service health shape: { status, version: { git_sha, app_version } } —
     // see ai-service/bubbly_chef/main.py::build_info(). Distinct field name
     // and nesting from the frontend's — do not conflate the two.
-    expect(typeof body.version?.git_sha).toBe('string');
-    expect(body.version.git_sha.length).toBeGreaterThan(0);
+    expect(body.version?.git_sha).toMatch(FULL_GIT_SHA);
   });
 });
 
