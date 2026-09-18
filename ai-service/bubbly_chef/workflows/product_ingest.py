@@ -15,6 +15,10 @@ from bubbly_chef.models.base import ProposalEnvelope
 from bubbly_chef.models.pantry import (
     PantryProposal,
 )
+from bubbly_chef.prompts.ingest import (
+    PRODUCT_PARSE_SYSTEM_PROMPT,
+    PRODUCT_PARSE_USER_PROMPT_TEMPLATE,
+)
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 from bubbly_chef.tools.llm_client import LLMError, get_ollama_client
 from bubbly_chef.tools.product_lookup import get_product_lookup
@@ -44,34 +48,6 @@ class ProductWorkflowState(WorkflowState):
     quantity_override: float
     unit_override: str
     product_found: bool
-
-
-# =============================================================================
-# LLM Prompts
-# =============================================================================
-
-PRODUCT_PARSE_SYSTEM_PROMPT = """\
-You are a helpful assistant that parses product descriptions \
-into structured item data.
-
-Given a product description, extract:
-1. The product name
-2. Any quantity information
-3. The food category
-
-Be concise and extract just the core product information."""
-
-
-PRODUCT_PARSE_USER_PROMPT_TEMPLATE = """Parse this product description:
-
-"{description}"
-
-Extract:
-- name: the product name
-- quantity: amount if mentioned (default 1)
-- unit: unit of measurement (default "item")
-- category: food category (produce, dairy, meat, seafood, frozen, \
-canned, dry_goods, condiments, beverages, snacks, bakery, other)"""
 
 
 # =============================================================================

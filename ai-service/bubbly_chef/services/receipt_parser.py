@@ -14,6 +14,7 @@ from bubbly_chef.domain.normalizer import (
     normalize_to_library,
 )
 from bubbly_chef.models.pantry import FoodCategory, StorageLocation
+from bubbly_chef.prompts.ingest import RECEIPT_PARSE_PROMPT
 
 
 class ParsedReceiptItem(BaseModel):
@@ -42,48 +43,6 @@ class LLMReceiptOutput(BaseModel):
     """Schema for LLM structured output."""
 
     items: list[dict[str, Any]]
-
-
-RECEIPT_PARSE_PROMPT = """You are a grocery receipt parser.
-Extract food items from this receipt text.
-
-CRITICAL RULES:
-1. Only extract FOOD items - ignore non-food (bags, tax, totals, discounts, coupons)
-2. IGNORE PRICES - Numbers with decimals (e.g., 6.17, 2.10) are PRICES, NOT quantities
-3. Only extract quantity if explicitly mentioned BEFORE or IN the item name
-   (e.g., "2X MILK", "3 Bananas", "Eggs 12pk")
-4. If a number appears AFTER the item name, it is probably a price - IGNORE IT
-5. Expand common abbreviations: ORG=Organic, GAL=Gallon, DZ=Dozen, PK=Pack, LB=Pound, OZ=Ounce
-6. Clean up item names - remove store codes, PLU numbers, asterisks
-7. If quantity is ambiguous or not clearly specified, return null
-
-Receipt text:
-```
-{receipt_text}
-```
-
-For each food item, extract:
-- name: Clean item name without quantity (e.g., "Large Eggs" not "Large Eggs 6.17")
-- quantity: ONLY if explicitly part of the product (e.g., "12pk"). Return null if uncertain.
-- unit: Unit ONLY if clearly specified in the product name (e.g., "gallon", "dozen", "lb", "pk")
-- confidence: Your confidence 0.0-1.0 that this is a valid food item
-
-EXAMPLES OF CORRECT PARSING:
-✓ "Large Eggs      6.17" →
-  {{"name": "Large Eggs", "quantity": null, "unit": null, "confidence": 0.95}}
-✓ "Milk             1.80" → {{"name": "Milk", "quantity": null, "unit": null, "confidence": 0.95}}
-✓ "2X Milk         3.80" → {{"name": "Milk", "quantity": 2, "unit": null, "confidence": 0.95}}
-✓ "Bananas 1lb     0.68" → {{"name": "Bananas", "quantity": 1, "unit": "lb", "confidence": 0.90}}
-✓ "Canned Tuna 12pk 11.98" →
-  {{"name": "Canned Tuna", "quantity": 12, "unit": "item", "confidence": 0.92}}
-✓ "Cheese Crackers 2.10" →
-  {{"name": "Cheese Crackers", "quantity": null, "unit": null, "confidence": 0.90}}
-
-WRONG - DO NOT DO THIS:
-✗ "Eggs 6.17" should NOT become {{"quantity": 6}} - that's a price!
-✗ "Crackers 2.10" should NOT become {{"quantity": 2}} - that's a price!
-
-Return JSON with an "items" array. Only include items you're reasonably confident are food items."""
 
 
 # Common non-food keywords to filter out
