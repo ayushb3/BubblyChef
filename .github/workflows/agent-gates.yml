@@ -91,7 +91,9 @@ jobs:
         id: required
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BODY: ${{ github.event.pull_request.body }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          PR: ${{ github.event.pull_request.number }}
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           set -euo pipefail
@@ -100,25 +102,33 @@ jobs:
             echo "Waived by the (verified) no-f2p label."
             exit 0
           fi
+
+          # Ask GitHub which issues this PR will close, rather than pattern-matching the
+          # PR body. Two earlier versions got this wrong: one piped `index("bug")` into
+          # `grep -v null`, which printed a blank line for every issue and so treated
+          # every closed issue as a bug; the next regex-matched `Fixes #N` in the body,
+          # which also matched example keywords inside code spans that GitHub itself
+          # ignores (caught on PR #460). closingIssuesReferences is exactly the set GitHub
+          # will close on merge, so the gate and GitHub can no longer disagree.
+          closing=$(gh api graphql \
+            -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){closingIssuesReferences(first:50){nodes{number labels(first:50){nodes{name}}}}}}}' \
+            -F o="$OWNER" -F r="$REPO" -F n="$PR" \
+            --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[]
+                  | "\(.number) \(any(.labels.nodes[]; .name == "bug"))"')
+
           required=false
-          # Closing keywords in the PR body, one issue per line (CLAUDE.md).
-          issues=$(printf '%s' "$BODY" \
-            | grep -oiE '(fixes|closes|resolves)[[:space:]]+#[0-9]+' \
-            | grep -oE '[0-9]+' | sort -u || true)
-          # Ask the question directly and compare the answer exactly. An earlier
-          # version piped `index("bug")` into `grep -v null`; that expression prints a
-          # blank line for every issue, a blank line is "not null", so every PR that
-          # closed any issue was treated as a bug fix (caught on PR #459).
-          for n in $issues; do
-            is_bug=$(gh issue view "$n" --repo "${{ github.repository }}" --json labels \
-                       --jq 'any(.labels[]; .name == "bug")' 2>/dev/null || true)
+          if [ -z "$closing" ]; then
+            echo "This PR closes no issues."
+          fi
+          while read -r n is_bug; do
+            [ -n "$n" ] || continue
             if [ "$is_bug" = "true" ]; then
-              echo "Issue #$n is labelled bug → fail-to-pass required."
+              echo "Closes issue #$n, labelled bug → fail-to-pass required."
               required=true
             else
-              echo "Issue #$n is not labelled bug."
+              echo "Closes issue #$n, not labelled bug."
             fi
-          done
+          done <<<"$closing"
           echo "required=$required" >> "$GITHUB_OUTPUT"
 
       - name: Run the PR's tests against the base commit
