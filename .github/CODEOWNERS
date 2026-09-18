@@ -31,6 +31,9 @@
 /.claude/hooks/                             @ayushb3
 /.claude/agents/                            @ayushb3
 /scripts/agent-gates/                       @ayushb3
+# The agent loop's own control flow: its caps, its "never merge" rules, and how it
+# acts as the bot. An agent that could edit this could raise its own limits.
+/.claude/workflows/                         @ayushb3
 
 # Dependencies — supply chain.
 /nextjs/package.json                        @ayushb3

@@ -285,6 +285,36 @@ post-merge smoke test waits until both match the merged commit, exercises core f
 against production, and on failure an agent opens a revert PR that may auto-merge —
 a pure revert being the one change that is always safe.
 
+### The agent loop
+
+One `ready-for-agent` issue goes end to end through a saved Workflow script,
+`.claude/workflows/agent-loop.js`, run with `{issue: <n>, runDate: "YYYY-MM-DD"}`.
+Control flow lives in the script so it behaves the same every run; judgement lives in
+the agents it calls:
+
+| Stage | Who | Way out |
+|---|---|---|
+| Preflight | Sonnet, low effort | Stops if `AGENTS_ENABLED` isn't `true`, the day's 3-run cap is used, or the issue isn't ready |
+| Setup | Sonnet, low effort | Fresh worktree and branch from `main` |
+| Plan | the dev role for the domain | Lists genuine ambiguities, each with its own take |
+| Decide | **Opus, high effort** | Settles each ambiguity; escalates to Ayush (`needs-decision`) only for protected paths or product behaviour beyond the issue |
+| Reproduce | dev role | Bugs only: a test that fails on the unfixed code, plus before-screenshots |
+| Implement + Verify | dev role | Quality gates, then the `verify` skill; **2 attempts total** |
+| Review | **Opus**, fresh context | Up to **3** fix rounds |
+| Ship | Sonnet | PR as `bubblychef-bot`, protected paths flagged at the top |
+
+Any stage that can't finish takes the **blocked path**: a draft PR labelled
+`agent-blocked` with the work so far and where it stopped, and the issue moved back to
+`needs-triage` so it isn't picked up again until a human has looked. A stuck run is a
+normal outcome; a silent half-done branch is not.
+
+The loop never merges. In shadow mode (the default) it never requests auto-merge
+either; it marks PRs that *would* auto-merge and Ayush merges. The script itself is
+CODEOWNERS-protected: an agent that could edit it could raise its own limits.
+
+`dryRun: true` stops after Decide and removes the worktree: a cheap way to see how the
+loop reads an issue before letting it write anything.
+
 
 ## 8. House rules
 

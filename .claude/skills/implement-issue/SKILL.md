@@ -14,6 +14,14 @@ the skill.
 Do exactly one issue per invocation. If asked to "clear the queue", run this
 skill once per issue, not as a batch.
 
+**Prefer the scripted loop.** `.claude/workflows/agent-loop.js` runs the same
+lifecycle with fixed control flow: it adds a failing-test-first step for bugs, an
+Opus decision agent for ambiguity, a running-app `verify` step, a fresh-context
+review, and it acts as `bubblychef-bot` so CODEOWNERS applies. Run it with the
+Workflow tool (`name: "agent-loop"`, `args: {issue: <n>, runDate: "YYYY-MM-DD"}`).
+Use this skill instead only when working an issue interactively with Ayush, and in
+that case still open the PR as the bot (`WORKFLOW.md` §7, "The agent loop").
+
 ## Run budget — check as you go, not at the end
 
 Unattended, the failure mode is a run that never admits it's stuck. Stop and take
