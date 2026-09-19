@@ -408,7 +408,14 @@ Return:
 - userVisible: can a user see or trigger this in the app?
 - questions: ONLY genuine ambiguities the issue does not settle and that change
   what you would build. For each, the options and your own take. Do not invent
-  questions; an issue that is clear gets an empty list.`,
+  questions; an issue that is clear gets an empty list.
+  ALWAYS include as a question any change a user would notice beyond what the issue
+  literally describes, even when you are confident it is correct: for example, the
+  fix also changes what gets saved, which items are selected by default, or copy the
+  user sees elsewhere. Frame it as "should we also <change>?", with your take. The
+  decision step routes those to Ayush. (Issue #406's fix also stopped medium-confidence
+  scanned items being added automatically; nobody was asked, and in non-shadow mode it
+  would have merged unseen.)`,
   { label: 'plan', phase: 'Plan', schema: PLAN, agentType: pre.devRole },
 )
 if (!plan) return await blocked(wt, 'Plan', 'plan agent died', pre)
