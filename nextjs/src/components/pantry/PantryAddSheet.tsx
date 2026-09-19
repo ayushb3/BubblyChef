@@ -67,18 +67,18 @@ export default function PantryAddSheet({
   const allItems = [...scanItems, ...typeItems]
   const itemCount = allItems.length
 
-  // Switching tabs unmounts the outgoing one — its draft (typeRows /
-  // scanSnapshot) is preserved above so the UI it shows on remount isn't
-  // wiped, but its contribution to the "ready to add" count is cleared here
-  // rather than left stale (issue #402: the count previously survived an
-  // unmount that the underlying data didn't). The incoming tab re-derives
-  // its own count from the restored draft as soon as it re-validates it
-  // (ScanTab's ReviewSurface does this on mount; TypeTab does it on the next
-  // edit).
+  // Switching tabs unmounts the outgoing one, but both tabs' drafts (typeRows
+  // / scanSnapshot) and their submitted items (typeItems / scanItems) are
+  // kept — a tab switch is not a discard. Both tabs' items are combined in
+  // `allItems` below, so the footer count (and the actual submit payload)
+  // reflect items from scan and type together, not just the active tab
+  // (issue #402: an earlier version cleared the outgoing tab's items here,
+  // which silently dropped it from the submit if the user never switched
+  // back). Each tab re-reports its own items on mount (ScanTab's
+  // ReviewSurface does this via onCheckedItemsChange; TypeTab does it in a
+  // mount effect), so the count stays in sync with what's actually there.
   function switchTab(next: PantryAddTab) {
     if (next === activeTab) return
-    if (activeTab === 'scan') setScanItems([])
-    else setTypeItems([])
     setActiveTab(next)
   }
 
