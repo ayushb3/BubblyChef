@@ -1,10 +1,10 @@
 export const meta = {
   name: 'agent-loop',
-  description: 'Take one ready-for-agent issue to a reviewed PR opened as bubblychef-bot: plan, decide, reproduce, implement, verify, review, ship',
+  description: 'Take one ready-for-agent issue to a reviewed PR opened as bubblychef-bot: plan, decide, reproduce, implement, verify, review, ship, respond to the GitHub review',
   whenToUse: 'One issue per run. args: {issue: <number>}. Optional: shadow (default true), dryRun (stop after Decide). See docs/plans/2026-09-17-autonomous-agent-loop.md.',
   phases: [
     { title: 'Preflight', detail: 'kill switch, daily cap, issue readiness, classify' },
-    { title: 'Setup', detail: 'fresh worktree and branch from main' },
+    { title: 'Setup', detail: "fresh branch from main in the session's own checkout" },
     { title: 'Plan', detail: 'dev role reads issue, lessons and code; lists open questions' },
     { title: 'Decide', detail: 'Opus decides each open question, or escalates to Ayush' },
     { title: 'Reproduce', detail: 'bugs: failing test first, before-screenshots' },
@@ -12,6 +12,7 @@ export const meta = {
     { title: 'Verify', detail: 'run the real app and walk the flow (verify skill)' },
     { title: 'Review', detail: 'fresh-context Opus review, up to 3 fix rounds' },
     { title: 'Ship', detail: 'commit and PR as bubblychef-bot; or the blocked path' },
+    { title: 'Respond', detail: 'read the GitHub review and answer it, max 2 fix rounds; then finish' },
   ],
 }
 
@@ -58,9 +59,11 @@ ACTING AS THE BOT — follow exactly; never use Ayush's identity for writes.
   never run \`gh pr merge\` in any form.`
 
 const WORKTREE_RULES = (wt) => `
-Work ONLY inside the worktree at: ${wt.path} (branch ${wt.branch}).
+Work ONLY inside the checkout at: ${wt.path}, on branch ${wt.branch}. Do not switch branches
+while you work; the only exception is an explicit numbered cleanup step below telling you to
+return to the original branch at the end, which you must carry out.
 Start every shell command with: cd "${wt.path}" && ...
-Read docs/agents/lessons.md in that worktree before you start; it lists mistakes
+Read docs/agents/lessons.md in that checkout before you start; it lists mistakes
 agents have already made in this repo.`
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
@@ -88,12 +91,13 @@ const SETUP = {
   type: 'object',
   properties: {
     ok: { type: 'boolean' },
-    worktreeCreated: { type: 'boolean', description: 'true if git worktree add succeeded, even if a later step failed' },
-    path: { type: 'string' },
+    branchCreated: { type: 'boolean', description: 'true if the issue branch was created, even if a later step failed' },
+    path: { type: 'string', description: "this session's checkout (git rev-parse --show-toplevel)" },
     branch: { type: 'string' },
+    originalBranch: { type: 'string', description: 'the branch the checkout was on before Setup, to return to at the end' },
     problem: { type: 'string' },
   },
-  required: ['ok', 'worktreeCreated', 'path', 'branch', 'problem'],
+  required: ['ok', 'branchCreated', 'path', 'branch', 'originalBranch', 'problem'],
 }
 
 const FIX = {
@@ -207,16 +211,63 @@ const REVIEW = {
   required: ['verdict', 'findings'],
 }
 
+const GH_REVIEW = {
+  type: 'object',
+  properties: {
+    reviewRan: { type: 'boolean', description: 'a GitHub review run for the head commit finished and posted a review' },
+    verdict: { type: 'string', enum: ['looks mergeable', 'needs changes', 'needs a human', 'none'] },
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          severity: { type: 'string', enum: ['blocking', 'important', 'minor'] },
+          file: { type: 'string' },
+          problem: { type: 'string' },
+          why: { type: 'string' },
+        },
+        required: ['severity', 'file', 'problem', 'why'],
+      },
+    },
+    note: { type: 'string', description: 'why reviewRan is false, or anything notable; else empty' },
+    reviewedSha: { type: 'string', description: 'the headSha of the workflow run whose review you read' },
+  },
+  required: ['reviewRan', 'verdict', 'findings', 'note', 'reviewedSha'],
+}
+
 const SHIP = {
   type: 'object',
   properties: {
     prUrl: { type: 'string' },
     prNumber: { type: 'integer' },
+    headSha: { type: 'string', description: 'full SHA of the commit you pushed (git rev-parse HEAD after pushing)' },
     protectedPaths: { type: 'array', items: { type: 'string' } },
     wouldAutoMerge: { type: 'boolean' },
     lessonsProposed: { type: 'array', items: { type: 'string' } },
   },
-  required: ['prUrl', 'prNumber', 'protectedPaths', 'wouldAutoMerge', 'lessonsProposed'],
+  required: ['prUrl', 'prNumber', 'headSha', 'protectedPaths', 'wouldAutoMerge', 'lessonsProposed'],
+}
+
+// A Respond fix round. Like FIX, plus what it pushed, so the next review read can be
+// pinned to that exact commit (never a previous round's review), and the protected
+// paths of the WHOLE diff after the fix (a fix can touch a protected file).
+const RESPOND_FIX = {
+  type: 'object',
+  properties: {
+    ...FIX.properties,
+    pushedSha: { type: 'string', description: 'full SHA you pushed, or "" if you committed nothing (e.g. every finding disputed)' },
+    protectedPaths: { type: 'array', items: { type: 'string' }, description: 'files in git diff --name-only origin/main...HEAD matching .github/CODEOWNERS, after your fix' },
+  },
+  required: [...FIX.required, 'pushedSha', 'protectedPaths'],
+}
+
+const FINISH = {
+  type: 'object',
+  properties: {
+    returnedToOriginal: { type: 'boolean', description: 'git branch --show-current (or rev-parse HEAD) now shows the original branch/commit' },
+    ranMergeCommand: { type: 'boolean', description: 'you ran any gh pr merge command' },
+  },
+  required: ['returnedToOriginal', 'ranMergeCommand'],
 }
 
 // ── The blocked path ─────────────────────────────────────────────────────────
@@ -238,7 +289,7 @@ Do this:
 1. ${wt ? `If the branch ${wt.branch} has commits beyond origin/main, commit any remaining work-in-progress (as the bot), push the branch as the bot, and open a DRAFT PR as the bot with labels "agent-loop" and "agent-blocked". Title: "WIP (agent-blocked): <issue title>". Body: what was attempted, the exact point and reason it stopped (quote the failing output), what a human should look at first, and "Related to #${ISSUE}" (NOT a closing keyword). End the body with the line: 🤖 Generated with [Claude Code](https://claude.com/claude-code)` : 'There is no branch to push.'}
 2. As the bot, comment on issue #${ISSUE}: one short paragraph on where the loop stopped and why, linking the draft PR if there is one.
 3. As the bot, on issue #${ISSUE}: remove the label "ready-for-agent" and add "needs-triage", so the loop does not pick it up again until a human has looked.
-${wt ? `4. Stop any stack you started (scripts/dev/stack.sh down in the worktree). Leave the worktree in place.` : ''}
+${wt ? `4. Stop any stack you started (scripts/dev/stack.sh down in ${wt.path}). Then, once everything is committed and pushed (or there was nothing to commit), return the checkout to its original branch: git checkout "${wt.originalBranch}". If nothing was ever committed on ${wt.branch}, also delete it: git branch -D "${wt.branch}".` : ''}
 
 Return the draft PR URL, or "none".`,
     { label: 'blocked-path', phase: 'Ship', model: 'sonnet', effort: 'low' },
@@ -295,27 +346,38 @@ if (stopReason) {
 phase('Setup')
 const prefix = pre.kind === 'bug' ? 'fix' : 'feat'
 const branch = `${prefix}/issue-${ISSUE}-${pre.slug}`
+// The loop works IN THIS SESSION'S OWN CHECKOUT, on a fresh branch. It does not create
+// a separate worktree: the host only lets a session (and every agent it launches) write
+// inside its own worktree, so agents could read a new worktree but never write to it.
+// That is how the first pilot run on issue #405 blocked. It also matches WORKFLOW.md §5:
+// isolation belongs to the session. Running issues in parallel means parallel sessions.
 const wt = await agent(
-  `Create an isolated worktree for the agent loop. Do not touch any other worktree.
-1. Find the main checkout: the parent directory of \`git rev-parse --path-format=absolute --git-common-dir\`.
-2. From there: git fetch origin && git worktree add "<main>/.claude/worktrees/loop-issue-${ISSUE}" -b "${branch}" origin/main
-   If that branch or path already exists, ok=false with the reason — do not reuse or delete it.
-3. Copy the gitignored env files into the new worktree (never print their contents):
-   <main>/nextjs/.env.local -> nextjs/.env.local ; <main>/ai-service/.env -> ai-service/.env
-4. cd into the worktree's nextjs/ and run: npm ci --prefer-offline --no-audit
-Return the absolute worktree path and the branch. Set worktreeCreated=true whenever step 2
-succeeded, even if a later step failed, and always return the path and branch you used.`,
+  `Prepare this session's own checkout for the agent loop. Do not create worktrees, and do
+not touch any other checkout.
+1. path = \`git rev-parse --show-toplevel\` (run it from your current directory).
+2. \`git status --porcelain\` in path must print NOTHING. If the checkout has any uncommitted
+   or untracked-but-unignored files, ok=false with the list: never stash, reset or clean them,
+   they may be someone's work.
+3. originalBranch = \`git branch --show-current\`; if that prints nothing (detached HEAD), use
+   \`git rev-parse HEAD\` instead. Cleanup returns to it with git checkout, which accepts either.
+4. git fetch origin && git switch -c "${branch}" origin/main
+   If that branch already exists locally or on origin, ok=false with the reason — do not reuse or delete it.
+5. If nextjs/.env.local or ai-service/.env is missing: when this checkout is NOT the main
+   checkout (the parent of \`git rev-parse --path-format=absolute --git-common-dir\`), copy it
+   from there; when it IS the main checkout, there is nowhere to copy from, so set ok=false
+   and say which file is missing. Never print their contents.
+6. If nextjs/node_modules is missing, run in nextjs/: npm ci --prefer-offline --no-audit
+Set branchCreated=true whenever step 4 succeeded, even if a later step failed, and always
+return path, branch and originalBranch.`,
   { label: 'setup', phase: 'Setup', schema: SETUP, model: 'sonnet', effort: 'low' },
 )
 if (!wt || !wt.ok) {
-  // A half-finished Setup must not leave the worktree behind: the next run would hit
-  // "path already exists" and block on this issue forever. Nothing has been committed
-  // yet, so removing it loses nothing. (Found by the independent review on PR #461.)
-  if (wt && wt.worktreeCreated) {
+  // A half-finished Setup must not leave the issue branch checked out: the next run would
+  // find the branch already exists and block on this issue forever. Nothing has been
+  // committed yet, so dropping it loses nothing. (Found by the independent review on PR #461.)
+  if (wt && wt.branchCreated) {
     await agent(
-      `A failed setup left a worktree behind. Remove it and its branch; nothing was committed there.
-git worktree remove --force "${wt.path}"  then  git branch -D "${wt.branch}"
-Run these from the main checkout (the parent of \`git rev-parse --path-format=absolute --git-common-dir\`). Nothing else.`,
+      `A failed setup left an issue branch behind. In ${wt.path}: git checkout "${wt.originalBranch}" then git branch -D "${wt.branch}". Nothing was committed on it. Nothing else.`,
       { label: 'setup-cleanup', phase: 'Setup', model: 'haiku', effort: 'low' },
     )
   }
@@ -384,8 +446,8 @@ The agent loop on issue #${ISSUE} needs a human decision before it can continue.
 As the bot, comment on issue #${ISSUE} with, for each question below: the question,
 the implementer's take, the decision agent's recommendation and reasoning, and why it
 needs Ayush. Keep it readable on a phone. Then, as the bot, remove "ready-for-agent" and
-add "needs-decision". Finally remove the worktree at ${wt.path} (git worktree remove) and
-delete its local branch; nothing was committed.
+add "needs-decision". Finally, in ${wt.path}: git checkout "${wt.originalBranch}" and then
+git branch -D "${wt.branch}". Nothing was committed on it.
 
 ${escalations.map(d => `- Question: ${d.question}\n  Implementer: ${d.implementerTake}\n  Recommendation: ${d.decision}\n  Reasoning: ${d.reasoning}\n  Why escalated: ${d.escalateReason}`).join('\n')}`,
     { label: 'escalate', phase: 'Ship', model: 'sonnet', effort: 'low' },
@@ -397,8 +459,8 @@ const DECIDED = settled.length
   : 'No open questions: the issue is clear.'
 
 if (DRY_RUN) {
-  log('Dry run: stopping after Decide and removing the worktree.')
-  await agent(`Remove the worktree at ${wt.path} (git worktree remove --force) and delete its local branch ${wt.branch}. Nothing else.`,
+  log('Dry run: stopping after Decide and removing the issue branch.')
+  await agent(`In ${wt.path}: git checkout "${wt.originalBranch}" and then git branch -D "${wt.branch}". Nothing was committed on it. Nothing else.`,
     { label: 'dry-run-cleanup', phase: 'Decide', model: 'haiku', effort: 'low' })
   return { status: 'dry-run', issue: ISSUE, pre, plan, decisions: settled }
 }
@@ -481,12 +543,12 @@ Do not push.`,
 ${AS_BOT}
 
 Verify issue #${ISSUE} ("${pre.title}") by following .claude/skills/verify/SKILL.md exactly,
-in the worktree above. What was implemented: ${impl.summary}
+in the checkout above. What was implemented: ${impl.summary}
 ${repro && repro.beforeScreenshots.length ? `Before-screenshots already exist: ${repro.beforeScreenshots.join(', ')}. Take the matching -after.png shots.` : ''}
 ${plan.userVisible ? '' : 'The change is not user-visible: verify its observable effect as the skill describes for backend-only changes, or mark applicable=false only if there is genuinely no runtime behaviour to check.'}
 
 Walk the flow the issue describes AND its neighbours. Check both health endpoints report
-the worktree's HEAD. Run the smoke suite. Always run scripts/dev/stack.sh down at the end.
+the checkout's HEAD. Run the smoke suite. Always run scripts/dev/stack.sh down at the end.
 Commit screenshots as the bot. Never report verified=true for anything you did not run.`,
     { label: `verify-${attempt}`, phase: 'Verify', schema: VERIFY, agentType: pre.devRole },
   )
@@ -563,7 +625,8 @@ ${AS_BOT}
 Open the PR for issue #${ISSUE}: "${pre.title}".
 
 1. Work out which changed files match .github/CODEOWNERS (git diff --name-only origin/main...HEAD).
-2. Push the branch as the bot.
+2. Push the branch as the bot, then record headSha = \`git rev-parse HEAD\` (the exact commit
+   the GitHub review will run on).
 3. Open a PR (NOT draft) as the bot against main, labelled "agent-loop". Title in the
    repo's conventional style. The body is the review surface — write it for someone who
    will not open the diff (CLAUDE.md, "The PR body is the review surface"):
@@ -582,22 +645,185 @@ Open the PR for issue #${ISSUE}: "${pre.title}".
    - Lessons proposed (for the nightly curation into docs/agents/lessons.md — do NOT edit that file): anything a future run should know, or "none".
    - "Fixes #${ISSUE}" on its own line if this fully resolves it; "Related to #${ISSUE}" if only partly.
    - End with: 🤖 Generated with [Claude Code](https://claude.com/claude-code)
-4. ${SHADOW ? 'Shadow mode: do NOT enable auto-merge. Do not run any gh pr merge command.' : 'Enable auto-merge only if no protected paths: gh pr merge --auto --merge (as the bot).'}
-5. Stop any stack you started. Leave the worktree in place.`,
+4. ${SHADOW ? 'Shadow mode: do NOT enable auto-merge. Do not run any gh pr merge command.' : 'Do NOT enable auto-merge here: the loop decides that after the GitHub review (Respond). Do not run any gh pr merge command.'}
+5. Stop any stack you started. STAY on ${wt.branch}: the Respond stage may still need to fix
+   and push. A final step returns the checkout to its original branch.`,
   { label: 'ship', phase: 'Ship', schema: SHIP, model: 'sonnet' },
 )
 if (!ship) return await blocked(wt, 'Ship', 'ship agent died before the PR was confirmed', pre)
 
+// ── Respond ──────────────────────────────────────────────────────────────────
+// The GitHub reviewer (claude-review.yml) reviews the PR from a context that never saw
+// this run, and in practice it finds things the in-loop review missed. Its findings used
+// to sit unread on the PR until a human got to them, which kept the human as the
+// bottleneck. Respond reads that review and answers it, with the same rules as the
+// in-loop review: each finding fixed or disputed with a reason, reported separately,
+// and a hard cap on rounds.
+//
+// Every review read is PINNED TO AN EXACT COMMIT, checked here in code: the reader must
+// report the SHA of the run it read, and anything else is treated as "no review", never
+// as approval. Without that, a read could pick up a previous round's review (GitHub
+// updates the PR head asynchronously after a push, and a round that only disputes
+// pushes nothing, so no new review runs). (Found by an independent review of PR #463.)
+//
+// Re-reviews: claude-review.yml also fires on pushes to PRs labelled `agent-loop`, so
+// each fix push gets a fresh GitHub review of the new commit.
+phase('Respond')
+const MAX_RESPOND_ROUNDS = 2
+let expectedSha = ship.headSha
+let protectedNow = [...ship.protectedPaths]
+let ghReview = null
+let respondOutcome = 'looks mergeable'
+const respondFixed = []
+const respondDisputed = []
+for (let round = 0; round <= MAX_RESPOND_ROUNDS; round++) {
+  ghReview = await agent(
+    `Read the GitHub review of ${REPO} PR #${ship.prNumber} for ONE exact commit. Read-only: change nothing.
+Expected head commit: ${expectedSha}
+1. Wait until GitHub shows that commit as the PR head: poll
+     gh pr view ${ship.prNumber} --repo ${REPO} --json headRefOid --jq .headRefOid
+   every 20s for up to 5 minutes until it equals the expected commit. If it never does,
+   reviewRan=false and say so.
+2. List the "Claude PR review" runs for that commit:
+     gh run list --repo ${REPO} --workflow claude-review.yml --commit ${expectedSha} --json databaseId,headSha,status,conclusion,createdAt
+   Use the NEWEST run whose conclusion is not "cancelled" (rapid pushes cancel older runs).
+   If none exists yet, check again every 30s for up to 5 minutes; if still none, reviewRan=false.
+3. Wait for it to finish: gh run watch <id> --repo ${REPO}. It can take several minutes; if a
+   single watch times out, run it again, up to 25 minutes in total. A run that ends
+   "skipped" or "failure" without posting a review means reviewRan=false, with why in note.
+4. Read the review THAT run posted. The summary is ONE "sticky" comment by claude that each
+   run edits in place, so use its last-updated time, not its creation time:
+     gh api repos/${REPO}/issues/${ship.prNumber}/comments --jq '.[] | select(.user.login=="claude[bot]" or .user.login=="claude") | {updated_at, body}'
+   Inline comments are new for each run: gh api repos/${REPO}/pulls/${ship.prNumber}/comments
+   Use only the summary UPDATED after the run started, and inline comments CREATED after it.
+   If the summary wasn't updated by this run, reviewRan=false.
+5. reviewedSha: the headSha of the run you read. verdict: exactly the review's own verdict —
+   "looks mergeable", "needs changes" or "needs a human". findings: each concrete problem it
+   raised (file, problem, why, and severity as it states it; if it doesn't state one, use
+   "important", never guess "minor").`,
+    { label: `gh-review-${round + 1}`, phase: 'Respond', schema: GH_REVIEW, model: 'sonnet', effort: 'low' },
+  )
+  // Enforced here, not by the reader: a review of any other commit is not a review of this one.
+  if (!ghReview || !ghReview.reviewRan || ghReview.reviewedSha !== expectedSha) {
+    respondOutcome = 'no-review'
+    log(`No usable GitHub review for ${expectedSha.slice(0, 8)}: ${!ghReview ? 'agent died' : !ghReview.reviewRan ? ghReview.note : `it read ${String(ghReview.reviewedSha).slice(0, 8)} instead`}`)
+    break
+  }
+  const serious = ghReview.findings.filter(f => f.severity !== 'minor')
+  log(`GitHub review round ${round + 1}: ${ghReview.verdict}, ${serious.length} serious finding(s)`)
+  if (ghReview.verdict === 'looks mergeable') { respondOutcome = 'looks mergeable'; break }
+  if (ghReview.verdict === 'needs a human') { respondOutcome = 'needs a human'; break }  // expected for protected paths
+  if (ghReview.verdict === 'needs changes' && !serious.length) {
+    // The reviewer still said "needs changes"; only minor points remain. The PR stands,
+    // but this is NOT the reviewer's approval, so it can never lead to auto-merge.
+    respondOutcome = 'minor only'
+    break
+  }
+  if (round === MAX_RESPOND_ROUNDS) { respondOutcome = 'unresolved'; break }
+
+  const fix = await agent(
+    `${WORKTREE_RULES(wt)}
+${AS_BOT}
+
+The independent GitHub reviewer found these problems in PR #${ship.prNumber} (issue #${ISSUE}).
+Fix each one. If you are CERTAIN a finding is wrong, put it in \`disputed\` with the reason.
+List every finding you actually fixed in \`fixed\`, with what you changed.
+${serious.map(f => `- [${f.severity}] ${f.file}: ${f.problem} — ${f.why}`).join('\n')}
+
+${GATES}
+
+Then, as the bot:
+- If you changed anything: commit, push the branch (this triggers a fresh GitHub review of the
+  new commit), and set pushedSha to \`git rev-parse HEAD\`.
+- If you only disputed and changed nothing: do not make an empty commit; set pushedSha to "".
+  A dispute with no new commit cannot be re-reviewed, so the loop hands it to Ayush.
+- Post ONE comment on PR #${ship.prNumber} listing each finding with one line:
+  "fixed: <what changed>" or "disputed: <why>". Never call a disputed finding fixed.
+- protectedPaths: files in \`git diff --name-only origin/main...HEAD\` matching .github/CODEOWNERS.`,
+    { label: `respond-fix-${round + 1}`, phase: 'Respond', schema: RESPOND_FIX, agentType: pre.devRole },
+  )
+  if (!fix || !fix.gatesPassed) {
+    respondOutcome = 'unresolved'
+    log(`Respond fix round ${round + 1} failed: ${fix ? fix.gateOutput : 'agent died'}`)
+    break
+  }
+  respondFixed.push(...fix.fixed)
+  respondDisputed.push(...fix.disputed)
+  protectedNow = [...new Set([...protectedNow, ...fix.protectedPaths])]
+  if (!fix.pushedSha || fix.pushedSha === expectedSha) {
+    // Nothing new pushed means nothing new to review: re-reading would only return the
+    // same review. "The same commit as before" counts as nothing pushed, since an agent
+    // may report the current head instead of "". (Found by re-review of PR #463.)
+    // The disagreement is Ayush's to settle.
+    respondOutcome = 'needs a human'
+    log('Every remaining finding was disputed and nothing was pushed: handing to Ayush.')
+    break
+  }
+  expectedSha = fix.pushedSha
+}
+
+// ── Finish ───────────────────────────────────────────────────────────────────
+// Always runs once a PR exists: labels an unresolved PR for Ayush, requests auto-merge
+// only when EVERY condition holds, and returns the caller's checkout. Auto-merge needs
+// the reviewer's own "looks mergeable" on the exact final commit, and protected paths
+// are taken from the WHOLE diff after any Respond fixes, not just what Ship saw.
+const mayAutoMerge = !SHADOW && respondOutcome === 'looks mergeable' && protectedNow.length === 0
+const finishPrompt = `${WORKTREE_RULES(wt)}
+${AS_BOT}
+
+Finish the agent loop run for PR #${ship.prNumber} (issue #${ISSUE}). Do exactly these steps.
+1. ${respondOutcome === 'unresolved'
+    ? `The GitHub review still needs changes after ${MAX_RESPOND_ROUNDS} rounds. As the bot: add the label "agent-blocked" to PR #${ship.prNumber}, convert it to draft (gh pr ready ${ship.prNumber} --repo ${REPO} --undo), and comment which findings remain and why the loop stopped.`
+    : respondOutcome === 'no-review'
+      ? `The GitHub review did not run, or could not be read for the final commit. As the bot, comment on PR #${ship.prNumber} saying so, so a human knows it is unreviewed by the GitHub reviewer.`
+      : respondOutcome === 'needs a human'
+        ? `The GitHub review needs a human (a protected path, or findings disputed without a new commit). As the bot, comment on PR #${ship.prNumber} saying what Ayush needs to decide.`
+        : 'Nothing to label.'}
+2. ${mayAutoMerge
+    ? `Every condition holds (not shadow mode; the GitHub review of the final commit says "looks mergeable"; no protected paths): as the bot, enable auto-merge with gh pr merge ${ship.prNumber} --repo ${REPO} --auto --merge. GitHub still waits for every required check.`
+    : 'Do NOT enable auto-merge and do not run any gh pr merge command.'}
+3. Stop any stack you started, then return the checkout to its original branch:
+   git checkout "${wt.originalBranch}"  (keep the local issue branch; it is pushed).
+   Report whether that worked, and whether you ran any gh pr merge command.`
+let fin = await agent(finishPrompt, { label: 'finish', phase: 'Respond', schema: FINISH, model: 'haiku', effort: 'low' })
+if (!fin) {
+  // The finish agent died: its labelling and drafting of an unresolved PR matter as much
+  // as the checkout, so re-run the whole step once, not just the checkout.
+  fin = await agent(finishPrompt, { label: 'finish-retry', phase: 'Respond', schema: FINISH, model: 'haiku', effort: 'low' })
+}
+if (!fin || !fin.returnedToOriginal) {
+  // Never leave a human's checkout parked on the issue branch because one agent failed.
+  await agent(
+    `In ${wt.path}: run  git checkout "${wt.originalBranch}"  and confirm with git branch --show-current. Nothing else.`,
+    { label: 'finish-fallback', phase: 'Respond', model: 'haiku', effort: 'low' },
+  )
+}
+if (fin && fin.ranMergeCommand && !mayAutoMerge) {
+  // Undo, don't just warn: a forbidden auto-merge left on would merge once checks pass.
+  log('WARNING: the finish agent ran gh pr merge when it was not allowed to. Disabling auto-merge.')
+  await agent(
+    `${AS_BOT}
+As the bot, run: gh pr merge ${ship.prNumber} --repo ${REPO} --disable-auto
+Then comment on PR #${ship.prNumber}: "Auto-merge was enabled by the agent loop in error and has been disabled; a human must merge this PR." Nothing else.`,
+    { label: 'undo-auto-merge', phase: 'Respond', model: 'haiku', effort: 'low' },
+  )
+}
+
 return {
-  status: 'pr-opened',
+  status: respondOutcome === 'unresolved' ? 'agent-blocked' : 'pr-opened',
   issue: ISSUE,
   pr: ship.prUrl,
-  protectedPaths: ship.protectedPaths,
+  protectedPaths: protectedNow,
   wouldAutoMerge: ship.wouldAutoMerge,
+  autoMergeRequested: mayAutoMerge,
+  mergeRuleBroken: !!(fin && fin.ranMergeCommand && !mayAutoMerge),
   shadow: SHADOW,
   decisions: settled.map(d => `${d.question} → ${d.decision}`),
   findingsFixed: fixedFindings.length,
   findingsDisputed: disputedFindings.length,
+  githubReview: respondOutcome,
+  githubFindingsFixed: respondFixed.length,
+  githubFindingsDisputed: respondDisputed.length,
   lessonsProposed: ship.lessonsProposed,
-  worktree: wt.path,
+  checkout: wt.path,
 }
