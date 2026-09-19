@@ -41,6 +41,7 @@ from bubbly_chef.prompts.recipe import (
     RECIPE_CONSTRAINTS_SYSTEM_PROMPT as RECIPE_CONSTRAINTS_SYSTEM_PROMPT,
 )
 from bubbly_chef.repository.supabase_repo import get_repository
+from bubbly_chef.services.dietary_preferences import get_stored_dietary_preferences
 from bubbly_chef.tools.web_search import search_recipe
 from bubbly_chef.workflows.state import (
     LLMRecipeResult,
@@ -491,6 +492,22 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
         constraints["meal_type"] = _default_meal_type()
         logger.info("Defaulted meal_type=%s from time of day", constraints["meal_type"])
 
+    # Stored profile default (#394). Precedence: an explicit dietary ask made
+    # *this message* (captured above by the LLM extraction) always wins for
+    # this turn — a stored preference is a default, not a prohibition. An
+    # inherited dietary constraint from an earlier turn in the same session
+    # (via `_merge_constraints`) also wins, since the user already established
+    # it explicitly this conversation. The stored profile preference only
+    # fills in when the session has *no* dietary signal at all — it must
+    # never be silently dropped just because this message didn't repeat it.
+    if not constraints.get("dietary"):
+        stored_dietary = await get_stored_dietary_preferences(state.get("user_id") or "")
+        if stored_dietary:
+            constraints["dietary"] = stored_dietary
+            logger.info(
+                "Applied stored profile dietary preferences as default: %s", stored_dietary
+            )
+
     return {
         **state,
         "recipe_constraints": constraints,
@@ -734,6 +751,18 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
                 "(dietary=%s, must_use=%s)",
                 constraints.get("dietary"),
                 constraints.get("must_use_ingredients"),
+            )
+
+    # Same stored-preference fallback as extract_recipe_constraints, for the
+    # (defensive) case this path is reached with no dietary signal in the
+    # rehydrated session constraints either (#394).
+    if not constraints.get("dietary"):
+        stored_dietary = await get_stored_dietary_preferences(state.get("user_id") or "")
+        if stored_dietary:
+            constraints = {**constraints, "dietary": stored_dietary}
+            logger.info(
+                "research_recipe: applied stored profile dietary preferences as default: %s",
+                stored_dietary,
             )
 
     cuisine_tag = constraints.get("cuisine")
