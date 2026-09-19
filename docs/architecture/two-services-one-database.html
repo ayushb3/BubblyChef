@@ -1,0 +1,675 @@
+<title>Two Services, One Database</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,500;0,600;0,700;1,500&family=Source+Sans+3:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --ink: #1e1a20;
+    --paper: #faf7f9;
+    --muted: #6b6470;
+    --rule: #e4dee6;
+    --panel: #f1ecf0;
+    --panel-ink: #3a3340;
+    --accent-app: #c14f6a;      /* Next.js / app layer — muted BubblyChef coral */
+    --accent-app-soft: #f6dee4;
+    --accent-ai: #2c6d8a;       /* ai-service / Python layer — teal-blue */
+    --accent-ai-soft: #dcebf0;
+    --accent-data: #23855e;     /* Supabase / Postgres layer — signal green */
+    --accent-data-soft: #d9ede2;
+    --code-bg: #221f28;
+    --code-ink: #ece6ee;
+    --shadow: 0 1px 2px rgba(30, 26, 32, 0.06);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #f3eef5;
+      --paper: #17141a;
+      --muted: #b3a9bb;
+      --rule: #332b3a;
+      --panel: #211c27;
+      --panel-ink: #ece6ee;
+      --accent-app: #ff93ab;
+      --accent-app-soft: #3d2530;
+      --accent-ai: #7cc2e0;
+      --accent-ai-soft: #1c3540;
+      --accent-data: #5fd0a1;
+      --accent-data-soft: #16362a;
+      --code-bg: #0f0d12;
+      --code-ink: #ece6ee;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ink: #f3eef5;
+    --paper: #17141a;
+    --muted: #b3a9bb;
+    --rule: #332b3a;
+    --panel: #211c27;
+    --panel-ink: #ece6ee;
+    --accent-app: #ff93ab;
+    --accent-app-soft: #3d2530;
+    --accent-ai: #7cc2e0;
+    --accent-ai-soft: #1c3540;
+    --accent-data: #5fd0a1;
+    --accent-data-soft: #16362a;
+    --code-bg: #0f0d12;
+    --code-ink: #ece6ee;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Source Sans 3', ui-sans-serif, system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.6;
+    padding-inline: 20px;
+    padding-block: 56px 88px;
+  }
+
+  .page {
+    max-width: 700px;
+    margin-inline: auto;
+  }
+
+  h1, h2, h3, .kicker { font-family: 'Fraunces', Georgia, serif; text-wrap: balance; }
+
+  .masthead { margin-bottom: 44px; }
+
+  .kicker {
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .kicker .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-data); flex: none; }
+
+  h1 {
+    font-size: clamp(32px, 6vw, 44px);
+    font-weight: 600;
+    line-height: 1.08;
+    margin: 0 0 16px;
+    letter-spacing: -0.01em;
+  }
+
+  .dek {
+    font-size: 18px;
+    color: var(--panel-ink);
+    max-width: 62ch;
+    margin: 0 0 28px;
+  }
+
+  .byline {
+    font-size: 14px;
+    color: var(--muted);
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+  }
+  .byline b { color: var(--ink); font-weight: 600; }
+
+  nav.toc {
+    background: var(--panel);
+    border-radius: 4px;
+    padding: 22px 26px;
+    margin: 40px 0 48px;
+  }
+  nav.toc .kicker { margin-bottom: 12px; }
+  nav.toc ol {
+    margin: 0;
+    padding-left: 0;
+    list-style: none;
+    display: grid;
+    gap: 8px;
+    font-size: 15px;
+  }
+  nav.toc li { display: flex; gap: 10px; }
+  nav.toc .n {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--muted);
+    width: 1.4em;
+    flex: none;
+    padding-top: 1px;
+  }
+  nav.toc a { color: var(--panel-ink); text-decoration: none; border-bottom: 1px solid transparent; }
+  nav.toc a:hover { border-bottom-color: currentColor; }
+
+  section { margin: 56px 0; }
+  section > h2:first-child { margin-top: 0; }
+
+  h2 {
+    font-size: 26px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    letter-spacing: -0.005em;
+  }
+  .h2-sub {
+    color: var(--muted);
+    font-size: 15px;
+    margin: 0 0 22px;
+  }
+
+  h3 {
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    margin: 30px 0 10px;
+    color: var(--ink);
+  }
+
+  p { margin: 0 0 16px; max-width: 66ch; }
+  p.lead { font-size: 18px; color: var(--panel-ink); }
+  ul, ol.prose { margin: 0 0 16px; padding-left: 22px; max-width: 64ch; }
+  li { margin-bottom: 8px; }
+  strong { font-weight: 700; }
+
+  a { color: var(--accent-ai); }
+  a:visited { color: var(--accent-ai); }
+
+  code, .mono {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.87em;
+  }
+  p code, li code {
+    background: var(--panel);
+    color: var(--panel-ink);
+    padding: 0.1em 0.4em;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+
+  pre {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    border-radius: 6px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    margin: 0 0 20px;
+    box-shadow: var(--shadow);
+  }
+  pre code {
+    background: none;
+    color: inherit;
+    padding: 0;
+    white-space: pre;
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+  .code-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    color: var(--muted);
+    margin: 0 0 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .code-label .path { color: var(--panel-ink); }
+
+  /* service tag chips */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 3px 10px 3px 8px;
+    border-radius: 100px;
+  }
+  .tag::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .tag.app  { background: var(--accent-app-soft); color: var(--accent-app); }
+  .tag.ai   { background: var(--accent-ai-soft); color: var(--accent-ai); }
+  .tag.data { background: var(--accent-data-soft); color: var(--accent-data); }
+
+  /* two-column service comparison */
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin: 20px 0 28px;
+  }
+  @media (max-width: 620px) { .split { grid-template-columns: 1fr; } }
+  .card {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 18px 20px;
+    background: var(--paper);
+  }
+  .card.app  { border-top: 3px solid var(--accent-app); }
+  .card.ai   { border-top: 3px solid var(--accent-ai); }
+  .card h4 {
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    margin: 0 0 12px;
+  }
+  .card dl { margin: 0; display: grid; gap: 9px; }
+  .card dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; }
+  .card dd { margin: 1px 0 0; font-size: 14.5px; }
+
+  figure { margin: 28px 0 8px; }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption {
+    font-size: 14px;
+    color: var(--muted);
+    margin-top: 12px;
+    max-width: 60ch;
+  }
+  svg text { font-family: 'Source Sans 3', sans-serif; fill: currentColor; }
+  svg .node-label { font-weight: 700; font-size: 13.5px; }
+  svg .node-sub { font-size: 11px; fill: var(--muted); }
+  svg .arrow-label { font-size: 11px; fill: var(--muted); }
+  svg .box { fill: var(--panel); stroke: var(--rule); stroke-width: 1.2; }
+  svg .box.app { stroke: var(--accent-app); }
+  svg .box.ai { stroke: var(--accent-ai); }
+  svg .box.data { stroke: var(--accent-data); fill: var(--accent-data-soft); }
+
+  aside.callout {
+    background: var(--accent-data-soft);
+    border-left: 3px solid var(--accent-data);
+    border-radius: 0 4px 4px 0;
+    padding: 16px 20px;
+    margin: 24px 0;
+  }
+  aside.callout.warn { background: var(--accent-app-soft); border-left-color: var(--accent-app); }
+  aside.callout p { margin: 0; max-width: none; font-size: 15px; }
+  aside.callout p + p { margin-top: 10px; }
+  aside.callout .callout-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--accent-data); margin-bottom: 8px; display: block;
+  }
+  aside.callout.warn .callout-label { color: var(--accent-app); }
+
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 24px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 14px 9px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 700; }
+
+  .takeaways { list-style: none; padding: 0; margin: 0; display: grid; gap: 18px; }
+  .takeaways li {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 14px;
+    margin: 0;
+  }
+  .takeaways .num {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 18px;
+    color: var(--accent-ai);
+  }
+  .takeaways b { display: block; margin-bottom: 2px; }
+  .takeaways span.sub { color: var(--panel-ink); font-size: 15px; }
+
+  footer {
+    margin-top: 64px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    font-size: 13.5px;
+    color: var(--muted);
+  }
+
+  ::selection { background: var(--accent-app-soft); color: var(--ink); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .page { animation: rise 0.5s ease both; }
+    @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  }
+</style>
+
+<div class="page">
+
+  <div class="masthead">
+    <div class="kicker"><span class="dot"></span>Architecture notes &middot; BubblyChef</div>
+    <h1>Two Services, One Database</h1>
+    <p class="dek">Why the pantry app is two deployed programs instead of one, what Supabase buys you that a hand-rolled backend doesn't, and the real bug — filed as issue #380 — that shows exactly what this split costs.</p>
+    <div class="byline">
+      <span><b>Written for:</b> understanding this codebase's shape, as a system-design reference</span>
+      <span><b>Reading time:</b> ~14 min</span>
+    </div>
+  </div>
+
+  <nav class="toc">
+    <div class="kicker" style="margin-bottom:14px">In this document</div>
+    <ol>
+      <li><span class="n">01</span><a href="#shape">The shape of the system</a></li>
+      <li><span class="n">02</span><a href="#why-split">Why split at all</a></li>
+      <li><span class="n">03</span><a href="#app-layer">The app layer — Next.js on Vercel</a></li>
+      <li><span class="n">04</span><a href="#ai-layer">The reasoning layer — FastAPI + LangGraph on Railway</a></li>
+      <li><span class="n">05</span><a href="#supabase">Supabase — the substrate both services stand on</a></li>
+      <li><span class="n">06</span><a href="#deploy">Why Vercel and Railway, specifically</a></li>
+      <li><span class="n">07</span><a href="#cost">The cost of the split — a real bug</a></li>
+      <li><span class="n">08</span><a href="#takeaways">What transfers to other systems</a></li>
+    </ol>
+  </nav>
+
+  <section id="shape">
+    <h2>The shape of the system</h2>
+    <p class="h2-sub">One browser, two backends, one database.</p>
+
+    <p class="lead">BubblyChef looks, from the browser, like a single app. It isn't one. Every request the browser makes goes to one of two independently deployed programs, written in two different languages, running on two different hosts — and both of them read and write the same Postgres database, through two different doors.</p>
+
+    <figure>
+      <svg viewBox="0 0 860 480" role="img" aria-label="Diagram: the browser calls Next.js on Vercel for CRUD operations and calls the ai-service on Railway directly for AI operations. Next.js reaches Supabase with the anon key, where row-level security enforces per-user access. The ai-service reaches Supabase with the service_role key, which bypasses row-level security, so the repository code must filter by user_id itself. Supabase's Auth issues one JWT that both services verify independently.">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"></path>
+          </marker>
+        </defs>
+
+        <!-- Browser -->
+        <rect class="box" x="330" y="16" width="200" height="58" rx="5"></rect>
+        <text x="430" y="40" text-anchor="middle" class="node-label">Browser</text>
+        <text x="430" y="58" text-anchor="middle" class="node-sub">one session, one JWT</text>
+
+        <!-- Next.js -->
+        <rect class="box app" x="50" y="168" width="320" height="72" rx="5"></rect>
+        <text x="210" y="196" text-anchor="middle" class="node-label">Next.js API routes</text>
+        <text x="210" y="214" text-anchor="middle" class="node-sub">/api/pantry, /api/recipes …</text>
+        <text x="210" y="230" text-anchor="middle" class="node-sub">deployed on Vercel</text>
+
+        <!-- ai-service -->
+        <rect class="box ai" x="490" y="168" width="320" height="72" rx="5"></rect>
+        <text x="650" y="196" text-anchor="middle" class="node-label">ai-service</text>
+        <text x="650" y="214" text-anchor="middle" class="node-sub">FastAPI + LangGraph, port 8888</text>
+        <text x="650" y="230" text-anchor="middle" class="node-sub">deployed on Railway</text>
+
+        <!-- Supabase -->
+        <rect class="box data" x="50" y="392" width="760" height="72" rx="5"></rect>
+        <text x="430" y="420" text-anchor="middle" class="node-label">Supabase</text>
+        <text x="430" y="438" text-anchor="middle" class="node-sub">Postgres + Row-Level Security</text>
+        <text x="430" y="454" text-anchor="middle" class="node-sub">Auth — issues and signs the JWT</text>
+
+        <!-- Browser -> Next.js -->
+        <line x1="395" y1="74" x2="240" y2="168" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow)"></line>
+        <text x="270" y="118" class="arrow-label">same-origin fetch</text>
+        <text x="270" y="132" class="arrow-label">+ session cookie</text>
+
+        <!-- Browser -> ai-service -->
+        <line x1="465" y1="74" x2="630" y2="168" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow)"></line>
+        <text x="560" y="118" class="arrow-label">POST /v1/chat/stream</text>
+        <text x="560" y="132" class="arrow-label">Authorization: Bearer &lt;JWT&gt;</text>
+
+        <!-- Next.js -> Supabase (solid, anon key) -->
+        <line x1="150" y1="240" x2="150" y2="392" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow)"></line>
+        <text x="20" y="290" class="arrow-label">anon key</text>
+        <text x="20" y="304" class="arrow-label">RLS enforced</text>
+        <text x="20" y="318" class="arrow-label">per row</text>
+
+        <!-- ai-service -> Supabase (solid, service_role) -->
+        <line x1="720" y1="240" x2="720" y2="392" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow)"></line>
+        <text x="732" y="290" class="arrow-label">service_role key</text>
+        <text x="732" y="304" class="arrow-label">RLS bypassed —</text>
+        <text x="732" y="318" class="arrow-label">code filters user_id</text>
+
+        <!-- dashed verify arrows -->
+        <line x1="250" y1="392" x2="250" y2="240" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#arrow)" opacity="0.75"></line>
+        <text x="262" y="350" class="arrow-label">verifies JWT via</text>
+        <text x="262" y="364" class="arrow-label">supabase-js session</text>
+
+        <line x1="620" y1="392" x2="620" y2="240" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#arrow)" opacity="0.75"></line>
+        <text x="380" y="350" class="arrow-label" text-anchor="end">verifies JWT independently —</text>
+        <text x="380" y="364" class="arrow-label" text-anchor="end">JWKS (ES256) or shared secret (HS256)</text>
+      </svg>
+      <figcaption>Two paths from the same browser session converge on one database. Solid arrows are data; dashed arrows are the two independent JWT checks — neither service trusts the other's verdict, and there is no shared session store between them.</figcaption>
+    </figure>
+
+    <p>Two rules keep this legible instead of turning into spaghetti, and they're stated plainly in this repo's own <code>CLAUDE.md</code>: <strong>the two API surfaces are never mixed</strong> — CRUD always goes through Next.js, AI operations always go direct to the microservice — and <strong>every AI call goes through one abstraction</strong>, so nothing in the app talks to the Gemini SDK directly. Both rules exist for the same reason: a split system only stays sane if each side has exactly one job.</p>
+  </section>
+
+  <section id="why-split">
+    <h2>Why split at all</h2>
+    <p class="h2-sub">The two halves of this app want different things from their runtime.</p>
+
+    <p>The instinct when you're building alone is to keep everything in one process — one language, one deploy, one thing to reason about. BubblyChef resists that on purpose, because the two things it does don't behave alike:</p>
+
+    <div class="split">
+      <div class="card app">
+        <h4><span class="tag app">CRUD</span></h4>
+        <dl>
+          <dt>Shape of a request</dt>
+          <dd>Short. Read a row, write a row, return JSON. Milliseconds.</dd>
+          <dt>What it needs</dt>
+          <dd>Nothing exotic — a database client and a router. TypeScript is fine; it's the same language as the UI calling it.</dd>
+          <dt>How it scales</dt>
+          <dd>Trivially — stateless functions, spin up on demand, spin down to zero.</dd>
+        </dl>
+      </div>
+      <div class="card ai">
+        <h4><span class="tag ai">AI orchestration</span></h4>
+        <dl>
+          <dt>Shape of a request</dt>
+          <dd>Long, and often <em>staged</em> — classify intent, fetch context, call a model, maybe call it again. Seconds, and streamed.</dd>
+          <dt>What it needs</dt>
+          <dd>LangGraph, LangChain, the Gemini/Ollama SDKs — an ecosystem that lives in Python, not the frontend's TypeScript.</dd>
+          <dt>How it scales</dt>
+          <dd>By a completely different cost curve — model calls dominate, not request count.</dd>
+        </dl>
+      </div>
+    </div>
+
+    <p>That's the actual principle, and it's worth separating from the specific technologies: <strong>split by workload shape, not by what resource is being touched.</strong> "Pantry stuff" and "recipe stuff" both touch the same tables, but they aren't split from each other — <code>/api/pantry</code> and <code>/api/recipes</code> are neighbors in the same Next.js app. What's split is <em>short synchronous CRUD</em> from <em>long, multi-step, model-calling orchestration</em> — because those two things want different runtimes, not because they touch different nouns.</p>
+  </section>
+
+  <section id="app-layer">
+    <h2>The app layer</h2>
+    <p class="h2-sub"><span class="tag app">Next.js on Vercel</span> — same-origin CRUD, nothing clever.</p>
+
+    <p>Every pantry read, every recipe save, every profile edit goes through a Next.js <a href="#" onclick="return false" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--muted)">route handler</a> under <code>app/api/</code>. The job here is deliberately boring: authenticate the request, touch exactly the rows this user owns, return JSON. Here's the actual gate every route passes through first:</p>
+
+    <div class="code-label">nextjs/src/lib/response-helpers.ts</div>
+    <pre><code>export async function requireAuth(): Promise&lt;
+  [SupabaseClient, User] | NextResponse
+&gt; {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  return [supabase, user]
+}</code></pre>
+
+    <p>Notice what this function <em>doesn't</em> do: it doesn't decide what the user is allowed to touch. It just answers "who is this?" and hands back a Supabase client already carrying that identity. The actual row-level permission check happens one layer down, at the database — more on that in a moment, because it's the most important idea in this whole document.</p>
+
+    <p>Why Next.js for this half specifically, rather than any other backend framework? Because the CRUD layer and the UI are the same audience and the same language. A route handler and the component that calls it live in the same repo, the same type system, often the same file's neighborhood — there's no schema to keep in sync across a network boundary for something as simple as "save this recipe." Same-origin also means no CORS configuration, no separate auth token dance for the common case: the browser's session cookie <em>is</em> the credential.</p>
+  </section>
+
+  <section id="ai-layer">
+    <h2>The reasoning layer</h2>
+    <p class="h2-sub"><span class="tag ai">FastAPI + LangGraph on Railway</span> — multi-step, model-calling, streamed.</p>
+
+    <p>Ask BubblyChef's chat "what can I cook tonight," and a lot happens before you see a word: classify what you're asking for, fetch your pantry, extract constraints (cuisine, time, diet) with one model call, deterministically rank recipe candidates by expiry urgency, then generate a grounded response with a second model call. That's not one function — it's a graph:</p>
+
+    <pre><code>classify_intent → [recipe-generate]
+  ↓
+gather_pantry_context       # fetch items + expiring
+  ↓
+extract_constraints         # LLM → structured RecipeConstraints
+  ↓
+score_and_rank               # deterministic: expiry urgency + fit
+  ↓
+generate_grounded_response  # LLM, with structured context — not a raw pantry dump</code></pre>
+
+    <p><strong>LangGraph is what makes this a graph instead of one enormous prompt.</strong> Each node is a small, independently testable Python function with typed state in and typed state out — the ranking step is plain deterministic code, not the model's opinion, which is exactly why expiry-vs-coherence bugs in this app show up as a scoring-weight problem you can unit test, not a prompt-wording problem you can only eyeball. This is the shape LangGraph is built for, and it's a Python-ecosystem tool — which is most of why this half of the app isn't TypeScript.</p>
+
+    <p>The other reason is the <strong>proposal pattern</strong>, stated as a rule in this repo's own conventions: <em>nothing writes to the database without user confirmation.</em> Every workflow here returns a proposal with a confidence score, not a committed write — high confidence auto-suggests, medium asks for review, low gets dropped. That's a deliberate seam between "the model decided something" and "the database changed," and it's one more reason this logic doesn't live inline in a CRUD route: it's a genuinely different kind of function, one that reasons about uncertainty instead of just moving rows.</p>
+
+    <aside class="callout">
+      <span class="callout-label">One abstraction, two providers</span>
+      <p>Nothing in this layer calls the Gemini SDK directly. Every model call goes through an <code>AIManager</code> that tries providers in order — Gemini first, Ollama as a local fallback — so a provider outage degrades the app instead of breaking it, and swapping models (as this project did, moving to <code>gemini-3.1-flash-lite</code>) is a one-line config change, not a rewrite.</p>
+    </aside>
+  </section>
+
+  <section id="supabase">
+    <h2>Supabase — the substrate both services stand on</h2>
+    <p class="h2-sub">One managed Postgres, one identity provider, two very different trust levels.</p>
+
+    <p>This is the part that actually makes the two-service split affordable. If BubblyChef had to hand-roll a database, an auth system, and a way for two separate backends to agree on "who is this user," the split above would cost far more than it's worth. Supabase collapses all three into one thing both services can point at.</p>
+
+    <h3>The database enforces what the app might forget</h3>
+    <p>Every table's permission rule looks like this — plain SQL, not application code:</p>
+
+    <div class="code-label">supabase/migrations/00002_rls_policies.sql</div>
+    <pre><code>ALTER TABLE pantry_items ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users manage own pantry items"
+  ON pantry_items FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);</code></pre>
+
+    <p>That policy runs <em>inside Postgres</em>, on every query, regardless of which service sent it or whether that service's code remembered to add a <code>WHERE user_id = ?</code> clause. This is the core idea worth carrying into any system: <strong>push the invariant that matters most into the layer that can't be skipped</strong>. Application code has bugs, forgets things, gets refactored by someone in a hurry. A database constraint, checked on every single query, doesn't have an "oops, forgot that route" failure mode.</p>
+
+    <p>But this backstop only exists for the path that uses it — which is exactly where the two services stop being symmetric.</p>
+
+    <h3>Two keys, two trust models</h3>
+    <table>
+      <tr><th>Next.js</th><th>ai-service</th></tr>
+      <tr>
+        <td><code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code>, scoped by the user's own session</td>
+        <td><code>BUBBLY_SUPABASE_SECRET_KEY</code> — Supabase's <strong>service_role</strong> key</td>
+      </tr>
+      <tr>
+        <td>Row-Level Security applies. A query for someone else's pantry returns nothing, full stop, enforced by Postgres.</td>
+        <td>Row-Level Security is bypassed entirely by design — this key can read or write <em>any</em> row.</td>
+      </tr>
+      <tr>
+        <td>Correctness is guaranteed twice: once by the route handler's logic, once by the database underneath it.</td>
+        <td>Correctness is guaranteed exactly once — by the code. Which is why <em>every</em> repository method's first parameter is <code>user_id</code>, filtered by hand:</td>
+      </tr>
+    </table>
+    <pre><code>async def get_all_pantry_items(self, user_id: str) -&gt; list[PantryItem]:
+    ...</code></pre>
+    <p>That's not a style choice — it's the entire safety net for this half of the app, spelled out as a function signature convention because there's no database-level one to lean on. The service_role key exists because the AI service genuinely needs it: it has to read across whatever the workflow needs, act on the user's behalf inside a multi-step graph, and RLS's per-request model doesn't compose cleanly with that. The trade is real, not a mistake — you get power, in exchange for the app being the only thing keeping user boundaries straight.</p>
+
+    <h3>One identity, verified twice, never shared</h3>
+    <p>Supabase Auth issues a single signed JWT when you log in. The interesting part is what happens next: <strong>the two services never talk to each other to agree on who you are.</strong> There's no shared session store, no internal "am I really logged in" round-trip between Next.js and ai-service. Each one verifies the same token independently, against the same source of truth:</p>
+
+    <div class="code-label">ai-service/bubbly_chef/api/auth.py</div>
+    <pre><code>def _decode_with_jwks(token: str) -&gt; dict[str, Any]:
+    """Decode JWT using Supabase JWKS (ES256)."""
+    client = _get_jwks_client()
+    signing_key = client.get_signing_key_from_jwt(token)
+    return jwt.decode(
+        token, signing_key.key,
+        algorithms=["ES256"], audience="authenticated",
+    )</code></pre>
+
+    <p>Next.js verifies the same JWT its own way — via the <code>supabase-js</code> client's session handling. Both arrive at the same answer, independently, because both trust the same issuer rather than trusting each other. This is the pattern worth remembering: <strong>stateless, signed tokens let you add a third, fourth, fifth service later without ever touching a shared session table.</strong> That's a large part of what "the power of Supabase" cashes out to in practice — not a specific feature, but that identity becomes a fact both services can check for themselves, instead of infrastructure you'd otherwise have to build and keep in sync by hand.</p>
+
+    <aside class="callout">
+      <span class="callout-label">RLS is the backstop — here's what it looks like when there isn't one</span>
+      <figure style="margin-top:12px;margin-bottom:0">
+        <svg viewBox="0 0 860 340" role="img" aria-label="Diagram: the Next.js write path to pantry_items.estimated_expiry has a row-level security backstop at the database. The ai-service write path to the same column, using the service_role key, has no such backstop — correctness depends entirely on the application code remembering to update the flag.">
+          <defs>
+            <marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"></path>
+            </marker>
+          </defs>
+
+          <rect class="box app" x="30" y="18" width="360" height="68" rx="5"></rect>
+          <text x="210" y="46" text-anchor="middle" class="node-label">PUT /api/pantry/[id]</text>
+          <text x="210" y="64" text-anchor="middle" class="node-sub">Next.js — anon key</text>
+          <text x="210" y="80" text-anchor="middle" class="node-sub">RLS enforced underneath it</text>
+
+          <rect class="box ai" x="470" y="18" width="360" height="68" rx="5"></rect>
+          <text x="650" y="46" text-anchor="middle" class="node-label">update_pantry_item()</text>
+          <text x="650" y="64" text-anchor="middle" class="node-sub">ai-service — service_role key</text>
+          <text x="650" y="80" text-anchor="middle" class="node-sub">RLS bypassed</text>
+
+          <rect class="box data" x="220" y="248" width="420" height="66" rx="5"></rect>
+          <text x="430" y="276" text-anchor="middle" class="node-label">pantry_items.estimated_expiry</text>
+          <text x="430" y="294" text-anchor="middle" class="node-sub">two independent write paths, one column</text>
+
+          <line x1="230" y1="86" x2="340" y2="248" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow2)"></line>
+          <text x="90" y="180" class="arrow-label">wrong user_id here →</text>
+          <text x="90" y="194" class="arrow-label">database itself refuses</text>
+
+          <line x1="640" y1="86" x2="520" y2="248" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow2)"></line>
+          <text x="760" y="180" class="arrow-label" text-anchor="end">no such refusal —</text>
+          <text x="760" y="194" class="arrow-label" text-anchor="end">only what the function does</text>
+        </svg>
+      </figure>
+      <p style="margin-top:14px">Both paths update the same flag. Only one of them has a database that will ever say no. Section 07 is what happened because of that.</p>
+    </aside>
+  </section>
+
+  <section id="deploy">
+    <h2>Why Vercel and Railway, specifically</h2>
+    <p class="h2-sub">Matching the host to what the runtime actually needs, not just "a place to deploy."</p>
+
+    <p><strong>Vercel</strong> is built by the same team as Next.js, and it shows in exactly the ways that matter for the CRUD layer: push a branch, get a full preview deployment at a real URL — which is what's actually posting that "Ready — Preview" comment on every pull request in this repo. Serverless functions that scale to zero between requests fit a workload made of thousands of short, independent reads and writes. There's no server to patch, size, or leave idling overnight for three users.</p>
+
+    <p><strong>Railway</strong> earns its keep on the opposite property: it's fine with a process that stays up, holds a connection open, and streams. The ai-service's chat endpoint is server-sent events — tokens arriving as the model produces them, not a request that returns once and disappears. A model call can also legitimately take several seconds across a multi-node LangGraph run; a platform built around short serverless function timeouts fights that shape, a platform built around long-running containers doesn't.</p>
+
+    <p>Neither choice is about one platform being "better." It's the same principle as the service split itself, one level down the stack: <strong>a short, stateless, bursty workload and a long, stateful, streaming one want different hosts</strong>, for the same reason they wanted different frameworks.</p>
+  </section>
+
+  <section id="cost">
+    <h2>The cost of the split — a real bug</h2>
+    <p class="h2-sub">Splitting a system means splitting the places its rules can live.</p>
+
+    <p>None of the above is free, and the honest version of this document says where it actually bit. Issue #182 added <code>estimated_expiry</code> — a flag meaning "this date was guessed, not confirmed" — with a matching rule: <strong>if a user later corrects the date by hand, the guess-flag must clear.</strong> One invariant, plain to state.</p>
+
+    <p>The trouble is that a pantry item's expiry date can be written from <em>either</em> service — the ai-service, when it estimates a date during receipt scanning, and the Next.js CRUD route, when a person edits the item by hand in the pantry UI. The fix landed in the ai-service's write path:</p>
+
+    <div class="code-label">ai-service/bubbly_chef/repository/supabase_repo.py</div>
+    <pre><code># clear the estimated_expiry flag unless the caller explicitly set it
+if "expiry_date" in updates and "estimated_expiry" not in updates:
+    updates["estimated_expiry"] = False</code></pre>
+
+    <p>It did not land in the Next.js route. <code>PUT /api/pantry/[id]</code> happily updated <code>expiry_date</code> and never touched <code>estimated_expiry</code> at all — because it's a different file, in a different language, reviewed as a different piece of work, and nothing forced the two to be checked together. It shipped clean: types checked, tests passed, CI was green. The badge just kept reading "(est.)" on a date a person had just told the app was correct, and nobody knew until someone opened the real app in a real browser and manually corrected a date — the one kind of check a split system with independently green CI on both sides doesn't get for free.</p>
+
+    <aside class="callout warn">
+      <span class="callout-label">The general shape of this failure</span>
+      <p>It isn't really an auth story or a language story — it's what happens whenever <strong>one invariant has more than one place it can be written from.</strong> Two services, two write paths, and a monolith with two code paths for the same reason all have this exact failure mode. Splitting into services doesn't create the risk; it just makes each write path further apart, in a different language, on a different reviewer's desk, with its own green CI — so the two are much less likely to be looked at side by side.</p>
+      <p>The fix isn't "don't split services." It's to know, for each invariant, whether it has one writer or several — and if several, either centralize the write (one function every path calls through) or write a test that exercises the invariant from <em>every</em> path that can touch it, not just the one you happened to be working in.</p>
+    </aside>
+  </section>
+
+  <section id="takeaways">
+    <h2>What transfers to other systems</h2>
+    <p class="h2-sub">None of this is BubblyChef-specific. These are the same five decisions on any stack.</p>
+
+    <ol class="takeaways">
+      <li>
+        <span class="num">1</span>
+        <div><b>Split by workload shape, not by resource.</b> <span class="sub">Short/stateless vs. long/streaming is a real fork in what a runtime needs. "Pantry vs. recipes" isn't — that's just two endpoints in the same app.</span></div>
+      </li>
+      <li>
+        <span class="num">2</span>
+        <div><b>Push the invariant that matters most into the layer that can't be skipped.</b> <span class="sub">A database constraint checked on every query beats an application check that a future refactor might forget to include.</span></div>
+      </li>
+      <li>
+        <span class="num">3</span>
+        <div><b>Bypassing that layer is sometimes the right call — but know you did it.</b> <span class="sub">The service_role key is a legitimate trade for the power a multi-step AI workflow needs. The cost is that correctness moves entirely into code, and someone should be able to name where.</span></div>
+      </li>
+      <li>
+        <span class="num">4</span>
+        <div><b>One signed identity, verified independently, beats a shared session store.</b> <span class="sub">It's what lets two services — or five, later — agree on "who is this" without ever having to talk to each other about it.</span></div>
+      </li>
+      <li>
+        <span class="num">5</span>
+        <div><b>A split write path is a promise to keep two implementations of the same rule in sync.</b> <span class="sub">Budget for that explicitly — either one function every path routes through, or a test that walks every path, not just the one in front of you.</span></div>
+      </li>
+    </ol>
+  </section>
+
+  <footer>
+    Sources for every claim above: <code>CLAUDE.md</code>, <code>supabase/migrations/00002_rls_policies.sql</code>, <code>nextjs/src/lib/response-helpers.ts</code>, <code>ai-service/bubbly_chef/api/auth.py</code>, <code>ai-service/bubbly_chef/repository/supabase_repo.py</code>, and issues #182 / #380 in this repository. Nothing here is illustrative — every snippet is what the code actually says.
+  </footer>
+
+</div>
