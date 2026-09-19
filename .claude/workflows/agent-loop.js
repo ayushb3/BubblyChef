@@ -750,9 +750,11 @@ Then, as the bot:
   respondFixed.push(...fix.fixed)
   respondDisputed.push(...fix.disputed)
   protectedNow = [...new Set([...protectedNow, ...fix.protectedPaths])]
-  if (!fix.pushedSha) {
-    // Nothing pushed means nothing new to review: re-reading would only return the same
-    // review. The disagreement is Ayush's to settle.
+  if (!fix.pushedSha || fix.pushedSha === expectedSha) {
+    // Nothing new pushed means nothing new to review: re-reading would only return the
+    // same review. "The same commit as before" counts as nothing pushed, since an agent
+    // may report the current head instead of "". (Found by re-review of PR #463.)
+    // The disagreement is Ayush's to settle.
     respondOutcome = 'needs a human'
     log('Every remaining finding was disputed and nothing was pushed: handing to Ayush.')
     break
@@ -783,7 +785,12 @@ Finish the agent loop run for PR #${ship.prNumber} (issue #${ISSUE}). Do exactly
 3. Stop any stack you started, then return the checkout to its original branch:
    git checkout "${wt.originalBranch}"  (keep the local issue branch; it is pushed).
    Report whether that worked, and whether you ran any gh pr merge command.`
-const fin = await agent(finishPrompt, { label: 'finish', phase: 'Respond', schema: FINISH, model: 'haiku', effort: 'low' })
+let fin = await agent(finishPrompt, { label: 'finish', phase: 'Respond', schema: FINISH, model: 'haiku', effort: 'low' })
+if (!fin) {
+  // The finish agent died: its labelling and drafting of an unresolved PR matter as much
+  // as the checkout, so re-run the whole step once, not just the checkout.
+  fin = await agent(finishPrompt, { label: 'finish-retry', phase: 'Respond', schema: FINISH, model: 'haiku', effort: 'low' })
+}
 if (!fin || !fin.returnedToOriginal) {
   // Never leave a human's checkout parked on the issue branch because one agent failed.
   await agent(
@@ -792,7 +799,14 @@ if (!fin || !fin.returnedToOriginal) {
   )
 }
 if (fin && fin.ranMergeCommand && !mayAutoMerge) {
-  log('WARNING: the finish agent reports running gh pr merge when it was not allowed to. Check the PR.')
+  // Undo, don't just warn: a forbidden auto-merge left on would merge once checks pass.
+  log('WARNING: the finish agent ran gh pr merge when it was not allowed to. Disabling auto-merge.')
+  await agent(
+    `${AS_BOT}
+As the bot, run: gh pr merge ${ship.prNumber} --repo ${REPO} --disable-auto
+Then comment on PR #${ship.prNumber}: "Auto-merge was enabled by the agent loop in error and has been disabled; a human must merge this PR." Nothing else.`,
+    { label: 'undo-auto-merge', phase: 'Respond', model: 'haiku', effort: 'low' },
+  )
 }
 
 return {

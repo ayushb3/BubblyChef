@@ -299,6 +299,24 @@ async function main() {
     check('finish: a merge command run in shadow mode is reported', r.mergeRuleBroken === true, `mergeRuleBroken ${r.mergeRuleBroken}`)
   }
 
+  {
+    // the fix pushed nothing but reports the CURRENT head instead of "" (found by re-review)
+    const h = harness(ghSeq(['needs changes'], { ...FIXED, pushedSha: 'sha-ship' }))
+    const r = await h.run({ issue: 405 })
+    check('respond: a fix reporting the unchanged head counts as no push (no stale re-read)', r.githubReview === 'needs a human' && count(h, 'gh-review') === 1,
+      `${r.githubReview} reviews ${count(h, 'gh-review')}`)
+  }
+  {
+    const h = harness(label => label === 'finish' ? null : HAPPY(label))
+    await h.run({ issue: 405 })
+    check('finish: a dead finish agent re-runs the whole step, not just the checkout', h.calls.includes('finish-retry'), `calls ${h.calls.join()}`)
+  }
+  {
+    const h = harness(label => label === 'finish' ? { returnedToOriginal: true, ranMergeCommand: true } : HAPPY(label))
+    await h.run({ issue: 405 })
+    check('finish: a forbidden merge command is undone, not just logged', h.calls.includes('undo-auto-merge') && /--disable-auto/.test(h.prompts['undo-auto-merge'] || ''), `calls ${h.calls.join()}`)
+  }
+
   // ── Auto-merge is requested only when EVERY condition holds ──
   {
     const cases = [
