@@ -12,7 +12,7 @@ import RecipeDeleteConfirm from './RecipeDeleteConfirm'
 import RecipeImportModal from './RecipeImportModal'
 import CookModal from './CookModal'
 import GuidedCookFlow from './GuidedCookFlow'
-import { startCookSession, getActiveCookSession, clearActiveCookSession } from '@/lib/cook-session'
+import { startGuidedCookSession, getActiveCookSession, clearActiveCookSession } from '@/lib/cook-session'
 import { springs, heartPopVariants } from '@/lib/motion'
 import Chip from '@/components/ui/Chip'
 import { tagToTone } from '@/lib/tag-tone'
@@ -136,8 +136,12 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   // mounts this component once `recipes` has already been fetched). Looks up
   // the persisted { recipeId, step } record and re-opens the guided flow at
   // the same step, rather than silently discarding it. `getActiveCookSession`
-  // already refuses to return a record for a recipe whose deduction was
-  // confirmed (#440), so this can't resurrect an ended session.
+  // refuses to return a record for a recipe whose deduction was confirmed
+  // (#440), so this can't resurrect an ended session — but that alone isn't
+  // enough to avoid auto-opening the guided flow for a cook the user never
+  // guided: only `startGuidedCookSession` (called from `handleOpenGuidedCook`
+  // below) ever arms this record, so a chat-started cook (which only calls
+  // `startCookSession`) never has one to find here (PR #475 code review).
   useEffect(() => {
     if (resumeCheckedRef.current) return
     if (recipes.length === 0) return
@@ -198,13 +202,17 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
    * Opens the guided step-by-step cook flow. This is the "start cooking"
    * moment for the library's cook path — unlike the chat card's cook flow,
    * there is no separate preview step first, so a fresh session (#440) is
-   * armed right here: clears any stale "ended" record left by a previous
-   * confirmed cook of this same recipe, so this legitimate new attempt isn't
-   * mistaken for a stale re-entry into an already-finished one.
+   * armed right here via `startGuidedCookSession`: clears any stale "ended"
+   * record left by a previous confirmed cook of this same recipe, so this
+   * legitimate new attempt isn't mistaken for a stale re-entry into an
+   * already-finished one, and arms the #441 resumable step record — the
+   * thing that makes `getActiveCookSession()` findable by the reload-resume
+   * effect above. This is the *only* place that record gets armed, so only a
+   * cook genuinely started here is ever auto-resumed (PR #475 code review).
    */
   const handleOpenGuidedCook = () => {
     if (!selectedRecipe) return
-    startCookSession(selectedRecipe.id)
+    startGuidedCookSession(selectedRecipe.id)
     setResumeStep(null)
     setGuidedCookOpen(true)
   }

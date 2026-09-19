@@ -11,12 +11,19 @@
  * deduction was confirmed (`endCookSession`) must never be resurrected by
  * the resume path — getting that wrong reintroduces the double-deduction
  * trap #440 fixed.
+ *
+ * PR #475 code review (Bug 2): only `startGuidedCookSession` — called from
+ * `RecipeBook.handleOpenGuidedCook`, the actual entry point to the guided
+ * flow — arms the resumable step record. `startCookSession` (the chat cook
+ * path) deliberately does not, so a cook started from chat can never cause
+ * `/recipes` to auto-open the guided flow it was never asked to enter.
  */
 
 import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import {
   startCookSession,
+  startGuidedCookSession,
   endCookSession,
   isCookSessionEnded,
   saveCookProgress,
@@ -36,14 +43,14 @@ describe('cook-session resume (#441)', () => {
     expect(getActiveCookSession('r1')).toBeNull()
   })
 
-  it('starting a session arms a resumable record at the prep screen', () => {
-    startCookSession('r1')
+  it('starting a guided session arms a resumable record at the prep screen', () => {
+    startGuidedCookSession('r1')
     expect(getActiveCookSession()).toEqual({ recipeId: 'r1', step: -1 })
     expect(getActiveCookSession('r1')).toEqual({ recipeId: 'r1', step: -1 })
   })
 
   it('saveCookProgress updates the persisted step for a rehydrate', () => {
-    startCookSession('r1')
+    startGuidedCookSession('r1')
     saveCookProgress('r1', 0)
     expect(getActiveCookSession('r1')).toEqual({ recipeId: 'r1', step: 0 })
     saveCookProgress('r1', 1)
@@ -51,7 +58,7 @@ describe('cook-session resume (#441)', () => {
   })
 
   it('a persisted session rehydrates at the right step and recipe', () => {
-    startCookSession('recipe-42')
+    startGuidedCookSession('recipe-42')
     saveCookProgress('recipe-42', 2)
 
     // Simulate a fresh module read the way a full page reload would —
@@ -61,13 +68,13 @@ describe('cook-session resume (#441)', () => {
   })
 
   it('getActiveCookSession(id) returns null for a session belonging to a different recipe', () => {
-    startCookSession('r1')
+    startGuidedCookSession('r1')
     saveCookProgress('r1', 1)
     expect(getActiveCookSession('r2')).toBeNull()
   })
 
   it('an ended (confirmed) session does NOT rehydrate, even with a fresh step on record', () => {
-    startCookSession('r1')
+    startGuidedCookSession('r1')
     saveCookProgress('r1', 2)
     endCookSession('r1')
 
@@ -76,7 +83,7 @@ describe('cook-session resume (#441)', () => {
   })
 
   it('saveCookProgress on an already-ended session is a no-op — it cannot resurrect it', () => {
-    startCookSession('r1')
+    startGuidedCookSession('r1')
     endCookSession('r1')
 
     saveCookProgress('r1', 2)
@@ -86,35 +93,35 @@ describe('cook-session resume (#441)', () => {
   })
 
   it('ending a session clears its resumable record so a stale step cannot leak into a later fresh start', () => {
-    startCookSession('r1')
+    startGuidedCookSession('r1')
     saveCookProgress('r1', 2)
     endCookSession('r1')
-    startCookSession('r1')
+    startGuidedCookSession('r1')
 
     // Fresh start after an ended session begins back at prep, not step 2.
     expect(getActiveCookSession('r1')).toEqual({ recipeId: 'r1', step: -1 })
   })
 
   it('ending one recipe does not clear a different, still-active recipe session', () => {
-    startCookSession('r1')
+    startGuidedCookSession('r1')
     saveCookProgress('r1', 1)
     endCookSession('r2')
     expect(getActiveCookSession('r1')).toEqual({ recipeId: 'r1', step: 1 })
   })
 
   it('clearActiveCookSession removes the resumable record without marking the session ended', () => {
-    startCookSession('r1')
+    startGuidedCookSession('r1')
     saveCookProgress('r1', 1)
     clearActiveCookSession('r1')
 
     expect(getActiveCookSession('r1')).toBeNull()
     // Not ended — a later re-open of guided cook for this recipe still works.
-    startCookSession('r1')
+    startGuidedCookSession('r1')
     expect(getActiveCookSession('r1')).toEqual({ recipeId: 'r1', step: -1 })
   })
 
   it('clearActiveCookSession is a no-op for a recipe that is not the active session', () => {
-    startCookSession('r1')
+    startGuidedCookSession('r1')
     saveCookProgress('r1', 1)
     clearActiveCookSession('r2')
     expect(getActiveCookSession('r1')).toEqual({ recipeId: 'r1', step: 1 })
@@ -128,7 +135,7 @@ describe('cook-session resume (#441)', () => {
       expect(() => getActiveCookSession()).not.toThrow()
       expect(getActiveCookSession()).toBeNull()
       expect(() => saveCookProgress('r1', 1)).not.toThrow()
-      expect(() => startCookSession('r1')).not.toThrow()
+      expect(() => startGuidedCookSession('r1')).not.toThrow()
     } finally {
       spy.mockRestore()
     }
@@ -138,6 +145,24 @@ describe('cook-session resume (#441)', () => {
     window.localStorage.setItem('bubblychef:cook:activeSession', 'not json')
     expect(() => getActiveCookSession()).not.toThrow()
     expect(getActiveCookSession()).toBeNull()
+  })
+
+  // ─── PR #475 code review — Bug 2: chat-started cook must not auto-resume ──
+
+  it('startCookSession (chat cook path) does NOT arm a resumable record', () => {
+    startCookSession('r1')
+    expect(getActiveCookSession()).toBeNull()
+    expect(getActiveCookSession('r1')).toBeNull()
+  })
+
+  it('a chat-started cook does not leak into an unrelated guided-flow resumable record', () => {
+    startGuidedCookSession('r1')
+    saveCookProgress('r1', 1)
+    // A second, unrelated recipe is started from the chat cook path.
+    startCookSession('r2')
+    // r1's genuinely-guided session is still resumable and untouched.
+    expect(getActiveCookSession('r1')).toEqual({ recipeId: 'r1', step: 1 })
+    expect(getActiveCookSession('r2')).toBeNull()
   })
 })
 
@@ -201,7 +226,7 @@ describe('GuidedCookFlow resume (#441)', () => {
   })
 
   it('advancing a step persists the new position for a later resume', () => {
-    startCookSession('r1')
+    startGuidedCookSession('r1')
     render(<GuidedCookFlow recipe={RECIPE} onExit={jest.fn()} />)
 
     fireEvent.click(screen.getByTestId('guided-cook-next')) // prep -> step 1
@@ -212,7 +237,7 @@ describe('GuidedCookFlow resume (#441)', () => {
   })
 
   it('going back a step persists the earlier position', () => {
-    startCookSession('r1')
+    startGuidedCookSession('r1')
     render(<GuidedCookFlow recipe={RECIPE} onExit={jest.fn()} initialStep={1} />)
 
     fireEvent.click(screen.getByTestId('guided-cook-back'))
@@ -220,11 +245,33 @@ describe('GuidedCookFlow resume (#441)', () => {
   })
 
   it('does not resurrect an ended session — progress stops persisting once confirmed', () => {
-    startCookSession('r1')
+    startGuidedCookSession('r1')
     endCookSession('r1')
     render(<GuidedCookFlow recipe={RECIPE} onExit={jest.fn()} />)
 
     fireEvent.click(screen.getByTestId('guided-cook-next'))
     expect(getActiveCookSession('r1')).toBeNull()
+  })
+})
+
+// ─── RecipeBook — Bug 2: only a guided-flow-started cook auto-resumes ───────
+
+describe('RecipeBook resume gating (#441 / PR #475 Bug 2)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  it('a chat-started cook session is not visible to the no-argument resume lookup RecipeBook uses on mount', () => {
+    // Mirrors app/chat/page.tsx's onStartCooking handler, which only calls
+    // startCookSession — never startGuidedCookSession.
+    startCookSession('r1')
+    expect(getActiveCookSession()).toBeNull()
+  })
+
+  it('a guided-flow-started cook session IS visible to the no-argument resume lookup RecipeBook uses on mount', () => {
+    // Mirrors RecipeBook.handleOpenGuidedCook, the guided flow's real entry point.
+    startGuidedCookSession('r1')
+    saveCookProgress('r1', 1)
+    expect(getActiveCookSession()).toEqual({ recipeId: 'r1', step: 1 })
   })
 })

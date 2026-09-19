@@ -46,6 +46,62 @@ describe('cook-session (#440)', () => {
     endCookSession('r1')
     expect(isCookSessionEnded('r1')).toBe(true)
   })
+
+  // ─── PR #475 code review — Bug 1: single-slot record double-deducted ──────
+
+  it('ending recipe B does NOT un-end recipe A (regression for the reintroduced double-deduction bug)', () => {
+    endCookSession('r1')
+    endCookSession('r2')
+    expect(isCookSessionEnded('r1')).toBe(true)
+    expect(isCookSessionEnded('r2')).toBe(true)
+  })
+
+  it('ending several recipes in sequence keeps all of them ended', () => {
+    endCookSession('r1')
+    endCookSession('r2')
+    endCookSession('r3')
+    expect(isCookSessionEnded('r1')).toBe(true)
+    expect(isCookSessionEnded('r2')).toBe(true)
+    expect(isCookSessionEnded('r3')).toBe(true)
+  })
+
+  it('starting a fresh cook for B after ending A leaves A ended', () => {
+    endCookSession('r1')
+    endCookSession('r2')
+    startCookSession('r2')
+    expect(isCookSessionEnded('r1')).toBe(true)
+    expect(isCookSessionEnded('r2')).toBe(false)
+  })
+
+  it('reads the pre-fix single-string storage format without crashing, and honours it', () => {
+    window.localStorage.setItem('bubblychef:cook:endedRecipeId', 'legacy-recipe')
+    expect(isCookSessionEnded('legacy-recipe')).toBe(true)
+    expect(isCookSessionEnded('other-recipe')).toBe(false)
+  })
+
+  it('a corrupt stored value degrades to "nothing ended" instead of throwing', () => {
+    window.localStorage.setItem('bubblychef:cook:endedRecipeId', '{not valid json at all')
+    expect(() => isCookSessionEnded('r1')).not.toThrow()
+    expect(isCookSessionEnded('r1')).toBe(false)
+
+    window.localStorage.setItem('bubblychef:cook:endedRecipeId', '{"unexpected":"shape"}')
+    expect(() => isCookSessionEnded('r1')).not.toThrow()
+    expect(isCookSessionEnded('r1')).toBe(false)
+  })
+
+  it('caps the ended-recipe list, evicting the oldest entry first', () => {
+    const ids = Array.from({ length: 25 }, (_, i) => `r${i}`)
+    ids.forEach((id) => endCookSession(id))
+
+    // The cap is 20 — the oldest 5 (r0..r4) should have been evicted.
+    for (let i = 0; i < 5; i++) {
+      expect(isCookSessionEnded(`r${i}`)).toBe(false)
+    }
+    // The most recent 20 (r5..r24) should still be recorded as ended.
+    for (let i = 5; i < 25; i++) {
+      expect(isCookSessionEnded(`r${i}`)).toBe(true)
+    }
+  })
 })
 
 // ─── CookModal — confirm ends the session, cancel/close does not ─────────────
