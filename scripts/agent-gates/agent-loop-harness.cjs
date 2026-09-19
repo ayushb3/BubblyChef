@@ -22,10 +22,13 @@ const makeRun = new Function('args', 'agent', 'parallel', 'phase', 'log', `retur
 function harness(respond) {
   const calls = []
   const prompts = {}
+  const opts = {}
   let fixN = 0
+  const optsSeen = opts
   const agent = async (prompt, opts) => {
     calls.push(opts.label)
     prompts[opts.label] = prompt
+    optsSeen[opts.label] = opts
     let r = await respond(opts.label, prompt)
     // SHA plumbing, so each test only has to state what it is about. A gh-review mock
     // that doesn't name the commit it read is taken to have read the expected one; a
@@ -44,6 +47,7 @@ function harness(respond) {
   return {
     calls,
     prompts,
+    opts,
     run: args => makeRun(args, agent, parallel, () => {}, () => {}),
   }
 }
@@ -334,6 +338,25 @@ async function main() {
       check(`auto-merge ${expect ? 'requested' : 'NOT requested'}: ${name}`, r.autoMergeRequested === expect && asked === expect,
         `autoMergeRequested ${r.autoMergeRequested}, prompt asks ${asked}`)
     }
+  }
+
+  // ── Every agent has a lean, explicit type (cost guard) ──
+  // Untyped agents load every tool the session has (~40k tokens per agent before doing
+  // anything). Every stage must be either the dev role or `loop-runner`.
+  {
+    const seen = {}
+    const runs = [
+      harness(label => HAPPY(label)),
+      harness(ghSeq(['needs changes', 'looks mergeable'], FIXED)),
+      harness(label => label.startsWith('implement') ? { gatesPassed: false, gateOutput: 'x', summary: 's', filesChanged: [] } : HAPPY(label)),
+      harness(label => HAPPY(label, { setup: { ok: false, branchCreated: true, path: '/wt', branch: 'b', originalBranch: 'main', problem: 'x' } })),
+    ]
+    for (const h of runs) { await h.run({ issue: 405 }); Object.assign(seen, h.opts) }
+    { const h = harness(label => HAPPY(label)); await h.run({ issue: 405, dryRun: true }); Object.assign(seen, h.opts) }
+    const untyped = Object.entries(seen).filter(([, o]) => !o.agentType).map(([l]) => l)
+    const plumbingNotLean = Object.entries(seen).filter(([l, o]) => o.agentType !== 'frontend' && o.agentType !== 'backend' && o.agentType !== 'ui-ux' && o.agentType !== 'loop-runner').map(([l]) => l)
+    check(`every agent call is typed (checked ${Object.keys(seen).length} stages)`, untyped.length === 0, `untyped: ${untyped.join(', ')}`)
+    check('non-dev stages use the lean loop-runner', plumbingNotLean.length === 0, `other types: ${plumbingNotLean.join(', ')}`)
   }
 
   // ── The loop never merges in shadow mode ──
