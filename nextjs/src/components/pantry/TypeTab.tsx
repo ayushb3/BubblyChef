@@ -18,10 +18,20 @@ function newRow(): ManualRow {
 
 interface TypeTabProps {
   onItemsReady: (items: AddItem[]) => void
+  /**
+   * Rows to seed the tab with on mount — lets a parent hand back a draft
+   * that survived a previous unmount (e.g. a tab switch, issue #402).
+   * Falls back to a single empty row when absent/empty.
+   */
+  initialRows?: ManualRow[]
+  /** Fired alongside onItemsReady with the full row list (including empty/partial rows), so a parent can persist it across an unmount. */
+  onRowsChange?: (rows: ManualRow[]) => void
 }
 
-export default function TypeTab({ onItemsReady }: TypeTabProps) {
-  const [rows, setRows] = useState<ManualRow[]>([newRow()])
+export default function TypeTab({ onItemsReady, initialRows, onRowsChange }: TypeTabProps) {
+  const [rows, setRows] = useState<ManualRow[]>(
+    initialRows && initialRows.length > 0 ? initialRows : [newRow()],
+  )
 
   function toAddItems(updated: ManualRow[]): AddItem[] {
     return updated
@@ -39,6 +49,7 @@ export default function TypeTab({ onItemsReady }: TypeTabProps) {
 
   const handleChange = (updated: ManualRow[]) => {
     setRows(updated)
+    onRowsChange?.(updated)
     onItemsReady(toAddItems(updated))
   }
 
@@ -52,8 +63,13 @@ export default function TypeTab({ onItemsReady }: TypeTabProps) {
   }
 
   const handleAddRow = () => {
-    // Just append — new empty row doesn't affect parent item count
-    setRows((prev) => [...prev, newRow()])
+    // New empty row doesn't affect parent item count, but still needs to be
+    // persisted so it survives a tab switch (issue #402).
+    setRows((prev) => {
+      const next = [...prev, newRow()]
+      onRowsChange?.(next)
+      return next
+    })
   }
 
   const validCount = rows.filter((r) => r.name.trim().length > 0).length

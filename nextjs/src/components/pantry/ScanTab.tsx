@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import ReviewSurface from '@/components/scan/ReviewSurface'
@@ -9,26 +9,53 @@ import { scannedToBulkAddItem } from '@/lib/scan-helpers'
 import type { ScannedItem, ScanResult } from '@/types/scan'
 import type { AddItem } from './PantryAddSheet'
 
-type ScanTabState = 'upload' | 'processing' | 'results'
+type ScanStage = 'upload' | 'processing' | 'results'
+
+/**
+ * A snapshot of ScanTab's in-progress upload/review state. ScanTab still
+ * mounts and unmounts when the parent switches tabs, so a parent that wants
+ * a finished (or in-flight) scan to survive that unmount — issue #402 —
+ * holds onto the latest snapshot via `onSnapshotChange` and hands it back in
+ * as `initialSnapshot` on remount.
+ */
+export interface ScanTabSnapshot {
+  state: ScanStage
+  preview: string | null
+  error: string | null
+  readyToAdd: ScannedItem[]
+  needsReview: ScannedItem[]
+  skipped: ScannedItem[]
+  warnings: string[]
+}
 
 interface ScanTabProps {
   onItemsReady: (items: AddItem[]) => void
+  initialSnapshot?: ScanTabSnapshot
+  onSnapshotChange?: (snapshot: ScanTabSnapshot) => void
 }
 
 function scannedToAddItem(item: ScannedItem): AddItem {
   return { ...scannedToBulkAddItem(item), source: 'scan' }
 }
 
-export default function ScanTab({ onItemsReady }: ScanTabProps) {
+export default function ScanTab({ onItemsReady, initialSnapshot, onSnapshotChange }: ScanTabProps) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [state, setState] = useState<ScanTabState>('upload')
-  const [preview, setPreview] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [state, setState] = useState<ScanStage>(initialSnapshot?.state ?? 'upload')
+  const [preview, setPreview] = useState<string | null>(initialSnapshot?.preview ?? null)
+  const [error, setError] = useState<string | null>(initialSnapshot?.error ?? null)
 
-  const [readyToAdd, setReadyToAdd] = useState<ScannedItem[]>([])
-  const [needsReview, setNeedsReview] = useState<ScannedItem[]>([])
-  const [skipped, setSkipped] = useState<ScannedItem[]>([])
-  const [warnings, setWarnings] = useState<string[]>([])
+  const [readyToAdd, setReadyToAdd] = useState<ScannedItem[]>(initialSnapshot?.readyToAdd ?? [])
+  const [needsReview, setNeedsReview] = useState<ScannedItem[]>(initialSnapshot?.needsReview ?? [])
+  const [skipped, setSkipped] = useState<ScannedItem[]>(initialSnapshot?.skipped ?? [])
+  const [warnings, setWarnings] = useState<string[]>(initialSnapshot?.warnings ?? [])
+
+  // Reports the full snapshot on every relevant change; onSnapshotChange is
+  // intentionally excluded from deps so an inline/unmemoized callback
+  // doesn't re-trigger this.
+  useEffect(() => {
+    onSnapshotChange?.({ state, preview, error, readyToAdd, needsReview, skipped, warnings })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, preview, error, readyToAdd, needsReview, skipped, warnings])
 
   async function handleFileSelect(file: File) {
     setError(null)

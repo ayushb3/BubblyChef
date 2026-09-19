@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence, useDragControls } from 'framer-motion'
-import ScanTab from './ScanTab'
+import ScanTab, { type ScanTabSnapshot } from './ScanTab'
 import TypeTab from './TypeTab'
+import type { ManualRow } from './AddItemRow'
 import { bulkAddPantryItems } from '@/lib/api/pantry'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
@@ -35,6 +36,11 @@ export default function PantryAddSheet({
   const [activeTab, setActiveTab] = useState<PantryAddTab>(initialTab)
   const [scanItems, setScanItems] = useState<AddItem[]>([])
   const [typeItems, setTypeItems] = useState<AddItem[]>([])
+  // Draft state for each tab, preserved across a tab switch even though the
+  // tab component itself unmounts (issue #402) — reset only when the sheet
+  // closes, alongside scanItems/typeItems below.
+  const [typeRows, setTypeRows] = useState<ManualRow[]>([])
+  const [scanSnapshot, setScanSnapshot] = useState<ScanTabSnapshot | undefined>(undefined)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const dragControls = useDragControls()
@@ -51,6 +57,8 @@ export default function PantryAddSheet({
     if (!isOpen) {
       setScanItems([])
       setTypeItems([])
+      setTypeRows([])
+      setScanSnapshot(undefined)
       setError(null)
       setIsSubmitting(false)
     }
@@ -58,6 +66,21 @@ export default function PantryAddSheet({
 
   const allItems = [...scanItems, ...typeItems]
   const itemCount = allItems.length
+
+  // Switching tabs unmounts the outgoing one — its draft (typeRows /
+  // scanSnapshot) is preserved above so the UI it shows on remount isn't
+  // wiped, but its contribution to the "ready to add" count is cleared here
+  // rather than left stale (issue #402: the count previously survived an
+  // unmount that the underlying data didn't). The incoming tab re-derives
+  // its own count from the restored draft as soon as it re-validates it
+  // (ScanTab's ReviewSurface does this on mount; TypeTab does it on the next
+  // edit).
+  function switchTab(next: PantryAddTab) {
+    if (next === activeTab) return
+    if (activeTab === 'scan') setScanItems([])
+    else setTypeItems([])
+    setActiveTab(next)
+  }
 
   async function handleConfirm() {
     if (itemCount === 0) return
@@ -148,7 +171,7 @@ export default function PantryAddSheet({
               <div className="flex gap-2 mt-3">
                 <button
                   type="button"
-                  onClick={() => setActiveTab('scan')}
+                  onClick={() => switchTab('scan')}
                   className={`flex-1 py-2 rounded-full text-sm font-semibold transition-colors ${
                     activeTab === 'scan'
                       ? 'bg-[var(--color-primary)] text-white'
@@ -159,7 +182,7 @@ export default function PantryAddSheet({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('type')}
+                  onClick={() => switchTab('type')}
                   className={`flex-1 py-2 rounded-full text-sm font-semibold transition-colors ${
                     activeTab === 'type'
                       ? 'bg-[var(--color-primary)] text-white'
@@ -179,6 +202,14 @@ export default function PantryAddSheet({
                 </div>
               )}
 
+              {/*
+                ScanTab/TypeTab still mount and unmount when the tab switches
+                (AnimatePresence mode="wait" below), but their draft state —
+                TypeTab's rows, ScanTab's upload/results snapshot — now lives
+                here and is handed back in as the initial value on remount.
+                That's what keeps a switch away and back from wiping a typed
+                row or a finished scan review — see issue #402.
+              */}
               <AnimatePresence mode="wait">
                 {activeTab === 'scan' ? (
                   <motion.div
@@ -188,7 +219,11 @@ export default function PantryAddSheet({
                     exit={{ opacity: 0, x: 12 }}
                     transition={{ duration: 0.2 }}
                   >
-                    <ScanTab onItemsReady={setScanItems} />
+                    <ScanTab
+                      onItemsReady={setScanItems}
+                      initialSnapshot={scanSnapshot}
+                      onSnapshotChange={setScanSnapshot}
+                    />
                   </motion.div>
                 ) : (
                   <motion.div
@@ -198,7 +233,11 @@ export default function PantryAddSheet({
                     exit={{ opacity: 0, x: -12 }}
                     transition={{ duration: 0.2 }}
                   >
-                    <TypeTab onItemsReady={setTypeItems} />
+                    <TypeTab
+                      onItemsReady={setTypeItems}
+                      initialRows={typeRows}
+                      onRowsChange={setTypeRows}
+                    />
                   </motion.div>
                 )}
               </AnimatePresence>

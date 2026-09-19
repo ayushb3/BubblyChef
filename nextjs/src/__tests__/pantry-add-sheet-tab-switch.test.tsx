@@ -17,6 +17,8 @@ import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import PantryAddSheet from '@/components/pantry/PantryAddSheet'
 import * as pantryApi from '@/lib/api/pantry'
+import * as scanApi from '@/lib/api/scan'
+import type { ScanResult } from '@/types/scan'
 
 jest.mock('@/lib/api/scan')
 jest.mock('@/lib/api/pantry')
@@ -24,9 +26,39 @@ jest.mock('@/lib/api/pantry')
 const mockBulkAddPantryItems = pantryApi.bulkAddPantryItems as jest.MockedFunction<
   typeof pantryApi.bulkAddPantryItems
 >
+const mockUploadReceipt = scanApi.uploadReceipt as jest.MockedFunction<typeof scanApi.uploadReceipt>
+
+const SCAN_RESULT: ScanResult = {
+  ocr_text: 'MILK 4.29',
+  ready_to_add: [
+    {
+      name: 'Whole Milk',
+      original_name: 'whole milk',
+      source_line: 'MILK 4.29',
+      price: 4.29,
+      quantity: 1,
+      unit: 'gallon',
+      category: 'dairy',
+      location: 'fridge',
+      confidence: 0.95,
+    },
+  ],
+  needs_review: [],
+  skipped: [],
+  total_items: 1,
+  warnings: [],
+}
+
+function selectFile() {
+  const file = new File(['fake-bytes'], 'receipt.png', { type: 'image/png' })
+  const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+  fireEvent.change(fileInput, { target: { files: [file] } })
+}
 
 beforeEach(() => {
   jest.clearAllMocks()
+  global.URL.createObjectURL = jest.fn(() => 'blob:mock')
+  global.URL.revokeObjectURL = jest.fn()
 })
 
 it('keeps typed input after switching to Scan and back to Type', async () => {
@@ -60,4 +92,27 @@ it('keeps typed input after switching to Scan and back to Type', async () => {
   // The footer count should match what's actually in the (now-empty) input,
   // not a stale count left over from before the tab switch.
   expect(screen.getByRole('button', { name: /Add Items/i })).toBeInTheDocument()
+})
+
+it('keeps a completed scan review after switching to Type and back to Scan', async () => {
+  mockUploadReceipt.mockResolvedValue(SCAN_RESULT)
+
+  render(
+    <PantryAddSheet isOpen onClose={jest.fn()} initialTab="scan" onItemsAdded={jest.fn()} />,
+  )
+
+  selectFile()
+  await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
+
+  // Switch to Type, then wait for the Scan tab's content to actually leave
+  // the DOM, then switch back.
+  fireEvent.click(screen.getByRole('button', { name: /Type/i }))
+  await waitFor(() => expect(screen.queryByText(/Ready to Add \(1\)/)).not.toBeInTheDocument())
+
+  fireEvent.click(screen.getByRole('button', { name: /Scan/i }))
+
+  // The review results should still be shown — no re-upload prompt — rather
+  // than resetting back to the empty upload dropzone.
+  await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
+  expect(screen.queryByText(/Drop your receipt here/i)).not.toBeInTheDocument()
 })
