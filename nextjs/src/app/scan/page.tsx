@@ -8,6 +8,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import ReviewSurface from '@/components/scan/ReviewSurface'
+import { useFileDropzone } from '@/hooks/useFileDropzone'
 import { uploadReceipt } from '@/lib/api/scan'
 import { bulkAddPantryItems } from '@/lib/api/pantry'
 import { scannedToBulkAddItem } from '@/lib/scan-helpers'
@@ -38,6 +39,8 @@ export default function ScanPage() {
   const [needsReview, setNeedsReview] = useState<ScannedItem[]>([])
   const [skipped, setSkipped] = useState<ScannedItem[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
+
+  const { isDragActive, dropzoneHandlers } = useFileDropzone({ onFile: handleFileSelect })
 
   async function handleFileSelect(file: File) {
     setError(null)
@@ -122,12 +125,19 @@ export default function ScanPage() {
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="w-full border-2 border-dashed border-[var(--color-primary)] rounded-3xl p-10 text-center bg-[var(--color-surface)] hover:bg-[var(--color-border)] transition-colors active:scale-95"
+                {...dropzoneHandlers}
+                className={`w-full border-2 border-dashed rounded-3xl p-10 text-center transition-colors active:scale-95 ${
+                  isDragActive
+                    ? 'border-[var(--color-primary)] bg-[var(--color-border)] scale-[1.02]'
+                    : 'border-[var(--color-primary)] bg-[var(--color-surface)] hover:bg-[var(--color-border)]'
+                }`}
               >
                 <div className="flex justify-center mb-3">
                   <BubblesMascot state="happy" size={72} />
                 </div>
-                <p className="font-semibold text-[var(--color-text)] mb-1">Drop your receipt here</p>
+                <p className="font-semibold text-[var(--color-text)] mb-1">
+                  {isDragActive ? 'Drop it here!' : 'Drop your receipt here'}
+                </p>
                 <p className="text-sm text-[var(--color-muted)]">or tap to upload</p>
               </button>
 
