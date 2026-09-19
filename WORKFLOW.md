@@ -297,7 +297,7 @@ the agents it calls:
 
 | Stage | Who | Way out |
 |---|---|---|
-| Preflight | Sonnet gathers facts; **the script decides** | Stops if `AGENTS_ENABLED` isn't `true`, 3 loop PRs were opened in the last 24 hours, the issue isn't open and `ready-for-agent`, or a PR is already on it |
+| Preflight | Sonnet gathers facts; **the script decides** | Stops if `AGENTS_ENABLED` isn't `true`, 6 loop PRs were opened in the last 24 hours (raised from 3 on 2026-09-19), the issue isn't open and `ready-for-agent`, or a PR is already on it |
 | Setup | Sonnet, low effort | A fresh branch from `main` **in the session's own checkout** (never a separate worktree; see below). Refuses to start on uncommitted work |
 | Plan | the dev role for the domain | Lists genuine ambiguities, each with its own take |
 | Decide | **Opus, high effort** | Settles each ambiguity; escalates to Ayush (`needs-decision`) only for protected paths or product behaviour beyond the issue |

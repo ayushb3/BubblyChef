@@ -80,7 +80,7 @@ async function main() {
   const stops = [
     ['kill switch off', { agentsEnabled: 'false' }, /kill switch/],
     ['kill switch empty', { agentsEnabled: '' }, /kill switch/],
-    ['daily cap reached', { runsLast24h: 3 }, /daily cap/],
+    ['daily cap reached', { runsLast24h: 6 }, /daily cap/],
     ['issue closed', { issueState: 'CLOSED' }, /CLOSED/],
     ['not ready-for-agent', { issueLabels: ['bug'] }, /not labelled ready-for-agent/],
     ['PR already open', { openPrsForIssue: [470] }, /already has open PR/],
@@ -92,9 +92,9 @@ async function main() {
       `got ${r.status} "${r.reason}", agents: ${h.calls.join()}`)
   }
   {
-    const h = harness(label => HAPPY(label, { facts: { ...FACTS, runsLast24h: 2 } }))
+    const h = harness(label => HAPPY(label, { facts: { ...FACTS, runsLast24h: 5 } }))
     const r = await h.run({ issue: 405, dryRun: true })
-    check('preflight allows 2 runs in 24h (under cap)', r.status === 'dry-run', `got ${r.status}`)
+    check('preflight allows 5 runs in 24h (under cap)', r.status === 'dry-run', `got ${r.status}`)
   }
 
   // ── Setup: a half-finished setup drops its branch; one that failed before creating it doesn't ──
