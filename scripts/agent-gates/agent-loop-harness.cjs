@@ -141,6 +141,49 @@ async function main() {
       /git switch -c/.test(setup) && !/git worktree add/.test(setup), 'setup prompt')
   }
 
+  // ── Every exit path returns the caller's checkout to its original branch ──
+  // The loop runs in the session's own checkout, so a path that forgets to switch back
+  // leaves a human's working directory parked on an issue branch. `git checkout` (not
+  // `git switch`) because the original may be a detached commit hash. (Found by the
+  // independent review on PR #463.)
+  {
+    const BACK = 'git checkout "main"'
+    const paths = {}
+    // shipped PR
+    { const h = harness(label => HAPPY(label)); await h.run({ issue: 405 }); paths.ship = h.prompts.ship }
+    // dry run
+    { const h = harness(label => HAPPY(label)); await h.run({ issue: 405, dryRun: true }); paths['dry-run-cleanup'] = h.prompts['dry-run-cleanup'] }
+    // escalation to Ayush
+    {
+      const h = harness(label => {
+        if (label === 'plan') return { plan: 'p', filesToChange: [], protectedPaths: [], userVisible: false, questions: [{ question: 'q', options: ['a', 'b'], implementerTake: 'a' }] }
+        if (label.startsWith('decide')) return { decision: 'd', reasoning: 'r', escalate: true, escalateReason: 'protected path' }
+        return HAPPY(label)
+      })
+      const r = await h.run({ issue: 405 })
+      check('escalation stops the run as needs-decision', r.status === 'needs-decision', `status ${r.status}`)
+      paths.escalate = h.prompts.escalate
+    }
+    // blocked mid-run (implement never passes its gates)
+    {
+      const h = harness(label => label.startsWith('implement') ? { gatesPassed: false, gateOutput: 'x', summary: 's', filesChanged: [] } : HAPPY(label))
+      await h.run({ issue: 405 })
+      paths['blocked-path'] = h.prompts['blocked-path']
+    }
+    // setup failed after creating the branch
+    {
+      const h = harness(label => HAPPY(label, { setup: { ok: false, branchCreated: true, path: '/wt', branch: 'b', originalBranch: 'main', problem: 'npm' } }))
+      await h.run({ issue: 405 })
+      paths['setup-cleanup'] = h.prompts['setup-cleanup']
+    }
+    for (const [name, prompt] of Object.entries(paths)) {
+      check(`exit path "${name}" returns to the original branch`, typeof prompt === 'string' && prompt.includes(BACK), `prompt ${prompt ? 'lacks ' + BACK : 'missing'}`)
+    }
+    const h = harness(label => HAPPY(label)); await h.run({ issue: 405 })
+    check('no prompt tells an agent to "never switch branches" (it would override the cleanup step)',
+      !Object.values(h.prompts).some(p => /Never switch branches\./.test(p)), 'contradictory rule present')
+  }
+
   // ── The loop never merges in shadow mode ──
   {
     const h = harness(label => HAPPY(label))

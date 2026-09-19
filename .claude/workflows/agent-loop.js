@@ -4,7 +4,7 @@ export const meta = {
   whenToUse: 'One issue per run. args: {issue: <number>}. Optional: shadow (default true), dryRun (stop after Decide). See docs/plans/2026-09-17-autonomous-agent-loop.md.',
   phases: [
     { title: 'Preflight', detail: 'kill switch, daily cap, issue readiness, classify' },
-    { title: 'Setup', detail: 'fresh worktree and branch from main' },
+    { title: 'Setup', detail: "fresh branch from main in the session's own checkout" },
     { title: 'Plan', detail: 'dev role reads issue, lessons and code; lists open questions' },
     { title: 'Decide', detail: 'Opus decides each open question, or escalates to Ayush' },
     { title: 'Reproduce', detail: 'bugs: failing test first, before-screenshots' },
@@ -58,9 +58,11 @@ ACTING AS THE BOT — follow exactly; never use Ayush's identity for writes.
   never run \`gh pr merge\` in any form.`
 
 const WORKTREE_RULES = (wt) => `
-Work ONLY inside the checkout at: ${wt.path}, on branch ${wt.branch}. Never switch branches.
+Work ONLY inside the checkout at: ${wt.path}, on branch ${wt.branch}. Do not switch branches
+while you work; the only exception is an explicit numbered cleanup step below telling you to
+return to the original branch at the end, which you must carry out.
 Start every shell command with: cd "${wt.path}" && ...
-Read docs/agents/lessons.md in that worktree before you start; it lists mistakes
+Read docs/agents/lessons.md in that checkout before you start; it lists mistakes
 agents have already made in this repo.`
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
@@ -239,7 +241,7 @@ Do this:
 1. ${wt ? `If the branch ${wt.branch} has commits beyond origin/main, commit any remaining work-in-progress (as the bot), push the branch as the bot, and open a DRAFT PR as the bot with labels "agent-loop" and "agent-blocked". Title: "WIP (agent-blocked): <issue title>". Body: what was attempted, the exact point and reason it stopped (quote the failing output), what a human should look at first, and "Related to #${ISSUE}" (NOT a closing keyword). End the body with the line: 🤖 Generated with [Claude Code](https://claude.com/claude-code)` : 'There is no branch to push.'}
 2. As the bot, comment on issue #${ISSUE}: one short paragraph on where the loop stopped and why, linking the draft PR if there is one.
 3. As the bot, on issue #${ISSUE}: remove the label "ready-for-agent" and add "needs-triage", so the loop does not pick it up again until a human has looked.
-${wt ? `4. Stop any stack you started (scripts/dev/stack.sh down in ${wt.path}). Then, once everything is committed and pushed (or there was nothing to commit), return the checkout to its original branch: git switch "${wt.originalBranch}". If nothing was ever committed on ${wt.branch}, also delete it: git branch -D "${wt.branch}".` : ''}
+${wt ? `4. Stop any stack you started (scripts/dev/stack.sh down in ${wt.path}). Then, once everything is committed and pushed (or there was nothing to commit), return the checkout to its original branch: git checkout "${wt.originalBranch}". If nothing was ever committed on ${wt.branch}, also delete it: git branch -D "${wt.branch}".` : ''}
 
 Return the draft PR URL, or "none".`,
     { label: 'blocked-path', phase: 'Ship', model: 'sonnet', effort: 'low' },
@@ -308,11 +310,14 @@ not touch any other checkout.
 2. \`git status --porcelain\` in path must print NOTHING. If the checkout has any uncommitted
    or untracked-but-unignored files, ok=false with the list: never stash, reset or clean them,
    they may be someone's work.
-3. originalBranch = \`git branch --show-current\` (or the commit hash if detached).
+3. originalBranch = \`git branch --show-current\`; if that prints nothing (detached HEAD), use
+   \`git rev-parse HEAD\` instead. Cleanup returns to it with git checkout, which accepts either.
 4. git fetch origin && git switch -c "${branch}" origin/main
    If that branch already exists locally or on origin, ok=false with the reason — do not reuse or delete it.
-5. If nextjs/.env.local or ai-service/.env is missing, copy it from the main checkout (the
-   parent of \`git rev-parse --path-format=absolute --git-common-dir\`). Never print their contents.
+5. If nextjs/.env.local or ai-service/.env is missing: when this checkout is NOT the main
+   checkout (the parent of \`git rev-parse --path-format=absolute --git-common-dir\`), copy it
+   from there; when it IS the main checkout, there is nowhere to copy from, so set ok=false
+   and say which file is missing. Never print their contents.
 6. If nextjs/node_modules is missing, run in nextjs/: npm ci --prefer-offline --no-audit
 Set branchCreated=true whenever step 4 succeeded, even if a later step failed, and always
 return path, branch and originalBranch.`,
@@ -324,7 +329,7 @@ if (!wt || !wt.ok) {
   // committed yet, so dropping it loses nothing. (Found by the independent review on PR #461.)
   if (wt && wt.branchCreated) {
     await agent(
-      `A failed setup left an issue branch behind. In ${wt.path}: git switch "${wt.originalBranch}" then git branch -D "${wt.branch}". Nothing was committed on it. Nothing else.`,
+      `A failed setup left an issue branch behind. In ${wt.path}: git checkout "${wt.originalBranch}" then git branch -D "${wt.branch}". Nothing was committed on it. Nothing else.`,
       { label: 'setup-cleanup', phase: 'Setup', model: 'haiku', effort: 'low' },
     )
   }
@@ -393,7 +398,7 @@ The agent loop on issue #${ISSUE} needs a human decision before it can continue.
 As the bot, comment on issue #${ISSUE} with, for each question below: the question,
 the implementer's take, the decision agent's recommendation and reasoning, and why it
 needs Ayush. Keep it readable on a phone. Then, as the bot, remove "ready-for-agent" and
-add "needs-decision". Finally, in ${wt.path}: git switch "${wt.originalBranch}" and then
+add "needs-decision". Finally, in ${wt.path}: git checkout "${wt.originalBranch}" and then
 git branch -D "${wt.branch}". Nothing was committed on it.
 
 ${escalations.map(d => `- Question: ${d.question}\n  Implementer: ${d.implementerTake}\n  Recommendation: ${d.decision}\n  Reasoning: ${d.reasoning}\n  Why escalated: ${d.escalateReason}`).join('\n')}`,
@@ -407,7 +412,7 @@ const DECIDED = settled.length
 
 if (DRY_RUN) {
   log('Dry run: stopping after Decide and removing the issue branch.')
-  await agent(`In ${wt.path}: git switch "${wt.originalBranch}" and then git branch -D "${wt.branch}". Nothing was committed on it. Nothing else.`,
+  await agent(`In ${wt.path}: git checkout "${wt.originalBranch}" and then git branch -D "${wt.branch}". Nothing was committed on it. Nothing else.`,
     { label: 'dry-run-cleanup', phase: 'Decide', model: 'haiku', effort: 'low' })
   return { status: 'dry-run', issue: ISSUE, pre, plan, decisions: settled }
 }
@@ -490,12 +495,12 @@ Do not push.`,
 ${AS_BOT}
 
 Verify issue #${ISSUE} ("${pre.title}") by following .claude/skills/verify/SKILL.md exactly,
-in the worktree above. What was implemented: ${impl.summary}
+in the checkout above. What was implemented: ${impl.summary}
 ${repro && repro.beforeScreenshots.length ? `Before-screenshots already exist: ${repro.beforeScreenshots.join(', ')}. Take the matching -after.png shots.` : ''}
 ${plan.userVisible ? '' : 'The change is not user-visible: verify its observable effect as the skill describes for backend-only changes, or mark applicable=false only if there is genuinely no runtime behaviour to check.'}
 
 Walk the flow the issue describes AND its neighbours. Check both health endpoints report
-the worktree's HEAD. Run the smoke suite. Always run scripts/dev/stack.sh down at the end.
+the checkout's HEAD. Run the smoke suite. Always run scripts/dev/stack.sh down at the end.
 Commit screenshots as the bot. Never report verified=true for anything you did not run.`,
     { label: `verify-${attempt}`, phase: 'Verify', schema: VERIFY, agentType: pre.devRole },
   )
@@ -593,7 +598,7 @@ Open the PR for issue #${ISSUE}: "${pre.title}".
    - End with: 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 4. ${SHADOW ? 'Shadow mode: do NOT enable auto-merge. Do not run any gh pr merge command.' : 'Enable auto-merge only if no protected paths: gh pr merge --auto --merge (as the bot).'}
 5. Stop any stack you started. After the PR is open and the branch pushed, return the checkout
-   to its original branch: git switch "${wt.originalBranch}" (the pushed branch stays on origin
+   to its original branch: git checkout "${wt.originalBranch}" (the pushed branch stays on origin
    for the PR; keep the local copy too).`,
   { label: 'ship', phase: 'Ship', schema: SHIP, model: 'sonnet' },
 )
@@ -610,5 +615,5 @@ return {
   findingsFixed: fixedFindings.length,
   findingsDisputed: disputedFindings.length,
   lessonsProposed: ship.lessonsProposed,
-  worktree: wt.path,
+  checkout: wt.path,
 }
