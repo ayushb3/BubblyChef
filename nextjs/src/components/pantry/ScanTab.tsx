@@ -40,9 +40,31 @@ function scannedToAddItem(item: ScannedItem): AddItem {
 
 export default function ScanTab({ onItemsReady, initialSnapshot, onSnapshotChange }: ScanTabProps) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [state, setState] = useState<ScanStage>(initialSnapshot?.state ?? 'upload')
-  const [preview, setPreview] = useState<string | null>(initialSnapshot?.preview ?? null)
+  // A restored 'processing' snapshot has no upload in flight to resume it —
+  // the promise that would have resolved it belonged to the unmounted
+  // instance that made this snapshot, and its preview blob URL has already
+  // been revoked. Restoring 'processing' as-is spins forever with a broken
+  // image and no way out (issue #402 follow-up). Fall back to the upload
+  // dropzone instead so the user can just re-scan.
+  const restoredStuckProcessing = initialSnapshot?.state === 'processing'
+  const [state, setState] = useState<ScanStage>(
+    restoredStuckProcessing ? 'upload' : initialSnapshot?.state ?? 'upload',
+  )
+  const [preview, setPreview] = useState<string | null>(
+    restoredStuckProcessing ? null : initialSnapshot?.preview ?? null,
+  )
   const [error, setError] = useState<string | null>(initialSnapshot?.error ?? null)
+  // Guards state updates from an in-flight upload whose promise resolves
+  // after this instance has unmounted (e.g. the user switched tabs while
+  // scanning) — without this, the late setState calls land on a detached
+  // instance and their result is silently dropped instead of persisted.
+  const isMountedRef = useRef(true)
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   const [readyToAdd, setReadyToAdd] = useState<ScannedItem[]>(initialSnapshot?.readyToAdd ?? [])
   const [needsReview, setNeedsReview] = useState<ScannedItem[]>(initialSnapshot?.needsReview ?? [])
@@ -65,12 +87,20 @@ export default function ScanTab({ onItemsReady, initialSnapshot, onSnapshotChang
 
     try {
       const result: ScanResult = await uploadReceipt(file)
+      // The paid Vision call already happened by this point — if the tab
+      // was switched away mid-upload and this instance is gone, there's no
+      // UI left to hand the result to, but we must not silently drop it
+      // either; the parent's snapshot only ever reflects a mounted
+      // instance's state, so there is nothing further to persist here once
+      // unmounted. Just avoid touching this detached instance's state.
+      if (!isMountedRef.current) return
       setReadyToAdd(result.ready_to_add)
       setNeedsReview(result.needs_review)
       setSkipped(result.skipped)
       setWarnings(result.warnings ?? [])
       setState('results')
     } catch (err) {
+      if (!isMountedRef.current) return
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setState('upload')
       // Retrying the same receipt is the obvious next move after a transient

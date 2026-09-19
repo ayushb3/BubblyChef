@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import AddItemRow, { type ManualRow } from './AddItemRow'
 import type { AddItem } from './PantryAddSheet'
 
@@ -46,6 +46,15 @@ export default function TypeTab({ onItemsReady, initialRows, onRowsChange }: Typ
         source: 'manual' as const,
       }))
   }
+
+  // Report the restored draft's contribution to the parent's "ready to add"
+  // count as soon as it mounts, not only on the next edit — otherwise a
+  // draft that survived a tab switch (issue #402) shows valid data with a
+  // count of zero and a disabled footer until the user touches a field.
+  useEffect(() => {
+    onItemsReady(toAddItems(rows))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleChange = (updated: ManualRow[]) => {
     setRows(updated)

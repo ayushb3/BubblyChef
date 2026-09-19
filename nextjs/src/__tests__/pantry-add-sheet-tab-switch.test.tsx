@@ -84,14 +84,16 @@ it('keeps typed input after switching to Scan and back to Type', async () => {
   fireEvent.click(screen.getByRole('button', { name: /Type/i }))
   await waitFor(() => expect(screen.getByLabelText('Item name')).toBeInTheDocument())
 
-  // The typed value should still be there — it is not, because TypeTab
-  // unmounted and remounted with a fresh, empty row.
+  // The typed value should still be there — the draft survives the
+  // TypeTab unmount/remount across the tab switch.
   const nameInputAfter = screen.getByLabelText('Item name') as HTMLInputElement
   expect(nameInputAfter.value).toBe('Bananas')
 
-  // The footer count should match what's actually in the (now-empty) input,
-  // not a stale count left over from before the tab switch.
-  expect(screen.getByRole('button', { name: /Add Items/i })).toBeInTheDocument()
+  // The footer count should match what's actually in the restored input,
+  // not lag behind until the user makes an edit.
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: /Add 1 Item/i })).toBeInTheDocument(),
+  )
 })
 
 it('keeps a completed scan review after switching to Type and back to Scan', async () => {
