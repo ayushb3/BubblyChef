@@ -48,6 +48,13 @@ const MAX_IMPLEMENT_ATTEMPTS = 2
 // Fix rounds after review: up to 3 fixes, so up to 4 reviews.
 const MAX_REVIEW_ROUNDS = 3
 
+// Plumbing stages run as the lean `loop-runner` agent (.claude/agents/loop-runner.md):
+// Bash/Read/Grep/Glob only. As default workflow subagents they loaded every tool the
+// session has, about 40k tokens of context per agent before doing anything, repeated
+// on every call: the largest single cost in the first full pilot run (issue #405).
+// Dev-role stages keep their own agent type.
+const RUNNER = 'loop-runner'
+
 // How every agent acts as the bot. Kept in one place so no stage improvises it.
 const AS_BOT = `
 ACTING AS THE BOT — follow exactly; never use Ayush's identity for writes.
@@ -292,7 +299,7 @@ Do this:
 ${wt ? `4. Stop any stack you started (scripts/dev/stack.sh down in ${wt.path}). Then, once everything is committed and pushed (or there was nothing to commit), return the checkout to its original branch: git checkout "${wt.originalBranch}". If nothing was ever committed on ${wt.branch}, also delete it: git branch -D "${wt.branch}".` : ''}
 
 Return the draft PR URL, or "none".`,
-    { label: 'blocked-path', phase: 'Ship', model: 'sonnet', effort: 'low' },
+    { agentType: RUNNER, label: 'blocked-path', phase: 'Ship', model: 'sonnet', effort: 'low' },
   )
   return { status: 'agent-blocked', issue: ISSUE, stage, detail, pr: result }
 }
@@ -324,7 +331,7 @@ Then classify from the issue's labels, title, body and comments:
   ui-ux (nextjs/src/components visual/design-system work).
 - slug: short kebab-case for the branch name.
 - summary: what the issue actually asks for, in your own words.`,
-  { label: 'preflight', phase: 'Preflight', schema: PREFLIGHT, model: 'sonnet', effort: 'low' },
+  { agentType: RUNNER, label: 'preflight', phase: 'Preflight', schema: PREFLIGHT, model: 'sonnet', effort: 'low' },
 )
 if (!pre) throw new Error('preflight agent died')
 log(`Issue #${ISSUE}: ${pre.title} — ${pre.kind}, ${pre.devRole}; runs in last 24h ${pre.runsLast24h}/${DAILY_CAP}`)
@@ -369,7 +376,7 @@ not touch any other checkout.
 6. If nextjs/node_modules is missing, run in nextjs/: npm ci --prefer-offline --no-audit
 Set branchCreated=true whenever step 4 succeeded, even if a later step failed, and always
 return path, branch and originalBranch.`,
-  { label: 'setup', phase: 'Setup', schema: SETUP, model: 'sonnet', effort: 'low' },
+  { agentType: RUNNER, label: 'setup', phase: 'Setup', schema: SETUP, model: 'sonnet', effort: 'low' },
 )
 if (!wt || !wt.ok) {
   // A half-finished Setup must not leave the issue branch checked out: the next run would
@@ -378,7 +385,7 @@ if (!wt || !wt.ok) {
   if (wt && wt.branchCreated) {
     await agent(
       `A failed setup left an issue branch behind. In ${wt.path}: git checkout "${wt.originalBranch}" then git branch -D "${wt.branch}". Nothing was committed on it. Nothing else.`,
-      { label: 'setup-cleanup', phase: 'Setup', model: 'haiku', effort: 'low' },
+      { agentType: RUNNER, label: 'setup-cleanup', phase: 'Setup', model: 'haiku', effort: 'low' },
     )
   }
   return await blocked(null, 'Setup', wt ? wt.problem : 'setup agent died', pre)
@@ -431,7 +438,7 @@ Set escalate=true ONLY if deciding either (a) requires changing a path in
 .github/CODEOWNERS (migrations, auth, ai-service/bubbly_chef/prompts/, .github/,
 .claude/ config, dependency manifests, deploy config), or (b) changes product
 behaviour a user would notice beyond what the issue describes. Otherwise decide.`,
-  { label: `decide-${i + 1}`, phase: 'Decide', schema: DECISION, model: 'opus', effort: 'high' },
+  { agentType: RUNNER, label: `decide-${i + 1}`, phase: 'Decide', schema: DECISION, model: 'opus', effort: 'high' },
 )))
 const settled = decisions.map((d, i) => d && ({ ...d, question: plan.questions[i].question, implementerTake: plan.questions[i].implementerTake }))
 if (settled.some(d => !d)) return await blocked(wt, 'Decide', 'a decision agent died', pre)
@@ -450,7 +457,7 @@ add "needs-decision". Finally, in ${wt.path}: git checkout "${wt.originalBranch}
 git branch -D "${wt.branch}". Nothing was committed on it.
 
 ${escalations.map(d => `- Question: ${d.question}\n  Implementer: ${d.implementerTake}\n  Recommendation: ${d.decision}\n  Reasoning: ${d.reasoning}\n  Why escalated: ${d.escalateReason}`).join('\n')}`,
-    { label: 'escalate', phase: 'Ship', model: 'sonnet', effort: 'low' },
+    { agentType: RUNNER, label: 'escalate', phase: 'Ship', model: 'sonnet', effort: 'low' },
   )
   return { status: 'needs-decision', issue: ISSUE, questions: escalations.map(d => d.question) }
 }
@@ -461,7 +468,7 @@ const DECIDED = settled.length
 if (DRY_RUN) {
   log('Dry run: stopping after Decide and removing the issue branch.')
   await agent(`In ${wt.path}: git checkout "${wt.originalBranch}" and then git branch -D "${wt.branch}". Nothing was committed on it. Nothing else.`,
-    { label: 'dry-run-cleanup', phase: 'Decide', model: 'haiku', effort: 'low' })
+    { agentType: RUNNER, label: 'dry-run-cleanup', phase: 'Decide', model: 'haiku', effort: 'low' })
   return { status: 'dry-run', issue: ISSUE, pre, plan, decisions: settled }
 }
 
@@ -590,7 +597,7 @@ the issue or the claims; bugs (anything that passes tests but is wrong); securit
 or were weakened; guideline violations. Only concrete problems, each with why it matters.
 Skip style the linters enforce.
 verdict=mergeable only if nothing blocking or important remains.`,
-    { label: `review-${round}`, phase: 'Review', schema: REVIEW, model: 'opus' },
+    { agentType: RUNNER, label: `review-${round}`, phase: 'Review', schema: REVIEW, model: 'opus' },
   )
   if (!review) return await blocked(wt, 'Review', 'review agent died', pre)
   const serious = review.findings.filter(f => f.severity !== 'minor')
@@ -648,7 +655,7 @@ Open the PR for issue #${ISSUE}: "${pre.title}".
 4. ${SHADOW ? 'Shadow mode: do NOT enable auto-merge. Do not run any gh pr merge command.' : 'Do NOT enable auto-merge here: the loop decides that after the GitHub review (Respond). Do not run any gh pr merge command.'}
 5. Stop any stack you started. STAY on ${wt.branch}: the Respond stage may still need to fix
    and push. A final step returns the checkout to its original branch.`,
-  { label: 'ship', phase: 'Ship', schema: SHIP, model: 'sonnet' },
+  { agentType: RUNNER, label: 'ship', phase: 'Ship', schema: SHIP, model: 'sonnet' },
 )
 if (!ship) return await blocked(wt, 'Ship', 'ship agent died before the PR was confirmed', pre)
 
@@ -701,7 +708,7 @@ Expected head commit: ${expectedSha}
    "looks mergeable", "needs changes" or "needs a human". findings: each concrete problem it
    raised (file, problem, why, and severity as it states it; if it doesn't state one, use
    "important", never guess "minor").`,
-    { label: `gh-review-${round + 1}`, phase: 'Respond', schema: GH_REVIEW, model: 'sonnet', effort: 'low' },
+    { agentType: RUNNER, label: `gh-review-${round + 1}`, phase: 'Respond', schema: GH_REVIEW, model: 'sonnet', effort: 'low' },
   )
   // Enforced here, not by the reader: a review of any other commit is not a review of this one.
   if (!ghReview || !ghReview.reviewRan || ghReview.reviewedSha !== expectedSha) {
@@ -785,17 +792,17 @@ Finish the agent loop run for PR #${ship.prNumber} (issue #${ISSUE}). Do exactly
 3. Stop any stack you started, then return the checkout to its original branch:
    git checkout "${wt.originalBranch}"  (keep the local issue branch; it is pushed).
    Report whether that worked, and whether you ran any gh pr merge command.`
-let fin = await agent(finishPrompt, { label: 'finish', phase: 'Respond', schema: FINISH, model: 'haiku', effort: 'low' })
+let fin = await agent(finishPrompt, { agentType: RUNNER, label: 'finish', phase: 'Respond', schema: FINISH, model: 'haiku', effort: 'low' })
 if (!fin) {
   // The finish agent died: its labelling and drafting of an unresolved PR matter as much
   // as the checkout, so re-run the whole step once, not just the checkout.
-  fin = await agent(finishPrompt, { label: 'finish-retry', phase: 'Respond', schema: FINISH, model: 'haiku', effort: 'low' })
+  fin = await agent(finishPrompt, { agentType: RUNNER, label: 'finish-retry', phase: 'Respond', schema: FINISH, model: 'haiku', effort: 'low' })
 }
 if (!fin || !fin.returnedToOriginal) {
   // Never leave a human's checkout parked on the issue branch because one agent failed.
   await agent(
     `In ${wt.path}: run  git checkout "${wt.originalBranch}"  and confirm with git branch --show-current. Nothing else.`,
-    { label: 'finish-fallback', phase: 'Respond', model: 'haiku', effort: 'low' },
+    { agentType: RUNNER, label: 'finish-fallback', phase: 'Respond', model: 'haiku', effort: 'low' },
   )
 }
 if (fin && fin.ranMergeCommand && !mayAutoMerge) {
@@ -805,7 +812,7 @@ if (fin && fin.ranMergeCommand && !mayAutoMerge) {
     `${AS_BOT}
 As the bot, run: gh pr merge ${ship.prNumber} --repo ${REPO} --disable-auto
 Then comment on PR #${ship.prNumber}: "Auto-merge was enabled by the agent loop in error and has been disabled; a human must merge this PR." Nothing else.`,
-    { label: 'undo-auto-merge', phase: 'Respond', model: 'haiku', effort: 'low' },
+    { agentType: RUNNER, label: 'undo-auto-merge', phase: 'Respond', model: 'haiku', effort: 'low' },
   )
 }
 
