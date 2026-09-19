@@ -38,6 +38,11 @@ changes so it no longer applies.
 - **Subagent `isolation: worktree` branches from the default branch**, not the
   parent session's HEAD. A dev role delegated with it won't see the feature branch
   it's meant to build on. Isolate per session instead.
+- **Agents can only write inside their session's own worktree.** A workflow's agents
+  inherit the launching session's write scope, so they can *read* another worktree but
+  not write to it. The first agent-loop pilot created a separate worktree per issue and
+  blocked on this. Work on a branch in the session's own checkout instead. If a guard
+  refuses a write, don't route around it with shell commands; report it.
 - **Agent PRs must be opened as `bubblychef-bot`**, never as `ayushb3`. GitHub
   skips code-owner review when the author is the only code owner, so a PR opened
   under Ayush's account bypasses the protected-path gate entirely.

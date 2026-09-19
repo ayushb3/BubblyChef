@@ -58,7 +58,7 @@ ACTING AS THE BOT — follow exactly; never use Ayush's identity for writes.
   never run \`gh pr merge\` in any form.`
 
 const WORKTREE_RULES = (wt) => `
-Work ONLY inside the worktree at: ${wt.path} (branch ${wt.branch}).
+Work ONLY inside the checkout at: ${wt.path}, on branch ${wt.branch}. Never switch branches.
 Start every shell command with: cd "${wt.path}" && ...
 Read docs/agents/lessons.md in that worktree before you start; it lists mistakes
 agents have already made in this repo.`
@@ -88,12 +88,13 @@ const SETUP = {
   type: 'object',
   properties: {
     ok: { type: 'boolean' },
-    worktreeCreated: { type: 'boolean', description: 'true if git worktree add succeeded, even if a later step failed' },
-    path: { type: 'string' },
+    branchCreated: { type: 'boolean', description: 'true if the issue branch was created, even if a later step failed' },
+    path: { type: 'string', description: "this session's checkout (git rev-parse --show-toplevel)" },
     branch: { type: 'string' },
+    originalBranch: { type: 'string', description: 'the branch the checkout was on before Setup, to return to at the end' },
     problem: { type: 'string' },
   },
-  required: ['ok', 'worktreeCreated', 'path', 'branch', 'problem'],
+  required: ['ok', 'branchCreated', 'path', 'branch', 'originalBranch', 'problem'],
 }
 
 const FIX = {
@@ -238,7 +239,7 @@ Do this:
 1. ${wt ? `If the branch ${wt.branch} has commits beyond origin/main, commit any remaining work-in-progress (as the bot), push the branch as the bot, and open a DRAFT PR as the bot with labels "agent-loop" and "agent-blocked". Title: "WIP (agent-blocked): <issue title>". Body: what was attempted, the exact point and reason it stopped (quote the failing output), what a human should look at first, and "Related to #${ISSUE}" (NOT a closing keyword). End the body with the line: 🤖 Generated with [Claude Code](https://claude.com/claude-code)` : 'There is no branch to push.'}
 2. As the bot, comment on issue #${ISSUE}: one short paragraph on where the loop stopped and why, linking the draft PR if there is one.
 3. As the bot, on issue #${ISSUE}: remove the label "ready-for-agent" and add "needs-triage", so the loop does not pick it up again until a human has looked.
-${wt ? `4. Stop any stack you started (scripts/dev/stack.sh down in the worktree). Leave the worktree in place.` : ''}
+${wt ? `4. Stop any stack you started (scripts/dev/stack.sh down in ${wt.path}). Then, once everything is committed and pushed (or there was nothing to commit), return the checkout to its original branch: git switch "${wt.originalBranch}". If nothing was ever committed on ${wt.branch}, also delete it: git branch -D "${wt.branch}".` : ''}
 
 Return the draft PR URL, or "none".`,
     { label: 'blocked-path', phase: 'Ship', model: 'sonnet', effort: 'low' },
@@ -295,27 +296,35 @@ if (stopReason) {
 phase('Setup')
 const prefix = pre.kind === 'bug' ? 'fix' : 'feat'
 const branch = `${prefix}/issue-${ISSUE}-${pre.slug}`
+// The loop works IN THIS SESSION'S OWN CHECKOUT, on a fresh branch. It does not create
+// a separate worktree: the host only lets a session (and every agent it launches) write
+// inside its own worktree, so agents could read a new worktree but never write to it.
+// That is how the first pilot run on issue #405 blocked. It also matches WORKFLOW.md §5:
+// isolation belongs to the session. Running issues in parallel means parallel sessions.
 const wt = await agent(
-  `Create an isolated worktree for the agent loop. Do not touch any other worktree.
-1. Find the main checkout: the parent directory of \`git rev-parse --path-format=absolute --git-common-dir\`.
-2. From there: git fetch origin && git worktree add "<main>/.claude/worktrees/loop-issue-${ISSUE}" -b "${branch}" origin/main
-   If that branch or path already exists, ok=false with the reason — do not reuse or delete it.
-3. Copy the gitignored env files into the new worktree (never print their contents):
-   <main>/nextjs/.env.local -> nextjs/.env.local ; <main>/ai-service/.env -> ai-service/.env
-4. cd into the worktree's nextjs/ and run: npm ci --prefer-offline --no-audit
-Return the absolute worktree path and the branch. Set worktreeCreated=true whenever step 2
-succeeded, even if a later step failed, and always return the path and branch you used.`,
+  `Prepare this session's own checkout for the agent loop. Do not create worktrees, and do
+not touch any other checkout.
+1. path = \`git rev-parse --show-toplevel\` (run it from your current directory).
+2. \`git status --porcelain\` in path must print NOTHING. If the checkout has any uncommitted
+   or untracked-but-unignored files, ok=false with the list: never stash, reset or clean them,
+   they may be someone's work.
+3. originalBranch = \`git branch --show-current\` (or the commit hash if detached).
+4. git fetch origin && git switch -c "${branch}" origin/main
+   If that branch already exists locally or on origin, ok=false with the reason — do not reuse or delete it.
+5. If nextjs/.env.local or ai-service/.env is missing, copy it from the main checkout (the
+   parent of \`git rev-parse --path-format=absolute --git-common-dir\`). Never print their contents.
+6. If nextjs/node_modules is missing, run in nextjs/: npm ci --prefer-offline --no-audit
+Set branchCreated=true whenever step 4 succeeded, even if a later step failed, and always
+return path, branch and originalBranch.`,
   { label: 'setup', phase: 'Setup', schema: SETUP, model: 'sonnet', effort: 'low' },
 )
 if (!wt || !wt.ok) {
-  // A half-finished Setup must not leave the worktree behind: the next run would hit
-  // "path already exists" and block on this issue forever. Nothing has been committed
-  // yet, so removing it loses nothing. (Found by the independent review on PR #461.)
-  if (wt && wt.worktreeCreated) {
+  // A half-finished Setup must not leave the issue branch checked out: the next run would
+  // find the branch already exists and block on this issue forever. Nothing has been
+  // committed yet, so dropping it loses nothing. (Found by the independent review on PR #461.)
+  if (wt && wt.branchCreated) {
     await agent(
-      `A failed setup left a worktree behind. Remove it and its branch; nothing was committed there.
-git worktree remove --force "${wt.path}"  then  git branch -D "${wt.branch}"
-Run these from the main checkout (the parent of \`git rev-parse --path-format=absolute --git-common-dir\`). Nothing else.`,
+      `A failed setup left an issue branch behind. In ${wt.path}: git switch "${wt.originalBranch}" then git branch -D "${wt.branch}". Nothing was committed on it. Nothing else.`,
       { label: 'setup-cleanup', phase: 'Setup', model: 'haiku', effort: 'low' },
     )
   }
@@ -384,8 +393,8 @@ The agent loop on issue #${ISSUE} needs a human decision before it can continue.
 As the bot, comment on issue #${ISSUE} with, for each question below: the question,
 the implementer's take, the decision agent's recommendation and reasoning, and why it
 needs Ayush. Keep it readable on a phone. Then, as the bot, remove "ready-for-agent" and
-add "needs-decision". Finally remove the worktree at ${wt.path} (git worktree remove) and
-delete its local branch; nothing was committed.
+add "needs-decision". Finally, in ${wt.path}: git switch "${wt.originalBranch}" and then
+git branch -D "${wt.branch}". Nothing was committed on it.
 
 ${escalations.map(d => `- Question: ${d.question}\n  Implementer: ${d.implementerTake}\n  Recommendation: ${d.decision}\n  Reasoning: ${d.reasoning}\n  Why escalated: ${d.escalateReason}`).join('\n')}`,
     { label: 'escalate', phase: 'Ship', model: 'sonnet', effort: 'low' },
@@ -397,8 +406,8 @@ const DECIDED = settled.length
   : 'No open questions: the issue is clear.'
 
 if (DRY_RUN) {
-  log('Dry run: stopping after Decide and removing the worktree.')
-  await agent(`Remove the worktree at ${wt.path} (git worktree remove --force) and delete its local branch ${wt.branch}. Nothing else.`,
+  log('Dry run: stopping after Decide and removing the issue branch.')
+  await agent(`In ${wt.path}: git switch "${wt.originalBranch}" and then git branch -D "${wt.branch}". Nothing was committed on it. Nothing else.`,
     { label: 'dry-run-cleanup', phase: 'Decide', model: 'haiku', effort: 'low' })
   return { status: 'dry-run', issue: ISSUE, pre, plan, decisions: settled }
 }
@@ -583,7 +592,9 @@ Open the PR for issue #${ISSUE}: "${pre.title}".
    - "Fixes #${ISSUE}" on its own line if this fully resolves it; "Related to #${ISSUE}" if only partly.
    - End with: 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 4. ${SHADOW ? 'Shadow mode: do NOT enable auto-merge. Do not run any gh pr merge command.' : 'Enable auto-merge only if no protected paths: gh pr merge --auto --merge (as the bot).'}
-5. Stop any stack you started. Leave the worktree in place.`,
+5. Stop any stack you started. After the PR is open and the branch pushed, return the checkout
+   to its original branch: git switch "${wt.originalBranch}" (the pushed branch stays on origin
+   for the PR; keep the local copy too).`,
   { label: 'ship', phase: 'Ship', schema: SHIP, model: 'sonnet' },
 )
 if (!ship) return await blocked(wt, 'Ship', 'ship agent died before the PR was confirmed', pre)

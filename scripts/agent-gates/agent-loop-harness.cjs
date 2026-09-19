@@ -39,7 +39,7 @@ const FACTS = {
   agentsEnabled: 'true', runsLast24h: 0, issueState: 'OPEN', issueLabels: ['ready-for-agent'],
   openPrsForIssue: [], title: 'T', kind: 'feature', devRole: 'frontend', slug: 's', summary: 'x',
 }
-const SETUP_OK = { ok: true, worktreeCreated: true, path: '/wt', branch: 'feat/x', problem: '' }
+const SETUP_OK = { ok: true, branchCreated: true, path: '/wt', branch: 'feat/x', originalBranch: 'main', problem: '' }
 const HAPPY = (label, extra = {}) => {
   if (label === 'preflight') return extra.facts || FACTS
   if (label === 'setup') return extra.setup || SETUP_OK
@@ -79,16 +79,16 @@ async function main() {
     check('preflight allows 2 runs in 24h (under cap)', r.status === 'dry-run', `got ${r.status}`)
   }
 
-  // ── Setup: a half-finished setup removes its worktree; a failed one before add doesn't ──
+  // ── Setup: a half-finished setup drops its branch; one that failed before creating it doesn't ──
   {
-    const h = harness(label => HAPPY(label, { setup: { ok: false, worktreeCreated: true, path: '/wt', branch: 'b', problem: 'npm ci failed' } }))
+    const h = harness(label => HAPPY(label, { setup: { ok: false, branchCreated: true, path: '/wt', branch: 'b', originalBranch: 'main', problem: 'npm ci failed' } }))
     const r = await h.run({ issue: 405 })
-    check('setup failing after worktree add cleans up', r.status === 'agent-blocked' && h.calls.includes('setup-cleanup'), `calls: ${h.calls.join()}`)
+    check('setup failing after the branch was created cleans it up', r.status === 'agent-blocked' && h.calls.includes('setup-cleanup'), `calls: ${h.calls.join()}`)
   }
   {
-    const h = harness(label => HAPPY(label, { setup: { ok: false, worktreeCreated: false, path: '', branch: '', problem: 'exists' } }))
+    const h = harness(label => HAPPY(label, { setup: { ok: false, branchCreated: false, path: '/wt', branch: '', originalBranch: 'main', problem: 'exists' } }))
     await h.run({ issue: 405 })
-    check('setup failing before worktree add does not clean up', !h.calls.includes('setup-cleanup'), `calls: ${h.calls.join()}`)
+    check('setup failing before the branch was created does not clean up', !h.calls.includes('setup-cleanup'), `calls: ${h.calls.join()}`)
   }
 
   // ── Review: MAX_REVIEW_ROUNDS fix rounds, then blocked ──
@@ -128,6 +128,17 @@ async function main() {
       `fixed ${r.findingsFixed}, disputed ${r.findingsDisputed}`)
     check('PR body lists the dispute and no false "passed first review"',
       /disputed and accepted by the re-review: P1/.test(ship) && !/passed the first review/.test(ship), 'ship prompt wording')
+  }
+
+  // ── Setup works in the session's own checkout, never a separate worktree ──
+  // The host only lets a session's agents write inside the session's own worktree; the
+  // first pilot run blocked because Setup created a separate one. Guard against regressing.
+  {
+    const h = harness(label => HAPPY(label))
+    await h.run({ issue: 405, dryRun: true })
+    const setup = h.prompts.setup || ''
+    check('setup works in place and never creates a worktree',
+      /git switch -c/.test(setup) && !/git worktree add/.test(setup), 'setup prompt')
   }
 
   // ── The loop never merges in shadow mode ──

@@ -295,7 +295,7 @@ the agents it calls:
 | Stage | Who | Way out |
 |---|---|---|
 | Preflight | Sonnet gathers facts; **the script decides** | Stops if `AGENTS_ENABLED` isn't `true`, 3 loop PRs were opened in the last 24 hours, the issue isn't open and `ready-for-agent`, or a PR is already on it |
-| Setup | Sonnet, low effort | Fresh worktree and branch from `main` |
+| Setup | Sonnet, low effort | A fresh branch from `main` **in the session's own checkout** (never a separate worktree; see below). Refuses to start on uncommitted work |
 | Plan | the dev role for the domain | Lists genuine ambiguities, each with its own take |
 | Decide | **Opus, high effort** | Settles each ambiguity; escalates to Ayush (`needs-decision`) only for protected paths or product behaviour beyond the issue |
 | Reproduce | dev role | Bugs only: a test that fails on the unfixed code, plus before-screenshots |
@@ -312,7 +312,9 @@ The loop never merges. In shadow mode (the default) it never requests auto-merge
 either; it marks PRs that *would* auto-merge and Ayush merges. The script itself is
 CODEOWNERS-protected: an agent that could edit it could raise its own limits.
 
-`dryRun: true` stops after Decide and removes the worktree: a cheap way to see how the
+**It runs in the calling session's own checkout,** switching it to a new branch and back at the end. The host only lets a session, and every agent it launches, write inside that session's own worktree, so a loop that created a separate worktree could read it but never write to it (the first pilot run blocked on exactly this). Running several issues at once therefore means several sessions, each in its own worktree, which is what §5 already says.
+
+`dryRun: true` stops after Decide and deletes the issue branch: a cheap way to see how the
 loop reads an issue before letting it write anything.
 
 
