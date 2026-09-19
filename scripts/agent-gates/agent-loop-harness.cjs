@@ -378,6 +378,38 @@ async function main() {
       `${r.status} calls ${h.calls.join()}`)
   }
 
+  // ── Re-verify after review fixes (found on the blocked #402 run, PR #471) ──
+  {
+    const h = harness(label => HAPPY(label))
+    const r = await h.run({ issue: 405 })
+    check('no review fixes -> verified once, no re-verification', r.status === 'pr-opened' && !h.calls.includes('verify-recheck'), `calls ${h.calls.join()}`)
+  }
+  {
+    const rv = reviewing(['bad', 'ok'], FIXED)
+    const h = harness(label => {
+      if (label === 'verify-recheck') return { verified: true, applicable: true, commitVerified: 'final', evidence: 'FRESH-EVIDENCE', screenshots: [], problems: '', couldNotVerify: '' }
+      return rv(label)
+    })
+    const r = await h.run({ issue: 405 })
+    check('after a review fix round, verification re-runs on the final commit', h.calls.includes('verify-recheck') && r.status === 'pr-opened', `calls ${h.calls.join()}`)
+    check('the PR carries the re-verified evidence, not the stale one', /FRESH-EVIDENCE/.test(h.prompts.ship || ''), 'ship prompt lacks recheck evidence')
+    check('re-verification is told it is a from-scratch recheck of current HEAD', /THIS IS A RE-VERIFICATION/.test(h.prompts['verify-recheck'] || ''), 'recheck prompt')
+    check('the reviewer after a fix is told the evidence predates the fixes', /verification was done BEFORE 1 fix round/.test(h.prompts['review-2'] || ''), 'review-2 prompt')
+  }
+  {
+    const rv = reviewing(['bad', 'ok'], FIXED)
+    const h = harness(label => label === 'verify-recheck'
+      ? { verified: false, applicable: true, commitVerified: 'final', evidence: 'e', screenshots: [], problems: 'footer wrong after fix', couldNotVerify: '' }
+      : rv(label))
+    const r = await h.run({ issue: 405 })
+    check('a failed re-verification blocks instead of shipping', r.status === 'agent-blocked' && r.stage === 'Verify' && !h.calls.includes('ship'), `${r.status} ${r.stage}`)
+  }
+  {
+    const h = harness(ghSeq(['needs changes', 'looks mergeable'], FIXED))
+    await h.run({ issue: 405 })
+    check('respond fixes must re-verify user-visible changes before pushing', /re-verify that flow on your new commit/.test(h.prompts['respond-fix-1'] || ''), 'respond-fix prompt')
+  }
+
   // ── The loop never merges in shadow mode ──
   {
     const h = harness(label => HAPPY(label))

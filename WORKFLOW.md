@@ -303,7 +303,7 @@ the agents it calls:
 | Decide | **Opus, high effort** | Settles each ambiguity; escalates to Ayush (`needs-decision`) only for protected paths or product behaviour beyond the issue |
 | Reproduce | dev role | Bugs only: a test that fails on the unfixed code, plus before-screenshots |
 | Implement + Verify | dev role | Quality gates, then the `verify` skill; **2 attempts total** |
-| Review | **Opus**, fresh context | Up to **3** fix rounds |
+| Review | **Opus**, fresh context | Up to **3** fix rounds; if any fix happened, **verification re-runs on the final commit** before Ship, and a failed re-verification takes the blocked path |
 | Ship | Sonnet | PR as `bubblychef-bot`, protected paths flagged at the top |
 | Respond | Sonnet reads, dev role fixes | Waits for the **GitHub review** of the PR, and answers it: each finding fixed or disputed with a reason, a resolutions comment on the PR, and a push that triggers a fresh GitHub review. **Up to 2 rounds**; still unresolved → PR drafted and labelled `agent-blocked`. `needs a human` (e.g. a protected path) is left for Ayush |
 
