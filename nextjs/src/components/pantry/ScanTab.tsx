@@ -26,6 +26,13 @@ export interface ScanTabSnapshot {
   needsReview: ScannedItem[]
   skipped: ScannedItem[]
   warnings: string[]
+  /**
+   * The user's actual checkbox selection from ReviewSurface, keyed by
+   * itemKey. Without this, a remount reseeds from the default rule (every
+   * ready_to_add item checked, everything else unchecked) and silently
+   * discards whatever the user actually chose (issue #402).
+   */
+  checkedKeys: string[]
 }
 
 interface ScanTabProps {
@@ -70,14 +77,28 @@ export default function ScanTab({ onItemsReady, initialSnapshot, onSnapshotChang
   const [needsReview, setNeedsReview] = useState<ScannedItem[]>(initialSnapshot?.needsReview ?? [])
   const [skipped, setSkipped] = useState<ScannedItem[]>(initialSnapshot?.skipped ?? [])
   const [warnings, setWarnings] = useState<string[]>(initialSnapshot?.warnings ?? [])
+  // Restored once on mount and handed to ReviewSurface as its seed; only
+  // ever updated afterwards via onCheckedKeysChange, so ReviewSurface stays
+  // the single source of truth for what's actually checked.
+  const [checkedKeys, setCheckedKeys] = useState<string[]>(initialSnapshot?.checkedKeys ?? [])
+  const restoredCheckedKeysRef = useRef(initialSnapshot?.checkedKeys)
 
   // Reports the full snapshot on every relevant change; onSnapshotChange is
   // intentionally excluded from deps so an inline/unmemoized callback
   // doesn't re-trigger this.
   useEffect(() => {
-    onSnapshotChange?.({ state, preview, error, readyToAdd, needsReview, skipped, warnings })
+    onSnapshotChange?.({
+      state,
+      preview,
+      error,
+      readyToAdd,
+      needsReview,
+      skipped,
+      warnings,
+      checkedKeys,
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, preview, error, readyToAdd, needsReview, skipped, warnings])
+  }, [state, preview, error, readyToAdd, needsReview, skipped, warnings, checkedKeys])
 
   async function handleFileSelect(file: File) {
     setError(null)
@@ -98,6 +119,12 @@ export default function ScanTab({ onItemsReady, initialSnapshot, onSnapshotChang
       setNeedsReview(result.needs_review)
       setSkipped(result.skipped)
       setWarnings(result.warnings ?? [])
+      setCheckedKeys([])
+      // A fresh scan's items don't correspond to whatever was restored from
+      // an earlier snapshot — let ReviewSurface fall back to its default
+      // seeding rule (ready_to_add checked, rest unchecked) instead of
+      // matching stale keys against the new item set.
+      restoredCheckedKeysRef.current = undefined
       setState('results')
     } catch (err) {
       if (!isMountedRef.current) return
@@ -120,6 +147,8 @@ export default function ScanTab({ onItemsReady, initialSnapshot, onSnapshotChang
     setNeedsReview([])
     setSkipped([])
     setWarnings([])
+    setCheckedKeys([])
+    restoredCheckedKeysRef.current = undefined
     onItemsReady([])
     if (inputRef.current) inputRef.current.value = ''
   }
@@ -244,6 +273,8 @@ export default function ScanTab({ onItemsReady, initialSnapshot, onSnapshotChang
               isSubmitting={false}
               hideConfirmButton
               onCheckedItemsChange={(checked) => onItemsReady(checked.map(scannedToAddItem))}
+              initialCheckedKeys={restoredCheckedKeysRef.current}
+              onCheckedKeysChange={setCheckedKeys}
             />
           </motion.div>
         )}

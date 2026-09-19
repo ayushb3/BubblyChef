@@ -118,3 +118,33 @@ it('keeps a completed scan review after switching to Type and back to Scan', asy
   await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
   expect(screen.queryByText(/Drop your receipt here/i)).not.toBeInTheDocument()
 })
+
+it('keeps an unchecked ready-to-add item unchecked across a Type/Scan round trip', async () => {
+  mockUploadReceipt.mockResolvedValue(SCAN_RESULT)
+
+  render(
+    <PantryAddSheet isOpen onClose={jest.fn()} initialTab="scan" onItemsAdded={jest.fn()} />,
+  )
+
+  selectFile()
+  await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
+
+  // The single ready_to_add item starts checked by default — uncheck it,
+  // which should drop the footer count to 0.
+  const checkbox = screen.getByLabelText('Include Whole Milk') as HTMLInputElement
+  expect(checkbox.checked).toBe(true)
+  fireEvent.click(checkbox)
+  expect(checkbox.checked).toBe(false)
+
+  // Round-trip through the Type tab and back.
+  fireEvent.click(screen.getByRole('button', { name: /Type/i }))
+  await waitFor(() => expect(screen.queryByText(/Ready to Add \(1\)/)).not.toBeInTheDocument())
+
+  fireEvent.click(screen.getByRole('button', { name: /Scan/i }))
+  await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
+
+  // The user's deselection must survive the round trip — re-checking it
+  // silently would add an item back in that the user explicitly excluded.
+  const checkboxAfter = screen.getByLabelText('Include Whole Milk') as HTMLInputElement
+  expect(checkboxAfter.checked).toBe(false)
+})

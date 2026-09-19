@@ -39,6 +39,16 @@ export interface ReviewSurfaceProps {
    * (issue #406).
    */
   onCheckedItemsChange?: (items: ScannedItem[]) => void
+  /**
+   * Seeds the checked set on mount instead of the default "ready_to_add
+   * checked, everything else unchecked" rule. Lets a caller that persists
+   * a snapshot across an unmount/remount (e.g. ScanTab surviving an
+   * Add-to-Pantry tab switch, issue #402) restore the user's actual
+   * checkbox choices instead of losing them to the default reseed.
+   */
+  initialCheckedKeys?: string[]
+  /** Fires whenever the checked-key set changes, so a caller can persist it. */
+  onCheckedKeysChange?: (keys: string[]) => void
 }
 
 // ─── Stable item key ──────────────────────────────────────────────────────────
@@ -172,9 +182,14 @@ export default function ReviewSurface({
   isSubmitting,
   hideConfirmButton = false,
   onCheckedItemsChange,
+  initialCheckedKeys,
+  onCheckedKeysChange,
 }: ReviewSurfaceProps) {
-  // Seed: ready_to_add items start checked; needs_review and skipped start unchecked.
-  const initialCheckedKeys = useMemo(() => {
+  // Seed: ready_to_add items start checked; needs_review and skipped start
+  // unchecked — unless a caller hands us a restored selection (issue #402),
+  // in which case we honor exactly what the user last chose.
+  const seedCheckedKeys = useMemo(() => {
+    if (initialCheckedKeys) return new Set(initialCheckedKeys)
     const keys = new Set<string>()
     readyToAdd.forEach((item, i) => keys.add(itemKey(item, i)))
     return keys
@@ -182,7 +197,7 @@ export default function ReviewSurface({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const [checkedKeys, setCheckedKeys] = useState<Set<string>>(initialCheckedKeys)
+  const [checkedKeys, setCheckedKeys] = useState<Set<string>>(seedCheckedKeys)
 
   function toggleKey(key: string, checked: boolean) {
     setCheckedKeys((prev) => {
@@ -233,6 +248,13 @@ export default function ReviewSurface({
     // re-fire this effect whenever the parent re-renders with a new closure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checkedItems])
+
+  useEffect(() => {
+    onCheckedKeysChange?.(Array.from(checkedKeys))
+    // onCheckedKeysChange is a caller-provided callback; including it would
+    // re-fire this effect whenever the parent re-renders with a new closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkedKeys])
 
   return (
     <div>
