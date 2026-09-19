@@ -47,7 +47,8 @@ const HAPPY = (label, extra = {}) => {
   if (label.startsWith('implement')) return { gatesPassed: true, gateOutput: 'ok', summary: 'did it', filesChanged: ['a.ts'] }
   if (label.startsWith('verify')) return { verified: true, applicable: true, commitVerified: 'abc', evidence: 'e', screenshots: [], problems: '', couldNotVerify: '' }
   if (label.startsWith('review')) return { verdict: 'mergeable', findings: [] }
-  if (label === 'ship') return { prUrl: 'u', prNumber: 1, protectedPaths: [], wouldAutoMerge: true, lessonsProposed: [] }
+  if (label === 'ship') return { prUrl: 'u', prNumber: 1, protectedPaths: extra.protectedPaths || [], wouldAutoMerge: true, lessonsProposed: [] }
+  if (label.startsWith('gh-review')) return { reviewRan: true, verdict: 'looks mergeable', findings: [], note: '' }
   return 'none'
 }
 
@@ -150,7 +151,7 @@ async function main() {
     const BACK = 'git checkout "main"'
     const paths = {}
     // shipped PR
-    { const h = harness(label => HAPPY(label)); await h.run({ issue: 405 }); paths.ship = h.prompts.ship }
+    { const h = harness(label => HAPPY(label)); await h.run({ issue: 405 }); paths.finish = h.prompts.finish }
     // dry run
     { const h = harness(label => HAPPY(label)); await h.run({ issue: 405, dryRun: true }); paths['dry-run-cleanup'] = h.prompts['dry-run-cleanup'] }
     // escalation to Ayush
@@ -182,6 +183,77 @@ async function main() {
     const h = harness(label => HAPPY(label)); await h.run({ issue: 405 })
     check('no prompt tells an agent to "never switch branches" (it would override the cleanup step)',
       !Object.values(h.prompts).some(p => /Never switch branches\./.test(p)), 'contradictory rule present')
+  }
+
+  // ── Respond: the GitHub review is read and answered, with a hard round cap ──
+  const ghSeq = (verdicts, fix, extra = {}) => {
+    let n = 0
+    return label => {
+      if (label.startsWith('gh-review')) {
+        const v = verdicts[Math.min(n++, verdicts.length - 1)]
+        if (v === 'none') return { reviewRan: false, verdict: 'none', findings: [], note: 'run skipped' }
+        return { reviewRan: true, verdict: v, note: '',
+          findings: v === 'needs changes' ? [{ severity: 'important', file: 'a.ts', problem: `G${n}`, why: 'w' }] : [] }
+      }
+      if (label.startsWith('respond-fix')) return fix
+      return HAPPY(label, extra)
+    }
+  }
+  const count = (h, prefix) => h.calls.filter(c => c.startsWith(prefix)).length
+  {
+    const h = harness(ghSeq(['looks mergeable'], FIXED))
+    const r = await h.run({ issue: 405 })
+    check('respond: mergeable first time -> no fixes, PR stands', r.status === 'pr-opened' && r.githubReview === 'looks mergeable' && count(h, 'respond-fix') === 0,
+      `${r.status} ${r.githubReview} fixes ${count(h, 'respond-fix')}`)
+  }
+  {
+    const h = harness(ghSeq(['needs changes', 'looks mergeable'], FIXED))
+    const r = await h.run({ issue: 405 })
+    check('respond: one fix round then mergeable', r.status === 'pr-opened' && count(h, 'respond-fix') === 1 && count(h, 'gh-review') === 2,
+      `${r.status} fixes ${count(h, 'respond-fix')} reviews ${count(h, 'gh-review')}`)
+    check('respond: fix prompt requires a fixed/disputed resolutions comment', /"fixed: <what changed>" or "disputed: <why>"/.test(h.prompts['respond-fix-1'] || ''), 'respond-fix prompt')
+  }
+  {
+    const h = harness(ghSeq(['needs changes'], FIXED))
+    const r = await h.run({ issue: 405 })
+    check('respond: never mergeable -> blocked after 2 fixes / 3 reviews', r.status === 'agent-blocked' && r.githubReview === 'unresolved' && count(h, 'respond-fix') === 2 && count(h, 'gh-review') === 3,
+      `${r.status} ${r.githubReview} fixes ${count(h, 'respond-fix')} reviews ${count(h, 'gh-review')}`)
+    check('respond: unresolved PR is labelled agent-blocked and drafted', /agent-blocked/.test(h.prompts.finish || '') && /--undo/.test(h.prompts.finish || ''), 'finish prompt')
+  }
+  {
+    const h = harness(ghSeq(['needs a human'], FIXED))
+    const r = await h.run({ issue: 405 })
+    check('respond: "needs a human" stops without fixing', r.githubReview === 'needs a human' && count(h, 'respond-fix') === 0, `${r.githubReview} fixes ${count(h, 'respond-fix')}`)
+  }
+  {
+    const h = harness(ghSeq(['none'], FIXED))
+    const r = await h.run({ issue: 405 })
+    check('respond: review that never ran is flagged, not treated as approval', r.githubReview === 'no-review' && count(h, 'respond-fix') === 0 && /could not be read/.test(h.prompts.finish || ''),
+      `${r.githubReview}`)
+  }
+  {
+    const h = harness(ghSeq(['needs changes'], { gatesPassed: false, gateOutput: 'x', fixed: [], disputed: [] }))
+    const r = await h.run({ issue: 405 })
+    check('respond: a fix that breaks the gates ends unresolved', r.githubReview === 'unresolved' && count(h, 'respond-fix') === 1, `${r.githubReview} fixes ${count(h, 'respond-fix')}`)
+  }
+
+  // ── Auto-merge is requested only when EVERY condition holds ──
+  {
+    const cases = [
+      ['shadow (default), mergeable', {}, ['looks mergeable'], {}, false],
+      ['not shadow, mergeable, no protected paths', { shadow: false }, ['looks mergeable'], {}, true],
+      ['not shadow, mergeable, protected path', { shadow: false }, ['looks mergeable'], { protectedPaths: ['.github/x'] }, false],
+      ['not shadow, unresolved review', { shadow: false }, ['needs changes'], {}, false],
+      ['not shadow, review never ran', { shadow: false }, ['none'], {}, false],
+      ['not shadow, needs a human', { shadow: false }, ['needs a human'], {}, false],
+    ]
+    for (const [name, args, verdicts, extra, expect] of cases) {
+      const h = harness(ghSeq(verdicts, FIXED, extra))
+      const r = await h.run({ issue: 405, ...args })
+      const asked = /gh pr merge \d+ --repo \S+ --auto/.test(h.prompts.finish || '')
+      check(`auto-merge ${expect ? 'requested' : 'NOT requested'}: ${name}`, r.autoMergeRequested === expect && asked === expect,
+        `autoMergeRequested ${r.autoMergeRequested}, prompt asks ${asked}`)
+    }
   }
 
   // ── The loop never merges in shadow mode ──

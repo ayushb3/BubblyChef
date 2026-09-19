@@ -302,6 +302,7 @@ the agents it calls:
 | Implement + Verify | dev role | Quality gates, then the `verify` skill; **2 attempts total** |
 | Review | **Opus**, fresh context | Up to **3** fix rounds |
 | Ship | Sonnet | PR as `bubblychef-bot`, protected paths flagged at the top |
+| Respond | Sonnet reads, dev role fixes | Waits for the **GitHub review** of the PR, and answers it: each finding fixed or disputed with a reason, a resolutions comment on the PR, and a push that triggers a fresh GitHub review. **Up to 2 rounds**; still unresolved → PR drafted and labelled `agent-blocked`. `needs a human` (e.g. a protected path) is left for Ayush |
 
 Any stage that can't finish takes the **blocked path**: a draft PR labelled
 `agent-blocked` with the work so far and where it stopped, and the issue moved back to
@@ -309,7 +310,13 @@ Any stage that can't finish takes the **blocked path**: a draft PR labelled
 normal outcome; a silent half-done branch is not.
 
 The loop never merges. In shadow mode (the default) it never requests auto-merge
-either; it marks PRs that *would* auto-merge and Ayush merges. The script itself is
+either; it marks PRs that *would* auto-merge and Ayush merges. Outside shadow mode it
+requests auto-merge only when **all** of these hold: the GitHub review says `looks
+mergeable`, and the PR touches no protected path. GitHub then still waits for every
+required check.
+
+`claude-review.yml` re-reviews new pushes **only on PRs labelled `agent-loop`**, which
+is what gives Respond a fresh review after each fix. Human PRs are reviewed once, on open. The script itself is
 CODEOWNERS-protected: an agent that could edit it could raise its own limits.
 
 **It runs in the calling session's own checkout,** switching it to a new branch and back at the end. The host only lets a session, and every agent it launches, write inside that session's own worktree, so a loop that created a separate worktree could read it but never write to it (the first pilot run blocked on exactly this). Running several issues at once therefore means several sessions, each in its own worktree, which is what §5 already says.
