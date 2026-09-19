@@ -129,7 +129,7 @@ it('a failed confirm shows an error and stays on the review step (no redirect)',
   expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument()
 })
 
-it('a failed upload shows friendly copy and returns to the upload state', async () => {
+it('a failed upload shows an error and returns to the upload state', async () => {
   // #396: this used to assert the raw upstream message was rendered verbatim,
   // which is the leak that issue describes. The route now maps failures to
   // user-facing copy, so the assertion is inverted: friendly text shown, the
