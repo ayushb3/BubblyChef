@@ -22,10 +22,23 @@ const makeRun = new Function('args', 'agent', 'parallel', 'phase', 'log', `retur
 function harness(respond) {
   const calls = []
   const prompts = {}
+  let fixN = 0
   const agent = async (prompt, opts) => {
     calls.push(opts.label)
     prompts[opts.label] = prompt
-    return respond(opts.label, prompt)
+    let r = await respond(opts.label, prompt)
+    // SHA plumbing, so each test only has to state what it is about. A gh-review mock
+    // that doesn't name the commit it read is taken to have read the expected one; a
+    // Respond fix that doesn't say what it pushed is taken to have pushed a new commit.
+    if (r && typeof r === 'object' && opts.label.startsWith('gh-review') && r.reviewedSha === undefined) {
+      const m = /Expected head commit: (\S+)/.exec(prompt)
+      r = { ...r, reviewedSha: m ? m[1] : '' }
+    }
+    if (r && typeof r === 'object' && opts.label.startsWith('respond-fix')) {
+      r = { ...r, pushedSha: r.pushedSha === undefined ? `sha-fix-${++fixN}` : r.pushedSha, protectedPaths: r.protectedPaths || [] }
+    }
+    if (opts.label === 'finish' && (r === 'none' || r === undefined)) r = { returnedToOriginal: true, ranMergeCommand: false }
+    return r
   }
   const parallel = async thunks => Promise.all(thunks.map(t => t()))
   return {
@@ -47,7 +60,7 @@ const HAPPY = (label, extra = {}) => {
   if (label.startsWith('implement')) return { gatesPassed: true, gateOutput: 'ok', summary: 'did it', filesChanged: ['a.ts'] }
   if (label.startsWith('verify')) return { verified: true, applicable: true, commitVerified: 'abc', evidence: 'e', screenshots: [], problems: '', couldNotVerify: '' }
   if (label.startsWith('review')) return { verdict: 'mergeable', findings: [] }
-  if (label === 'ship') return { prUrl: 'u', prNumber: 1, protectedPaths: extra.protectedPaths || [], wouldAutoMerge: true, lessonsProposed: [] }
+  if (label === 'ship') return { prUrl: 'u', prNumber: 1, headSha: 'sha-ship', protectedPaths: extra.protectedPaths || [], wouldAutoMerge: true, lessonsProposed: [] }
   if (label.startsWith('gh-review')) return { reviewRan: true, verdict: 'looks mergeable', findings: [], note: '' }
   return 'none'
 }
@@ -235,6 +248,55 @@ async function main() {
     const h = harness(ghSeq(['needs changes'], { gatesPassed: false, gateOutput: 'x', fixed: [], disputed: [] }))
     const r = await h.run({ issue: 405 })
     check('respond: a fix that breaks the gates ends unresolved', r.githubReview === 'unresolved' && count(h, 'respond-fix') === 1, `${r.githubReview} fixes ${count(h, 'respond-fix')}`)
+  }
+
+  // ── Respond: every review read is pinned to the exact commit (found by review of PR #463) ──
+  {
+    const h = harness(ghSeq(['needs changes', 'looks mergeable'], FIXED))
+    await h.run({ issue: 405 })
+    check('respond: first review read is pinned to the commit Ship pushed', /Expected head commit: sha-ship/.test(h.prompts['gh-review-1'] || ''), 'gh-review-1 prompt')
+    check('respond: the next read is pinned to the commit the fix pushed', /Expected head commit: sha-fix-1/.test(h.prompts['gh-review-2'] || ''), 'gh-review-2 prompt')
+  }
+  {
+    // the reader reports a review of a DIFFERENT commit (a previous round's)
+    const h = harness(label => label.startsWith('gh-review')
+      ? { reviewRan: true, verdict: 'looks mergeable', findings: [], note: '', reviewedSha: 'some-older-sha' } : HAPPY(label))
+    const r = await h.run({ issue: 405, shadow: false })
+    check('respond: a review of any other commit is treated as no review, never approval', r.githubReview === 'no-review' && r.autoMergeRequested === false,
+      `${r.githubReview} autoMerge ${r.autoMergeRequested}`)
+  }
+  {
+    // every finding disputed, nothing pushed: must not re-read the same review
+    const h = harness(ghSeq(['needs changes'], { gatesPassed: true, gateOutput: 'ok', fixed: [], disputed: [{ finding: 'G1', reason: 'wrong' }], pushedSha: '' }))
+    const r = await h.run({ issue: 405 })
+    check('respond: dispute-only round with no push hands to Ayush instead of re-reading', r.githubReview === 'needs a human' && count(h, 'gh-review') === 1 && count(h, 'respond-fix') === 1,
+      `${r.githubReview} reviews ${count(h, 'gh-review')} fixes ${count(h, 'respond-fix')}`)
+  }
+  {
+    // reviewer says "needs changes" but only minor points
+    const h = harness(label => label.startsWith('gh-review')
+      ? { reviewRan: true, verdict: 'needs changes', note: '', findings: [{ severity: 'minor', file: 'a', problem: 'nit', why: 'w' }] } : HAPPY(label))
+    const r = await h.run({ issue: 405, shadow: false })
+    check('respond: "needs changes" with only minor points is not approval (no auto-merge)', r.githubReview === 'minor only' && r.autoMergeRequested === false,
+      `${r.githubReview} autoMerge ${r.autoMergeRequested}`)
+  }
+  {
+    // a Respond fix touches a protected path, then the review passes
+    const h = harness(ghSeq(['needs changes', 'looks mergeable'], { ...FIXED, protectedPaths: ['.github/CODEOWNERS'] }))
+    const r = await h.run({ issue: 405, shadow: false })
+    check('respond: a fix that touches a protected path blocks auto-merge', r.autoMergeRequested === false && r.protectedPaths.includes('.github/CODEOWNERS'),
+      `autoMerge ${r.autoMergeRequested} protected ${r.protectedPaths}`)
+  }
+  {
+    // the finish agent fails to return the checkout
+    const h = harness(label => label === 'finish' ? { returnedToOriginal: false, ranMergeCommand: false } : HAPPY(label))
+    await h.run({ issue: 405 })
+    check('finish: a failed return to the original branch triggers the fallback', h.calls.includes('finish-fallback') && /git checkout "main"/.test(h.prompts['finish-fallback'] || ''), `calls ${h.calls.join()}`)
+  }
+  {
+    const h = harness(label => label === 'finish' ? { returnedToOriginal: true, ranMergeCommand: true } : HAPPY(label))
+    const r = await h.run({ issue: 405 })
+    check('finish: a merge command run in shadow mode is reported', r.mergeRuleBroken === true, `mergeRuleBroken ${r.mergeRuleBroken}`)
   }
 
   // ── Auto-merge is requested only when EVERY condition holds ──

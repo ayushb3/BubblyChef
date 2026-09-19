@@ -230,8 +230,9 @@ const GH_REVIEW = {
       },
     },
     note: { type: 'string', description: 'why reviewRan is false, or anything notable; else empty' },
+    reviewedSha: { type: 'string', description: 'the headSha of the workflow run whose review you read' },
   },
-  required: ['reviewRan', 'verdict', 'findings', 'note'],
+  required: ['reviewRan', 'verdict', 'findings', 'note', 'reviewedSha'],
 }
 
 const SHIP = {
@@ -239,11 +240,34 @@ const SHIP = {
   properties: {
     prUrl: { type: 'string' },
     prNumber: { type: 'integer' },
+    headSha: { type: 'string', description: 'full SHA of the commit you pushed (git rev-parse HEAD after pushing)' },
     protectedPaths: { type: 'array', items: { type: 'string' } },
     wouldAutoMerge: { type: 'boolean' },
     lessonsProposed: { type: 'array', items: { type: 'string' } },
   },
-  required: ['prUrl', 'prNumber', 'protectedPaths', 'wouldAutoMerge', 'lessonsProposed'],
+  required: ['prUrl', 'prNumber', 'headSha', 'protectedPaths', 'wouldAutoMerge', 'lessonsProposed'],
+}
+
+// A Respond fix round. Like FIX, plus what it pushed, so the next review read can be
+// pinned to that exact commit (never a previous round's review), and the protected
+// paths of the WHOLE diff after the fix (a fix can touch a protected file).
+const RESPOND_FIX = {
+  type: 'object',
+  properties: {
+    ...FIX.properties,
+    pushedSha: { type: 'string', description: 'full SHA you pushed, or "" if you committed nothing (e.g. every finding disputed)' },
+    protectedPaths: { type: 'array', items: { type: 'string' }, description: 'files in git diff --name-only origin/main...HEAD matching .github/CODEOWNERS, after your fix' },
+  },
+  required: [...FIX.required, 'pushedSha', 'protectedPaths'],
+}
+
+const FINISH = {
+  type: 'object',
+  properties: {
+    returnedToOriginal: { type: 'boolean', description: 'git branch --show-current (or rev-parse HEAD) now shows the original branch/commit' },
+    ranMergeCommand: { type: 'boolean', description: 'you ran any gh pr merge command' },
+  },
+  required: ['returnedToOriginal', 'ranMergeCommand'],
 }
 
 // ── The blocked path ─────────────────────────────────────────────────────────
@@ -601,7 +625,8 @@ ${AS_BOT}
 Open the PR for issue #${ISSUE}: "${pre.title}".
 
 1. Work out which changed files match .github/CODEOWNERS (git diff --name-only origin/main...HEAD).
-2. Push the branch as the bot.
+2. Push the branch as the bot, then record headSha = \`git rev-parse HEAD\` (the exact commit
+   the GitHub review will run on).
 3. Open a PR (NOT draft) as the bot against main, labelled "agent-loop". Title in the
    repo's conventional style. The body is the review surface — write it for someone who
    will not open the diff (CLAUDE.md, "The PR body is the review surface"):
@@ -635,72 +660,87 @@ if (!ship) return await blocked(wt, 'Ship', 'ship agent died before the PR was c
 // in-loop review: each finding fixed or disputed with a reason, reported separately,
 // and a hard cap on rounds.
 //
+// Every review read is PINNED TO AN EXACT COMMIT, checked here in code: the reader must
+// report the SHA of the run it read, and anything else is treated as "no review", never
+// as approval. Without that, a read could pick up a previous round's review (GitHub
+// updates the PR head asynchronously after a push, and a round that only disputes
+// pushes nothing, so no new review runs). (Found by an independent review of PR #463.)
+//
 // Re-reviews: claude-review.yml also fires on pushes to PRs labelled `agent-loop`, so
 // each fix push gets a fresh GitHub review of the new commit.
 phase('Respond')
 const MAX_RESPOND_ROUNDS = 2
+let expectedSha = ship.headSha
+let protectedNow = [...ship.protectedPaths]
 let ghReview = null
 let respondOutcome = 'looks mergeable'
 const respondFixed = []
 const respondDisputed = []
 for (let round = 0; round <= MAX_RESPOND_ROUNDS; round++) {
   ghReview = await agent(
-    `Read the GitHub review of ${REPO} PR #${ship.prNumber}. Read-only: change nothing.
-1. Get the PR's head commit: gh pr view ${ship.prNumber} --repo ${REPO} --json headRefOid --jq .headRefOid
-2. Find the "Claude PR review" workflow run for THAT commit:
-     gh run list --repo ${REPO} --workflow claude-review.yml --commit <sha> --json databaseId,status,conclusion
-   If none exists yet, check again every 30s for up to 5 minutes. If still none, reviewRan=false.
-3. Wait for it to finish: gh run watch <id> --repo ${REPO}  (it can take several minutes; keep
-   waiting up to 25 minutes in total). If the run was skipped or failed without posting a review,
-   reviewRan=false and say why in note.
-4. Read the review it posted for this commit. The summary is ONE "sticky" comment by claude
-   that each review run edits in place, so check its last-updated time, not its creation time:
+    `Read the GitHub review of ${REPO} PR #${ship.prNumber} for ONE exact commit. Read-only: change nothing.
+Expected head commit: ${expectedSha}
+1. Wait until GitHub shows that commit as the PR head: poll
+     gh pr view ${ship.prNumber} --repo ${REPO} --json headRefOid --jq .headRefOid
+   every 20s for up to 5 minutes until it equals the expected commit. If it never does,
+   reviewRan=false and say so.
+2. List the "Claude PR review" runs for that commit:
+     gh run list --repo ${REPO} --workflow claude-review.yml --commit ${expectedSha} --json databaseId,headSha,status,conclusion,createdAt
+   Use the NEWEST run whose conclusion is not "cancelled" (rapid pushes cancel older runs).
+   If none exists yet, check again every 30s for up to 5 minutes; if still none, reviewRan=false.
+3. Wait for it to finish: gh run watch <id> --repo ${REPO}. It can take several minutes; if a
+   single watch times out, run it again, up to 25 minutes in total. A run that ends
+   "skipped" or "failure" without posting a review means reviewRan=false, with why in note.
+4. Read the review THAT run posted. The summary is ONE "sticky" comment by claude that each
+   run edits in place, so use its last-updated time, not its creation time:
      gh api repos/${REPO}/issues/${ship.prNumber}/comments --jq '.[] | select(.user.login=="claude[bot]" or .user.login=="claude") | {updated_at, body}'
    Inline comments are new for each run: gh api repos/${REPO}/pulls/${ship.prNumber}/comments
-   Use only the summary UPDATED after the run started, and inline comments CREATED after it,
-   so an older round's review is never re-read as current. If the summary wasn't updated by
-   this run, reviewRan=false.
-5. verdict: exactly the review's own verdict — "looks mergeable", "needs changes" or
-   "needs a human". findings: each concrete problem it raised (file, problem, why, severity as
-   it states or implies it: blocking/important/minor).`,
+   Use only the summary UPDATED after the run started, and inline comments CREATED after it.
+   If the summary wasn't updated by this run, reviewRan=false.
+5. reviewedSha: the headSha of the run you read. verdict: exactly the review's own verdict —
+   "looks mergeable", "needs changes" or "needs a human". findings: each concrete problem it
+   raised (file, problem, why, and severity as it states it; if it doesn't state one, use
+   "important", never guess "minor").`,
     { label: `gh-review-${round + 1}`, phase: 'Respond', schema: GH_REVIEW, model: 'sonnet', effort: 'low' },
   )
-  if (!ghReview || !ghReview.reviewRan) {
+  // Enforced here, not by the reader: a review of any other commit is not a review of this one.
+  if (!ghReview || !ghReview.reviewRan || ghReview.reviewedSha !== expectedSha) {
     respondOutcome = 'no-review'
-    log(`GitHub review did not run or could not be read: ${ghReview ? ghReview.note : 'agent died'}`)
+    log(`No usable GitHub review for ${expectedSha.slice(0, 8)}: ${!ghReview ? 'agent died' : !ghReview.reviewRan ? ghReview.note : `it read ${String(ghReview.reviewedSha).slice(0, 8)} instead`}`)
     break
   }
   const serious = ghReview.findings.filter(f => f.severity !== 'minor')
   log(`GitHub review round ${round + 1}: ${ghReview.verdict}, ${serious.length} serious finding(s)`)
-  if (ghReview.verdict === 'looks mergeable' || (ghReview.verdict === 'needs changes' && !serious.length)) {
-    respondOutcome = 'looks mergeable'
+  if (ghReview.verdict === 'looks mergeable') { respondOutcome = 'looks mergeable'; break }
+  if (ghReview.verdict === 'needs a human') { respondOutcome = 'needs a human'; break }  // expected for protected paths
+  if (ghReview.verdict === 'needs changes' && !serious.length) {
+    // The reviewer still said "needs changes"; only minor points remain. The PR stands,
+    // but this is NOT the reviewer's approval, so it can never lead to auto-merge.
+    respondOutcome = 'minor only'
     break
   }
-  if (ghReview.verdict === 'needs a human') {
-    // Expected for protected paths; the loop does not argue with it.
-    respondOutcome = 'needs a human'
-    break
-  }
-  if (round === MAX_RESPOND_ROUNDS) {
-    respondOutcome = 'unresolved'
-    break
-  }
+  if (round === MAX_RESPOND_ROUNDS) { respondOutcome = 'unresolved'; break }
+
   const fix = await agent(
     `${WORKTREE_RULES(wt)}
 ${AS_BOT}
 
 The independent GitHub reviewer found these problems in PR #${ship.prNumber} (issue #${ISSUE}).
-Fix each one. If you are CERTAIN a finding is wrong, put it in \`disputed\` with the reason; a
-dispute goes back to the reviewer, so never use it to skip a hard fix. List every finding you
-actually fixed in \`fixed\`, with what you changed.
+Fix each one. If you are CERTAIN a finding is wrong, put it in \`disputed\` with the reason.
+List every finding you actually fixed in \`fixed\`, with what you changed.
 ${serious.map(f => `- [${f.severity}] ${f.file}: ${f.problem} — ${f.why}`).join('\n')}
 
 ${GATES}
 
-Then, as the bot: commit, push the branch (this triggers a fresh GitHub review of the new
-commit), and post ONE comment on PR #${ship.prNumber} listing each finding with one line:
-"fixed: <what changed>" or "disputed: <why>". Never call a disputed finding fixed.`,
-    { label: `respond-fix-${round + 1}`, phase: 'Respond', schema: FIX, agentType: pre.devRole },
+Then, as the bot:
+- If you changed anything: commit, push the branch (this triggers a fresh GitHub review of the
+  new commit), and set pushedSha to \`git rev-parse HEAD\`.
+- If you only disputed and changed nothing: do not make an empty commit; set pushedSha to "".
+  A dispute with no new commit cannot be re-reviewed, so the loop hands it to Ayush.
+- Post ONE comment on PR #${ship.prNumber} listing each finding with one line:
+  "fixed: <what changed>" or "disputed: <why>". Never call a disputed finding fixed.
+- protectedPaths: files in \`git diff --name-only origin/main...HEAD\` matching .github/CODEOWNERS.`,
+    { label: `respond-fix-${round + 1}`, phase: 'Respond', schema: RESPOND_FIX, agentType: pre.devRole },
   )
   if (!fix || !fix.gatesPassed) {
     respondOutcome = 'unresolved'
@@ -709,37 +749,60 @@ commit), and post ONE comment on PR #${ship.prNumber} listing each finding with 
   }
   respondFixed.push(...fix.fixed)
   respondDisputed.push(...fix.disputed)
+  protectedNow = [...new Set([...protectedNow, ...fix.protectedPaths])]
+  if (!fix.pushedSha) {
+    // Nothing pushed means nothing new to review: re-reading would only return the same
+    // review. The disagreement is Ayush's to settle.
+    respondOutcome = 'needs a human'
+    log('Every remaining finding was disputed and nothing was pushed: handing to Ayush.')
+    break
+  }
+  expectedSha = fix.pushedSha
 }
 
 // ── Finish ───────────────────────────────────────────────────────────────────
-// Always runs once a PR exists: labels an unresolved PR for Ayush, requests
-// auto-merge only when every condition holds, and returns the caller's checkout.
-const mayAutoMerge = !SHADOW && respondOutcome === 'looks mergeable' && ship.protectedPaths.length === 0
-await agent(
-  `${WORKTREE_RULES(wt)}
+// Always runs once a PR exists: labels an unresolved PR for Ayush, requests auto-merge
+// only when EVERY condition holds, and returns the caller's checkout. Auto-merge needs
+// the reviewer's own "looks mergeable" on the exact final commit, and protected paths
+// are taken from the WHOLE diff after any Respond fixes, not just what Ship saw.
+const mayAutoMerge = !SHADOW && respondOutcome === 'looks mergeable' && protectedNow.length === 0
+const finishPrompt = `${WORKTREE_RULES(wt)}
 ${AS_BOT}
 
 Finish the agent loop run for PR #${ship.prNumber} (issue #${ISSUE}). Do exactly these steps.
 1. ${respondOutcome === 'unresolved'
     ? `The GitHub review still needs changes after ${MAX_RESPOND_ROUNDS} rounds. As the bot: add the label "agent-blocked" to PR #${ship.prNumber}, convert it to draft (gh pr ready ${ship.prNumber} --repo ${REPO} --undo), and comment which findings remain and why the loop stopped.`
     : respondOutcome === 'no-review'
-      ? `The GitHub review did not run or could not be read. As the bot, comment on PR #${ship.prNumber} saying so, so a human knows it is unreviewed by the GitHub reviewer.`
-      : 'Nothing to label.'}
+      ? `The GitHub review did not run, or could not be read for the final commit. As the bot, comment on PR #${ship.prNumber} saying so, so a human knows it is unreviewed by the GitHub reviewer.`
+      : respondOutcome === 'needs a human'
+        ? `The GitHub review needs a human (a protected path, or findings disputed without a new commit). As the bot, comment on PR #${ship.prNumber} saying what Ayush needs to decide.`
+        : 'Nothing to label.'}
 2. ${mayAutoMerge
-    ? `Every condition holds (not shadow mode, the GitHub review says mergeable, no protected paths): as the bot, enable auto-merge with gh pr merge ${ship.prNumber} --repo ${REPO} --auto --merge. GitHub still waits for every required check.`
+    ? `Every condition holds (not shadow mode; the GitHub review of the final commit says "looks mergeable"; no protected paths): as the bot, enable auto-merge with gh pr merge ${ship.prNumber} --repo ${REPO} --auto --merge. GitHub still waits for every required check.`
     : 'Do NOT enable auto-merge and do not run any gh pr merge command.'}
 3. Stop any stack you started, then return the checkout to its original branch:
-   git checkout "${wt.originalBranch}"  (keep the local issue branch; it is pushed).`,
-  { label: 'finish', phase: 'Respond', model: 'haiku', effort: 'low' },
-)
+   git checkout "${wt.originalBranch}"  (keep the local issue branch; it is pushed).
+   Report whether that worked, and whether you ran any gh pr merge command.`
+const fin = await agent(finishPrompt, { label: 'finish', phase: 'Respond', schema: FINISH, model: 'haiku', effort: 'low' })
+if (!fin || !fin.returnedToOriginal) {
+  // Never leave a human's checkout parked on the issue branch because one agent failed.
+  await agent(
+    `In ${wt.path}: run  git checkout "${wt.originalBranch}"  and confirm with git branch --show-current. Nothing else.`,
+    { label: 'finish-fallback', phase: 'Respond', model: 'haiku', effort: 'low' },
+  )
+}
+if (fin && fin.ranMergeCommand && !mayAutoMerge) {
+  log('WARNING: the finish agent reports running gh pr merge when it was not allowed to. Check the PR.')
+}
 
 return {
   status: respondOutcome === 'unresolved' ? 'agent-blocked' : 'pr-opened',
   issue: ISSUE,
   pr: ship.prUrl,
-  protectedPaths: ship.protectedPaths,
+  protectedPaths: protectedNow,
   wouldAutoMerge: ship.wouldAutoMerge,
   autoMergeRequested: mayAutoMerge,
+  mergeRuleBroken: !!(fin && fin.ranMergeCommand && !mayAutoMerge),
   shadow: SHADOW,
   decisions: settled.map(d => `${d.question} → ${d.decision}`),
   findingsFixed: fixedFindings.length,
