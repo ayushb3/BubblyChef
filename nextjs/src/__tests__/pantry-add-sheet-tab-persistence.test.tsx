@@ -12,10 +12,23 @@
 
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import PantryAddSheet from '@/components/pantry/PantryAddSheet'
 import * as scanApi from '@/lib/api/scan'
 import * as pantryApi from '@/lib/api/pantry'
 import type { ScanResult } from '@/types/scan'
+
+// TypeTab's ingredient-name field now uses React Query for catalog
+// autocomplete (issue #398), so any tree that mounts PantryAddSheet needs a
+// QueryClientProvider — the sheet component itself is untouched by #398.
+function renderSheet(props: React.ComponentProps<typeof PantryAddSheet>) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <PantryAddSheet {...props} />
+    </QueryClientProvider>,
+  )
+}
 
 jest.mock('@/lib/api/scan')
 jest.mock('@/lib/api/pantry')
@@ -63,9 +76,7 @@ function switchTab(name: RegExp) {
 }
 
 it('typed input and the footer count both survive a switch away to Scan and back', async () => {
-  render(
-    <PantryAddSheet isOpen onClose={jest.fn()} initialTab="type" onItemsAdded={jest.fn()} />,
-  )
+  renderSheet({ isOpen: true, onClose: jest.fn(), initialTab: "type", onItemsAdded: jest.fn() })
 
   const nameInput = screen.getByPlaceholderText('Item name (e.g. Milk, Eggs...)')
   fireEvent.change(nameInput, { target: { value: 'Milk' } })
@@ -85,9 +96,7 @@ it('typed input and the footer count both survive a switch away to Scan and back
 it('a completed scan review survives switching to Type and back', async () => {
   mockUploadReceipt.mockResolvedValue(SCAN_RESULT)
 
-  render(
-    <PantryAddSheet isOpen onClose={jest.fn()} initialTab="scan" onItemsAdded={jest.fn()} />,
-  )
+  renderSheet({ isOpen: true, onClose: jest.fn(), initialTab: "scan", onItemsAdded: jest.fn() })
 
   selectFile()
   await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
@@ -109,9 +118,7 @@ it('locks the Type tab while a scan is processing, then unlocks on success', asy
     }),
   )
 
-  render(
-    <PantryAddSheet isOpen onClose={jest.fn()} initialTab="scan" onItemsAdded={jest.fn()} />,
-  )
+  renderSheet({ isOpen: true, onClose: jest.fn(), initialTab: "scan", onItemsAdded: jest.fn() })
 
   selectFile()
   await waitFor(() => expect(screen.getByText(/Scanning receipt…/)).toBeInTheDocument())
@@ -140,9 +147,7 @@ it('unlocks the Type tab after a scan failure/timeout, not just success', async 
     new scanApi.ScanError('Scan timed out', scanApi.SCAN_CLIENT_TIMEOUT_CODE),
   )
 
-  render(
-    <PantryAddSheet isOpen onClose={jest.fn()} initialTab="scan" onItemsAdded={jest.fn()} />,
-  )
+  renderSheet({ isOpen: true, onClose: jest.fn(), initialTab: "scan", onItemsAdded: jest.fn() })
 
   selectFile()
 
@@ -165,9 +170,7 @@ it('the sheet close paths (X button) still work while a scan is processing', asy
   mockUploadReceipt.mockReturnValue(new Promise<ScanResult>(() => {})) // never resolves
   const onClose = jest.fn()
 
-  render(
-    <PantryAddSheet isOpen onClose={onClose} initialTab="scan" onItemsAdded={jest.fn()} />,
-  )
+  renderSheet({ isOpen: true, onClose: onClose, initialTab: "scan", onItemsAdded: jest.fn() })
 
   selectFile()
   await waitFor(() => expect(screen.getByText(/Scanning receipt…/)).toBeInTheDocument())
@@ -179,9 +182,7 @@ it('the sheet close paths (X button) still work while a scan is processing', asy
 it('the footer count never disagrees with the actual confirm payload after a tab round-trip', async () => {
   mockBulkAddPantryItems.mockResolvedValue({ count: 1, items: [] })
 
-  render(
-    <PantryAddSheet isOpen onClose={jest.fn()} initialTab="type" onItemsAdded={jest.fn()} />,
-  )
+  renderSheet({ isOpen: true, onClose: jest.fn(), initialTab: "type", onItemsAdded: jest.fn() })
 
   fireEvent.change(screen.getByPlaceholderText('Item name (e.g. Milk, Eggs...)'), { target: { value: 'Milk' } })
   await waitFor(() =>
