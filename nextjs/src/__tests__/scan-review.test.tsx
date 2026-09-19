@@ -351,3 +351,62 @@ it('ScanResult has all pinned contract fields', () => {
   expect(typeof result.total_items).toBe('number')
   expect(Array.isArray(result.warnings)).toBe(true)
 })
+
+// ─── 7. Category shown once (issue #400) ──────────────────────────────────────
+// The category used to appear twice: a read-only pill next to the confidence
+// badge, and again as the editable <select>. Two on-screen copies of the same
+// value can drift apart when one is edited without the other. The editable
+// select is now the single source of truth — no separate pill exists.
+
+it('renders the category value exactly once per card', () => {
+  render(
+    <ScannedItemCard
+      item={READY_ITEM}
+      index={0}
+      checked
+      onChange={noop}
+      onDismiss={noop}
+      onCheckedChange={noop}
+    />,
+  )
+  // The only place "condiments" can appear is as the selected <option> text
+  // inside the Category <select>.
+  const matches = screen.getAllByText(/condiments/i)
+  expect(matches).toHaveLength(1)
+  expect(screen.getByRole('combobox', { name: 'Category' })).toHaveValue(READY_ITEM.category)
+})
+
+it('editing the category select is the only way to change it — no separate pill to disagree with', () => {
+  const onChange = jest.fn()
+  render(
+    <ScannedItemCard
+      item={READY_ITEM}
+      index={0}
+      checked
+      onChange={onChange}
+      onDismiss={noop}
+      onCheckedChange={noop}
+    />,
+  )
+  const select = screen.getByRole('combobox', { name: 'Category' })
+  fireEvent.change(select, { target: { value: 'produce' } })
+  expect(onChange).toHaveBeenCalledWith({ ...READY_ITEM, category: 'produce' })
+})
+
+// ─── 8. Selection checkbox matches the app's custom-checkbox pattern ──────────
+// Same visual language as the ingredient checklist on the recipe detail page
+// (recipes/[id]/page.tsx): a visually-hidden native <input type="checkbox">
+// for state/keyboard handling, with a styled circular indicator driven by
+// `checked`, rather than a bare browser checkbox.
+
+it('selection checkbox is a real, labelled, keyboard-operable checkbox input', () => {
+  renderResults()
+  const checkbox = screen.getByRole('checkbox', {
+    name: new RegExp(`Include ${READY_ITEM.name}`, 'i'),
+  })
+  expect(checkbox).toBeChecked()
+  // Visually hidden (custom indicator renders the visible state), not a bare
+  // native checkbox — matches the sr-only + styled-indicator pattern used
+  // elsewhere in the app.
+  expect(checkbox.className).toContain('sr-only')
+})

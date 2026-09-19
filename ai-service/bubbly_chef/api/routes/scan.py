@@ -128,5 +128,14 @@ async def scan_receipt(
         }
 
     except Exception as e:
-        logger.error(f"Receipt scan failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Receipt scan failed: {str(e)}") from e
+        # Full internal detail (provider names, model IDs, raw exception text)
+        # is logged server-side only — never shipped to the client (#396).
+        logger.error(f"Receipt scan failed for user={user_id}: {e}", exc_info=True)
+
+        from bubbly_chef.services.scan_errors import classify_scan_error
+
+        error_info = classify_scan_error(e)
+        raise HTTPException(
+            status_code=error_info.status_code,
+            detail={"message": error_info.message, "code": error_info.code},
+        ) from e

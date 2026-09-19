@@ -4,8 +4,9 @@ import { useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import ReviewSurface from '@/components/scan/ReviewSurface'
-import { uploadReceipt } from '@/lib/api/scan'
+import { uploadReceipt, ScanError } from '@/lib/api/scan'
 import { scannedToBulkAddItem } from '@/lib/scan-helpers'
+import { scanErrorCopy } from '@/lib/scan-error-copy'
 import type { ScannedItem, ScanResult } from '@/types/scan'
 import type { AddItem } from './PantryAddSheet'
 
@@ -44,7 +45,13 @@ export default function ScanTab({ onItemsReady }: ScanTabProps) {
       setWarnings(result.warnings ?? [])
       setState('results')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      // Never render a raw server/provider string — always route through the
+      // code -> copy mapping, falling back to generic friendly copy for
+      // anything unrecognized (issue #396). This also covers the
+      // client-side upload timeout (issue #402): it comes back as a
+      // `ScanError` and must land here, not in some separate stuck state.
+      const code = err instanceof ScanError ? err.code : undefined
+      setError(scanErrorCopy(code))
       setState('upload')
       // Retrying the same receipt is the obvious next move after a transient
       // failure, but `onChange` doesn't fire for an unchanged value — so
