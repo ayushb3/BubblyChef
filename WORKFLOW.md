@@ -125,7 +125,10 @@ it.
 
 **Utility agents** sit beside the roles. They own no files, have no role file, and
 are invoked as tools: `explorer` (Haiku, low effort, Read/Grep/Glob only) answers
-"where is X" and "how is Y wired" so no one spends an implementer on searching. They
+"where is X" and "how is Y wired" so no one spends an implementer on searching.
+`loop-runner` (Bash/Read/Grep/Glob only) runs the agent loop's plumbing stages;
+untyped agents load every tool the session has, about 40k tokens before doing
+anything, which was the largest cost in the first full loop run. They
 are leaves, so they don't count against the one-level cap below. See
 `docs/plans/2026-09-17-autonomous-agent-loop.md` for the tiering rationale.
 
