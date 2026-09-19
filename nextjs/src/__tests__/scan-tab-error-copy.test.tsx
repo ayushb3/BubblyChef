@@ -40,14 +40,14 @@ it('a client-side scan timeout shows friendly copy and returns the tab to a usab
 
   selectFile()
 
+  // Friendly copy, not a raw timeout string — this only becomes true once
+  // the async rejection has been handled, so it's the condition to wait on.
+  await waitFor(() => expect(screen.getByText(/taking too long/i)).toBeInTheDocument())
+
   // Leaves processing — no stuck spinner.
-  await waitFor(() =>
-    expect(screen.queryByText(/Scanning receipt…/)).not.toBeInTheDocument(),
-  )
+  expect(screen.queryByText(/Scanning receipt…/)).not.toBeInTheDocument()
   // Back on the upload step, ready to retry.
   expect(screen.getByText(/Drop your receipt here/)).toBeInTheDocument()
-  // Friendly copy, not a raw timeout string.
-  expect(screen.getByText(/taking too long/i)).toBeInTheDocument()
 
   // File input was cleared so re-selecting the same file fires onChange again.
   const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
