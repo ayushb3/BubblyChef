@@ -9,7 +9,8 @@ import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import ReviewSurface from '@/components/scan/ReviewSurface'
 import { useFileDropzone } from '@/hooks/useFileDropzone'
-import { uploadReceipt } from '@/lib/api/scan'
+import { uploadReceipt, ScanError } from '@/lib/api/scan'
+import { scanErrorCopy } from '@/lib/scan-error-copy'
 import { bulkAddPantryItems } from '@/lib/api/pantry'
 import { scannedToBulkAddItem } from '@/lib/scan-helpers'
 import type { ScannedItem, ScanResult } from '@/types/scan'
@@ -56,7 +57,10 @@ export default function ScanPage() {
       setWarnings(result.warnings ?? [])
       setState('review')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      // #396 — never render a raw error at the user. ScanTab had this fixed;
+      // this route builds its own state machine and was missed, so a network
+      // TypeError or a proxy 502 still leaked raw text here.
+      setError(scanErrorCopy(err instanceof ScanError ? err.code : undefined))
       setState('upload')
       // Retrying the same receipt is the obvious next move after a transient
       // failure, but `onChange` doesn't fire for an unchanged value — so

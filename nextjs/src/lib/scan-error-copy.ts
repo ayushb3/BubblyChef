@@ -9,20 +9,21 @@
  * those codes into copy — never render `err.message` from the server
  * directly, and never string-match on it.
  *
- * The exact code strings below are provisional pending reconciliation with
- * the concurrent backend change (issue #396) — this is the only file that
- * needs updating if they change.
+ * The code strings below match `scan_errors.py` exactly; this file is the
+ * only place that needs updating if the contract changes.
  */
 
 import { SCAN_CLIENT_TIMEOUT_CODE } from '@/lib/api/scan'
 
+const TIMEOUT_COPY = 'That scan is taking too long. Try again, or add items manually.'
+
 const GENERIC_COPY = "Couldn't read that receipt — try again, or add items manually."
 
 const COPY_BY_CODE: Record<string, string> = {
-  [SCAN_CLIENT_TIMEOUT_CODE]:
-    "That scan is taking too long. Try again, or add items manually.",
-  scan_timeout:
-    "That scan is taking too long. Try again, or add items manually.",
+  // Client-side abort and a server-reported timeout are the same thing to a
+  // user: the scan took too long. Different codes, one message.
+  [SCAN_CLIENT_TIMEOUT_CODE]: TIMEOUT_COPY,
+  scan_timeout: TIMEOUT_COPY,
   vision_provider_unavailable:
     "Scanning is temporarily unavailable. Try again in a moment, or add items manually.",
   unreadable_image:
