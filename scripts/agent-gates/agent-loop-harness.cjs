@@ -359,6 +359,25 @@ async function main() {
     check('non-dev stages use the lean loop-runner', plumbingNotLean.length === 0, `other types: ${plumbingNotLean.join(', ')}`)
   }
 
+  // ── Behaviour changes beyond the issue must reach Ayush (found on issue #406 / PR #468) ──
+  {
+    const h = harness(label => HAPPY(label))
+    await h.run({ issue: 405, dryRun: true })
+    check('plan must raise user-visible changes beyond the issue as questions',
+      /ALWAYS include as a question any change a user would notice beyond what the issue/.test(h.prompts.plan || ''), 'plan prompt')
+  }
+  {
+    // such a question, escalated by the decision agent, stops the run for Ayush
+    const h = harness(label => {
+      if (label === 'plan') return { plan: 'p', filesToChange: [], protectedPaths: [], userVisible: true, questions: [{ question: 'should we also stop auto-adding medium-confidence items?', options: ['yes', 'no'], implementerTake: 'yes' }] }
+      if (label.startsWith('decide')) return { decision: 'yes', reasoning: 'r', escalate: true, escalateReason: 'product behaviour beyond the issue' }
+      return HAPPY(label)
+    })
+    const r = await h.run({ issue: 406 })
+    check('a behaviour-change question escalated by Decide stops as needs-decision, before any code', r.status === 'needs-decision' && !h.calls.some(c => c.startsWith('implement')),
+      `${r.status} calls ${h.calls.join()}`)
+  }
+
   // ── The loop never merges in shadow mode ──
   {
     const h = harness(label => HAPPY(label))

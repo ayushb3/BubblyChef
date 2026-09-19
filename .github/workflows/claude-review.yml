@@ -88,6 +88,13 @@ jobs:
             Finish with one summary comment:
             - **Verdict:** `looks mergeable`, `needs changes`, or `needs a human`
               (a protected path, or something you could not verify).
+              `looks mergeable` means an agent may merge this with no human ever
+              reading it. So if the change alters behaviour a user would notice
+              beyond what the issue describes — even if you think the new
+              behaviour is right — the verdict MUST be `needs a human`, with that
+              change named first. Never write "looks mergeable" together with
+              "the human should accept/confirm/decide …"; that combination is
+              `needs a human`.
             - The findings that drove the verdict, most severe first, one line each.
             - Anything you could not check.
             Keep it short enough to read on a phone.
