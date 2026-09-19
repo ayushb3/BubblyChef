@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
 import type { CookProposal, CompoundSuggestion, IngredientMatch, DeductionItem, ExpiredMatchedItem } from '@/types/recipes'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
+import { endCookSession } from '@/lib/cook-session'
 
 interface CookModalProps {
   recipeId: string
@@ -378,6 +379,12 @@ export default function CookModal({
 
     try {
       await confirmCook(recipeId, deductions)
+      // #440 — the deduction just landed, so this cook session is over
+      // regardless of which page/flow confirmed it. Recorded outside React
+      // state because the non-draft branch below navigates to a fresh mount
+      // of /chat, which would otherwise have no way to know a deduction it
+      // didn't witness already happened and re-offer "Finished cooking".
+      endCookSession(recipeId)
       setState('success')
       if (!isDraft) {
         redirectTimerRef.current = setTimeout(() => {
