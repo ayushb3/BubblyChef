@@ -520,6 +520,23 @@ const GATES = `Quality gates (run the ones for what you touched; all must pass):
 Known and NOT yours: 5 failures in ai-service/tests/test_issue_300_catalog_emoji.py on Windows only,
 and 2 pre-existing eslint errors from @ts-nocheck in e2e specs (issue #149). Report them, don't chase them.`
 
+// One verify prompt, used for the first verification and for the re-verification
+// after review fixes, so both walk the same flow to the same standard.
+function verifyPrompt(summary, recheckNote) {
+  return `${WORKTREE_RULES(wt)}
+${AS_BOT}
+
+Verify issue #${ISSUE} ("${pre.title}") by following .claude/skills/verify/SKILL.md exactly,
+in the checkout above. What was implemented: ${summary}
+${recheckNote}
+${repro && repro.beforeScreenshots.length ? `Before-screenshots already exist: ${repro.beforeScreenshots.join(', ')}. Take the matching -after.png shots${recheckNote ? ', replacing any earlier -after shots' : ''}.` : ''}
+${plan.userVisible ? '' : 'The change is not user-visible: verify its observable effect as the skill describes for backend-only changes, or mark applicable=false only if there is genuinely no runtime behaviour to check.'}
+
+Walk the flow the issue describes AND its neighbours. Check both health endpoints report
+the checkout's HEAD. Run the smoke suite. Always run scripts/dev/stack.sh down at the end.
+Commit screenshots as the bot. Never report verified=true for anything you did not run.`
+}
+
 let impl = null
 let verify = null
 let feedback = ''
@@ -552,20 +569,7 @@ Do not push.`,
   }
 
   phase('Verify')
-  verify = await agent(
-    `${WORKTREE_RULES(wt)}
-${AS_BOT}
-
-Verify issue #${ISSUE} ("${pre.title}") by following .claude/skills/verify/SKILL.md exactly,
-in the checkout above. What was implemented: ${impl.summary}
-${repro && repro.beforeScreenshots.length ? `Before-screenshots already exist: ${repro.beforeScreenshots.join(', ')}. Take the matching -after.png shots.` : ''}
-${plan.userVisible ? '' : 'The change is not user-visible: verify its observable effect as the skill describes for backend-only changes, or mark applicable=false only if there is genuinely no runtime behaviour to check.'}
-
-Walk the flow the issue describes AND its neighbours. Check both health endpoints report
-the checkout's HEAD. Run the smoke suite. Always run scripts/dev/stack.sh down at the end.
-Commit screenshots as the bot. Never report verified=true for anything you did not run.`,
-    { label: `verify-${attempt}`, phase: 'Verify', schema: VERIFY, agentType: pre.devRole },
-  )
+  verify = await agent(verifyPrompt(impl.summary, ''), { label: `verify-${attempt}`, phase: 'Verify', schema: VERIFY, agentType: pre.devRole })
   if (!verify) return await blocked(wt, 'Verify', 'verify agent died', pre)
   if (verify.verified || verify.applicable === false) break
   feedback = `The implementation passed its gates but failed verification in the running app:\n${verify.problems}`
@@ -589,6 +593,7 @@ if (!verify) return await blocked(wt, 'Verify', `Still failing verification afte
 let review = null
 const fixedFindings = []
 const disputedFindings = []
+let fixRounds = 0
 for (let round = 1; round <= MAX_REVIEW_ROUNDS + 1; round++) {
   phase('Review')
   review = await agent(
@@ -596,6 +601,7 @@ for (let round = 1; round <= MAX_REVIEW_ROUNDS + 1; round++) {
 Diff: git diff origin/main...HEAD. The issue: gh issue view ${ISSUE} --repo ${REPO} --comments.
 What the implementer says it did: ${impl.summary}
 Verification evidence: ${verify.evidence}
+${fixRounds ? `\nNOTE: that verification was done BEFORE ${fixRounds} fix round(s) changed the code. The loop re-runs verification on the final commit before the PR is opened, so do not raise stale evidence by itself as a finding: judge the CURRENT code, and raise any behaviour you believe the fixes broke.` : ''}
 ${disputedFindings.length ? `\nThe implementer disputed these earlier findings. Judge each on its merits; raise it again only if the dispute is wrong:\n${disputedFindings.map(d => `- ${d.finding} — implementer says: ${d.reason}`).join('\n')}` : ''}
 
 Review against the issue and CLAUDE.md. In priority order: behaviour that doesn't match
@@ -628,6 +634,30 @@ Commit as the bot. Do not push.`,
   if (!fix || !fix.gatesPassed) return await blocked(wt, 'Review', `Fixing review findings broke the gates:\n${fix ? fix.gateOutput : 'fix agent died'}`, pre)
   fixedFindings.push(...fix.fixed)
   disputedFindings.push(...fix.disputed)
+  fixRounds++
+}
+
+// ── Re-verify after review fixes ─────────────────────────────────────────────
+// Verification ran before the review's fix rounds, so once a fix changes the code the
+// evidence describes older code. The blocked #402 run (PR #471) shipped-to-draft exactly
+// that: screenshots and a walkthrough of behaviour three commits had since changed.
+// So if any fix round happened, verify again on the final commit, and the PR carries
+// only that fresh evidence. A failed re-verification takes the blocked path.
+if (fixRounds > 0) {
+  phase('Verify')
+  const recheck = await agent(
+    verifyPrompt(
+      `${impl.summary}\nThen ${fixRounds} review fix round(s) changed it further: ${fixedFindings.join('; ') || 'see git log'}.`,
+      'THIS IS A RE-VERIFICATION: the code changed after the first verification. Verify the CURRENT HEAD from scratch; do not reuse or trust any earlier result. Check the health endpoints report the current HEAD.',
+    ),
+    { label: 'verify-recheck', phase: 'Verify', schema: VERIFY, agentType: pre.devRole },
+  )
+  if (!recheck) return await blocked(wt, 'Verify', 're-verification agent died', pre)
+  if (!(recheck.verified || recheck.applicable === false)) {
+    return await blocked(wt, 'Verify', `Re-verification after ${fixRounds} review fix round(s) failed on the final commit:\n${recheck.problems}`, pre)
+  }
+  verify = recheck
+  log(`Re-verified on the final commit after ${fixRounds} fix round(s)`)
 }
 
 // ── Ship ─────────────────────────────────────────────────────────────────────
@@ -745,6 +775,14 @@ List every finding you actually fixed in \`fixed\`, with what you changed.
 ${serious.map(f => `- [${f.severity}] ${f.file}: ${f.problem} — ${f.why}`).join('\n')}
 
 ${GATES}
+
+If your fix changes anything a user can see or trigger, the PR's verification evidence now
+describes older code. Before pushing, re-verify that flow on your new commit by following
+.claude/skills/verify/SKILL.md (stack up, walk the flow, health endpoints report the new HEAD,
+smoke suite, stack down), replace the affected -after screenshots, and update the PR's
+Verified section to match (gh pr edit ${ship.prNumber} --repo ${REPO} --body-file ... as the bot).
+Say in your resolutions comment that it was re-verified. Never leave evidence in the PR that
+describes code that has since changed.
 
 Then, as the bot:
 - If you changed anything: commit, push the branch (this triggers a fresh GitHub review of the
