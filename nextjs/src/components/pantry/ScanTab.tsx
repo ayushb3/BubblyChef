@@ -30,10 +30,6 @@ export default function ScanTab({ onItemsReady }: ScanTabProps) {
   const [skipped, setSkipped] = useState<ScannedItem[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
 
-  function notifyParent(ready: ScannedItem[], review: ScannedItem[]) {
-    onItemsReady([...ready, ...review].map(scannedToAddItem))
-  }
-
   async function handleFileSelect(file: File) {
     setError(null)
     const objectUrl = URL.createObjectURL(file)
@@ -47,7 +43,6 @@ export default function ScanTab({ onItemsReady }: ScanTabProps) {
       setSkipped(result.skipped)
       setWarnings(result.warnings ?? [])
       setState('results')
-      notifyParent(result.ready_to_add, result.needs_review)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setState('upload')
@@ -74,12 +69,10 @@ export default function ScanTab({ onItemsReady }: ScanTabProps) {
 
   const handleReadyChange = (items: ScannedItem[]) => {
     setReadyToAdd(items)
-    notifyParent(items, needsReview)
   }
 
   const handleReviewChange = (items: ScannedItem[]) => {
     setNeedsReview(items)
-    notifyParent(readyToAdd, items)
   }
 
   return (
@@ -193,6 +186,7 @@ export default function ScanTab({ onItemsReady }: ScanTabProps) {
               onConfirm={() => {/* confirm handled by PantryAddSheet */}}
               isSubmitting={false}
               hideConfirmButton
+              onCheckedItemsChange={(checked) => onItemsReady(checked.map(scannedToAddItem))}
             />
           </motion.div>
         )}
