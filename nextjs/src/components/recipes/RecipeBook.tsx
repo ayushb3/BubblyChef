@@ -12,6 +12,7 @@ import RecipeDeleteConfirm from './RecipeDeleteConfirm'
 import RecipeImportModal from './RecipeImportModal'
 import CookModal from './CookModal'
 import GuidedCookFlow from './GuidedCookFlow'
+import { startCookSession } from '@/lib/cook-session'
 import { springs, heartPopVariants } from '@/lib/motion'
 import Chip from '@/components/ui/Chip'
 import { tagToTone } from '@/lib/tag-tone'
@@ -169,6 +170,20 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     setDirection(newIndex > currentIndex ? 1 : -1)
     setSelectedId(id)
     setSidebarOpen(false)
+  }
+
+  /**
+   * Opens the guided step-by-step cook flow. This is the "start cooking"
+   * moment for the library's cook path — unlike the chat card's cook flow,
+   * there is no separate preview step first, so a fresh session (#440) is
+   * armed right here: clears any stale "ended" record left by a previous
+   * confirmed cook of this same recipe, so this legitimate new attempt isn't
+   * mistaken for a stale re-entry into an already-finished one.
+   */
+  const handleOpenGuidedCook = () => {
+    if (!selectedRecipe) return
+    startCookSession(selectedRecipe.id)
+    setGuidedCookOpen(true)
   }
 
   const handleFavorite = async () => {
@@ -490,7 +505,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   <div className="flex items-center justify-between">
                     {/* Cook it — opens guided step-by-step cooking flow (#263) */}
                     <button
-                      onClick={() => setGuidedCookOpen(true)}
+                      onClick={handleOpenGuidedCook}
                       disabled={mutating}
                       className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                       style={{ background: 'color-mix(in srgb, var(--color-primary) 18%, var(--color-bg))', border: '1.5px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border))' }}
@@ -618,7 +633,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   <div className="flex items-center justify-between w-full">
                     {/* Cook it — opens guided step-by-step cooking flow (#263) */}
                     <button
-                      onClick={() => setGuidedCookOpen(true)}
+                      onClick={handleOpenGuidedCook}
                       disabled={mutating}
                       className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                       style={{ background: 'color-mix(in srgb, var(--color-primary) 18%, var(--color-bg))', border: '1.5px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border))' }}
