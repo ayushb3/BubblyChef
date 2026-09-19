@@ -3,6 +3,7 @@
 Google Gemini provider using the free tier API.
 """
 
+import asyncio
 import base64
 import json
 import logging
@@ -29,6 +30,9 @@ class GeminiProvider(AIProvider):
         api_key: str,
         model: str = "gemini-3.1-flash-lite",
         timeout: float = 60.0,
+        vision_timeout: float = 18.0,
+        vision_max_retries: int = 1,
+        vision_retry_backoff: float = 1.0,
     ):
         """
         Initialize Gemini provider.
@@ -38,11 +42,23 @@ class GeminiProvider(AIProvider):
             model: Model to use (gemini-3.1-flash-lite recommended for free tier —
                 fastest and most token-efficient of the current Flash lineup;
                 gemini-2.5-flash is deprecated, retiring no earlier than 2026-10-16)
-            timeout: Request timeout in seconds
+            timeout: Request timeout in seconds for text completions
+            vision_timeout: Per-attempt request timeout in seconds for vision
+                calls (issue #476). Deliberately shorter than ``timeout`` so a
+                single retry still fits inside the Next.js scan client's fixed
+                45s abort budget instead of racing it.
+            vision_max_retries: Number of retries (beyond the first attempt)
+                for vision calls that fail with a transient network error
+                (timeout, connection error). HTTP error responses (auth,
+                malformed request) are not retried — they are deterministic.
+            vision_retry_backoff: Seconds to wait before a vision retry.
         """
         self.api_key = api_key
         self.model = model
         self.timeout = timeout
+        self.vision_timeout = vision_timeout
+        self.vision_max_retries = vision_max_retries
+        self.vision_retry_backoff = vision_retry_backoff
         self._client = httpx.AsyncClient(timeout=timeout)
 
     @property
@@ -318,27 +334,46 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             "generationConfig": generation_config,
         }
 
-        try:
-            response = await self._client.post(
-                url,
-                json=payload,
-                params={"key": self.api_key},
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            error_body = e.response.text[:500] if hasattr(e.response, "text") else str(e)
-            if e.response.status_code == 429:
+        # Retry loop (issue #476): only network-layer failures (timeout,
+        # connection error — httpx.RequestError) are transient and worth
+        # retrying. HTTP error responses (rate limit, auth, bad request) are
+        # deterministic and raised immediately without a retry.
+        response: httpx.Response | None = None
+        attempts = 1 + self.vision_max_retries
+        for attempt in range(attempts):
+            try:
+                response = await self._client.post(
+                    url,
+                    json=payload,
+                    params={"key": self.api_key},
+                    timeout=self.vision_timeout,
+                )
+                response.raise_for_status()
+                break
+            except httpx.HTTPStatusError as e:
+                error_body = e.response.text[:500] if hasattr(e.response, "text") else str(e)
+                if e.response.status_code == 429:
+                    raise ProviderUnavailableError(
+                        f"Gemini [{self.model}] vision rate limit 429: {error_body}"
+                    ) from e
                 raise ProviderUnavailableError(
-                    f"Gemini [{self.model}] vision rate limit 429: {error_body}"
+                    f"Gemini [{self.model}] vision API error {e.response.status_code}: "
+                    f"{error_body}"
                 ) from e
-            raise ProviderUnavailableError(
-                f"Gemini [{self.model}] vision API error {e.response.status_code}: "
-                f"{error_body}"
-            ) from e
-        except httpx.RequestError as e:
-            raise ProviderUnavailableError(
-                f"Gemini [{self.model}] vision connection error: {type(e).__name__}: {e}"
-            ) from e
+            except httpx.RequestError as e:
+                if attempt < attempts - 1:
+                    logger.warning(
+                        f"Gemini [{self.model}] vision attempt {attempt + 1}/{attempts} "
+                        f"failed with {type(e).__name__}, retrying after "
+                        f"{self.vision_retry_backoff}s"
+                    )
+                    await asyncio.sleep(self.vision_retry_backoff)
+                    continue
+                raise ProviderUnavailableError(
+                    f"Gemini [{self.model}] vision connection error: {type(e).__name__}: {e}"
+                ) from e
+
+        assert response is not None  # loop always ends via break or raise
 
         data = response.json()
         try:

@@ -24,6 +24,19 @@ class Settings(BaseSettings):
     ollama_timeout_seconds: int = 120
     ollama_max_retries: int = 2
 
+    # Gemini vision (receipt OCR) — issue #476. The Next.js scan client aborts
+    # at a fixed 45s (nextjs/src/lib/api/scan.ts, not owned here) and the
+    # server's own per-attempt timeout must fit a retry inside that budget
+    # rather than race it: 18s/attempt + one retry + a short backoff is
+    # ~37s worst case for the vision call alone, leaving headroom for OCR/
+    # parse overhead and the downstream ingest-dispatch step in the same
+    # request. Only network-layer failures (timeout, connection error) are
+    # retried — HTTP error responses (auth, malformed request) are
+    # deterministic and retried instantly would just fail again.
+    gemini_vision_timeout_seconds: float = 18.0
+    gemini_vision_max_retries: int = 1
+    gemini_vision_retry_backoff_seconds: float = 1.0
+
     # Anthropic / SAP proxy (dev only — leave use_anthropic_proxy=false in prod/CI)
     anthropic_base_url: str = "http://localhost:6655/anthropic"
     anthropic_api_key: str = ""
