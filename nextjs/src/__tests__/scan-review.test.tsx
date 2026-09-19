@@ -79,6 +79,7 @@ function renderResults(overrides: Partial<{
   hideConfirmButton: boolean
   isSubmitting: boolean
   onConfirm: (items: ScannedItem[]) => void
+  onCheckedItemsChange: (items: ScannedItem[]) => void
 }> = {}) {
   const props = {
     readyToAdd: STUB_RESULT.ready_to_add,
@@ -171,6 +172,54 @@ it('onConfirm is called with only the checked items', () => {
   const called: ScannedItem[] = onConfirm.mock.calls[0][0]
   expect(called).toHaveLength(1)
   expect(called[0].name).toBe(READY_ITEM.name)
+})
+
+// ─── 3b. onCheckedItemsChange (issue #406) ────────────────────────────────────
+// An embedding parent (PantryAddSheet's ScanTab) hides the built-in confirm
+// button and instead tracks the checked set via this callback. It must fire
+// with the reduced list when a checked item is unchecked, not the full found
+// set.
+
+it('onCheckedItemsChange fires with the initial checked set on mount', async () => {
+  const onCheckedItemsChange = jest.fn()
+  renderResults({ hideConfirmButton: true, onCheckedItemsChange })
+
+  await waitFor(() => {
+    expect(onCheckedItemsChange).toHaveBeenCalled()
+  })
+  const lastCall = onCheckedItemsChange.mock.calls[onCheckedItemsChange.mock.calls.length - 1][0]
+  expect(lastCall).toHaveLength(1)
+  expect(lastCall[0].name).toBe(READY_ITEM.name)
+})
+
+it('onCheckedItemsChange fires with the reduced list when a checked item is unchecked', async () => {
+  const onCheckedItemsChange = jest.fn()
+  renderResults({ hideConfirmButton: true, onCheckedItemsChange })
+
+  const readyCheckbox = screen.getByRole('checkbox', {
+    name: new RegExp(`Include ${READY_ITEM.name}`, 'i'),
+  })
+  fireEvent.click(readyCheckbox)
+
+  await waitFor(() => {
+    const lastCall = onCheckedItemsChange.mock.calls[onCheckedItemsChange.mock.calls.length - 1][0]
+    expect(lastCall).toHaveLength(0)
+  })
+})
+
+it('onCheckedItemsChange fires with the increased list when a review item is checked', async () => {
+  const onCheckedItemsChange = jest.fn()
+  renderResults({ hideConfirmButton: true, onCheckedItemsChange })
+
+  const reviewCheckbox = screen.getByRole('checkbox', {
+    name: new RegExp(`Include ${REVIEW_ITEM.name}`, 'i'),
+  })
+  fireEvent.click(reviewCheckbox)
+
+  await waitFor(() => {
+    const lastCall = onCheckedItemsChange.mock.calls[onCheckedItemsChange.mock.calls.length - 1][0]
+    expect(lastCall).toHaveLength(2)
+  })
 })
 
 // ─── 4. Eye toggle ────────────────────────────────────────────────────────────
