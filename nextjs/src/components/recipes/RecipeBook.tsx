@@ -12,7 +12,7 @@ import RecipeDeleteConfirm from './RecipeDeleteConfirm'
 import RecipeImportModal from './RecipeImportModal'
 import CookModal from './CookModal'
 import GuidedCookFlow from './GuidedCookFlow'
-import { startCookSession } from '@/lib/cook-session'
+import { startCookSession, getActiveCookSession, clearActiveCookSession } from '@/lib/cook-session'
 import { springs, heartPopVariants } from '@/lib/motion'
 import Chip from '@/components/ui/Chip'
 import { tagToTone } from '@/lib/tag-tone'
@@ -75,6 +75,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const [importOpen, setImportOpen] = useState(false)
   const [cookOpen, setCookOpen] = useState(false)
   const [guidedCookOpen, setGuidedCookOpen] = useState(false)
+  const [resumeStep, setResumeStep] = useState<number | null>(null)
+  const resumeCheckedRef = useRef(false)
   const [importDraft, setImportDraft] = useState<Partial<Recipe> | null>(null)
   const [mutating, setMutating] = useState(false)
   // Local optimistic overrides for favorite state — avoids full re-fetch on toggle
@@ -128,6 +130,26 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   }, [search, filteredRecipes])
 
   const selectedRecipe = recipesWithOverrides.find((r) => r.id === selectedId) ?? recipesWithOverrides[0] ?? null
+
+  // Issue #441 — resume an in-progress guided cook after a full page reload.
+  // Runs once, as soon as the recipe list is available (the loader only
+  // mounts this component once `recipes` has already been fetched). Looks up
+  // the persisted { recipeId, step } record and re-opens the guided flow at
+  // the same step, rather than silently discarding it. `getActiveCookSession`
+  // already refuses to return a record for a recipe whose deduction was
+  // confirmed (#440), so this can't resurrect an ended session.
+  useEffect(() => {
+    if (resumeCheckedRef.current) return
+    if (recipes.length === 0) return
+    resumeCheckedRef.current = true
+    const active = getActiveCookSession()
+    if (!active) return
+    const match = recipes.find((r) => r.id === active.recipeId)
+    if (!match) return
+    setSelectedId(match.id)
+    setResumeStep(active.step)
+    setGuidedCookOpen(true)
+  }, [recipes])
 
   // Reset hero image error state whenever the selected recipe changes
   useEffect(() => { setThumbError(false) }, [selectedId])
@@ -183,6 +205,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const handleOpenGuidedCook = () => {
     if (!selectedRecipe) return
     startCookSession(selectedRecipe.id)
+    setResumeStep(null)
     setGuidedCookOpen(true)
   }
 
@@ -872,8 +895,18 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         <GuidedCookFlow
           key={selectedRecipe.id}
           recipe={selectedRecipe}
-          onExit={() => setGuidedCookOpen(false)}
+          initialStep={resumeStep ?? undefined}
+          onExit={() => {
+            // Deliberate exit back to the plain recipe view — nothing left
+            // to resume (#441). Not the same as `endCookSession`: a later
+            // re-open of guided cook for this recipe should still work.
+            clearActiveCookSession(selectedRecipe.id)
+            setResumeStep(null)
+            setGuidedCookOpen(false)
+          }}
           onFinish={() => {
+            clearActiveCookSession(selectedRecipe.id)
+            setResumeStep(null)
             setGuidedCookOpen(false)
             setCookOpen(true)
           }}

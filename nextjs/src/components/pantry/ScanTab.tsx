@@ -15,13 +15,20 @@ type ScanTabState = 'upload' | 'processing' | 'results'
 
 interface ScanTabProps {
   onItemsReady: (items: AddItem[]) => void
+  /**
+   * Reports whether a scan is currently in flight so the parent sheet can
+   * lock the Type tab for the duration (issue #402). Must fire `true` right
+   * before the upload starts and `false` on every path out of `processing`
+   * — success and failure/timeout alike — or the lock never releases.
+   */
+  onProcessingChange?: (processing: boolean) => void
 }
 
 function scannedToAddItem(item: ScannedItem): AddItem {
   return { ...scannedToBulkAddItem(item), source: 'scan' }
 }
 
-export default function ScanTab({ onItemsReady }: ScanTabProps) {
+export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [state, setState] = useState<ScanTabState>('upload')
   const [preview, setPreview] = useState<string | null>(null)
@@ -39,6 +46,7 @@ export default function ScanTab({ onItemsReady }: ScanTabProps) {
     const objectUrl = URL.createObjectURL(file)
     setPreview(objectUrl)
     setState('processing')
+    onProcessingChange?.(true)
 
     try {
       const result: ScanResult = await uploadReceipt(file)
@@ -62,6 +70,9 @@ export default function ScanTab({ onItemsReady }: ScanTabProps) {
       if (inputRef.current) inputRef.current.value = ''
     } finally {
       setTimeout(() => URL.revokeObjectURL(objectUrl), 500)
+      // Every path out of `processing` — results or upload/error — must
+      // release the Type-tab lock (issue #402).
+      onProcessingChange?.(false)
     }
   }
 
