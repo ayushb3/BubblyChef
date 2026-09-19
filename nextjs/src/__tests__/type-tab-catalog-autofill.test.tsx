@@ -12,7 +12,7 @@
  * this issue — see #402's tab-persistence fix, which just landed).
  */
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import PantryAddSheet from '@/components/pantry/PantryAddSheet'
 import * as pantryApi from '@/lib/api/pantry'
@@ -56,7 +56,7 @@ async function selectMilkSuggestion() {
   fireEvent.change(nameInput, { target: { value: 'mi' } })
   await waitFor(() => expect(screen.getByRole('listbox')).toBeInTheDocument())
   const option = screen.getAllByRole('option')[0]
-  const { getByRole } = require('@testing-library/react').within(option)
+  const { getByRole } = within(option)
   fireEvent.mouseDown(getByRole('button'))
 }
 
