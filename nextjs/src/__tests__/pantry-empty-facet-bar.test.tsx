@@ -7,7 +7,7 @@
  */
 
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import PantryPage from '@/app/pantry/page'
 import type { PantryItem } from '@/types/pantry'
@@ -64,8 +64,16 @@ it('still shows the facet filter bar when items exist but filters match zero', a
   mockPantryFetch([ITEM])
   renderPage()
 
-  // Wait for the item to render, then the facet bar must already be present.
+  // Wait for the item to render first.
   await screen.findByText('Milk')
+
+  // Now filter it out with a search term that matches nothing, so the
+  // *filtered* list is empty while the pantry itself is not.
+  fireEvent.change(screen.getByPlaceholderText('Search items...'), {
+    target: { value: 'nonexistent-item-xyz' },
+  })
+
+  expect(await screen.findByText('No items match your filters')).toBeInTheDocument()
 
   expect(screen.getByLabelText(/Filter by location/)).toBeInTheDocument()
   expect(screen.getByLabelText(/Filter by category/)).toBeInTheDocument()
