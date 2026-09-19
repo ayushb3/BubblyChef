@@ -17,12 +17,18 @@
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import ScanTab from '@/components/pantry/ScanTab'
+import PantryAddSheet from '@/components/pantry/PantryAddSheet'
 import * as scanApi from '@/lib/api/scan'
+import * as pantryApi from '@/lib/api/pantry'
 import type { ScanResult } from '@/types/scan'
 
 jest.mock('@/lib/api/scan')
+jest.mock('@/lib/api/pantry')
 
 const mockUploadReceipt = scanApi.uploadReceipt as jest.MockedFunction<typeof scanApi.uploadReceipt>
+const mockBulkAddPantryItems = pantryApi.bulkAddPantryItems as jest.MockedFunction<
+  typeof pantryApi.bulkAddPantryItems
+>
 
 const SCAN_RESULT: ScanResult = {
   ocr_text: 'MILK 4.29\nEGGS 3.99\nBREAD 2.99',
@@ -103,4 +109,35 @@ it('drops the reported item count when an item is unchecked', async () => {
     const lastCall = onItemsReady.mock.calls[onItemsReady.mock.calls.length - 1][0]
     expect(lastCall).toHaveLength(2)
   })
+})
+
+// ─── PantryAddSheet-level: footer count and confirm payload ───────────────────
+// The more serious variant of the bug — the footer button AND the actual
+// bulkAddPantryItems() write both derive from ScanTab's onItemsReady, so both
+// must reflect only checked items.
+
+it('PantryAddSheet footer count and bulkAddPantryItems payload both drop after an uncheck', async () => {
+  mockUploadReceipt.mockResolvedValue(SCAN_RESULT)
+  mockBulkAddPantryItems.mockResolvedValue({ count: 2, items: [] })
+
+  render(
+    <PantryAddSheet isOpen onClose={jest.fn()} initialTab="scan" onItemsAdded={jest.fn()} />,
+  )
+  selectFile()
+
+  await waitFor(() => expect(screen.getByText(/Ready to Add \(3\)/)).toBeInTheDocument())
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: /Add 3 Items/i })).toBeInTheDocument(),
+  )
+
+  const eggsCheckbox = screen.getByRole('checkbox', { name: /Include Eggs/i })
+  fireEvent.click(eggsCheckbox)
+
+  const confirmButton = await screen.findByRole('button', { name: /Add 2 Items/i })
+  fireEvent.click(confirmButton)
+
+  await waitFor(() => expect(mockBulkAddPantryItems).toHaveBeenCalledTimes(1))
+  const payload = mockBulkAddPantryItems.mock.calls[0][0]
+  expect(payload).toHaveLength(2)
+  expect(payload.some((item) => item.name === 'Eggs')).toBe(false)
 })
