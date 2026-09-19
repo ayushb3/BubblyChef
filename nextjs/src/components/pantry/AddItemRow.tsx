@@ -19,6 +19,14 @@ export interface ManualRow {
    * the date themselves — it's no longer an estimate at that point.
    */
   estimated_expiry: boolean
+  /**
+   * Catalog emoji (issue #398's `FoodCatalogEntry.emoji`), captured when the
+   * row was filled via a catalog suggestion. Purely cosmetic — used by the
+   * collapsed-row summary (issue #404) so a filled row still shows an icon
+   * without re-deriving it. `null`/absent for freehand-typed names, which
+   * the summary falls back to a category-based icon for.
+   */
+  emoji?: string | null
 }
 
 /** `YYYY-MM-DD` for `today + days`, matching the `<input type="date">` format. */
@@ -85,6 +93,7 @@ export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRo
       storage_location: entry.default_location || row.storage_location,
       expiry_date: expiryDateFromDays(entry.expiry_days),
       estimated_expiry: true,
+      emoji: entry.emoji,
     })
   }
 
