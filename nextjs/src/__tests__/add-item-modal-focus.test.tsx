@@ -1,23 +1,46 @@
 /**
- * AddItemModal focus-trap wiring (issue #291).
+ * Edit-item modal focus-trap wiring (issue #291).
  *
- * AddItemModal stays mounted and toggles via its own `isOpen` prop (rather
- * than mounting/unmounting), so this exercises the "stays-mounted sheet"
- * call shape of `useModalFocusTrap` end to end through the real component,
- * not just the hook in isolation.
+ * The modal (still `AddItemModal.tsx` on disk; it is edit-only since #478)
+ * stays mounted and toggles via its own `isOpen` prop (rather than
+ * mounting/unmounting), so this exercises the "stays-mounted sheet" call
+ * shape of `useModalFocusTrap` end to end through the real component, not
+ * just the hook in isolation.
  */
 
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import AddItemModal from '@/components/pantry/AddItemModal'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import EditItemModal from '@/components/pantry/AddItemModal'
+import type { PantryItem } from '@/types/pantry'
+
+// The name field is a FoodAutocomplete (#398), which reads the catalog via
+// React Query; the query is disabled until the user types, so no request is
+// ever made here, but the provider still has to exist.
+jest.mock('@/lib/api/foods')
+
+const ITEM: PantryItem = {
+  id: 'item-1',
+  name: 'milk',
+  category: 'dairy',
+  location: 'fridge',
+  quantity: 1,
+  unit: 'gallon',
+  expiry_date: null,
+}
 
 function Harness({ initialOpen = false }: { initialOpen?: boolean }) {
   const [isOpen, setIsOpen] = React.useState(initialOpen)
+  const [queryClient] = React.useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  )
   return (
-    <div>
-      <button onClick={() => setIsOpen(true)}>Add item</button>
-      <AddItemModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
-    </div>
+    <QueryClientProvider client={queryClient}>
+      <div>
+        <button onClick={() => setIsOpen(true)}>Add item</button>
+        <EditItemModal isOpen={isOpen} onClose={() => setIsOpen(false)} editItem={ITEM} />
+      </div>
+    </QueryClientProvider>
   )
 }
 
@@ -28,7 +51,7 @@ describe('AddItemModal focus trap', () => {
     expect(dialog).toHaveAttribute('aria-modal', 'true')
     const labelledBy = dialog.getAttribute('aria-labelledby')
     expect(labelledBy).toBeTruthy()
-    expect(document.getElementById(labelledBy as string)).toHaveTextContent(/add item/i)
+    expect(document.getElementById(labelledBy as string)).toHaveTextContent(/edit item/i)
   })
 
   it('moves focus into the panel when opened', () => {

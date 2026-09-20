@@ -2,6 +2,7 @@
 
 import FoodAutocomplete from './FoodAutocomplete'
 import type { FoodCatalogEntry } from '@/lib/api/foods'
+import { LOCATIONS } from '@/lib/pantry-vocab'
 
 export interface ManualRow {
   id: string
@@ -40,13 +41,6 @@ const CATEGORIES = [
   { value: 'beverages', label: 'Beverages' },
   { value: 'frozen', label: 'Frozen' },
   { value: 'other', label: 'Other' },
-]
-
-const LOCATIONS = [
-  { value: 'fridge', label: 'Fridge' },
-  { value: 'freezer', label: 'Freezer' },
-  { value: 'pantry', label: 'Pantry' },
-  { value: 'counter', label: 'Counter' },
 ]
 
 interface AddItemRowProps {

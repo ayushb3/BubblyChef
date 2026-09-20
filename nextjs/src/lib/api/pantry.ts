@@ -5,6 +5,8 @@
  * see the "two API surfaces" rule in CLAUDE.md.
  */
 
+import type { PantryItem } from '@/types/pantry'
+
 /** Item shape accepted by `POST /api/pantry/bulk`. */
 export interface BulkAddItem {
   name: string
@@ -81,4 +83,61 @@ export async function resolvePantryItem(
   }
 
   return res.json()
+}
+
+/**
+ * Fields the edit modal can change on a single pantry item. Every field is
+ * optional — `PUT /api/pantry/[id]` only touches the keys that are present.
+ * The route accepts either `location` or `storage_location`; this client
+ * sends `location`, the DB column name.
+ */
+export interface UpdatePantryItemInput {
+  name?: string
+  quantity?: number
+  unit?: string
+  category?: string
+  location?: string
+  expiry_date?: string | null
+}
+
+/**
+ * Update one pantry item in place — the only single-item write path in the
+ * app (issue #478: the edit modal is the sole consumer, and it was calling
+ * `fetch` directly). Rejects with a message the caller can show as-is; a 401
+ * is called out specifically because the fix ("sign in again") is different
+ * from every other failure.
+ */
+export async function updatePantryItem(
+  itemId: string,
+  updates: UpdatePantryItemInput,
+): Promise<PantryItem> {
+  const res = await fetch(`/api/pantry/${itemId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error('Your session expired — sign in again to save.')
+    }
+    const detail = await res.json().catch(() => null)
+    throw new Error(detail?.error ?? `Could not save item (${res.status})`)
+  }
+
+  return res.json()
+}
+
+/**
+ * Delete one pantry item outright, without recording an outcome. For "used
+ * it up" / "tossed it", which the pantry tracks as events, use
+ * `resolvePantryItem` instead.
+ */
+export async function deletePantryItem(itemId: string): Promise<void> {
+  const res = await fetch(`/api/pantry/${itemId}`, { method: 'DELETE' })
+
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null)
+    throw new Error(detail?.error ?? `Could not delete item (${res.status})`)
+  }
 }

@@ -9,7 +9,7 @@ import SpringButton from '@/components/ui/SpringButton'
 import FadeInView from '@/components/ui/FadeInView'
 import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
-import AddItemModal from '@/components/pantry/AddItemModal'
+import EditItemModal from '@/components/pantry/AddItemModal'
 import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
 import PantryAddSheet, { type PantryAddTab } from '@/components/pantry/PantryAddSheet'
 import ResolveActions from '@/components/pantry/ResolveActions'
@@ -28,7 +28,7 @@ import {
 } from '@/lib/pantry-helpers'
 import type { PantryFacetSelection } from '@/lib/pantry-helpers'
 import FacetDropdown from '@/components/ui/FacetDropdown'
-import { LOCATIONS } from '@/components/pantry/AddItemModal'
+import { LOCATIONS } from '@/lib/pantry-vocab'
 
 // Category card tints — dedicated --color-cat-* tokens (globals.css). These must
 // never reference expiry/status tokens (fresh/expiring/expired): status signals
@@ -60,11 +60,13 @@ const CATEGORY_EMOJI: Record<string, string> = {
   other: '📦',
 }
 
-// Location facet options: reuses `AddItemModal`'s `LOCATIONS` list rather than
-// carrying a second, parallel one (#228). "All Items" isn't an option anymore —
+// Location facet options: reuses the shared `LOCATIONS` vocabulary (the same
+// list the edit modal, add row and scan card render — #228, #478) rather than
+// carrying a parallel one. "All Items" isn't an option anymore —
 // an empty selection means "no location constraint", handled by
 // `itemMatchesFacets`.
-const LOCATION_OPTIONS = LOCATIONS
+// (Spread: the shared list is `as const`, FacetDropdown takes a mutable array.)
+const LOCATION_OPTIONS = [...LOCATIONS]
 
 // Category facet options: reuses the exact same emoji/label source the display
 // grouping below uses for its section headers (`CATEGORY_EMOJI`), so the facet
@@ -434,8 +436,9 @@ function PantryPageInner() {
         onItemsAdded={handleItemsAdded}
       />
 
-      {/* Single Item Edit Modal */}
-      <AddItemModal
+      {/* Single Item Edit Modal — the only way to correct or plainly delete an
+          item. Opened by tapping a pantry card; never by the FAB (#478). */}
+      <EditItemModal
         isOpen={editModalOpen}
         onClose={handleEditModalClose}
         editItem={editItem}

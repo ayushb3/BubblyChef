@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import type { ScannedItem } from '@/types/scan'
 import { getFoodEmoji } from '@/lib/food-emoji'
 import Chip from '@/components/ui/Chip'
+import { LOCATION_VALUES } from '@/lib/pantry-vocab'
 
 const CATEGORIES = [
   'produce',
@@ -17,8 +18,6 @@ const CATEGORIES = [
   'frozen',
   'other',
 ]
-
-const LOCATIONS = ['fridge', 'freezer', 'pantry', 'counter']
 
 function confidenceChipTone(confidence: number): 'fresh' | 'expiring' | 'muted' {
   if (confidence >= 0.8) return 'fresh'
@@ -227,7 +226,7 @@ export default function ScannedItemCard({
             onChange={(e) => update('location', e.target.value)}
             className="w-full text-sm text-[var(--color-text)] bg-[var(--color-bg,#FFF0F5)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:border-[var(--color-primary)] transition-colors"
           >
-            {LOCATIONS.map((l) => (
+            {LOCATION_VALUES.map((l) => (
               <option key={l} value={l}>
                 {l}
               </option>

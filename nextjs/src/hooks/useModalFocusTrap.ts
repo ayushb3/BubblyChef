@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react'
 /**
  * Shared modal keyboard/focus behaviour — issue #291.
  *
- * Every bottom-sheet/dialog in the app (`AddItemModal`, `PantryAddSheet`,
+ * Every bottom-sheet/dialog in the app (`EditItemModal`, `PantryAddSheet`,
  * `CookModal`, `RecipeEditModal`, `RecipeImportModal`,
  * `RecipeRefinementModal`, `RecipeDeleteConfirm`, `ThemePicker`) rolled its
  * own backdrop + `motion.div`, but none of them moved focus in on open,
@@ -16,7 +16,7 @@ import { useEffect, useRef } from 'react'
  * `aria-labelledby` markup since that is tied to their own heading ids.
  *
  * Two call shapes, matching the two ways modals exist in this codebase:
- *  - Stays-mounted sheets (`AddItemModal`, `PantryAddSheet`,
+ *  - Stays-mounted sheets (`EditItemModal`, `PantryAddSheet`,
  *    `RecipeRefinementModal`) pass their own `isOpen` prop through — the
  *    effect re-arms every time it flips to true.
  *  - Mounts-to-open modals (`RecipeEditModal`, `RecipeImportModal`,
@@ -37,7 +37,7 @@ const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 // `offsetParent !== null` is the usual cheap visibility check, but every
-// modal panel in this codebase (`AddItemModal`, `PantryAddSheet`, `CookModal`,
+// modal panel in this codebase (`EditItemModal`, `PantryAddSheet`, `CookModal`,
 // `RecipeEditModal`, `RecipeImportModal`, `RecipeRefinementModal`) is itself
 // `position: fixed`, and `offsetParent` is spec'd to be `null` for a
 // fixed-position element's own layout box regardless of visibility — it would
