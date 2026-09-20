@@ -46,23 +46,6 @@ changes so it no longer applies.
 - **Agent PRs must be opened as `bubblychef-bot`**, never as `ayushb3`. GitHub
   skips code-owner review when the author is the only code owner, so a PR opened
   under Ayush's account bypasses the protected-path gate entirely.
-- **In a Claude Code cloud session you cannot be anyone but `ayushb3`, so the
-  agent loop cannot run there.** The session's HTTPS proxy strips whatever
-  credential a client sends to `api.github.com` and injects the session's own:
-  a request with a *forged* token, and a request with *no* `Authorization`
-  header at all, both come back `{"login": "ayushb3"}`. Provisioning a
-  `bubblychef-bot` token into `$HOME/.config/gh-bubblychef-bot` does not help —
-  the token is discarded in transit, not consulted. Don't spend a session
-  building token plumbing for cloud; the loop is laptop-only until the
-  authorship requirement itself is redesigned (issue #474).
-- **`gh` reads `GH_TOKEN`/`GITHUB_TOKEN` ahead of `GH_CONFIG_DIR`.** An ambient
-  token in the environment silently overrides the bot config dir, so the write
-  lands as that token's owner while the command still *looks* like a bot command.
-  Every bot command in `AS_BOT` clears both first. Keep them cleared.
-- **Not every `gh` is a `gh`.** Ubuntu's apt ships 2.45.0, which has no
-  `gh variable get` — the subcommand the loop's kill-switch read depends on.
-  The Actions REST API is no substitute in cloud: the proxy 403s every
-  `/actions/*` path, so `AGENTS_ENABLED` is unreadable there by any route.
 
 ## Frontend
 

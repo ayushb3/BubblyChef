@@ -103,7 +103,8 @@ const CAPABILITY = {
 const PREFLIGHT = {
   type: 'object',
   properties: {
-    agentsEnabled: { type: 'string', description: 'exact output of gh variable get AGENTS_ENABLED, trimmed' },
+    agentsEnabled: { type: 'string', description: 'exact output of gh variable get AGENTS_ENABLED, trimmed; "" if the command failed' },
+    agentsEnabledRead: { type: 'boolean', description: 'true only if the AGENTS_ENABLED command exited 0. An error message is NOT a value.' },
     runsLast24h: { type: 'integer' },
     issueState: { type: 'string', description: 'OPEN or CLOSED, exactly as gh reports it' },
     issueLabels: { type: 'array', items: { type: 'string' } },
@@ -112,9 +113,10 @@ const PREFLIGHT = {
     kind: { type: 'string', enum: ['bug', 'feature', 'refactor', 'docs'] },
     devRole: { type: 'string', enum: ['frontend', 'backend', 'ui-ux'] },
     slug: { type: 'string', description: 'kebab-case, <= 5 words' },
+    agentsEnabledError: { type: 'string', description: 'error text if the AGENTS_ENABLED read failed, else ""' },
     summary: { type: 'string', description: 'what the issue asks for, 2-3 sentences' },
   },
-  required: ['agentsEnabled', 'runsLast24h', 'issueState', 'issueLabels', 'openPrsForIssue', 'title', 'kind', 'devRole', 'slug', 'summary'],
+  required: ['agentsEnabled', 'agentsEnabledRead', 'runsLast24h', 'issueState', 'issueLabels', 'openPrsForIssue', 'title', 'kind', 'devRole', 'slug', 'summary', 'agentsEnabledError'],
 }
 
 const SETUP = {
@@ -337,7 +339,7 @@ phase('Preflight')
 // "Ayush turned the loop off" and sent the last session diagnosing the wrong thing.
 const BOT_LOGIN = 'bubblychef-bot'
 const cap = await agent(
-  `Report two facts about this environment. Read-only: change nothing, create nothing,
+  `Report three facts about this environment. Read-only: change nothing, create nothing,
 authenticate nothing, and do not try to fix or install anything you find missing.
 Report what is true right now, even if the answer is "no" — a false "yes" here lets
 writes land under the wrong GitHub account.
@@ -366,10 +368,16 @@ const envStop =
       `so this run would open PRs that silently bypass the protected-path gate. Probe said: ${cap.probe}. ` +
       'See issue #474.'
   : ''
-if (envStop) {
-  log(`Not starting: ${envStop}`)
-  return { status: 'skipped', issue: ISSUE, reason: envStop }
+// Both Preflight gates end the same way, so the shape lives in one place: a third
+// gate should not have to copy it (and get it subtly wrong).
+const skip = reason => {
+  if (!reason) return null
+  log(`Not starting: ${reason}`)
+  return { status: 'skipped', issue: ISSUE, reason }
 }
+
+const envSkip = skip(envStop)
+if (envSkip) return envSkip
 log(`Environment OK: writes resolve to ${cap.botLogin}`)
 
 const pre = await agent(
@@ -377,7 +385,12 @@ const pre = await agent(
 and do not judge whether the run should proceed: report the raw values exactly.
 Use the default \`gh\` (Ayush's login) for these reads.
 
-1. agentsEnabled: the trimmed output of  gh variable get AGENTS_ENABLED --repo ${REPO}
+1. agentsEnabled / agentsEnabledRead: run  gh variable get AGENTS_ENABLED --repo ${REPO}
+   If it exits 0, agentsEnabledRead=true and agentsEnabled is its trimmed output.
+   If it exits non-zero FOR ANY REASON — no such subcommand on an older gh, no
+   permission, no network — agentsEnabledRead=false and agentsEnabled is "", with the
+   error text in agentsEnabledError. Never report an error message as the value: doing
+   that is what made a missing gh look like a kill switch someone had deliberately set.
 2. runsLast24h: PRs by bubblychef-bot labelled "agent-loop" created in the last 24 hours.
    Get the cutoff in UTC:  date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ
    then: gh pr list --repo ${REPO} --state all --author bubblychef-bot --label agent-loop --search "created:>=<cutoff>" --json number --jq length
@@ -404,16 +417,16 @@ log(`Issue #${ISSUE}: ${pre.title} — ${pre.kind}, ${pre.devRole}; runs in last
 
 // The go/no-go is decided HERE, from the raw facts — not by the agent.
 const stopReason =
-  pre.agentsEnabled !== 'true' ? `kill switch: AGENTS_ENABLED is "${pre.agentsEnabled}", not "true"`
+  !pre.agentsEnabledRead ? `could not read the kill switch: \`gh variable get AGENTS_ENABLED\` failed (${pre.agentsEnabledError || 'no error text'}). ` +
+    'The loop does not run while its own off switch is unreadable — and an unreadable switch is not a switch that is set.'
+  : pre.agentsEnabled !== 'true' ? `kill switch: AGENTS_ENABLED is "${pre.agentsEnabled}", not "true"`
   : pre.runsLast24h >= DAILY_CAP ? `daily cap: ${pre.runsLast24h} loop PRs in the last 24h (cap ${DAILY_CAP})`
   : pre.issueState !== 'OPEN' ? `issue #${ISSUE} is ${pre.issueState}`
   : !pre.issueLabels.includes('ready-for-agent') ? `issue #${ISSUE} is not labelled ready-for-agent`
   : pre.openPrsForIssue.length ? `issue #${ISSUE} already has open PR(s): ${pre.openPrsForIssue.map(n => '#' + n).join(', ')}`
   : ''
-if (stopReason) {
-  log(`Not starting: ${stopReason}`)
-  return { status: 'skipped', issue: ISSUE, reason: stopReason }
-}
+const preSkip = skip(stopReason)
+if (preSkip) return preSkip
 
 // ── Setup ────────────────────────────────────────────────────────────────────
 phase('Setup')

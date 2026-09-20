@@ -53,7 +53,7 @@ function harness(respond) {
 }
 
 const FACTS = {
-  agentsEnabled: 'true', runsLast24h: 0, issueState: 'OPEN', issueLabels: ['ready-for-agent'],
+  agentsEnabled: 'true', agentsEnabledRead: true, agentsEnabledError: '', runsLast24h: 0, issueState: 'OPEN', issueLabels: ['ready-for-agent'],
   openPrsForIssue: [], title: 'T', kind: 'feature', devRole: 'frontend', slug: 's', summary: 'x',
 }
 const SETUP_OK = { ok: true, branchCreated: true, path: '/wt', branch: 'feat/x', originalBranch: 'main', problem: '' }
@@ -81,7 +81,12 @@ function check(name, cond, detail) {
 async function main() {
   // ── Preflight: every stop is decided by the script, and nothing else runs ──
   const stops = [
-    ['kill switch off', { agentsEnabled: 'false' }, /kill switch/],
+    ['kill switch off', { agentsEnabled: 'false' }, /kill switch: AGENTS_ENABLED is "false"/],
+    // The bug #474 was filed about: a FAILED READ was reported as the switch's VALUE,
+    // so "gh: unknown command" read as "Ayush turned the loop off". Still reachable on a
+    // laptop whose gh predates `gh variable get`, where the identity gate passes first.
+    ['kill switch unreadable', { agentsEnabledRead: false, agentsEnabled: '', agentsEnabledError: 'unknown command "get" for "gh variable"' }, /could not read the kill switch/],
+    ['an unreadable switch is never reported as a set one', { agentsEnabledRead: false, agentsEnabled: 'ERROR: gh not found', agentsEnabledError: 'command not found' }, /could not read the kill switch/],
     ['kill switch empty', { agentsEnabled: '' }, /kill switch/],
     ['daily cap reached', { runsLast24h: 6 }, /daily cap/],
     ['issue closed', { issueState: 'CLOSED' }, /CLOSED/],
@@ -111,22 +116,17 @@ async function main() {
     ['identity resolves to a human', { ghPresent: true, botLogin: 'ayushb3', probe: 'ayushb3' }, /attributed to "ayushb3", not bubblychef-bot/],
     ['identity cannot be resolved', { ghPresent: true, botLogin: '', probe: 'exit 4' }, /an unresolved identity/],
     ['identity is some other bot', { ghPresent: true, botLogin: 'other-bot', probe: 'other-bot' }, /attributed to "other-bot"/],
+    // Exact match only — not a prefix, suffix, case-fold or a stray trailing space.
+    ['lookalike: suffixed', { ghPresent: true, botLogin: 'bubblychef-bot2', probe: 'x' }, /attributed to "bubblychef-bot2"/],
+    ['lookalike: prefixed', { ghPresent: true, botLogin: 'not-bubblychef-bot', probe: 'x' }, /attributed to "not-bubblychef-bot"/],
+    ['lookalike: different case', { ghPresent: true, botLogin: 'Bubblychef-Bot', probe: 'x' }, /attributed to "Bubblychef-Bot"/],
+    ['lookalike: trailing space', { ghPresent: true, botLogin: 'bubblychef-bot ', probe: 'x' }, /attributed to "bubblychef-bot "/],
   ]
   for (const [name, capability, reason] of envStops) {
     const h = harness(label => HAPPY(label, { capability }))
     const r = await h.run({ issue: 405 })
     check(`environment stops: ${name}`, r.status === 'skipped' && reason.test(r.reason) && h.calls.join() === 'capability',
       `got ${r.status} "${r.reason}", agents: ${h.calls.join()}`)
-  }
-  {
-    // The gate must not be satisfiable by a probe that merely looks healthy: the
-    // login has to be the bot exactly, not a prefix, suffix or lookalike.
-    for (const login of ['bubblychef-bot2', 'not-bubblychef-bot', 'Bubblychef-Bot', 'bubblychef-bot ']) {
-      const h = harness(label => HAPPY(label, { capability: { ghPresent: true, botLogin: login, probe: login } }))
-      const r = await h.run({ issue: 405 })
-      check(`environment stops: login "${login}" is not the bot`, r.status === 'skipped' && h.calls.join() === 'capability',
-        `got ${r.status} "${r.reason}", agents: ${h.calls.join()}`)
-    }
   }
   {
     // ...and the probe itself must never be told to fix what it finds: an agent
@@ -145,8 +145,8 @@ async function main() {
     // ahead of GH_CONFIG_DIR, so without this the write lands as that token's owner.
     const h = harness(label => HAPPY(label))
     await h.run({ issue: 405, dryRun: true })
-    const shipLike = Object.entries(h.prompts).filter(([, v]) => /GH_CONFIG_DIR="\$HOME\/\.config\/gh-bubblychef-bot"/.test(v))
-    const bad = shipLike.filter(([, v]) =>
+    const botPrompts = Object.entries(h.prompts).filter(([, v]) => /GH_CONFIG_DIR="\$HOME\/\.config\/gh-bubblychef-bot"/.test(v))
+    const bad = botPrompts.filter(([, v]) =>
       /(?<!GH_TOKEN= GITHUB_TOKEN= )GH_CONFIG_DIR="\$HOME\/\.config\/gh-bubblychef-bot" gh /.test(v))
     check('every bot gh command clears GH_TOKEN/GITHUB_TOKEN first', bad.length === 0,
       `unguarded in: ${bad.map(([k]) => k).join(', ') || 'none'}`)
