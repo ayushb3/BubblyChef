@@ -80,6 +80,9 @@ class WorkflowState(TypedDict, total=False):
     # ==========================================================================
     input_text: str
     input_type: str  # "chat", "receipt", "product", "recipe"
+    # Remaining wall-clock seconds the LLM parse leg may spend (issue #481).
+    # None = unbounded (legacy callers); <= 0 = budget already exhausted, skip.
+    parse_timeout_seconds: float | None
     input_mode: str  # "text" or "voice"
     pantry_snapshot: list[dict[str, Any]] | None
     context: dict[str, Any] | None  # Client-supplied context, e.g. {"cooking_recipe": {...}}

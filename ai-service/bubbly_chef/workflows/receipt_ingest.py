@@ -5,6 +5,7 @@ This graph parses OCR-extracted receipt text into structured
 pantry update proposals.
 """
 
+import asyncio
 import logging
 from datetime import date
 
@@ -53,6 +54,15 @@ async def parse_receipt_llm(state: WorkflowState) -> WorkflowState:
             "confidence": 0.0,
         }
 
+    # Per-request budget (issue #481): the scan route hands us what is left
+    # of its wall-clock budget after OCR. None = unbounded (callers with no
+    # upstream leg); <= 0 = already exhausted, so don't start an AI call
+    # whose result the client will never see.
+    parse_timeout = state.get("parse_timeout_seconds")
+    if parse_timeout is not None and parse_timeout <= 0:
+        logger.warning("Receipt parse skipped: request budget exhausted before parse")
+        return _parse_timed_out(state, parse_timeout)
+
     llm = get_ai_manager()
     prompt = (
         RECEIPT_PARSE_SYSTEM_PROMPT
@@ -61,11 +71,20 @@ async def parse_receipt_llm(state: WorkflowState) -> WorkflowState:
     )
 
     try:
-        result = await llm.complete(
+        completion = llm.complete(
             prompt=prompt,
             response_schema=LLMParseResult,
             temperature=0.1,
         )
+        # One wall-clock cap around the whole call. AIManager.complete retries
+        # structured-output failures internally (up to 2) and falls back
+        # Gemini -> Ollama; wait_for encloses all of that and cancels the
+        # in-flight request on expiry, so the retries live inside the budget
+        # instead of multiplying it.
+        if parse_timeout is not None:
+            result = await asyncio.wait_for(completion, timeout=parse_timeout)
+        else:
+            result = await completion
 
         if not isinstance(result, LLMParseResult):
             return {
@@ -101,6 +120,9 @@ async def parse_receipt_llm(state: WorkflowState) -> WorkflowState:
             "confidence": adjusted_confidence,
         }
 
+    except TimeoutError:
+        logger.error(f"Receipt parse timed out after {parse_timeout:.1f}s budget")
+        return _parse_timed_out(state, parse_timeout)
     except Exception as e:
         logger.error(f"LLM error: {e}")
         return {
@@ -111,6 +133,29 @@ async def parse_receipt_llm(state: WorkflowState) -> WorkflowState:
             "confidence": 0.0,
             "requires_review": True,
         }
+
+
+# User-safe copy for a parse that ran out of budget. Carries no provider
+# name, model id or exception text (#396) — it is forwarded to the client as
+# a warning so a timed-out scan is not a silent "0 items".
+PARSE_TIMEOUT_WARNING = (
+    "Reading the receipt took too long and item extraction was cut short. "
+    "Please try again."
+)
+
+
+def _parse_timed_out(state: WorkflowState, parse_timeout: float | None) -> WorkflowState:
+    """State after the LLM parse leg ran out of its per-request budget (#481)."""
+    budget = f"{parse_timeout:.1f}s" if parse_timeout is not None else "unbounded"
+    return {
+        **state,
+        "parsed_items": [],
+        "parse_error": f"Receipt parse timed out (budget {budget})",
+        "warnings": state.get("warnings", []) + [PARSE_TIMEOUT_WARNING],
+        "errors": state.get("errors", []) + [f"Receipt parse timed out (budget {budget})"],
+        "confidence": 0.0,
+        "requires_review": True,
+    }
 
 
 def clean_receipt_items(state: WorkflowState) -> WorkflowState:
@@ -277,6 +322,7 @@ async def run_receipt_ingest(
     ocr_text: str,
     store_name: str | None = None,
     purchase_date: str | None = None,
+    parse_timeout_seconds: float | None = None,
 ) -> ProposalEnvelope[PantryProposal]:
     """
     Run the receipt ingest workflow and return a proposal envelope.
@@ -285,6 +331,9 @@ async def run_receipt_ingest(
         ocr_text: OCR-extracted text from receipt
         store_name: Optional store name for context
         purchase_date: Optional purchase date (YYYY-MM-DD)
+        parse_timeout_seconds: Wall-clock cap for the LLM parse leg (issue
+            #481) — what is left of the scan request's budget after OCR.
+            None leaves it unbounded.
 
     Returns:
         ProposalEnvelope containing the pantry update proposal
@@ -306,6 +355,7 @@ async def run_receipt_ingest(
         "confidence": 0.0,
         "field_confidences": {},
         "requires_review": True,
+        "parse_timeout_seconds": parse_timeout_seconds,
     }
 
     # Run the graph

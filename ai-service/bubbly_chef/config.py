@@ -37,6 +37,27 @@ class Settings(BaseSettings):
     gemini_vision_max_retries: int = 1
     gemini_vision_retry_backoff_seconds: float = 1.0
 
+    # Whole-request budget for POST /v1/scan/receipt — issue #481. A scan is
+    # two AI calls in one HTTP request: the vision/OCR leg above, then a
+    # structured text parse of the OCR output. #476 bounded only the first
+    # leg; the parse still ran on the provider's general ~60s text timeout
+    # times AIManager.complete's own structured-output retries (up to 2) and
+    # the Gemini -> Ollama fallback (120s), so the client's 45s abort always
+    # won and the server kept spending on a result nobody would receive.
+    #
+    # The route starts this clock before preprocessing/OCR and hands the parse
+    # leg whatever is left as ONE wall-clock cap around AIManager.complete
+    # (asyncio.wait_for in workflows/receipt_ingest.py). The cap encloses the
+    # internal retries and any provider fallback rather than multiplying
+    # them. Worst case arithmetic:
+    #   vision: (1 + 1 retry) * 18s + 1s backoff              = 37s
+    #   parse:  min(remaining, 40 - 37)                        <= 3s
+    #   server-side AI time                                    <= 40s
+    #   + transport/proxy headroom (upload, Vercel -> Railway) <= 5s
+    #   = 45s = SCAN_TIMEOUT_MS in nextjs/src/lib/api/scan.ts (not owned here).
+    # A fast OCR leaves the parse most of the 40s; only a slow OCR squeezes it.
+    scan_request_budget_seconds: float = 40.0
+
     # Anthropic / SAP proxy (dev only — leave use_anthropic_proxy=false in prod/CI)
     anthropic_base_url: str = "http://localhost:6655/anthropic"
     anthropic_api_key: str = ""

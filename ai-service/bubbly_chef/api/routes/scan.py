@@ -10,6 +10,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from bubbly_chef.api.auth import get_current_user_id
+from bubbly_chef.config import settings
+from bubbly_chef.services.scan_budget import RequestBudget
 from bubbly_chef.services.scan_errors import classify_scan_error
 
 logger = logging.getLogger(__name__)
@@ -51,6 +53,12 @@ async def scan_receipt(
         f"preprocess={preprocess}, mode={preprocess_mode}"
     )
 
+    # One wall-clock budget for the whole request (issue #481). Started
+    # before preprocessing so every server-side step draws it down; the
+    # vision leg is bounded per attempt by #476 and the parse leg gets
+    # whatever is left, so the sum stays under the client's fixed abort.
+    budget = RequestBudget(settings.scan_request_budget_seconds)
+
     try:
         # Optional preprocessing
         if preprocess:
@@ -85,8 +93,17 @@ async def scan_receipt(
             dispatcher,
         )
 
+        parse_timeout = budget.remaining()
+        logger.info(
+            f"Receipt scan: user={user_id}, OCR took {budget.elapsed():.1f}s, "
+            f"parse budget {parse_timeout:.1f}s of {budget.total_seconds:.0f}s"
+        )
         result = await dispatcher.dispatch(
-            IngestPayload(modality=IngestModality.RECEIPT, ocr_text=ocr_text)
+            IngestPayload(
+                modality=IngestModality.RECEIPT,
+                ocr_text=ocr_text,
+                parse_timeout_seconds=parse_timeout,
+            )
         )
 
         # Extract items from the proposal envelope (Pydantic model)
