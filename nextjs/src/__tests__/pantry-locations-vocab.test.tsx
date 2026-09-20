@@ -9,11 +9,13 @@
  * because the server's expiry heuristic scales by it — but no surface shows,
  * offers or edits a location any more.
  *
- * The `it(...)` names below are kept verbatim from the #478 version: the
- * test-count guard (`scripts/agent-gates/test-count-guard.sh`) reads a
- * changed `it(` line as a deleted test. Each body now asserts the #397
- * contract, i.e. the inverse of what the name was written for; the comment
- * above each one says what it actually checks.
+ * Four `it(...)` names here were rewritten to say what each test now asserts.
+ * That trips `scripts/agent-gates/test-count-guard.sh`, which matches test
+ * names textually and reads a rename as a deletion — so this PR carries the
+ * `test-removal-approved` label. Keeping the old names would have left a test
+ * called "renders one toggle per shared location" asserting that no toggle
+ * exists: a passing test that lies to the next person who greps for the
+ * behaviour, which is worse than tripping the guard.
  */
 import fs from 'fs'
 import path from 'path'
@@ -66,7 +68,7 @@ describe('no kitchen-location surface anywhere (#397)', () => {
   // values the AI service derived, unchanged and in order, and falls back to
   // the column's own default when the parse has none. The UI never remaps
   // these strings — the column is untouched by #397.
-  it('keeps the four stored values, in order, and derives the bare list from them', () => {
+  it('scan path still forwards the AI-derived location unchanged, defaulting to pantry', () => {
     const forwarded = STORED_VALUES.map((v) => scannedToBulkAddItem(scanned(v)).storage_location)
     expect(forwarded).toEqual(STORED_VALUES)
     expect(scannedToBulkAddItem(scanned(undefined)).storage_location).toBe('pantry')
@@ -75,10 +77,7 @@ describe('no kitchen-location surface anywhere (#397)', () => {
   // Now checks: the edit modal renders no storage-location control at all,
   // and saving omits `location` from the update so the stored value is
   // preserved rather than rewritten.
-  it('EditItemModal renders one toggle per shared location', () => {
-    // Non-async signature on purpose: the count guard reads a changed
-    // `it(` line as a removed test. Jest awaits the returned promise.
-    return (async () => {
+  it('EditItemModal shows no storage-location control and omits location when saving', async () => {
       mockUpdatePantryItem.mockResolvedValue({} as PantryItem)
       const item: PantryItem = {
         id: 'i1',
@@ -105,13 +104,12 @@ describe('no kitchen-location surface anywhere (#397)', () => {
       expect(updates).not.toHaveProperty('location')
       expect(updates).not.toHaveProperty('storage_location')
       expect(updates).toMatchObject({ name: 'milk', category: 'dairy' })
-      await waitFor(() => expect(onClose).toHaveBeenCalled())
-    })()
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
   })
 
   // Now checks: the manual add row has no storage-location select; its only
   // selects are Unit and Category.
-  it('AddItemRow offers exactly the shared locations in its select', () => {
+  it('AddItemRow shows no storage-location select', () => {
     const row: ManualRow = {
       id: 'r1',
       name: '',
@@ -130,7 +128,7 @@ describe('no kitchen-location surface anywhere (#397)', () => {
   // Now checks: the scan review card has no Location select, only Category,
   // and the card never edits `item.location` (the backend-derived value
   // rides through untouched).
-  it('ScannedItemCard offers exactly the shared locations in its select', () => {
+  it('ScannedItemCard shows no storage-location select', () => {
     const onChange = jest.fn()
     render(
       <ScannedItemCard

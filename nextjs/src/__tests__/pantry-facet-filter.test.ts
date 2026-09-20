@@ -23,7 +23,7 @@ describe('itemMatchesFacets', () => {
   })
 
   describe('OR within a facet', () => {
-    it('matches if location is any of the selected values', () => {
+    it('ignores a stored location — it is no longer a facet (#397)', () => {
       // #397: there is no location facet any more. Whatever the row still
       // stores in `location` is ignored — it neither matches nor excludes —
       // and the selection type has no `locations` key to express one.
@@ -66,7 +66,7 @@ describe('itemMatchesFacets', () => {
   })
 
   describe('AND across facets', () => {
-    it('requires location AND category AND expiry to all match', () => {
+    it('requires category AND expiry to both match', () => {
       // #397: location dropped out of the AND — category AND expiry remain.
       const facets: PantryFacetSelection = {
         categories: ['produce'],
