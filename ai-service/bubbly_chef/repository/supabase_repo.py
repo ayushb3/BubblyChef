@@ -202,6 +202,59 @@ class SupabaseRepository:
         )
         return result.count or 0
 
+    async def get_pantry_rows_missing_expiry(
+        self,
+        user_id: str,
+        *,
+        after_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Page through one user's pantry rows that have no expiry_date (#183).
+
+        Keyset-paginated by id rather than offset/limit: a backfill pass that
+        sets expiry_date makes rows drop out of this filter mid-run, so an
+        offset would silently skip rows behind it. Ordering by id and passing
+        the last-seen id back as `after_id` is stable regardless of how many
+        rows the caller has already written.
+        """
+        query = (
+            self.client.table("pantry_items")
+            .select("id,name,category,location")
+            .eq("user_id", user_id)
+            .is_("expiry_date", "null")
+            .order("id")
+            .limit(limit)
+        )
+        if after_id is not None:
+            query = query.gt("id", after_id)
+        result = query.execute()
+        return _as_rows(result.data)
+
+    async def list_user_ids_missing_pantry_expiry(
+        self,
+        *,
+        after_id: str | None = None,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Page raw (id, user_id) rows with no expiry_date, across all users.
+
+        Used only to discover which users have at least one row a backfill
+        pass would touch, without loading the whole table; the caller dedups
+        user_id. Keyset-paginated by id for the same reason as
+        `get_pantry_rows_missing_expiry`.
+        """
+        query = (
+            self.client.table("pantry_items")
+            .select("id,user_id")
+            .is_("expiry_date", "null")
+            .order("id")
+            .limit(limit)
+        )
+        if after_id is not None:
+            query = query.gt("id", after_id)
+        result = query.execute()
+        return _as_rows(result.data)
+
     # =========================================================================
     # apply_pantry_proposal (complex write logic)
     # =========================================================================
