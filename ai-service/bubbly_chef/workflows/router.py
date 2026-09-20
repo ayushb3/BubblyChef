@@ -27,6 +27,7 @@ from langgraph.graph.state import CompiledStateGraph
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.config import settings
+from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.models.base import (
     Intent,
     NextAction,
@@ -1912,12 +1913,16 @@ async def run_chat_workflow_streaming(
     pantry_context = ""
     try:
         repo = await get_repository()
-        items = await repo.get_all_pantry_items(classified_state.get("user_id", ""))
+        # Expired / zero-quantity rows are not stock (#443); see
+        # chat/nodes.py::_fetch_pantry_context, which this block mirrors.
+        items = filter_usable_pantry_items(
+            await repo.get_all_pantry_items(classified_state.get("user_id", ""))
+        )
         if items:
             if intent == Intent.COOKING_HELP.value:
                 expiring = [
                     it for it in items
-                    if it.expiry_date and (it.expiry_date - date.today()).days <= 3
+                    if it.expiry_date and 0 <= (it.expiry_date - date.today()).days <= 3
                 ]
                 pantry_lines = [f"- {it.name} ({it.quantity} {it.unit})" for it in items]
                 pantry_context = (

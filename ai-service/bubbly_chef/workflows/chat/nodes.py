@@ -13,6 +13,7 @@ from typing import Any
 import bubbly_chef.tools.cooking  # noqa: F401 — registers check_pantry on import
 from bubbly_chef.ai.manager import AIManager, NoProviderAvailableError
 from bubbly_chef.api.deps import get_ai_manager
+from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
 from bubbly_chef.models.proposals import RecipeAmendmentDetection
 from bubbly_chef.repository.supabase_repo import get_repository
@@ -255,7 +256,9 @@ async def general_chat_response(state: WorkflowState) -> WorkflowState:
     pantry_context = ""
     try:
         repo = await get_repository()
-        items = await repo.get_all_pantry_items(state.get("user_id", ""))
+        items = filter_usable_pantry_items(
+            await repo.get_all_pantry_items(state.get("user_id", ""))
+        )
         if items:
             names = [it.name for it in items[:20]]
             pantry_context = (
@@ -382,12 +385,17 @@ async def _fetch_pantry_context(state: WorkflowState) -> str:
     """
     try:
         repo = await get_repository()
-        items = await repo.get_all_pantry_items(state.get("user_id") or "")
+        # Expired / zero-quantity rows are not stock (#443). Dropping them
+        # first also keeps the "EXPIRING SOON" line honest: the unbounded
+        # `days <= 3` below used to sweep up food already past its date.
+        items = filter_usable_pantry_items(
+            await repo.get_all_pantry_items(state.get("user_id") or "")
+        )
         if not items:
             return ""
         expiring = [
             it for it in items
-            if it.expiry_date and (it.expiry_date - date.today()).days <= 3
+            if it.expiry_date and 0 <= (it.expiry_date - date.today()).days <= 3
         ]
         pantry_lines = [f"- {it.name} ({it.quantity} {it.unit})" for it in items]
         context = (

@@ -9,6 +9,7 @@ from bubbly_chef.ai import AIManager
 from bubbly_chef.ai.provider import StructuredOutputError
 from bubbly_chef.domain.normalizer import normalize_food_name
 from bubbly_chef.domain.staples import is_staple
+from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.models.recipe import Ingredient, RecipeCard
 
@@ -404,6 +405,13 @@ async def generate_recipe(
     Raises:
         StructuredOutputError: If AI fails after all retries
     """
+    # Expired and zero-quantity rows are not stock. This is the engine behind
+    # /v1/recipes/refine and the chat refine node, where a refinement offered
+    # "fresh spinach from your pantry" from a row that was two days past its
+    # date at quantity 0 (#443). Filtering here, not in each caller, also keeps
+    # match_ingredient_to_pantry from reporting such a row as "have"/"partial".
+    pantry_items = filter_usable_pantry_items(pantry_items)
+
     # Format pantry context
     pantry_formatted = format_pantry_for_prompt(pantry_items)
     expiring_formatted = format_expiring_items(pantry_items)
