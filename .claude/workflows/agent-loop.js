@@ -3,7 +3,7 @@ export const meta = {
   description: 'Take one ready-for-agent issue to a reviewed PR opened as bubblychef-bot: plan, decide, reproduce, implement, verify, review, ship, respond to the GitHub review',
   whenToUse: 'One issue per run. args: {issue: <number>}. Optional: shadow (default true), dryRun (stop after Decide). See docs/plans/2026-09-17-autonomous-agent-loop.md.',
   phases: [
-    { title: 'Preflight', detail: 'kill switch, daily cap, issue readiness, classify' },
+    { title: 'Preflight', detail: 'environment + bot identity, kill switch, daily cap, issue readiness, classify' },
     { title: 'Setup', detail: "fresh branch from main in the session's own checkout" },
     { title: 'Plan', detail: 'dev role reads issue, lessons and code; lists open questions' },
     { title: 'Decide', detail: 'Opus decides each open question, or escalates to Ayush' },
@@ -59,9 +59,12 @@ const RUNNER = 'loop-runner'
 const AS_BOT = `
 ACTING AS THE BOT — follow exactly; never use Ayush's identity for writes.
 - GitHub CLI writes (PRs, comments, labels): prefix with
-    GH_CONFIG_DIR="$HOME/.config/gh-bubblychef-bot" gh ...
+    GH_TOKEN= GITHUB_TOKEN= GH_CONFIG_DIR="$HOME/.config/gh-bubblychef-bot" gh ...
+  The two empty assignments are load-bearing: gh reads GH_TOKEN/GITHUB_TOKEN from the
+  environment ahead of anything in GH_CONFIG_DIR, so an ambient token silently wins and
+  the write lands as its owner instead of the bot. Clear them on every bot command.
 - Commits: git -c user.name="bubblychef-bot" -c user.email="330798838+bubblychef-bot@users.noreply.github.com" commit ...
-- Pushes: git -c credential.helper= -c 'credential.helper=!f() { GH_CONFIG_DIR="$HOME/.config/gh-bubblychef-bot" gh auth git-credential "$@"; }; f' push ...
+- Pushes: git -c credential.helper= -c 'credential.helper=!f() { GH_TOKEN= GITHUB_TOKEN= GH_CONFIG_DIR="$HOME/.config/gh-bubblychef-bot" gh auth git-credential "$@"; }; f' push ...
 - NEVER run \`gh auth setup-git\`, never change global git config, never merge a PR,
   never run \`gh pr merge\` in any form.`
 
@@ -74,6 +77,26 @@ Read docs/agents/lessons.md in that checkout before you start; it lists mistakes
 agents have already made in this repo.`
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
+// The loop's central safety property is that every write lands as bubblychef-bot.
+// GitHub skips code-owner review when the PR author is the only code owner, so a run
+// that quietly falls back to Ayush's identity bypasses the protected-path gate while
+// looking like a clean run. That is worse than not running at all, so the identity is
+// PROBED before anything else and the run stops unless it resolves to the bot.
+//
+// This is deliberately separate from the Preflight facts: it answers "can this
+// environment run the loop at all", which is a different question from "should this
+// issue be picked up", and it has to be answered first. Claude Code cloud sessions
+// answer it "no" — see issue #474.
+const CAPABILITY = {
+  type: 'object',
+  properties: {
+    ghPresent: { type: 'boolean', description: 'true only if `gh --version` exits 0' },
+    botLogin: { type: 'string', description: 'the login the bot config dir actually resolves to, or "" if it could not be determined' },
+    probe: { type: 'string', description: 'raw trimmed output or error of the identity probe, for the log' },
+  },
+  required: ['ghPresent', 'botLogin', 'probe'],
+}
+
 // Preflight returns RAW FACTS only. The script decides whether to proceed (see
 // "Preflight" below): the kill switch and the cap must bind in code, not rest on an
 // agent's judgement of its own limits. (Found by the independent review on PR #461.)
@@ -306,6 +329,49 @@ Return the draft PR URL, or "none".`,
 
 // ── Preflight ────────────────────────────────────────────────────────────────
 phase('Preflight')
+
+// Step 0: can this environment run the loop as the bot? Nothing else is asked until
+// this is settled. Previously the first `gh` call was the kill-switch read, so an
+// environment with no `gh` reported its error string as the kill switch's value and
+// the run logged `AGENTS_ENABLED is "ERROR: gh CLI not found..."` — which reads as
+// "Ayush turned the loop off" and sent the last session diagnosing the wrong thing.
+const BOT_LOGIN = 'bubblychef-bot'
+const cap = await agent(
+  `Report two facts about this environment. Read-only: change nothing, create nothing,
+authenticate nothing, and do not try to fix or install anything you find missing.
+Report what is true right now, even if the answer is "no" — a false "yes" here lets
+writes land under the wrong GitHub account.
+
+1. ghPresent: run  gh --version  and report whether it exited 0.
+2. botLogin: if and only if ghPresent, run exactly
+
+     GH_TOKEN= GITHUB_TOKEN= GH_CONFIG_DIR="$HOME/.config/gh-bubblychef-bot" gh api user --jq .login
+
+   and report the trimmed login it prints. If the command fails, or ghPresent is false,
+   report botLogin as the empty string. Never substitute the login from a different
+   config dir or from \`gh auth status\`, and never report a login the command did not
+   actually print.
+3. probe: the raw trimmed output (or error text) of that command, for the log.`,
+  { agentType: RUNNER, label: 'capability', phase: 'Preflight', schema: CAPABILITY, model: 'sonnet', effort: 'low' },
+)
+if (!cap) throw new Error('capability agent died')
+
+const envStop =
+  !cap.ghPresent
+    ? 'environment: the gh CLI is not installed, and the loop shells out to it throughout. ' +
+      'See issue #474.'
+  : cap.botLogin !== BOT_LOGIN
+    ? `environment: writes would be attributed to ${cap.botLogin ? `"${cap.botLogin}"` : 'an unresolved identity'}, ` +
+      `not ${BOT_LOGIN}. GitHub skips code-owner review when the PR author is the only code owner, ` +
+      `so this run would open PRs that silently bypass the protected-path gate. Probe said: ${cap.probe}. ` +
+      'See issue #474.'
+  : ''
+if (envStop) {
+  log(`Not starting: ${envStop}`)
+  return { status: 'skipped', issue: ISSUE, reason: envStop }
+}
+log(`Environment OK: writes resolve to ${cap.botLogin}`)
+
 const pre = await agent(
   `Gather facts for the agent loop on ${REPO} issue #${ISSUE}. Read-only: change nothing,
 and do not judge whether the run should proceed: report the raw values exactly.
