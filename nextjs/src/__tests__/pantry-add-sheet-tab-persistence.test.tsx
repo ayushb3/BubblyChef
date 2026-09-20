@@ -86,7 +86,7 @@ it('typed input and the footer count both survive a switch away to Scan and back
   )
 
   switchTab(/Scan/)
-  switchTab(/Type/)
+  switchTab(/Manual/)
 
   // The exact repro: text must still be there, not just the count.
   expect(screen.getByDisplayValue('Milk')).toBeInTheDocument()
@@ -101,7 +101,7 @@ it('a completed scan review survives switching to Type and back', async () => {
   selectFile()
   await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
 
-  switchTab(/Type/)
+  switchTab(/Manual/)
   switchTab(/Scan/)
 
   // Still on the results screen, not reset to the upload dropzone.
@@ -123,7 +123,7 @@ it('locks the Type tab while a scan is processing, then unlocks on success', asy
   selectFile()
   await waitFor(() => expect(screen.getByText(/Scanning receipt…/)).toBeInTheDocument())
 
-  const typeButton = screen.getByRole('button', { name: /Type/ })
+  const typeButton = screen.getByRole('button', { name: /Manual/ })
   expect(typeButton).toHaveAttribute('aria-disabled', 'true')
 
   fireEvent.click(typeButton)
@@ -133,12 +133,12 @@ it('locks the Type tab while a scan is processing, then unlocks on success', asy
   resolveUpload(SCAN_RESULT)
   await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
 
-  expect(screen.getByRole('button', { name: /^✍️ Type$/ })).toHaveAttribute(
+  expect(screen.getByRole('button', { name: /^Manual$/ })).toHaveAttribute(
     'aria-disabled',
     'false',
   )
 
-  switchTab(/^✍️ Type$/)
+  switchTab(/^Manual$/)
   expect(screen.getByPlaceholderText('Item name (e.g. Milk, Eggs...)')).toBeInTheDocument()
 })
 
@@ -156,13 +156,13 @@ it('unlocks the Type tab after a scan failure/timeout, not just success', async 
   // once the scan has failed, the tab is unlocked again — every path out of
   // `processing` (including failure/timeout) must release it.
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: /^✍️ Type$/ })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /^Manual$/ })).toHaveAttribute(
       'aria-disabled',
       'false',
     ),
   )
 
-  switchTab(/^✍️ Type$/)
+  switchTab(/^Manual$/)
   expect(screen.getByPlaceholderText('Item name (e.g. Milk, Eggs...)')).toBeInTheDocument()
 })
 
@@ -190,7 +190,7 @@ it('the footer count never disagrees with the actual confirm payload after a tab
   )
 
   switchTab(/Scan/)
-  switchTab(/Type/)
+  switchTab(/Manual/)
 
   const confirmButton = screen.getByRole('button', { name: /Add 1 Item/i })
   fireEvent.click(confirmButton)
