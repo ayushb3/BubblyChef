@@ -1,6 +1,6 @@
 /**
  * Issue #398 — manual "Type" pantry-add row: selecting a catalog suggestion
- * auto-fills unit/category/location/expiry, and the auto-filled expiry must
+ * auto-fills unit/category/expiry, and the auto-filled expiry must
  * carry an explicit `estimated_expiry: true` in the eventual bulk-add
  * payload so the server flags it (mirrors #363's precedence). A date the
  * user types themselves — or edits after an autofill — must come out
@@ -75,7 +75,9 @@ describe('TypeTab catalog autofill -> bulk add payload (#398)', () => {
     expect(screen.getByDisplayValue('milk')).toBeInTheDocument()
     expect(screen.getByLabelText('Unit')).toHaveValue('gallon')
     expect(screen.getByLabelText('Category')).toHaveValue('dairy')
-    expect(screen.getByLabelText('Storage location')).toHaveValue('fridge')
+    // No kitchen-location control any more (#397); the catalog's
+    // `default_location` is simply not used.
+    expect(screen.queryByLabelText('Storage location')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Expiry date')).not.toHaveValue('')
     expect(screen.getByText('(est.)')).toBeInTheDocument()
 
@@ -88,9 +90,10 @@ describe('TypeTab catalog autofill -> bulk add payload (#398)', () => {
       name: 'milk',
       unit: 'gallon',
       category: 'dairy',
-      storage_location: 'fridge',
       estimated_expiry: true,
     })
+    // Manual adds no longer send a location; the server default applies (#397).
+    expect(payload[0]).not.toHaveProperty('storage_location')
     expect(payload[0].expiry_date).toEqual(expect.any(String))
   })
 

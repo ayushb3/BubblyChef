@@ -4,8 +4,9 @@
  * The edit modal used to call `fetch` directly for its PUT and DELETE, the
  * only single-item write paths in the app. They now live in the per-domain
  * client like every other call. These pin the request shape the route
- * expects (method, path, JSON body, `location` not `storage_location`) and
- * the error contract the modal shows verbatim.
+ * expects (method, path, JSON body) and the error contract the modal shows
+ * verbatim. Kitchen location is not part of the update input any more
+ * (issue #397); the row the server returns still carries the column.
  */
 import { updatePantryItem, deletePantryItem } from '@/lib/api/pantry'
 
@@ -38,7 +39,6 @@ describe('updatePantryItem (#478)', () => {
       quantity: 2,
       unit: 'quart',
       category: 'dairy',
-      location: 'fridge',
       expiry_date: '2026-10-01',
     })
 
@@ -52,7 +52,6 @@ describe('updatePantryItem (#478)', () => {
       quantity: 2,
       unit: 'quart',
       category: 'dairy',
-      location: 'fridge',
       expiry_date: '2026-10-01',
     })
     expect(result).toEqual(updated)

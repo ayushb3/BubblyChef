@@ -9,6 +9,11 @@ export interface PantryItemRow {
   name: string
   name_normalized: string
   category: string
+  /**
+   * Kitchen location (`fridge` / `freezer` / `pantry` / `counter`). Still a
+   * column and still returned, but no longer surfaced or editable anywhere in
+   * the UI (issue #397) — it fed the on-hold kitchen scene (PR #124).
+   */
   location: string
   quantity: number
   unit: string
@@ -99,8 +104,6 @@ export type ExpiryFacetOption = 'expiring' | 'expired'
 
 export interface PantryFacetSelection {
   /** Empty array = this facet does not constrain results. */
-  locations: string[]
-  /** Empty array = this facet does not constrain results. */
   categories: string[]
   /** Empty array = this facet does not constrain results. */
   expiryStatuses: ExpiryFacetOption[]
@@ -112,15 +115,16 @@ export interface PantryFacetSelection {
  * Semantics: OR within a facet, AND across facets. An empty selection in a
  * facet means that facet imposes no constraint at all (not "match nothing").
  * Expiry reuses `isExpiringSoon`/`isExpired` above — no new thresholds.
+ *
+ * Two facets: category and expiry. The location facet went with the
+ * kitchen-location field (issue #397); an item's stored `location` is never
+ * consulted here.
  */
 export function itemMatchesFacets(
-  item: { location: string; category: string },
+  item: { category: string },
   days: number | null,
   facets: PantryFacetSelection
 ): boolean {
-  if (facets.locations.length > 0 && !facets.locations.includes(item.location)) {
-    return false
-  }
   if (facets.categories.length > 0 && !facets.categories.includes(item.category)) {
     return false
   }

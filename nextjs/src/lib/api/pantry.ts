@@ -13,7 +13,13 @@ export interface BulkAddItem {
   quantity: number
   unit: string
   category: string
-  storage_location: string
+  /**
+   * Kitchen location. Nothing in the UI asks the user for one any more
+   * (issue #397); the scan path still forwards the value the AI service
+   * derived from the category (the server's expiry heuristic scales by it —
+   * freezer ×6), and the manual path omits it so the server default applies.
+   */
+  storage_location?: string
   expiry_date: string | null
   /**
    * Explicit override for whether `expiry_date` is an estimate rather than
@@ -88,15 +94,15 @@ export async function resolvePantryItem(
 /**
  * Fields the edit modal can change on a single pantry item. Every field is
  * optional — `PUT /api/pantry/[id]` only touches the keys that are present.
- * The route accepts either `location` or `storage_location`; this client
- * sends `location`, the DB column name.
+ * Kitchen location is deliberately not among them (issue #397): the edit
+ * modal no longer shows it, and omitting the key leaves the stored value
+ * untouched.
  */
 export interface UpdatePantryItemInput {
   name?: string
   quantity?: number
   unit?: string
   category?: string
-  location?: string
   expiry_date?: string | null
 }
 

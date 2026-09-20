@@ -12,7 +12,8 @@ export interface AddItem {
   quantity: number
   unit: string
   category: string
-  storage_location: string
+  /** Only the scan path sets this (backend-derived); manual adds omit it (#397). */
+  storage_location?: string
   expiry_date: string | null
   source: 'scan' | 'manual'
 }

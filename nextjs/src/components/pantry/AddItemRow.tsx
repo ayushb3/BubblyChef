@@ -2,7 +2,6 @@
 
 import FoodAutocomplete from './FoodAutocomplete'
 import type { FoodCatalogEntry } from '@/lib/api/foods'
-import { LOCATIONS } from '@/lib/pantry-vocab'
 
 export interface ManualRow {
   id: string
@@ -10,7 +9,6 @@ export interface ManualRow {
   quantity: number
   unit: string
   category: string
-  storage_location: string
   expiry_date: string
   /**
    * True when `expiry_date` came from the food catalog's default expiry-days
@@ -67,16 +65,16 @@ export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRo
     ? CATEGORIES
     : [{ value: row.category, label: row.category }, ...CATEGORIES]
 
-  // Selecting a catalog suggestion auto-fills unit, category, location and
-  // expiry (today + the catalog's expiry_days) — the user can still
-  // override any of it afterwards (issue #398).
+  // Selecting a catalog suggestion auto-fills unit, category and expiry
+  // (today + the catalog's expiry_days) — the user can still override any of
+  // it afterwards (issue #398). The catalog's `default_location` is ignored:
+  // the row has no kitchen-location field any more (issue #397).
   const handleCatalogSelect = (entry: FoodCatalogEntry) => {
     onChange({
       ...row,
       name: entry.canonical,
       unit: entry.valid_units[0] || row.unit,
       category: entry.category || row.category,
-      storage_location: entry.default_location || row.storage_location,
       expiry_date: expiryDateFromDays(entry.expiry_days),
       estimated_expiry: true,
     })
@@ -136,29 +134,18 @@ export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRo
         </select>
       </div>
 
-      {/* Category + Location */}
-      <div className="flex gap-2">
-        <select
-          value={row.category}
-          onChange={(e) => set('category', e.target.value)}
-          className="flex-1 rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
-          aria-label="Category"
-        >
-          {categoryOptions.map((c) => (
-            <option key={c.value} value={c.value}>{c.label}</option>
-          ))}
-        </select>
-        <select
-          value={row.storage_location}
-          onChange={(e) => set('storage_location', e.target.value)}
-          className="flex-1 rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
-          aria-label="Storage location"
-        >
-          {LOCATIONS.map((l) => (
-            <option key={l.value} value={l.value}>{l.label}</option>
-          ))}
-        </select>
-      </div>
+      {/* Category (the kitchen-location select that used to sit beside it
+          went with the on-hold kitchen scene — issue #397) */}
+      <select
+        value={row.category}
+        onChange={(e) => set('category', e.target.value)}
+        className={inputClass}
+        aria-label="Category"
+      >
+        {categoryOptions.map((c) => (
+          <option key={c.value} value={c.value}>{c.label}</option>
+        ))}
+      </select>
 
       {/* Optional expiry */}
       <div>
