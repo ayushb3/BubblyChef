@@ -186,6 +186,18 @@ export function getBrainstormIdeas(response?: ChatResponse | null): string[] {
   return raw.filter((item): item is string => typeof item === 'string')
 }
 
+/**
+ * Extract the backend's context-aware follow-up suggestions from a
+ * ChatResponse's metadata (issue #498). Raw model output — callers must pass
+ * it through `resolveChips`, which sanitises and falls back to static chips.
+ * Returns an empty array when absent, null, or malformed.
+ */
+export function getFollowUpSuggestions(response?: ChatResponse | null): string[] {
+  const raw = response?.metadata?.follow_up_suggestions
+  if (!Array.isArray(raw)) return []
+  return raw.filter((item): item is string => typeof item === 'string')
+}
+
 // ─── Pantry clarification helpers ──────────────────────────────────────────────
 
 export interface TermSuggestion {

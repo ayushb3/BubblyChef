@@ -138,6 +138,10 @@ class WorkflowState(TypedDict, total=False):
     # Response Fields
     # ==========================================================================
     assistant_message: str
+    # Context-aware follow-up chips derived from the reply (issue #498).
+    # Empty when the post-pass was skipped or failed; the frontend then
+    # falls back to its static per-intent chip set.
+    follow_up_suggestions: list[str]
     next_action: str  # NextAction enum value
 
     # ==========================================================================

@@ -10,8 +10,17 @@
  *       in the resolver.
  */
 
-import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
-import type { ChatIntent } from '@/types/chat'
+import {
+  resolveChips,
+  resolveStaticChips,
+  sanitiseFollowUps,
+  COOKING_CHIPS,
+  MAX_FOLLOW_UP_CHIPS,
+  MIN_FOLLOW_UP_CHIPS,
+  MAX_FOLLOW_UP_LENGTH,
+} from '@/lib/chat-chips'
+import { getFollowUpSuggestions } from '@/types/chat'
+import type { ChatIntent, ChatResponse } from '@/types/chat'
 
 // Derive VALID_INTENTS from the ChatIntent union via an exhaustive Record.
 // tsc errors if a union member is missing from the object literal, so adding
@@ -132,5 +141,193 @@ describe('resolveChips — no phantom intents in the switch (#304)', () => {
     const chips = resolveChips('general_chat')
     const labels = chips.map((c) => c.label)
     expect(labels).toEqual(DEFAULT_LABELS)
+  })
+})
+
+// ─── Context-aware follow-ups (#498) ──────────────────────────────────────────
+//
+// `resolveChips(intent, suggestions?)` prefers the backend's
+// `metadata.follow_up_suggestions` when at least one survives sanitising,
+// tops the row up to MIN_FOLLOW_UP_CHIPS from the static set, and falls back
+// to the static set entirely otherwise. It never returns an empty array.
+
+const CHICKEN_SUGGESTIONS = [
+  'What internal temperature?',
+  'How long should it rest?',
+  'Can I use a thermometer?',
+]
+
+function envelope(metadata: Record<string, unknown> | null | undefined): ChatResponse {
+  return {
+    request_id: 'r',
+    workflow_id: 'w',
+    conversation_id: null,
+    intent: 'cooking_help',
+    assistant_message: 'Chicken is done at 74°C.',
+    proposal: null,
+    confidence: { overall: 1 },
+    requires_review: false,
+    next_action: 'none',
+    metadata,
+  } as ChatResponse
+}
+
+describe('resolveChips — prefers backend follow-up suggestions (#498)', () => {
+  it('renders the suggestions as chips instead of the static cooking set', () => {
+    const chips = resolveChips('cooking_help', CHICKEN_SUGGESTIONS)
+    expect(chips.map((c) => c.label)).toEqual(CHICKEN_SUGGESTIONS)
+    expect(chips.map((c) => c.message)).toEqual(CHICKEN_SUGGESTIONS)
+    expect(chips.map((c) => c.label)).not.toContain('What can I substitute?')
+  })
+
+  it('gives every contextual chip a tone and an emoji, with no emoji in message', () => {
+    const chips = resolveChips('cooking_help', CHICKEN_SUGGESTIONS)
+    chips.forEach((chip) => {
+      expect(chip.tone).toBeDefined()
+      expect(chip.emoji).toBeDefined()
+      expect(chip.message).not.toMatch(/\p{Emoji_Presentation}/u)
+    })
+  })
+
+  it('applies to every intent, not only cooking_help', () => {
+    ;['general_chat', 'recipe_brainstorm', 'pantry_update', undefined].forEach((intent) => {
+      const chips = resolveChips(intent, ['Follow up one?', 'Follow up two?'])
+      expect(chips.map((c) => c.label)).toEqual(['Follow up one?', 'Follow up two?'])
+    })
+  })
+
+  it('caps the row at MAX_FOLLOW_UP_CHIPS even when the model returns more', () => {
+    const many = ['One?', 'Two?', 'Three?', 'Four?', 'Five?']
+    const chips = resolveChips('cooking_help', many)
+    expect(chips).toHaveLength(MAX_FOLLOW_UP_CHIPS)
+    expect(chips.map((c) => c.label)).toEqual(many.slice(0, MAX_FOLLOW_UP_CHIPS))
+  })
+
+  it('tops a single usable suggestion up to MIN_FOLLOW_UP_CHIPS from the static set', () => {
+    const chips = resolveChips('cooking_help', ['What internal temperature?'])
+    expect(chips).toHaveLength(MIN_FOLLOW_UP_CHIPS)
+    expect(chips[0].label).toBe('What internal temperature?')
+    expect(chips[1]).toBe(COOKING_CHIPS[0])
+  })
+
+  it('does not top up with a static chip that duplicates a suggestion', () => {
+    const chips = resolveChips('cooking_help', ['what can i substitute?'])
+    expect(chips.map((c) => c.label.toLowerCase())).toEqual([
+      'what can i substitute?',
+      'how do i prep this?',
+    ])
+  })
+})
+
+describe('resolveChips — static fallback is the safety net (#498)', () => {
+  it('no suggestions argument → the static set (unchanged behaviour)', () => {
+    expect(resolveChips('cooking_help')).toBe(COOKING_CHIPS)
+  })
+
+  it.each([undefined, null, [], 'not an array', 42, {}])(
+    'suggestions %p → the static set',
+    (bad) => {
+      expect(resolveChips('cooking_help', bad)).toBe(COOKING_CHIPS)
+      expect(resolveChips('general_chat', bad).map((c) => c.label)).toEqual([
+        'Try another',
+        'Tell me more',
+      ])
+    },
+  )
+
+  it('one 200-char suggestion → dropped, static set renders', () => {
+    const chips = resolveChips('cooking_help', ['x'.repeat(200)])
+    expect(chips).toBe(COOKING_CHIPS)
+  })
+
+  it('all-junk suggestions (empty, whitespace, non-strings, links) → static set', () => {
+    const junk = ['', '   ', 7, null, 'see https://example.com', 'www.example.com/x', '**']
+    expect(resolveChips('cooking_help', junk)).toBe(COOKING_CHIPS)
+  })
+
+  it('never returns an empty array for any intent and any suggestions input', () => {
+    const inputs: unknown[] = [undefined, [], [''], ['x'.repeat(61)], [1, 2], ['ok?']]
+    const intents = [...VALID_INTENTS, undefined]
+    intents.forEach((intent) =>
+      inputs.forEach((input) => {
+        expect(resolveChips(intent, input).length).toBeGreaterThan(0)
+      }),
+    )
+  })
+
+  it('resolveStaticChips matches resolveChips with no suggestions for every intent', () => {
+    VALID_INTENTS.forEach((intent) => {
+      expect(resolveChips(intent)).toEqual(resolveStaticChips(intent))
+    })
+  })
+})
+
+describe('sanitiseFollowUps (#498)', () => {
+  it('strips markdown, links and emoji, and collapses whitespace', () => {
+    expect(
+      sanitiseFollowUps([
+        '**What  internal temperature?**',
+        '- How long should it rest? 🍗',
+        '1. `Can` I _use_ a [thermometer](x)?',
+      ]),
+    ).toEqual(['What internal temperature?', 'How long should it rest?', 'Can I use a thermometer?'])
+  })
+
+  it('drops empties, over-length strings, URLs and non-strings', () => {
+    expect(
+      sanitiseFollowUps(['', ' ', 'y'.repeat(MAX_FOLLOW_UP_LENGTH + 1), 'http://a.b', 3, 'ok?']),
+    ).toEqual(['ok?'])
+  })
+
+  it('keeps a string exactly at the length cap', () => {
+    const atCap = 'z'.repeat(MAX_FOLLOW_UP_LENGTH)
+    expect(sanitiseFollowUps([atCap])).toEqual([atCap])
+  })
+
+  it('dedupes case-insensitively, keeping the first spelling', () => {
+    expect(sanitiseFollowUps(['How long?', 'how long?', 'HOW LONG?', 'Rest?'])).toEqual([
+      'How long?',
+      'Rest?',
+    ])
+  })
+
+  it('caps at MAX_FOLLOW_UP_CHIPS', () => {
+    expect(sanitiseFollowUps(['a?', 'b?', 'c?', 'd?'])).toHaveLength(MAX_FOLLOW_UP_CHIPS)
+  })
+
+  it('returns [] for non-array input without throwing', () => {
+    expect(sanitiseFollowUps(undefined)).toEqual([])
+    expect(sanitiseFollowUps('a?')).toEqual([])
+    expect(sanitiseFollowUps({ 0: 'a?' })).toEqual([])
+  })
+})
+
+describe('getFollowUpSuggestions (#498)', () => {
+  it('reads metadata.follow_up_suggestions and keeps only strings', () => {
+    expect(getFollowUpSuggestions(envelope({ follow_up_suggestions: ['a?', 1, 'b?'] }))).toEqual([
+      'a?',
+      'b?',
+    ])
+  })
+
+  it('returns [] when metadata is absent, null, or the field is not an array', () => {
+    expect(getFollowUpSuggestions(envelope(undefined))).toEqual([])
+    expect(getFollowUpSuggestions(envelope(null))).toEqual([])
+    expect(getFollowUpSuggestions(envelope({ follow_up_suggestions: 'nope' }))).toEqual([])
+    expect(getFollowUpSuggestions(envelope({ brainstorm_ideas: ['x'] }))).toEqual([])
+    expect(getFollowUpSuggestions(undefined)).toEqual([])
+  })
+
+  it('end to end: envelope with no suggestions → static chips still render', () => {
+    const chips = resolveChips('cooking_help', getFollowUpSuggestions(envelope({})))
+    expect(chips).toBe(COOKING_CHIPS)
+  })
+
+  it('end to end: envelope with suggestions → contextual chips render', () => {
+    const chips = resolveChips(
+      'cooking_help',
+      getFollowUpSuggestions(envelope({ follow_up_suggestions: CHICKEN_SUGGESTIONS })),
+    )
+    expect(chips.map((c) => c.label)).toEqual(CHICKEN_SUGGESTIONS)
   })
 })

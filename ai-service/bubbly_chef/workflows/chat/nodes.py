@@ -6,6 +6,7 @@ Contains the node functions (and their helpers/prompts) for:
 - cooking_help_response: pantry-aware cooking suggestions (ReAct loop)
 """
 
+import asyncio
 import logging
 from datetime import date
 from typing import Any
@@ -14,7 +15,7 @@ import bubbly_chef.tools.cooking  # noqa: F401 — registers check_pantry on imp
 from bubbly_chef.ai.manager import AIManager, NoProviderAvailableError
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
-from bubbly_chef.models.proposals import RecipeAmendmentDetection
+from bubbly_chef.models.proposals import FollowUpSuggestions, RecipeAmendmentDetection
 from bubbly_chef.prompts.chat import (
     _AMENDMENT_DETECTION_PROMPT,
     _COOKING_REACT_SYSTEM_PROMPT,
@@ -38,6 +39,74 @@ MAX_ITERATIONS = 5
 
 # Names of tools available in the cooking_help ReAct loop (v1: check_pantry only).
 _COOKING_TOOL_NAMES = ["check_pantry"]
+
+# ─── Context-aware follow-up chips (issue #498) ───────────────────────────────
+
+# Hard cap on suggestions carried in the envelope.  The frontend re-applies
+# its own cap and sanitising; this one just keeps the payload bounded.
+MAX_FOLLOW_UP_SUGGESTIONS = 3
+
+# Inline (not in prompts/) — a structured post-pass over a reply that has
+# already been produced, the same shape as the amendment-detection pass.
+_FOLLOW_UP_PROMPT = """\
+You are a structured-output assistant. A cooking assistant has just answered a
+user's message. Suggest the follow-up questions the user is most likely to ask
+NEXT, based on what the answer actually said.
+
+User message: {user_message}
+
+Assistant reply (already sent): {reply_text}
+
+Rules:
+- Return 2 or 3 suggestions, each phrased in the user's voice as a short
+  question or request of at most 8 words (e.g. "What internal temperature?",
+  "How long should it rest?", "Can I use the air fryer?").
+- Each must follow directly from the content of the reply. Do not ask about
+  something the reply already fully covered, and do not suggest generic
+  questions the reply gives no reason to ask.
+- Plain text only: no markdown, no numbering, no emoji, no links.
+
+Return ONLY the JSON fields defined in the schema — no extra text."""
+
+
+async def suggest_follow_ups(
+    ai_manager: AIManager,
+    user_message: str,
+    reply_text: str,
+) -> list[str]:
+    """Derive follow-up chip suggestions from a finished reply (issue #498).
+
+    Best effort: any failure, unexpected result type or empty output returns
+    ``[]`` so the caller degrades to the frontend's static per-intent chips.
+    Never raises.  Uses structured output (``FollowUpSuggestions``) — no raw
+    string parsing.
+    """
+    if not reply_text.strip():
+        return []
+    prompt = _FOLLOW_UP_PROMPT.format(user_message=user_message, reply_text=reply_text)
+    try:
+        result = await ai_manager.complete(
+            prompt=prompt,
+            response_schema=FollowUpSuggestions,
+            temperature=0.3,
+        )
+        if isinstance(result, dict):
+            result = FollowUpSuggestions(**result)
+        if not isinstance(result, FollowUpSuggestions):
+            logger.warning("suggest_follow_ups: unexpected result type %s", type(result))
+            return []
+    except Exception as exc:  # best-effort: chips must never break the reply
+        logger.warning("suggest_follow_ups failed (degrading to static chips): %s", exc)
+        return []
+
+    cleaned: list[str] = []
+    for raw in result.follow_up_suggestions:
+        text = " ".join(str(raw).split())
+        if text and text.lower() not in (c.lower() for c in cleaned):
+            cleaned.append(text)
+        if len(cleaned) >= MAX_FOLLOW_UP_SUGGESTIONS:
+            break
+    return cleaned
 
 
 def get_mode_prefix(state: WorkflowState) -> str:
@@ -247,6 +316,7 @@ async def general_chat_response(state: WorkflowState) -> WorkflowState:
         )
 
         suggested_mode = detect_mode_suggestion(response_text, state.get("input_mode", "chat"))
+        follow_ups = await suggest_follow_ups(ai_manager, input_text, response_text)
 
         return {
             **state,
@@ -258,6 +328,7 @@ async def general_chat_response(state: WorkflowState) -> WorkflowState:
             "confidence": 1.0,
             "workflow_status": WorkflowStatus.COMPLETED.value,
             "suggested_mode": suggested_mode,
+            "follow_up_suggestions": follow_ups,
         }
 
     except NoProviderAvailableError:
@@ -422,7 +493,9 @@ async def _cooking_help_single_shot(
     """Original single-shot cooking help path (pre-R3 behavior).
 
     Used as the graceful fallback when no tool-calling-capable provider is
-    available.
+    available.  Deliberately runs no follow-up-chip post-pass (issue #498):
+    this is the degraded single-call path, so the frontend shows its static
+    chips here.
     """
     pantry_context = await _fetch_pantry_context(state)
     prompt = _build_cooking_prompt(state, _COOKING_SYSTEM_PROMPT, pantry_context)
@@ -646,7 +719,13 @@ async def _cooking_help_react(
 
         suggested_mode = detect_mode_suggestion(last_text, state.get("input_mode", "chat"))
 
-        amendment = await _detect_amendment(state, ai_manager, last_text)
+        # Both post-passes read the finished reply; run them concurrently so
+        # the follow-up chips add no wall-clock latency when a recipe is pinned
+        # (issue #498).
+        amendment, follow_ups = await asyncio.gather(
+            _detect_amendment(state, ai_manager, last_text),
+            suggest_follow_ups(ai_manager, state.get("input_text", ""), last_text),
+        )
         if (
             amendment is not None
             and amendment.is_amendment
@@ -663,6 +742,7 @@ async def _cooking_help_react(
                 "confidence": 1.0,
                 "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
                 "suggested_mode": suggested_mode,
+                "follow_up_suggestions": follow_ups,
             }
 
         return {
@@ -675,6 +755,7 @@ async def _cooking_help_react(
             "confidence": 1.0,
             "workflow_status": WorkflowStatus.COMPLETED.value,
             "suggested_mode": suggested_mode,
+            "follow_up_suggestions": follow_ups,
         }
 
     except NoProviderAvailableError:

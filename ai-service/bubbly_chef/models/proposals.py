@@ -203,6 +203,25 @@ class GeneralChatResponse(BaseModel):
     )
 
 
+class FollowUpSuggestions(BaseModel):
+    """Structured output for the follow-up-chip pass (issue #498).
+
+    Produced after a chat / cooking-help prose reply is complete, from the
+    reply itself, so the chips under the message reflect what was actually
+    said rather than a fixed per-intent set.  Carries the same field as
+    ``GeneralChatResponse.follow_up_suggestions``; the reply is not
+    regenerated, so ``response_text`` is deliberately absent.
+    """
+
+    follow_up_suggestions: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Two or three short follow-up questions, in the user's voice, that "
+            "follow directly from the content of the reply. Plain text only."
+        ),
+    )
+
+
 class RecipeIngredientAmendment(BaseModel):
     """A single ingredient in a user-amended recipe ingredient list."""
 

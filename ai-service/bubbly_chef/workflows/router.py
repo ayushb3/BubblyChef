@@ -61,6 +61,7 @@ from bubbly_chef.workflows.chat.nodes import (
     general_chat_response,
     get_mode_prefix,
     normalize_cooking_recipe,
+    suggest_follow_ups,
 )
 from bubbly_chef.workflows.pantry.nodes import (
     apply_expiry_heuristics,
@@ -1121,6 +1122,9 @@ async def run_chat_workflow(
         envelope.suggested_mode = final_state.get("suggested_mode")
         envelope.suggested_action = final_state.get("suggested_action")
         envelope.metadata["brainstorm_ideas"] = final_state.get("brainstorm_ideas", [])
+        envelope.metadata["follow_up_suggestions"] = final_state.get(
+            "follow_up_suggestions", []
+        )
         return envelope
 
 
@@ -1250,6 +1254,9 @@ def _build_envelope_from_state(
         Intent.RECIPE_BRAINSTORM.value,
     ):
         envelope.metadata["brainstorm_ideas"] = final_state.get("brainstorm_ideas", [])
+        envelope.metadata["follow_up_suggestions"] = final_state.get(
+            "follow_up_suggestions", []
+        )
     return envelope
 
 
@@ -1448,6 +1455,15 @@ async def run_chat_workflow_streaming(
     envelope.suggested_mode = suggested_mode
 
     yield _json.dumps({"type": "done"})
+
+    # Context-aware follow-up chips (issue #498).  Runs after the reply has
+    # fully streamed and `done` has been sent, so the visible reply is not
+    # delayed; the chip row appears with the envelope.  Best effort — an
+    # empty list makes the frontend fall back to its static chips.
+    envelope.metadata["follow_up_suggestions"] = await suggest_follow_ups(
+        ai_manager, message, collected_text
+    )
+
     yield _json.dumps({"type": "envelope", "data": envelope.model_dump(mode="json")})
 
 

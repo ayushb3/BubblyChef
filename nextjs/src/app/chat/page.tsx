@@ -31,7 +31,12 @@ import type {
   PantryProposalData,
   PantryProposalAction,
 } from '@/types/chat'
-import { getBrainstormIdeas, getClarificationSuggestions, buildClarificationText } from '@/types/chat'
+import {
+  getBrainstormIdeas,
+  getClarificationSuggestions,
+  getFollowUpSuggestions,
+  buildClarificationText,
+} from '@/types/chat'
 import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
 
 // ---------------------------------------------------------------------------
@@ -866,7 +871,10 @@ function MessageRenderer({
       {/* Follow-up affordances — only under the last settled assistant reply.
           Recipe-card and pantry-proposal messages carry their own actions. */}
       {isLastSettledAssistant && (
-        <PostMessageChips chips={resolveChips(intent)} onChipTap={onChipTap} />
+        <PostMessageChips
+          chips={resolveChips(intent, getFollowUpSuggestions(message.response))}
+          onChipTap={onChipTap}
+        />
       )}
     </motion.div>
   )
