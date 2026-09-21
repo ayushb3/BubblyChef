@@ -220,9 +220,11 @@ pass things eslint rejects. ai-service needs the venv binaries: `.venv/bin/pytes
 4. **What PR #436 actually closes.** Its body carries only `Fixes #416` / `Fixes #442`,
    but Spec 0 lists #266 and #408 as folded in — they will stay open after merge, which
    is the exact failure CLAUDE.md warns about (PR #251 left six issues open).
-5. **Production Supabase: is anonymous sign-in enabled?** #332 was closed because guest
-   mode exists in code (`middleware.ts:59` calls `signInAnonymously()`), but that toggle
-   is a dashboard fact no session can see. If it's off, the login wall is still up.
+5. **Production Supabase: is anonymous sign-in enabled?** #332 is **open**, relabelled
+   `ready-for-human` on 2026-09-20 — it was *never closed*, despite what an earlier draft
+   of this doc said. Guest mode exists in code (`middleware.ts:59` calls
+   `signInAnonymously()`), but that toggle is a dashboard fact no session can see. If it's
+   off, the login wall is still up. Verify the dashboard before closing it either way.
 6. **#337 is `module:auth`, a CODEOWNERS path.** An agent PR there would touch auth *and*
    bypass the one gate meant to catch mistakes. Left alone deliberately; unblocks when
    #474 is resolved.
@@ -231,7 +233,8 @@ pass things eslint rejects. ai-service needs the venv binaries: `.venv/bin/pytes
 product owner, each posted with an explicit banner saying it is **not** Ayush's decision
 and is reversible: on **#489** (an applied amendment lives in the session snapshot; draft
 rows may be PATCHed, library rows never), **#444** (two tickets, #358 closed as duplicate,
-#311 stays), **#332** (guest mode already shipped — closed), **#410** (the
+#311 stays), **#332** (guest mode judged already shipped — but the issue was only
+relabelled `ready-for-human`, **not** closed), **#410** (the
 `WorkflowState.session: dict[str, Any]` residual is a follow-up, not accepted),
 **#408** (PR #436 closes #266; #408 is only half-fixed). **Treat all five as unratified.**
 

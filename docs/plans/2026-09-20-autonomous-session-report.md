@@ -192,8 +192,12 @@ migration for all five of #395's columns so CODEOWNERS reviews once.
   user-safe surface.
 
 **Closed:** #358 (duplicate of #444, after carrying its reproduction and
-acceptance criteria across) and #332 (guest mode already shipped —
-`middleware.ts:59` calls `signInAnonymously()`).
+acceptance criteria across).
+
+**Not closed, contrary to an earlier draft of this report:** #332. The call was
+that guest mode already ships (`middleware.ts:59` calls `signInAnonymously()`),
+but the issue was only relabelled `ready-for-human` — it is still open, and the
+production toggle was never verified.
 
 ---
 
@@ -278,11 +282,12 @@ nightly job, per that file's own rule.
    second path through a security gate.
 3. **Five provisional product calls** made by an AI stand-in, each banner-marked
    as *not* Ayush's and reversible: #489 (where an applied amendment lives),
-   #444 (fold #311, close #358), #332 (guest mode already shipped),
+   #444 (fold #311, close #358), #332 (guest mode judged already shipped, though
+   the issue was only relabelled, not closed),
    #410 (`WorkflowState.session` dict residual), #408 (what PR #436 actually
    closes).
-4. **Production Supabase** — is anonymous sign-in actually enabled? #332 was
-   closed on code evidence; that toggle is a dashboard fact no session can see.
-   If it is off, the login wall is still up despite the code.
+4. **Production Supabase** — is anonymous sign-in actually enabled? #332 is still
+   open (relabelled `ready-for-human`, not closed); that toggle is a dashboard fact
+   no session can see. If it is off, the login wall is still up despite the code.
 
 [#474]: https://github.com/ayushb3/BubblyChef/issues/474
