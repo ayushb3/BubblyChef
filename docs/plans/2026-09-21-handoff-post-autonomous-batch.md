@@ -89,31 +89,16 @@ the script never runs the command itself. Prompt hardening is mitigation, not en
 
 ---
 
-## 2b. Check that GitHub Actions is actually running before you trust a green PR
+## 2b. Two small CI facts
 
-**As of 2026-09-21 05:40 UTC, no workflow of any kind had run in this repo since
-2026-09-20 17:04.** A docs push at 05:39 produced only a Vercel check — no `CI`, no
-`Agent gates`. The 11 PRs in §4 were verified on the commits that *did* run; a commit
-pushed after that window may carry no verification at all.
+**Workflow runs take a minute or two to register.** Checking the checks API seconds after
+a push shows only Vercel, which looks exactly like "Actions is broken". It isn't — wait,
+or query the runs API by head SHA. (I briefly concluded Actions had been switched off on
+the strength of a check made 20 seconds after a push, and an overnight gap that was just
+nobody pushing anything. Don't repeat it.)
 
-This may well be deliberate — Actions turned off, or a spending limit reached after a
-heavy night (~100 job runs). It is not necessarily a fault. But **do not read "no red
-checks" as "verified"**: check that a run exists for your head SHA before believing it.
-
-```
-gh run list --branch <your-branch> --limit 5     # or the Actions tab
-```
-
-If Actions is off, the gates described in §5 are not protecting you, and every claim a
-PR body makes about passing CI has to be re-established locally:
-
-```
-cd nextjs     && npx tsc --noEmit && npx eslint src/ --max-warnings=-1 && npx jest
-cd ai-service && .venv/bin/pytest && .venv/bin/ruff check bubbly_chef/ && ./scripts/mypy_gate.sh
-```
-
-Separately: `Claude PR review` reports `skipped` on every recent run, so agent review is
-not running on PRs regardless. Ayush has said he does not want it on docs PRs.
+**`Claude PR review` reports `skipped` on every recent run**, so agent review is not
+running on PRs. Ayush has said he does not want it on docs PRs in any case.
 
 ---
 
