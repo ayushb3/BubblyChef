@@ -19,6 +19,7 @@ class Intent(StrEnum):
     RECIPE_BRAINSTORM = "recipe_brainstorm"
     RECIPE_GENERATION = "recipe_generation"  # User wants a recipe generated (not advice)
     COOKING_HELP = "cooking_help"  # Advice: how-to, storage, substitutions (not generation)
+    SAVED_RECIPE_LOOKUP = "saved_recipe_lookup"  # Find an already-saved recipe (not generation)
     GENERAL_CHAT = "general_chat"
 
 

@@ -42,7 +42,11 @@ _BRAINSTORM_HISTORY = [
     },
 ]
 
-# Each entry: input text + optional state overrides + expected intent (for annotation only).
+# Each entry: input text + optional state overrides + expected intent.
+# `expected` is the ground truth the replay test (test_intent_classification.py)
+# holds the captured model output to — a re-capture where the model drifts
+# must fail, not get silently blessed. A list means the phrasing is genuinely
+# ambiguous and any of those intents is correct.
 CASES: list[dict[str, Any]] = [
     # pantry_update
     {"input": "I bought milk", "expected": "pantry_update"},
@@ -69,13 +73,28 @@ CASES: list[dict[str, Any]] = [
     {"input": "give me a pasta recipe", "expected": "recipe_generation"},
     {"input": "dinner ideas for tonight", "expected": "recipe_brainstorm"},
     {"input": "make me something with chicken", "expected": "recipe_generation"},
-    {"input": "I'm craving something spicy", "expected": "recipe_generation"},
+    # No dish named: generating one spicy recipe and brainstorming spicy
+    # options are both reasonable readings.
+    {
+        "input": "I'm craving something spicy",
+        "expected": ["recipe_generation", "recipe_brainstorm"],
+    },
     {"input": "quick easy meal under 30 minutes", "expected": "recipe_generation"},
     # cooking_help
     {"input": "how do I caramelise onions?", "expected": "cooking_help"},
     {"input": "how long does chicken last in the fridge?", "expected": "cooking_help"},
     {"input": "substitute for butter in baking?", "expected": "cooking_help"},
     {"input": "can I freeze cooked pasta?", "expected": "cooking_help"},
+    # saved_recipe_lookup
+    {"input": "show me my saved butter chicken", "expected": "saved_recipe_lookup"},
+    {"input": "make that pasta I saved last week", "expected": "saved_recipe_lookup"},
+    {"input": "the chicken curry I made last week", "expected": "saved_recipe_lookup"},
+    {"input": "do you remember that curry recipe?", "expected": "saved_recipe_lookup"},
+    {"input": "search your memory for the soup we made", "expected": "saved_recipe_lookup"},
+    {"input": "look in my history for that pasta", "expected": "saved_recipe_lookup"},
+    {"input": "what was that recipe from last time?", "expected": "saved_recipe_lookup"},
+    {"input": "find the one we made before", "expected": "saved_recipe_lookup"},
+    {"input": "make me a butter chicken", "expected": "recipe_generation"},
     # general_chat
     {"input": "hello, how are you?", "expected": "general_chat"},
     {"input": "what does this app do?", "expected": "general_chat"},
@@ -149,7 +168,8 @@ async def _capture_all() -> dict[str, Any]:
         reasoning = result.get("intent_reasoning", "")
         entities = result.get("detected_entities", [])
 
-        status = "✓" if got_intent == expected else f"✗ (expected {expected})"
+        acceptable = expected if isinstance(expected, list) else [expected]
+        status = "✓" if got_intent in acceptable else f"✗ (expected {expected})"
         print(f"{got_intent}  [{confidence:.2f}]  {status}")
 
         fixtures[text] = {

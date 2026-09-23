@@ -5,7 +5,9 @@
  * the comment on `STORAGE_KEY` in useChat.ts) and restores it on mount unless
  * told to skip (deep-link seeds / cook handoff start fresh on purpose).
  */
+import { createElement, type ReactNode } from 'react'
 import { act, renderHook, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useChat } from '@/hooks/useChat'
 import { fetchChatHistory, streamChatMessage } from '@/lib/api/chat'
 import type { ConversationHistoryTurn, ChatRecipeData } from '@/types/chat'
@@ -20,6 +22,14 @@ const mockStreamChatMessage = streamChatMessage as jest.MockedFunction<typeof st
 
 const STORAGE_KEY = 'bubblychef:chat:conversationId'
 
+// useChat invalidates the ['bubbles'] query on proposal approval (#520) —
+// it needs a QueryClientProvider to render. No JSX here (this file is .ts,
+// not .tsx), hence createElement.
+function wrapper({ children }: { children: ReactNode }) {
+  const client = new QueryClient()
+  return createElement(QueryClientProvider, { client }, children)
+}
+
 function turn(role: 'user' | 'assistant', content: string): ConversationHistoryTurn {
   return { role, content, intent: null, created_at: new Date().toISOString() }
 }
@@ -33,7 +43,7 @@ describe('useChat — conversation persistence (#265)', () => {
   })
 
   it('fresh browser with empty storage starts a normal empty conversation without error', async () => {
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     // Give the resume effect a tick to (not) run.
     await act(async () => {})
@@ -44,7 +54,7 @@ describe('useChat — conversation persistence (#265)', () => {
   })
 
   it('persists the id when the first message of a brand-new conversation is sent', async () => {
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     await act(async () => {
       result.current.sendMessage('hello bubbles')
@@ -56,7 +66,7 @@ describe('useChat — conversation persistence (#265)', () => {
   })
 
   it('send -> navigate away -> return: resumes the same conversation with prior messages intact', async () => {
-    const { result, unmount } = renderHook(() => useChat())
+    const { result, unmount } = renderHook(() => useChat(), { wrapper })
 
     await act(async () => {
       result.current.sendMessage('what can I make with paprika?')
@@ -73,7 +83,7 @@ describe('useChat — conversation persistence (#265)', () => {
       turn('assistant', 'Try a paprika chicken!'),
     ])
 
-    const { result: resumed } = renderHook(() => useChat())
+    const { result: resumed } = renderHook(() => useChat(), { wrapper })
 
     await waitFor(() => expect(resumed.current.conversationId).toBe(convId))
     expect(mockFetchChatHistory).toHaveBeenCalledWith(convId)
@@ -86,14 +96,14 @@ describe('useChat — conversation persistence (#265)', () => {
     window.localStorage.setItem(STORAGE_KEY, 'conv-refresh-1')
     mockFetchChatHistory.mockResolvedValueOnce([turn('user', 'hi'), turn('assistant', 'hello!')])
 
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     await waitFor(() => expect(result.current.conversationId).toBe('conv-refresh-1'))
     await waitFor(() => expect(result.current.messages).toHaveLength(2))
   })
 
   it('"New Chat" clears the persisted id so returning afterwards resumes the NEW conversation, not the previous one', async () => {
-    const { result, unmount } = renderHook(() => useChat())
+    const { result, unmount } = renderHook(() => useChat(), { wrapper })
 
     // Old conversation.
     await act(async () => {
@@ -122,7 +132,7 @@ describe('useChat — conversation persistence (#265)', () => {
       turn('user', 'brand new conversation message'),
     ])
 
-    const { result: resumed } = renderHook(() => useChat())
+    const { result: resumed } = renderHook(() => useChat(), { wrapper })
     await waitFor(() => expect(resumed.current.conversationId).toBe(newConvId))
     expect(mockFetchChatHistory).toHaveBeenCalledWith(newConvId)
   })
@@ -131,7 +141,7 @@ describe('useChat — conversation persistence (#265)', () => {
     window.localStorage.setItem(STORAGE_KEY, 'dead-conv-id')
     mockFetchChatHistory.mockRejectedValueOnce(new Error('404'))
 
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     await waitFor(() => expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull())
     expect(result.current.conversationId).toBeNull()
@@ -148,7 +158,7 @@ describe('useChat — conversation persistence (#265)', () => {
     window.localStorage.setItem(STORAGE_KEY, 'empty-history-conv')
     mockFetchChatHistory.mockResolvedValueOnce([])
 
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     await waitFor(() => expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull())
     expect(result.current.conversationId).toBeNull()
@@ -158,7 +168,7 @@ describe('useChat — conversation persistence (#265)', () => {
   it('skipResume (deep-link seed / cook handoff) ignores a persisted id on mount', async () => {
     window.localStorage.setItem(STORAGE_KEY, 'should-not-resume')
 
-    const { result } = renderHook(() => useChat({ skipResume: true }))
+    const { result } = renderHook(() => useChat({ skipResume: true }), { wrapper })
 
     await act(async () => {})
 
@@ -173,7 +183,7 @@ describe('useChat — conversation persistence (#265)', () => {
     // skipResume false — without unmounting the hook.
     const { result, rerender } = renderHook(
       ({ skipResume }) => useChat({ skipResume }),
-      { initialProps: { skipResume: true } },
+      { initialProps: { skipResume: true }, wrapper },
     )
 
     // The seed's auto-send happens while skipResume is still true, exactly as
@@ -216,7 +226,7 @@ describe('useChat — conversation persistence (#265)', () => {
       }),
     )
 
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     // The fetch is in flight; the hook should already have adopted the
     // stored id synchronously so a send now reuses it rather than minting a
@@ -274,7 +284,7 @@ describe('useChat — conversation persistence (#265)', () => {
       },
     )
 
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     await act(async () => {
       result.current.sendMessage('recipe for spaghetti creamy and garlicky')
@@ -302,7 +312,7 @@ describe('useChat — conversation persistence (#265)', () => {
     historyPromise.catch(() => {})
     mockFetchChatHistory.mockReturnValueOnce(historyPromise)
 
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
     await waitFor(() => expect(result.current.conversationId).toBe('conv-race-2'))
 
     await act(async () => {
@@ -356,7 +366,7 @@ describe('useChat — conversation persistence (#265)', () => {
     ]
     mockFetchChatHistory.mockResolvedValueOnce(historyTurns)
 
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     await waitFor(() => {
       expect(mockFetchChatHistory).toHaveBeenCalledWith('conv-recipe-restore-1')
