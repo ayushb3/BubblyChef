@@ -13,8 +13,11 @@
 -- applied to conversation_history in 00002_rls_policies.sql; adding columns
 -- requires no new policy.
 --
+-- IF NOT EXISTS: the hosted project already has both columns (applied by
+-- hand before this file landed), so this must be a no-op there.
+--
 -- Apply: supabase db push (dev project obmbwuqwpvntxhhbdfsg)
 
 ALTER TABLE conversation_history
-  ADD COLUMN proposal JSONB,
-  ADD COLUMN metadata JSONB;
+  ADD COLUMN IF NOT EXISTS proposal JSONB,
+  ADD COLUMN IF NOT EXISTS metadata JSONB;
