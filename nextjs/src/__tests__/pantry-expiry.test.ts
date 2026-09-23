@@ -1,5 +1,6 @@
 import {
   daysUntilExpiry,
+  daysUntilExpiryOn,
   enrichPantryItem,
   estimatedExpirySuffix,
   parseLocalDate,
@@ -41,6 +42,26 @@ describe('daysUntilExpiry', () => {
   it('reports negative for an item that already expired', () => {
     jest.useFakeTimers().setSystemTime(new Date(2026, 7, 25, 23, 0, 0))
     expect(daysUntilExpiry('2026-08-24')).toBe(-1)
+  })
+})
+
+describe('daysUntilExpiryOn (#524 review — client-local day, not the server’s UTC one)', () => {
+  it('returns null for a missing expiry date', () => {
+    expect(daysUntilExpiryOn(null, '2026-08-25')).toBeNull()
+  })
+
+  it('reports 0 when the client-local date is the expiry date itself, regardless of the server clock', () => {
+    // The server's own clock (if it were consulted) would say something
+    // else entirely — this helper must never look at `new Date()`.
+    expect(daysUntilExpiryOn('2026-08-25', '2026-08-25')).toBe(0)
+  })
+
+  it('reports 1 when the client-local date is a day before the expiry date', () => {
+    expect(daysUntilExpiryOn('2026-08-26', '2026-08-25')).toBe(1)
+  })
+
+  it('reports -1 when the client-local date is a day after the expiry date', () => {
+    expect(daysUntilExpiryOn('2026-08-24', '2026-08-25')).toBe(-1)
   })
 })
 

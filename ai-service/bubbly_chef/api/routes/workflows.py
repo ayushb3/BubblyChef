@@ -47,7 +47,7 @@ async def apply_proposal(
                 applied_count=0,
             )
 
-        applied, failed, errors = await repo.apply_pantry_proposal(
+        applied, failed, errors, affected_item_ids = await repo.apply_pantry_proposal(
             user_id=user_id,
             actions=actions,
         )
@@ -71,6 +71,7 @@ async def apply_proposal(
             applied_count=applied,
             failed_count=failed,
             errors=errors,
+            affected_item_ids=affected_item_ids,
         )
 
     elif request.intent == "recipe_card":

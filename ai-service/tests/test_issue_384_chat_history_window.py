@@ -1,0 +1,198 @@
+"""Issue #384 — cooking-help conversation history window (10 turns) is too
+short for real multi-step cooking.
+
+Two stacked bugs made long cooking conversations forget early context:
+
+1. ``format_history_context`` / ``_format_history_context`` only kept the
+   last 10 *messages* (~5 exchanges) of whatever history was handed to them,
+   so a detail established at turn 1 (a marinade ratio, an agreed
+   substitution) was gone by turn 6.
+2. ``SupabaseRepository.get_history`` ordered ascending and applied
+   ``.limit()`` in the same query — PostgREST applies limit after order, so
+   that returns the *oldest* rows, not the most recent ones. For any
+   conversation longer than the limit, the model could never see anything
+   newer than the fetch window, no matter how high the formatter's cap was
+   raised. Fixed by ordering descending, limiting at the DB, then reversing
+   in Python — no over-fetch.
+
+This also changes what ``GET /v1/chat/history/{id}`` returns for a
+conversation longer than `limit`: reopening a long chat now restores its
+*most recent* messages instead of its *first* `limit` messages. That's an
+intentional, reviewed behaviour change (a restored chat should show its
+latest messages), not a side effect — see
+``test_chat_routes.py::test_chat_history_endpoint_restores_most_recent_messages_not_oldest``
+(the route-level test; the tests in this file exercise the repository and
+the formatters directly).
+
+No token budget gates the 40-message default -- that is Ayush's own triage
+call on #384 ("raise the cap now, summarize older turns later"), not an
+oversight. Rough sizing, so the tradeoff is visible: a typical chat message
+runs on the order of 50-200 characters (roughly 15-60 tokens); 40 messages
+is therefore on the order of a couple thousand tokens added to the
+cooking-help prompt on a long conversation, up from a few hundred at the
+old 10-message cap. Summarizing older turns instead of a flat cap is
+deferred to later work, as the triage decision states.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+from bubbly_chef.repository.supabase_repo import SupabaseRepository
+from bubbly_chef.workflows.chat.nodes import format_history_context
+from bubbly_chef.workflows.recipe.nodes import _format_history_context
+from bubbly_chef.workflows.state import WorkflowState
+
+
+def _turn_history(num_turns: int) -> list[dict[str, str]]:
+    """Build `num_turns` user/assistant exchanges, turn 1 carrying a marker
+    ("marinade ratio 3:1") that a later turn needs to still be able to see."""
+    history: list[dict[str, str]] = []
+    for i in range(1, num_turns + 1):
+        if i == 1:
+            user_content = "I'm marinating chicken, using a 3:1 oil to acid ratio."
+        else:
+            user_content = f"Turn {i}: what's next?"
+        history.append({"role": "user", "content": user_content})
+        history.append({"role": "assistant", "content": f"Turn {i} reply."})
+    return history
+
+
+class TestFormatHistoryContextWindow:
+    """Reproduces + fixes the formatter-level 10-message cap."""
+
+    def test_chat_formatter_keeps_early_context_by_turn_12(self) -> None:
+        """By turn 12, format_history_context must still surface the
+        marinade ratio established at turn 1. With the old max_turns=10
+        (10 *messages*, ~5 exchanges), turn 1 falls out of the window."""
+        state: WorkflowState = {
+            "conversation_history": _turn_history(11),  # turns 1-11 precede turn 12
+        }
+
+        context = format_history_context(state)
+
+        assert "3:1 oil to acid ratio" in context
+
+    def test_recipe_formatter_keeps_early_context_by_turn_12(self) -> None:
+        """Same reproduction against the recipe-mode formatter (#384 scope
+        explicitly covers both the chat and recipe history formatters)."""
+        state: WorkflowState = {
+            "conversation_history": _turn_history(11),
+        }
+
+        context = _format_history_context(state)
+
+        assert "3:1 oil to acid ratio" in context
+
+
+# ---------------------------------------------------------------------------
+# get_history recency fix — fake Supabase client that actually threads
+# order/limit through so the ascending-order-then-limit bug is visible.
+# ---------------------------------------------------------------------------
+
+
+class _OrderedHistoryQuery:
+    """Fluent query stub that mimics PostgREST: order() then limit() applies
+    the limit to whatever order the rows are currently in — i.e. it does NOT
+    know to return the "most recent" rows unless the caller ordered descending
+    first, exactly like real PostgREST."""
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+        self._desc = False
+        self._limit: int | None = None
+
+    def select(self, *_args: Any, **_kwargs: Any) -> "_OrderedHistoryQuery":
+        return self
+
+    def eq(self, *_args: Any, **_kwargs: Any) -> "_OrderedHistoryQuery":
+        return self
+
+    def order(self, _column: str, desc: bool = False) -> "_OrderedHistoryQuery":
+        self._desc = desc
+        return self
+
+    def limit(self, n: int) -> "_OrderedHistoryQuery":
+        self._limit = n
+        return self
+
+    def execute(self) -> Any:
+        rows = list(reversed(self._rows)) if self._desc else list(self._rows)
+        if self._limit is not None:
+            rows = rows[: self._limit]
+        return type("Result", (), {"data": rows})()
+
+
+class _OrderedHistoryClient:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+
+    def table(self, _name: str) -> _OrderedHistoryQuery:
+        return _OrderedHistoryQuery(self._rows)
+
+
+def _repo_with_rows(rows: list[dict[str, Any]]) -> SupabaseRepository:
+    repo = SupabaseRepository.__new__(SupabaseRepository)
+    repo.client = _OrderedHistoryClient(rows)  # type: ignore[assignment]
+    return repo
+
+
+@pytest.mark.asyncio
+class TestGetHistoryRecency:
+    async def test_returns_most_recent_messages_not_oldest(self) -> None:
+        """A conversation with more messages than the requested limit must
+        return the tail (most recent) messages, in ascending order — not the
+        oldest ones. Simulates 12 turns (24 messages) with limit=10."""
+        rows = [
+            {
+                "role": "user" if i % 2 == 0 else "assistant",
+                "content": f"message {i}",
+                "created_at": f"2026-01-01T00:{i:02d}:00Z",
+            }
+            for i in range(24)
+        ]
+        repo = _repo_with_rows(rows)
+
+        history = await repo.get_history(user_id="u1", conversation_id="c1", limit=10)
+
+        assert len(history) == 10
+        # Must be the most recent 10 (messages 14-23), oldest-first.
+        assert [row["content"] for row in history] == [f"message {i}" for i in range(14, 24)]
+
+    async def test_default_limit_restores_the_most_recent_turn_not_the_first(self) -> None:
+        """30 messages (well over the old default of 20, under the new
+        default of 40) with a marker on the LAST message. The old
+        ascending-order-then-limit(20) code would drop the marker entirely
+        (it kept messages 0-19); the fix must surface it, since it never
+        drops recent messages while the conversation fits under the new
+        default limit."""
+        rows = [
+            {"role": "user" if i % 2 == 0 else "assistant", "content": f"turn {i}"}
+            for i in range(29)
+        ] + [{"role": "assistant", "content": "LATEST: use the 3:1 marinade ratio again."}]
+        repo = _repo_with_rows(rows)
+
+        history = await repo.get_history(user_id="u1", conversation_id="c1")
+
+        contents = [row["content"] for row in history]
+        assert "LATEST: use the 3:1 marinade ratio again." in contents
+
+    async def test_limit_zero_returns_nothing(self) -> None:
+        """limit=0 must return [] outright, not silently mean 'everything'."""
+        rows = [{"role": "user", "content": "hi", "created_at": "2026-01-01T00:00:00Z"}]
+        repo = _repo_with_rows(rows)
+
+        history = await repo.get_history(user_id="u1", conversation_id="c1", limit=0)
+
+        assert history == []
+
+    async def test_negative_limit_returns_nothing(self) -> None:
+        """A negative limit must not invert into a Python negative-index slice."""
+        rows = [{"role": "user", "content": "hi", "created_at": "2026-01-01T00:00:00Z"}]
+        repo = _repo_with_rows(rows)
+
+        history = await repo.get_history(user_id="u1", conversation_id="c1", limit=-5)
+
+        assert history == []
