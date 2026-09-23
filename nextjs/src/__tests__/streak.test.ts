@@ -197,6 +197,22 @@ describe('computeStreak', () => {
       expect(result.currentStreak).toBe(1)
     })
 
+    it('judges and pays a week visited ON its own last day (Sunday) — that visit happened while the week was still in progress (re-review #4 boundary, issue #524/#570)', () => {
+      // previousVisitDate is exactly W38's end (2026-09-20). A visit that
+      // day happened before midnight, i.e. still inside W38 — it never
+      // judged W38, so W38 is still a first judgment today.
+      const result = computeStreak({
+        referenceDate,
+        settledWeekKeys: [],
+        activeWeekKeys: ['2026-W38'],
+        wastedWeekKeys: [],
+        previousVisitDate: '2026-09-20',
+      })
+
+      expect(result.weeksToAward).toEqual(['2026-W38'])
+      expect(result.currentStreak).toBe(1)
+    })
+
     it('still judges a completed week that ended AFTER the previous visit — it was never judged before', () => {
       // Previous visit was during W37 (before W38 even started), so W38 —
       // which ends 2026-09-20, after the previous visit — has never been

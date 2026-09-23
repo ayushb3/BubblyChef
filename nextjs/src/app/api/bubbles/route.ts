@@ -20,20 +20,29 @@ export async function GET(request: Request) {
   // than the server's UTC day. Missing/unparseable falls back to UTC.
   const offsetMinutes = parseTzOffsetMinutes(searchParams.get('tz_offset_minutes'))
 
-  // Award (or no-op if already awarded today) before reading the balance so
-  // the response reflects today's visit.
-  await awardBubbles(user.id, 'daily_visit', validDate)
-
   // Weekly rescue streak (#524): lazily settle any completed week since the
   // last one that was awarded, bounded to ~12 weeks of catch-up, and report
   // the resulting streak length + whether the current (in-progress) week has
-  // already seen waste.
-  const { streakWeeks, wastedThisWeek } = await settleWeeklyStreak(
+  // already seen waste. Settle BEFORE awarding today's `daily_visit`
+  // (re-review #4 on issue #524/#570) — that award is what marks "today's
+  // visit happened" for the NEXT call's `previousVisitDate` lookup, so if
+  // settlement fails, the visit must not be recorded either: doing so would
+  // permanently lock out every week that failed settlement would have
+  // judged. On failure this route falls through with no visit award; since
+  // `GET /api/bubbles` runs on nearly every page, the next request the same
+  // day simply retries both.
+  const { streakWeeks, wastedThisWeek, ok } = await settleWeeklyStreak(
     supabase,
     user.id,
     validDate,
     offsetMinutes,
   )
+
+  // Award (or no-op if already awarded today) only once settlement has
+  // actually run — see above.
+  if (ok) {
+    await awardBubbles(user.id, 'daily_visit', validDate)
+  }
 
   const [{ data: balanceRow }, { data: recent }] = await Promise.all([
     supabase.from('bubble_balances').select('balance').eq('user_id', user.id).maybeSingle(),

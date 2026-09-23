@@ -25,11 +25,16 @@
  * any completed week that had already ended by then, regardless of whether
  * `settledWeekKeys` shows it as awarded — that prior settlement call
  * necessarily already considered it (same `MAX_WEEKS` catch-up window, an
- * earlier reference date). `route.ts` awards today's own `daily_visit`
- * BEFORE calling this function, so `previousVisitDate` is derived from the
- * `events` window already read below (no extra query), filtering out
- * `daily_visit` rows bucketed to today so today's own just-inserted visit
- * is never mistaken for the previous one.
+ * earlier reference date). `previousVisitDate` is derived from the `events`
+ * window already read below (no extra query): the latest `daily_visit`
+ * local date strictly before today. `route.ts` calls this function BEFORE
+ * awarding today's own `daily_visit` (re-review #4 on issue #524/#570) —
+ * settling first and gating the visit award on `ok` means a transient
+ * settlement failure never permanently locks out the weeks it would have
+ * judged (a failed visit award just gets retried on the next request, since
+ * this route runs on nearly every page). Because today's own visit hasn't
+ * been written yet when this runs, the `< today` filter below is naturally
+ * safe under either ordering.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -43,6 +48,17 @@ const MAX_WEEKS = 12
 export interface StreakSettlementResult {
   streakWeeks: number
   wastedThisWeek: boolean
+  /**
+   * `false` when settlement itself failed (a Supabase error, thrown or
+   * returned) — the catch below already logs and returns a safe zeroed
+   * result so the balance response is never blocked, but the caller
+   * (`route.ts`) needs to know settlement did NOT actually run this visit,
+   * so it must not award today's `daily_visit` (issue #524/#570 re-review
+   * #4): that award is what marks "settlement ran today" for the NEXT
+   * visit's `previousVisitDate` lookup, and a transient failure must not
+   * permanently lock out every completed week it would have judged.
+   */
+  ok: boolean
 }
 
 export async function settleWeeklyStreak(
@@ -115,9 +131,9 @@ export async function settleWeeklyStreak(
     const currentWeekKey = isoWeekKey(today)
     const wastedThisWeek = wastedWeekKeys.has(currentWeekKey)
 
-    return { streakWeeks: currentStreak, wastedThisWeek }
+    return { streakWeeks: currentStreak, wastedThisWeek, ok: true }
   } catch (err) {
     console.error('[streak] settlement failed: %s', err)
-    return { streakWeeks: 0, wastedThisWeek: false }
+    return { streakWeeks: 0, wastedThisWeek: false, ok: false }
   }
 }

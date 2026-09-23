@@ -139,8 +139,12 @@ export function computeStreak(input: ComputeStreakInput): ComputeStreakResult {
     // an expired item since deleted from the pantry) would flip an already
     // -judged wasted week to clean and pay it retroactively (issue
     // #524/#570). A week is judged exactly once, at the first settlement
-    // after it completes.
-    if (input.previousVisitDate != null && weekRange(wk).end <= input.previousVisitDate) continue
+    // after it completes. Strictly `<`, not `<=`: a visit ON a week's
+    // Sunday happens while that week is still in progress (it doesn't end
+    // until midnight), so that visit never judged it — `<=` here locked
+    // every week out the moment its own last day's visit landed (re-review
+    // #4 on issue #524/#570).
+    if (input.previousVisitDate != null && weekRange(wk).end < input.previousVisitDate) continue
     if (active.has(wk) && !wasted.has(wk)) {
       weeksToAward.push(wk)
     }

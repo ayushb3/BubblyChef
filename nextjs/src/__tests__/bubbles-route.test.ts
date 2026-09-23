@@ -263,6 +263,95 @@ describe('GET /api/bubbles', () => {
       expect(data.wasted_this_week).toBe(true)
     })
 
+    it('a failed settlement does not write daily_visit, and the response still succeeds (re-review #4, issue #524/#570)', async () => {
+      // The settlement's own Promise.all array is built synchronously, so
+      // the very first `.from('bubble_events')` call throwing aborts that
+      // whole array (the second settlement query is never even reached) and
+      // lands in settlement's try/catch. The route's LATER "recent" read is
+      // a separate `.from('bubble_events')` call, made only after
+      // settlement has already returned — it must succeed.
+      let failedOnce = false
+      const supabase = {
+        from: (table: string) => {
+          if (table === 'bubble_events' && !failedOnce) {
+            failedOnce = true
+            throw new Error('db exploded')
+          }
+          return chain([])
+        },
+      }
+      mockRequireAuth.mockResolvedValue([supabase, mockUser])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request(`http://localhost/api/bubbles?date=${today}`))
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.streak_weeks).toBe(0)
+      expect(upsertMock).not.toHaveBeenCalled()
+      expect(upsertMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'daily_visit' }),
+        expect.anything(),
+      )
+    })
+
+    it('after a failed settlement, the next visit the same day still judges the week the failure never reached (re-review #4, issue #524/#570)', async () => {
+      const lastWeekTimestamp = withinLastCompletedWeek()
+      const bubbleEventsRows: Array<Record<string, unknown>> = [
+        { event_type: 'pantry_add', ref_key: 'item-1', created_at: lastWeekTimestamp },
+      ]
+      let failNextBubbleEventsReads = true
+
+      function makeFlakySupabase() {
+        return {
+          from: (table: string) => {
+            if (table === 'bubble_events') {
+              if (failNextBubbleEventsReads) {
+                failNextBubbleEventsReads = false
+                throw new Error('db exploded')
+              }
+              return chain(bubbleEventsRows)
+            }
+            return chain([])
+          },
+        }
+      }
+
+      // Simulate writes actually landing back in the table the next read sees.
+      ;(upsertMock as unknown as jest.Mock).mockImplementation((row: Record<string, unknown>) => ({
+        select: async () => {
+          bubbleEventsRows.push(row)
+          return { data: [{ id: 'evt-x' }], error: null }
+        },
+      }))
+
+      const { GET } = await import('@/app/api/bubbles/route')
+
+      // First visit: the settlement read throws, so nothing is written —
+      // no daily_visit, no weekly_streak.
+      mockRequireAuth.mockResolvedValue([makeFlakySupabase(), mockUser])
+      const res1 = await GET(new Request(`http://localhost/api/bubbles?date=${today}`))
+      expect(res1.status).toBe(200)
+      expect(upsertMock).not.toHaveBeenCalled()
+
+      // Second visit, same day: settlement succeeds this time. Because no
+      // daily_visit was recorded by the failed first visit, the completed
+      // week it would have judged is still a first judgment, not locked out.
+      mockRequireAuth.mockResolvedValue([makeFlakySupabase(), mockUser])
+      const res2 = await GET(new Request(`http://localhost/api/bubbles?date=${today}`))
+      const data2 = await res2.json()
+
+      expect(data2.streak_weeks).toBe(1)
+      expect(upsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({ user_id: mockUser.id, event_type: 'weekly_streak' }),
+        expect.anything(),
+      )
+      expect(upsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({ user_id: mockUser.id, event_type: 'daily_visit' }),
+        expect.anything(),
+      )
+    })
+
     it('a week settled as wasted stays unpaid on a later visit after the expired item is deleted (regression, issue #524/#570)', async () => {
       // A `daily_visit` from yesterday stands in for "settlement already ran
       // once" — the last completed week had already ended by then, so it
