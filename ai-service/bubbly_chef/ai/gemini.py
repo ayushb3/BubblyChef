@@ -7,7 +7,7 @@ import asyncio
 import base64
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any, TypeVar
 
 import httpx
@@ -29,6 +29,13 @@ _TRANSIENT_STATUS_CODES = frozenset({500, 502, 503, 504})
 # the 60s client default — otherwise a slow check alone could eat most of the
 # scan client's 45s budget before the vision call even starts.
 _AVAILABILITY_TIMEOUT_SECONDS = 5.0
+
+# A vision retry is only started if at least this much of the caller's budget
+# would be left once the backoff has elapsed. Real receipt scans take ~5-8s
+# (issue #479), so an attempt with less than this can't realistically finish
+# before the scan client aborts; it would only spend quota on a response
+# nobody receives.
+_MIN_VISION_ATTEMPT_SECONDS = 5.0
 
 
 class GeminiProvider(AIProvider):
@@ -308,6 +315,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
         mime_type: str = "image/jpeg",
         response_schema: type[T] | None = None,
         temperature: float = 0.3,
+        time_remaining: Callable[[], float] | None = None,
     ) -> T | str:
         """Generate a completion from an image + text prompt using Gemini vision."""
         url = f"{self.BASE_URL}/models/{self.model}:generateContent"
@@ -353,19 +361,33 @@ Return ONLY the JSON, no markdown formatting or extra text."""
         response: httpx.Response | None = None
         attempts = 1 + self.vision_max_retries
         for attempt in range(attempts):
+            # Each attempt is capped at the per-attempt timeout OR what is left
+            # of the caller's request budget (issue #481), whichever is smaller.
+            attempt_timeout = self.vision_timeout
+            if time_remaining is not None:
+                left = time_remaining()
+                if left <= 0:
+                    raise ProviderUnavailableError(
+                        f"Gemini [{self.model}] vision skipped: request budget exhausted"
+                    )
+                attempt_timeout = min(attempt_timeout, left)
             try:
                 response = await self._client.post(
                     url,
                     json=payload,
                     params={"key": self.api_key},
-                    timeout=self.vision_timeout,
+                    timeout=attempt_timeout,
                 )
                 response.raise_for_status()
                 break
             except httpx.HTTPStatusError as e:
                 error_body = e.response.text[:500] if hasattr(e.response, "text") else str(e)
                 status = e.response.status_code
-                if status in _TRANSIENT_STATUS_CODES and attempt < attempts - 1:
+                if (
+                    status in _TRANSIENT_STATUS_CODES
+                    and attempt < attempts - 1
+                    and self._budget_allows_retry(time_remaining)
+                ):
                     logger.warning(
                         f"Gemini [{self.model}] vision attempt {attempt + 1}/{attempts} "
                         f"got HTTP {status}, retrying after {self.vision_retry_backoff}s"
@@ -381,7 +403,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
                     f"{error_body}"
                 ) from e
             except httpx.RequestError as e:
-                if attempt < attempts - 1:
+                if attempt < attempts - 1 and self._budget_allows_retry(time_remaining):
                     logger.warning(
                         f"Gemini [{self.model}] vision attempt {attempt + 1}/{attempts} "
                         f"failed with {type(e).__name__}, retrying after "
@@ -487,6 +509,19 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             result = await self.complete(prompt=prompt, temperature=temperature)
             text = result if isinstance(result, str) else str(result)
             yield text
+
+    def _budget_allows_retry(self, time_remaining: Callable[[], float] | None) -> bool:
+        """True if a vision retry still fits in the caller's budget."""
+        if time_remaining is None:
+            return True
+        left_after_backoff = time_remaining() - self.vision_retry_backoff
+        if left_after_backoff < _MIN_VISION_ATTEMPT_SECONDS:
+            logger.warning(
+                f"Gemini [{self.model}] vision retry skipped: {left_after_backoff:.1f}s of "
+                f"request budget would be left, need {_MIN_VISION_ATTEMPT_SECONDS:.0f}s"
+            )
+            return False
+        return True
 
     async def is_available(self) -> bool:
         """Check if Gemini API is reachable.
