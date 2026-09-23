@@ -11,14 +11,17 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const date = searchParams.get('date')
-  const dateError = validateClientDate(date, 'date query param')
+  // Client's UTC offset in minutes (issue #524 review) — used both to bucket
+  // `created_at` timestamps into the client's local calendar day rather than
+  // the server's UTC day, and (issue #550) to compute the ONE local date
+  // `date` is allowed to be. Missing/unparseable falls back to UTC.
+  const offsetMinutes = parseTzOffsetMinutes(searchParams.get('tz_offset_minutes'))
+  // Issue #550: exact match against the offset-derived local date, no ±1 day
+  // window — refuses both a future date and yesterday's.
+  const dateError = validateClientDate(date, offsetMinutes, 'date query param')
   if (dateError) return errorResponse(dateError, 400)
   // Narrowed by validateClientDate above.
   const validDate = date as string
-  // Client's UTC offset in minutes (issue #524 review) — used to bucket
-  // `created_at` timestamps into the client's local calendar day rather
-  // than the server's UTC day. Missing/unparseable falls back to UTC.
-  const offsetMinutes = parseTzOffsetMinutes(searchParams.get('tz_offset_minutes'))
 
   // Weekly rescue streak (#524): lazily settle any completed week since the
   // last one that was awarded, bounded to ~12 weeks of catch-up, and report

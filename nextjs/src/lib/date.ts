@@ -45,32 +45,47 @@ export function utcTimestampToLocalDate(timestamp: string, offsetMinutes: number
 /**
  * Clamp a client-supplied UTC-offset-in-minutes to real-world timezone
  * bounds (UTC-12 .. UTC+14) and fall back to UTC (0) for anything missing or
- * unparseable, so a bad/absent `tz_offset_minutes` query param degrades to
- * the old UTC-bucketing behavior instead of throwing or producing `NaN`
- * dates.
+ * unparseable, so a bad/absent `tz_offset_minutes` param degrades to the old
+ * UTC-bucketing behavior instead of throwing or producing `NaN` dates.
+ *
+ * Accepts either a raw query-string value (`GET /api/bubbles`) or a JSON
+ * body value (`POST` routes send a number, not a string) — issue #550.
  */
-export function parseTzOffsetMinutes(raw: string | null): number {
-  if (raw === null) return 0
-  const n = Number(raw)
+export function parseTzOffsetMinutes(raw: string | number | null | undefined): number {
+  if (raw === null || raw === undefined) return 0
+  const n = typeof raw === 'number' ? raw : Number(raw)
   if (!Number.isFinite(n)) return 0
   return Math.max(-720, Math.min(840, Math.trunc(n)))
 }
 
 /**
  * Validate a client-supplied local date (YYYY-MM-DD) against the server's
- * own clock, tolerating up to a day of skew either side — a signed-in
- * timezone can be up to 14 hours off UTC, which spans a full calendar day
- * either side of the server's date.
+ * own clock shifted by the client's `offsetMinutes` (see
+ * `parseTzOffsetMinutes`) — the ONE local date the server will accept, with
+ * no window of tolerance either side (issue #550).
  *
- * Extracted from `GET /api/bubbles` (issue #520) so the two new award routes
- * in issue #524 (`POST /api/pantry/[id]/resolve`, `POST
- * /api/ai/recipes/cook/confirm`) can reuse the same check instead of
- * copy-pasting it.
+ * Earlier versions of this check (issue #520/#524) tolerated up to a day of
+ * clock skew either side of the server's UTC date, so a `daily_visit` for
+ * tomorrow could be claimed today, and so a client could mint a second
+ * `cook_confirm` for one cook by sending yesterday's date on one request and
+ * today's on the next. Issue #550 replaces that tolerance with an exact
+ * match: the server computes `serverNow` shifted by `offsetMinutes` and
+ * formats it as YYYY-MM-DD, and the supplied date must equal that exactly.
+ * A `date` one day ahead (or behind) the offset-derived local date is
+ * refused, not silently accepted as "close enough".
+ *
+ * Extracted from `GET /api/bubbles` (issue #520) so the other award routes
+ * (`POST /api/pantry/[id]/resolve`, `POST /api/ai/recipes/cook/confirm`) can
+ * reuse the same check instead of copy-pasting it.
  *
  * Returns an error message string when invalid, or `null` when the date is
  * fine to use as an award ref_key component.
  */
-export function validateClientDate(date: unknown, fieldLabel = 'date'): string | null {
+export function validateClientDate(
+  date: unknown,
+  offsetMinutes: number,
+  fieldLabel = 'date',
+): string | null {
   if (!date || typeof date !== 'string') {
     return `${fieldLabel} is required (YYYY-MM-DD, client local date)`
   }
@@ -83,14 +98,11 @@ export function validateClientDate(date: unknown, fieldLabel = 'date'): string |
     return `${fieldLabel} must be a valid date`
   }
 
-  // Anything further off than a day either side is not a real client clock
-  // skew case — reject it so a signed-in user can't loop ?date=1, ?date=2,
-  // ... and mint unlimited date-keyed awards.
-  const msPerDay = 24 * 60 * 60 * 1000
-  const serverToday = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`)
-  const dayDiff = Math.abs(parsedDate.getTime() - serverToday.getTime()) / msPerDay
-  if (dayDiff > 1) {
-    return `${fieldLabel} is too far from the server date`
+  const expectedLocalDate = new Date(Date.now() + offsetMinutes * 60_000)
+    .toISOString()
+    .slice(0, 10)
+  if (date !== expectedLocalDate) {
+    return `${fieldLabel} must be the caller's current local date (${expectedLocalDate})`
   }
 
   return null

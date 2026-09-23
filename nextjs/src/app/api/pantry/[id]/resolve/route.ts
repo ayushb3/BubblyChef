@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
 import { daysUntilExpiry, daysUntilExpiryOn, isExpiringSoon } from '@/lib/pantry-helpers'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
-import { validateClientDate } from '@/lib/date'
+import { validateClientDate, parseTzOffsetMinutes } from '@/lib/date'
 import { awardBubbles } from '@/lib/bubbles'
 
 /** Outcomes the client may record. Must match the CHECK constraint on pantry_events. */
@@ -53,14 +53,24 @@ export async function POST(
     )
   }
 
-  // Client's local date (issue #524) — used only to key the `rescue` bubbles
-  // award, same clock-skew tolerance as `GET /api/bubbles`. A missing or
-  // out-of-range date must never block the resolve itself (a stale tab with
-  // pre-deploy JS sends no `date` at all) — it only means the rescue award
-  // is skipped, matching the never-block contract every other award call
-  // site follows (see bubbles-award-call-sites.test.ts).
+  // Client's local date (issue #524), validated EXACTLY against the
+  // offset-derived local date (#550 — see `validateClientDate`; no more ±1
+  // day tolerance), used only to key the `rescue` bubbles award — the same
+  // accepted date `cook_confirm`'s own rescue bonus and `daily_visit` use,
+  // so all rescue-shaped awards agree on one local day (#550 rule 6). A
+  // missing or invalid date/offset must never block the resolve itself (a
+  // stale tab with pre-deploy JS sends no `date` at all) — it only means the
+  // rescue award is skipped, matching the never-block contract every other
+  // award call site follows (see bubbles-award-call-sites.test.ts).
   const date = (body as { date?: unknown } | null)?.date
-  const validDate = validateClientDate(date, 'date') ? null : (date as string)
+  const offsetMinutes = parseTzOffsetMinutes(
+    (body as { tz_offset_minutes?: unknown } | null)?.tz_offset_minutes as
+      | string
+      | number
+      | null
+      | undefined,
+  )
+  const validDate = validateClientDate(date, offsetMinutes, 'date') ? null : (date as string)
 
   // Read the item first — both to confirm ownership and to snapshot the fields
   // the event needs before the row goes away.

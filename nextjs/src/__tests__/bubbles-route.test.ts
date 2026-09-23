@@ -150,6 +150,72 @@ describe('GET /api/bubbles', () => {
     expect(upsertMock).not.toHaveBeenCalled()
   })
 
+  describe('date validation (issue #550: exact match, no ±1 day tolerance)', () => {
+    it('refuses a date one day ahead of the offset-derived local date and does not award', async () => {
+      mockRequireAuth.mockResolvedValue([{}, mockUser])
+
+      const tomorrow = addDaysToDateString(today, 1)
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request(`http://localhost/api/bubbles?date=${tomorrow}`))
+
+      expect(res.status).toBe(400)
+      expect(upsertMock).not.toHaveBeenCalled()
+    })
+
+    it("refuses yesterday's date (no more ±1 day tolerance) and does not award", async () => {
+      mockRequireAuth.mockResolvedValue([{}, mockUser])
+
+      const yesterday = addDaysToDateString(today, -1)
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request(`http://localhost/api/bubbles?date=${yesterday}`))
+
+      expect(res.status).toBe(400)
+      expect(upsertMock).not.toHaveBeenCalled()
+    })
+
+    it('accepts the correct local date for a UTC-7 client that has rolled over ahead of the server (crosses UTC midnight)', async () => {
+      // Freeze the server clock just after UTC midnight so a UTC-7 client is
+      // still on the PREVIOUS calendar day.
+      jest.useFakeTimers().setSystemTime(new Date(`${today}T00:30:00.000Z`))
+      const localDate = addDaysToDateString(today, -1)
+      const supabase = makeSupabase()
+      mockRequireAuth.mockResolvedValue([supabase, mockUser])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(
+        new Request(`http://localhost/api/bubbles?date=${localDate}&tz_offset_minutes=-420`),
+      )
+
+      expect(res.status).toBe(200)
+      expect(upsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'daily_visit', ref_key: localDate }),
+        expect.anything(),
+      )
+      jest.useRealTimers()
+    })
+
+    it('accepts the correct local date for a UTC+9 client that has rolled over ahead of the server (crosses UTC midnight)', async () => {
+      // Freeze the server clock just before UTC midnight so a UTC+9 client
+      // is already on the NEXT calendar day.
+      jest.useFakeTimers().setSystemTime(new Date(`${today}T16:00:00.000Z`))
+      const localDate = addDaysToDateString(today, 1)
+      const supabase = makeSupabase()
+      mockRequireAuth.mockResolvedValue([supabase, mockUser])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(
+        new Request(`http://localhost/api/bubbles?date=${localDate}&tz_offset_minutes=540`),
+      )
+
+      expect(res.status).toBe(200)
+      expect(upsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'daily_visit', ref_key: localDate }),
+        expect.anything(),
+      )
+      jest.useRealTimers()
+    })
+  })
+
   it('awards the daily_visit event keyed on the date for a valid date', async () => {
     const supabase = makeSupabase()
     mockRequireAuth.mockResolvedValue([supabase, mockUser])
