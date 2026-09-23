@@ -171,10 +171,11 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
   const { totalCount, expiringCount, urgentItem, tip: dashboardTip, suggestion } = data
 
   // Kitchen scene (#521): `decorations` rows use `name`/`decoration_type`;
-  // KitchenScene expects `id`/`slot`. `useBubbles` is a stub today (#520's
-  // frontend half hasn't landed) — see `lib/api/bubbles.ts`.
+  // KitchenScene expects `id`/`slot`. The balance is `null` until `/api/bubbles`
+  // answers, so the scene hides its pill rather than flashing a `0`.
   const { data: decorationsData, isLoading: decorationsLoading } = useDecorations()
-  const { balance, isLoading: balanceLoading } = useBubbles()
+  const { data: bubblesData } = useBubbles()
+  const balance = bubblesData?.balance ?? null
   const unlocked = (decorationsData?.decorations ?? []).map((row) => ({
     id: row.name,
     slot: row.decoration_type,
@@ -251,7 +252,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
         <KitchenScene
           unlocked={unlocked}
           balance={balance}
-          loading={decorationsLoading || balanceLoading}
+          loading={decorationsLoading}
         />
       </FadeInView>
 

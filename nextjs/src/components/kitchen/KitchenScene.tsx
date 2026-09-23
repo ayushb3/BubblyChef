@@ -28,7 +28,8 @@ export interface UnlockedDecoration {
 
 export interface KitchenSceneProps {
   unlocked: UnlockedDecoration[]
-  balance: number
+  /** `null` while the balance is unknown (loading or failed): the pill is hidden. */
+  balance: number | null
   loading?: boolean
 }
 
@@ -108,13 +109,15 @@ export default function KitchenScene({ unlocked, balance, loading = false }: Kit
         {/* The balance sits in the scene's top-right corner. The `lights`
             slot (slots.ts) starts below it, so the pill never covers a
             decoration. It is rendered after the slots so it stacks above them. */}
-        <div
-          className="absolute top-1.5 right-1.5 z-10 rounded-full px-3 py-1 text-xs font-bold text-[var(--color-text)] shadow-sm border border-[var(--color-border)]"
-          style={{ background: 'var(--color-surface)' }}
-          data-testid="kitchen-bubbles-balance"
-        >
-          🫧 {balance}
-        </div>
+        {balance !== null && (
+          <div
+            className="absolute top-1.5 right-1.5 z-10 rounded-full px-3 py-1 text-xs font-bold text-[var(--color-text)] shadow-sm border border-[var(--color-border)]"
+            style={{ background: 'var(--color-surface)' }}
+            data-testid="kitchen-bubbles-balance"
+          >
+            🫧 {balance}
+          </div>
+        )}
       </div>
     </div>
   )

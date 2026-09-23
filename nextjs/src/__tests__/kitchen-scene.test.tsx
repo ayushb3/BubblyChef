@@ -63,6 +63,13 @@ describe('KitchenScene (#521)', () => {
     }
   })
 
+  it('hides the balance pill while the balance is unknown, rather than showing 0', () => {
+    render(<KitchenScene unlocked={[]} balance={null} />)
+
+    expect(screen.getByTestId('kitchen-scene')).toBeInTheDocument()
+    expect(screen.queryByTestId('kitchen-bubbles-balance')).not.toBeInTheDocument()
+  })
+
   it('hides empty slots from screen readers and names filled ones after the decoration', () => {
     const first = CATALOG[0]
     render(<KitchenScene unlocked={[{ id: first.id, slot: first.slot }]} balance={0} />)
