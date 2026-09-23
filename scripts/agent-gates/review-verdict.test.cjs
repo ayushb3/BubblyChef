@@ -61,7 +61,7 @@ check('holds: a code owner comment that is not an approval', run({ ...BAD, appro
   const wf = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'claude-review.yml'), 'utf8').replace(/\r/g, '')
   const verdictJob = (wf.split(/\n  verdict:\n/)[1] || '')
   check('workflow: a "Claude review verdict" job exists', /name: Claude review verdict/.test(verdictJob), 'job missing')
-  check('workflow: the verdict job always runs (a skipped required check counts as passing)', /\n    if: always\(\)/.test(verdictJob) && !/\n    if: (?!always\(\))/.test(verdictJob), 'verdict job has a non-always if')
+  check('workflow: the verdict job always runs (a skipped required check counts as passing)', (verdictJob.match(/\n    if:.*/g) || []).join() === '\n    if: always()', 'verdict job has a non-always if')
   check('workflow: the verdict job runs this script', /review-verdict\.cjs/.test(verdictJob), 'script not called')
   check('workflow: re-evaluated when a review is submitted (approval clears the hold)', /pull_request_review:\n\s+types: \[submitted\]/.test(wf), 'no pull_request_review trigger')
   check('workflow: the Opus review never runs on a review event', /github\.event_name == 'pull_request'/.test(wf.split(/\n  verdict:\n/)[0]), 'review job if lacks event guard')
