@@ -543,13 +543,13 @@ async function main() {
     check('tier small, bug, user-visible: Reproduce still runs (before-screenshots)', count(h, 'reproduce') === 1, `calls ${h.calls.join()}`)
   }
   {
-    const h = harness(tiered({ facts: BUG, plan: { userVisible: false, expectedChangedLines: 400 } }))
+    const h = harness(tiered({ facts: BUG, plan: { userVisible: false, expectedChangedLines: 700 } }))
     const r = await h.run({ issue: 405 })
     check('tier standard, bug, not user-visible: Reproduce still runs', r.tier === 'standard' && count(h, 'reproduce') === 1, `tier ${r.tier} calls ${h.calls.join()}`)
   }
   {
     // Verify is never skipped for a user-visible change, whatever the tier.
-    for (const [name, o] of [['small', {}], ['standard', { plan: { expectedChangedLines: 400 } }], ['small bug', { facts: BUG }]]) {
+    for (const [name, o] of [['small', {}], ['standard', { plan: { expectedChangedLines: 700 } }], ['small bug', { facts: BUG }]]) {
       const h = harness(tiered(o))
       await h.run({ issue: 405 })
       check(`verify always runs for a user-visible change (${name})`, count(h, 'verify') >= 1, `calls ${h.calls.join()}`)
@@ -563,8 +563,13 @@ async function main() {
   }
   {
     const cases = [
-      ['over the line limit', { expectedChangedLines: 151 }, 'standard'],
-      ['at the line limit', { expectedChangedLines: 150 }, 'small'],
+      ['over the line limit', { expectedChangedLines: 501 }, 'standard'],
+      ['at the line limit', { expectedChangedLines: 500 }, 'small'],
+      ['a #537-sized fix (295 lines)', { expectedChangedLines: 295 }, 'small'],
+      ['a #536-sized change (959 lines)', { expectedChangedLines: 959 }, 'standard'],
+      ['at the file limit', { filesToChange: ['1', '2', '3', '4', '5'] }, 'small'],
+      ['screenshots under docs/media/ are not counted as files', { filesToChange: ['a.ts', 'a.test.ts', 'docs/media/issue-1/x-before.png', 'docs/media/issue-1/x-after.png', 'docs/media/issue-1/y-before.png', 'docs/media/issue-1/y-after.png'] }, 'small'],
+      ['a docs/ file outside media/ still counts', { filesToChange: ['1', '2', '3', '4', '5', 'docs/plan.md'] }, 'standard'],
       ['over the file limit', { filesToChange: ['1', '2', '3', '4', '5', '6'] }, 'standard'],
       ['unknown size', { expectedChangedLines: undefined }, 'standard'],
     ]
@@ -576,13 +581,13 @@ async function main() {
   }
   {
     // bump UP when the real diff grows past the plan
-    const h = harness(tiered({ impl: { linesChanged: 400 }, ship: { linesChanged: 400 } }))
+    const h = harness(tiered({ impl: { linesChanged: 700 }, ship: { linesChanged: 700 } }))
     const r = await h.run({ issue: 405 })
     check('tier bumps up when Implement\'s diff outgrows the plan', r.tier === 'standard' && count(h, 'gh-review') >= 1, `tier ${r.tier}; ${r.tierLog}`)
   }
   {
     // review fixes grow the diff: only Ship sees it
-    const h = harness(tiered({ ship: { linesChanged: 300, filesChanged: 3 } }))
+    const h = harness(tiered({ ship: { linesChanged: 600, filesChanged: 3 } }))
     const r = await h.run({ issue: 405 })
     check('tier bumps up at Ship when review fixes grew the diff', r.tier === 'standard' && count(h, 'gh-review') >= 1, `tier ${r.tier}; ${r.tierLog}`)
   }
@@ -598,9 +603,24 @@ async function main() {
   }
   {
     // never DOWN: a standard plan whose diff came out tiny stays standard
-    const h = harness(tiered({ plan: { expectedChangedLines: 400 } }))
+    const h = harness(tiered({ plan: { expectedChangedLines: 700 } }))
     const r = await h.run({ issue: 405 })
     check('tier never goes down when the diff comes out smaller than planned', r.tier === 'standard' && count(h, 'gh-review') >= 1, `tier ${r.tier}`)
+  }
+  {
+    // #537's real shape: 4 code/test files plus 4 verify screenshots stays small after Implement
+    const files = ['nextjs/src/hooks/useChat.ts', 'nextjs/src/lib/api/chat.ts', 'nextjs/src/__tests__/a.test.tsx', 'nextjs/src/__tests__/b.test.tsx',
+      'docs/media/issue-513/1-after.png', 'docs/media/issue-513/2-after.png', 'docs/media/issue-513/3-after.png', 'docs/media/issue-513/3-before.png']
+    const h = harness(tiered({ impl: { linesChanged: 295, filesChanged: files }, ship: { linesChanged: 295, filesChanged: 4 } }))
+    const r = await h.run({ issue: 513 })
+    check('tier: screenshots Implement committed under docs/media/ do not push a small fix out of small', r.tier === 'small', `tier ${r.tier}; ${r.tierLog}`)
+    check('ship is told not to count docs/media/ files', /NOT counting files under docs\/media\//.test(h.prompts.ship || ''), 'ship prompt')
+  }
+  {
+    // ...but six real code files after Implement still bump it up
+    const h = harness(tiered({ impl: { filesChanged: ['1', '2', '3', '4', '5', '6', 'docs/media/x.png'] } }))
+    const r = await h.run({ issue: 405 })
+    check('tier: six code files after Implement bump to standard, screenshots aside', r.tier === 'standard', `tier ${r.tier}`)
   }
   {
     // an implement agent that doesn't report its size can't keep a run small

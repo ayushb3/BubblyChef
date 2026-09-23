@@ -61,8 +61,14 @@ const MAX_REVIEW_ROUNDS = 3
 //   standard  — anything else; the full pipeline.
 //   protected — touches a .github/CODEOWNERS path; the full pipeline. Never small.
 // An unknown size (an agent that didn't report it) is standard, not small.
-const SMALL_MAX_LINES = 150
+// Limits set from real loop PRs: #464, #468, #471 and #537 (up to ~370 lines, mostly
+// tests) are small; #536 (959 lines, 13 files, a prompts/ path) is not.
+// Verify screenshots under docs/media/ don't count toward the file limit: they're
+// evidence, not code, and a user-visible fix commits two to eight of them.
+const SMALL_MAX_LINES = 500
 const SMALL_MAX_FILES = 5
+const MEDIA_DIR = 'docs/media/'
+const codeFiles = paths => (paths || []).filter(p => !p.startsWith(MEDIA_DIR))
 // Small tier skips waiting for the GitHub review only when that review is a merge gate
 // in its own right: this required check (the `verdict` job in claude-review.yml) holds
 // an agent-loop PR until the reviewer says "looks mergeable" for its exact head commit.
@@ -310,7 +316,7 @@ const SHIP = {
     headSha: { type: 'string', description: 'full SHA of the commit you pushed (git rev-parse HEAD after pushing)' },
     protectedPaths: { type: 'array', items: { type: 'string' } },
     linesChanged: { type: 'integer', description: 'insertions + deletions from git diff --shortstat origin/main...HEAD' },
-    filesChanged: { type: 'integer', description: 'number of files in git diff --name-only origin/main...HEAD' },
+    filesChanged: { type: 'integer', description: 'number of files in git diff --name-only origin/main...HEAD, NOT counting files under docs/media/' },
     wouldAutoMerge: { type: 'boolean' },
     lessonsProposed: { type: 'array', items: { type: 'string' } },
   },
@@ -546,7 +552,7 @@ log(`Plan: ${plan.filesToChange.length} files, ${plan.protectedPaths.length} pro
 // The tier starts from Plan's estimate and is re-checked against the real diff after
 // Implement and again at Ship. raiseTier never lowers it: a change that turns out bigger
 // than planned gets the fuller pipeline, one that turns out smaller keeps what it had.
-let tier = sizeTier({ lines: plan.expectedChangedLines, files: plan.filesToChange.length, protectedPaths: plan.protectedPaths })
+let tier = sizeTier({ lines: plan.expectedChangedLines, files: codeFiles(plan.filesToChange).length, protectedPaths: plan.protectedPaths })
 const tierLog = [`plan: ${tier.tier} (${tier.why})`]
 log(`Tier: ${tier.tier} — ${tier.why}`)
 function raiseTier(stage, facts) {
@@ -710,7 +716,7 @@ and protectedPaths (files in git diff --name-only origin/main...HEAD matching .g
     { label: `implement-${attempt}`, phase: 'Implement', schema: IMPLEMENT, agentType: pre.devRole },
   )
   if (!impl) return await blocked(wt, 'Implement', 'implement agent died', pre)
-  raiseTier(`implement-${attempt}`, { lines: impl.linesChanged, files: (impl.filesChanged || []).length, protectedPaths: impl.protectedPaths || [] })
+  raiseTier(`implement-${attempt}`, { lines: impl.linesChanged, files: codeFiles(impl.filesChanged).length, protectedPaths: impl.protectedPaths || [] })
   if (!impl.gatesPassed) {
     feedback = `Quality gates failed:\n${impl.gateOutput}`
     log(`Attempt ${attempt}: gates failed`)
@@ -819,7 +825,7 @@ Open the PR for issue #${ISSUE}: "${pre.title}".
 
 1. Work out which changed files match .github/CODEOWNERS (git diff --name-only origin/main...HEAD),
    and report linesChanged (insertions + deletions from git diff --shortstat origin/main...HEAD)
-   and filesChanged (the number of files in that diff).
+   and filesChanged (the number of files in that diff, NOT counting files under docs/media/).
 2. Push the branch as the bot, then record headSha = \`git rev-parse HEAD\` (the exact commit
    the GitHub review will run on).
 3. Open a PR (NOT draft) as the bot against main, labelled "agent-loop". Title in the
