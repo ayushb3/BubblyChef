@@ -136,8 +136,8 @@ export async function streamChatMessage(
               return
             }
             // 'done' event is informational; envelope follows it
-          } catch {
-            // Skip unparseable lines
+          } catch (err) {
+            console.error('[streamChatMessage] Failed to process SSE line:', err)
           }
         }
       }
