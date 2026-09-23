@@ -166,6 +166,16 @@ def lookup_query_terms(text: str) -> list[str]:
 # `test_description_only_match_in_a_realistic_length_description_still_shown`.
 # A row with any non-title signal (desc_score or tags_score > 0) always
 # bypasses this floor; only a title-only, near-zero-overlap row is dropped.
+#
+# This floor alone only ever fires against a title of 21+ tokens
+# (1/21 ≈ 0.048 < 0.05) — every realistic title (2-5 tokens) scores well
+# above it on a single shared word, so it does nothing against #542's actual
+# complaint (a multi-word query padded out with several single-word-overlap
+# titles). `search_saved_recipes` additionally drops a title-only match
+# that's missing at least one query token whenever another candidate's
+# title contains *every* query token — see the `full_coverage` handling
+# below and `TestFullQueryCoverageCutoff`. This floor remains as the only
+# filter for the case where no candidate has full coverage.
 _MIN_TITLE_SCORE = 0.05
 
 
@@ -569,16 +579,36 @@ class SupabaseRepository:
 
         Exact-title short-circuit (issue #542 re-review): compares the
         *tokenized* query (`_tokenize_query` — lower-cased, punctuation
-        stripped, stopwords removed) against each candidate's tokenized
-        title, so "butter chicken", "show me my saved butter chicken", and
-        "butter chicken?" all resolve to the same `{butter, chicken}` and any
-        of them short-circuits. The short-circuit only fires when exactly one
-        *distinct* title token set equals the query's: if another candidate's
-        title is a strict superset of the query tokens (e.g. querying
-        "chicken" when both "Chicken" and "Roast Chicken" are saved), that
-        other title is just as plausible a match, so the ranked list is
-        returned instead — with the exact match still sorted first, since it
-        scores highest.
+        stripped, stopwords removed) against each candidate's *tokenized
+        title, also run through `_tokenize_query`* so both sides fold
+        stopwords the same way — a saved "Chicken and Rice" must equal a
+        query of "chicken rice", not silently miss because "and" survived
+        on one side only. This resolves "butter chicken", "show me my saved
+        butter chicken", "butter chicken?", and "chicken and rice" all to
+        the token sets a bare title comparison would expect, and any of them
+        short-circuits. The short-circuit only fires when exactly one
+        *distinct* title token set equals the query's: if another
+        candidate's title is a strict superset of the query tokens (e.g.
+        querying "chicken" when both "Chicken" and "Roast Chicken" are
+        saved), that other title is just as plausible a match, so the ranked
+        list is returned instead — with the exact match still sorted first,
+        since it scores highest.
+
+        Full-query-coverage cutoff (issue #542 re-review, scope item 2): the
+        `_MIN_TITLE_SCORE` floor below only fires against titles of 21+
+        tokens, so on realistic (2-5 token) titles it never touches the
+        padded list #542 actually reported — a multi-word query matching
+        several titles on only one shared word. Whenever at least one
+        candidate's title contains *every* query token (a superset, same
+        stopword-stripped tokenization as the short-circuit above — e.g.
+        "Butter Chicken Curry" for query "butter chicken"), any other
+        title-only-signal candidate that's missing at least one query token
+        is dropped as padding, the same way the short-circuit above drops it
+        when the coverage is an exact match rather than a superset. A row
+        with independent description/tag signal is never dropped by this.
+        For a single-token query, every containing title trivially has full
+        coverage, so this never fires — `_MIN_TITLE_SCORE` is the only floor
+        left for that case.
         """
         query_tokens = set(_tokenize_query(query))
         if not query_tokens:
@@ -586,7 +616,7 @@ class SupabaseRepository:
 
         candidates = await self.get_user_recipes(user_id, limit=500)
         title_token_sets = [
-            (row, set(_tokenize(str(row.get("title") or "")))) for row in candidates
+            (row, set(_tokenize_query(str(row.get("title") or "")))) for row in candidates
         ]
 
         exact_matches = [row for row, tset in title_token_sets if tset == query_tokens]
@@ -596,8 +626,11 @@ class SupabaseRepository:
         if exact_matches and not other_full_match_exists:
             return exact_matches[:limit]
 
+        full_coverage_flags = [tset >= query_tokens for _row, tset in title_token_sets]
+        any_full_coverage = any(full_coverage_flags)
+
         scored: list[tuple[float, dict[str, Any]]] = []
-        for row in candidates:
+        for row, has_full_coverage in zip(candidates, full_coverage_flags, strict=True):
             title_tokens = _tokenize(str(row.get("title") or ""))
             desc_tokens = _tokenize(str(row.get("description") or ""))
             raw_tags = row.get("tags")
@@ -623,10 +656,10 @@ class SupabaseRepository:
             total = title_score * 1.0 + desc_score * 0.4 + tags_score * 0.4
             if total <= 0:
                 continue
-            title_only_noise = (
-                0 < title_score < _MIN_TITLE_SCORE and desc_score == 0 and tags_score == 0
-            )
-            if title_only_noise:
+            title_only = desc_score == 0 and tags_score == 0
+            title_only_noise = title_only and 0 < title_score < _MIN_TITLE_SCORE
+            partial_coverage_noise = title_only and any_full_coverage and not has_full_coverage
+            if title_only_noise or partial_coverage_noise:
                 continue
             scored.append((total, row))
 

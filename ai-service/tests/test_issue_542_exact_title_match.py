@@ -31,6 +31,28 @@ first pass:
    query tokens; otherwise the ranked list is returned, with the exact match
    sorted first.
 
+Revised again (3rd re-review pass, 2026-09-23) for two further gaps:
+
+4. The exact-match comparison tokenized its two sides differently: the query
+   went through `_tokenize_query` (stopwords stripped) but the title went
+   through `_tokenize` (stopwords kept, deliberately, for the ranked-scoring
+   path below). A saved title containing a stopword ("Chicken and Rice",
+   "Mac and Cheese", "Pasta with Pesto", "One Pot Chicken") could never equal
+   the stripped query tokens, so the short-circuit never fired for it — and
+   it also tripped the strict-superset guard, suppressing the short-circuit
+   even when it was the only saved recipe. Both sides are now tokenized with
+   `_tokenize_query` for this comparison.
+5. The `_MIN_TITLE_SCORE` floor only ever fires against a title of 21+
+   tokens (1/21 ≈ 0.048 < 0.05); every realistic title (2-5 tokens) scores
+   well above it on a single shared word, so the "score cutoff" half of
+   #542's scope did nothing against the issue's actual padded-list scenario.
+   `search_saved_recipes` now also drops a title-only match that's missing
+   at least one query token when another candidate's title contains *every*
+   query token (`TestFullQueryCoverageCutoff` below) — the generalisation of
+   the exact-match short-circuit to a title with an exact match plus extra
+   words ("Butter Chicken Curry" for query "butter chicken"). The absolute
+   floor still exists for the case where no candidate has full coverage.
+
 Follows the `_FakeClient`/`_FakeQuery` pattern from
 `test_issue_493_saved_recipe_search.py`.
 """
@@ -269,6 +291,88 @@ class TestExactTitleMatch:
         assert set(ids) == {"exact", "roast", "tikka"}
 
 
+@pytest.mark.asyncio
+class TestExactMatchStopwordTokenization:
+    """Regression for PR #605 3rd re-review finding 1: the exact-match
+    comparison must tokenize the title the same way it tokenizes the query
+    (`_tokenize_query`, stopwords stripped), or a title containing a
+    stopword can never short-circuit."""
+
+    @pytest.mark.parametrize(
+        ("title", "query"),
+        [
+            ("Chicken and Rice", "chicken rice"),
+            ("Mac and Cheese", "mac cheese"),
+            ("Pasta with Pesto", "pasta pesto"),
+            ("One Pot Chicken", "pot chicken"),
+        ],
+    )
+    async def test_stopword_title_only_recipe_returns_that_recipe_alone(
+        self, title: str, query: str
+    ) -> None:
+        """The only saved recipe has a stopword in its title; asking for it
+        by the stopword-stripped query must return it, not an empty/padded
+        result caused by the two sides tokenizing differently."""
+        rows = [
+            {
+                "id": "exact",
+                "user_id": "u1",
+                "title": title,
+                "description": "",
+                "tags": [],
+            },
+        ]
+        repo = _repo_for(rows)
+
+        results = await repo.search_saved_recipes("u1", query, limit=5)
+
+        assert [r["id"] for r in results] == ["exact"]
+
+    @pytest.mark.parametrize(
+        ("title", "query"),
+        [
+            ("Chicken and Rice", "chicken rice"),
+            ("Mac and Cheese", "mac cheese"),
+            ("Pasta with Pesto", "pasta pesto"),
+            ("One Pot Chicken", "pot chicken"),
+        ],
+    )
+    async def test_stopword_title_exact_match_among_several_saved_recipes(
+        self, title: str, query: str
+    ) -> None:
+        """Same stopword-title equality, but with other saved recipes in the
+        pool that don't match at all — the exact match must still be
+        isolated from unrelated candidates, not padded or dropped."""
+        rows = [
+            {
+                "id": "exact",
+                "user_id": "u1",
+                "title": title,
+                "description": "",
+                "tags": [],
+            },
+            {
+                "id": "unrelated1",
+                "user_id": "u1",
+                "title": "Blueberry Pancakes",
+                "description": "",
+                "tags": [],
+            },
+            {
+                "id": "unrelated2",
+                "user_id": "u1",
+                "title": "Garden Salad",
+                "description": "",
+                "tags": [],
+            },
+        ]
+        repo = _repo_for(rows)
+
+        results = await repo.search_saved_recipes("u1", query, limit=5)
+
+        assert [r["id"] for r in results] == ["exact"]
+
+
 def _title_with_padding(word: str, total_tokens: int) -> str:
     """Build a title with exactly `total_tokens` tokens, one of which is
     `word` — lets a test target a precise token-overlap ratio (1/total)."""
@@ -382,3 +486,156 @@ class TestScoreCutoff:
         results = await repo.search_saved_recipes("u1", "butter chicken", limit=5)
 
         assert [r["id"] for r in results] == ["desc_match"]
+
+
+@pytest.mark.asyncio
+class TestFullQueryCoverageCutoff:
+    """Regression for PR #605 3rd re-review finding 2: `_MIN_TITLE_SCORE`
+    never fires against realistic (2-5 token) titles, so #542's actual
+    complaint — a multi-word query returns a padded list of titles that
+    share only one word with it — was untouched by the first cutoff pass.
+
+    These use titles of realistic length (2-4 tokens), the same shape as
+    the issue's own scenario, not synthetic padding built to straddle a
+    constant.
+    """
+
+    async def test_padded_list_from_the_issue_scenario_is_shortened(self) -> None:
+        """Query 'butter chicken' against a saved 'Butter Chicken Curry'
+        (contains every query word, plus one) alongside several
+        'chicken'-only matches that were the padding #542 complained about.
+        Once a title contains the full query, the chicken-only rows are
+        dropped rather than padding the list out to `limit`."""
+        rows = [
+            {
+                "id": "full_coverage",
+                "user_id": "u1",
+                "title": "Butter Chicken Curry",
+                "description": "",
+                "tags": [],
+            },
+            {
+                "id": "chicken_only_1",
+                "user_id": "u1",
+                "title": "Chicken Tikka Masala Bowl",
+                "description": "",
+                "tags": [],
+            },
+            {
+                "id": "chicken_only_2",
+                "user_id": "u1",
+                "title": "Chicken Noodle Soup Recipe",
+                "description": "",
+                "tags": [],
+            },
+            {
+                "id": "chicken_only_3",
+                "user_id": "u1",
+                "title": "Grilled Chicken Skewers Plate",
+                "description": "",
+                "tags": [],
+            },
+        ]
+        repo = _repo_for(rows)
+
+        results = await repo.search_saved_recipes("u1", "butter chicken", limit=5)
+
+        assert [r["id"] for r in results] == ["full_coverage"]
+
+    async def test_partial_matches_survive_when_nothing_has_full_coverage(self) -> None:
+        """No saved title contains every query word, so there's nothing to
+        prefer over the partial matches — the cutoff must not empty the
+        list just because every candidate is partial."""
+        rows = [
+            {
+                "id": "roast",
+                "user_id": "u1",
+                "title": "Roast Chicken",
+                "description": "",
+                "tags": [],
+            },
+            {
+                "id": "tikka",
+                "user_id": "u1",
+                "title": "Chicken Tikka",
+                "description": "",
+                "tags": [],
+            },
+        ]
+        repo = _repo_for(rows)
+
+        results = await repo.search_saved_recipes("u1", "butter chicken", limit=5)
+
+        assert {r["id"] for r in results} == {"roast", "tikka"}
+
+    async def test_description_only_match_survives_alongside_a_full_coverage_title(
+        self,
+    ) -> None:
+        """A row with no title overlap at all, but a description that names
+        the dish, must still surface even when another candidate's title
+        has full query coverage — the coverage cutoff only drops rows with
+        no independent desc/tag signal."""
+        rows = [
+            {
+                "id": "full_coverage",
+                "user_id": "u1",
+                "title": "Butter Chicken Curry",
+                "description": "",
+                "tags": [],
+            },
+            {
+                "id": "desc_match",
+                "user_id": "u1",
+                "title": "Weeknight Dinner Idea",
+                "description": (
+                    "This creamy butter chicken curry is a weeknight favorite that "
+                    "pairs wonderfully with steamed rice or warm naan bread and only "
+                    "takes about forty five minutes from start to finish making it "
+                    "perfect for a cozy family dinner any night of the week really"
+                ),
+                "tags": [],
+            },
+            {
+                "id": "chicken_only",
+                "user_id": "u1",
+                "title": "Chicken Noodle Soup Recipe",
+                "description": "",
+                "tags": [],
+            },
+        ]
+        repo = _repo_for(rows)
+
+        results = await repo.search_saved_recipes("u1", "butter chicken", limit=5)
+
+        ids = {r["id"] for r in results}
+        assert "full_coverage" in ids
+        assert "desc_match" in ids
+        assert "chicken_only" not in ids
+
+    async def test_single_token_query_unaffected_by_coverage_cutoff(self) -> None:
+        """A single-token query trivially gives every containing title 'full
+        coverage', so this cutoff must never fire for it — that's what keeps
+        `TestExactTitleMatch.test_single_token_query_matching_several_titles_keeps_the_list`
+        (a real, already-fixed scenario) intact. Same shape, checked directly
+        against the coverage rule rather than the short-circuit."""
+        rows = [
+            {
+                "id": "roast",
+                "user_id": "u1",
+                "title": "Roast Chicken",
+                "description": "",
+                "tags": [],
+            },
+            {
+                "id": "stock",
+                "user_id": "u1",
+                "title": "Chicken Stock Notes",
+                "description": "",
+                "tags": [],
+            },
+        ]
+        repo = _repo_for(rows)
+
+        results = await repo.search_saved_recipes("u1", "chicken", limit=5)
+
+        assert {r["id"] for r in results} == {"roast", "stock"}
