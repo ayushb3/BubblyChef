@@ -143,13 +143,17 @@ async function main() {
   {
     // Every bot write clears the ambient token: gh reads GH_TOKEN/GITHUB_TOKEN
     // ahead of GH_CONFIG_DIR, so without this the write lands as that token's owner.
+    // A full run, NOT dryRun: dryRun returns after Decide, so no AS_BOT-derived prompt
+    // (ship, respond-fix, blocked-path, finish, escalate) is ever emitted and the check
+    // passes vacuously against the capability probe alone. botPrompts.length > 1 pins
+    // that: with dryRun the count is 1 and this fails.
     const h = harness(label => HAPPY(label))
-    await h.run({ issue: 405, dryRun: true })
+    await h.run({ issue: 405 })
     const botPrompts = Object.entries(h.prompts).filter(([, v]) => /GH_CONFIG_DIR="\$HOME\/\.config\/gh-bubblychef-bot"/.test(v))
     const bad = botPrompts.filter(([, v]) =>
       /(?<!GH_TOKEN= GITHUB_TOKEN= )GH_CONFIG_DIR="\$HOME\/\.config\/gh-bubblychef-bot" gh /.test(v))
-    check('every bot gh command clears GH_TOKEN/GITHUB_TOKEN first', bad.length === 0,
-      `unguarded in: ${bad.map(([k]) => k).join(', ') || 'none'}`)
+    check('every bot gh command clears GH_TOKEN/GITHUB_TOKEN first', bad.length === 0 && botPrompts.length > 1,
+      `unguarded in: ${bad.map(([k]) => k).join(', ') || 'none'}; bot prompts inspected: ${botPrompts.length}`)
   }
 
   // ── Setup: a half-finished setup drops its branch; one that failed before creating it doesn't ──
