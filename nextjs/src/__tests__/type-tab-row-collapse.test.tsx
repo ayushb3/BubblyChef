@@ -167,8 +167,8 @@ describe('TypeTab row collapse on "Add another item" (#404)', () => {
       screen.getByRole('button', { name: /Edit item 1: Milk/i }),
     ).toBeInTheDocument()
 
-    switchTab(/Scan/)
-    switchTab(/Type/)
+    switchTab(/^Scan$|📷 Scan/)
+    switchTab(/^Manual$|Type/)
 
     // Still collapsed with the same data, and the count is unaffected.
     const summaryButton = screen.getByRole('button', { name: /Edit item 1: Milk/i })
@@ -179,5 +179,59 @@ describe('TypeTab row collapse on "Add another item" (#404)', () => {
     // And re-expanding after the round trip still works and shows "Milk".
     fireEvent.click(summaryButton)
     expect(screen.getByDisplayValue('Milk')).toBeInTheDocument()
+  })
+
+  it('blurring a filled row onto "Add another item" does not collapse it before the click lands', async () => {
+    // Collapsing on the button's mousedown/focus shifts the layout under the
+    // pointer between press and release; the add-row click collapses filled
+    // rows itself, so the blur has nothing to do in that case.
+    renderSheet()
+
+    fireEvent.change(nameInputs()[0], { target: { value: 'Milk' } })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Add 1 Item/i })).toBeInTheDocument(),
+    )
+    const addButton = screen.getByRole('button', { name: /Add another item/i })
+    fireEvent.blur(nameInputs()[0], { relatedTarget: addButton })
+
+    expect(screen.getByDisplayValue('Milk')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Edit item 1: Milk/i })).not.toBeInTheDocument()
+
+    fireEvent.click(addButton)
+    expect(screen.getByRole('button', { name: /Edit item 1: Milk/i })).toBeInTheDocument()
+  })
+
+  it('blurring a filled row onto anything else still collapses it', async () => {
+    renderSheet()
+
+    fireEvent.change(nameInputs()[0], { target: { value: 'Milk' } })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Add 1 Item/i })).toBeInTheDocument(),
+    )
+    fireEvent.blur(nameInputs()[0], { relatedTarget: screen.getByRole('button', { name: /Add 1 Item/i }) })
+
+    expect(screen.getByRole('button', { name: /Edit item 1: Milk/i })).toBeInTheDocument()
+  })
+
+  it("expanding a summary puts focus in that row's name field without opening the suggestions", async () => {
+    mockSearchFoods.mockResolvedValue([
+      { name: 'Milk', category: 'dairy', default_location: 'fridge', expiry_days: 7, emoji: '🥛' },
+    ] as unknown as Awaited<ReturnType<typeof foodsApi.searchFoods>>)
+    renderSheet()
+
+    fireEvent.change(nameInputs()[0], { target: { value: 'Milk' } })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Add 1 Item/i })).toBeInTheDocument(),
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Add another item/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Edit item 1: Milk/i }))
+
+    const expandedName = screen.getByDisplayValue('Milk')
+    await waitFor(() => expect(document.activeElement).toBe(expandedName))
+    // Give the debounced search time to run; a programmatic focus must not
+    // pop the catalog list open over the form.
+    await new Promise((r) => setTimeout(r, 400))
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(expandedName).toHaveAttribute('aria-expanded', 'false')
   })
 })

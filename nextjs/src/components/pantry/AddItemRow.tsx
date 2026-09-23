@@ -72,12 +72,20 @@ interface AddItemRowProps {
   onChange: (updated: ManualRow) => void
   onRemove: () => void
   index: number
+  /** Focus the name field on mount (set when the row is re-expanded). */
+  autoFocusName?: boolean
 }
 
 const inputClass =
   'w-full rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]'
 
-export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRowProps) {
+export default function AddItemRow({
+  row,
+  onChange,
+  onRemove,
+  index,
+  autoFocusName = false,
+}: AddItemRowProps) {
   const set = (field: keyof ManualRow, value: string | number | boolean) =>
     onChange({ ...row, [field]: value })
 
@@ -136,6 +144,7 @@ export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRo
         placeholder="Item name (e.g. Milk, Eggs...)"
         ariaLabel="Item name"
         className={inputClass}
+        autoFocus={autoFocusName}
       />
 
       {/* Quantity + Unit */}

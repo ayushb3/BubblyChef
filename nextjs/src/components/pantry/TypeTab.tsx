@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import AddItemRow, { type ManualRow } from './AddItemRow'
 import AddItemRowSummary from './AddItemRowSummary'
@@ -50,6 +50,9 @@ export default function TypeTab({ onItemsReady }: TypeTabProps) {
   // `isCollapsed` below re-checks `isFilled` on every render so an emptied
   // row is never hidden behind a summary that would mask its missing name.
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
+  // The row the user just re-expanded; its name field takes focus on mount.
+  const [focusRowId, setFocusRowId] = useState<string | null>(null)
+  const addButtonRef = useRef<HTMLButtonElement>(null)
 
   function toAddItems(updated: ManualRow[]): AddItem[] {
     return updated
@@ -108,6 +111,7 @@ export default function TypeTab({ onItemsReady }: TypeTabProps) {
   }
 
   const handleExpand = (id: string) => {
+    setFocusRowId(id)
     setCollapsedIds((prev) => {
       if (!prev.has(id)) return prev
       const next = new Set(prev)
@@ -125,6 +129,10 @@ export default function TypeTab({ onItemsReady }: TypeTabProps) {
     // this row's container. An indeterminate relatedTarget (null) is left
     // alone rather than guessed at.
     if (!related || e.currentTarget.contains(related)) return
+    // Focus is moving to "+ Add another item", whose click collapses filled rows
+    // itself. Collapsing here, on the press, would shrink the layout under
+    // the pointer before the release lands.
+    if (related === addButtonRef.current) return
     setCollapsedIds((prev) => {
       if (prev.has(row.id)) return prev
       const next = new Set(prev)
@@ -179,12 +187,14 @@ export default function TypeTab({ onItemsReady }: TypeTabProps) {
               index={i}
               onChange={(updated) => handleRowChange(i, updated)}
               onRemove={() => handleRowRemove(i)}
+              autoFocusName={focusRowId === row.id}
             />
           </motion.div>
         )
       })}
 
       <button
+        ref={addButtonRef}
         type="button"
         onClick={handleAddRow}
         className="w-full py-3 rounded-2xl border-2 border-dashed border-[var(--color-border)] text-sm text-[var(--color-muted)] font-semibold hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors active:scale-95"
