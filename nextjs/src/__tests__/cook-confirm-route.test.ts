@@ -2,40 +2,48 @@
  * @jest-environment node
  *
  * `POST /api/ai/recipes/cook/confirm` \u2014 regression tests for review findings
- * on the #524 rescue-bonus PR, amended by issue #550:
+ * on the #524 rescue-bonus PR, amended by issue #550, amended again by the
+ * #595 PR review:
  *
- * 1. Issue #550 tightened `validateClientDate` from tolerating \u00b11 day of
- *    clock skew (its #520/#524/#570 form) to requiring an EXACT match
- *    against the offset-derived local date. Both `cook_confirm` and
- *    `rescue` key on that single accepted local date (`validDate`) \u2014 this is
- *    what actually fixes the UTC-midnight double pay this issue was filed
- *    for (two confirms of one recipe at 23:50 and 00:10 UTC, same local day,
- *    now share one `validDate` and pay once).
- * 2. Issue #550 review: `cook_confirm` was going to fall back to the
- *    server's UTC date when the client sent no usable date, same as its
- *    pre-#524 form \u2014 but that fallback reopens a double pay of its own: one
- *    confirm with a valid local date pays `<recipe>:<localDate>`, and a
- *    SECOND confirm of the same cook with a missing/invalid date pays the
- *    fallback `<recipe>:<utcDate>` \u2014 two awards for one cook whenever the
- *    client's local day and the server's UTC day disagree (every evening in
- *    the Americas). The app always sends a date, so `cook_confirm` now SKIPS
- *    the award entirely without a usable `validDate`, exactly like `rescue`
- *    already did \u2014 no server-UTC fallback for either award. The cook
- *    DEDUCTION itself is never gated on the date either way.
- * 3. The old "send yesterday's date on one confirm, today's on the next"
- *    double-pay this suite originally guarded against is now closed by
- *    `validateClientDate` itself: an invalid date is flatly refused
- *    (`validDate` is `null`, so the award is skipped) rather than tolerated
- *    and collapsed onto the server's date.
+ * 1. `cook_confirm` and `rescue` key on `validDate` \u2014 the client's local date
+ *    checked exactly against the offset-derived local date
+ *    (`validateClientDate` in `lib/date.ts`) \u2014 when there is one. With no
+ *    usable date, both are SKIPPED, never fallback-keyed to the server's UTC
+ *    date (an earlier revision's fallback reopened a double pay of its own:
+ *    one confirm with a valid local date pays `<recipe>:<localDate>`, a
+ *    second confirm of the same cook with a missing date pays a DIFFERENT
+ *    fallback key). The cook DEDUCTION is never gated on the date either way.
+ * 2. **#595 review, the actual fix**: `validDate`'s "exact match" is exact
+ *    only relative to `tz_offset_minutes`, which is client-supplied \u2014 a
+ *    fabricated offset makes ANY date "the" caller's exact local date, so
+ *    keying alone (matching or not) cannot be what prevents a double pay.
+ *    The real boundary is a 20h cooldown on the server's own `created_at`
+ *    for this recipe's `cook_confirm` awards (`mostRecentEventCreatedAt` +
+ *    `isRateLimited` in `lib/bubbles.ts`): at most one `cook_confirm` per
+ *    recipe per ~20h, independent of what ref_key any individual call's date
+ *    would produce. The tests below use a NON-UTC offset fixture (UTC-7)
+ *    specifically because a UTC/offset-0 fixture makes `validDate` and the
+ *    (now-removed) server-UTC fallback collide, which is exactly what made
+ *    the pre-review version of this test pass for the wrong reason.
  */
 
 const mockUser = { id: 'user-1' }
 
 const awardBubblesMock = jest.fn(async () => 10)
-jest.mock('@/lib/bubbles', () => ({
-  awardBubbles: awardBubblesMock,
-  RESCUE_CAP_PER_COOK: 3,
-}))
+// `null` by default (no prior event of this type) — individual tests override
+// with `mockResolvedValueOnce` to simulate a recent prior award. `isRateLimited`
+// is the REAL, pure implementation (imported via `requireActual`), not mocked —
+// its correctness given a `created_at` is exactly what these tests are pinning.
+const mostRecentEventCreatedAtMock = jest.fn(async () => null as string | null)
+jest.mock('@/lib/bubbles', () => {
+  const actual = jest.requireActual('@/lib/bubbles')
+  return {
+    ...actual,
+    awardBubbles: awardBubblesMock,
+    RESCUE_CAP_PER_COOK: 3,
+    mostRecentEventCreatedAt: mostRecentEventCreatedAtMock,
+  }
+})
 
 jest.mock('@/lib/response-helpers', () => ({
   requireAuth: jest.fn(),
@@ -97,36 +105,95 @@ describe('cook/confirm cook_confirm award (#524 review)', () => {
     )
   })
 
-  it("awards cook_confirm exactly once when a valid-date confirm is followed by a no-date confirm of the same cook (#550: the fallback this replaces would have paid twice)", async () => {
-    jest.useFakeTimers().setSystemTime(new Date('2026-08-26T12:00:00.000Z'))
+  it('awards cook_confirm exactly once when a valid-date confirm is followed by a no-date confirm of the same cook (non-UTC fixture, order: valid then missing)', async () => {
+    // UTC-7 fixture (not offset 0) — see the file header on why a UTC
+    // fixture makes this assertion pass for the wrong reason. The no-date
+    // second call is skipped for its own reason (no `validDate` at all, so
+    // `mostRecentEventCreatedAt` for cook_confirm is never even queried) —
+    // this pins that skip, not the cooldown; the cooldown itself is pinned
+    // separately below with two calls that BOTH have a valid (but
+    // different) date.
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-24T01:00:00.000Z')) // 2026-09-23 18:00 local at UTC-7
     mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])
 
-    await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [], date: '2026-08-26' }))
+    await POST(
+      makeRequest({ recipe_id: 'recipe-1', deductions: [], date: '2026-09-23', tz_offset_minutes: -420 }),
+    )
     await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [] }))
 
     const cookConfirmCalls = (awardBubblesMock.mock.calls as unknown as Array<[string, string, string]>).filter(
       (call) => call[1] === 'cook_confirm',
     )
     expect(cookConfirmCalls).toHaveLength(1)
-    expect(cookConfirmCalls[0][2]).toBe('recipe-1:2026-08-26')
+    expect(cookConfirmCalls[0][2]).toBe('recipe-1:2026-09-23')
   })
 
-  it("awards cook_confirm only once, on the second call, when the client sends yesterday's (refused) date, then today's, for the same cook", async () => {
-    // The old ±1 day tolerance is what let this scenario collapse onto one
-    // server-dated key; #550 refuses yesterday's date outright, so the
-    // first call is simply skipped (no award, no key at all) and only the
-    // second (valid) call awards.
-    jest.useFakeTimers().setSystemTime(new Date('2026-08-26T12:00:00.000Z'))
+  it('awards cook_confirm exactly once when a no-date confirm is followed by a valid-date confirm of the same cook (non-UTC fixture, order: missing then valid)', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-24T01:00:00.000Z'))
     mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])
 
-    await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [], date: '2026-08-25' }))
-    await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [], date: '2026-08-26' }))
+    await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [] }))
+    await POST(
+      makeRequest({ recipe_id: 'recipe-1', deductions: [], date: '2026-09-23', tz_offset_minutes: -420 }),
+    )
 
     const cookConfirmCalls = (awardBubblesMock.mock.calls as unknown as Array<[string, string, string]>).filter(
       (call) => call[1] === 'cook_confirm',
     )
     expect(cookConfirmCalls).toHaveLength(1)
-    expect(cookConfirmCalls[0][2]).toBe('recipe-1:2026-08-26')
+    expect(cookConfirmCalls[0][2]).toBe('recipe-1:2026-09-23')
+  })
+
+  it("refuses a second cook_confirm within 20h for the same recipe even when the second call's valid date is a DIFFERENT key (#595 review findings 2 & 3: keying alone can't prevent this, only the cooldown does)", async () => {
+    // Both calls send a genuinely "valid" date per `validateClientDate` —
+    // the first honestly (UTC-7), the second via a different offset that
+    // makes the NEXT calendar day the "exact" local date, exactly the
+    // offset-fabrication finding 1 describes. Without the cooldown these
+    // would be two different ref_keys and both would pay.
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-23T23:30:00.000Z'))
+    mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])
+
+    // First confirm: honest UTC-7 client. No prior cook_confirm exists yet.
+    mostRecentEventCreatedAtMock.mockResolvedValueOnce(null)
+    await POST(
+      makeRequest({ recipe_id: 'recipe-1', deductions: [], date: '2026-09-23', tz_offset_minutes: -420 }),
+    )
+
+    // Second confirm, 10 minutes later (well inside the 20h cooldown) — a
+    // fabricated offset (+30) makes '2026-09-24' the exact expected local
+    // date. Simulate the first award as the most recent cook_confirm row
+    // for this recipe, ~10 minutes old.
+    jest.setSystemTime(new Date('2026-09-23T23:40:00.000Z'))
+    mostRecentEventCreatedAtMock.mockResolvedValueOnce(new Date('2026-09-23T23:30:05.000Z').toISOString())
+    await POST(
+      makeRequest({ recipe_id: 'recipe-1', deductions: [], date: '2026-09-24', tz_offset_minutes: 30 }),
+    )
+
+    const cookConfirmCalls = (awardBubblesMock.mock.calls as unknown as Array<[string, string, string]>).filter(
+      (call) => call[1] === 'cook_confirm',
+    )
+    expect(cookConfirmCalls).toHaveLength(1)
+    expect(cookConfirmCalls[0][2]).toBe('recipe-1:2026-09-23')
+  })
+
+  it('allows a new cook_confirm for the same recipe once the 20h cooldown has elapsed', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-23T23:30:00.000Z'))
+    mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])
+
+    // The most recent cook_confirm for this recipe was 21 hours ago — past
+    // the 20h cooldown — so a new one is allowed.
+    mostRecentEventCreatedAtMock.mockResolvedValueOnce(
+      new Date('2026-09-23T02:30:00.000Z').toISOString(),
+    )
+    await POST(
+      makeRequest({ recipe_id: 'recipe-1', deductions: [], date: '2026-09-23', tz_offset_minutes: -420 }),
+    )
+
+    const cookConfirmCalls = (awardBubblesMock.mock.calls as unknown as Array<[string, string, string]>).filter(
+      (call) => call[1] === 'cook_confirm',
+    )
+    expect(cookConfirmCalls).toHaveLength(1)
+    expect(cookConfirmCalls[0][2]).toBe('recipe-1:2026-09-23')
   })
 
   it("judges rescue eligibility on the client's accepted local day and keys BOTH cook_confirm and rescue on it, not the server's UTC day (#550)", async () => {

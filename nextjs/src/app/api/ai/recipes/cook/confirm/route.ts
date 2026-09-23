@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { aiProxyJson } from '@/lib/api/ai-proxy'
 import { requireAuth } from '@/lib/response-helpers'
-import { awardBubbles, RESCUE_CAP_PER_COOK } from '@/lib/bubbles'
+import { awardBubbles, RESCUE_CAP_PER_COOK, mostRecentEventCreatedAt, isRateLimited } from '@/lib/bubbles'
 import { validateClientDate, parseTzOffsetMinutes } from '@/lib/date'
 import { isExpiringSoon, daysUntilExpiryOn } from '@/lib/pantry-helpers'
 
@@ -13,20 +13,16 @@ export async function POST(request: Request) {
   const body = await request.json()
 
   // Client's local date (#524), validated EXACTLY against the offset-derived
-  // local date (#550 — see `validateClientDate`; no more ±1 day tolerance).
-  // Used to key both the `cook_confirm` and `rescue` awards below; a missing
-  // or invalid date/offset must never block the cook DEDUCTION itself,
-  // matching the never-block contract every other award call site follows
-  // (see bubbles-award-call-sites.test.ts) — it only means both awards are
-  // skipped for that call, below. (An earlier version of this fix fell back
-  // to the server's UTC date for `cook_confirm` instead of skipping it — that
-  // reopens the double pay this issue exists to close: one confirm with the
-  // valid local date pays `<recipe>:<localDate>`, and a second confirm of
-  // the SAME cook with a missing/invalid date pays the fallback
-  // `<recipe>:<utcDate>` — two awards for one cook whenever local and UTC
-  // dates disagree, i.e. every evening in the Americas. The app always sends
-  // a valid date, so skipping — like `rescue` already does — is the correct
-  // choice here.)
+  // local date (see `validateClientDate`; no ±1 day tolerance) — but
+  // `tz_offset_minutes` is client-supplied, so that match is exact only
+  // relative to a number the caller chose (#550/#595 review). `validDate` is
+  // therefore used for JUDGEMENT (was this item expiring soon "today") and
+  // to pick a sensible ref_key, never as the reason a second award is
+  // refused — that's the 20h cooldown below, keyed on the server's own
+  // `created_at`. A missing or invalid date/offset must never block the cook
+  // DEDUCTION itself, matching the never-block contract every other award
+  // call site follows (see bubbles-award-call-sites.test.ts) — it only means
+  // both awards below are skipped for that call.
   const offsetMinutes = parseTzOffsetMinutes(body.tz_offset_minutes)
   const validDate = validateClientDate(body.date, offsetMinutes, 'date')
     ? null
@@ -56,18 +52,30 @@ export async function POST(request: Request) {
   const response = await aiProxyJson('/v1/recipes/cook/confirm', body)
 
   if (response.status >= 200 && response.status < 300) {
-    // cook_confirm (predates #524): keyed on `validDate` — the single
-    // client-local date the server just validated exactly against the
-    // offset — so the same recipe cooked at 23:50 and 00:10 UTC on the same
-    // local day pays once, closing the UTC-midnight double pay this issue
-    // was filed for. Issue #550 review: SKIPPED (not fallback-keyed to the
-    // server's UTC date) when there's no usable `validDate`, same as
-    // `rescue` below — a UTC fallback here would let one cook be paid twice
-    // by confirming once with a valid date and once with a missing/invalid
-    // one. The cook DEDUCTION above is unaffected either way; only this
-    // award is conditional on a usable date, and the app always sends one.
+    // cook_confirm (predates #524): keyed on `validDate` when there is one —
+    // the same recipe cooked at 23:50 and 00:10 UTC on the same local day
+    // shares one key. SKIPPED (never a server-UTC fallback) without a usable
+    // `validDate`, same as `rescue` below — the cook DEDUCTION above is
+    // unaffected either way.
+    //
+    // #550/#595 review: keying alone can't close the double pay, because
+    // `validDate` depends on client-supplied `tz_offset_minutes` — a second
+    // confirm of the SAME cook that simply omits the date (or sends a
+    // different offset) produces a DIFFERENT key from the first, valid-dated
+    // confirm, and would pay again. The actual boundary is this 20h cooldown
+    // on the server's own `created_at` for THIS recipe's `cook_confirm`
+    // awards, independent of what ref_key any individual call would use —
+    // at most one `cook_confirm` per recipe per ~20h, whatever the date says.
     if (body.recipe_id && validDate) {
-      await awardBubbles(user.id, 'cook_confirm', `${body.recipe_id}:${validDate}`)
+      const lastCookConfirmCreatedAt = await mostRecentEventCreatedAt(
+        supabase,
+        user.id,
+        'cook_confirm',
+        `${body.recipe_id}:`,
+      )
+      if (!isRateLimited(lastCookConfirmCreatedAt)) {
+        await awardBubbles(user.id, 'cook_confirm', `${body.recipe_id}:${validDate}`)
+      }
     }
 
     // Rescue bonus (#524): only after the microservice confirms the cook
