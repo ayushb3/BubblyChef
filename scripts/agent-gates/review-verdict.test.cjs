@@ -3,7 +3,7 @@
 'use strict'
 const fs = require('fs')
 const path = require('path')
-const { decide, parseVerdict, REVIEW_JOB, REVIEW_STEP } = require('./review-verdict.cjs')
+const { decide, parseVerdict, prDiffUnchanged, makeGit, REVIEW_JOB, REVIEW_STEP } = require('./review-verdict.cjs')
 
 let failures = 0
 function check(name, cond, detail) {
@@ -55,6 +55,130 @@ check('passes: code owner approved this exact commit', run({ ...BAD, approvals: 
 check('holds: approval of an older commit', run({ ...BAD, approvals: [{ user: 'ayushb3', state: 'APPROVED', commitId: 'b'.repeat(40) }] }).pass === false, '')
 check('holds: approval by someone who is not a code owner', run({ ...BAD, approvals: [{ user: 'bubblychef-bot', state: 'APPROVED', commitId: HEAD }] }).pass === false, '')
 check('holds: a code owner comment that is not an approval', run({ ...BAD, approvals: [{ user: 'ayushb3', state: 'COMMENTED', commitId: HEAD }] }).pass === false, '')
+
+// an approval of an earlier commit, carried across pushes that only merged the base in
+const A = 'b'.repeat(40)
+const approvedA = [{ user: 'ayushb3', state: 'APPROVED', commitId: A, submittedAt: '2026-09-22T10:00:00Z' }]
+const unchanged = same => sha => (sha === A ? { same, why: same ? '' : 'the PR diff changed' } : { same: false, why: 'unexpected sha' })
+check('passes: approval of A, and HEAD only merged the base in', run({ ...BAD, approvals: approvedA, prDiffUnchanged: unchanged(true) }).pass === true, '')
+{
+  const r = run({ ...BAD, approvals: approvedA, prDiffUnchanged: unchanged(false) })
+  check('holds: approval of A, but the PR diff changed since (new code or an altered merge)', r.pass === false && /does not carry/.test(r.reason), r.reason)
+}
+{
+  const r = run({ ...BAD, approvals: approvedA, prDiffUnchanged: () => { throw new Error('boom') } })
+  check('holds: the git comparison throws', r.pass === false && /boom/.test(r.reason), r.reason)
+}
+check('holds: the git comparison answers something other than same: true', run({ ...BAD, approvals: approvedA, prDiffUnchanged: () => ({ same: 'yes' }) }).pass === false, '')
+check('holds: no git comparison available', run({ ...BAD, approvals: approvedA }).pass === false, '')
+{
+  let called = false
+  const r = run({ approvals: approvedA, prDiffUnchanged: () => { called = true; return { same: true } } })
+  check('no git work when the Claude review already clears it', r.pass === true && !called, `called=${called}`)
+}
+{
+  const approvals = [...approvedA, { user: 'ayushb3', state: 'CHANGES_REQUESTED', commitId: HEAD, submittedAt: '2026-09-22T11:00:00Z' }]
+  check('holds: a later "changes requested" overrides an approval of A', run({ ...BAD, approvals, prDiffUnchanged: unchanged(true) }).pass === false, '')
+}
+{
+  const approvals = [{ user: 'ayushb3', state: 'APPROVED', commitId: HEAD, submittedAt: '2026-09-22T10:00:00Z' },
+    { user: 'ayushb3', state: 'CHANGES_REQUESTED', commitId: HEAD, submittedAt: '2026-09-22T11:00:00Z' }]
+  check('holds: a later "changes requested" overrides an approval of HEAD', run({ ...BAD, approvals }).pass === false, '')
+}
+{
+  const approvals = [{ user: 'ayushb3', state: 'CHANGES_REQUESTED', commitId: A, submittedAt: '2026-09-22T09:00:00Z' }, ...approvedA]
+  check('passes: an approval after an earlier "changes requested" stands', run({ ...BAD, approvals, prDiffUnchanged: unchanged(true) }).pass === true, '')
+}
+{
+  const approvals = [...approvedA, { user: 'ayushb3', state: 'COMMENTED', commitId: HEAD, submittedAt: '2026-09-22T11:00:00Z' }]
+  check('passes: a later plain comment does not withdraw an approval', run({ ...BAD, approvals, prDiffUnchanged: unchanged(true) }).pass === true, '')
+}
+{
+  const approvals = [...approvedA, { user: 'other-owner', state: 'CHANGES_REQUESTED', commitId: A, submittedAt: '2026-09-22T11:00:00Z' }]
+  check('holds: another code owner\'s standing "changes requested"', run({ ...BAD, owners: ['ayushb3', 'other-owner'], approvals, prDiffUnchanged: unchanged(true) }).pass === false, '')
+}
+check('holds: a dismissed approval', run({ ...BAD, approvals: [{ ...approvedA[0], state: 'DISMISSED' }], prDiffUnchanged: unchanged(true) }).pass === false, '')
+check('holds: approval of A by someone who is not a code owner', run({ ...BAD, approvals: [{ ...approvedA[0], user: 'bubblychef-bot' }], prDiffUnchanged: unchanged(true) }).pass === false, '')
+
+// prDiffUnchanged against a real repository: the patch-id comparison itself
+{
+  const os = require('os')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'verdict-gate-'))
+  const emptyConfig = path.join(dir, 'empty-gitconfig')
+  fs.writeFileSync(emptyConfig, '')
+  const repoDir = path.join(dir, 'repo')
+  fs.mkdirSync(repoDir)
+  const env = {
+    ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: emptyConfig,
+    GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t',
+  }
+  const git = makeGit(repoDir, env)
+  const write = (f, text) => fs.writeFileSync(path.join(repoDir, f), text)
+  const commit = msg => { git(['add', '-A']); git(['commit', '-q', '-m', msg]); return git(['rev-parse', 'HEAD']).trim() }
+  const lines = n => Array.from({ length: n }, (_, i) => `line ${i + 1}`).join('\n') + '\n'
+  const same = (approvedSha, headSha) => prDiffUnchanged({ git, baseRef: 'main', approvedSha, headSha })
+  try {
+    git(['init', '-q', '-b', 'main'])
+    git(['config', 'core.autocrlf', 'false'])
+    write('app.txt', lines(40)); write('other.txt', 'other\n')
+    commit('base')
+    git(['checkout', '-q', '-b', 'pr'])
+    write('app.txt', lines(40).replace('line 20\n', 'line 20 changed by the PR\n'))
+    const approved = commit('pr change')
+
+    // main moves on: an unrelated file, and new lines above the PR's hunk (shifts its line numbers)
+    git(['checkout', '-q', 'main'])
+    write('other.txt', 'other, changed on main\n')
+    write('app.txt', 'new top line\n' + lines(40))
+    commit('main moves on')
+
+    git(['checkout', '-q', 'pr'])
+    git(['merge', '-q', '--no-edit', 'main'])
+    const baseMerged = git(['rev-parse', 'HEAD']).trim()
+    const r1 = same(approved, baseMerged)
+    check('git: a base-only merge (clean, shifts the PR hunk) keeps the PR diff unchanged', r1.same === true, r1.why)
+    check('git: the same commit compares equal to itself', same(approved, approved).same === true, '')
+
+    write('app.txt', fs.readFileSync(path.join(repoDir, 'app.txt'), 'utf8') + 'new code\n')
+    const newCode = commit('more code')
+    const r2 = same(approved, newCode)
+    check('git: a new code commit after the approval changes the PR diff', r2.same === false && /changed/.test(r2.why), r2.why)
+
+    // a merge whose conflict resolution alters the PR's own line
+    git(['checkout', '-q', '-b', 'pr2', approved])
+    git(['checkout', '-q', 'main'])
+    write('app.txt', fs.readFileSync(path.join(repoDir, 'app.txt'), 'utf8').replace('line 20\n', 'line 20 changed by main\n'))
+    commit('main edits the same line')
+    git(['checkout', '-q', 'pr2'])
+    try { git(['merge', '-q', '--no-edit', 'main']) } catch { /* conflict expected */ }
+    write('app.txt', fs.readFileSync(path.join(repoDir, 'app.txt'), 'utf8')
+      .replace(/<<<<<<< [^\n]*\n[\s\S]*?>>>>>>> [^\n]*\n/, 'line 20 resolved some third way\n'))
+    const resolved = commit('merge main, resolving the conflict')
+    const r3 = same(approved, resolved)
+    check('git: a merge whose conflict resolution changed the PR lines alters the PR diff', r3.same === false, r3.why)
+
+    // a binary file the PR adds, altered after approval: the diff text must not hide it
+    // (with a text change alongside, so the diff has a patch-id without the binary part)
+    git(['checkout', '-q', '-b', 'pr3', 'main'])
+    write('other.txt', 'other, changed by pr3\n')
+    fs.writeFileSync(path.join(repoDir, 'img.bin'), Buffer.from([0, 1, 2, 3, 0, 255]))
+    const binApproved = commit('add binary')
+    fs.writeFileSync(path.join(repoDir, 'img.bin'), Buffer.from([0, 1, 2, 3, 0, 254]))
+    const binChanged = commit('change binary')
+    check('git: a changed binary file alters the PR diff', same(binApproved, binChanged).same === false, '')
+
+    const r4 = same('c'.repeat(40), baseMerged)
+    check('git: an unknown commit is a git error, answered as not unchanged', r4.same === false && /failed/.test(r4.why), r4.why)
+    const r5 = same(approved, git(['rev-parse', 'main']).trim())
+    check('git: an approved commit that is not an ancestor of HEAD does not carry', r5.same === false && /ancestor/.test(r5.why), r5.why)
+    const r6 = prDiffUnchanged({ git: () => { throw new Error('git exploded') }, baseRef: 'main', approvedSha: approved, headSha: baseMerged })
+    check('git: prDiffUnchanged never throws', r6.same === false && /exploded/.test(r6.why), r6.why)
+  } catch (e) {
+    check('git: repository scenarios ran', false, String((e && (e.stderr || e.message)) || e))
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+}
 
 // the workflow wiring the gate depends on
 {
