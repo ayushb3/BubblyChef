@@ -16,7 +16,7 @@ import React from 'react'
 import { render, screen, act, waitFor } from '@testing-library/react'
 import { TOUR_STEPS } from '@/components/onboarding/steps'
 import { TourProvider, useTour } from '@/components/onboarding/TourProvider'
-import { TourOverlay } from '@/components/onboarding/TourOverlay'
+import { TourOverlay, TARGET_WAIT_MS } from '@/components/onboarding/TourOverlay'
 
 // --- Controllable pathname for the next/navigation mock ---
 let mockPathname = '/'
@@ -135,10 +135,15 @@ describe('TourOverlay: auto-skip missing target', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 50))
     })
+    // Still waiting for the target — it may just not have rendered yet.
+    expect(screen.getByTestId('step-index').textContent).toBe('0')
 
-    await waitFor(() => {
-      expect(Number(screen.getByTestId('step-index').textContent)).toBeGreaterThan(0)
-    })
+    await waitFor(
+      () => {
+        expect(Number(screen.getByTestId('step-index').textContent)).toBeGreaterThan(0)
+      },
+      { timeout: TARGET_WAIT_MS + 1000 },
+    )
   })
 
   it('does NOT advance past step 1 on a missing step-0 target (re-entrancy guard)', async () => {
@@ -172,7 +177,7 @@ describe('TourOverlay: auto-skip missing target', () => {
     })
 
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 100))
+      await new Promise((r) => setTimeout(r, TARGET_WAIT_MS + 500))
     })
 
     // The skippedStepRef guard ensures each stepIndex auto-skips at most once, so

@@ -63,6 +63,10 @@ function sameRect(a: SpotRect, b: SpotRect): boolean {
  */
 const SETTLE_POLL_MS = 250
 
+/** How long a step waits for its target to appear before auto-skipping it. */
+export const TARGET_WAIT_MS = 1500
+const TARGET_POLL_MS = 100
+
 function useReducedMotion(): boolean {
   const [reduced, setReduced] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -98,25 +102,42 @@ export function TourOverlay() {
   const skippedStepRef = useRef<number | null>(null)
 
   // --- (a) Initial measure-for-step — MAY auto-skip, but at most once per stepIndex ---
+  // A target missing on the first frame is not proof the step is gone: arriving
+  // on '/' via "Take the tour" shows app/loading.tsx before the home screen, so
+  // the hero isn't in the DOM yet. Keep looking for TARGET_WAIT_MS before
+  // treating the target as absent and skipping the step.
   useEffect(() => {
     if (!isOpen || !step) return
-    const rafId = requestAnimationFrame(() => {
+    const started = performance.now()
+    let rafId = 0
+    let timeoutId: number | undefined
+    const tick = () => {
       setVp({ w: window.innerWidth, h: window.innerHeight })
       const r = measureTarget(step.selector, step.id)
-      if (!r) {
-        // Guard: only skip once per stepIndex to prevent re-entrancy loops.
-        if (skippedStepRef.current === stepIndex) return
-        skippedStepRef.current = stepIndex
-        if (stepIndex < totalSteps - 1) {
-          void goNext()
-        } else {
-          void closeTour()
-        }
+      if (r) {
+        setRect(r)
         return
       }
-      setRect(r)
-    })
-    return () => cancelAnimationFrame(rafId)
+      if (performance.now() - started < TARGET_WAIT_MS) {
+        timeoutId = window.setTimeout(() => {
+          rafId = requestAnimationFrame(tick)
+        }, TARGET_POLL_MS)
+        return
+      }
+      // Guard: only skip once per stepIndex to prevent re-entrancy loops.
+      if (skippedStepRef.current === stepIndex) return
+      skippedStepRef.current = stepIndex
+      if (stepIndex < totalSteps - 1) {
+        void goNext()
+      } else {
+        void closeTour()
+      }
+    }
+    rafId = requestAnimationFrame(tick)
+    return () => {
+      cancelAnimationFrame(rafId)
+      window.clearTimeout(timeoutId)
+    }
   }, [isOpen, stepIndex, step, totalSteps, goNext, closeTour])
 
   // --- (b) Re-measure on resize/scroll — ONLY updates the existing rect, never skips ---
