@@ -414,12 +414,13 @@ class TestScoreCutoff:
         self,
     ) -> None:
         """Regression for PR #605 re-review finding: a realistic (30-word)
-        description naming the dish scores well under any floor that's safe
-        for a short title (2/30 title-overlap-style ratio ~= 0.067, weighted
-        0.4x = ~0.027), because scores are normalised by field length. The
-        cutoff must only ever apply to the title score, so this row —
-        genuinely naming the dish, just not in its title — is still
-        returned, not silently treated as "no saved recipe"."""
+        description naming the dish gets a small score (2/30 ratio ~= 0.067,
+        weighted 0.4x = ~0.027), because scores are normalised by field
+        length. A small positive score must still be returned, not silently
+        treated as "no saved recipe". The absolute floor this originally
+        guarded against is gone. With a single row, the coverage cutoff can't
+        fire here either. The live cutoff case (a covering title present) is
+        `test_description_only_match_survives_alongside_a_full_coverage_title`."""
         long_description = (
             "This creamy butter chicken curry is a weeknight favorite that "
             "pairs wonderfully with steamed rice or warm naan bread and only "
@@ -642,7 +643,7 @@ class TestFullQueryCoverageCutoff:
 
 
 def _patch_real_repo(rows: list[dict[str, Any]]) -> Any:
-    """Unlike `_patch_repo` above, patches in a *real* `SupabaseRepository`
+    """Patches in a *real* `SupabaseRepository` rather than a mock
     (via `_repo_for`, on the fake in-memory client) as the node's
     repository, so `search_saved_recipes` — including the coverage cutoff
     — actually runs against `rows`. Used where the test needs to pin the
