@@ -154,6 +154,21 @@ def lookup_query_terms(text: str) -> list[str]:
     return _tokenize_query(text)
 
 
+# issue #542 (re-review): a query with only one real token overlap against a
+# long title scores close to zero but still > 0, so the old "score > 0,
+# capped at limit" rule padded the result list with title matches that share
+# essentially no real signal with the query. This floor drops those — but
+# only against the TITLE score. Scores are normalised by field length, so a
+# real 20-40 word description naming the dish scores far below any floor
+# that's safe for titles (a title is usually 2-5 tokens; a description isn't).
+# Applying the floor to the combined total silently turned genuine
+# description/tag-only matches into "you have nothing saved" — see
+# `test_description_only_match_in_a_realistic_length_description_still_shown`.
+# A row with any non-title signal (desc_score or tags_score > 0) always
+# bypasses this floor; only a title-only, near-zero-overlap row is dropped.
+_MIN_TITLE_SCORE = 0.05
+
+
 def _as_row(value: JSON) -> dict[str, Any]:
     """Narrow one Supabase result row from the recursive `JSON` union to a dict.
 
@@ -547,14 +562,39 @@ class SupabaseRepository:
 
         Returns raw dicts, same shape convention as `get_recipe` /
         `get_user_recipes`, sorted by score descending and capped at `limit`.
-        Rows with zero overlap on all three fields are dropped rather than
-        returned as arbitrary trailing "matches".
+        A row whose ONLY signal is a near-zero title overlap is dropped
+        rather than padding the list out to `limit` (issue #542) — see
+        `_MIN_TITLE_SCORE`. A row with any description/tag signal is never
+        dropped by this floor, however small.
+
+        Exact-title short-circuit (issue #542 re-review): compares the
+        *tokenized* query (`_tokenize_query` — lower-cased, punctuation
+        stripped, stopwords removed) against each candidate's tokenized
+        title, so "butter chicken", "show me my saved butter chicken", and
+        "butter chicken?" all resolve to the same `{butter, chicken}` and any
+        of them short-circuits. The short-circuit only fires when exactly one
+        *distinct* title token set equals the query's: if another candidate's
+        title is a strict superset of the query tokens (e.g. querying
+        "chicken" when both "Chicken" and "Roast Chicken" are saved), that
+        other title is just as plausible a match, so the ranked list is
+        returned instead — with the exact match still sorted first, since it
+        scores highest.
         """
         query_tokens = set(_tokenize_query(query))
         if not query_tokens:
             return []
 
         candidates = await self.get_user_recipes(user_id, limit=500)
+        title_token_sets = [
+            (row, set(_tokenize(str(row.get("title") or "")))) for row in candidates
+        ]
+
+        exact_matches = [row for row, tset in title_token_sets if tset == query_tokens]
+        other_full_match_exists = any(
+            tset != query_tokens and tset >= query_tokens for _row, tset in title_token_sets
+        )
+        if exact_matches and not other_full_match_exists:
+            return exact_matches[:limit]
 
         scored: list[tuple[float, dict[str, Any]]] = []
         for row in candidates:
@@ -581,8 +621,14 @@ class SupabaseRepository:
             )
 
             total = title_score * 1.0 + desc_score * 0.4 + tags_score * 0.4
-            if total > 0:
-                scored.append((total, row))
+            if total <= 0:
+                continue
+            title_only_noise = (
+                0 < title_score < _MIN_TITLE_SCORE and desc_score == 0 and tags_score == 0
+            )
+            if title_only_noise:
+                continue
+            scored.append((total, row))
 
         scored.sort(key=lambda pair: pair[0], reverse=True)
         return [row for _score, row in scored[:limit]]
