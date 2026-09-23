@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { streamChatMessage, fetchChatHistory, applyPantryProposal } from '@/lib/api/chat'
 import type { ChatMessage, ChatResponse, ChatIntent, PantryProposalData, PantryProposalAction } from '@/types/chat'
 import { getClarificationSuggestions, mergeTermSuggestions, mergeActions, filterResolvedTerms } from '@/types/chat'
+import { isProposalHandled, markProposalHandled } from '@/lib/chat-proposal-storage'
 
 /** Everything needed to apply a pantry proposal once the user approves it. */
 interface PendingProposal {
@@ -176,15 +177,20 @@ export function useChat(options?: UseChatOptions) {
             timestamp: new Date(turn.created_at),
           }
           // Rebuild response so the card render branches fire on reload.
-          // Exclude pantry_update: a restored pantry proposal has no entry in
-          // pendingProposalsRef, so its Approve/Reject buttons would no-op — a
-          // dead button is worse than the prior no-card state. Persisting the
-          // interactive approve/reject state across reload is a separate pass.
-          // Recipe cards and brainstorm cards are read-only, so they restore
-          // fully and safely.
+          // Recipe cards and brainstorm cards are read-only, so they always
+          // restore fully. A pantry_update proposal is interactive (Approve/
+          // Reject), so it only restores live if it hasn't already been
+          // handled — see chat-proposal-storage.ts (#444). Once approved or
+          // rejected it must not come back as an actionable card.
+          const isPantryUpdate = turn.intent === 'pantry_update'
+          const pantryActions: PantryProposalAction[] =
+            isPantryUpdate && turn.proposal && 'actions' in turn.proposal
+              ? (turn.proposal as PantryProposalData).actions
+              : []
+          const pantryHandled =
+            pantryActions.length > 0 && isProposalHandled(storedId, turn.content, pantryActions)
           const canRestoreCard =
             turn.role === 'assistant' &&
-            turn.intent !== 'pantry_update' &&
             (turn.proposal || turn.metadata)
           if (canRestoreCard) {
             return {
@@ -192,7 +198,7 @@ export function useChat(options?: UseChatOptions) {
               response: {
                 intent: (turn.intent ?? 'general_chat') as ChatIntent,
                 assistant_message: turn.content,
-                proposal: turn.proposal ?? null,
+                proposal: pantryHandled ? null : (turn.proposal ?? null),
                 // A restored turn has no live stream behind it, so it can't still
                 // be waiting for follow-up chips (#498).
                 metadata: turn.metadata ? { ...turn.metadata, follow_ups_pending: false } : null,
@@ -211,6 +217,28 @@ export function useChat(options?: UseChatOptions) {
           return base
         })
         setMessages(restored)
+
+        // Seed pendingProposals/proposalStates for every restored,
+        // not-yet-handled pantry card so its Approve/Reject buttons work
+        // immediately, exactly like a live-session card (#444). A fresh
+        // request_id is minted per restored proposal — the persisted turn
+        // never carried the original one (it isn't part of the `proposal`
+        // JSONB), and `POST /v1/workflows/apply` doesn't validate it against
+        // anything server-side, only logs it.
+        const seededPending: Record<string, PendingProposal> = {}
+        const seededStates: Record<string, 'pending'> = {}
+        restored.forEach((msg) => {
+          if (msg.intent !== 'pantry_update') return
+          const proposal = msg.response?.proposal as PantryProposalData | null | undefined
+          if (!proposal || !Array.isArray(proposal.actions) || proposal.actions.length === 0) return
+          seededPending[msg.id] = { requestId: crypto.randomUUID(), actions: proposal.actions }
+          seededStates[msg.id] = 'pending'
+        })
+        if (Object.keys(seededPending).length > 0) {
+          setPendingProposals((prev) => ({ ...prev, ...seededPending }))
+          setProposalStates((prev) => ({ ...prev, ...seededStates }))
+        }
+
         setIsResuming(false)
       })
       .catch(() => {
@@ -637,6 +665,17 @@ export function useChat(options?: UseChatOptions) {
       }
 
       setProposalStates((prev) => ({ ...prev, [msgId]: 'approved' }))
+      // Remember this proposal is handled so a later navigate-away-and-back
+      // doesn't restore it as pending again (#444). The signature must match
+      // what a restore recomputes from the *persisted* turn — i.e. the
+      // original, unedited actions from `response.proposal`, not the (maybe
+      // inline-edited) `pending.actions` that were actually sent. See
+      // chat-proposal-storage.ts for why content, not an id.
+      const approvedMsg = messagesRef.current.find((m) => m.id === msgId)
+      const originalProposal = approvedMsg?.response?.proposal as PantryProposalData | undefined
+      if (approvedMsg && originalProposal?.actions) {
+        markProposalHandled(conversationId, approvedMsg.content, originalProposal.actions)
+      }
       // The approve route (/api/ai/workflows/apply) awards pantry_add
       // bubbles server-side (#520) — refetch so the balance shown in the UI
       // picks it up, same as every other awarding mutation (CookModal,
@@ -649,7 +688,7 @@ export function useChat(options?: UseChatOptions) {
       }))
       setProposalStates((prev) => ({ ...prev, [msgId]: 'failed' }))
     }
-  }, [pendingProposals, queryClient])
+  }, [pendingProposals, queryClient, conversationId])
 
   /**
    * Update the pending actions for a proposal in place (no AI round-trip).
@@ -676,7 +715,14 @@ export function useChat(options?: UseChatOptions) {
    */
   const rejectProposal = useCallback((msgId: string) => {
     setProposalStates((prev) => ({ ...prev, [msgId]: 'rejected' }))
-  }, [])
+    // Same reasoning as approveProposal: mark handled using the original
+    // (unedited) actions so a restore's signature matches (#444).
+    const rejectedMsg = messagesRef.current.find((m) => m.id === msgId)
+    const originalProposal = rejectedMsg?.response?.proposal as PantryProposalData | undefined
+    if (rejectedMsg && originalProposal?.actions) {
+      markProposalHandled(conversationId, rejectedMsg.content, originalProposal.actions)
+    }
+  }, [conversationId])
 
   // ── Chip tap send (interrupts streaming) ────────────────────────────────
   // Clarification pill taps need to send even while a prior response is
