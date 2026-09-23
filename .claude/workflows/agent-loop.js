@@ -43,7 +43,7 @@ if (!Number.isInteger(ISSUE) || ISSUE <= 0) throw new Error('args.issue must be 
 const REPO = 'ayushb3/BubblyChef'
 // At most this many loop PRs in any rolling 24 hours. Rolling rather than per
 // calendar day, so it can't be sidestepped by the UTC/local date boundary.
-const DAILY_CAP = 6
+const DAILY_CAP = 15
 const MAX_IMPLEMENT_ATTEMPTS = 2
 // Fix rounds after review: up to 3 fixes, so up to 4 reviews.
 const MAX_REVIEW_ROUNDS = 3
