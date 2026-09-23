@@ -11,6 +11,8 @@ import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 const PAD = 8
 const RADIUS = 16
 const TOOLTIP_WIDTH = 288
+/** Typical card height (copy + dots + buttons); replaced by the measured height once rendered. */
+const TOOLTIP_EST_HEIGHT = 140
 
 /**
  * Steps whose target is position:fixed and always visible — skip scrollIntoView
@@ -94,6 +96,9 @@ export function TourOverlay() {
 
   const [rect, setRect] = useState<SpotRect>(emptyRect())
   const [vp, setVp] = useState({ w: 0, h: 0 })
+  // Rendered card height, read back from the DOM; the estimate covers the first
+  // frame (and jsdom, which has no layout).
+  const [tipH, setTipH] = useState(TOOLTIP_EST_HEIGHT)
   const tooltipRef = useRef<HTMLDivElement>(null)
   const prefersReduced = useReducedMotion()
 
@@ -163,6 +168,8 @@ export function TourOverlay() {
           ? prev
           : { w: window.innerWidth, h: window.innerHeight },
       )
+      const h = tooltipRef.current?.offsetHeight
+      if (h) setTipH((prev) => (prev === h ? prev : h))
     }, SETTLE_POLL_MS)
     return () => window.clearInterval(id)
   }, [isOpen, step])
@@ -192,10 +199,21 @@ export function TourOverlay() {
   // translateY(-100%): the tooltip is a motion.div animating `y`, and framer
   // motion owns `transform`, so a transform in `style` gets overwritten and the
   // tooltip drops below the bottom nav, off-screen.
-  const tooltipVertical =
-    step?.placement === 'above'
-      ? { bottom: Math.max(vp.h - rect.y + 8, 8) }
-      : { top: rect.y + rect.height + 8 }
+  //
+  // The step's placement is a preference: if the card doesn't fit on that side
+  // (a 'below' step on a short phone, e.g. quick-actions at ~560px tall) and the
+  // other side has more room, it flips. Either way it is clamped on-screen: the
+  // card is fixed and the backdrop eats every tap, so a card below the fold
+  // would leave a touch user with no way out but a reload.
+  const spaceBelow = vp.h - (rect.y + rect.height + 8) - 8
+  const spaceAbove = rect.y - 8 - 8
+  let placeAbove = step?.placement === 'above'
+  if (placeAbove && spaceAbove < tipH && spaceBelow > spaceAbove) placeAbove = false
+  else if (!placeAbove && spaceBelow < tipH && spaceAbove > spaceBelow) placeAbove = true
+  const maxOffset = Math.max(vp.h - tipH - 8, 8)
+  const tooltipVertical = placeAbove
+    ? { bottom: Math.min(Math.max(vp.h - rect.y + 8, 8), maxOffset) }
+    : { top: Math.min(rect.y + rect.height + 8, maxOffset) }
 
   // Horizontal centre — clamp inside viewport.
   const tooltipLeft = Math.min(
@@ -204,9 +222,9 @@ export function TourOverlay() {
   )
 
   const tooltipVariants = {
-    hidden: { opacity: 0, y: prefersReduced ? 0 : (step?.placement === 'above' ? 8 : -8) },
+    hidden: { opacity: 0, y: prefersReduced ? 0 : (placeAbove ? 8 : -8) },
     visible: { opacity: 1, y: 0 },
-    exit: { opacity: 0, y: prefersReduced ? 0 : (step?.placement === 'above' ? 8 : -8) },
+    exit: { opacity: 0, y: prefersReduced ? 0 : (placeAbove ? 8 : -8) },
   }
 
   const maskId = 'tour-spotlight-mask'

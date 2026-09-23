@@ -184,7 +184,7 @@ describe('TourOverlay: auto-skip missing target', () => {
     // a missing step-0 target advances to step 1 and then stops (step-1 target
     // exists) — it must NOT run away toward totalSteps.
     const finalStep = Number(screen.getByTestId('step-index').textContent)
-    expect(finalStep).toBeLessThanOrEqual(1)
+    expect(finalStep).toBe(1)
   })
 })
 
@@ -329,6 +329,31 @@ describe('TourOverlay: positioning', () => {
     // Spotlight top = 746 - PAD(8) = 738; the tooltip's bottom edge sits 8px above it.
     expect(dialog.style.bottom).toBe(`${812 - 738 + 8}px`)
     expect(dialog.style.top).toBe('')
+  })
+
+  it("flips a 'below' card above its target when it wouldn't fit on a short screen", async () => {
+    // ~iPhone SE in Safari: quick-actions near the bottom of a 560px viewport.
+    Object.assign(window, { innerHeight: 560 })
+    boxes['quick-actions'] = { x: 16, y: 380, width: 343, height: 107 }
+    await act(async () => {
+      render(
+        <TourProvider>
+          <Harness />
+          <TourOverlay />
+        </TourProvider>,
+      )
+    })
+    await settle(50)
+    await act(async () => {
+      screen.getByTestId('next').click()
+    })
+    await settle(300)
+    const dialog = screen.getByRole('dialog', {
+      name: `Onboarding tour step 2 of ${TOUR_STEPS.length}`,
+    })
+    // Below would start at 380+107+8+8 = 503 and run off a 560px screen.
+    expect(dialog.style.top).toBe('')
+    expect(dialog.style.bottom).toBe(`${560 - (380 - 8) + 8}px`)
   })
 
   it('moves the spotlight when the target shifts after the tour opened', async () => {
