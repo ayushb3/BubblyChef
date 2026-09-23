@@ -25,13 +25,6 @@ export default function LoginPage() {
   // useSearchParams() to avoid a Suspense boundary for what's otherwise a
   // plain client page. Read once on mount and strip the param so a refresh
   // doesn't keep re-showing a stale error.
-  // Prefill the email handed over from the profile's "Save your account"
-  // card (#588).
-  useEffect(() => {
-    const stashed = takeLoginEmail()
-    if (stashed) setEmail(stashed)
-  }, [])
-
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const oauthError = params.get('error')
@@ -41,6 +34,13 @@ export default function LoginPage() {
       url.searchParams.delete('error')
       window.history.replaceState({}, '', url.toString())
     }
+  }, [])
+
+  // Prefill the email handed over from the profile's "Save your account"
+  // card (#588).
+  useEffect(() => {
+    const stashed = takeLoginEmail()
+    if (stashed) setEmail(stashed)
   }, [])
 
   const handleGoogleSignIn = async () => {
