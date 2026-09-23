@@ -25,6 +25,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from bubbly_chef.ai.manager import NoProviderAvailableError
+from bubbly_chef.ai.provider import user_message_for_failure
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.config import settings
 from bubbly_chef.domain.stock import filter_usable_pantry_items
@@ -664,6 +665,8 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "intent_reasoning": "No AI provider available",
             "errors": state.get("errors", []) + ["no_ai_provider"],
             "warnings": state.get("warnings", []) + [str(e)],
+            "ai_failure_kind": e.kind,
+            "ai_failure_configured": e.configured,
         }
     except Exception as e:
         logger.error(f"Intent classification failed: {e}")
@@ -2015,12 +2018,9 @@ async def run_chat_workflow_streaming(
         async for token in ai_manager.stream_complete(prompt=prompt, temperature=0.7):
             collected_text += token
             yield _json.dumps({"type": "token", "content": token})
-    except NoProviderAvailableError:
+    except NoProviderAvailableError as e:
         stream_failed = True
-        collected_text = (
-            "No AI provider is configured. "
-            "Please add a Gemini API key or start Ollama."
-        )
+        collected_text = user_message_for_failure(e.kind, e.configured)
         yield _json.dumps({"type": "token", "content": collected_text})
     except Exception as e:
         logger.error(f"Streaming error: {e}")

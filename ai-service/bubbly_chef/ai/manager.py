@@ -10,17 +10,65 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from .provider import AIProvider, ProviderUnavailableError, StructuredOutputError, ToolCallResponse
+from .provider import (
+    AIProvider,
+    ProviderUnavailableError,
+    StructuredOutputError,
+    ToolCallResponse,
+    infer_kind_from_message,
+)
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
 
-class NoProviderAvailableError(Exception):
-    """Raised when no AI providers are available."""
+# Kinds that say nothing about *why* a call failed (#514).
+_GENERIC_KINDS = frozenset({"network", "unknown"})
 
-    pass
+
+def _aggregate_kind(kinds: list[str]) -> str | None:
+    """Pick the most informative failure kind out of everything tried.
+
+    Providers are tried in registration order — Gemini first, then Ollama
+    as the local fallback (#514). A generic "network" kind (e.g. Ollama
+    unreachable at localhost) is the least informative failure there is: it
+    says nothing about *why* the request actually failed. A specific kind
+    from an earlier provider — quota_exhausted, auth, bad_request — is what
+    the user needs to hear, so it must win even if a later provider's
+    failure is recorded last. "unknown" is just as uninformative: it must
+    not outrank a specific kind from a later provider either. Falls back to
+    the first kind seen (network or unknown) only when nothing more specific
+    occurred, and to ``None`` when nothing failed at all.
+    """
+    for kind in kinds:
+        if kind not in _GENERIC_KINDS:
+            return kind
+    return kinds[0] if kinds else None
+
+
+class NoProviderAvailableError(Exception):
+    """Raised when no AI providers are available.
+
+    Carries the most *informative* failure-kind classification out of every
+    ``ProviderUnavailableError`` that led here (``kind``, via
+    ``_aggregate_kind`` — a specific kind like ``quota_exhausted`` or
+    ``auth`` from an earlier provider wins over a generic ``network`` kind
+    from a later one, e.g. an unreachable local Ollama fallback), and
+    whether any provider was registered at all (``configured``) — #514.
+    ``configured`` is only ``False`` when the manager's provider list is
+    empty; a registered-but-failing provider is still "configured".
+    """
+
+    def __init__(
+        self,
+        message: str,
+        kind: str | None = None,
+        configured: bool = True,
+    ) -> None:
+        super().__init__(message)
+        self.kind: str = kind if kind is not None else infer_kind_from_message(message)
+        self.configured = configured
 
 
 class AIManager:
@@ -39,10 +87,68 @@ class AIManager:
         """
         self.providers: list[AIProvider] = providers or []
         self._current_provider: AIProvider | None = None
+        # Last provider-level failure seen across complete/vision_complete/
+        # complete_with_tools/stream_complete (#514). Cleared on the next
+        # success from any of those four methods so /health/ai only ever
+        # reports a failure that hasn't since been superseded by a success.
+        self._last_failure_kind: str | None = None
+        self._last_failure_at: datetime | None = None
 
     def add_provider(self, provider: AIProvider) -> None:
         """Add a provider to the list."""
         self.providers.append(provider)
+
+    @property
+    def last_failure_kind(self) -> str | None:
+        """The ``kind`` of the most recent provider failure, if any."""
+        return self._last_failure_kind
+
+    @property
+    def last_failure_at(self) -> datetime | None:
+        """When the most recent provider failure was recorded, if any."""
+        return self._last_failure_at
+
+    def _record_failure(self, provider: AIProvider, error: ProviderUnavailableError) -> str:
+        """Log a provider failure and return the formatted string for the
+        method's ``errors`` list.
+
+        Does *not* set ``_last_failure_kind`` / ``_last_failure_at`` itself —
+        with Gemini tried before Ollama (see ``ollama_base_url`` default in
+        config.py), setting it here unconditionally would let a later,
+        generic Ollama "network" failure overwrite an earlier, more
+        informative Gemini kind (quota_exhausted/auth/etc.) once the whole
+        cascade finishes. ``_finalize_failure`` sets the aggregated kind once
+        the cascade for the call is done, the same way ``NoProviderAvailableError.kind``
+        is computed (#514). This is the single log site for a provider
+        failure across all four call methods (replaces each method's own,
+        previously inconsistent, logging).
+        """
+        logger.warning(
+            f"AI provider [{provider.name}] failed: kind={error.kind} "
+            f"status_code={error.status_code}: {error}"
+        )
+        return f"{provider.name}: {error}"
+
+    def _finalize_failure(self, failure_kinds: list[str]) -> str | None:
+        """Record the most informative kind out of a completed cascade.
+
+        Called once, after every provider in the cascade has been tried and
+        none succeeded — mirrors how ``NoProviderAvailableError.kind`` is
+        computed via ``_aggregate_kind`` so ``/health/ai`` reports the same
+        kind the raised error carries, instead of whichever provider merely
+        failed last (#514). Returns the aggregated kind for reuse when
+        raising ``NoProviderAvailableError``.
+        """
+        aggregated = _aggregate_kind(failure_kinds)
+        if aggregated is not None:
+            self._last_failure_kind = aggregated
+            self._last_failure_at = datetime.now()
+        return aggregated
+
+    def _clear_failure(self) -> None:
+        """Clear the last-recorded failure after a success."""
+        self._last_failure_kind = None
+        self._last_failure_at = None
 
     async def get_available_provider(self) -> AIProvider:
         """Get the first available provider."""
@@ -76,20 +182,20 @@ class AIManager:
             NoProviderAvailableError: If no providers are available or all fail
         """
         errors = []
+        failure_kinds: list[str] = []
         start_time = datetime.now()
         max_structured_retries = 2
 
         for provider in self.providers:
             try:
-                if not await provider.is_available():
-                    logger.warning(
-                        f"AI provider [{provider.name}] not available, skipping"
-                    )
-                    errors.append(
-                        f"{provider.name}: not available (check credentials/model/connection)"
-                    )
-                    continue
-
+                # Deliberately no `is_available()` pre-check here (#514): a
+                # cheap probe request only proves reachability at that
+                # instant, and skipping the real call on its say-so throws
+                # away the classified `ProviderUnavailableError` the actual
+                # request would have raised (auth/model/bad-request/etc.),
+                # collapsing every such failure into a generic "not
+                # available" string with no kind. Attempt the real call and
+                # let it classify its own failure.
                 logger.info(
                     f"AI request starting on [{provider.name}] "
                     f"(prompt_len={len(prompt)}, schema={response_schema is not None})"
@@ -107,6 +213,7 @@ class AIManager:
                             temperature=temperature,
                         )
                         self._current_provider = provider
+                        self._clear_failure()
 
                         elapsed = (datetime.now() - start_time).total_seconds()
                         logger.info(
@@ -136,12 +243,8 @@ class AIManager:
                     raise last_structured_error
 
             except ProviderUnavailableError as e:
-                elapsed = (datetime.now() - start_time).total_seconds()
-                logger.warning(
-                    f"AI provider [{provider.name}] failed after {elapsed:.2f}s: {e} "
-                    "— trying next"
-                )
-                errors.append(f"{provider.name}: {e}")
+                errors.append(self._record_failure(provider, e))
+                failure_kinds.append(e.kind)
                 continue
             except Exception as e:
                 elapsed = (datetime.now() - start_time).total_seconds()
@@ -157,7 +260,11 @@ class AIManager:
         logger.error(
             f"All AI providers failed after {elapsed:.2f}s: {errors}"
         )
-        raise NoProviderAvailableError(f"All providers failed. Errors: {errors}")
+        raise NoProviderAvailableError(
+            f"All providers failed. Errors: {errors}",
+            kind=self._finalize_failure(failure_kinds),
+            configured=bool(self.providers),
+        )
 
     async def vision_complete(
         self,
@@ -177,16 +284,15 @@ class AIManager:
             NoProviderAvailableError: If no vision-capable provider is available.
         """
         errors: list[str] = []
+        failure_kinds: list[str] = []
         start_time = datetime.now()
 
         for provider in self.providers:
             if not provider.supports_vision:
                 continue
             try:
-                if not await provider.is_available():
-                    errors.append(f"{provider.name}: not available")
-                    continue
-
+                # See `complete()` for why there's no `is_available()`
+                # pre-check gating this call (#514).
                 logger.info(
                     f"AI vision request starting on [{provider.name}] "
                     f"(image_bytes={len(image_bytes)}, schema={response_schema is not None})"
@@ -201,6 +307,7 @@ class AIManager:
                     time_remaining=time_remaining,
                 )
                 self._current_provider = provider
+                self._clear_failure()
 
                 elapsed = (datetime.now() - start_time).total_seconds()
                 logger.info(
@@ -209,7 +316,8 @@ class AIManager:
                 return result
 
             except ProviderUnavailableError as e:
-                errors.append(f"{provider.name}: {e}")
+                errors.append(self._record_failure(provider, e))
+                failure_kinds.append(e.kind)
                 continue
             except Exception as e:
                 logger.error(
@@ -220,7 +328,9 @@ class AIManager:
                 continue
 
         raise NoProviderAvailableError(
-            f"No vision-capable provider available. Errors: {errors}"
+            f"No vision-capable provider available. Errors: {errors}",
+            kind=self._finalize_failure(failure_kinds),
+            configured=bool(self.providers),
         )
 
     async def complete_with_tools(
@@ -247,16 +357,15 @@ class AIManager:
             NoProviderAvailableError: If no tool-calling-capable provider is available.
         """
         errors: list[str] = []
+        failure_kinds: list[str] = []
         start_time = datetime.now()
 
         for provider in self.providers:
             if not provider.supports_tool_calling:
                 continue
             try:
-                if not await provider.is_available():
-                    errors.append(f"{provider.name}: not available")
-                    continue
-
+                # See `complete()` for why there's no `is_available()`
+                # pre-check gating this call (#514).
                 logger.info(
                     f"AI tool-calling request starting on [{provider.name}] "
                     f"(messages={len(messages)}, tools={len(tools)})"
@@ -268,6 +377,7 @@ class AIManager:
                     temperature=temperature,
                 )
                 self._current_provider = provider
+                self._clear_failure()
 
                 elapsed = (datetime.now() - start_time).total_seconds()
                 logger.info(
@@ -277,7 +387,8 @@ class AIManager:
                 return result
 
             except ProviderUnavailableError as e:
-                errors.append(f"{provider.name}: {e}")
+                errors.append(self._record_failure(provider, e))
+                failure_kinds.append(e.kind)
                 continue
             except Exception as e:
                 logger.error(
@@ -288,7 +399,9 @@ class AIManager:
                 continue
 
         raise NoProviderAvailableError(
-            f"No tool-calling-capable provider available. Errors: {errors}"
+            f"No tool-calling-capable provider available. Errors: {errors}",
+            kind=self._finalize_failure(failure_kinds),
+            configured=bool(self.providers),
         )
 
     async def stream_complete(
@@ -302,13 +415,12 @@ class AIManager:
         Tries each provider in order, falling back on failure.
         """
         errors: list[str] = []
+        failure_kinds: list[str] = []
 
         for provider in self.providers:
             try:
-                if not await provider.is_available():
-                    errors.append(f"{provider.name}: not available")
-                    continue
-
+                # See `complete()` for why there's no `is_available()`
+                # pre-check gating this call (#514).
                 logger.info(
                     f"AI stream starting on [{provider.name}] (prompt_len={len(prompt)})"
                 )
@@ -317,8 +429,13 @@ class AIManager:
                     prompt=prompt, temperature=temperature
                 ):
                     yield token
+                self._clear_failure()
                 return
 
+            except ProviderUnavailableError as e:
+                errors.append(self._record_failure(provider, e))
+                failure_kinds.append(e.kind)
+                continue
             except Exception as e:
                 logger.warning(
                     f"AI stream [{provider.name}] failed: {type(e).__name__}: {e} "
@@ -328,7 +445,9 @@ class AIManager:
                 continue
 
         raise NoProviderAvailableError(
-            f"All providers failed for streaming. Errors: {errors}"
+            f"All providers failed for streaming. Errors: {errors}",
+            kind=self._finalize_failure(failure_kinds),
+            configured=bool(self.providers),
         )
 
     @property
@@ -361,6 +480,10 @@ class AIManager:
             "providers": providers_list,
             "available_count": available_count,
             "healthy": available_count > 0,
+            "last_failure_kind": self._last_failure_kind,
+            "last_failure_at": (
+                self._last_failure_at.isoformat() if self._last_failure_at is not None else None
+            ),
         }
 
     async def close(self) -> None:

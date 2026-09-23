@@ -12,6 +12,7 @@ from typing import Any
 
 import bubbly_chef.tools.cooking  # noqa: F401 — registers check_pantry on import
 from bubbly_chef.ai.manager import AIManager, NoProviderAvailableError
+from bubbly_chef.ai.provider import user_message_for_failure
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
@@ -277,9 +278,9 @@ async def general_chat_response(state: WorkflowState) -> WorkflowState:
         return {
             **state,
             "intent": Intent.GENERAL_CHAT.value,
-            "assistant_message": (
-                "No AI provider is configured."
-                " Please check your API keys in settings."
+            "assistant_message": user_message_for_failure(
+                state.get("ai_failure_kind"),
+                state.get("ai_failure_configured", True),
             ),
             "next_action": NextAction.NONE.value,
             "proposal": None,
@@ -341,14 +342,11 @@ async def general_chat_response(state: WorkflowState) -> WorkflowState:
             "suggested_mode": suggested_mode,
         }
 
-    except NoProviderAvailableError:
+    except NoProviderAvailableError as e:
         return {
             **state,
             "intent": Intent.GENERAL_CHAT.value,
-            "assistant_message": (
-                "No AI provider is configured."
-                " Please add a Gemini API key or start Ollama."
-            ),
+            "assistant_message": user_message_for_failure(e.kind, e.configured),
             "next_action": NextAction.NONE.value,
             "proposal": None,
             "requires_review": False,
@@ -471,6 +469,20 @@ async def cooking_help_response(state: WorkflowState) -> WorkflowState:
     loop (reason → act → observe → repeat, up to MAX_ITERATIONS).  Otherwise
     degrades gracefully to the original single-shot completion path so cooking
     help never breaks.
+
+    Grounding note (issue #540): the two paths get pantry context two
+    different ways. `_cooking_help_single_shot` always prepends a pantry
+    block via `_fetch_pantry_context`. `_cooking_help_react` carries no such
+    block — `_build_react_initial_message` has none — so a stock question
+    ("do I have spinach?", "what cheese do I have?") is only grounded if the
+    model decides to call the `check_pantry` tool. Gemini reports
+    `supports_tool_calling = True` (ai/gemini.py), so production always takes
+    the ReAct path, not the single-shot one. `check_pantry` itself applies
+    the #443 usable-stock filter and matches on whole shared words, so a
+    category question ("what cheese do I have?") only grounds against a
+    pantry row sharing that exact word — see
+    `tests/test_issue_540_stock_question_intent.py::TestReactPathGroundsStockQuestions`
+    for both cases exercised end to end against the real tool.
     """
     ai_manager = get_ai_manager()
 
@@ -662,14 +674,11 @@ async def _cooking_help_single_shot(
             "workflow_status": WorkflowStatus.COMPLETED.value,
             "suggested_mode": suggested_mode,
         }
-    except NoProviderAvailableError:
+    except NoProviderAvailableError as e:
         return {
             **state,
             "intent": Intent.COOKING_HELP.value,
-            "assistant_message": (
-                "No AI provider is configured."
-                " Please add a Gemini API key or start Ollama."
-            ),
+            "assistant_message": user_message_for_failure(e.kind, e.configured),
             "next_action": NextAction.NONE.value,
             "proposal": None,
             "requires_review": False,
@@ -874,14 +883,11 @@ async def _cooking_help_react(
             "suggested_mode": suggested_mode,
         }
 
-    except NoProviderAvailableError:
+    except NoProviderAvailableError as e:
         return {
             **state,
             "intent": Intent.COOKING_HELP.value,
-            "assistant_message": (
-                "No AI provider is configured."
-                " Please add a Gemini API key or start Ollama."
-            ),
+            "assistant_message": user_message_for_failure(e.kind, e.configured),
             "next_action": NextAction.NONE.value,
             "proposal": None,
             "requires_review": False,

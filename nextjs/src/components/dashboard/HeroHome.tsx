@@ -17,6 +17,7 @@ import { estimatedExpirySuffix } from '@/lib/pantry-helpers'
 import { useDecorations } from '@/lib/api/kitchen'
 import { useBubbles } from '@/lib/api/bubbles'
 import KitchenScene from '@/components/kitchen/KitchenScene'
+import UnlockOffer from '@/components/kitchen/UnlockOffer'
 
 interface HomeData {
   totalCount: number
@@ -303,6 +304,11 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
           loading={decorationsLoading}
         />
       </FadeInView>
+
+      {/* Milestone unlock offer (#522) — mounted directly under the kitchen
+          scene per the issue's placement instruction. Renders nothing when
+          there's no pending offer. */}
+      <UnlockOffer />
 
       {/* Greeting */}
       <FadeInView delay={0}>
