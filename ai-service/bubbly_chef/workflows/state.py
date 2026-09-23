@@ -182,6 +182,12 @@ class WorkflowState(TypedDict, total=False):
     # ==========================================================================
     warnings: list[str]
     errors: list[str]
+    # Set by classify_intent when its own AI call fails with
+    # NoProviderAvailableError (issue #514) — lets the "no_ai_provider"
+    # shortcut in general_chat_response pick the right user-facing message
+    # without re-attempting the AI call.
+    ai_failure_kind: str | None
+    ai_failure_configured: bool
 
     # ==========================================================================
     # Workflow Control

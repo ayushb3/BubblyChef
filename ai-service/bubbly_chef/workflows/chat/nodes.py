@@ -12,6 +12,7 @@ from typing import Any
 
 import bubbly_chef.tools.cooking  # noqa: F401 — registers check_pantry on import
 from bubbly_chef.ai.manager import AIManager, NoProviderAvailableError
+from bubbly_chef.ai.provider import user_message_for_failure
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
@@ -277,9 +278,9 @@ async def general_chat_response(state: WorkflowState) -> WorkflowState:
         return {
             **state,
             "intent": Intent.GENERAL_CHAT.value,
-            "assistant_message": (
-                "No AI provider is configured."
-                " Please check your API keys in settings."
+            "assistant_message": user_message_for_failure(
+                state.get("ai_failure_kind"),
+                state.get("ai_failure_configured", True),
             ),
             "next_action": NextAction.NONE.value,
             "proposal": None,
@@ -341,14 +342,11 @@ async def general_chat_response(state: WorkflowState) -> WorkflowState:
             "suggested_mode": suggested_mode,
         }
 
-    except NoProviderAvailableError:
+    except NoProviderAvailableError as e:
         return {
             **state,
             "intent": Intent.GENERAL_CHAT.value,
-            "assistant_message": (
-                "No AI provider is configured."
-                " Please add a Gemini API key or start Ollama."
-            ),
+            "assistant_message": user_message_for_failure(e.kind, e.configured),
             "next_action": NextAction.NONE.value,
             "proposal": None,
             "requires_review": False,
@@ -676,14 +674,11 @@ async def _cooking_help_single_shot(
             "workflow_status": WorkflowStatus.COMPLETED.value,
             "suggested_mode": suggested_mode,
         }
-    except NoProviderAvailableError:
+    except NoProviderAvailableError as e:
         return {
             **state,
             "intent": Intent.COOKING_HELP.value,
-            "assistant_message": (
-                "No AI provider is configured."
-                " Please add a Gemini API key or start Ollama."
-            ),
+            "assistant_message": user_message_for_failure(e.kind, e.configured),
             "next_action": NextAction.NONE.value,
             "proposal": None,
             "requires_review": False,
@@ -888,14 +883,11 @@ async def _cooking_help_react(
             "suggested_mode": suggested_mode,
         }
 
-    except NoProviderAvailableError:
+    except NoProviderAvailableError as e:
         return {
             **state,
             "intent": Intent.COOKING_HELP.value,
-            "assistant_message": (
-                "No AI provider is configured."
-                " Please add a Gemini API key or start Ollama."
-            ),
+            "assistant_message": user_message_for_failure(e.kind, e.configured),
             "next_action": NextAction.NONE.value,
             "proposal": None,
             "requires_review": False,

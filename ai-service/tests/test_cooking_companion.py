@@ -294,11 +294,36 @@ class TestCookingHelpReactLoop:
 
     @pytest.mark.asyncio
     async def test_no_provider_available_error_handled(self):
-        """NoProviderAvailableError returns a friendly error message, not an exception."""
+        """NoProviderAvailableError returns a friendly error message, not an
+        exception (issue #514: the message itself is now kind-aware — a
+        configured-but-failing provider no longer says "No AI provider is
+        configured", see the dedicated case below for that string).
+        """
         from bubbly_chef.ai.manager import NoProviderAvailableError
 
         manager, provider = _make_manager(supports_tool_calling=True)
-        manager.complete_with_tools.side_effect = NoProviderAvailableError("no provider")
+        manager.complete_with_tools.side_effect = NoProviderAvailableError(
+            "no provider", kind="unknown", configured=True
+        )
+
+        with patch("bubbly_chef.workflows.chat.nodes.get_ai_manager", return_value=manager):
+            result = await cooking_help_response(_state())
+
+        assert result["intent"] == Intent.COOKING_HELP.value
+        assert result["assistant_message"]
+        assert "No AI provider" not in result["assistant_message"]
+
+    @pytest.mark.asyncio
+    async def test_no_provider_available_error_not_configured_handled(self):
+        """When nothing is registered at all (configured=False), the reply
+        still says "No AI provider is configured" — the one case allowed to.
+        """
+        from bubbly_chef.ai.manager import NoProviderAvailableError
+
+        manager, provider = _make_manager(supports_tool_calling=True)
+        manager.complete_with_tools.side_effect = NoProviderAvailableError(
+            "no provider", configured=False
+        )
 
         with patch("bubbly_chef.workflows.chat.nodes.get_ai_manager", return_value=manager):
             result = await cooking_help_response(_state())

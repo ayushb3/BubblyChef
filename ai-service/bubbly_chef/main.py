@@ -93,6 +93,8 @@ def create_app() -> FastAPI:
             "service": "ai-microservice",
             "ai_available": status["healthy"],
             "providers": status["providers"],
+            "last_failure_kind": status.get("last_failure_kind"),
+            "last_failure_at": status.get("last_failure_at"),
             "version": build_info(),
         }
 
