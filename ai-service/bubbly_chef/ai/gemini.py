@@ -145,6 +145,12 @@ class GeminiProvider(AIProvider):
         self.vision_max_retries = vision_max_retries
         self.vision_retry_backoff = vision_retry_backoff
         self._client = httpx.AsyncClient(timeout=timeout)
+        # #515: the key used to travel as a `?key=...` query param, which
+        # httpx (and anything logging request URLs, e.g. Railway/httpx's own
+        # INFO logging) writes out in full — plaintext key in every log line
+        # for every call. Google's API accepts the same key as a header
+        # instead; sending it there keeps it out of the URL entirely.
+        self._auth_headers = {"x-goog-api-key": api_key}
 
     @property
     def name(self) -> str:
@@ -193,7 +199,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             response = await self._client.post(
                 url,
                 json=payload,
-                params={"key": self.api_key},
+                headers=self._auth_headers,
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
@@ -339,7 +345,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             response = await self._client.post(
                 url,
                 json=payload,
-                params={"key": self.api_key},
+                headers=self._auth_headers,
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
@@ -468,7 +474,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
                 response = await self._client.post(
                     url,
                     json=payload,
-                    params={"key": self.api_key},
+                    headers=self._auth_headers,
                     timeout=attempt_timeout,
                 )
                 response.raise_for_status()
@@ -572,7 +578,8 @@ Return ONLY the JSON, no markdown formatting or extra text."""
                 "POST",
                 url,
                 json=payload,
-                params={"key": self.api_key, "alt": "sse"},
+                params={"alt": "sse"},
+                headers=self._auth_headers,
             ) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
@@ -642,7 +649,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             url = f"{self.BASE_URL}/models/{self.model}"
             response = await self._client.get(
                 url,
-                params={"key": self.api_key},
+                headers=self._auth_headers,
                 timeout=_AVAILABILITY_TIMEOUT_SECONDS,
             )
             if response.status_code == 200:
