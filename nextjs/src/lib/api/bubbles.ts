@@ -8,6 +8,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { localDateString } from '@/lib/date'
 
 export interface BubbleEvent {
   id: string
@@ -21,17 +22,10 @@ export interface BubbleEvent {
 export interface BubblesResult {
   balance: number
   recent: BubbleEvent[]
-}
-
-/**
- * The visitor's local calendar date as YYYY-MM-DD.
- *
- * Deliberately `toLocaleDateString`-based (en-CA formats as YYYY-MM-DD),
- * not `toISOString`, which is UTC and would credit the daily-visit award to
- * the wrong day for anyone not on UTC.
- */
-function localDateString(): string {
-  return new Date().toLocaleDateString('en-CA')
+  /** Consecutive clean (active + no waste) Mon-Sun weeks, most recent completed week counting back (#524). */
+  streak_weeks: number
+  /** Whether the current, still-in-progress week has already seen waste (#524). */
+  wasted_this_week: boolean
 }
 
 /** Fetch the caller's bubble balance and recent events, awarding today's daily visit. */

@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
-import { daysUntilExpiry } from '@/lib/pantry-helpers'
+import { daysUntilExpiry, isExpiringSoon } from '@/lib/pantry-helpers'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
+import { validateClientDate } from '@/lib/date'
+import { awardBubbles } from '@/lib/bubbles'
 
 /** Outcomes the client may record. Must match the CHECK constraint on pantry_events. */
 const OUTCOMES = ['used', 'tossed', 'cooked'] as const
@@ -51,6 +53,13 @@ export async function POST(
     )
   }
 
+  // Client's local date (issue #524) — used to key the `rescue` bubbles
+  // award, same clock-skew tolerance as `GET /api/bubbles`.
+  const date = (body as { date?: unknown } | null)?.date
+  const dateError = validateClientDate(date, 'date')
+  if (dateError) return errorResponse(dateError, 400)
+  const validDate = date as string
+
   // Read the item first — both to confirm ownership and to snapshot the fields
   // the event needs before the row goes away.
   const { data: item, error: fetchError } = await supabase
@@ -84,6 +93,14 @@ export async function POST(
     .eq('user_id', user.id)
 
   if (deleteError) return errorResponse(deleteError.message)
+
+  // Rescue bonus (#524): the item was used or cooked (never a toss) while it
+  // was expiring soon (0-3 days left, `isExpiringSoon` — not merely "not yet
+  // expired"). ref_key ties the award to this exact item + day, so retrying
+  // a resolve can't double-award.
+  if (outcome !== 'tossed' && isExpiringSoon(daysUntilExpiry(row.expiry_date))) {
+    await awardBubbles(user.id, 'rescue', `${row.id}:${validDate}`)
+  }
 
   return NextResponse.json({
     id: row.id,

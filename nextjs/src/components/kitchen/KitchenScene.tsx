@@ -31,12 +31,22 @@ export interface KitchenSceneProps {
   /** `null` while the balance is unknown (loading or failed): the pill is hidden. */
   balance: number | null
   loading?: boolean
+  /**
+   * Consecutive clean (active + no waste) weeks (#524). `null` while unknown
+   * and `0` both hide the indicator — nothing to celebrate yet either way.
+   */
+  streakWeeks?: number | null
 }
 
 const CATALOG_BY_ID = new Map(CATALOG.map((d) => [d.id, d]))
 const VALID_SLOT_KEYS = new Set(SLOTS.map((s) => s.key))
 
-export default function KitchenScene({ unlocked, balance, loading = false }: KitchenSceneProps) {
+export default function KitchenScene({
+  unlocked,
+  balance,
+  loading = false,
+  streakWeeks = null,
+}: KitchenSceneProps) {
   // Build slot -> decoration lookup from the rows that actually resolve. A row
   // whose id isn't in the catalog, or whose slot isn't one of SLOTS', is
   // dropped here rather than thrown on — the source data (a decorations
@@ -114,11 +124,30 @@ export default function KitchenScene({ unlocked, balance, loading = false }: Kit
             stacks above them. */}
         {balance !== null && (
           <div
-            className="absolute top-1.5 right-1.5 z-10 rounded-full px-3 py-1 text-xs font-bold text-[var(--color-text)] shadow-sm border border-[var(--color-border)]"
-            style={{ background: 'var(--color-surface)' }}
-            data-testid="kitchen-bubbles-balance"
+            className="absolute top-1.5 right-1.5 z-10 flex items-center gap-1.5"
+            data-testid="kitchen-bubbles-balance-group"
           >
-            🫧 {balance}
+            {/* Streak indicator sits to the left of the balance pill — same
+                surface treatment, its own testid so #524 tests don't have to
+                parse the balance pill's text. Hidden at 0/null: nothing to
+                celebrate yet, and it must never claim a streak before one
+                exists. */}
+            {streakWeeks !== null && streakWeeks > 0 && (
+              <div
+                className="rounded-full px-2.5 py-1 text-xs font-bold text-[var(--color-text)] shadow-sm border border-[var(--color-border)]"
+                style={{ background: 'var(--color-surface)' }}
+                data-testid="kitchen-streak"
+              >
+                🔥 {streakWeeks}
+              </div>
+            )}
+            <div
+              className="rounded-full px-3 py-1 text-xs font-bold text-[var(--color-text)] shadow-sm border border-[var(--color-border)]"
+              style={{ background: 'var(--color-surface)' }}
+              data-testid="kitchen-bubbles-balance"
+            >
+              🫧 {balance}
+            </div>
           </div>
         )}
       </div>

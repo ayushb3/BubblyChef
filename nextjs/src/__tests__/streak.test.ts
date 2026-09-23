@@ -1,0 +1,143 @@
+/**
+ * Unit tests for the pure weekly-streak helpers (issue #524).
+ * `computeStreak` has no I/O — see `lib/streak-settlement.ts` for the
+ * Supabase-backed caller these get plugged into.
+ */
+
+import { isoWeekKey, weekRange, computeStreak } from '@/lib/streak'
+
+describe('isoWeekKey', () => {
+  it('keys a mid-week Wednesday into its own ISO week', () => {
+    // 2026-09-23 is a Wednesday in ISO week 39 of 2026.
+    expect(isoWeekKey('2026-09-23')).toBe('2026-W39')
+  })
+
+  it('keys the Monday and Sunday of the same week identically', () => {
+    expect(isoWeekKey('2026-09-21')).toBe('2026-W39') // Monday
+    expect(isoWeekKey('2026-09-27')).toBe('2026-W39') // Sunday
+  })
+
+  it('handles the year-boundary case where late December belongs to next year\'s week 1', () => {
+    // 2025-12-29 is a Monday and starts ISO week 1 of 2026.
+    expect(isoWeekKey('2025-12-29')).toBe('2026-W01')
+  })
+})
+
+describe('weekRange', () => {
+  it('returns the Monday..Sunday range for a week key', () => {
+    expect(weekRange('2026-W39')).toEqual({ start: '2026-09-21', end: '2026-09-27' })
+  })
+
+  it('round-trips with isoWeekKey for every day in the range', () => {
+    const { start, end } = weekRange('2026-W39')
+    expect(isoWeekKey(start)).toBe('2026-W39')
+    expect(isoWeekKey(end)).toBe('2026-W39')
+  })
+})
+
+describe('computeStreak', () => {
+  // A fixed Wednesday so "the current week" and "last completed week" are
+  // unambiguous across every test below.
+  const referenceDate = '2026-09-23' // 2026-W39; last completed week is 2026-W38
+
+  it('awards and counts a single clean, active, unsettled completed week', () => {
+    const result = computeStreak({
+      referenceDate,
+      settledWeekKeys: [],
+      activeWeekKeys: ['2026-W38'],
+      wastedWeekKeys: [],
+    })
+
+    expect(result.weeksToAward).toEqual(['2026-W38'])
+    expect(result.currentStreak).toBe(1)
+  })
+
+  it('never judges or awards the current, still-in-progress week', () => {
+    const result = computeStreak({
+      referenceDate,
+      settledWeekKeys: [],
+      activeWeekKeys: ['2026-W39'], // this week, not a completed one
+      wastedWeekKeys: [],
+    })
+
+    expect(result.weeksToAward).toEqual([])
+    expect(result.currentStreak).toBe(0)
+  })
+
+  it('does not award an already-settled week again (idempotent)', () => {
+    const result = computeStreak({
+      referenceDate,
+      settledWeekKeys: ['2026-W38'],
+      activeWeekKeys: ['2026-W38'],
+      wastedWeekKeys: [],
+    })
+
+    expect(result.weeksToAward).toEqual([])
+    expect(result.currentStreak).toBe(1) // already-settled clean week still counts
+  })
+
+  it('continues a streak across multiple consecutive clean weeks', () => {
+    const result = computeStreak({
+      referenceDate,
+      settledWeekKeys: ['2026-W36', '2026-W37'],
+      activeWeekKeys: ['2026-W36', '2026-W37', '2026-W38'],
+      wastedWeekKeys: [],
+    })
+
+    expect(result.weeksToAward).toEqual(['2026-W38'])
+    expect(result.currentStreak).toBe(3)
+  })
+
+  it('breaks the streak at a wasted week', () => {
+    const result = computeStreak({
+      referenceDate,
+      settledWeekKeys: ['2026-W36', '2026-W37'],
+      activeWeekKeys: ['2026-W36', '2026-W37', '2026-W38'],
+      wastedWeekKeys: ['2026-W38'],
+    })
+
+    expect(result.weeksToAward).toEqual([]) // W38 is wasted, not clean
+    expect(result.currentStreak).toBe(0) // most recent completed week breaks it
+  })
+
+  it('breaks the streak at an idle (inactive) week even with no waste', () => {
+    const result = computeStreak({
+      referenceDate,
+      settledWeekKeys: ['2026-W36', '2026-W37'],
+      activeWeekKeys: ['2026-W36', '2026-W37'], // W38 has no activity at all
+      wastedWeekKeys: [],
+    })
+
+    expect(result.weeksToAward).toEqual([]) // idle weeks are never clean
+    expect(result.currentStreak).toBe(0)
+  })
+
+  it('catches up across a gap: a clean week is still awarded even after several idle weeks', () => {
+    // Active + clean in W35, then idle W36-W38, checking in during W39 (referenceDate).
+    const result = computeStreak({
+      referenceDate,
+      settledWeekKeys: [],
+      activeWeekKeys: ['2026-W35'],
+      wastedWeekKeys: [],
+    })
+
+    expect(result.weeksToAward).toEqual(['2026-W35'])
+    // Streak is 0 — W38 (the most recent completed week) was idle, so the
+    // walk-back breaks immediately even though W35 got its award.
+    expect(result.currentStreak).toBe(0)
+  })
+
+  it('is bounded by maxWeeksToCheck for catch-up', () => {
+    const result = computeStreak({
+      referenceDate,
+      settledWeekKeys: [],
+      // A week far outside the default 12-week catch-up window.
+      activeWeekKeys: ['2025-W01'],
+      wastedWeekKeys: [],
+      maxWeeksToCheck: 2,
+    })
+
+    expect(result.weeksToAward).toEqual([])
+    expect(result.currentStreak).toBe(0)
+  })
+})

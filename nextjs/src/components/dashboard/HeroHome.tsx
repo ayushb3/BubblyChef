@@ -202,6 +202,9 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
   const { data: decorationsData, isLoading: decorationsLoading } = useDecorations()
   const { data: bubblesData } = useBubbles()
   const balance = bubblesData?.balance ?? null
+  // Rescue streak (#524): null until /api/bubbles answers, same convention
+  // as balance — KitchenScene hides the "🔥 N" indicator at null or 0.
+  const streakWeeks = bubblesData?.streak_weeks ?? null
   const unlocked = (decorationsData?.decorations ?? []).map((row) => ({
     id: row.name,
     slot: row.decoration_type,
@@ -293,6 +296,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
           unlocked={unlocked}
           balance={balance}
           loading={decorationsLoading}
+          streakWeeks={streakWeeks}
         />
       </FadeInView>
 
