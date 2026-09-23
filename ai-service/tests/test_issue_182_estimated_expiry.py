@@ -222,7 +222,7 @@ class TestApplyPantryProposalEstimatedExpiry:
     async def test_explicit_action_flag_wins_over_computed_heuristic(self) -> None:
         repo, client = _repo()
 
-        applied, failed, errors = await repo.apply_pantry_proposal(
+        applied, failed, errors, _affected_ids = await repo.apply_pantry_proposal(
             user_id="u1",
             actions=[
                 {
@@ -245,7 +245,7 @@ class TestApplyPantryProposalEstimatedExpiry:
     async def test_no_explicit_flag_falls_back_to_heuristic_estimate(self) -> None:
         repo, client = _repo()
 
-        applied, failed, errors = await repo.apply_pantry_proposal(
+        applied, failed, errors, _affected_ids = await repo.apply_pantry_proposal(
             user_id="u1",
             actions=[
                 {
@@ -271,7 +271,7 @@ class TestApplyPantryProposalEstimatedExpiry:
     ) -> None:
         repo, client = _repo()
 
-        applied, failed, errors = await repo.apply_pantry_proposal(
+        applied, failed, errors, _affected_ids = await repo.apply_pantry_proposal(
             user_id="u1",
             actions=[
                 {
