@@ -20,6 +20,7 @@ from bubbly_chef.models.proposals import (
     ChatMessage,
     ChatRole,
     ClarificationRequest,
+    FollowUpSuggestions,
     GeneralChatResponse,
     HandoffKind,
     HandoffProposal,
@@ -65,6 +66,7 @@ __all__ = [
     "ClarificationRequest",
     "ParsedPantryItem",
     "GeneralChatResponse",
+    "FollowUpSuggestions",
     # Recipe
     "Ingredient",
     "RecipeCard",

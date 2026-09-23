@@ -266,6 +266,8 @@ function AskBubblesOverlay({ stepN, stepText: stepBodyText, recipeTitle, onClose
       {
         message: framedMessage,
         conversation_id: null, // TODO(#410): use pinned session conversation_id
+        // The cook overlay shows no follow-up chips, so don't pay for them (#498).
+        follow_up_chips: false,
       },
       (token) => {
         accumulated += token

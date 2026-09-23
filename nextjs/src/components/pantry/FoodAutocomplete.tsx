@@ -28,7 +28,7 @@ const DEBOUNCE_MS = 250
  * (issue #398). Wraps a plain text input in a combobox: as the user types,
  * matching entries from the food catalog (`GET /api/foods/search`) show in a
  * keyboard-navigable dropdown. Selecting one hands the full catalog entry
- * back to the caller, which fills in unit/category/location/expiry.
+ * back to the caller, which fills in unit/category/expiry.
  *
  * Deliberately just a text input underneath — existing tests locate this row
  * by placeholder/display value (see `pantry-add-sheet-tab-persistence.test.tsx`),
@@ -52,6 +52,10 @@ export default function FoodAutocomplete({
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const suppressOpenOnFocusRef = useRef(false)
+  // Whether the user has typed in this field since it mounted. A focus that
+  // arrives before that — a modal's focus trap landing on a pre-filled name,
+  // say — must not pop last query's suggestions over the form.
+  const userHasTypedRef = useRef(false)
   const listboxId = useId()
   const generatedId = useId()
   const inputId = id ?? generatedId
@@ -93,6 +97,7 @@ export default function FoodAutocomplete({
   }, [isOpen])
 
   const handleInputChange = (next: string) => {
+    userHasTypedRef.current = true
     onChange(next)
     setHighlightedIndex(-1)
     setIsOpen(next.trim().length >= MIN_QUERY_LENGTH)
@@ -165,10 +170,13 @@ export default function FoodAutocomplete({
         value={value}
         onChange={(e) => handleInputChange(e.target.value)}
         onFocus={() => {
+          // The autoFocus focus (re-expanding a collapsed row, #404) never opens.
           if (suppressOpenOnFocusRef.current) {
             suppressOpenOnFocusRef.current = false
             return
           }
+          // Nor does any focus before the user has typed here (#478).
+          if (!userHasTypedRef.current) return
           setIsOpen(value.trim().length >= MIN_QUERY_LENGTH)
         }}
         onKeyDown={handleKeyDown}

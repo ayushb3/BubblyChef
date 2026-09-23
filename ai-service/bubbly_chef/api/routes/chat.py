@@ -77,7 +77,10 @@ async def chat_stream(
 
     async def event_generator() -> AsyncGenerator[str, None]:
         """Wrap workflow streaming output as SSE events."""
-        from bubbly_chef.workflows.router import run_chat_workflow_streaming  # lazy
+        from bubbly_chef.workflows.router import (  # lazy
+            merge_follow_ups_into_envelope,
+            run_chat_workflow_streaming,
+        )
 
         assistant_message = ""
         envelope_data: dict[str, Any] | None = None
@@ -93,6 +96,7 @@ async def chat_stream(
                 context=request.context,
                 forced_intent=request.forced_intent,
                 forced_intent_source=request.forced_intent_source,
+                follow_up_chips=request.follow_up_chips,
             ):
                 parsed = json.loads(chunk_json)
                 event_type = parsed.get("type", "token")
@@ -102,6 +106,9 @@ async def chat_stream(
 
                 if event_type == "envelope":
                     envelope_data = parsed.get("data", {})
+
+                if event_type == "follow_ups" and envelope_data is not None:
+                    merge_follow_ups_into_envelope(envelope_data, parsed.get("data", {}))
 
                 yield f"event: {event_type}\ndata: {chunk_json}\n\n"
 
@@ -184,7 +191,10 @@ async def chat_non_streaming(
     assistant_message = ""
 
     try:
-        from bubbly_chef.workflows.router import run_chat_workflow_streaming  # lazy
+        from bubbly_chef.workflows.router import (  # lazy
+            merge_follow_ups_into_envelope,
+            run_chat_workflow_streaming,
+        )
 
         async for chunk_json in run_chat_workflow_streaming(
             message=request.message,
@@ -196,6 +206,7 @@ async def chat_non_streaming(
             context=request.context,
             forced_intent=request.forced_intent,
             forced_intent_source=request.forced_intent_source,
+            follow_up_chips=request.follow_up_chips,
         ):
             parsed = json.loads(chunk_json)
             event_type = parsed.get("type", "token")
@@ -203,6 +214,8 @@ async def chat_non_streaming(
                 assistant_message += parsed.get("content", "")
             elif event_type == "envelope":
                 envelope_data = parsed.get("data", {})
+            elif event_type == "follow_ups" and envelope_data is not None:
+                merge_follow_ups_into_envelope(envelope_data, parsed.get("data", {}))
     except Exception as e:
         logger.error(f"Non-streaming workflow error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}") from e

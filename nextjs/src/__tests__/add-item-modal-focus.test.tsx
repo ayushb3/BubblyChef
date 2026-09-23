@@ -1,23 +1,48 @@
 /**
- * AddItemModal focus-trap wiring (issue #291).
+ * Edit-item modal focus-trap wiring (issue #291).
  *
- * AddItemModal stays mounted and toggles via its own `isOpen` prop (rather
- * than mounting/unmounting), so this exercises the "stays-mounted sheet"
- * call shape of `useModalFocusTrap` end to end through the real component,
- * not just the hook in isolation.
+ * The modal (still `AddItemModal.tsx` on disk; it is edit-only since #478)
+ * stays mounted and toggles via its own `isOpen` prop (rather than
+ * mounting/unmounting), so this exercises the "stays-mounted sheet" call
+ * shape of `useModalFocusTrap` end to end through the real component, not
+ * just the hook in isolation.
  */
 
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import AddItemModal from '@/components/pantry/AddItemModal'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import EditItemModal from '@/components/pantry/AddItemModal'
+import type { PantryItem } from '@/types/pantry'
+import * as foodsApi from '@/lib/api/foods'
+
+// The name field is a FoodAutocomplete (#398), which reads the catalog via
+// React Query; the query is disabled until the user types, so no request is
+// ever made here, but the provider still has to exist.
+jest.mock('@/lib/api/foods')
+const mockSearchFoods = foodsApi.searchFoods as jest.MockedFunction<typeof foodsApi.searchFoods>
+
+const ITEM: PantryItem = {
+  id: 'item-1',
+  name: 'milk',
+  category: 'dairy',
+  location: 'fridge',
+  quantity: 1,
+  unit: 'gallon',
+  expiry_date: null,
+}
 
 function Harness({ initialOpen = false }: { initialOpen?: boolean }) {
   const [isOpen, setIsOpen] = React.useState(initialOpen)
+  const [queryClient] = React.useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  )
   return (
-    <div>
-      <button onClick={() => setIsOpen(true)}>Add item</button>
-      <AddItemModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
-    </div>
+    <QueryClientProvider client={queryClient}>
+      <div>
+        <button onClick={() => setIsOpen(true)}>Add item</button>
+        <EditItemModal isOpen={isOpen} onClose={() => setIsOpen(false)} editItem={ITEM} />
+      </div>
+    </QueryClientProvider>
   )
 }
 
@@ -28,7 +53,7 @@ describe('AddItemModal focus trap', () => {
     expect(dialog).toHaveAttribute('aria-modal', 'true')
     const labelledBy = dialog.getAttribute('aria-labelledby')
     expect(labelledBy).toBeTruthy()
-    expect(document.getElementById(labelledBy as string)).toHaveTextContent(/add item/i)
+    expect(document.getElementById(labelledBy as string)).toHaveTextContent(/edit item/i)
   })
 
   it('moves focus into the panel when opened', () => {
@@ -72,5 +97,35 @@ describe('AddItemModal focus trap', () => {
 
     expect(dialog).toContainElement(document.activeElement as HTMLElement)
     expect(document.activeElement).not.toBe(screen.getByText('Add item'))
+  })
+
+  it('does not pop the suggestion list open when the trap focuses the pre-filled name', async () => {
+    // The trap focuses the first field (the name, pre-filled with the item's
+    // own name). Opening the catalog list on that focus drops a stale
+    // dropdown over the form every time the modal opens.
+    mockSearchFoods.mockResolvedValue([
+      { canonical: 'milk', category: 'dairy', default_location: 'fridge', expiry_days: 7 },
+    ] as unknown as Awaited<ReturnType<typeof foodsApi.searchFoods>>)
+    render(<Harness />)
+
+    for (let open = 0; open < 2; open++) {
+      fireEvent.click(screen.getByText('Add item'))
+      const name = screen.getByLabelText('Item name')
+      await waitFor(() => expect(name).toHaveFocus())
+      await new Promise((r) => setTimeout(r, 400)) // past the search debounce
+      expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+      fireEvent.keyDown(document, { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    }
+  })
+
+  it('still offers suggestions once the user types in the name', async () => {
+    mockSearchFoods.mockResolvedValue([
+      { canonical: 'oat milk', category: 'dairy', default_location: 'fridge', expiry_days: 7 },
+    ] as unknown as Awaited<ReturnType<typeof foodsApi.searchFoods>>)
+    render(<Harness initialOpen />)
+
+    fireEvent.change(screen.getByLabelText('Item name'), { target: { value: 'oat m' } })
+    expect(await screen.findByRole('listbox', {}, { timeout: 2000 })).toBeInTheDocument()
   })
 })

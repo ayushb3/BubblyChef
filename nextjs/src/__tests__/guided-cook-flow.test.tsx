@@ -317,6 +317,12 @@ describe('GuidedCookFlow — Ask Bubbles sends a valid ChatRequest', () => {
     const request = chatApi.streamChatMessage.mock.calls[0][0]
     expect(request.conversation_id).toBeNull()
   })
+
+  it('opts out of follow-up chips, which the overlay never renders (#498)', () => {
+    openOverlayAndSend('why al dente?')
+    const request = chatApi.streamChatMessage.mock.calls[0][0]
+    expect(request.follow_up_chips).toBe(false)
+  })
 })
 
 describe('GuidedCookFlow — done-state deduction handoff (#263)', () => {
