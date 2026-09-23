@@ -32,6 +32,7 @@ import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
 import path from 'path';
 import type { ChatResponse } from '../src/types/chat';
+import { guestUidFromCookies } from './support/guest-auth-cookie';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 
@@ -42,61 +43,17 @@ test.use({ storageState: { cookies: [], origins: [] } });
 // ---------------------------------------------------------------------------
 
 /**
- * Decode a JWT's payload without verifying it — this only ever reads a
- * token this same browser context was just issued by our own Supabase
- * project, so there's nothing to verify against; we just need `sub`.
- */
-function decodeJwtSub(accessToken: string): string | null {
-  try {
-    const payload = accessToken.split('.')[1];
-    const json = Buffer.from(payload, 'base64').toString('utf-8');
-    const parsed = JSON.parse(json) as { sub?: string };
-    return parsed.sub ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Read the anonymous session's user id from the auth cookie Playwright's
- * context holds. Same cookie name global-setup.ts computes
- * (`sb-<project-ref>-auth-token`) — @supabase/ssr's middleware wrote it on
- * the very first request via the `signInAnonymously()` branch.
+ * Read the anonymous session's user id from the auth cookie(s) Playwright's
+ * context holds (`sb-<project-ref>-auth-token`, the name global-setup.ts
+ * computes). @supabase/ssr splits a large session into `.0`/`.1` chunks;
+ * `guestUidFromCookies` reassembles them, so a big session can't silently
+ * leave the guest uncaptured — and so orphaned in the hosted project.
  */
 async function readGuestUid(context: BrowserContext): Promise<string | null> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!supabaseUrl) return null;
   const projectRef = new URL(supabaseUrl).hostname.split('.')[0];
-  const cookieName = `sb-${projectRef}-auth-token`;
-
-  const cookies = await context.cookies();
-  const cookie = cookies.find((c) => c.name === cookieName);
-  if (!cookie) return null;
-
-  // @supabase/ssr's browser cookie is `base64-<base64 of the JSON session>`,
-  // not raw JSON (global-setup.ts's own cookie is a special case: it writes
-  // raw JSON by hand for the *pre-authenticated* fixture, which the SDK
-  // still reads fine either way — but a real signInAnonymously() session
-  // written by the SDK itself always uses the base64- prefix).
-  const value = cookie.value;
-  const candidates = value.startsWith('base64-')
-    ? [Buffer.from(value.slice('base64-'.length), 'base64').toString('utf-8')]
-    : [value, decodeURIComponent(value)];
-
-  let session: { access_token?: string } | [string] | null = null;
-  for (const candidate of candidates) {
-    try {
-      session = JSON.parse(candidate);
-      break;
-    } catch {
-      // try the next candidate
-    }
-  }
-  if (!session) return null;
-
-  const accessToken = Array.isArray(session) ? session[0] : session.access_token;
-  if (!accessToken) return null;
-  return decodeJwtSub(accessToken);
+  return guestUidFromCookies(await context.cookies(), `sb-${projectRef}-auth-token`);
 }
 
 const LIVE = !!process.env.BUBBLY_E2E_LIVE_GUEST;
@@ -124,6 +81,7 @@ async function deleteGuestUsers(): Promise<void> {
     if (error) {
       console.warn(`[guest-walkthrough] Failed to delete guest user ${uid}: ${error.message}`);
     } else {
+      console.log(`[guest-walkthrough] Deleted guest user ${uid}`);
       guestUids.delete(uid);
     }
   }
@@ -184,7 +142,10 @@ test.describe('guest walkthrough (issue #518)', () => {
     await expect(page.getByAltText(/Bubbles/).first()).toBeVisible();
 
     const guestUid = await readGuestUid(context);
-    if (guestUid) guestUids.add(guestUid);
+    if (guestUid) {
+      guestUids.add(guestUid);
+      console.log(`[guest-walkthrough] Signed in as anonymous guest ${guestUid}`);
+    }
     expect(guestUid, 'Expected an anonymous Supabase session cookie after landing on /').not.toBeNull();
 
     // ── 2. Pantry add (Manual tab), then reload — same UID keeps the item ──
