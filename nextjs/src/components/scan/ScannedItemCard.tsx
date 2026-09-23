@@ -121,22 +121,45 @@ export default function ScannedItemCard({
 
       {/* Checkbox + confidence badge row */}
       <div className="flex items-center gap-2 mb-2 pr-16">
-        <input
-          type="checkbox"
-          id={`scan-item-${index}-${item.name}`}
-          checked={checked}
-          onChange={(e) => onCheckedChange(e.target.checked)}
+        {/* Custom checkbox — matches the ingredient-checklist pattern used on
+            the recipe detail page (recipes/[id]/page.tsx): a visually-hidden
+            native input for state/keyboard handling, wrapped in a label so
+            the tap target extends beyond the 20px visual circle, plus a
+            styled circle + checkmark that reflects checked state. */}
+        <label
+          className="flex-shrink-0 flex items-center justify-center w-11 h-11 -m-3 cursor-pointer"
           aria-label={`Include ${item.name}`}
-          className="w-4 h-4 rounded accent-[var(--color-primary)] cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]"
-        />
+        >
+          <input
+            type="checkbox"
+            id={`scan-item-${index}-${item.name}`}
+            checked={checked}
+            onChange={(e) => onCheckedChange(e.target.checked)}
+            className="sr-only peer"
+          />
+          <div
+            className="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--color-primary)]"
+            style={{
+              borderColor: checked ? 'var(--color-accent)' : 'var(--color-border)',
+              background: checked ? 'var(--color-accent)' : 'transparent',
+            }}
+          >
+            {checked && (
+              <svg
+                className="w-3 h-3 text-white"
+                fill="none"
+                viewBox="0 0 12 12"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path d="M2 6l3 3 5-5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </div>
+        </label>
         <Chip tone={confidenceChipTone(item.confidence)} size="sm">
           {confidenceLabel(item.confidence)}
         </Chip>
-        {item.category && (
-          <Chip tone="muted" size="sm">
-            {item.category.replace('_', ' ')}
-          </Chip>
-        )}
       </div>
 
       {/* Name field */}
