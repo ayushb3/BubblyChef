@@ -15,6 +15,12 @@
  * cookies, so middleware takes the `sign-in-anonymously` branch on the very
  * first request. Same override `e2e/auth.spec.ts` uses for the same reason.
  *
+ * Opt-in (env-gated: BUBBLY_E2E_LIVE_GUEST=1), like the live scan/cook specs:
+ * every run creates a real anonymous user in the hosted Supabase project, so
+ * the default e2e sweep must not run it.
+ *
+ *   BUBBLY_E2E_LIVE_GUEST=1 npx playwright test guest-walkthrough --project=chromium-mobile
+ *
  * AI calls (recipe import, chat) are stubbed via page.route — this spec
  * proves the guest *flow*, not AI output, matching the stubbing style in
  * e2e/receipt-ingestion.spec.ts. The recipe *save* itself is a real
@@ -93,27 +99,40 @@ async function readGuestUid(context: BrowserContext): Promise<string | null> {
   return decodeJwtSub(accessToken);
 }
 
-let guestUid: string | null = null;
+const LIVE = !!process.env.BUBBLY_E2E_LIVE_GUEST;
 
-test.afterAll(async () => {
-  if (!guestUid) return;
+// Every anonymous uid this worker created. A CI retry runs the test again and
+// signs in a new guest, so cleanup deletes every uid seen, not just the last.
+const guestUids = new Set<string>();
+
+async function deleteGuestUsers(): Promise<void> {
+  if (guestUids.size === 0) return;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceRoleKey) {
     console.warn(
       `[guest-walkthrough] Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY — ` +
-        `could not delete guest user ${guestUid}. Clean up by hand.`,
+        `could not delete guest users ${[...guestUids].join(', ')}. Clean up by hand.`,
     );
     return;
   }
   const admin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const { error } = await admin.auth.admin.deleteUser(guestUid);
-  if (error) {
-    console.warn(`[guest-walkthrough] Failed to delete guest user ${guestUid}: ${error.message}`);
+  for (const uid of [...guestUids]) {
+    const { error } = await admin.auth.admin.deleteUser(uid);
+    if (error) {
+      console.warn(`[guest-walkthrough] Failed to delete guest user ${uid}: ${error.message}`);
+    } else {
+      guestUids.delete(uid);
+    }
   }
-});
+}
+
+// After each attempt (pass or fail), so a retry never leaves the previous
+// attempt's guest behind; afterAll catches anything a failed delete left.
+test.afterEach(deleteGuestUsers);
+test.afterAll(deleteGuestUsers);
 
 // ---------------------------------------------------------------------------
 // Chat SSE stub — minimal ChatResponse, typed against the real shape so
@@ -156,13 +175,16 @@ const IMPORTED_RECIPE_STUB = {
 };
 
 test.describe('guest walkthrough (issue #518)', () => {
+  test.skip(!LIVE, 'Set BUBBLY_E2E_LIVE_GUEST=1 to run (creates a real anonymous user in the hosted Supabase project)');
+
   test('a fresh guest can pantry-add, save a recipe, chat, and load every core route', async ({ page, context }) => {
     // ── 1. Landing — no login redirect, dashboard mounted ──────────────────
     await page.goto('/');
     await expect(page).not.toHaveURL(/\/login/);
     await expect(page.getByAltText(/Bubbles/).first()).toBeVisible();
 
-    guestUid = await readGuestUid(context);
+    const guestUid = await readGuestUid(context);
+    if (guestUid) guestUids.add(guestUid);
     expect(guestUid, 'Expected an anonymous Supabase session cookie after landing on /').not.toBeNull();
 
     // ── 2. Pantry add (Manual tab), then reload — same UID keeps the item ──
@@ -249,30 +271,32 @@ test.describe('guest walkthrough (issue #518)', () => {
     await expect(page.getByText(/Oops! Something went wrong/)).toHaveCount(0);
 
     // ── 5. Sweep the remaining core routes ──────────────────────────────────
-    // Each: not redirected to /login, no visible error-boundary/"Something
-    // went wrong" text, plus one page-specific "it rendered" landmark.
+    // Each: not redirected to /login, one page-specific "it rendered"
+    // landmark, then no visible error-boundary/"Something went wrong" text.
+    // The landmark is awaited FIRST: an error-state count of 0 taken before
+    // the page has rendered anything proves nothing.
     await page.goto('/profile');
     await expect(page).not.toHaveURL(/\/login/);
-    await expect(page.getByText(/Something went wrong/)).toHaveCount(0);
     // Guest-only content: the persistent save-account section (issue #393),
     // visible for a guest without collapse/dismiss affordances.
     await expect(page.getByText(/Save your account/)).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText('Dietary Preferences')).toBeVisible();
+    await expect(page.getByText(/Something went wrong/)).toHaveCount(0);
 
     await page.goto('/scan');
     await expect(page).not.toHaveURL(/\/login/);
-    await expect(page.getByText(/Something went wrong/)).toHaveCount(0);
     await expect(page.getByText('Drop your receipt here')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/Something went wrong/)).toHaveCount(0);
 
     await page.goto('/pantry/use-soon');
     await expect(page).not.toHaveURL(/\/login/);
-    await expect(page.getByText(/Something went wrong/)).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Use Soon' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/Something went wrong/)).toHaveCount(0);
 
     await page.goto(`/recipes/${savedRecipeId}`);
     await expect(page).not.toHaveURL(/\/login/);
+    await expect(page.getByRole('button', { name: 'Edit with AI' })).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/Could not load recipe/)).toHaveCount(0);
     await expect(page.getByText('Recipe not found')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Edit with AI' })).toBeVisible({ timeout: 10_000 });
   });
 });
