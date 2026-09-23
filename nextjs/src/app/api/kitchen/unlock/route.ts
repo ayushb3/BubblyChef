@@ -32,6 +32,10 @@ const MILESTONE_KEYS = new Set(DECORATION_MILESTONES.map((m) => m.key))
  * A `23505` unique-violation on the insert (the two-tap/two-device race the
  * partial unique index on `(user_id, milestone)` guards against) is also
  * mapped to 409.
+ *
+ * `unlocked_at` is stamped with the claim time on insert — the column has
+ * no DB default, so leaving it unset would make the timestamp unrecoverable
+ * after the fact even though nothing reads it today.
  */
 export async function POST(request: Request) {
   const result = await requireAuth()
@@ -90,6 +94,7 @@ export async function POST(request: Request) {
       name: chosen.id,
       decoration_type: chosen.slot,
       milestone: milestoneKey,
+      unlocked_at: new Date().toISOString(),
     })
     .select()
     .single()

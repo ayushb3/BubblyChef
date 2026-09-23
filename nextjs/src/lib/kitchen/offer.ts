@@ -31,7 +31,16 @@ function fnv1a(input: string): number {
  * only ever shows one decoration at a time, so offering a second option for
  * an already-filled slot would be a dead end.
  *
- * Returns fewer than 3 (or none) when fewer than 3 (or 0) entries are
+ * At most one candidate per slot is ever placed into a single offer, even
+ * when two unclaimed siblings share a slot (the catalog has exactly two
+ * entries per slot). Offering both at once would mean picking either one
+ * permanently retires the other — the sibling's slot becomes "occupied" the
+ * moment either is claimed — with no chance for the sibling to appear in a
+ * later offer instead. Per slot, the sibling with the lowest hash is the one
+ * that competes for this offer; the other remains eligible for a future
+ * offer for as long as the slot stays unclaimed.
+ *
+ * Returns fewer than 3 (or none) when fewer than 3 (or 0) slots are
  * eligible — never pads or throws.
  */
 export function offerFor(
@@ -46,12 +55,19 @@ export function offerFor(
     catalog.filter((entry) => unlocked.has(entry.id)).map((entry) => entry.slot),
   )
 
-  const eligible = catalog.filter(
-    (entry) => !unlocked.has(entry.id) && !occupiedSlots.has(entry.slot),
-  )
-
-  return eligible
+  const eligible = catalog
+    .filter((entry) => !unlocked.has(entry.id) && !occupiedSlots.has(entry.slot))
     .map((entry) => ({ entry, hash: fnv1a(`${userId}:${milestoneKey}:${entry.id}`) }))
+
+  const bestPerSlot = new Map<string, { entry: Decoration; hash: number }>()
+  for (const candidate of eligible) {
+    const current = bestPerSlot.get(candidate.entry.slot)
+    if (!current || candidate.hash < current.hash) {
+      bestPerSlot.set(candidate.entry.slot, candidate)
+    }
+  }
+
+  return Array.from(bestPerSlot.values())
     .sort((a, b) => a.hash - b.hash)
     .slice(0, 3)
     .map(({ entry }) => entry)

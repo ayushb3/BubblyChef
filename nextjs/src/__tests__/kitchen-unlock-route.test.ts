@@ -132,6 +132,7 @@ describe('POST /api/kitchen/unlock', () => {
         name: 'a1',
         decoration_type: 'slot_a',
         milestone: 'm25',
+        unlocked_at: expect.any(String),
       }),
     )
     expect(data).toEqual({ id: 'dec-1', name: 'a1', decoration_type: 'slot_a', milestone: 'm25' })
