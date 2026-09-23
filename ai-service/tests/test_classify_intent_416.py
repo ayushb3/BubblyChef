@@ -1405,3 +1405,70 @@ async def test_pinned_same_dish_reference_falls_through_to_llm():
         )
     mock_mgr.return_value.complete.assert_awaited_once()
     assert result.get("intent_reasoning") != "Re-pick to a different already-offered idea (pinned session)"
+
+
+# ---------------------------------------------------------------------------
+# #436 verify findings: re-pick identity + confirm-band source text
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_pinned_repick_different_idea_flags_repick():
+    """The pinned re-pick short-circuit marks the turn as a switch to a different
+    idea, so dispatch can tell it apart from a modification of the pinned dish."""
+    with _mock_ai("recipe_card"):
+        result = await classify_intent(
+            _state(
+                input_text="show me the porridge one instead",
+                session_mode=SessionMode.RECIPE_EXPLORING.value,
+                session=_session_with_picked("Thai-Style Garlic Toast"),
+                brainstorm_ideas=list(_PINNED_REPICK_IDEAS),
+                conversation_history=_PINNED_REPICK_HISTORY,
+            )
+        )
+    assert result.get("repick_different_idea") is True
+
+
+def test_route_by_intent_repick_different_idea_routes_to_research_recipe():
+    """Re-picking a DIFFERENT offered idea while one is pinned must build a new
+    card (research_recipe), not refine the pinned one — refine keeps the pinned
+    recipe's id, so the two dishes would share an identity and a save of the
+    second could overwrite the first."""
+    state = _state(
+        intent=Intent.RECIPE_CARD.value,
+        input_text="let's do the Hearty Tomato Chickpea Stew instead",
+        selected_recipe_name="Hearty Tomato Chickpea Stew",
+        repick_different_idea=True,
+        session={"metadata": {"picked_recipe": _minimal_recipe_card_dict("Rice Skillet")}},
+    )
+    assert route_by_intent(state) == "research_recipe"
+
+
+def test_route_by_intent_llm_modification_with_selected_name_still_refines():
+    """The LLM recipe_card path fills selected_recipe_name with the raw input
+    ('no cheese') — without the re-pick flag that must stay a refine."""
+    state = _state(
+        intent=Intent.RECIPE_CARD.value,
+        input_text="no cheese",
+        selected_recipe_name="no cheese",
+        session={"metadata": {"picked_recipe": _minimal_recipe_card_dict()}},
+    )
+    assert route_by_intent(state) == "refine_recipe"
+
+
+def test_workflow_input_text_uses_confirm_band_source_on_forced_turn():
+    """A confirm-band tap posts the button label as the message; the workflow must
+    act on the request that raised the band, not on 'Tweak this recipe'."""
+    from bubbly_chef.workflows.router import workflow_input_text
+
+    source = "hmm what about something with mushrooms"
+    assert workflow_input_text("Tweak this recipe", "recipe_card", source) == source
+    assert workflow_input_text("Start fresh", "recipe_brainstorm", source) == source
+
+
+def test_workflow_input_text_ignores_source_without_forced_intent():
+    from bubbly_chef.workflows.router import workflow_input_text
+
+    assert workflow_input_text("no cheese", None, "stale text") == "no cheese"
+    assert workflow_input_text("Tweak this recipe", "recipe_card", None) == "Tweak this recipe"
+    assert workflow_input_text("Tweak this recipe", "recipe_card", "   ") == "Tweak this recipe"

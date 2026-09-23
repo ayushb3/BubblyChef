@@ -12,6 +12,7 @@ from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.models.recipe import Ingredient, RecipeCard
+from bubbly_chef.prompts.recipe import RECIPE_FOLLOWUP_PROMPT, RECIPE_GENERATION_PROMPT
 
 # Maximum retry attempts for AI generation
 MAX_RETRIES = 2
@@ -74,119 +75,6 @@ class GenerateRecipeResponse(BaseModel):
     have_count: int
     partial_count: int
     pantry_match_score: float = Field(ge=0.0, le=1.0)
-
-
-RECIPE_GENERATION_PROMPT = """\
-You are a helpful cooking assistant.
-Generate a recipe based on the user's request.
-
-## User's Pantry
-The user has these ingredients available:
-{pantry_items_formatted}
-
-## Items Expiring Soon (prioritize using these!)
-{expiring_items}
-
-## User Request
-{user_prompt}
-
-## Constraints
-{constraints}
-
-Generate a recipe that:
-1. Uses ingredients from the user's pantry when possible
-2. Prioritizes items that are expiring soon
-3. Clearly lists all ingredients with quantities and units
-4. Provides clear, numbered step-by-step instructions
-5. Estimates prep and cook time realistically
-
-IMPORTANT: You MUST return actual recipe data, NOT a schema or template.
-Generate a real recipe with actual values.
-
-Example of what to return:
-{{
-  "title": "Honey Garlic Chicken Stir-Fry",
-  "description": "A quick and delicious stir-fry with tender chicken and crisp vegetables",
-  "prep_time_minutes": 10,
-  "cook_time_minutes": 15,
-  "servings": 4,
-  "ingredients": [
-    {{"name": "chicken breast", "quantity": 1, "unit": "lb",
-      "preparation": "sliced thin", "optional": false}},
-    {{"name": "garlic", "quantity": 3, "unit": "cloves",
-      "preparation": "minced", "optional": false}},
-    {{"name": "soy sauce", "quantity": 3, "unit": "tablespoons",
-      "preparation": null, "optional": false}}
-  ],
-  "instructions": [
-    "Slice chicken into thin strips, season with salt and pepper",
-    "Mince garlic and prepare your vegetables",
-    "Heat oil in a large wok or skillet over high heat"
-  ],
-  "tips": [
-    "Add extra honey for a sweeter sauce",
-    "Use a very hot wok for best results"
-  ],
-  "cuisine": "Asian",
-  "difficulty": "easy"
-}}
-
-Now generate YOUR recipe following this same structure with ACTUAL VALUES (not the schema).
-"""
-
-RECIPE_FOLLOWUP_PROMPT = """\
-You are a helpful cooking assistant.
-The user wants to modify the previous recipe.
-
-## Previous Recipe
-{previous_recipe}
-
-## User's Pantry
-{pantry_items_formatted}
-
-## User's Modification Request
-{user_prompt}
-
-Modify the recipe according to the user's request.
-Keep the same format but adjust ingredients, instructions,
-or other aspects as needed.
-
-IMPORTANT: You MUST return actual recipe data with real values,
-NOT a schema or template.
-
-Example of what to return:
-{{
-  "title": "Spicy Honey Garlic Chicken Stir-Fry",
-  "description": "A quick and delicious stir-fry with tender chicken,
-crisp vegetables, and a spicy kick",
-  "prep_time_minutes": 10,
-  "cook_time_minutes": 15,
-  "servings": 4,
-  "ingredients": [
-    {{"name": "chicken breast", "quantity": 1, "unit": "lb",
-      "preparation": "sliced thin", "optional": false}},
-    {{"name": "garlic", "quantity": 4, "unit": "cloves",
-      "preparation": "minced", "optional": false}},
-    {{"name": "red pepper flakes", "quantity": 1,
-      "unit": "teaspoon", "preparation": null,
-      "optional": false}},
-    {{"name": "soy sauce", "quantity": 3,
-      "unit": "tablespoons", "preparation": null,
-      "optional": false}}
-  ],
-  "instructions": [
-    "Slice chicken breast into thin strips and season with salt and pepper",
-    "Mince garlic and add red pepper flakes to your prep",
-    "Heat oil in a large wok or skillet over high heat",
-    "Add chicken and stir-fry for 5-6 minutes until cooked through"
-  ],
-  "tips": ["Adjust red pepper flakes to taste", "Use a very hot wok for best results"],
-  "cuisine": "Asian",
-  "difficulty": "easy"
-}}
-
-Now generate YOUR modified recipe following this same structure with ACTUAL VALUES (not the schema).
-"""
 
 
 def format_pantry_for_prompt(pantry_items: list[PantryItem]) -> str:

@@ -135,6 +135,9 @@ class WorkflowState(TypedDict, total=False):
     scored_pantry_items: list[dict[str, Any]]
     brainstorm_ideas: list[str]
     selected_recipe_name: str | None
+    # True only when classify_intent resolved a pinned-session turn to a DIFFERENT
+    # already-offered idea; dispatch builds a new card instead of refining.
+    repick_different_idea: bool
     web_search_result: dict[str, Any] | None
     ingredient_availability: list[dict[str, Any]]
 

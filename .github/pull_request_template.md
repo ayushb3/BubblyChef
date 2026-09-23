@@ -33,5 +33,4 @@ Closes #<!-- issue number -->
 ---
 
 - [ ] `/code-review` run
-- [ ] `/interrogate` run (feature-level PRs only)
 - [ ] CI green

@@ -1,0 +1,154 @@
+name: Agent gates
+
+# Gates that let an agent-authored PR merge without a human reading the diff
+# (WORKFLOW.md §7, docs/plans/2026-09-17-autonomous-agent-loop.md).
+#
+# These are deliberately *mechanical*. The reason the merge gate could move off a
+# human is not that agents got more trustworthy — it is that these checks cannot be
+# satisfied by an agent asserting that it did the work. CI re-runs the PR's own
+# tests against the base commit; CI counts the tests; CI reads the diff.
+#
+# They run on every PR, not only agent ones: a rule that applies to some authors is
+# a rule that gets forgotten.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  # The agent loop's limits (kill switch, daily cap, fix-round and attempt caps,
+  # dispute reporting, never merging in shadow mode) live in
+  # .claude/workflows/agent-loop.js. This runs that script with agent() mocked, so an
+  # edit that weakens a limit fails here before it can merge. No model is called.
+  agent-loop-harness:
+    name: Agent loop limits hold
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run the control-flow harness
+        run: node scripts/agent-gates/agent-loop-harness.cjs
+
+  exemption:
+    name: F2P exemption is legitimate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check no-f2p label against the diff
+        run: |
+          bash scripts/agent-gates/exemption-check.sh \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}" \
+            '${{ toJSON(github.event.pull_request.labels.*.name) }}'
+
+  test-count:
+    name: Test suite did not shrink
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ai-service/pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: nextjs/package-lock.json
+      - name: Install (ai-service)
+        run: cd ai-service && pip install -e ".[dev]"
+      - name: Install (nextjs)
+        run: cd nextjs && npm ci
+      - name: Compare collected test counts
+        run: |
+          bash scripts/agent-gates/test-count-guard.sh \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}" \
+            '${{ toJSON(github.event.pull_request.labels.*.name) }}'
+
+  fail-to-pass:
+    name: Bug fix fails on base
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ai-service/pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: nextjs/package-lock.json
+      - name: Install (ai-service)
+        run: cd ai-service && pip install -e ".[dev]"
+      - name: Install (nextjs)
+        run: cd nextjs && npm ci
+
+      # Required only when the PR closes an issue labelled `bug`: a feature has
+      # nothing to fail against first. `no-f2p` waives it, and the exemption job
+      # above proves that waiver is honest.
+      - name: Is fail-to-pass required?
+        id: required
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          PR: ${{ github.event.pull_request.number }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -euo pipefail
+          if printf '%s' "$LABELS" | grep -q '"no-f2p"'; then
+            echo "required=false" >> "$GITHUB_OUTPUT"
+            echo "Waived by the (verified) no-f2p label."
+            exit 0
+          fi
+
+          # Ask GitHub which issues this PR will close, rather than pattern-matching the
+          # PR body. Two earlier versions got this wrong: one piped `index("bug")` into
+          # `grep -v null`, which printed a blank line for every issue and so treated
+          # every closed issue as a bug; the next regex-matched `Fixes #N` in the body,
+          # which also matched example keywords inside code spans that GitHub itself
+          # ignores (caught on PR #460). closingIssuesReferences is exactly the set GitHub
+          # will close on merge, so the gate and GitHub can no longer disagree.
+          closing=$(gh api graphql \
+            -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){closingIssuesReferences(first:50){nodes{number labels(first:50){nodes{name}}}}}}}' \
+            -F o="$OWNER" -F r="$REPO" -F n="$PR" \
+            --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[]
+                  | "\(.number) \(any(.labels.nodes[]; .name == "bug"))"')
+
+          required=false
+          if [ -z "$closing" ]; then
+            echo "This PR closes no issues."
+          fi
+          while read -r n is_bug; do
+            [ -n "$n" ] || continue
+            if [ "$is_bug" = "true" ]; then
+              echo "Closes issue #$n, labelled bug → fail-to-pass required."
+              required=true
+            else
+              echo "Closes issue #$n, not labelled bug."
+            fi
+          done <<<"$closing"
+          echo "required=$required" >> "$GITHUB_OUTPUT"
+
+      - name: Run the PR's tests against the base commit
+        run: |
+          bash scripts/agent-gates/f2p-check.sh \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}" \
+            "${{ steps.required.outputs.required }}"

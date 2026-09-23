@@ -122,6 +122,16 @@ class ChatRequest(BaseModel):
             "Chip UI is not yet live — this is the extension point (#416)."
         ),
     )
+    forced_intent_source: str | None = Field(
+        default=None,
+        max_length=10000,
+        description=(
+            "With forced_intent: the user's message that raised the confirm band. "
+            "The band posts its button label as `message`, so without this the "
+            "workflow would refine or brainstorm against 'Tweak this recipe' and "
+            "lose the actual request. Ignored when forced_intent is unset."
+        ),
+    )
 
     model_config = ConfigDict(json_schema_extra={
         "example": {
