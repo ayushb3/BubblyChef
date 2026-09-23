@@ -289,9 +289,12 @@ other work. So:
 
 - **The session that opens or pushes to a PR owns every Claude review on it** until the
   PR merges or closes. That includes inline comments, not just the verdict line.
-- **Each finding gets an outcome:** fixed (and pushed), answered in a PR comment with the
-  reason it stands, or escalated to the human as a decision. Silence is not an outcome.
-  Post a short resolutions comment that maps each finding to its outcome.
+- **Each finding gets an outcome, in the reviewer's own words:** **fixed** (and pushed), or
+  **disputed** with the reason it stands. A finding that is really a product or policy
+  call goes to the human as a decision, and the comment says so. Silence is not an
+  outcome. Post a resolutions comment that marks each finding "fixed" or "disputed". The
+  re-review prompt in `claude-review.yml` and the Respond stage (§8) look for exactly
+  those two words.
 - **Watch actively; don't wait to be told.** From the first PR it opens, a session keeps a
   standing poll on the repo-wide comment feeds and re-arms it for as long as the session
   runs:
@@ -303,9 +306,14 @@ other work. So:
 - **The desktop app's PR monitoring is a convenience, not the mechanism.** It isn't
   consistent enough to depend on, so the poll above is what the rule rests on.
 - **Getting a fresh review after a fix:** `agent-loop`-labelled PRs re-review on push. For
-  any other PR, close and reopen it. Don't add the label just for this, because it counts
-  toward the loop cap.
-- **Handoffs list every PR with an unread or unresolved review.**
+  any other PR, close and reopen it. Don't add the label just to get a review. The label
+  turns the `Claude review verdict` job into a blocking required check, which passes only
+  on "looks mergeable" for the exact head commit or on a code owner's approval. So the
+  PR can't merge on its checks alone. On a bot-authored PR from the last 24 hours, the
+  label also counts toward the loop cap.
+- **Handoffs list every PR with an unread or unresolved review.** The vendored `/handoff`
+  skill doesn't know this rule (it's drift-tracked in `skills-lock.json` and has no PR
+  step), so whoever writes the handoff adds the list by hand.
 
 ### Deploy-side checks
 
