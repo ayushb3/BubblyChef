@@ -9,9 +9,10 @@ import React from 'react'
 import { render, screen } from '@testing-library/react'
 import ScanResults from '@/components/scan/ScanResults'
 import ReviewSurface from '@/components/scan/ReviewSurface'
-import type { ScannedItem } from '@/types/scan'
+import type { ScannedItemWithId } from '@/lib/scan-helpers'
 
-const ITEM: ScannedItem = {
+const ITEM: ScannedItemWithId = {
+  _id: 'item-1',
   name: 'Whole Milk',
   original_name: 'whole milk',
   source_line: 'WHOLE MILK',

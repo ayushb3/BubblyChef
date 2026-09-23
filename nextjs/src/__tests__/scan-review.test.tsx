@@ -18,11 +18,13 @@ import React from 'react'
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
 import ReviewSurface from '@/components/scan/ReviewSurface'
 import ScannedItemCard from '@/components/scan/ScannedItemCard'
-import type { ScannedItem, ScanResult } from '@/types/scan'
+import type { ScannedItemWithId } from '@/lib/scan-helpers'
+import type { ScanResult } from '@/types/scan'
 
 // ─── Test stub matching the pinned contract ───────────────────────────────────
 
-const READY_ITEM: ScannedItem = {
+const READY_ITEM: ScannedItemWithId = {
+  _id: 'ready-1',
   name: 'Italian Bomba Hot Pepper Spread',
   original_name: 'italian bomba hot pepper',
   source_line: 'ITALIAN BOMBA HOT PEPPER',
@@ -34,7 +36,8 @@ const READY_ITEM: ScannedItem = {
   confidence: 0.92,
 }
 
-const REVIEW_ITEM: ScannedItem = {
+const REVIEW_ITEM: ScannedItemWithId = {
+  _id: 'review-1',
   name: 'Organic Cane Sugar',
   original_name: 'org cane sugar',
   source_line: 'ORG CANE SUGAR',
@@ -46,7 +49,8 @@ const REVIEW_ITEM: ScannedItem = {
   confidence: 0.65,
 }
 
-const SKIPPED_ITEM: ScannedItem = {
+const SKIPPED_ITEM: ScannedItemWithId = {
+  _id: 'skipped-1',
   name: 'T Premium Filler Assortment',
   original_name: 't premium filler asst',
   source_line: 'T PREMIUM FILLER ASST.',
@@ -72,19 +76,19 @@ const STUB_RESULT: ScanResult = {
 function noop() {}
 
 function renderResults(overrides: Partial<{
-  readyToAdd: ScannedItem[]
-  needsReview: ScannedItem[]
-  skipped: ScannedItem[]
+  readyToAdd: ScannedItemWithId[]
+  needsReview: ScannedItemWithId[]
+  skipped: ScannedItemWithId[]
   warnings: string[]
   hideConfirmButton: boolean
   isSubmitting: boolean
-  onConfirm: (items: ScannedItem[]) => void
-  onCheckedItemsChange: (items: ScannedItem[]) => void
+  onConfirm: (items: ScannedItemWithId[]) => void
+  onCheckedItemsChange: (items: ScannedItemWithId[]) => void
 }> = {}) {
   const props = {
-    readyToAdd: STUB_RESULT.ready_to_add,
-    needsReview: STUB_RESULT.needs_review,
-    skipped: STUB_RESULT.skipped,
+    readyToAdd: [READY_ITEM],
+    needsReview: [REVIEW_ITEM],
+    skipped: [SKIPPED_ITEM],
     warnings: STUB_RESULT.warnings,
     onReadyChange: noop,
     onReviewChange: noop,
@@ -169,7 +173,7 @@ it('onConfirm is called with only the checked items', () => {
   // Only ready item is pre-checked; click confirm
   fireEvent.click(screen.getByRole('button', { name: /Add 1 Item to Pantry/i }))
   expect(onConfirm).toHaveBeenCalledTimes(1)
-  const called: ScannedItem[] = onConfirm.mock.calls[0][0]
+  const called: ScannedItemWithId[] = onConfirm.mock.calls[0][0]
   expect(called).toHaveLength(1)
   expect(called[0].name).toBe(READY_ITEM.name)
 })
@@ -330,7 +334,7 @@ it('does not render warnings banner when warnings array is empty', () => {
 // mostly, but we double-check the shape at runtime here too).
 
 it('ScannedItem has all pinned contract fields', () => {
-  const item: ScannedItem = READY_ITEM
+  const item: ScannedItemWithId = READY_ITEM
   expect(typeof item.name).toBe('string')
   expect(typeof item.original_name).toBe('string')
   expect(typeof item.source_line).toBe('string')
@@ -391,6 +395,112 @@ it('editing the category select is the only way to change it — no separate pil
   const select = screen.getByRole('combobox', { name: 'Category' })
   fireEvent.change(select, { target: { value: 'produce' } })
   expect(onChange).toHaveBeenCalledWith({ ...READY_ITEM, category: 'produce' })
+})
+
+// ─── 9. Regression: dismissing an earlier item must not drop a later item's
+// checked state (issue #470) ───────────────────────────────────────────────
+// When an item has no `source_line` (falsy), ReviewSurface's itemKey falls
+// back to `${name}-${index}`. Dismissing an earlier item shifts every later
+// item's index, which changes its derived key — even though the item's
+// checked state should be unaffected. The stale key means checkedKeys no
+// longer contains the (now-renamed) key for the still-checked item, so it
+// silently drops out of both the visible checkbox state and the confirm
+// payload.
+
+const NO_LINE_READY_ITEM: ScannedItemWithId = {
+  _id: 'no-line-ready-1',
+  name: 'Canned Tomatoes',
+  original_name: 'canned tomatoes',
+  source_line: '',
+  price: 1.99,
+  quantity: 1,
+  unit: 'can',
+  category: 'canned_goods',
+  location: 'pantry',
+  confidence: 0.9,
+}
+
+const NO_LINE_REVIEW_ITEM: ScannedItemWithId = {
+  _id: 'no-line-review-1',
+  name: 'Basmati Rice',
+  original_name: 'basmati rice',
+  source_line: '',
+  price: 4.99,
+  quantity: 1,
+  unit: 'bag',
+  category: 'dry_goods',
+  location: 'pantry',
+  confidence: 0.65,
+}
+
+// A minimal stateful wrapper mirroring how the real callers (ScanTab,
+// app/scan/page.tsx) own the three arrays: on*Change actually updates state
+// and gets fed back into ReviewSurface, so a dismiss really does shift the
+// positions of the items after it — which is what triggers the bug.
+function StatefulReviewSurface({
+  initialReady,
+  initialReview,
+  onCheckedItemsChange,
+}: {
+  initialReady: ScannedItemWithId[]
+  initialReview: ScannedItemWithId[]
+  onCheckedItemsChange: (items: ScannedItemWithId[]) => void
+}) {
+  const [ready, setReady] = React.useState(initialReady)
+  const [review, setReview] = React.useState(initialReview)
+  return (
+    <ReviewSurface
+      readyToAdd={ready}
+      needsReview={review}
+      skipped={[]}
+      onReadyChange={setReady}
+      onReviewChange={setReview}
+      onSkippedChange={noop}
+      onConfirm={noop}
+      isSubmitting={false}
+      hideConfirmButton={true}
+      onCheckedItemsChange={onCheckedItemsChange}
+    />
+  )
+}
+
+it('keeps a later item checked after an earlier item is dismissed (issue #470)', async () => {
+  const onCheckedItemsChange = jest.fn()
+  render(
+    <StatefulReviewSurface
+      initialReady={[NO_LINE_READY_ITEM]}
+      initialReview={[NO_LINE_REVIEW_ITEM]}
+      onCheckedItemsChange={onCheckedItemsChange}
+    />,
+  )
+
+  // Check the needs_review item (it starts unchecked).
+  const reviewCheckbox = screen.getByRole('checkbox', {
+    name: new RegExp(`Include ${NO_LINE_REVIEW_ITEM.name}`, 'i'),
+  })
+  fireEvent.click(reviewCheckbox)
+  expect(reviewCheckbox).toBeChecked()
+
+  await waitFor(() => {
+    const lastCall = onCheckedItemsChange.mock.calls[onCheckedItemsChange.mock.calls.length - 1][0]
+    expect(lastCall).toHaveLength(2)
+  })
+
+  // Dismiss the ready item — this shifts the review item's index-derived key.
+  fireEvent.click(screen.getByRole('button', { name: `Dismiss ${NO_LINE_READY_ITEM.name}` }))
+
+  // The review item's checkbox should still be checked — its underlying
+  // identity didn't change, only its position did.
+  const reviewCheckboxAfter = screen.getByRole('checkbox', {
+    name: new RegExp(`Include ${NO_LINE_REVIEW_ITEM.name}`, 'i'),
+  })
+  expect(reviewCheckboxAfter).toBeChecked()
+
+  await waitFor(() => {
+    const lastCall = onCheckedItemsChange.mock.calls[onCheckedItemsChange.mock.calls.length - 1][0]
+    expect(lastCall).toHaveLength(1)
+    expect(lastCall[0].name).toBe(NO_LINE_REVIEW_ITEM.name)
+  })
 })
 
 // ─── 8. Selection checkbox matches the app's custom-checkbox pattern ──────────
