@@ -56,12 +56,25 @@ authenticatedTest.describe('sign-out / AC1: sign out flow', () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC2 — after signing out, protected routes redirect back to /login
+// AC2 — after signing out, protected routes start a guest session instead
+// of redirecting to /login
 // ---------------------------------------------------------------------------
 //
 // This suite runs in a clean (unauthenticated) browser context so it mirrors
 // the state immediately after a real sign-out clears all auth cookies.
-unauthenticatedTest.describe('sign-out / AC2: protected routes redirect when unauthenticated', () => {
+//
+// Historically this asserted a redirect to /login. Issue #382 (closed —
+// added guest mode) changed that: the middleware (lib/supabase/middleware.ts
+// / auth-routing.ts) now calls Supabase `signInAnonymously()` for an
+// unauthenticated visitor on a protected page route instead of bouncing them
+// to the login wall, since every RLS policy here is already
+// `auth.uid() = user_id` and an anonymous user satisfies that with zero
+// other changes. Issue #458 rewrites this test to match: it now asserts the
+// visitor stays on the requested route AND that a guest session was
+// actually established (a Supabase auth-token cookie appears), rather than
+// the old redirect-to-/login expectation which failed 5/5 on main because it
+// no longer describes what the app does.
+unauthenticatedTest.describe('sign-out / AC2: protected routes start a guest session when unauthenticated', () => {
   // Use a completely empty storage state — no cookies, no localStorage tokens.
   unauthenticatedTest.use({ storageState: { cookies: [], origins: [] } });
 
@@ -69,13 +82,35 @@ unauthenticatedTest.describe('sign-out / AC2: protected routes redirect when una
 
   for (const route of protectedRoutes) {
     unauthenticatedTest(
-      `unauthenticated visit to ${route} redirects to /login`,
+      `unauthenticated visit to ${route} starts a guest session instead of redirecting to /login`,
       async ({ page }) => {
         await page.goto(route);
-        // The Next.js middleware (middleware.ts) redirects unauthenticated
-        // requests; allow one full navigation + networkidle to settle.
+        // The Next.js middleware settles the anonymous sign-in and any
+        // resulting navigation; allow one full networkidle to finish.
         await page.waitForLoadState('networkidle');
-        await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
+
+        // No login-wall redirect — the visitor stays on the route they asked for.
+        await expect(page).not.toHaveURL(/\/login/, { timeout: 10_000 });
+        await expect(page).toHaveURL(new RegExp(`${route}$`));
+
+        // A guest session was actually established, not just "didn't
+        // redirect by accident": the middleware's signInAnonymously() call
+        // runs server-side and isn't observable via page.route, so the
+        // closest available signal from the browser page is the
+        // Supabase auth-token cookie it sets.
+        const cookies = await page.context().cookies();
+        const authCookie = cookies.find((cookie) => /^sb-.*-auth-token/.test(cookie.name));
+        expect(authCookie).toBeDefined();
+
+        // ...and that session is a *guest* one, not some leftover real login:
+        // SaveAccountBanner renders only when the current user is anonymous
+        // (isGuestUser), and /profile mounts it persistently. Same context, so
+        // this is the session the visit to `route` just started.
+        if (route !== '/profile') {
+          await page.goto('/profile');
+          await page.waitForLoadState('networkidle');
+        }
+        await expect(page.getByText('Save your account')).toBeVisible({ timeout: 10_000 });
       }
     );
   }

@@ -64,6 +64,30 @@ cmd_ports() {
   echo "export AI_SERVICE_URL=$AI_URL"
 }
 
+# A failed `up` must not leave half a stack behind, and must not be quietly
+# replaced by `next dev`: dev mode hides the hydration bugs this script exists
+# to catch, and a verify run against it proves nothing about the production
+# build. So stop whatever this run started, and say so loudly.
+fail_up() {
+  local what=$1 log=$2
+  {
+    echo
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "!! stack.sh up FAILED: $what"
+    echo "!! Log: $log"
+    if [ -f "$log" ]; then
+      echo "!! First errors:"
+      grep -m 8 -iE 'error|failed' "$log" | sed 's/^/!!   /'
+    fi
+    echo "!! Do NOT fall back to 'next dev' and call it verified. Fix the build,"
+    echo "!! or report that the stack won't start: that is itself a finding."
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo
+  } >&2
+  cmd_down >&2
+  exit 1
+}
+
 cmd_up() {
   for p in "$PORT" "$AI_PORT"; do
     if port_busy "$p"; then
@@ -84,14 +108,20 @@ cmd_up() {
       nohup python -m uvicorn bubbly_chef.main:app --host 127.0.0.1 --port "$AI_PORT" \
       >"$STATE/ai-service.log" 2>&1 &
   )
-  wait_for "$AI_URL/health" ai-service 30 || exit 1
+  wait_for "$AI_URL/health" ai-service 30 || fail_up "ai-service did not answer" "$STATE/ai-service.log"
   record_listener "$AI_PORT"
 
   echo "== nextjs production build (AI at $AI_URL)"
+  # `next dev` writes route types to .next/dev/types, and tsconfig includes that
+  # directory, so `next build` type-checks whatever a previous dev run left
+  # there. Stale dev types fail the production type check (for example on a
+  # page's extra named export) even though the code builds fine on a clean
+  # checkout. They are dev-server output only, so clear them first.
+  rm -rf "$ROOT/nextjs/.next/dev"
   (
     cd "$ROOT/nextjs" || exit 1
     NEXT_PUBLIC_GIT_SHA="$SHA" NEXT_PUBLIC_AI_SERVICE_URL="$AI_URL" npm run build >"$STATE/nextjs-build.log" 2>&1
-  ) || { echo "next build failed — see $STATE/nextjs-build.log" >&2; exit 1; }
+  ) || fail_up "next build failed" "$STATE/nextjs-build.log"
 
   echo "== nextjs on $PORT"
   (
@@ -99,7 +129,7 @@ cmd_up() {
     NEXT_PUBLIC_GIT_SHA="$SHA" NEXT_PUBLIC_AI_SERVICE_URL="$AI_URL" nohup npx next start -p "$PORT" \
       >"$STATE/nextjs.log" 2>&1 &
   )
-  wait_for "$WEB_URL/api/health" nextjs 60 || exit 1
+  wait_for "$WEB_URL/api/health" nextjs 60 || fail_up "nextjs did not answer" "$STATE/nextjs.log"
   record_listener "$PORT"
 
   echo
