@@ -113,14 +113,11 @@ export default function FoodAutocomplete({
         }
         break
       case 'Escape':
-        // Only close the dropdown, not the sheet it lives in (issue #439) —
-        // without this, Escape bubbles to `useModalFocusTrap`'s document-level
-        // handler and closes the whole `PantryAddSheet`, discarding whatever
-        // the user had typed. `stopPropagation` (not just `preventDefault`)
-        // is what keeps that document listener from ever seeing this
-        // keydown — React attaches its own listener at the app root, which
-        // sits below `document` in the DOM, so stopping propagation there
-        // is sufficient to prevent the native event from reaching `document`.
+        // Only close the dropdown, not the sheet it lives in (issue #439).
+        // `preventDefault` is the signal: `useModalFocusTrap` skips an Escape
+        // that's already been handled. (`stopPropagation` alone is not enough —
+        // React's delegated listener lives on `document` in this app, next to
+        // the trap's own listener, so it can't stop a sibling on the same node.)
         e.preventDefault()
         e.stopPropagation()
         setIsOpen(false)

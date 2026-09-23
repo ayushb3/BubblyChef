@@ -215,6 +215,13 @@ export function useModalFocusTrap(
 
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
+        // A control inside the modal (e.g. an open autocomplete listbox) that
+        // handles Escape itself calls preventDefault. Respect that instead of
+        // closing the whole modal. stopPropagation in that control can't do
+        // this job: Next.js hydrates the entire document, so React's delegated
+        // listener sits on `document` alongside this one, and a sibling listener
+        // on the same node isn't stopped by stopPropagation (issue #439).
+        if (e.defaultPrevented) return
         e.preventDefault()
         onCloseRef.current()
         return

@@ -106,6 +106,27 @@ describe('useModalFocusTrap', () => {
     expect(onCloseSpy).toHaveBeenCalledTimes(1)
   })
 
+  it('does not close when another handler already handled Escape (defaultPrevented)', () => {
+    // Models the real app: React's delegated listener sits on `document`
+    // (Next.js hydrates the whole document) and is registered before the trap,
+    // so a control like an open autocomplete handles Escape first and calls
+    // preventDefault. stopPropagation can't stop a sibling listener on the
+    // same node, so the trap itself must respect defaultPrevented (issue #439).
+    const earlierHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') e.preventDefault()
+    }
+    document.addEventListener('keydown', earlierHandler)
+    try {
+      const onCloseSpy = jest.fn()
+      render(<Harness onCloseSpy={onCloseSpy} />)
+      fireEvent.click(screen.getByText('Open trigger'))
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(onCloseSpy).not.toHaveBeenCalled()
+    } finally {
+      document.removeEventListener('keydown', earlierHandler)
+    }
+  })
+
   it('restores focus to the trigger element on close', () => {
     render(<Harness />)
     const trigger = screen.getByText('Open trigger')
