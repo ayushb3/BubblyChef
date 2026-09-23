@@ -9,7 +9,14 @@ export interface ManualRow {
   quantity: number
   unit: string
   category: string
-  storage_location: string
+  /**
+   * The catalog's `default_location` for the picked suggestion (milk ->
+   * fridge). Never shown or edited — the row has no location control any
+   * more (issue #397) — but still stored, since the server's expiry
+   * estimate scales by it (freezer x6). Unset for a freehand name, so the
+   * server default applies.
+   */
+  storage_location?: string
   expiry_date: string
   /**
    * True when `expiry_date` came from the food catalog's default expiry-days
@@ -60,13 +67,6 @@ const CATEGORIES = [
   { value: 'other', label: 'Other' },
 ]
 
-const LOCATIONS = [
-  { value: 'fridge', label: 'Fridge' },
-  { value: 'freezer', label: 'Freezer' },
-  { value: 'pantry', label: 'Pantry' },
-  { value: 'counter', label: 'Counter' },
-]
-
 interface AddItemRowProps {
   row: ManualRow
   onChange: (updated: ManualRow) => void
@@ -99,16 +99,17 @@ export default function AddItemRow({
     ? CATEGORIES
     : [{ value: row.category, label: row.category }, ...CATEGORIES]
 
-  // Selecting a catalog suggestion auto-fills unit, category, location and
-  // expiry (today + the catalog's expiry_days) — the user can still
-  // override any of it afterwards (issue #398).
+  // Selecting a catalog suggestion auto-fills unit, category and expiry
+  // (today + the catalog's expiry_days) — the user can still override any of
+  // it afterwards (issue #398). The catalog's `default_location` is kept on the
+  // row without a visible field (issue #397).
   const handleCatalogSelect = (entry: FoodCatalogEntry) => {
     onChange({
       ...row,
       name: entry.canonical,
       unit: entry.valid_units[0] || row.unit,
       category: entry.category || row.category,
-      storage_location: entry.default_location || row.storage_location,
+      storage_location: entry.default_location || undefined,
       expiry_date: expiryDateFromDays(entry.expiry_days),
       estimated_expiry: true,
       emoji: entry.emoji,
@@ -139,7 +140,9 @@ export default function AddItemRow({
       {/* Name — with catalog autocomplete (#398) */}
       <FoodAutocomplete
         value={row.name}
-        onChange={(value) => set('name', value)}
+        // Typing a different name leaves the catalog pick behind, so its
+        // hidden location goes with it — it can't be corrected by hand.
+        onChange={(value) => onChange({ ...row, name: value, storage_location: undefined })}
         onSelect={handleCatalogSelect}
         placeholder="Item name (e.g. Milk, Eggs...)"
         ariaLabel="Item name"
@@ -170,29 +173,18 @@ export default function AddItemRow({
         </select>
       </div>
 
-      {/* Category + Location */}
-      <div className="flex gap-2">
-        <select
-          value={row.category}
-          onChange={(e) => set('category', e.target.value)}
-          className="flex-1 rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
-          aria-label="Category"
-        >
-          {categoryOptions.map((c) => (
-            <option key={c.value} value={c.value}>{c.label}</option>
-          ))}
-        </select>
-        <select
-          value={row.storage_location}
-          onChange={(e) => set('storage_location', e.target.value)}
-          className="flex-1 rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
-          aria-label="Storage location"
-        >
-          {LOCATIONS.map((l) => (
-            <option key={l.value} value={l.value}>{l.label}</option>
-          ))}
-        </select>
-      </div>
+      {/* Category (the kitchen-location select that used to sit beside it
+          went with the on-hold kitchen scene — issue #397) */}
+      <select
+        value={row.category}
+        onChange={(e) => set('category', e.target.value)}
+        className={inputClass}
+        aria-label="Category"
+      >
+        {categoryOptions.map((c) => (
+          <option key={c.value} value={c.value}>{c.label}</option>
+        ))}
+      </select>
 
       {/* Optional expiry */}
       <div>

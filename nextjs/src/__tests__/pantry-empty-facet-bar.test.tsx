@@ -4,6 +4,10 @@
  * least one item in the pantry (`allItems.length > 0`), not merely once the
  * *filtered* list is empty — a search/facet combination that matches zero
  * items must still show the bar so the user can change their filters.
+ *
+ * The bar has two facets, category and expiry — the location facet was
+ * removed with the kitchen-location field (issue #397), so it must be
+ * absent in both states.
  */
 
 import React from 'react'
@@ -55,9 +59,9 @@ it('hides the facet filter bar when the pantry has zero items', async () => {
 
   expect(await screen.findByText('Your pantry is empty!')).toBeInTheDocument()
 
-  expect(screen.queryByLabelText(/Filter by location/)).not.toBeInTheDocument()
   expect(screen.queryByLabelText(/Filter by category/)).not.toBeInTheDocument()
   expect(screen.queryByLabelText(/Filter by expiry status/)).not.toBeInTheDocument()
+  expect(screen.queryByLabelText(/Filter by location/)).not.toBeInTheDocument()
 })
 
 it('still shows the facet filter bar when items exist but filters match zero', async () => {
@@ -75,7 +79,8 @@ it('still shows the facet filter bar when items exist but filters match zero', a
 
   expect(await screen.findByText('No items match your filters')).toBeInTheDocument()
 
-  expect(screen.getByLabelText(/Filter by location/)).toBeInTheDocument()
   expect(screen.getByLabelText(/Filter by category/)).toBeInTheDocument()
   expect(screen.getByLabelText(/Filter by expiry status/)).toBeInTheDocument()
+  // No location facet, even with items present (#397).
+  expect(screen.queryByLabelText(/Filter by location/)).not.toBeInTheDocument()
 })

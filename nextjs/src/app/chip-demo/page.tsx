@@ -139,13 +139,13 @@ export default function ChipDemo() {
         )}
       </section>
 
-      {/* Location filter chips (replaces pantry filter buttons) */}
+      {/* Filter chips (the pantry's own filters are category/expiry facets) */}
       <section className="space-y-3">
         <h2 className="text-sm font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
-          Filter chips (replaces pantry location buttons)
+          Filter chips (replaces pantry filter buttons)
         </h2>
         <div className="flex flex-wrap gap-2">
-          {(['All', 'Fridge', 'Freezer', 'Pantry', 'Other'] as const).map((loc, i) => (
+          {(['All', 'Produce', 'Dairy', 'Meat', 'Other'] as const).map((loc, i) => (
             <Chip
               key={loc}
               tone={i === 0 ? 'primary' : 'muted'}

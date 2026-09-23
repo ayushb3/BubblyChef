@@ -20,11 +20,36 @@ const LOOP_LABEL = 'agent-loop'
 const REVIEW_JOB = 'review'
 const REVIEW_STEP = 'Claude review'
 
-// The first backticked value after "Verdict", in both shapes the reviewer writes:
-// **Verdict: `looks mergeable`**   and   **Verdict:** `needs changes`
+// The three verdicts the reviewer is instructed to write (see .github/workflows/claude-review.yml).
+const KNOWN_VERDICTS = ['looks mergeable', 'needs changes', 'needs a human']
+
+// The value after the LAST "Verdict:" label in the body, however the reviewer formatted
+// it: backticked or not, bold or not, any case, trailing punctuation, extra spaces —
+// `**Verdict: \`looks mergeable\`**`, `Verdict: looks mergeable.`, `VERDICT: NEEDS A
+// HUMAN` all parse the same way. Only the three known verdicts are ever accepted;
+// anything else — an unknown word, or no "Verdict:" label at all — is "unreadable" (fail
+// closed), returned as ''. Requires the literal label "Verdict" immediately followed by
+// a colon, so ordinary prose that merely mentions "verdict" never matches.
 function parseVerdict(body) {
-  const m = /Verdict\W{0,6}`([^`]+)`/i.exec(body || '')
-  return m ? m[1].trim().toLowerCase() : ''
+  const lines = String(body || '').split(/\r?\n/)
+  let value = ''
+  for (const line of lines) {
+    const m = /\bVerdict\s*:\s*(.*)$/i.exec(line)
+    if (!m) continue
+    // Backticks, when present, delimit the value exactly (so trailing prose after the
+    // closing backtick, e.g. a parenthetical aside, is never swept in). Without
+    // backticks the rest of the line is the value.
+    const backticked = /^\**\s*`([^`]+)`/.exec(m[1])
+    value = backticked ? backticked[1] : m[1]
+  }
+  const normalized = value
+    .replace(/[`*_]/g, '')
+    .trim()
+    .replace(/[.,;:!?]+$/, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+  return KNOWN_VERDICTS.includes(normalized) ? normalized : ''
 }
 
 // Each code owner's standing approval: their latest APPROVED / CHANGES_REQUESTED /

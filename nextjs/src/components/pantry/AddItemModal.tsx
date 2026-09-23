@@ -3,28 +3,34 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
+import FoodAutocomplete from '@/components/pantry/FoodAutocomplete'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
+import { updatePantryItem, deletePantryItem } from '@/lib/api/pantry'
+import type { FoodCatalogEntry } from '@/lib/api/foods'
+import type { PantryItem } from '@/types/pantry'
 
-interface PantryItemData {
-  id: string
-  name: string
-  category: string
-  location: string
-  quantity: number
-  unit: string
-  expiry_date: string | null
-}
+/**
+ * EditItemModal — the single-item edit sheet on `/pantry`.
+ *
+ * Despite the filename (kept as `AddItemModal.tsx` so the focus-trap test and
+ * the count guard that reads test names textually are undisturbed), this is
+ * an edit surface only. Adding goes through `PantryAddSheet` — the "+ Add
+ * Item" FAB has always opened that, and the only thing that opens this modal
+ * is tapping an existing pantry card. The old add branch (`POST /api/pantry`)
+ * was unreachable and has been removed (issue #478). It is also the only
+ * place in the app that updates or plainly deletes a single item, which is
+ * why it survives at all.
+ *
+ * There is no kitchen-location control here (issue #397): the field only fed
+ * the on-hold kitchen scene (PR #124). The item's stored location is left as
+ * it is — the update omits the key rather than rewriting it.
+ */
 
-interface AddItemModalProps {
+interface EditItemModalProps {
   isOpen: boolean
   onClose: () => void
-  editItem?: PantryItemData | null
-}
-
-interface FoodSuggestion {
-  canonical_name: string
-  category?: string
-  default_location?: string
+  /** The item being edited. `null` only while the sheet is closed. */
+  editItem: PantryItem | null
 }
 
 const CATEGORIES = [
@@ -39,134 +45,75 @@ const CATEGORIES = [
   { value: 'other', label: 'Other 📦' },
 ]
 
-// Exported so the pantry filter bar's location facet (#228) reuses the exact
-// same value set instead of carrying a second, parallel list.
-export const LOCATIONS = [
-  { value: 'fridge', label: 'Fridge' },
-  { value: 'freezer', label: 'Freezer' },
-  { value: 'pantry', label: 'Pantry' },
-  { value: 'counter', label: 'Counter' },
-]
-
 const UNIT_SUGGESTIONS = ['item', 'lb', 'oz', 'kg', 'gallon', 'cup', 'dozen']
 
-export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
+const fieldClass =
+  'w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]'
+
+export default function EditItemModal({ isOpen, onClose, editItem }: EditItemModalProps) {
   const [name, setName] = useState('')
   const [quantity, setQuantity] = useState(1)
   const [unit, setUnit] = useState('item')
   const [category, setCategory] = useState('other')
-  const [location, setLocation] = useState('pantry')
   const [expiryDate, setExpiryDate] = useState('')
-  const [suggestions, setSuggestions] = useState<FoodSuggestion[]>([])
-  const [showSuggestions, setShowSuggestions] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const isEditMode = !!editItem
   const panelRef = useRef<HTMLDivElement>(null)
   useModalFocusTrap(isOpen, onClose, panelRef)
 
-  // Populate form when editing
+  // Populate the form from the item every time the sheet opens.
   useEffect(() => {
     if (editItem) {
       setName(editItem.name)
       setQuantity(editItem.quantity)
       setUnit(editItem.unit)
       setCategory(editItem.category || 'other')
-      setLocation(editItem.location || 'pantry')
       setExpiryDate(editItem.expiry_date ?? '')
-    } else {
-      setName('')
-      setQuantity(1)
-      setUnit('item')
-      setCategory('other')
-      setLocation('pantry')
-      setExpiryDate('')
     }
     setConfirmDelete(false)
-    setSuggestions([])
     setError(null)
   }, [editItem, isOpen])
 
-  // Food typeahead
-  const handleNameChange = (value: string) => {
-    setName(value)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    if (value.length < 1) {
-      setSuggestions([])
-      setShowSuggestions(false)
-      return
-    }
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/foods/search?q=${encodeURIComponent(value)}&limit=6`)
-        if (res.ok) {
-          const data = await res.json()
-          setSuggestions(data.items ?? data ?? [])
-          setShowSuggestions(true)
-        }
-      } catch {
-        setSuggestions([])
-      }
-    }, 300)
-  }
+  // A stored category the catalog uses but this fixed list predates (e.g.
+  // "seafood", "canned", "bakery") still needs a matching <option>, or the
+  // <select> silently shows the first entry and a save would rewrite the
+  // category to "produce". Same fold-in as AddItemRow (#398).
+  const categoryOptions = CATEGORIES.some((c) => c.value === category)
+    ? CATEGORIES
+    : [{ value: category, label: category }, ...CATEGORIES]
 
-  const selectSuggestion = (s: FoodSuggestion) => {
-    setName(s.canonical_name)
-    if (s.category) setCategory(s.category)
-    if (s.default_location) setLocation(s.default_location)
-    setShowSuggestions(false)
-    setSuggestions([])
+  // Picking a catalog suggestion (the response-shape fix for #478 — the old
+  // hand-rolled typeahead read `data.items` from a route that returns
+  // `data.results`, so it never showed anything) fills in name and category.
+  // Quantity, unit and expiry are left alone: this is an existing item being
+  // corrected, not a fresh one, so what the user already recorded is more
+  // trustworthy than a catalog default. The catalog's `default_location` is
+  // ignored — there is no location field to fill (#397).
+  const handleCatalogSelect = (entry: FoodCatalogEntry) => {
+    setName(entry.canonical)
+    if (entry.category) setCategory(entry.category)
   }
 
   // Every write path below keeps the modal open on failure. It used to close
   // unconditionally and swallow the error, so a 401/409/500 was indistinguishable
   // from a successful save and the item silently never appeared (#240).
   const handleSubmit = async () => {
-    if (!name.trim()) return
+    if (!editItem || !name.trim()) return
     setSaving(true)
     setError(null)
     try {
-      const res =
-        isEditMode && editItem
-          ? await fetch(`/api/pantry/${editItem.id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name: name.trim(),
-                quantity,
-                unit,
-                category,
-                location,
-                expiry_date: expiryDate || null,
-              }),
-            })
-          : await fetch('/api/pantry', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name: name.trim(),
-                quantity,
-                unit,
-                category,
-                storage_location: location,
-                expiry_date: expiryDate || null,
-              }),
-            })
-
-      if (!res.ok) {
-        setError(
-          res.status === 401
-            ? 'Your session expired — sign in again to save.'
-            : "Couldn't save that item. Please try again.",
-        )
-        return
-      }
+      await updatePantryItem(editItem.id, {
+        name: name.trim(),
+        quantity,
+        unit,
+        category,
+        expiry_date: expiryDate || null,
+      })
       onClose()
-    } catch {
-      setError('Network problem — check your connection and try again.')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't save that item. Please try again.")
     } finally {
       setSaving(false)
     }
@@ -177,14 +124,10 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
     setSaving(true)
     setError(null)
     try {
-      const res = await fetch(`/api/pantry/${editItem.id}`, { method: 'DELETE' })
-      if (!res.ok) {
-        setError("Couldn't delete that item. Please try again.")
-        return
-      }
+      await deletePantryItem(editItem.id)
       onClose()
-    } catch {
-      setError('Network problem — check your connection and try again.')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't delete that item. Please try again.")
     } finally {
       setSaving(false)
     }
@@ -208,7 +151,7 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
             ref={panelRef}
             role="dialog"
             aria-modal="true"
-            aria-labelledby="add-item-modal-title"
+            aria-labelledby="edit-item-modal-title"
             tabIndex={-1}
             className="fixed bottom-0 left-0 right-0 z-[60] bg-white rounded-t-3xl max-h-[85vh] overflow-y-auto outline-none"
             initial={{ y: '100%' }}
@@ -222,39 +165,27 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
             </div>
 
             <div className="px-6 pb-8">
-              <h2 id="add-item-modal-title" className="text-lg font-extrabold text-[var(--color-text)] mb-4">
-                {isEditMode ? 'Edit Item' : 'Add Item'} ✏️
+              <h2 id="edit-item-modal-title" className="text-lg font-extrabold text-[var(--color-text)] mb-4">
+                Edit Item ✏️
               </h2>
 
-              {/* Name with typeahead */}
-              <div className="mb-3 relative">
-                <label className="text-xs font-semibold text-[var(--color-muted)] mb-1 block">Name</label>
-                <input
-                  type="text"
+              {/* Name — with catalog autocomplete (#398, #478) */}
+              <div className="mb-3">
+                <label
+                  htmlFor="edit-item-name"
+                  className="text-xs font-semibold text-[var(--color-muted)] mb-1 block"
+                >
+                  Name
+                </label>
+                <FoodAutocomplete
+                  id="edit-item-name"
                   value={name}
-                  onChange={(e) => handleNameChange(e.target.value)}
-                  onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                  onChange={setName}
+                  onSelect={handleCatalogSelect}
                   placeholder="e.g., Milk, Eggs, Rice..."
-                  className="w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
+                  ariaLabel="Item name"
+                  className={fieldClass}
                 />
-                {showSuggestions && suggestions.length > 0 && (
-                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[var(--color-border)] rounded-xl shadow-lg z-10 overflow-hidden">
-                    {suggestions.map((s) => (
-                      <button
-                        key={s.canonical_name}
-                        type="button"
-                        onMouseDown={() => selectSuggestion(s)}
-                        className="w-full text-left px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-primary)]/10 transition-colors"
-                      >
-                        {s.canonical_name}
-                        {s.category && (
-                          <span className="text-xs text-[var(--color-muted)] ml-2">({s.category})</span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
 
               {/* Quantity + Unit row */}
@@ -267,7 +198,7 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                     step="any"
                     value={quantity}
                     onChange={(e) => setQuantity(Number(e.target.value))}
-                    className="w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
+                    className={fieldClass}
                   />
                 </div>
                 <div className="flex-1">
@@ -277,7 +208,7 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                     value={unit}
                     onChange={(e) => setUnit(e.target.value)}
                     list="unit-suggestions"
-                    className="w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
+                    className={fieldClass}
                   />
                   <datalist id="unit-suggestions">
                     {UNIT_SUGGESTIONS.map((u) => (
@@ -293,33 +224,12 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
+                  className={fieldClass}
                 >
-                  {CATEGORIES.map((c) => (
+                  {categoryOptions.map((c) => (
                     <option key={c.value} value={c.value}>{c.label}</option>
                   ))}
                 </select>
-              </div>
-
-              {/* Location */}
-              <div className="mb-3">
-                <label className="text-xs font-semibold text-[var(--color-muted)] mb-1 block">Storage Location</label>
-                <div className="flex gap-2">
-                  {LOCATIONS.map((loc) => (
-                    <button
-                      key={loc.value}
-                      type="button"
-                      onClick={() => setLocation(loc.value)}
-                      className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-colors ${
-                        location === loc.value
-                          ? 'bg-[var(--color-primary)] text-white'
-                          : 'bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border)]'
-                      }`}
-                    >
-                      {loc.label}
-                    </button>
-                  ))}
-                </div>
               </div>
 
               {/* Expiry Date */}
@@ -329,7 +239,7 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                   type="date"
                   value={expiryDate}
                   onChange={(e) => setExpiryDate(e.target.value)}
-                  className="w-full rounded-xl px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
+                  className={fieldClass}
                 />
               </div>
 
@@ -344,46 +254,41 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
 
               {/* Actions */}
               <div className="flex gap-3">
-                {isEditMode && (
+                {confirmDelete ? (
+                  <div className="flex gap-2 flex-1">
+                    <button
+                      type="button"
+                      onClick={handleDelete}
+                      disabled={saving}
+                      className="flex-1 py-2.5 rounded-full bg-red-400 text-white text-sm font-semibold disabled:opacity-50"
+                    >
+                      Confirm Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(false)}
+                      className="flex-1 py-2.5 rounded-full bg-[var(--color-surface)] text-[var(--color-text)] text-sm font-semibold border border-[var(--color-border)]"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
                   <>
-                    {confirmDelete ? (
-                      <div className="flex gap-2 flex-1">
-                        <button
-                          type="button"
-                          onClick={handleDelete}
-                          disabled={saving}
-                          className="flex-1 py-2.5 rounded-full bg-red-400 text-white text-sm font-semibold disabled:opacity-50"
-                        >
-                          Confirm Delete
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDelete(false)}
-                          className="flex-1 py-2.5 rounded-full bg-[var(--color-surface)] text-[var(--color-text)] text-sm font-semibold border border-[var(--color-border)]"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDelete(true)}
-                        className="py-2.5 px-4 rounded-full text-red-400 text-sm font-semibold border border-red-300"
-                      >
-                        Delete
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(true)}
+                      className="py-2.5 px-4 rounded-full text-red-400 text-sm font-semibold border border-red-300"
+                    >
+                      Delete
+                    </button>
+                    <SpringButton
+                      onClick={handleSubmit}
+                      disabled={saving || !name.trim()}
+                      className="flex-1 bg-[var(--color-primary)] text-white font-semibold py-2.5 rounded-full disabled:opacity-50"
+                    >
+                      {saving ? 'Saving...' : 'Save Changes'}
+                    </SpringButton>
                   </>
-                )}
-
-                {!confirmDelete && (
-                  <SpringButton
-                    onClick={handleSubmit}
-                    disabled={saving || !name.trim()}
-                    className="flex-1 bg-[var(--color-primary)] text-white font-semibold py-2.5 rounded-full disabled:opacity-50"
-                  >
-                    {saving ? 'Saving...' : isEditMode ? 'Save Changes' : 'Add to Pantry'}
-                  </SpringButton>
                 )}
               </div>
             </div>

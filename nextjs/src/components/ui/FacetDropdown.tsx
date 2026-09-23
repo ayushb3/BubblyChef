@@ -19,15 +19,15 @@ export interface FacetDropdownProps {
   /** Visible label next to the trigger emoji. Omitted for `iconOnly` triggers. */
   triggerLabel?: string
   triggerEmoji?: string
-  /** Compact 44×44 circular trigger with no visible text — used for the location facet. */
+  /** Compact 44×44 circular trigger with no visible text. (Unused since the location facet went, #397.) */
   iconOnly?: boolean
 }
 
 /**
  * Multi-select facet trigger + popover, following `ThemePicker`'s
  * click-outside/Escape-to-dismiss popover pattern (#228) so the pantry filter
- * bar's three facets (location, category, expiry) share one implementation
- * instead of three near-duplicates.
+ * bar's facets (category, expiry) share one implementation instead of
+ * near-duplicates.
  *
  * Selection is OR-within-facet by design: toggling an option adds/removes it
  * from `selected`, and an empty `selected` means "no constraint" — the caller

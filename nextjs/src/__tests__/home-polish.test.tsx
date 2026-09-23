@@ -10,6 +10,7 @@
  */
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import HeroHome from '@/components/dashboard/HeroHome'
 
 jest.mock('next/navigation', () => ({
@@ -27,6 +28,8 @@ const LONG_TIP =
 function mockFetch(tipText: string) {
   global.fetch = jest.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
+    if (url.includes('/api/decorations')) return jsonResponse({ decorations: [], total: 0 })
+    if (url.includes('/api/bubbles')) return jsonResponse({ balance: 0, recent: [] })
     if (url.includes('/api/pantry/expiring')) return jsonResponse({ items: [], count: 0 })
     if (url.includes('/api/pantry')) return jsonResponse({ items: [{ id: 'p1', name: 'eggs' }], total_count: 1 })
     if (url.includes('/api/ai/dashboard/daily')) {
@@ -39,6 +42,17 @@ function mockFetch(tipText: string) {
     }
     throw new Error(`Unexpected fetch: ${url}`)
   }) as unknown as typeof fetch
+}
+
+// HeroHome's kitchen scene (#521) reads useDecorations() and useBubbles(),
+// which need a QueryClient in context.
+function renderHero() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <HeroHome displayName="ayush" />
+    </QueryClientProvider>,
+  )
 }
 
 /** The tip `<p>` — `getByText(/^Tip:/)` would match the inner `<strong>`. */
@@ -77,7 +91,7 @@ describe('quick-action cards use line icons, not emoji (#391)', () => {
   beforeEach(() => mockFetch('Taste as you cook.'))
 
   it('renders an SVG icon in each of the three cards and no emoji literal', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
     await screen.findByText(/^Tip:/)
 
     for (const label of ['Use Soon', 'Scan', 'Ask']) {
@@ -89,7 +103,7 @@ describe('quick-action cards use line icons, not emoji (#391)', () => {
   })
 
   it('marks the card icons decorative so the label is the accessible name', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
     await screen.findByText(/^Tip:/)
 
     const useSoon = screen.getByRole('link', { name: /use soon/i })
@@ -101,7 +115,7 @@ describe('daily tip expand/collapse (#391)', () => {
   it('shows no "Read more" control when the tip fits in two lines', async () => {
     stubOverflow(false)
     mockFetch('Taste as you cook.')
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     await screen.findByText(/^Tip:/)
     expect(screen.queryByRole('button', { name: /read more/i })).toBeNull()
@@ -111,7 +125,7 @@ describe('daily tip expand/collapse (#391)', () => {
   it('offers "Read more" when the tip overflows, and expanding removes the clamp', async () => {
     stubOverflow(true)
     mockFetch(LONG_TIP)
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     await screen.findByText(/^Tip:/)
     const tipText = tipParagraph()
@@ -136,7 +150,7 @@ describe('daily tip expand/collapse (#391)', () => {
   it('keeps the seeded-chat deep link as its own "Ask Bubbles" pill, labelled with the full tip', async () => {
     stubOverflow(true)
     mockFetch(LONG_TIP)
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     const ask = await screen.findByRole('link', { name: /Ask Bubbles about today's tip/i })
     expect(ask.getAttribute('aria-label')).toBe(`Ask Bubbles about today's tip: ${LONG_TIP}`)

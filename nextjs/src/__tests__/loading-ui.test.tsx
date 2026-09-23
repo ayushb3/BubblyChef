@@ -7,9 +7,21 @@
  *     blocking the whole hero behind one all-or-nothing `loading` flag.
  */
 import { render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Loading from '@/app/loading'
 import ProfileLoading from '@/app/profile/loading'
 import HeroHome from '@/components/dashboard/HeroHome'
+
+// HeroHome now also fetches decorations via `useDecorations()` (#521), which
+// needs a QueryClient in context.
+function renderHero() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <HeroHome displayName="ayush" />
+    </QueryClientProvider>,
+  )
+}
 
 // Any 6- or 3-digit hex colour literal. The 5-theme system means the skeleton
 // must resolve every colour through a CSS custom property.
@@ -89,7 +101,7 @@ describe('HeroHome progressive paint', () => {
     // Never-resolving fetches: this is the "still loading" frame.
     global.fetch = jest.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch
 
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     // Greeting + name are known server-side, so they must be on screen already.
     expect(screen.getByText('ayush')).toBeInTheDocument()
@@ -113,7 +125,7 @@ describe('HeroHome progressive paint', () => {
       return jsonResponse({ recipes: [], total_count: 0 })
     }) as unknown as typeof fetch
 
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     await waitFor(() =>
       expect(screen.getByText(/Your pantry is empty/)).toBeInTheDocument()
