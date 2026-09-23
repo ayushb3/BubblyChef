@@ -63,7 +63,7 @@ except ModuleNotFoundError:
     sys.modules["rapidfuzz.process"] = _rp_process
 
 from bubbly_chef.models.base import Intent  # noqa: E402
-from bubbly_chef.workflows.recipe.nodes import extract_selected_recipe  # noqa: E402
+from bubbly_chef.workflows.recipe.nodes import extract_selected_recipe, extract_selected_recipe_by_name  # noqa: E402
 from bubbly_chef.workflows.router import classify_intent  # noqa: E402
 from bubbly_chef.workflows.state import LLMIntentResult  # noqa: E402
 
@@ -137,11 +137,15 @@ def test_extract_returns_none_for_explain() -> None:
 
 
 def test_extract_returns_none_for_whats_in() -> None:
-    result = extract_selected_recipe("what's in the first idea?", _BRAINSTORM_HISTORY)
-    # "what's in" is informational but "first" is ordinal → ordinal wins; returns first idea
-    # This tests that ordinal takes precedence even with informational phrasing
-    result2 = extract_selected_recipe("what's in them", _BRAINSTORM_HISTORY)
-    assert result2 is None  # no ordinal → informational guard fires
+    # "what's in the first idea?" is informational but "first" is an ordinal →
+    # ordinal wins; this documents that ordinals take precedence over the
+    # informational guard.
+    assert (
+        extract_selected_recipe("what's in the first idea?", _BRAINSTORM_HISTORY)
+        == "Cheesy Chicken Bites"
+    )
+    # No ordinal → informational guard fires → no selection.
+    assert extract_selected_recipe("what's in them", _BRAINSTORM_HISTORY) is None
 
 
 def test_extract_returns_none_for_how_do_i_make_no_ordinal() -> None:
@@ -190,6 +194,50 @@ def test_extract_returns_none_when_no_history() -> None:
 def test_extract_surprise_keyword_returns_first() -> None:
     result = extract_selected_recipe("surprise me!", _BRAINSTORM_HISTORY)
     assert result == "Cheesy Chicken Bites"
+
+
+# ---------------------------------------------------------------------------
+# #442: "the <name> one instead" must select by NAME, not fall to idea[0]
+# because the bare word "one" used to be treated as ordinal index 0.
+# ---------------------------------------------------------------------------
+
+
+def test_extract_name_plus_one_selects_by_name_not_first() -> None:
+    """'show me the pasta one instead' → Pasta Primavera, NOT the first idea.
+
+    Regression for #442: 'one' was in the ordinal map and matched before the
+    fuzzy name pass, so any 'the <name> one' phrase returned ideas[0]."""
+    result = extract_selected_recipe(
+        "show me the pasta one instead", _BRAINSTORM_HISTORY
+    )
+    assert result == "Pasta Primavera"
+
+
+def test_extract_name_plus_one_selects_third_by_name() -> None:
+    """'the tacos one' names the third idea — must not resolve to idea[0]."""
+    result = extract_selected_recipe("actually the tacos one", _BRAINSTORM_HISTORY)
+    assert result == "Beef Tacos"
+
+
+def test_extract_bare_one_still_selects_first_when_no_name_matches() -> None:
+    """With no name in the text, a bare 'give me number one' still means idx 0
+    (fallback path preserved)."""
+    result = extract_selected_recipe("give me number one", _BRAINSTORM_HISTORY)
+    assert result == "Cheesy Chicken Bites"
+
+
+def test_extract_ordinal_still_wins_over_name() -> None:
+    """'the first one' keeps ordinal precedence → idx 0, unchanged by the fix."""
+    result = extract_selected_recipe("the first one", _BRAINSTORM_HISTORY)
+    assert result == "Cheesy Chicken Bites"
+
+
+def test_extract_one_inside_word_does_not_trigger_selection() -> None:
+    """Word-boundary match: 'one' inside 'someone'/'done' must not pick idx 0."""
+    result = extract_selected_recipe(
+        "has anyone done these before?", _BRAINSTORM_HISTORY
+    )
+    assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -263,3 +311,196 @@ async def test_raw_phrase_never_becomes_recipe_title_after_brainstorm() -> None:
         assert result.get("selected_recipe_name") != phrase, (
             f"Phrase '{phrase}' became a recipe title — guard not working"
         )
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for extract_selected_recipe_by_name (name-match-only path)
+# Ticket #442, defect 3: pinned-session re-pick to a different offered idea.
+# ---------------------------------------------------------------------------
+
+_TOAST_PORRIDGE_IDEAS = [
+    "Thai-Style Garlic Toast",
+    "Sweet Coconut Milk Toast",
+    "Savory Thai Rice Porridge",
+]
+
+_TOAST_PORRIDGE_HISTORY: list[dict[str, Any]] = [
+    {
+        "role": "assistant",
+        "content": (
+            "Here are some ideas:\n"
+            "**Thai-Style Garlic Toast** - crispy toast with garlic\n"
+            "**Sweet Coconut Milk Toast** - a sweet breakfast toast\n"
+            "**Savory Thai Rice Porridge** - comforting congee-style porridge\n"
+        ),
+        "intent": Intent.RECIPE_BRAINSTORM.value,
+    },
+]
+
+
+def test_name_only_porridge_with_one() -> None:
+    """'show me the porridge one instead' → name match → 'Savory Thai Rice Porridge'."""
+    result = extract_selected_recipe_by_name(
+        "show me the porridge one instead",
+        _TOAST_PORRIDGE_HISTORY,
+        stored_ideas=_TOAST_PORRIDGE_IDEAS,
+    )
+    assert result == "Savory Thai Rice Porridge"
+
+
+def test_name_only_porridge_without_one() -> None:
+    """'show me the porridge instead' (no 'one') → still a name match."""
+    result = extract_selected_recipe_by_name(
+        "show me the porridge instead",
+        _TOAST_PORRIDGE_HISTORY,
+        stored_ideas=_TOAST_PORRIDGE_IDEAS,
+    )
+    assert result == "Savory Thai Rice Porridge"
+
+
+def test_name_only_rejects_the_first_one() -> None:
+    """'the first one' is positional — name-only extractor returns None."""
+    result = extract_selected_recipe_by_name(
+        "the first one",
+        _TOAST_PORRIDGE_HISTORY,
+        stored_ideas=_TOAST_PORRIDGE_IDEAS,
+    )
+    assert result is None
+
+
+def test_name_only_rejects_number_two() -> None:
+    """'number two' is a bare cardinal — name-only extractor returns None."""
+    result = extract_selected_recipe_by_name(
+        "number two",
+        _TOAST_PORRIDGE_HISTORY,
+        stored_ideas=_TOAST_PORRIDGE_IDEAS,
+    )
+    assert result is None
+
+
+def test_name_only_rejects_add_pesto() -> None:
+    """'add pesto to it' is a modification, not a stored idea name → None."""
+    result = extract_selected_recipe_by_name(
+        "add pesto to it",
+        _TOAST_PORRIDGE_HISTORY,
+        stored_ideas=_TOAST_PORRIDGE_IDEAS,
+    )
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# MEDIUM regression: sibling near-tie / shared-token ambiguity guard
+# Ideas: Garlic Toast Supreme, Garlic Bread Twists, Tomato Basil Soup
+# Pinned: Garlic Bread Twists
+# "the garlic one" → both Garlic Toast Supreme AND Garlic Bread Twists share
+# the decisive "garlic" token → ambiguous → must return None (not re-pick
+# to the sibling silently).
+# ---------------------------------------------------------------------------
+
+_SIBLING_IDEAS = ["Garlic Toast Supreme", "Garlic Bread Twists", "Tomato Basil Soup"]
+_SIBLING_HISTORY: list[dict[str, Any]] = [
+    {
+        "role": "assistant",
+        "content": (
+            "**Garlic Toast Supreme** - rich garlic toast\n"
+            "**Garlic Bread Twists** - twisted garlic bread\n"
+            "**Tomato Basil Soup** - classic tomato soup\n"
+        ),
+        "intent": Intent.RECIPE_BRAINSTORM.value,
+    },
+]
+
+
+def test_name_only_sibling_garlic_ambiguous_returns_none() -> None:
+    """'the garlic one' with pinned='Garlic Bread Twists' — both sibling ideas
+    share the decisive 'garlic' token with the pinned dish → ambiguous → None."""
+    result = extract_selected_recipe_by_name(
+        "the garlic one",
+        _SIBLING_HISTORY,
+        stored_ideas=_SIBLING_IDEAS,
+        picked_title="Garlic Bread Twists",
+    )
+    assert result is None
+
+
+def test_name_only_sibling_tomato_unambiguous() -> None:
+    """'show me the tomato one instead' with pinned='Garlic Bread Twists' —
+    'tomato' does not appear in the pinned title → unambiguous → Tomato Basil Soup."""
+    result = extract_selected_recipe_by_name(
+        "show me the tomato one instead",
+        _SIBLING_HISTORY,
+        stored_ideas=_SIBLING_IDEAS,
+        picked_title="Garlic Bread Twists",
+    )
+    assert result == "Tomato Basil Soup"
+
+
+# ---------------------------------------------------------------------------
+# LOW 2 regression: novel comparatives caught by the regex rule
+# ---------------------------------------------------------------------------
+
+
+def test_name_only_novel_comparative_gooier_blocks_repick() -> None:
+    """'make it gooier' — 'gooier' matched by \\b\\w{4,}ier\\b → modification guard fires → None."""
+    result = extract_selected_recipe_by_name(
+        "make it gooier",
+        _TOAST_PORRIDGE_HISTORY,
+        stored_ideas=_TOAST_PORRIDGE_IDEAS,
+        picked_title="Thai-Style Garlic Toast",
+    )
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Regression: dish names ending in -er must NOT be swallowed by the
+# comparative guard.  The old \b\w{5,}(ier|er)\b regex fired on food nouns
+# like "cheeseburger", "burger", "pepper", "butter", blocking legitimate
+# re-picks.  The tightened guard uses -ier-only regex + explicit -er set.
+# ---------------------------------------------------------------------------
+
+_BURGER_IDEAS = ["Classic Cheeseburger", "Pasta Primavera", "Tomato Soup"]
+_BURGER_HISTORY: list[dict[str, Any]] = [
+    {
+        "role": "assistant",
+        "content": (
+            "**Classic Cheeseburger** - classic beef patty\n"
+            "**Pasta Primavera** - light veggie pasta\n"
+            "**Tomato Soup** - warming tomato soup\n"
+        ),
+        "intent": Intent.RECIPE_BRAINSTORM.value,
+    },
+]
+
+
+def test_name_only_cheeseburger_repick_not_blocked() -> None:
+    """'show me the cheeseburger one instead' — 'cheeseburger' ends in -er but
+    is a food noun, NOT a comparative → must re-pick to 'Classic Cheeseburger'."""
+    result = extract_selected_recipe_by_name(
+        "show me the cheeseburger one instead",
+        _BURGER_HISTORY,
+        stored_ideas=_BURGER_IDEAS,
+        picked_title="Pasta Primavera",
+    )
+    assert result == "Classic Cheeseburger"
+
+
+def test_name_only_spicier_still_blocked() -> None:
+    """'make it spicier' — 'spicier' ends -ier → modification guard still fires → None."""
+    result = extract_selected_recipe_by_name(
+        "make it spicier",
+        _BURGER_HISTORY,
+        stored_ideas=_BURGER_IDEAS,
+        picked_title="Classic Cheeseburger",
+    )
+    assert result is None
+
+
+def test_name_only_sweeter_explicit_er_blocked() -> None:
+    """'a bit sweeter' — 'sweeter' is in the explicit -er set → modification guard → None."""
+    result = extract_selected_recipe_by_name(
+        "a bit sweeter",
+        _BURGER_HISTORY,
+        stored_ideas=_BURGER_IDEAS,
+        picked_title="Classic Cheeseburger",
+    )
+    assert result is None

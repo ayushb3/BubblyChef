@@ -7,7 +7,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-from bubbly_chef.models.recipe import RecipeConstraints
+from bubbly_chef.models.recipe import RecipeCard, RecipeConstraints
 
 
 class SessionMode(StrEnum):
@@ -66,6 +66,15 @@ class SessionContext(BaseModel):
     brainstorm_ideas: list[str] = Field(default_factory=list)
     recipe_constraints: RecipeConstraints | None = None
     last_recipe_title: str | None = None
+    picked_recipe: RecipeCard | None = None
+    """Full recipe card for the most recently pinned recipe_card proposal.
+
+    Distinct from ``cooking_recipe`` (a partial title+ingredients snapshot used
+    by COOKING mode prompts): this carries ingredients-with-quantities and
+    instructions so a ``recipe_card`` follow-up can refine the pinned recipe
+    in place via ``services/recipe_generator.py::generate_recipe(previous_recipe=...)``
+    instead of generating an unrelated new dish (#416 AC1).
+    """
 
 
 class ConversationSession(BaseModel):

@@ -12,6 +12,12 @@ interface FoodAutocompleteProps {
   ariaLabel?: string
   className?: string
   id?: string
+  /**
+   * Focus the input when it mounts, without opening the suggestion list —
+   * a programmatic focus (e.g. re-expanding a collapsed row) shouldn't pop
+   * last query's results over the form the user is about to edit.
+   */
+  autoFocus?: boolean
 }
 
 const MIN_QUERY_LENGTH = 2
@@ -37,15 +43,24 @@ export default function FoodAutocomplete({
   ariaLabel = 'Item name',
   className,
   id,
+  autoFocus = false,
 }: FoodAutocompleteProps) {
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [isOpen, setIsOpen] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const suppressOpenOnFocusRef = useRef(false)
   const listboxId = useId()
   const generatedId = useId()
   const inputId = id ?? generatedId
+
+  useEffect(() => {
+    if (!autoFocus) return
+    suppressOpenOnFocusRef.current = true
+    inputRef.current?.focus()
+  }, [autoFocus])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -133,6 +148,7 @@ export default function FoodAutocomplete({
   return (
     <div className="relative" ref={containerRef}>
       <input
+        ref={inputRef}
         id={inputId}
         type="text"
         role="combobox"
@@ -148,7 +164,13 @@ export default function FoodAutocomplete({
         autoComplete="off"
         value={value}
         onChange={(e) => handleInputChange(e.target.value)}
-        onFocus={() => setIsOpen(value.trim().length >= MIN_QUERY_LENGTH)}
+        onFocus={() => {
+          if (suppressOpenOnFocusRef.current) {
+            suppressOpenOnFocusRef.current = false
+            return
+          }
+          setIsOpen(value.trim().length >= MIN_QUERY_LENGTH)
+        }}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         className={className}

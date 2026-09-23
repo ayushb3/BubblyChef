@@ -17,6 +17,7 @@ import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
 import ClarificationCard from '@/components/chat/ClarificationCard'
 import BrainstormOptions from '@/components/chat/BrainstormOptions'
+import ConfirmBand from '@/components/chat/ConfirmBand'
 import CookModal from '@/components/recipes/CookModal'
 import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
 import Chip, { type ChipTone } from '@/components/ui/Chip'
@@ -33,7 +34,7 @@ import type {
   PantryProposalData,
   PantryProposalAction,
 } from '@/types/chat'
-import { getBrainstormIdeas, getClarificationSuggestions, buildClarificationText } from '@/types/chat'
+import { getBrainstormIdeas, getClarificationSuggestions, buildClarificationText, getConfirmOptions } from '@/types/chat'
 import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
 
 // ---------------------------------------------------------------------------
@@ -101,6 +102,7 @@ function ChatSurface() {
     proposalErrors,
     sendMessage,
     sendChipMessage,
+    sendConfirmChoice,
     cancelStream,
     startNewChat,
     approveProposal,
@@ -409,6 +411,14 @@ function ChatSurface() {
     sendMessage(idea)
   }
 
+  const handleConfirmChoice = (
+    forcedIntent: 'recipe_card' | 'recipe_brainstorm',
+    label: string,
+    source?: string,
+  ) => {
+    sendConfirmChoice(label, forcedIntent, source)
+  }
+
   // Determine if the typing indicator should show
   // (streaming has started but no content yet on the last assistant message)
   const lastMsg = messages[messages.length - 1]
@@ -571,6 +581,7 @@ function ChatSurface() {
                 onTryAnother={handleChipTap.bind(null, 'Give me a different recipe')}
                 onChipTap={handleChipTap}
                 onPickIdea={handlePickIdea}
+                onConfirmChoice={handleConfirmChoice}
                 onStageText={handleStageText}
               />
             ))}
@@ -728,6 +739,12 @@ interface MessageRendererProps {
   onTryAnother: () => void
   onChipTap: (message: string) => void
   onPickIdea: (idea: string) => void
+  /** Called when the user taps a confirm-band button (#416 AC3). */
+  onConfirmChoice: (
+    forcedIntent: 'recipe_card' | 'recipe_brainstorm',
+    label: string,
+    source?: string,
+  ) => void
   /** Stage text in the input field (clarification pill selections). */
   onStageText: (text: string) => void
 }
@@ -752,6 +769,7 @@ function MessageRenderer({
   onTryAnother,
   onChipTap,
   onPickIdea,
+  onConfirmChoice,
   onStageText,
 }: MessageRendererProps) {
   // User messages — simple bubble
@@ -769,6 +787,36 @@ function MessageRenderer({
 
   const mascotState = isLastAssistant && isStreaming ? 'thinking' : 'happy'
   const intent = message.intent ?? message.response?.intent
+
+  // Confirm-choice band — renders before brainstorm so the explicit
+  // next_action gate fires first. The band fires when the backend can't
+  // decide between "tweak this" and "start fresh" (#416 AC3).
+  if (message.response?.next_action === 'confirm_choice') {
+    const confirmOptions = getConfirmOptions(message.response)
+    if (confirmOptions.length > 0) {
+      return (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+        >
+          <div className="flex items-end gap-2">
+            <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+            <div className="flex flex-col gap-2 items-start">
+              {message.content && <MessageBubble message={message} />}
+              <ConfirmBand
+                options={confirmOptions}
+                onSelect={(forcedIntent, label) =>
+                  onConfirmChoice(forcedIntent, label, message.confirmSource)
+                }
+                disabled={!isLastSettledAssistant}
+              />
+            </div>
+          </div>
+        </motion.div>
+      )
+    }
+  }
 
   // Brainstorm intent — render intro bubble + tappable idea cards
   // Falls through to plain markdown if metadata.brainstorm_ideas is absent (backward compat).
