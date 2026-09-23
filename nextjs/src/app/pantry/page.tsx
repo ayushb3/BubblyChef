@@ -294,10 +294,10 @@ function PantryPageInner() {
               <BubblesMascot state="surprised" size={100} />
             </div>
             <p className="font-semibold text-[var(--color-text)] mb-1">
-              {search || hasActiveFacets ? 'No items match your filters' : 'Your pantry is empty!'}
+              {hasItems && (search || hasActiveFacets) ? 'No items match your filters' : 'Your pantry is empty!'}
             </p>
             <p className="text-sm text-[var(--color-muted)]">
-              {search || hasActiveFacets ? 'Try different search terms.' : 'Scan a receipt or add items to get started.'}
+              {hasItems && (search || hasActiveFacets) ? 'Try different search terms.' : 'Scan a receipt or add items to get started.'}
             </p>
           </div>
         </div>
