@@ -90,6 +90,14 @@ CASES: list[dict[str, Any]] = [
     {"input": "do I have spinach?", "expected": "cooking_help"},
     {"input": "is there any milk left?", "expected": "cooking_help"},
     {"input": "what cheese do I have?", "expected": "cooking_help"},
+    {"input": "do we have any eggs?", "expected": "cooking_help"},
+    {"input": "is there butter in the fridge?", "expected": "cooking_help"},
+    {"input": "how many eggs do I have?", "expected": "cooking_help"},
+    # ...and their pantry_update counterparts: the same foods, phrased as a change.
+    {"input": "I bought spinach", "expected": "pantry_update"},
+    {"input": "add 2 eggs", "expected": "pantry_update"},
+    {"input": "I got some milk today", "expected": "pantry_update"},
+    {"input": "used up the last of the butter", "expected": "pantry_update"},
     # saved_recipe_lookup
     {"input": "show me my saved butter chicken", "expected": "saved_recipe_lookup"},
     {"input": "make that pasta I saved last week", "expected": "saved_recipe_lookup"},

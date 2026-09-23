@@ -334,5 +334,68 @@
       "the second one"
     ],
     "expected": "recipe_card"
+  },
+  "do we have any eggs?": {
+    "intent": "cooking_help",
+    "confidence": 1.0,
+    "reasoning": "The user is asking a stock question to check the availability of an item in their pantry, which is explicitly categorized under cooking_help per the instructions.",
+    "entities": [
+      "eggs"
+    ],
+    "expected": "cooking_help"
+  },
+  "is there butter in the fridge?": {
+    "intent": "cooking_help",
+    "confidence": 1.0,
+    "reasoning": "The user is asking a stock question to check if an item is currently in their pantry, which falls under the cooking_help category as per the provided instructions.",
+    "entities": [
+      "butter"
+    ],
+    "expected": "cooking_help"
+  },
+  "how many eggs do I have?": {
+    "intent": "cooking_help",
+    "confidence": 1.0,
+    "reasoning": "The user is asking a stock question to check their current inventory, which is explicitly categorized under cooking_help in the instructions.",
+    "entities": [
+      "eggs"
+    ],
+    "expected": "cooking_help"
+  },
+  "I bought spinach": {
+    "intent": "pantry_update",
+    "confidence": 1.0,
+    "reasoning": "The user explicitly states they 'bought' an item, which is a clear indicator of a pantry update action.",
+    "entities": [
+      "spinach"
+    ],
+    "expected": "pantry_update"
+  },
+  "add 2 eggs": {
+    "intent": "pantry_update",
+    "confidence": 1.0,
+    "reasoning": "The user is explicitly asking to add an item to their inventory, which matches the pantry_update intent.",
+    "entities": [
+      "2 eggs"
+    ],
+    "expected": "pantry_update"
+  },
+  "I got some milk today": {
+    "intent": "pantry_update",
+    "confidence": 1.0,
+    "reasoning": "The user explicitly states they 'got' (purchased) an item, which falls under the pantry_update intent for managing inventory.",
+    "entities": [
+      "milk"
+    ],
+    "expected": "pantry_update"
+  },
+  "used up the last of the butter": {
+    "intent": "pantry_update",
+    "confidence": 1.0,
+    "reasoning": "The user is stating that they have consumed an item ('used up the last of'), which falls under the pantry_update intent.",
+    "entities": [
+      "butter"
+    ],
+    "expected": "pantry_update"
   }
 }

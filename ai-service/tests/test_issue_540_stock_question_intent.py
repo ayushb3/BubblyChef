@@ -6,12 +6,21 @@ classification isn't deterministically testable without hitting the live
 model, so the disambiguation itself is checked by asserting the classifier
 system prompt carries explicit stock-question examples (cooking_help) next to
 contrasting pantry-mutation examples (pantry_update) — the boundary the LLM
-is currently missing, per the issue — plus a table-driven mock of
-`ai_manager.complete` covering both sides of the boundary.
+is currently missing, per the issue — plus table-driven checks against the
+*recorded live-model classifications* in tests/fixtures/intent_classifications.json
+(captured by tests/capture_intent_fixtures.py) for both sides of the boundary.
+
+The table tests deliberately do not mock an intent per phrase: a mock that
+returns "cooking_help" would pass for any input, so it proves nothing about
+the prompt (PR #577 review). Each phrase must have a real captured answer,
+that answer must be the correct intent, and replaying it through
+classify_intent must keep it.
 """
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -36,13 +45,6 @@ def _state(**kwargs: Any) -> dict[str, Any]:
     }
     base.update(kwargs)
     return base
-
-
-def _mock_ai(intent: str, confidence: float = 0.9) -> Any:
-    llm_result = LLMIntentResult(intent=intent, confidence=confidence, reasoning="t", entities=[])
-    ai = MagicMock()
-    ai.complete = AsyncMock(return_value=llm_result)
-    return patch("bubbly_chef.workflows.router.get_ai_manager", MagicMock(return_value=ai))
 
 
 class TestStockQuestionDisambiguationInPrompt:
@@ -74,8 +76,27 @@ class TestStockQuestionDisambiguationInPrompt:
 
 
 # ---------------------------------------------------------------------------
-# Classifier routing — table-driven, mocked LLM
+# Classifier routing — table-driven, against recorded live-model answers
 # ---------------------------------------------------------------------------
+
+_FIXTURES: dict[str, Any] = json.loads(
+    (Path(__file__).parent / "fixtures" / "intent_classifications.json").read_text(encoding="utf-8")
+)
+
+
+def _replay(captured: dict[str, Any]) -> Any:
+    """Patch the classifier's LLM call to return exactly what the live model
+    answered for this phrase when the fixtures were captured."""
+    llm_result = LLMIntentResult(
+        intent=captured["intent"],
+        confidence=captured["confidence"],
+        reasoning=captured.get("reasoning") or "captured",
+        entities=captured.get("entities") or [],
+    )
+    ai = MagicMock()
+    ai.complete = AsyncMock(return_value=llm_result)
+    return patch("bubbly_chef.workflows.router.get_ai_manager", MagicMock(return_value=ai))
+
 
 STOCK_QUESTION_PHRASINGS = [
     "do I have spinach?",
@@ -83,6 +104,7 @@ STOCK_QUESTION_PHRASINGS = [
     "what cheese do I have?",
     "do we have any eggs?",
     "is there butter in the fridge?",
+    "how many eggs do I have?",
 ]
 
 PANTRY_UPDATE_PHRASINGS = [
@@ -97,7 +119,15 @@ PANTRY_UPDATE_PHRASINGS = [
 @pytest.mark.asyncio
 @pytest.mark.parametrize("text", STOCK_QUESTION_PHRASINGS)
 async def test_stock_questions_route_to_cooking_help(text: str) -> None:
-    with _mock_ai("cooking_help"):
+    captured = _FIXTURES.get(text)
+    assert captured is not None, (
+        f"No recorded live classification for {text!r}; add it to CASES in "
+        "tests/capture_intent_fixtures.py and re-capture"
+    )
+    assert captured["intent"] == Intent.COOKING_HELP.value, (
+        f"The live model classified {text!r} as {captured['intent']!r}"
+    )
+    with _replay(captured):
         result = await classify_intent(_state(input_text=text))
     assert result["intent"] == Intent.COOKING_HELP.value
 
@@ -105,7 +135,15 @@ async def test_stock_questions_route_to_cooking_help(text: str) -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("text", PANTRY_UPDATE_PHRASINGS)
 async def test_pantry_mutations_still_route_to_pantry_update(text: str) -> None:
-    with _mock_ai("pantry_update"):
+    captured = _FIXTURES.get(text)
+    assert captured is not None, (
+        f"No recorded live classification for {text!r}; add it to CASES in "
+        "tests/capture_intent_fixtures.py and re-capture"
+    )
+    assert captured["intent"] == Intent.PANTRY_UPDATE.value, (
+        f"The live model classified {text!r} as {captured['intent']!r}"
+    )
+    with _replay(captured):
         result = await classify_intent(_state(input_text=text))
     assert result["intent"] == Intent.PANTRY_UPDATE.value
 
@@ -169,9 +207,7 @@ class TestReactPathGroundsStockQuestions:
         mock_repo = MagicMock()
         mock_repo.find_similar_item = AsyncMock(return_value=spinach)
 
-        manager = _react_manager(
-            "check_pantry", "spinach", "Yes, you've got spinach on hand!"
-        )
+        manager = _react_manager("check_pantry", "spinach", "Yes, you've got spinach on hand!")
 
         from bubbly_chef.workflows.chat.nodes import _invoke_tool as real_invoke_tool
 
@@ -221,9 +257,7 @@ class TestReactPathGroundsStockQuestions:
         mock_repo.find_similar_item = AsyncMock(return_value=None)
         mock_repo.get_all_pantry_items = AsyncMock(return_value=[cheddar])
 
-        manager = _react_manager(
-            "check_pantry", "cheese", "You've got cheddar cheese ready to go!"
-        )
+        manager = _react_manager("check_pantry", "cheese", "You've got cheddar cheese ready to go!")
 
         with (
             patch("bubbly_chef.workflows.chat.nodes.get_ai_manager", return_value=manager),
