@@ -382,7 +382,7 @@
         el("span", { class: "chip move", text: "Suggested: " + moveText(c) }),
         el("span", { class: "chip conf-" + c.confidence, text: c.confidence + " confidence" }),
         c.category ? el("span", { class: "chip", text: c.category }) : null,
-        c.applied ? el("span", { class: "chip applied", text: "Applied on GitHub" }) : null),
+        c.applied ? el("span", { class: "chip applied", text: c.applied.move === "hold" ? "Held for next run" : "Applied on GitHub" }) : null),
       el("p", { class: "summary", text: c.summary }),
       el("p", { class: "why" }, el("span", { class: "lbl" }, "Why: "), c.why),
       c.followUp ? el("div", { class: "follow" }, el("span", { class: "lbl" }, "Claude looked again: "), c.followUp) : null,
