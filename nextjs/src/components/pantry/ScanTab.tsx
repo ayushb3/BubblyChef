@@ -6,9 +6,9 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 import ReviewSurface from '@/components/scan/ReviewSurface'
 import { useFileDropzone } from '@/hooks/useFileDropzone'
 import { uploadReceipt, ScanError } from '@/lib/api/scan'
-import { scannedToBulkAddItem } from '@/lib/scan-helpers'
+import { scannedToBulkAddItem, assignScanIds, type ScannedItemWithId } from '@/lib/scan-helpers'
 import { scanErrorCopy } from '@/lib/scan-error-copy'
-import type { ScannedItem, ScanResult } from '@/types/scan'
+import type { ScanResult } from '@/types/scan'
 import type { AddItem } from './PantryAddSheet'
 
 type ScanTabState = 'upload' | 'processing' | 'results'
@@ -24,7 +24,7 @@ interface ScanTabProps {
   onProcessingChange?: (processing: boolean) => void
 }
 
-function scannedToAddItem(item: ScannedItem): AddItem {
+function scannedToAddItem(item: ScannedItemWithId): AddItem {
   return { ...scannedToBulkAddItem(item), source: 'scan' }
 }
 
@@ -34,9 +34,9 @@ export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabPro
   const [preview, setPreview] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const [readyToAdd, setReadyToAdd] = useState<ScannedItem[]>([])
-  const [needsReview, setNeedsReview] = useState<ScannedItem[]>([])
-  const [skipped, setSkipped] = useState<ScannedItem[]>([])
+  const [readyToAdd, setReadyToAdd] = useState<ScannedItemWithId[]>([])
+  const [needsReview, setNeedsReview] = useState<ScannedItemWithId[]>([])
+  const [skipped, setSkipped] = useState<ScannedItemWithId[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
 
   const { isDragActive, dropzoneHandlers } = useFileDropzone({ onFile: handleFileSelect })
@@ -78,9 +78,10 @@ export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabPro
     try {
       const result: ScanResult = await uploadReceipt(file, { signal: controller.signal })
       if (isStale()) return
-      setReadyToAdd(result.ready_to_add)
-      setNeedsReview(result.needs_review)
-      setSkipped(result.skipped)
+      const withIds = assignScanIds(result)
+      setReadyToAdd(withIds.ready_to_add)
+      setNeedsReview(withIds.needs_review)
+      setSkipped(withIds.skipped)
       setWarnings(result.warnings ?? [])
       setState('results')
     } catch (err) {
@@ -119,11 +120,11 @@ export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabPro
     if (inputRef.current) inputRef.current.value = ''
   }
 
-  const handleReadyChange = (items: ScannedItem[]) => {
+  const handleReadyChange = (items: ScannedItemWithId[]) => {
     setReadyToAdd(items)
   }
 
-  const handleReviewChange = (items: ScannedItem[]) => {
+  const handleReviewChange = (items: ScannedItemWithId[]) => {
     setNeedsReview(items)
   }
 

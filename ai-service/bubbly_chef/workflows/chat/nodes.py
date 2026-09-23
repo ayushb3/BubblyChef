@@ -469,6 +469,20 @@ async def cooking_help_response(state: WorkflowState) -> WorkflowState:
     loop (reason → act → observe → repeat, up to MAX_ITERATIONS).  Otherwise
     degrades gracefully to the original single-shot completion path so cooking
     help never breaks.
+
+    Grounding note (issue #540): the two paths get pantry context two
+    different ways. `_cooking_help_single_shot` always prepends a pantry
+    block via `_fetch_pantry_context`. `_cooking_help_react` carries no such
+    block — `_build_react_initial_message` has none — so a stock question
+    ("do I have spinach?", "what cheese do I have?") is only grounded if the
+    model decides to call the `check_pantry` tool. Gemini reports
+    `supports_tool_calling = True` (ai/gemini.py), so production always takes
+    the ReAct path, not the single-shot one. `check_pantry` itself applies
+    the #443 usable-stock filter and matches on whole shared words, so a
+    category question ("what cheese do I have?") only grounds against a
+    pantry row sharing that exact word — see
+    `tests/test_issue_540_stock_question_intent.py::TestReactPathGroundsStockQuestions`
+    for both cases exercised end to end against the real tool.
     """
     ai_manager = get_ai_manager()
 
