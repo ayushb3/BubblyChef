@@ -1,18 +1,23 @@
 """OCR service abstraction."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 
 
 class OCRService(ABC):
     """Base class for OCR services."""
 
     @abstractmethod
-    async def extract_text(self, image_data: bytes) -> str:
+    async def extract_text(
+        self, image_data: bytes, *, time_remaining: Callable[[], float] | None = None
+    ) -> str:
         """
         Extract text from image.
 
         Args:
             image_data: Raw image bytes (PNG, JPEG, etc.)
+            time_remaining: Optional seconds-left callback for the caller's
+                request budget (issue #481), forwarded to the vision call.
 
         Returns:
             Extracted text from the image
@@ -34,7 +39,9 @@ class GeminiOCR(OCRService):
         manager = get_ai_manager()
         return any(p.supports_vision for p in manager.providers)
 
-    async def extract_text(self, image_data: bytes) -> str:
+    async def extract_text(
+        self, image_data: bytes, *, time_remaining: Callable[[], float] | None = None
+    ) -> str:
         from bubbly_chef.api.deps import get_ai_manager
 
         # Detect MIME type from magic bytes
@@ -53,6 +60,7 @@ class GeminiOCR(OCRService):
             ),
             image_bytes=image_data,
             mime_type=mime_type,
+            time_remaining=time_remaining,
         )
         return str(result).strip()
 
@@ -66,7 +74,9 @@ class MockOCR(OCRService):
     def is_available(self) -> bool:
         return True
 
-    async def extract_text(self, image_data: bytes) -> str:
+    async def extract_text(
+        self, image_data: bytes, *, time_remaining: Callable[[], float] | None = None
+    ) -> str:
         return self.mock_text
 
 

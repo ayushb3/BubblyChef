@@ -395,7 +395,7 @@ async def test_route_budget_clock_starts_before_ocr(app: FastAPI) -> None:
 
     ocr = MagicMock()
 
-    async def _slow_ocr(_: bytes) -> str:
+    async def _slow_ocr(_: bytes, **__: object) -> str:
         clock.advance(ocr_seconds)
         return "MILK 1.99"
 
@@ -426,7 +426,7 @@ async def test_route_passes_zero_when_ocr_exhausts_the_budget(app: FastAPI) -> N
     clock = _FakeClock()
     ocr = MagicMock()
 
-    async def _very_slow_ocr(_: bytes) -> str:
+    async def _very_slow_ocr(_: bytes, **__: object) -> str:
         clock.advance(settings.scan_request_budget_seconds + 5.0)
         return "MILK 1.99"
 
@@ -481,3 +481,188 @@ async def test_route_end_to_end_timed_out_parse_is_not_silent(
     body = resp.text.lower()
     for marker in ("gemini", "ollama", "traceback"):
         assert marker not in body
+
+
+# ---------------------------------------------------------------------------
+# Vision leg draws from the same budget (review follow-up on #509)
+# ---------------------------------------------------------------------------
+
+
+def _gemini(**overrides: object) -> Any:
+    from bubbly_chef.ai.gemini import GeminiProvider
+
+    kwargs: dict[str, object] = {
+        "api_key": "k",
+        "vision_timeout": 18.0,
+        "vision_max_retries": 1,
+        "vision_retry_backoff": 1.0,
+    }
+    kwargs.update(overrides)
+    return GeminiProvider(**kwargs)  # type: ignore[arg-type]
+
+
+def _vision_ok() -> MagicMock:
+    import httpx
+
+    resp = MagicMock(spec=httpx.Response)
+    resp.raise_for_status = MagicMock(return_value=None)
+    resp.json = MagicMock(return_value={"candidates": [{"content": {"parts": [{"text": "MILK"}]}}]})
+    return resp
+
+
+@pytest.mark.asyncio
+async def test_vision_attempt_is_capped_at_the_remaining_budget() -> None:
+    provider = _gemini()
+    post = AsyncMock(return_value=_vision_ok())
+    provider._client.post = post
+
+    await provider.vision_complete(prompt="p", image_bytes=b"x", time_remaining=lambda: 7.0)
+
+    assert post.await_args.kwargs["timeout"] == pytest.approx(7.0)
+
+
+@pytest.mark.asyncio
+async def test_vision_attempt_keeps_its_own_cap_when_budget_is_ample() -> None:
+    provider = _gemini()
+    post = AsyncMock(return_value=_vision_ok())
+    provider._client.post = post
+
+    await provider.vision_complete(prompt="p", image_bytes=b"x", time_remaining=lambda: 35.0)
+
+    assert post.await_args.kwargs["timeout"] == pytest.approx(18.0)
+
+
+@pytest.mark.asyncio
+async def test_vision_retry_is_skipped_when_too_little_budget_is_left() -> None:
+    """First attempt times out with 6s of budget left: after the 1s backoff
+    only 5s would remain for a call that takes ~5-8s for real, so the retry
+    is not started — the failure surfaces while the client is still listening."""
+    import httpx
+
+    from bubbly_chef.ai.provider import ProviderUnavailableError
+
+    provider = _gemini()
+    remaining = [20.0]
+
+    async def _post(*_: object, **__: object) -> object:
+        remaining[0] = 5.5
+        raise httpx.ReadTimeout("timed out")
+
+    post = AsyncMock(side_effect=_post)
+    provider._client.post = post
+
+    with (
+        patch("bubbly_chef.ai.gemini.asyncio.sleep", new_callable=AsyncMock) as sleep,
+        pytest.raises(ProviderUnavailableError),
+    ):
+        await provider.vision_complete(
+            prompt="p", image_bytes=b"x", time_remaining=lambda: remaining[0]
+        )
+
+    post.assert_awaited_once()
+    sleep.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_vision_retry_runs_when_enough_budget_is_left() -> None:
+    import httpx
+
+    provider = _gemini()
+    remaining = [38.0]
+
+    async def _post(*_: object, **__: object) -> object:
+        if post.await_count == 1:
+            remaining[0] = 20.0
+            raise httpx.ReadTimeout("timed out")
+        return _vision_ok()
+
+    post = AsyncMock(side_effect=_post)
+    provider._client.post = post
+
+    with patch("bubbly_chef.ai.gemini.asyncio.sleep", new_callable=AsyncMock):
+        out = await provider.vision_complete(
+            prompt="p", image_bytes=b"x", time_remaining=lambda: remaining[0]
+        )
+
+    assert out == "MILK"
+    assert post.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_vision_with_no_budget_left_makes_no_call() -> None:
+    from bubbly_chef.ai.provider import ProviderUnavailableError
+
+    provider = _gemini()
+    post = AsyncMock(return_value=_vision_ok())
+    provider._client.post = post
+
+    with pytest.raises(ProviderUnavailableError):
+        await provider.vision_complete(prompt="p", image_bytes=b"x", time_remaining=lambda: 0.0)
+    post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_manager_forwards_time_remaining_to_the_provider() -> None:
+    from bubbly_chef.ai.manager import AIManager
+
+    provider = MagicMock()
+    provider.name = "fake"
+    provider.supports_vision = True
+    provider.is_available = AsyncMock(return_value=True)
+    provider.vision_complete = AsyncMock(return_value="text")
+    manager = AIManager(providers=[provider])
+
+    def left() -> float:
+        return 12.0
+
+    await manager.vision_complete(prompt="p", image_bytes=b"x", time_remaining=left)
+
+    assert provider.vision_complete.await_args.kwargs["time_remaining"] is left
+
+
+@pytest.mark.asyncio
+async def test_gemini_ocr_forwards_time_remaining_to_the_manager() -> None:
+    from bubbly_chef.services.ocr import GeminiOCR
+
+    manager = MagicMock()
+    manager.vision_complete = AsyncMock(return_value="MILK")
+
+    def left() -> float:
+        return 9.0
+
+    with patch("bubbly_chef.api.deps.get_ai_manager", return_value=manager):
+        png = bytes([0x89]) + b"PNG" + bytes([0x0D, 0x0A, 0x1A, 0x0A]) + b"rest"
+        await GeminiOCR().extract_text(png, time_remaining=left)
+
+    assert manager.vision_complete.await_args.kwargs["time_remaining"] is left
+
+
+@pytest.mark.asyncio
+async def test_route_hands_the_ocr_leg_the_live_budget(app: FastAPI) -> None:
+    """The vision leg is told what is left of the request's one clock."""
+    clock = _FakeClock()
+    seen: dict[str, float] = {}
+
+    async def _ocr(_: bytes, *, time_remaining: Any = None) -> str:
+        seen["at_start"] = time_remaining()
+        clock.advance(10.0)
+        seen["after_10s"] = time_remaining()
+        return "MILK 1.99"
+
+    ocr = MagicMock()
+    ocr.extract_text = _ocr
+    dispatch = AsyncMock(return_value=_empty_envelope())
+
+    with (
+        patch("bubbly_chef.services.ocr.get_ocr_service", return_value=ocr),
+        patch("bubbly_chef.api.ingest_dispatcher.dispatcher.dispatch", dispatch),
+        patch(
+            "bubbly_chef.api.routes.scan.RequestBudget",
+            side_effect=lambda total: RequestBudget(total, clock=clock),
+        ),
+    ):
+        resp = await _post_receipt(app)
+
+    assert resp.status_code == 200
+    assert seen["at_start"] == pytest.approx(settings.scan_request_budget_seconds)
+    assert seen["after_10s"] == pytest.approx(settings.scan_request_budget_seconds - 10.0)

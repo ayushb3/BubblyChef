@@ -71,7 +71,8 @@ async def scan_receipt(
         from bubbly_chef.services.ocr import get_ocr_service
 
         ocr = get_ocr_service()
-        ocr_text = await ocr.extract_text(image_data)
+        # The vision leg draws from the same clock as the parse leg below.
+        ocr_text = await ocr.extract_text(image_data, time_remaining=budget.remaining)
 
         if not ocr_text.strip():
             return {
