@@ -112,7 +112,9 @@ describe('deletePantryItem (#478)', () => {
     await expect(deletePantryItem('abc')).resolves.toBeUndefined()
 
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toMatch(/^\/api\/pantry\/abc\?date=\d{4}-\d{2}-\d{2}$/)
+    // No ?date= (#524/#570 review): DELETE never records waste, so it no
+    // longer needs the client's local date at all.
+    expect(url).toBe('/api/pantry/abc')
     expect(init.method).toBe('DELETE')
   })
 

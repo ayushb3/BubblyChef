@@ -2,21 +2,19 @@
  * "Wasted" pantry items — issue #524 (weekly streak) and #525 (reused here,
  * per that issue's own spec).
  *
- * Waste is: an item whose expiry passed while quantity > 0. Two sources
- * surface that:
- *  - a `pantry_events` row where either `outcome = 'tossed'` (the user
- *    explicitly said they threw it out) OR the snapshotted
- *    `days_until_expiry` was already negative at resolve time — resolving an
- *    already-expired item as `used`/`cooked` doesn't launder it, dated by
- *    `created_at`.
+ * Waste is exactly two things (@ayushb3's call on the #524/#570 review —
+ * an *interaction* with an item, like deleting it or resolving it as used,
+ * never counts against the streak on its own):
+ *  - a `pantry_events` row with `outcome = 'tossed'` — the user explicitly
+ *    said they threw it out via the resolve flow, dated by `created_at`.
  *  - a `pantry_items` row still sitting in the pantry whose `expiry_date`
  *    has passed while `quantity` is still > 0 — nobody ever resolved it,
  *    dated by `expiry_date`.
  *
- * `DELETE /api/pantry/[id]` writes its own `pantry_events` row (outcome
- * `tossed`) when the item being deleted was already expired, specifically so
- * deleting a spoiled item can't quietly clear waste the same way resolving
- * it can't — see that route.
+ * Notably NOT waste: deleting an item (`DELETE /api/pantry/[id]` — an
+ * interaction, records nothing), or resolving an already-expired item as
+ * `used`/`cooked` (`days_until_expiry` on that event can be negative; the
+ * outcome the user chose, not the snapshot, decides waste).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -54,14 +52,10 @@ export async function wastedItemsSince(
   const [{ data: wasteEvents }, { data: expiredItems }] = await Promise.all([
     supabase
       .from('pantry_events')
-      .select('item_name, created_at, outcome, days_until_expiry')
+      .select('item_name, created_at, outcome')
       .eq('user_id', userId)
       .gte('created_at', sinceDate)
-      // Either the user said "tossed" outright, or the item was already
-      // expired (negative days_until_expiry) whatever outcome it was
-      // resolved with — an already-spoiled item resolved as "used" is still
-      // waste, it just wasn't labelled that way by the user (see module doc).
-      .or('outcome.eq.tossed,days_until_expiry.lt.0'),
+      .eq('outcome', 'tossed'),
     supabase
       .from('pantry_items')
       .select('name, expiry_date, quantity')
@@ -72,14 +66,11 @@ export async function wastedItemsSince(
   ])
 
   const wasted: WastedItem[] = []
-  for (const row of (wasteEvents ?? []) as Array<{
-    item_name: string
-    created_at: string
-    outcome?: string
-    days_until_expiry?: number | null
-  }>) {
+  // Every row here is already outcome = 'tossed' (filtered in the query
+  // above), so reason is always 'tossed' — not derived per-row.
+  for (const row of (wasteEvents ?? []) as Array<{ item_name: string; created_at: string }>) {
     wasted.push({
-      reason: row.outcome === 'tossed' ? 'tossed' : 'expired',
+      reason: 'tossed',
       // Client-local date of the resolve action, not the raw UTC timestamp
       // date (issue #524 review) — matches the bucketing used for
       // bubble_events in `lib/streak-settlement.ts`.
