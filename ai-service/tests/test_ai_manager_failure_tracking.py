@@ -63,6 +63,73 @@ class TestHealthCheckFailureTracking:
         assert status_after_success["last_failure_at"] is None
 
 
+class TestAggregatedKindAcrossProviders:
+    """Production shape: Gemini (primary) followed by an unreachable local
+    Ollama fallback. Both fail, but Gemini's classified failure is the one
+    the user needs to hear — not Ollama's generic "network" kind just
+    because it was tried last (#514).
+    """
+
+    @pytest.mark.asyncio
+    async def test_gemini_quota_exhausted_survives_ollama_network_fallback(self) -> None:
+        gemini = _provider("gemini/test")
+        gemini.complete = AsyncMock(
+            side_effect=ProviderUnavailableError(
+                "429 RESOURCE_EXHAUSTED", kind="quota_exhausted"
+            )
+        )
+        ollama = _provider("ollama/test")
+        ollama.complete = AsyncMock(
+            side_effect=ProviderUnavailableError(
+                "Ollama connection error: [Errno 111] Connection refused", kind="network"
+            )
+        )
+        manager = AIManager(providers=[gemini, ollama])
+
+        with pytest.raises(NoProviderAvailableError) as exc_info:
+            await manager.complete(prompt="hello")
+
+        assert exc_info.value.kind == "quota_exhausted"
+
+    @pytest.mark.asyncio
+    async def test_gemini_bad_request_survives_ollama_network_fallback(self) -> None:
+        gemini = _provider("gemini/test")
+        gemini.complete = AsyncMock(
+            side_effect=ProviderUnavailableError("400 Bad Request: invalid key", kind="bad_request")
+        )
+        ollama = _provider("ollama/test")
+        ollama.complete = AsyncMock(
+            side_effect=ProviderUnavailableError(
+                "Ollama connection error: [Errno 111] Connection refused", kind="network"
+            )
+        )
+        manager = AIManager(providers=[gemini, ollama])
+
+        with pytest.raises(NoProviderAvailableError) as exc_info:
+            await manager.complete(prompt="hello")
+
+        assert exc_info.value.kind == "bad_request"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_network_when_every_provider_is_network(self) -> None:
+        gemini = _provider("gemini/test")
+        gemini.complete = AsyncMock(
+            side_effect=ProviderUnavailableError("connection reset", kind="network")
+        )
+        ollama = _provider("ollama/test")
+        ollama.complete = AsyncMock(
+            side_effect=ProviderUnavailableError(
+                "Ollama connection error: [Errno 111] Connection refused", kind="network"
+            )
+        )
+        manager = AIManager(providers=[gemini, ollama])
+
+        with pytest.raises(NoProviderAvailableError) as exc_info:
+            await manager.complete(prompt="hello")
+
+        assert exc_info.value.kind == "network"
+
+
 class TestNoProviderAvailableErrorConfigured:
     @pytest.mark.asyncio
     async def test_configured_is_false_when_no_providers_registered(self) -> None:

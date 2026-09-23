@@ -23,14 +23,36 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 
+def _aggregate_kind(kinds: list[str]) -> str | None:
+    """Pick the most informative failure kind out of everything tried.
+
+    Providers are tried in registration order — Gemini first, then Ollama
+    as the local fallback (#514). A generic "network" kind (e.g. Ollama
+    unreachable at localhost) is the least informative failure there is: it
+    says nothing about *why* the request actually failed. A specific kind
+    from an earlier provider — quota_exhausted, auth, bad_request — is what
+    the user needs to hear, so it must win even if a later provider's
+    failure is recorded last. Falls back to the first kind seen (which will
+    be "network") only when nothing more specific occurred, and to ``None``
+    when nothing failed at all.
+    """
+    for kind in kinds:
+        if kind != "network":
+            return kind
+    return kinds[0] if kinds else None
+
+
 class NoProviderAvailableError(Exception):
     """Raised when no AI providers are available.
 
-    Carries the same failure-kind classification as the last
-    ``ProviderUnavailableError`` that led here (``kind``), and whether any
-    provider was registered at all (``configured``) — #514. ``configured``
-    is only ``False`` when the manager's provider list is empty; a
-    registered-but-failing provider is still "configured".
+    Carries the most *informative* failure-kind classification out of every
+    ``ProviderUnavailableError`` that led here (``kind``, via
+    ``_aggregate_kind`` — a specific kind like ``quota_exhausted`` or
+    ``auth`` from an earlier provider wins over a generic ``network`` kind
+    from a later one, e.g. an unreachable local Ollama fallback), and
+    whether any provider was registered at all (``configured``) — #514.
+    ``configured`` is only ``False`` when the manager's provider list is
+    empty; a registered-but-failing provider is still "configured".
     """
 
     def __init__(
@@ -135,6 +157,7 @@ class AIManager:
             NoProviderAvailableError: If no providers are available or all fail
         """
         errors = []
+        failure_kinds: list[str] = []
         start_time = datetime.now()
         max_structured_retries = 2
 
@@ -196,6 +219,7 @@ class AIManager:
 
             except ProviderUnavailableError as e:
                 errors.append(self._record_failure(provider, e))
+                failure_kinds.append(e.kind)
                 continue
             except Exception as e:
                 elapsed = (datetime.now() - start_time).total_seconds()
@@ -213,7 +237,7 @@ class AIManager:
         )
         raise NoProviderAvailableError(
             f"All providers failed. Errors: {errors}",
-            kind=self._last_failure_kind,
+            kind=_aggregate_kind(failure_kinds),
             configured=bool(self.providers),
         )
 
@@ -235,6 +259,7 @@ class AIManager:
             NoProviderAvailableError: If no vision-capable provider is available.
         """
         errors: list[str] = []
+        failure_kinds: list[str] = []
         start_time = datetime.now()
 
         for provider in self.providers:
@@ -267,6 +292,7 @@ class AIManager:
 
             except ProviderUnavailableError as e:
                 errors.append(self._record_failure(provider, e))
+                failure_kinds.append(e.kind)
                 continue
             except Exception as e:
                 logger.error(
@@ -278,7 +304,7 @@ class AIManager:
 
         raise NoProviderAvailableError(
             f"No vision-capable provider available. Errors: {errors}",
-            kind=self._last_failure_kind,
+            kind=_aggregate_kind(failure_kinds),
             configured=bool(self.providers),
         )
 
@@ -306,6 +332,7 @@ class AIManager:
             NoProviderAvailableError: If no tool-calling-capable provider is available.
         """
         errors: list[str] = []
+        failure_kinds: list[str] = []
         start_time = datetime.now()
 
         for provider in self.providers:
@@ -336,6 +363,7 @@ class AIManager:
 
             except ProviderUnavailableError as e:
                 errors.append(self._record_failure(provider, e))
+                failure_kinds.append(e.kind)
                 continue
             except Exception as e:
                 logger.error(
@@ -347,7 +375,7 @@ class AIManager:
 
         raise NoProviderAvailableError(
             f"No tool-calling-capable provider available. Errors: {errors}",
-            kind=self._last_failure_kind,
+            kind=_aggregate_kind(failure_kinds),
             configured=bool(self.providers),
         )
 
@@ -362,6 +390,7 @@ class AIManager:
         Tries each provider in order, falling back on failure.
         """
         errors: list[str] = []
+        failure_kinds: list[str] = []
 
         for provider in self.providers:
             try:
@@ -380,6 +409,7 @@ class AIManager:
 
             except ProviderUnavailableError as e:
                 errors.append(self._record_failure(provider, e))
+                failure_kinds.append(e.kind)
                 continue
             except Exception as e:
                 logger.warning(
@@ -391,7 +421,7 @@ class AIManager:
 
         raise NoProviderAvailableError(
             f"All providers failed for streaming. Errors: {errors}",
-            kind=self._last_failure_kind,
+            kind=_aggregate_kind(failure_kinds),
             configured=bool(self.providers),
         )
 
