@@ -393,6 +393,110 @@ it('editing the category select is the only way to change it — no separate pil
   expect(onChange).toHaveBeenCalledWith({ ...READY_ITEM, category: 'produce' })
 })
 
+// ─── 9. Regression: dismissing an earlier item must not drop a later item's
+// checked state (issue #470) ───────────────────────────────────────────────
+// When an item has no `source_line` (falsy), ReviewSurface's itemKey falls
+// back to `${name}-${index}`. Dismissing an earlier item shifts every later
+// item's index, which changes its derived key — even though the item's
+// checked state should be unaffected. The stale key means checkedKeys no
+// longer contains the (now-renamed) key for the still-checked item, so it
+// silently drops out of both the visible checkbox state and the confirm
+// payload.
+
+const NO_LINE_READY_ITEM: ScannedItem = {
+  name: 'Canned Tomatoes',
+  original_name: 'canned tomatoes',
+  source_line: '',
+  price: 1.99,
+  quantity: 1,
+  unit: 'can',
+  category: 'canned_goods',
+  location: 'pantry',
+  confidence: 0.9,
+}
+
+const NO_LINE_REVIEW_ITEM: ScannedItem = {
+  name: 'Basmati Rice',
+  original_name: 'basmati rice',
+  source_line: '',
+  price: 4.99,
+  quantity: 1,
+  unit: 'bag',
+  category: 'dry_goods',
+  location: 'pantry',
+  confidence: 0.65,
+}
+
+// A minimal stateful wrapper mirroring how the real callers (ScanTab,
+// app/scan/page.tsx) own the three arrays: on*Change actually updates state
+// and gets fed back into ReviewSurface, so a dismiss really does shift the
+// positions of the items after it — which is what triggers the bug.
+function StatefulReviewSurface({
+  initialReady,
+  initialReview,
+  onCheckedItemsChange,
+}: {
+  initialReady: ScannedItem[]
+  initialReview: ScannedItem[]
+  onCheckedItemsChange: (items: ScannedItem[]) => void
+}) {
+  const [ready, setReady] = React.useState(initialReady)
+  const [review, setReview] = React.useState(initialReview)
+  return (
+    <ReviewSurface
+      readyToAdd={ready}
+      needsReview={review}
+      skipped={[]}
+      onReadyChange={setReady}
+      onReviewChange={setReview}
+      onSkippedChange={noop}
+      onConfirm={noop}
+      isSubmitting={false}
+      hideConfirmButton={true}
+      onCheckedItemsChange={onCheckedItemsChange}
+    />
+  )
+}
+
+it('keeps a later item checked after an earlier item is dismissed (issue #470)', async () => {
+  const onCheckedItemsChange = jest.fn()
+  render(
+    <StatefulReviewSurface
+      initialReady={[NO_LINE_READY_ITEM]}
+      initialReview={[NO_LINE_REVIEW_ITEM]}
+      onCheckedItemsChange={onCheckedItemsChange}
+    />,
+  )
+
+  // Check the needs_review item (it starts unchecked).
+  const reviewCheckbox = screen.getByRole('checkbox', {
+    name: new RegExp(`Include ${NO_LINE_REVIEW_ITEM.name}`, 'i'),
+  })
+  fireEvent.click(reviewCheckbox)
+  expect(reviewCheckbox).toBeChecked()
+
+  await waitFor(() => {
+    const lastCall = onCheckedItemsChange.mock.calls[onCheckedItemsChange.mock.calls.length - 1][0]
+    expect(lastCall).toHaveLength(2)
+  })
+
+  // Dismiss the ready item — this shifts the review item's index-derived key.
+  fireEvent.click(screen.getByRole('button', { name: `Dismiss ${NO_LINE_READY_ITEM.name}` }))
+
+  // The review item's checkbox should still be checked — its underlying
+  // identity didn't change, only its position did.
+  const reviewCheckboxAfter = screen.getByRole('checkbox', {
+    name: new RegExp(`Include ${NO_LINE_REVIEW_ITEM.name}`, 'i'),
+  })
+  expect(reviewCheckboxAfter).toBeChecked()
+
+  await waitFor(() => {
+    const lastCall = onCheckedItemsChange.mock.calls[onCheckedItemsChange.mock.calls.length - 1][0]
+    expect(lastCall).toHaveLength(1)
+    expect(lastCall[0].name).toBe(NO_LINE_REVIEW_ITEM.name)
+  })
+})
+
 // ─── 8. Selection checkbox matches the app's custom-checkbox pattern ──────────
 // Same visual language as the ingredient checklist on the recipe detail page
 // (recipes/[id]/page.tsx): a visually-hidden native <input type="checkbox">
