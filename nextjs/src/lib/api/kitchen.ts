@@ -6,11 +6,9 @@
  * typed client + React Query hook, matching the `fetch`-and-throw pattern in
  * `pantry.ts`/`dashboard.ts`.
  *
- * `useDecorations` is the first hook in the codebase to actually call
- * `useQuery` — `@tanstack/react-query`'s `QueryClientProvider` has been
- * wired in `Providers.tsx` since it was added, but nothing consumed it until
- * now. This sets the convention: query key is a single-element array naming
- * the resource, `staleTime` is left to the provider's default (1 minute).
+ * `useDecorations` uses the `QueryClientProvider` wired in `Providers.tsx`:
+ * the query key is a single-element array naming the resource, and
+ * `staleTime` is left to the provider's default (1 minute).
  */
 import { useQuery } from '@tanstack/react-query'
 

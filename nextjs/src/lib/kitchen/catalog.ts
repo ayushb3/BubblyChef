@@ -10,8 +10,6 @@
  * `decorations` row's `name` column is expected to match once unlocked
  * (see `lib/api/kitchen.ts`).
  */
-import { SLOT_KEYS } from './slots'
-
 export interface Decoration {
   id: string
   name: string
@@ -70,6 +68,3 @@ export const CATALOG: Decoration[] = [
   { id: 'corner_cat_bed', name: "Bubbles' bed", slot: 'floor_corner', emoji: '🛏️' },
   { id: 'corner_basket', name: 'Wicker basket', slot: 'floor_corner', emoji: '🧺' },
 ]
-
-/** Every slot key `CATALOG` must cover — used only by the catalog test. */
-export const CATALOG_SLOT_KEYS = SLOT_KEYS

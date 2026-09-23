@@ -63,6 +63,24 @@ describe('KitchenScene (#521)', () => {
     }
   })
 
+  it('hides empty slots from screen readers and names filled ones after the decoration', () => {
+    const first = CATALOG[0]
+    render(<KitchenScene unlocked={[{ id: first.id, slot: first.slot }]} balance={0} />)
+
+    for (const slot of SLOTS) {
+      const el = screen.getByTestId(`kitchen-slot-${slot.key}`)
+      if (slot.key === first.slot) {
+        expect(el).not.toHaveAttribute('aria-hidden')
+      } else {
+        expect(el).toHaveAttribute('aria-hidden', 'true')
+      }
+    }
+    // Only the one filled slot reaches the accessibility tree, under the
+    // decoration's own name rather than the slot's label.
+    expect(screen.getAllByRole('img')).toHaveLength(1)
+    expect(screen.getByRole('img', { name: first.name })).toBeInTheDocument()
+  })
+
   it('ignores an unlocked row whose id is not in CATALOG, without throwing', () => {
     expect(() =>
       render(<KitchenScene unlocked={[{ id: 'not_a_real_id', slot: 'wall_shelf' }]} balance={0} />),
