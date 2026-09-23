@@ -96,29 +96,33 @@ async def test_dotcom_url_routes_to_recipe_ingest_without_llm():
 
 
 # ---------------------------------------------------------------------------
-# Session mode override (unchanged behavior)
+# Session mode bias (#416 classifier-primary: mode biases the classifier prompt
+# as a soft prior; the LLM is still consulted — the old deterministic force was
+# removed in Q1). We mock the LLM returning the intent the mode-biased prompt
+# yields and assert the resolved intent, not that the LLM was skipped.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_session_cooking_mode_routes_to_cooking_help():
-    with _mock_ai("general_chat") as mock_mgr:
+    with _mock_ai("cooking_help") as mock_mgr:
         result = await classify_intent(
             _state(input_text="how long should I boil eggs?",
                    session_mode=SessionMode.COOKING.value)
         )
-    mock_mgr.return_value.complete.assert_not_called()
+    # Classifier-primary: LLM IS consulted (COOKING mode biases the prompt).
+    mock_mgr.return_value.complete.assert_awaited_once()
     assert result["intent"] == Intent.COOKING_HELP.value
 
 
 @pytest.mark.asyncio
 async def test_session_ingesting_mode_routes_to_pantry_update():
-    with _mock_ai("general_chat") as mock_mgr:
+    with _mock_ai("pantry_update") as mock_mgr:
         result = await classify_intent(
             _state(input_text="milk, eggs, butter",
                    session_mode=SessionMode.INGESTING.value)
         )
-    mock_mgr.return_value.complete.assert_not_called()
+    mock_mgr.return_value.complete.assert_awaited_once()
     assert result["intent"] == Intent.PANTRY_UPDATE.value
 
 

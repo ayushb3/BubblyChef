@@ -22,13 +22,14 @@ interface TabDef {
   href: string
   icon: ComponentType<IconProps>
   label: string
+  tourId?: string
 }
 
 const tabs: TabDef[] = [
   { href: '/', icon: House, label: 'Home' },
-  { href: '/pantry', icon: Archive, label: 'Pantry' },
-  { href: '/chat', icon: ChatCircle, label: 'Chat' },
-  { href: '/recipes', icon: BookOpen, label: 'Recipes' },
+  { href: '/pantry', icon: Archive, label: 'Pantry', tourId: 'nav-pantry' },
+  { href: '/chat', icon: ChatCircle, label: 'Chat', tourId: 'nav-chat' },
+  { href: '/recipes', icon: BookOpen, label: 'Recipes', tourId: 'nav-recipes' },
 ]
 
 export default function BottomNav() {
@@ -50,6 +51,7 @@ export default function BottomNav() {
             <Link
               key={tab.href}
               href={tab.href}
+              {...(tab.tourId ? { 'data-tour': tab.tourId } : {})}
               className="flex-1 relative flex flex-col items-center py-2 pb-4 gap-0.5"
             >
               {isActive && (
