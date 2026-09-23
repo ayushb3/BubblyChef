@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse } from '@/lib/response-helpers'
 import { enrichPantryItem } from '@/lib/pantry-helpers'
@@ -23,7 +24,6 @@ export async function POST(request: Request) {
 
   const body = await request.json()
   const items: BulkItemInput[] = body.items
-  const requestId: string | undefined = body.request_id
 
   if (!Array.isArray(items) || items.length === 0) {
     return errorResponse('items must be a non-empty array', 400)
@@ -91,12 +91,26 @@ export async function POST(request: Request) {
   const insertedRows = data as PantryItemRow[]
   await Promise.all(insertedRows.map((row) => awardBubbles(user.id, 'pantry_add', row.id)))
 
-  // scan_confirm is awarded once per confirm click, keyed on the client's
-  // per-request id (not per item), so re-confirming the same items twice
-  // never double-counts the scan award.
+  // scan_confirm's ref_key must not come from client input — a hand-rolled
+  // POST could otherwise supply a fresh id on every call and farm the award
+  // indefinitely. Instead it's derived entirely from server-known state: the
+  // server's UTC date plus the (sorted, lowercased, trimmed) set of item
+  // names being confirmed, hashed to stay well under the 200-char ref_key
+  // limit (see the CHECK constraint in
+  // supabase/migrations/00011_gamification_bubbles_ledger.sql). That makes
+  // confirming the same set of items on the same day earn the award once —
+  // re-POSTing the identical payload (a real network retry, or a replay
+  // attempt) earns nothing, and it doesn't require trusting anything the
+  // client sent.
   const hasScanItem = items.some((item) => item.source === 'scan')
-  if (hasScanItem && requestId) {
-    await awardBubbles(user.id, 'scan_confirm', requestId)
+  if (hasScanItem) {
+    const utcDate = new Date().toISOString().slice(0, 10)
+    const nameSet = items
+      .map((item) => item.name.toLowerCase().trim())
+      .sort()
+      .join(',')
+    const digest = createHash('sha256').update(nameSet).digest('hex')
+    await awardBubbles(user.id, 'scan_confirm', `${utcDate}:${digest}`)
   }
 
   const enriched = insertedRows.map(enrichPantryItem)

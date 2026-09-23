@@ -7,6 +7,9 @@
 
 const mockUser = { id: 'user-1' }
 
+/** Today's UTC date as YYYY-MM-DD — the route accepts anything within a day of this. */
+const today = new Date().toISOString().slice(0, 10)
+
 const upsertMock = jest.fn(() => ({
   select: async () => ({ data: [{ id: 'evt-1' }], error: null }),
 }))
@@ -58,7 +61,7 @@ describe('GET /api/bubbles', () => {
     mockRequireAuth.mockResolvedValue([supabase, mockUser])
 
     const { GET } = await import('@/app/api/bubbles/route')
-    const res = await GET(new Request('http://localhost/api/bubbles?date=2026-09-22'))
+    const res = await GET(new Request(`http://localhost/api/bubbles?date=${today}`))
     const data = await res.json()
 
     expect(res.status).toBe(200)
@@ -85,10 +88,49 @@ describe('GET /api/bubbles', () => {
     mockRequireAuth.mockResolvedValue([supabase, mockUser])
 
     const { GET } = await import('@/app/api/bubbles/route')
-    const res = await GET(new Request('http://localhost/api/bubbles?date=2026-09-22'))
+    const res = await GET(new Request(`http://localhost/api/bubbles?date=${today}`))
     const data = await res.json()
 
     expect(res.status).toBe(200)
     expect(data).toEqual({ balance: 42, recent: recentEvents })
+  })
+
+  it('rejects a date far outside the server clock skew window and does not award', async () => {
+    mockRequireAuth.mockResolvedValue([{}, mockUser])
+
+    const { GET } = await import('@/app/api/bubbles/route')
+    const res = await GET(new Request('http://localhost/api/bubbles?date=2020-01-01'))
+
+    expect(res.status).toBe(400)
+    expect(upsertMock).not.toHaveBeenCalled()
+  })
+
+  it('awards the daily_visit event keyed on the date for a valid date', async () => {
+    const supabase = {
+      from: (table: string) => {
+        if (table === 'bubble_balances') {
+          return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }) }
+        }
+        return {
+          select: () => ({
+            eq: () => ({ order: () => ({ limit: async () => ({ data: [] }) }) }),
+          }),
+        }
+      },
+    }
+    mockRequireAuth.mockResolvedValue([supabase, mockUser])
+
+    const { GET } = await import('@/app/api/bubbles/route')
+    const res = await GET(new Request(`http://localhost/api/bubbles?date=${today}`))
+
+    expect(res.status).toBe(200)
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: mockUser.id,
+        event_type: 'daily_visit',
+        ref_key: today,
+      }),
+      expect.objectContaining({ onConflict: 'user_id,event_type,ref_key', ignoreDuplicates: true }),
+    )
   })
 })

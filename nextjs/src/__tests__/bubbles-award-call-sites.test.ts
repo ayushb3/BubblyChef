@@ -114,14 +114,14 @@ describe('bubbles award never blocks the underlying write', () => {
         method: 'POST',
         body: JSON.stringify({
           items: [{ name: 'Eggs', source: 'scan' }],
-          request_id: 'req-1',
         }),
       }),
     )
 
     expect(res.status).toBe(201)
-    // One pantry_add per inserted row, keyed on the row id (not the request
-    // id), plus one scan_confirm keyed on the request id.
+    // One pantry_add per inserted row, keyed on the row id, plus one
+    // scan_confirm keyed on a server-derived date+item-names digest — not on
+    // anything the client sent.
     expect(upsertMock).toHaveBeenCalledWith(
       expect.objectContaining({
         user_id: mockUser.id,
@@ -134,11 +134,51 @@ describe('bubbles award never blocks the underlying write', () => {
       expect.objectContaining({
         user_id: mockUser.id,
         event_type: 'scan_confirm',
-        ref_key: 'req-1',
+        ref_key: expect.stringMatching(
+          new RegExp(`^${new Date().toISOString().slice(0, 10)}:[0-9a-f]{64}$`),
+        ),
       }),
       expect.anything(),
     )
     expect(upsertMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('POST /api/pantry/bulk derives the same scan_confirm ref_key for the same items regardless of request body id', async () => {
+    const supabase = {
+      from: () => ({
+        insert: () => ({
+          select: async () => ({
+            data: [{ id: 'item-1', name: 'Eggs', category: 'dairy', location: 'fridge' }],
+            error: null,
+          }),
+        }),
+      }),
+    }
+    mockRequireAuth.mockResolvedValue([supabase, mockUser])
+
+    const { POST } = await import('@/app/api/pantry/bulk/route')
+
+    const makeRequest = (extra: Record<string, unknown>) =>
+      new Request('http://localhost/api/pantry/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ items: [{ name: 'Eggs', source: 'scan' }], ...extra }),
+      })
+
+    type UpsertRow = { event_type: string; ref_key: string }
+
+    await POST(makeRequest({ request_id: 'req-a' }))
+    const firstRefKey = (upsertMock.mock.calls as unknown as [UpsertRow][]).find(
+      (call) => call[0].event_type === 'scan_confirm',
+    )?.[0].ref_key
+
+    upsertMock.mockClear()
+    await POST(makeRequest({ request_id: 'req-b' }))
+    const secondRefKey = (upsertMock.mock.calls as unknown as [UpsertRow][]).find(
+      (call) => call[0].event_type === 'scan_confirm',
+    )?.[0].ref_key
+
+    expect(firstRefKey).toBeDefined()
+    expect(firstRefKey).toBe(secondRefKey)
   })
 
   it('POST /api/recipes still succeeds when the award insert throws', async () => {

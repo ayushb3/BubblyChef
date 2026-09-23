@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { streamChatMessage, fetchChatHistory, applyPantryProposal } from '@/lib/api/chat'
 import type { ChatMessage, ChatResponse, PantryProposalData, PantryProposalAction } from '@/types/chat'
 import { getClarificationSuggestions, mergeTermSuggestions, mergeActions, filterResolvedTerms } from '@/types/chat'
@@ -68,6 +69,7 @@ export interface UseChatOptions {
  */
 export function useChat(options?: UseChatOptions) {
   const skipResume = options?.skipResume ?? false
+  const queryClient = useQueryClient()
 
   // Both server and first client render start empty/null — reading
   // localStorage happens only inside an effect below, so there is no
@@ -545,6 +547,11 @@ export function useChat(options?: UseChatOptions) {
       }
 
       setProposalStates((prev) => ({ ...prev, [msgId]: 'approved' }))
+      // The approve route (/api/ai/workflows/apply) awards pantry_add
+      // bubbles server-side (#520) — refetch so the balance shown in the UI
+      // picks it up, same as every other awarding mutation (CookModal,
+      // RecipeBook import, scan confirm, the pantry add sheet).
+      queryClient.invalidateQueries({ queryKey: ['bubbles'] })
     } catch (err) {
       setProposalErrors((prev) => ({
         ...prev,
@@ -552,7 +559,7 @@ export function useChat(options?: UseChatOptions) {
       }))
       setProposalStates((prev) => ({ ...prev, [msgId]: 'failed' }))
     }
-  }, [pendingProposals])
+  }, [pendingProposals, queryClient])
 
   /**
    * Update the pending actions for a proposal in place (no AI round-trip).
