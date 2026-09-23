@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse } from '@/lib/response-helpers'
 import { enrichPantryItem } from '@/lib/pantry-helpers'
 import { estimateExpiry, estimateCategory, normalizeBaseUnit } from '@/lib/api/ai-proxy'
+import { awardBubbles } from '@/lib/bubbles'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
 
 interface BulkItemInput {
@@ -11,6 +12,7 @@ interface BulkItemInput {
   category?: string
   storage_location?: string
   expiry_date?: string | null
+  source?: 'scan' | 'manual'
 }
 
 export async function POST(request: Request) {
@@ -20,6 +22,7 @@ export async function POST(request: Request) {
 
   const body = await request.json()
   const items: BulkItemInput[] = body.items
+  const requestId: string | undefined = body.request_id
 
   if (!Array.isArray(items) || items.length === 0) {
     return errorResponse('items must be a non-empty array', 400)
@@ -76,6 +79,17 @@ export async function POST(request: Request) {
 
   if (error) return errorResponse(error.message)
 
-  const enriched = (data as PantryItemRow[]).map(enrichPantryItem)
+  const insertedRows = data as PantryItemRow[]
+  await Promise.all(insertedRows.map((row) => awardBubbles(user.id, 'pantry_add', row.id)))
+
+  // scan_confirm is awarded once per confirm click, keyed on the client's
+  // per-request id (not per item), so re-confirming the same items twice
+  // never double-counts the scan award.
+  const hasScanItem = items.some((item) => item.source === 'scan')
+  if (hasScanItem && requestId) {
+    await awardBubbles(user.id, 'scan_confirm', requestId)
+  }
+
+  const enriched = insertedRows.map(enrichPantryItem)
   return NextResponse.json({ items: enriched, count: enriched.length }, { status: 201 })
 }

@@ -15,5 +15,6 @@ export function scannedToBulkAddItem(item: ScannedItem): BulkAddItem {
     category: item.category ?? 'other',
     storage_location: item.location ?? 'pantry',
     expiry_date: null,
+    source: 'scan',
   }
 }

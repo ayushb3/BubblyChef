@@ -11,6 +11,7 @@
  */
 import React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/components/ThemeProvider'
 
 // react-markdown / remark-gfm ship ESM only and jest runs this suite as CJS.
@@ -56,12 +57,19 @@ jest.mock('@/lib/api/recipes', () => ({ fetchRecipe: (id: string) => fetchRecipe
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ChatPage = require('@/app/chat/page').default as () => React.JSX.Element
 
-/** The header's ThemePicker needs the real provider (see ThemePicker.test.tsx). */
+/**
+ * The header's ThemePicker needs the real provider (see ThemePicker.test.tsx).
+ * ChatSurface reads useQueryClient() (#520, to invalidate the bubbles balance
+ * after a chat recipe save), so it also needs a QueryClientProvider.
+ */
 function renderChat() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <ThemeProvider>
-      <ChatPage />
-    </ThemeProvider>,
+    <QueryClientProvider client={client}>
+      <ThemeProvider>
+        <ChatPage />
+      </ThemeProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -161,10 +169,13 @@ describe('/chat?use= — expiring item handoff (#138)', () => {
     const { rerender } = renderChat()
 
     await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const tree = (
-      <ThemeProvider>
-        <ChatPage />
-      </ThemeProvider>
+      <QueryClientProvider client={client}>
+        <ThemeProvider>
+          <ChatPage />
+        </ThemeProvider>
+      </QueryClientProvider>
     )
     rerender(tree)
     rerender(tree)

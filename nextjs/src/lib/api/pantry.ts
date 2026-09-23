@@ -13,6 +13,13 @@ export interface BulkAddItem {
   category: string
   storage_location: string
   expiry_date: string | null
+  /**
+   * Where this item came from. Drives the `scan_confirm` bubbles award
+   * (#520) — a request with at least one `source: 'scan'` item earns the
+   * scan award once, keyed on the request id below, in addition to the
+   * per-item `pantry_add` award every item earns regardless of source.
+   */
+  source?: 'scan' | 'manual'
 }
 
 export interface BulkAddResult {
@@ -27,10 +34,15 @@ export interface BulkAddResult {
  * user confirm action; callers must never invoke it automatically.
  */
 export async function bulkAddPantryItems(items: BulkAddItem[]): Promise<BulkAddResult> {
+  // Per-confirm-click id (#520) — lets the server award `scan_confirm` once
+  // per click rather than once per item, and stays idempotent if this same
+  // call is ever retried.
+  const requestId = crypto.randomUUID()
+
   const res = await fetch('/api/pantry/bulk', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items }),
+    body: JSON.stringify({ items, request_id: requestId }),
   })
 
   if (!res.ok) {

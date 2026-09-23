@@ -108,6 +108,7 @@ it('confirming the review writes via bulkAddPantryItems and redirects to /pantry
       category: 'dairy',
       storage_location: 'fridge',
       expiry_date: null,
+      source: 'scan',
     },
   ])
   await waitFor(() => expect(push).toHaveBeenCalledWith('/pantry'))

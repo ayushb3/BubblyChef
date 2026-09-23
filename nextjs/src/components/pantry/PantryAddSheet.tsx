@@ -65,13 +65,7 @@ export default function PantryAddSheet({
     setError(null)
 
     try {
-      await bulkAddPantryItems(
-        allItems.map((item) => {
-          const { source, ...rest } = item
-          void source
-          return rest
-        }),
-      )
+      await bulkAddPantryItems(allItems)
 
       onItemsAdded()
       onClose()

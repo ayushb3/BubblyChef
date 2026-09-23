@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence, useAnimation, type PanInfo } from 'framer-motion'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { Heart, DotsThree } from '@phosphor-icons/react'
 import RecipeDetail, { type Recipe } from './RecipePage'
 import RecipeSearchBar from './RecipeSearchBar'
@@ -63,6 +64,7 @@ const VELOCITY_THRESHOLD = 300
 
 export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -263,6 +265,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
       const saved = await res.json()
       setImportOpen(false)
       setImportDraft(null)
+      queryClient.invalidateQueries({ queryKey: ['bubbles'] })
       onMutate?.()
       setSelectedId(saved.id ?? null)
     } catch {
