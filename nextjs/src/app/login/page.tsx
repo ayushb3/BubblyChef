@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { takeLoginEmail } from '@/lib/auth/login-prefill'
 import { useRouter } from 'next/navigation'
 import FloatingBubbles from '@/components/ui/FloatingBubbles'
 import SpringButton from '@/components/ui/SpringButton'
@@ -33,6 +34,13 @@ export default function LoginPage() {
       url.searchParams.delete('error')
       window.history.replaceState({}, '', url.toString())
     }
+  }, [])
+
+  // Prefill the email handed over from the profile's "Save your account"
+  // card (#588).
+  useEffect(() => {
+    const stashed = takeLoginEmail()
+    if (stashed) setEmail(stashed)
   }, [])
 
   const handleGoogleSignIn = async () => {
