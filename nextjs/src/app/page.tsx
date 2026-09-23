@@ -10,6 +10,11 @@ export default async function HomePage() {
   } = await supabase.auth.getUser()
   const displayName =
     user?.user_metadata?.username?.trim() || user?.email?.split('@')[0] || 'Bubbly'
+  // Kitchen theme (#523): read server-side same as displayName above, so
+  // there's no client round trip and no flash of the wrong theme before
+  // hydration. `resolveKitchenTheme` (in useKitchenTheme) still validates
+  // this against the balance/catalog on the client.
+  const initialKitchenTheme: string | null = user?.user_metadata?.kitchen_theme ?? null
 
   return (
     <main className="min-h-screen pb-24">
@@ -18,7 +23,7 @@ export default async function HomePage() {
         rightSlot={<ProfileHeaderButton />}
       />
       <div className="px-4 pt-4 max-w-lg mx-auto">
-        <HeroHome displayName={displayName} />
+        <HeroHome displayName={displayName} initialKitchenTheme={initialKitchenTheme} />
       </div>
     </main>
   )
