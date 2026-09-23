@@ -8,6 +8,7 @@ import logging
 import re
 from datetime import UTC, date, datetime
 from typing import Any, cast
+from uuid import UUID
 
 from postgrest.types import JSON
 from supabase import Client, create_client
@@ -27,6 +28,12 @@ from bubbly_chef.tools.expiry import get_expiry_heuristics
 logger = logging.getLogger(__name__)
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+# #384: how many recent conversation_history messages get_history() returns
+# by default. 40 messages is ~20 user/assistant exchanges — enough for a
+# real multi-step cooking conversation without summarization, which is a
+# separate, later piece of work.
+_HISTORY_DEFAULT_LIMIT = 40
 
 # Filler words that carry no dish-identifying signal in a natural-language
 # lookup request ("show me my saved butter chicken", "do you have a recipe
@@ -329,10 +336,17 @@ class SupabaseRepository:
 
     async def apply_pantry_proposal(
         self, user_id: str, actions: list[dict[str, Any]]
-    ) -> tuple[int, int, list[str]]:
+    ) -> tuple[int, int, list[str], list[UUID]]:
+        """Apply reviewed pantry actions; returns (applied, failed, errors,
+        affected_item_ids). #541: affected_item_ids is every pantry row this
+        call created, updated, or deleted -- ApplyResponse was always
+        dropping this on the floor, so a caller (the bubbles ledger) had no
+        way to award credit for items that did apply on a partial failure.
+        """
         applied = 0
         failed = 0
         errors: list[str] = []
+        affected_item_ids: list[UUID] = []
 
         for action in actions:
             try:
@@ -352,7 +366,7 @@ class SupabaseRepository:
                             unit=action.get("unit", existing.unit),
                             category=action.get("category", existing.category.value),
                         )
-                        await self.update_pantry_item(
+                        updated = await self.update_pantry_item(
                             user_id,
                             str(existing.id),
                             {
@@ -361,6 +375,7 @@ class SupabaseRepository:
                                 "unit_base": _unit_base,
                             },
                         )
+                        affected_item_ids.append(updated.id if updated else existing.id)
                     else:
                         # F5: pass quantity_base and unit_base to PantryItem constructor
                         item_category = FoodCategory(action.get("category", "other"))
@@ -406,7 +421,8 @@ class SupabaseRepository:
                             expiry_date=item_expiry,
                             estimated_expiry=bool(item_estimated_expiry),
                         )
-                        await self.add_pantry_item(user_id, item)
+                        created = await self.add_pantry_item(user_id, item)
+                        affected_item_ids.append(created.id)
                     applied += 1
 
                 elif action_type in ("update", "use"):
@@ -423,25 +439,29 @@ class SupabaseRepository:
                         )
                         if new_qty <= 0:
                             await self.delete_pantry_item(user_id, str(existing.id))
+                            affected_item_ids.append(existing.id)
                         else:
-                            await self.update_pantry_item(
+                            updated = await self.update_pantry_item(
                                 user_id, str(existing.id), {"quantity": new_qty}
                             )
+                            affected_item_ids.append(updated.id if updated else existing.id)
                     else:
                         updates = {
                             k: v
                             for k, v in action.items()
                             if k not in ("action", "name") and v is not None
                         }
-                        await self.update_pantry_item(
+                        updated = await self.update_pantry_item(
                             user_id, str(existing.id), updates
                         )
+                        affected_item_ids.append(updated.id if updated else existing.id)
                     applied += 1
 
                 elif action_type == "remove":
                     existing = await self.find_similar_item(user_id, name)
                     if existing:
                         await self.delete_pantry_item(user_id, str(existing.id))
+                        affected_item_ids.append(existing.id)
                         applied += 1
                     else:
                         errors.append(f"Item not found for removal: {name}")
@@ -451,7 +471,7 @@ class SupabaseRepository:
                 errors.append(f"Error processing {action}: {e}")
                 failed += 1
 
-        return applied, failed, errors
+        return applied, failed, errors, affected_item_ids
 
     # =========================================================================
     # Recipe operations
@@ -727,18 +747,37 @@ class SupabaseRepository:
         ).execute()
 
     async def get_history(
-        self, user_id: str, conversation_id: str, limit: int = 20
+        self, user_id: str, conversation_id: str, limit: int = _HISTORY_DEFAULT_LIMIT
     ) -> list[dict[str, Any]]:
+        """Return the most recent `limit` messages, oldest-first.
+
+        #384: the query used to order ascending and apply `.limit()` in the
+        same call. PostgREST applies `.limit()` after `.order()`, so that
+        always returned the *oldest* `limit` rows, not the most recent ones
+        -- for any conversation longer than `limit`, callers could never see
+        anything newer than the very start of the conversation. Ordering
+        descending and limiting at the DB fetches exactly the most recent
+        `limit` rows regardless of how long the conversation is (no
+        over-fetch); reversing in Python restores the ascending order every
+        caller expects.
+
+        `limit` must be positive -- a non-positive value returns `[]` rather
+        than inverting into "return everything" or a negative slice.
+        """
+        if limit < 1:
+            return []
         result = (
             self.client.table("conversation_history")
             .select("*")
             .eq("user_id", user_id)
             .eq("conversation_id", conversation_id)
-            .order("created_at")
+            .order("created_at", desc=True)
             .limit(limit)
             .execute()
         )
-        return _as_rows(result.data)
+        rows = _as_rows(result.data)
+        rows.reverse()
+        return rows
 
     # =========================================================================
     # Session operations

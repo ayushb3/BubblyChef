@@ -590,11 +590,51 @@ def review_gate(state: WorkflowState) -> WorkflowState:
     current_names_lower = {action.item.name.lower() for action in actions}
     current_generic_lower = {term.lower() for term in generic_pantry_terms}
 
+    # Genuinely still-pending items (the #307-followup mechanism --
+    # `pending.item_names`, e.g. a proposal awaiting confirmation) always
+    # surface: they are unresolved regardless of what this turn is about.
     still_pending_items = [
         name
         for name in pending.item_names
         if name.lower() not in current_names_lower
     ]
+    # `pending.continuity_item_names` (#370) is a SEPARATE, already-*proposed*
+    # set from a recent clean turn -- kept only as short-lived context, not
+    # as something still awaiting resolution. It is surfaced only when THIS
+    # turn is itself ambiguous (has its own generic_pantry_terms) and is
+    # actually trying to resolve something against them, i.e. issue #370's
+    # own repro ("I have apples and eggs" -> "some dairy"). An ordinary add
+    # with nothing of its own to resolve must stay silent about them
+    # (orchestrator review on PR #600, finding 1).
+    #
+    # Wording (orchestrator third-round review on PR #600, inline comment on
+    # nodes.py:628; Ayush's call): a clean turn only *proposes* items --
+    # `review_gate -> suggest_specifics -> finalize_pantry -> update_session`
+    # has no apply node, and the frontend still requires an explicit Approve
+    # tap even for a high-confidence proposal. "you already added X" would
+    # assert something the backend can't know -- the user may never have
+    # approved it. "earlier you mentioned X" is true either way.
+    #
+    # Dedupe (orchestrator third-round review, finding 3): the same name can
+    # land in both buckets -- e.g. a clean add of "apples", then a later
+    # review turn that re-adds "apples" alongside a genuinely-unclear term.
+    # still_pending_items (below) wins in that overlap, since it reflects
+    # this session's most current, authoritative merge of what's actually
+    # still outstanding; continuity_item_names is a stale snapshot from an
+    # earlier clean turn by comparison. Without this, the note would name
+    # the same item under two different, contradictory claims in one
+    # sentence.
+    still_pending_lower = {name.lower() for name in pending.item_names}
+    already_added_items = (
+        [
+            name
+            for name in pending.continuity_item_names
+            if name.lower() not in current_names_lower
+            and name.lower() not in still_pending_lower
+        ]
+        if generic_pantry_terms
+        else []
+    )
     still_unclear_terms = [
         term
         for term in pending.unclear_terms
@@ -602,6 +642,8 @@ def review_gate(state: WorkflowState) -> WorkflowState:
     ]
 
     note_clauses = []
+    if already_added_items:
+        note_clauses.append(f"earlier you mentioned {', '.join(already_added_items)}")
     if still_pending_items:
         note_clauses.append(f"still with {', '.join(still_pending_items)} from earlier in this chat")
     if still_unclear_terms:

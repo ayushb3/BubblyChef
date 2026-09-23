@@ -18,6 +18,9 @@ import { useDecorations } from '@/lib/api/kitchen'
 import { useBubbles } from '@/lib/api/bubbles'
 import KitchenScene from '@/components/kitchen/KitchenScene'
 import UnlockOffer from '@/components/kitchen/UnlockOffer'
+import KitchenThemePicker from '@/components/kitchen/KitchenThemePicker'
+import KitchenThemeUnlockCard from '@/components/kitchen/KitchenThemeUnlockCard'
+import { useKitchenTheme } from '@/hooks/useKitchenTheme'
 
 interface HomeData {
   totalCount: number
@@ -59,7 +62,7 @@ function getGreeting(): string {
   if (hour >= 5 && hour < 12) return 'Good morning'
   if (hour >= 12 && hour < 18) return 'Good afternoon'
   if (hour >= 18 && hour < 22) return 'Good evening'
-  return 'Late night snack?'
+  return 'Late night snack'
 }
 
 function getGreetingEmoji(): string {
@@ -71,6 +74,8 @@ function getGreetingEmoji(): string {
 
 interface HeroHomeProps {
   displayName: string
+  /** `user_metadata.kitchen_theme` as read server-side (#523), or `null` if never set. */
+  initialKitchenTheme?: string | null
 }
 
 /**
@@ -107,7 +112,7 @@ function Skeleton({
   )
 }
 
-export default function HeroHome({ displayName }: HeroHomeProps) {
+export default function HeroHome({ displayName, initialKitchenTheme = null }: HeroHomeProps) {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<HomeData>({
     totalCount: 0,
@@ -211,10 +216,28 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
   const { data: decorationsData, isLoading: decorationsLoading } = useDecorations()
   const { data: bubblesData } = useBubbles()
   const balance = bubblesData?.balance ?? null
+  // Rescue streak (#524): null until /api/bubbles answers, same convention
+  // as balance — KitchenScene hides the "🔥 N" indicator at null or 0.
+  const streakWeeks = bubblesData?.streak_weeks ?? null
   const unlocked = (decorationsData?.decorations ?? []).map((row) => ({
     id: row.name,
     slot: row.decoration_type,
   }))
+
+  // Kitchen theme (#523): the balance also drives which themes are
+  // unlocked, so this stays gated on the same `balance` value derived above.
+  const [themePickerOpen, setThemePickerOpen] = useState(false)
+  const {
+    theme: kitchenTheme,
+    unlocked: unlockedThemes,
+    saving: themeSaving,
+    selectTheme,
+    newlyUnlocked,
+    dismissUnlock,
+    error: themeError,
+    clearError: clearThemeError,
+  } = useKitchenTheme(initialKitchenTheme, balance)
+  const unlockedThemeKeys = new Set(unlockedThemes.map((t) => t.key))
 
   // Tip text now comes from `GET /v1/dashboard/daily` (#225) — per-user,
   // grounded in that user's own pantry. FALLBACK_TIPS only renders when the
@@ -297,13 +320,46 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
           inferred one. `max-w-[480px]` (not `max-w-sm`'s 384px) matches
           KitchenScene's own cap so the scene can actually reach the full
           480px column issue #521 asks for. */}
-      <FadeInView delay={0} className="w-full max-w-[480px] mb-4">
-        <KitchenScene
-          unlocked={unlocked}
+      <div className="relative w-full max-w-[480px] mb-4">
+        <FadeInView delay={0} className="w-full">
+          <KitchenScene
+            unlocked={unlocked}
+            balance={balance}
+            loading={decorationsLoading}
+            streakWeeks={streakWeeks}
+            theme={kitchenTheme}
+          />
+        </FadeInView>
+
+        {/* Theme picker (#523) — the "🎨" trigger is positioned absolutely
+            against this wrapper, clear of the scene's own top-right balance
+            pill and top-left wall_shelf slot. */}
+        <KitchenThemePicker
+          isOpen={themePickerOpen}
+          onOpen={() => setThemePickerOpen(true)}
+          onClose={() => setThemePickerOpen(false)}
+          currentThemeKey={kitchenTheme.key}
+          unlockedKeys={unlockedThemeKeys}
           balance={balance}
-          loading={decorationsLoading}
+          onSelect={selectTheme}
+          saving={themeSaving}
+          error={themeError}
+          clearError={clearThemeError}
         />
-      </FadeInView>
+      </div>
+
+      {/* One-time "new theme unlocked" card (#523) — shown at most once per
+          theme per browser. "Try it" switches the scene to the new theme
+          (same `selectTheme` the picker sheet uses) and dismisses; the
+          plain ✕ just dismisses without switching. */}
+      <KitchenThemeUnlockCard
+        theme={newlyUnlocked}
+        onTryIt={() => {
+          if (newlyUnlocked) selectTheme(newlyUnlocked.key)
+          dismissUnlock()
+        }}
+        onDismiss={dismissUnlock}
+      />
 
       {/* Milestone unlock offer (#522) — mounted directly under the kitchen
           scene per the issue's placement instruction. Renders nothing when

@@ -81,6 +81,13 @@ export async function DELETE(
   const [supabase, user] = result
   const { id } = await params
 
+  // Deliberately does not record a `tossed` pantry_event (#524/#570 review,
+  // decided by @ayushb3): deleting an item straight from the pantry is an
+  // interaction, not an outcome — the user isn't telling the app "I wasted
+  // this", they're just removing a row. Waste, for the weekly streak, is
+  // only ever a resolve with outcome `tossed` (resolve/route.ts) or an item
+  // still sitting in the pantry with quantity > 0 past its expiry_date at
+  // settlement time (lib/waste.ts) — never a delete.
   const { error } = await supabase
     .from('pantry_items')
     .delete()

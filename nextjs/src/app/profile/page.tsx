@@ -4,6 +4,7 @@ import SignOutButton from '@/components/auth/SignOutButton'
 import DisplayNameField from '@/components/profile/DisplayNameField'
 import DietaryPreferences from '@/components/profile/DietaryPreferences'
 import TakeTourButton from '@/components/profile/TakeTourButton'
+import { isGuestUser } from '@/lib/auth/guest'
 import ThemePicker from '@/components/ui/ThemePicker'
 
 export default async function ProfilePage() {
@@ -55,7 +56,10 @@ export default async function ProfilePage() {
       )}
 
       <div className="px-6 space-y-6 max-w-md mx-auto">
-        {/* Account — permanent save-account for guests + sign-out for all */}
+        {/* Account — permanent save-account for guests; sign-out for real
+            accounts only. A guest "signing out" just discards the anonymous
+            user (the middleware mints a fresh one on the next request), so
+            the button would really mean "delete my guest data" (#587). */}
         <section>
           <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">
             Account
@@ -63,7 +67,7 @@ export default async function ProfilePage() {
           <div className="space-y-3">
             {/* Persistent save-account: stays visible even after the floating banner is dismissed */}
             <SaveAccountBanner persistent />
-            <SignOutButton />
+            {!isGuestUser(user) && <SignOutButton />}
           </div>
         </section>
 

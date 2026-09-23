@@ -68,6 +68,27 @@ export function daysUntilExpiry(expiryDate: string | null): number | null {
 }
 
 /**
+ * Whole days from `localDate` (a YYYY-MM-DD client-local calendar date, e.g.
+ * from `localDateString()`) until `expiryDate`.
+ *
+ * `daysUntilExpiry` above anchors on the *server's* clock (`new Date()`),
+ * which on Vercel is UTC — so near a client's local midnight, the server's
+ * UTC day can already be one calendar day ahead or behind the client's,
+ * mis-classifying a same-day rescue as a miss (or the reverse) and writing a
+ * `days_until_expiry` on `pantry_events` that's off by one (#524 review).
+ * This variant anchors on the client's own reported day instead, for the two
+ * call sites (`resolve`, pantry item `DELETE`) that have one and need the
+ * classification to match what the user is actually looking at.
+ */
+export function daysUntilExpiryOn(expiryDate: string | null, localDate: string): number | null {
+  if (!expiryDate) return null
+  const today = parseLocalDate(localDate)
+  today.setHours(0, 0, 0, 0)
+  const diffMs = parseLocalDate(expiryDate).getTime() - today.getTime()
+  return Math.round(diffMs / (1000 * 60 * 60 * 24))
+}
+
+/**
  * Subtle suffix appended to an expiry label when the date behind it is a
  * heuristic guess (#182) rather than one read from a receipt/label or
  * entered by the user — e.g. "3d left" → "3d left (est.)". A missing

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse } from '@/lib/response-helpers'
 import { awardBubbles } from '@/lib/bubbles'
+import { validateClientDate, parseTzOffsetMinutes } from '@/lib/date'
+import { settleWeeklyStreak } from '@/lib/streak-settlement'
 
 export async function GET(request: Request) {
   const result = await requireAuth()
@@ -9,30 +11,38 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const date = searchParams.get('date')
-  if (!date) return errorResponse('date query param is required (YYYY-MM-DD, client local date)', 400)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return errorResponse('date query param must be YYYY-MM-DD', 400)
-  }
+  const dateError = validateClientDate(date, 'date query param')
+  if (dateError) return errorResponse(dateError, 400)
+  // Narrowed by validateClientDate above.
+  const validDate = date as string
+  // Client's UTC offset in minutes (issue #524 review) — used to bucket
+  // `created_at` timestamps into the client's local calendar day rather
+  // than the server's UTC day. Missing/unparseable falls back to UTC.
+  const offsetMinutes = parseTzOffsetMinutes(searchParams.get('tz_offset_minutes'))
 
-  // The client sends its own local date, which can be up to a day off from
-  // the server's UTC date depending on timezone (UTC-14..UTC+14 spans a full
-  // calendar day either side). Anything further off than that is not a real
-  // client clock skew case — reject it so a signed-in user can't loop
-  // ?date=1, ?date=2, ... and mint unlimited daily_visit awards.
-  const parsedDate = new Date(`${date}T00:00:00Z`)
-  if (Number.isNaN(parsedDate.getTime())) {
-    return errorResponse('date query param must be a valid date', 400)
-  }
-  const msPerDay = 24 * 60 * 60 * 1000
-  const serverToday = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`)
-  const dayDiff = Math.abs(parsedDate.getTime() - serverToday.getTime()) / msPerDay
-  if (dayDiff > 1) {
-    return errorResponse('date query param is too far from the server date', 400)
-  }
+  // Weekly rescue streak (#524): lazily settle any completed week since the
+  // last one that was awarded, bounded to ~12 weeks of catch-up, and report
+  // the resulting streak length + whether the current (in-progress) week has
+  // already seen waste. Settle BEFORE awarding today's `daily_visit`
+  // (re-review #4 on issue #524/#570) — that award is what marks "today's
+  // visit happened" for the NEXT call's `previousVisitDate` lookup, so if
+  // settlement fails, the visit must not be recorded either: doing so would
+  // permanently lock out every week that failed settlement would have
+  // judged. On failure this route falls through with no visit award; since
+  // `GET /api/bubbles` runs on nearly every page, the next request the same
+  // day simply retries both.
+  const { streakWeeks, wastedThisWeek, ok } = await settleWeeklyStreak(
+    supabase,
+    user.id,
+    validDate,
+    offsetMinutes,
+  )
 
-  // Award (or no-op if already awarded today) before reading the balance so
-  // the response reflects today's visit.
-  await awardBubbles(user.id, 'daily_visit', date)
+  // Award (or no-op if already awarded today) only once settlement has
+  // actually run — see above.
+  if (ok) {
+    await awardBubbles(user.id, 'daily_visit', validDate)
+  }
 
   const [{ data: balanceRow }, { data: recent }] = await Promise.all([
     supabase.from('bubble_balances').select('balance').eq('user_id', user.id).maybeSingle(),
@@ -47,5 +57,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     balance: balanceRow?.balance ?? 0,
     recent: recent ?? [],
+    streak_weeks: streakWeeks,
+    wasted_this_week: wastedThisWeek,
   })
 }
