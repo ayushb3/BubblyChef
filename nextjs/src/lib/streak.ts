@@ -61,13 +61,19 @@ export function weekRange(weekKey: string): { start: string; end: string } {
 export interface ComputeStreakInput {
   /** Today, as the client's local YYYY-MM-DD. Only completed weeks (before this week) are ever judged or awarded. */
   referenceDate: string
-  /** Week keys that already have a `weekly_streak` bubble_events row — never re-awarded (idempotent). */
+  /**
+   * Week keys that already have a `weekly_streak` bubble_events row — never
+   * re-awarded (idempotent). Should be the caller's FULL history of settled
+   * weeks, not windowed to `maxWeeksToCheck`: `currentStreak` below walks
+   * back past that window, so a windowed set would falsely cap the
+   * reported streak at `maxWeeksToCheck` (issue #524 review).
+   */
   settledWeekKeys: string[]
-  /** Week keys with at least one bubble_event of any type — an idle week can never be clean. */
+  /** Week keys with at least one bubble_event of any type — an idle week can never be clean. Only needs to cover the catch-up window (`maxWeeksToCheck` + 1). */
   activeWeekKeys: string[]
-  /** Week keys with any waste (a tossed resolve, or an item that expired with quantity still > 0). */
+  /** Week keys with any waste (a tossed resolve, or an item that expired with quantity still > 0). Only needs to cover the catch-up window. */
   wastedWeekKeys: string[]
-  /** How many completed weeks back to catch up on. Default 12 — far enough to catch a returning user, bounded so one call can't walk forever. */
+  /** How many completed weeks back to catch up on new awards. Default 12 — far enough to catch a returning user, bounded so one call can't walk forever. Does NOT bound `currentStreak`. */
   maxWeeksToCheck?: number
 }
 
@@ -120,10 +126,24 @@ export function computeStreak(input: ComputeStreakInput): ComputeStreakResult {
   }
 
   const awardedOrSettled = new Set([...settled, ...weeksToAward])
+
+  // Count the current streak by walking back from the most recent completed
+  // week, with no cap other than a large safety bound (not `maxWeeksToCheck`
+  // — that only bounds catch-up awarding). Membership in `awardedOrSettled`
+  // alone is sufficient: a week only ever lands in `settled` or
+  // `weeksToAward` after already being verified clean (active + not
+  // wasted), so weeks outside the `active`/`wasted` windows (i.e. older than
+  // `maxWeeksToCheck`) can still correctly continue the streak as long as
+  // they were previously settled (issue #524 review: this used to also
+  // require `active.has(wk) && !wasted.has(wk)`, which silently broke the
+  // streak at the edge of the windowed data even for already-settled weeks).
+  const STREAK_COUNT_SAFETY_BOUND = 1560 // ~30 years of weeks
   let currentStreak = 0
-  for (const wk of completedWeeks) {
-    const isClean = active.has(wk) && !wasted.has(wk)
-    if (isClean && awardedOrSettled.has(wk)) {
+  let cursorForCount = input.referenceDate
+  for (let i = 0; i < STREAK_COUNT_SAFETY_BOUND; i++) {
+    cursorForCount = addDaysToDateString(cursorForCount, -7)
+    const wk = isoWeekKey(cursorForCount)
+    if (awardedOrSettled.has(wk)) {
       currentStreak++
     } else {
       break

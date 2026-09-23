@@ -27,6 +27,36 @@ export function addDaysToDateString(dateStr: string, days: number): string {
 }
 
 /**
+ * The calendar date (YYYY-MM-DD) a UTC timestamp falls on for a client at
+ * `offsetMinutes` from UTC — the same "minutes to ADD to UTC to reach local
+ * time" convention as `tzOffsetMinutes()` in `lib/api/dashboard.ts` (UTC+2 ->
+ * 120, UTC-7 -> -420).
+ *
+ * Used to bucket server-stored UTC timestamps (`created_at` columns) into
+ * the *client's* local day rather than the server's UTC day — bucketing by
+ * raw UTC date silently moves a Sunday-evening-local event into Monday for
+ * anyone west of UTC (issue #524 review).
+ */
+export function utcTimestampToLocalDate(timestamp: string, offsetMinutes: number): string {
+  const utcMs = new Date(timestamp).getTime()
+  return new Date(utcMs + offsetMinutes * 60_000).toISOString().slice(0, 10)
+}
+
+/**
+ * Clamp a client-supplied UTC-offset-in-minutes to real-world timezone
+ * bounds (UTC-12 .. UTC+14) and fall back to UTC (0) for anything missing or
+ * unparseable, so a bad/absent `tz_offset_minutes` query param degrades to
+ * the old UTC-bucketing behavior instead of throwing or producing `NaN`
+ * dates.
+ */
+export function parseTzOffsetMinutes(raw: string | null): number {
+  if (raw === null) return 0
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 0
+  return Math.max(-720, Math.min(840, Math.trunc(n)))
+}
+
+/**
  * Validate a client-supplied local date (YYYY-MM-DD) against the server's
  * own clock, tolerating up to a day of skew either side — a signed-in
  * timezone can be up to 14 hours off UTC, which spans a full calendar day

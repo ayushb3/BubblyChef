@@ -20,6 +20,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { utcTimestampToLocalDate } from '@/lib/date'
 
 export interface WastedItem {
   reason: 'tossed' | 'expired'
@@ -37,8 +38,18 @@ export async function wastedItemsSince(
   supabase: SupabaseClient,
   userId: string,
   sinceDate: string,
+  /**
+   * The client's UTC offset in minutes (see `utcTimestampToLocalDate`).
+   * Defaults to 0 (UTC) so any caller that hasn't been updated to pass it
+   * keeps the old UTC-bucketing behavior instead of breaking.
+   */
+  offsetMinutes = 0,
 ): Promise<WastedItem[]> {
-  const today = new Date().toISOString().slice(0, 10)
+  // The client's local "today", not the server's UTC date — otherwise an
+  // item that's expired-but-not-yet-crossed-midnight-UTC for a client west
+  // of UTC is silently excluded from "wasted" a day later than it should be
+  // (issue #524 review).
+  const today = utcTimestampToLocalDate(new Date().toISOString(), offsetMinutes)
 
   const [{ data: wasteEvents }, { data: expiredItems }] = await Promise.all([
     supabase
@@ -69,7 +80,10 @@ export async function wastedItemsSince(
   }>) {
     wasted.push({
       reason: row.outcome === 'tossed' ? 'tossed' : 'expired',
-      date: String(row.created_at).slice(0, 10),
+      // Client-local date of the resolve action, not the raw UTC timestamp
+      // date (issue #524 review) — matches the bucketing used for
+      // bubble_events in `lib/streak-settlement.ts`.
+      date: utcTimestampToLocalDate(row.created_at, offsetMinutes),
       itemName: row.item_name,
     })
   }

@@ -9,6 +9,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { localDateString } from '@/lib/date'
+import { tzOffsetMinutes } from '@/lib/api/dashboard'
 
 export interface BubbleEvent {
   id: string
@@ -30,7 +31,14 @@ export interface BubblesResult {
 
 /** Fetch the caller's bubble balance and recent events, awarding today's daily visit. */
 export async function getBubbles(): Promise<BubblesResult> {
-  const res = await fetch(`/api/bubbles?date=${localDateString()}`)
+  // `tz_offset_minutes` lets the route bucket `created_at` timestamps into
+  // this client's local calendar day rather than the server's UTC day
+  // (issue #524 review) — same convention/helper as the dashboard client.
+  const params = new URLSearchParams({
+    date: localDateString(),
+    tz_offset_minutes: String(tzOffsetMinutes()),
+  })
+  const res = await fetch(`/api/bubbles?${params}`)
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({ error: 'Failed to load bubbles' }))

@@ -5,6 +5,7 @@
  */
 
 import { isoWeekKey, weekRange, computeStreak } from '@/lib/streak'
+import { addDaysToDateString } from '@/lib/date'
 
 describe('isoWeekKey', () => {
   it('keys a mid-week Wednesday into its own ISO week', () => {
@@ -125,6 +126,27 @@ describe('computeStreak', () => {
     // Streak is 0 — W38 (the most recent completed week) was idle, so the
     // walk-back breaks immediately even though W35 got its award.
     expect(result.currentStreak).toBe(0)
+  })
+
+  it('counts a streak past maxWeeksToCheck when the caller passes full settled history (issue #524 review)', () => {
+    // 20 consecutive settled weeks ending last week (2026-W38), older than
+    // the default 12-week catch-up window — the caller is expected to pass
+    // the FULL settled history, not just what's inside the catch-up window.
+    const settledWeekKeys: string[] = []
+    let cursor = referenceDate
+    for (let i = 0; i < 20; i++) {
+      cursor = addDaysToDateString(cursor, -7)
+      settledWeekKeys.push(isoWeekKey(cursor))
+    }
+
+    const result = computeStreak({
+      referenceDate,
+      settledWeekKeys,
+      activeWeekKeys: [],
+      wastedWeekKeys: [],
+    })
+
+    expect(result.currentStreak).toBe(20)
   })
 
   it('is bounded by maxWeeksToCheck for catch-up', () => {

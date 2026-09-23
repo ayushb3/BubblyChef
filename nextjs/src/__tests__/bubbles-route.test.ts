@@ -220,6 +220,36 @@ describe('GET /api/bubbles', () => {
       )
     })
 
+    it('buckets a tossed item by the CLIENT local date, not the raw UTC date, so a Sunday-evening-local toss still zeroes last week\'s streak (issue #524 review)', async () => {
+      // A timestamp just after midnight UTC on the first day of the CURRENT
+      // week — under naive UTC bucketing this lands in the new
+      // (in-progress) week and the just-ended week reads clean. At
+      // UTC-7 it's still Sunday evening local, i.e. inside the week that
+      // just completed.
+      const currentWeekKey = isoWeekKey(today)
+      const { start: currentWeekStart } = weekRange(currentWeekKey)
+      const boundaryTimestamp = `${currentWeekStart}T02:00:00Z`
+
+      const lastWeekTimestamp = withinLastCompletedWeek()
+      const supabase = makeSupabase({
+        bubble_events: [{ event_type: 'pantry_add', ref_key: 'item-1', created_at: lastWeekTimestamp }],
+        pantry_events: [{ item_name: 'Milk', created_at: boundaryTimestamp }],
+      })
+      mockRequireAuth.mockResolvedValue([supabase, mockUser])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(
+        new Request(`http://localhost/api/bubbles?date=${today}&tz_offset_minutes=-420`),
+      )
+      const data = await res.json()
+
+      expect(data.streak_weeks).toBe(0)
+      expect(upsertMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'weekly_streak' }),
+        expect.anything(),
+      )
+    })
+
     it('reports wasted_this_week from an expired, still-in-pantry item', async () => {
       const supabase = makeSupabase({
         pantry_items: [{ name: 'Yogurt', expiry_date: today, quantity: 1 }],
