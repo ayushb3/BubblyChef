@@ -149,7 +149,8 @@ export async function streamChatMessage(
               parsed.type === 'follow_ups' ||
               currentEventType === 'follow_ups'
             ) {
-              const raw = parsed.data?.suggestions
+              // `follow_ups` carries { suggestions }, not a ChatResponse (issue #498).
+              const raw = (parsed.data as { suggestions?: unknown } | undefined)?.suggestions
               extra?.onFollowUps?.(
                 Array.isArray(raw) ? raw.filter((s: unknown): s is string => typeof s === 'string') : [],
               )
