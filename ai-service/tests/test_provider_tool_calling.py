@@ -519,11 +519,18 @@ class TestGeminiResponseParsing:
 
     @pytest.mark.asyncio
     async def test_api_key_sent_as_query_param(self) -> None:
-        """Gemini authenticates via ?key=... query param, not a header."""
+        """Despite the name (kept as-is so the test-count guard sees this as
+        a fixed test, not a removed one — see #602 review), this now asserts
+        the *opposite* of what its name says: Gemini authenticates via the
+        x-goog-api-key header, not a ?key=... query param (issue #515) — a
+        query param lands in plaintext in any log of the outgoing request
+        URL. This test used to assert the old buggy behaviour."""
         captured_url: list[str] = []
+        captured_headers: list[httpx.Headers] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
             captured_url.append(str(request.url))
+            captured_headers.append(request.headers)
             return httpx.Response(
                 200,
                 json={
@@ -542,6 +549,7 @@ class TestGeminiResponseParsing:
         )
 
         url = captured_url[0]
-        assert "key=my-gemini-key" in url, (
-            f"Gemini must pass API key as ?key= query param, got URL: {url}"
+        assert "my-gemini-key" not in url, (
+            f"Gemini must not pass the API key in the URL, got URL: {url}"
         )
+        assert captured_headers[0].get("x-goog-api-key") == "my-gemini-key"
