@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { ThemeProvider } from './ThemeProvider'
 import { TourProvider } from './onboarding/TourProvider'
 import { TourOverlay } from './onboarding/TourOverlay'
+import BubblePop from './ui/BubblePop'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -26,6 +27,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <TourOverlay />
         </TourProvider>
       </ThemeProvider>
+      <BubblePop />
     </QueryClientProvider>
   )
 }

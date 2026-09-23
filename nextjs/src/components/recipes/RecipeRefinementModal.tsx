@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
+import BubblesMascot from '@/components/ui/BubblesMascot'
 import { refineRecipe } from '@/lib/api/recipes'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
@@ -252,8 +253,30 @@ export default function RecipeRefinementModal({
                 </div>
               )}
 
+              {/* Refining — AI wait, mirrors the CookModal/RecipeImportModal loading
+                  convention (thinking Bubbles, not a bare spinner) */}
+              {refining && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="flex items-center gap-2.5 rounded-2xl px-4 py-3"
+                  style={{
+                    background: 'var(--color-surface)',
+                    border: '1.5px solid var(--color-border)',
+                  }}
+                >
+                  <BubblesMascot state="thinking" size={28} />
+                  <p
+                    className="text-sm font-semibold"
+                    style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+                  >
+                    Refining your recipe…
+                  </p>
+                </div>
+              )}
+
               {/* Empty history hint */}
-              {history.length === 0 && (
+              {!refining && history.length === 0 && (
                 <p
                   className="text-sm text-center py-4"
                   style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}

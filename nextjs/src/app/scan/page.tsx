@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -25,7 +25,7 @@ import type { ScanResult } from '@/types/scan'
  * taps the confirm button (issue #259).
  */
 
-type ScanPageState = 'upload' | 'processing' | 'review' | 'submitting'
+type ScanPageState = 'upload' | 'processing' | 'review' | 'submitting' | 'celebrating'
 
 export default function ScanPage() {
   const router = useRouter()
@@ -35,13 +35,26 @@ export default function ScanPage() {
   const [state, setState] = useState<ScanPageState>('upload')
   const [preview, setPreview] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const celebrateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [readyToAdd, setReadyToAdd] = useState<ScannedItemWithId[]>([])
   const [needsReview, setNeedsReview] = useState<ScannedItemWithId[]>([])
   const [skipped, setSkipped] = useState<ScannedItemWithId[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
+  const [addedCount, setAddedCount] = useState(0)
 
   const { isDragActive, dropzoneHandlers } = useFileDropzone({ onFile: handleFileSelect })
+
+  // Cancel the pending celebrate-then-redirect if the user navigates away
+  // (e.g. taps the bottom nav) before it fires, or the component unmounts
+  // for any other reason — otherwise the stale timer still calls
+  // `router.push('/pantry')` afterwards and yanks the user off wherever
+  // they just navigated to.
+  useEffect(() => {
+    return () => {
+      if (celebrateTimerRef.current) clearTimeout(celebrateTimerRef.current)
+    }
+  }, [])
 
   async function handleFileSelect(file: File) {
     setError(null)
@@ -92,7 +105,16 @@ export default function ScanPage() {
       await bulkAddPantryItems(checkedItems.map(scannedToBulkAddItem))
       queryClient.invalidateQueries({ queryKey: ['pantry'] })
       queryClient.invalidateQueries({ queryKey: ['bubbles'] })
-      router.push('/pantry')
+      // Celebrate briefly before leaving the page (issue #525). The timer is
+      // kept in a ref and cleared on unmount (see the effect above) — if the
+      // user taps the bottom nav during the celebration, this redirect must
+      // not fire afterwards and override the navigation they just chose.
+      setAddedCount(checkedItems.length)
+      setState('celebrating')
+      celebrateTimerRef.current = setTimeout(() => {
+        celebrateTimerRef.current = null
+        router.push('/pantry')
+      }, 1500)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add items')
       setState('review')
@@ -229,6 +251,24 @@ export default function ScanPage() {
                 onConfirm={handleConfirm}
                 isSubmitting={state === 'submitting'}
               />
+            </motion.div>
+          )}
+
+          {state === 'celebrating' && (
+            <motion.div
+              key="celebrating"
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.97 }}
+              transition={{ duration: 0.25 }}
+              className="text-center"
+            >
+              <div className="flex justify-center mb-3">
+                <BubblesMascot state="celebrate" size={88} />
+              </div>
+              <p className="font-semibold text-[var(--color-text)]">
+                Added {addedCount} item{addedCount === 1 ? '' : 's'} to your pantry!
+              </p>
             </motion.div>
           )}
         </AnimatePresence>

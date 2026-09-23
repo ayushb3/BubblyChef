@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
+import BubblesMascot from '@/components/ui/BubblesMascot'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
 import type { CookProposal, CompoundSuggestion, IngredientMatch, DeductionItem, ExpiredMatchedItem } from '@/types/recipes'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
@@ -480,6 +481,7 @@ export default function CookModal({
                 <span className="sr-only">Matching recipe ingredients against your pantry</span>
 
                 <div className="flex items-center gap-2.5">
+                  <BubblesMascot state="thinking" size={32} />
                   <div
                     className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin motion-reduce:animate-none shrink-0"
                     style={{ borderColor: 'var(--color-primary)', borderTopColor: 'transparent' }}
@@ -527,7 +529,7 @@ export default function CookModal({
 
             {state === 'success' && (
               <div className="py-8 text-center flex flex-col items-center gap-3">
-                <p className="text-3xl">✅</p>
+                <BubblesMascot state="celebrate" size={80} />
                 <p
                   className="text-sm font-extrabold text-[var(--color-text)]"
                   style={{ fontFamily: 'Nunito, sans-serif' }}
