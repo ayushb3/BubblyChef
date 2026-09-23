@@ -12,8 +12,8 @@ import { useFileDropzone } from '@/hooks/useFileDropzone'
 import { uploadReceipt, ScanError } from '@/lib/api/scan'
 import { scanErrorCopy } from '@/lib/scan-error-copy'
 import { bulkAddPantryItems } from '@/lib/api/pantry'
-import { scannedToBulkAddItem } from '@/lib/scan-helpers'
-import type { ScannedItem, ScanResult } from '@/types/scan'
+import { scannedToBulkAddItem, assignScanIds, type ScannedItemWithId } from '@/lib/scan-helpers'
+import type { ScanResult } from '@/types/scan'
 
 /**
  * `/scan` — full-viewport receipt OCR upload + review flow.
@@ -36,9 +36,9 @@ export default function ScanPage() {
   const [preview, setPreview] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const [readyToAdd, setReadyToAdd] = useState<ScannedItem[]>([])
-  const [needsReview, setNeedsReview] = useState<ScannedItem[]>([])
-  const [skipped, setSkipped] = useState<ScannedItem[]>([])
+  const [readyToAdd, setReadyToAdd] = useState<ScannedItemWithId[]>([])
+  const [needsReview, setNeedsReview] = useState<ScannedItemWithId[]>([])
+  const [skipped, setSkipped] = useState<ScannedItemWithId[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
 
   const { isDragActive, dropzoneHandlers } = useFileDropzone({ onFile: handleFileSelect })
@@ -51,9 +51,10 @@ export default function ScanPage() {
 
     try {
       const result: ScanResult = await uploadReceipt(file)
-      setReadyToAdd(result.ready_to_add)
-      setNeedsReview(result.needs_review)
-      setSkipped(result.skipped)
+      const withIds = assignScanIds(result)
+      setReadyToAdd(withIds.ready_to_add)
+      setNeedsReview(withIds.needs_review)
+      setSkipped(withIds.skipped)
       setWarnings(result.warnings ?? [])
       setState('review')
     } catch (err) {
@@ -82,7 +83,7 @@ export default function ScanPage() {
     if (inputRef.current) inputRef.current.value = ''
   }
 
-  async function handleConfirm(checkedItems: ScannedItem[]) {
+  async function handleConfirm(checkedItems: ScannedItemWithId[]) {
     if (checkedItems.length === 0) return
     setState('submitting')
     setError(null)

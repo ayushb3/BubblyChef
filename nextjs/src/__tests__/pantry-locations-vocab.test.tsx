@@ -28,7 +28,7 @@ import ScannedItemCard from '@/components/scan/ScannedItemCard'
 import { scannedToBulkAddItem } from '@/lib/scan-helpers'
 import * as pantryApi from '@/lib/api/pantry'
 import type { PantryItem } from '@/types/pantry'
-import type { ScannedItem } from '@/types/scan'
+import type { ScannedItemWithId } from '@/lib/scan-helpers'
 
 jest.mock('@/lib/api/foods')
 jest.mock('@/lib/api/pantry')
@@ -45,8 +45,9 @@ function withQuery(ui: React.ReactElement) {
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
-function scanned(location: string | undefined): ScannedItem {
+function scanned(location: string | undefined): ScannedItemWithId {
   return {
+    _id: 'bananas-1',
     name: 'Bananas',
     original_name: 'bananas',
     source_line: 'BANANAS 1.29',
