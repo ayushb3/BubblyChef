@@ -377,8 +377,9 @@ function ChatSurface() {
   const handleConfirmChoice = (
     forcedIntent: 'recipe_card' | 'recipe_brainstorm',
     label: string,
+    source?: string,
   ) => {
-    sendConfirmChoice(label, forcedIntent)
+    sendConfirmChoice(label, forcedIntent, source)
   }
 
   // Determine if the typing indicator should show
@@ -687,7 +688,11 @@ interface MessageRendererProps {
   onChipTap: (message: string) => void
   onPickIdea: (idea: string) => void
   /** Called when the user taps a confirm-band button (#416 AC3). */
-  onConfirmChoice: (forcedIntent: 'recipe_card' | 'recipe_brainstorm', label: string) => void
+  onConfirmChoice: (
+    forcedIntent: 'recipe_card' | 'recipe_brainstorm',
+    label: string,
+    source?: string,
+  ) => void
   /** Stage text in the input field (clarification pill selections). */
   onStageText: (text: string) => void
 }
@@ -749,7 +754,9 @@ function MessageRenderer({
               {message.content && <MessageBubble message={message} />}
               <ConfirmBand
                 options={confirmOptions}
-                onSelect={onConfirmChoice}
+                onSelect={(forcedIntent, label) =>
+                  onConfirmChoice(forcedIntent, label, message.confirmSource)
+                }
                 disabled={!isLastSettledAssistant}
               />
             </div>

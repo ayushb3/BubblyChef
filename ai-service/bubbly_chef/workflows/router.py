@@ -429,6 +429,7 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
                     ),
                     "detected_entities": [],
                     "selected_recipe_name": name_only_match,
+                    "repick_different_idea": True,
                 }
         # No name match, ambiguous, or same-dish reference — fall through to LLM
 
@@ -735,6 +736,11 @@ def route_by_intent(state: WorkflowState) -> str:
         return "extract_recipe_constraints"
     elif intent == Intent.RECIPE_CARD.value:
         session_metadata = (state.get("session") or {}).get("metadata") or {}
+        if state.get("repick_different_idea") and state.get("selected_recipe_name"):
+            # Switching to a different already-offered idea is a new dish, not a
+            # tweak: refine would keep the pinned recipe's id, so the two cards
+            # would share an identity and saving one could overwrite the other.
+            return "research_recipe"
         if session_metadata.get("picked_recipe"):
             # A recipe is already pinned in session -- this recipe_card turn is
             # a modification of it ("make it spicier", "add tomato"), not a
@@ -1402,6 +1408,22 @@ def get_chat_dispatch_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
 # =============================================================================
 
 
+def workflow_input_text(
+    message: str, forced_intent: str | None, forced_intent_source: str | None
+) -> str:
+    """The text the workflow acts on for this turn.
+
+    A confirm-band tap posts its button label ("Tweak this recipe") as the
+    message so the thread reads naturally, and sends the request that raised the
+    band as ``forced_intent_source``. The refine / brainstorm must run against
+    that request — otherwise "hmm what about something with mushrooms" becomes a
+    refine of the literal words "Tweak this recipe".
+    """
+    if forced_intent and forced_intent_source and forced_intent_source.strip():
+        return forced_intent_source
+    return message
+
+
 async def run_chat_workflow(
     message: str,
     conversation_id: str | None = None,
@@ -1411,6 +1433,7 @@ async def run_chat_workflow(
     user_id: str | None = None,
     context: dict[str, Any] | None = None,
     forced_intent: str | None = None,
+    forced_intent_source: str | None = None,
 ) -> ProposalEnvelope[Any]:
     """
     Run the chat router workflow and return a ProposalEnvelope.
@@ -1437,7 +1460,7 @@ async def run_chat_workflow(
         "workflow_id": str(uuid4()),
         "conversation_id": conversation_id,
         "user_id": user_id,
-        "input_text": message,
+        "input_text": workflow_input_text(message, forced_intent, forced_intent_source),
         "input_type": "chat",
         "input_mode": mode,
         "pantry_snapshot": pantry_snapshot,
@@ -1722,6 +1745,7 @@ async def run_chat_workflow_streaming(
     user_id: str | None = None,
     context: dict[str, Any] | None = None,
     forced_intent: str | None = None,
+    forced_intent_source: str | None = None,
 ) -> AsyncIterator[str]:
     """
     Streaming variant of run_chat_workflow.
@@ -1747,7 +1771,7 @@ async def run_chat_workflow_streaming(
         "workflow_id": str(uuid4()),
         "conversation_id": conversation_id,
         "user_id": user_id,
-        "input_text": message,
+        "input_text": workflow_input_text(message, forced_intent, forced_intent_source),
         "input_type": "chat",
         "input_mode": mode,
         "pantry_snapshot": pantry_snapshot,

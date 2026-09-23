@@ -38,14 +38,13 @@ export default function ConfirmBand({
   return (
     <div
       className="flex flex-col gap-2 w-full max-w-[85%]"
-      role="list"
+      role="group"
       aria-label="Choose how to continue — tap one"
     >
       {options.map((option, i) => (
         <motion.button
           key={option.forced_intent}
           type="button"
-          role="listitem"
           aria-label={option.label}
           disabled={disabled}
           onClick={() => !disabled && onSelect(option.forced_intent, option.label)}

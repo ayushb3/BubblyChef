@@ -97,6 +97,13 @@ export interface ChatMessage {
   intent?: ChatIntent
   response?: ChatResponse
   timestamp: Date
+  /**
+   * Set on an assistant turn that raised the confirm band: the user message
+   * that triggered it. A band tap posts its label as the visible message and
+   * sends this as `forced_intent_source`, so the tweak / fresh brainstorm acts
+   * on the real request rather than on the words "Tweak this recipe".
+   */
+  confirmSource?: string
 }
 
 export interface ChatRequest {
@@ -118,6 +125,8 @@ export interface ChatRequest {
    * Matches the backend Literal exactly: 'recipe_card' | 'recipe_brainstorm'.
    */
   forced_intent?: 'recipe_card' | 'recipe_brainstorm' | null
+  /** With forced_intent: the user message that raised the confirm band. */
+  forced_intent_source?: string | null
 }
 
 /**

@@ -235,6 +235,7 @@ export function useChat(options?: UseChatOptions) {
       text: string,
       context?: Record<string, unknown> | null,
       forcedIntent?: 'recipe_card' | 'recipe_brainstorm' | null,
+      forcedIntentSource?: string | null,
     ) => {
       const trimmed = text.trim()
       if (!trimmed || isStreaming) return
@@ -281,6 +282,9 @@ export function useChat(options?: UseChatOptions) {
           conversation_id: convId,
           ...(context ? { context } : {}),
           ...(forcedIntent ? { forced_intent: forcedIntent } : {}),
+          ...(forcedIntent && forcedIntentSource
+            ? { forced_intent_source: forcedIntentSource }
+            : {}),
         },
 
         // onToken — append each token to the placeholder
@@ -418,6 +422,9 @@ export function useChat(options?: UseChatOptions) {
                     content: msg.content || fallbackContent,
                     intent: response.intent,
                     response,
+                    ...(response.next_action === 'confirm_choice'
+                      ? { confirmSource: trimmed }
+                      : {}),
                   }
                 : msg,
             )
@@ -644,13 +651,17 @@ export function useChat(options?: UseChatOptions) {
   // visible user turn with forced_intent set so the backend bypasses the
   // classifier entirely and routes deterministically.
   const sendConfirmChoice = useCallback(
-    (label: string, forcedIntent: 'recipe_card' | 'recipe_brainstorm') => {
+    (
+      label: string,
+      forcedIntent: 'recipe_card' | 'recipe_brainstorm',
+      source?: string | null,
+    ) => {
       if (streamAbortRef.current) {
         streamAbortRef.current.abort()
         streamAbortRef.current = null
         setIsStreaming(false)
       }
-      sendMessage(label, null, forcedIntent)
+      sendMessage(label, null, forcedIntent, source)
     },
     [sendMessage],
   )
