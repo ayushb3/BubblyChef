@@ -138,14 +138,18 @@ test.describe('guest walkthrough (issue #518)', () => {
   test('a fresh guest can pantry-add, save a recipe, chat, and load every core route', async ({ page, context }) => {
     // ── 1. Landing — no login redirect, dashboard mounted ──────────────────
     await page.goto('/');
-    await expect(page).not.toHaveURL(/\/login/);
-    await expect(page.getByAltText(/Bubbles/).first()).toBeVisible();
 
+    // Capture the guest uid straight after the request that created the
+    // session, before any assertion: a failure below must still leave the uid
+    // in guestUids so afterEach/afterAll can delete the anonymous user.
     const guestUid = await readGuestUid(context);
     if (guestUid) {
       guestUids.add(guestUid);
       console.log(`[guest-walkthrough] Signed in as anonymous guest ${guestUid}`);
     }
+
+    await expect(page).not.toHaveURL(/\/login/);
+    await expect(page.getByAltText(/Bubbles/).first()).toBeVisible();
     expect(guestUid, 'Expected an anonymous Supabase session cookie after landing on /').not.toBeNull();
 
     // ── 2. Pantry add (Manual tab), then reload — same UID keeps the item ──
