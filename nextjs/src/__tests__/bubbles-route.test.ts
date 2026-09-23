@@ -384,5 +384,77 @@ describe('GET /api/bubbles', () => {
         expect.anything(),
       )
     })
+
+    it('a week judged wasted on an earlier visit stays unpaid on a second visit the SAME day after the expired item is deleted (regression, re-review #6, issue #524/#570)', async () => {
+      // `previousVisitDate` now includes TODAY's own `daily_visit` (a6d4b14,
+      // re-review #6) — so this exercises the same-day case the earlier
+      // "later visit" regression above doesn't: settle once today (wasted,
+      // no award), write today's `daily_visit`, delete the expired item,
+      // then settle again today. The week must still not be paid.
+      const lastWeekTimestamp = withinLastCompletedWeek()
+      const lastCompletedWeekKey = isoWeekKey(addDaysToDateString(today, -7))
+      const { start: lastWeekStart } = weekRange(lastCompletedWeekKey)
+      const expiredDate = addDaysToDateString(lastWeekStart, 2) // inside last completed week
+
+      const bubbleEventsRows: Array<Record<string, unknown>> = [
+        { event_type: 'pantry_add', ref_key: 'item-1', created_at: lastWeekTimestamp },
+      ]
+      const pantryItems: Array<Record<string, unknown>> = [
+        { name: 'Yogurt', expiry_date: expiredDate, quantity: 1 },
+      ]
+
+      function makeSupabaseWithState() {
+        return {
+          from: (table: string) => {
+            if (table === 'bubble_events') return chain(bubbleEventsRows)
+            if (table === 'pantry_items') return chain(pantryItems)
+            return chain([])
+          },
+        }
+      }
+
+      // Simulate writes actually landing back in the table the next read
+      // sees. `awardBubbles` doesn't set `created_at` itself (the DB
+      // default does) — synthesize one so a re-read of this row can be
+      // bucketed back into a local date.
+      ;(upsertMock as unknown as jest.Mock).mockImplementation((row: Record<string, unknown>) => ({
+        select: async () => {
+          bubbleEventsRows.push({ ...row, created_at: new Date().toISOString() })
+          return { data: [{ id: 'evt-x' }], error: null }
+        },
+      }))
+
+      const { GET } = await import('@/app/api/bubbles/route')
+
+      // First visit today: the week is active but wasted — judged, not paid.
+      mockRequireAuth.mockResolvedValue([makeSupabaseWithState(), mockUser])
+      const res1 = await GET(new Request(`http://localhost/api/bubbles?date=${today}`))
+      const data1 = await res1.json()
+      expect(data1.streak_weeks).toBe(0)
+      expect(upsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'daily_visit' }),
+        expect.anything(),
+      )
+      expect(upsertMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'weekly_streak' }),
+        expect.anything(),
+      )
+
+      // The user deletes the expired item — the pantry now reads clean.
+      pantryItems.length = 0
+
+      // Second visit, same day: today's own `daily_visit` (written above) is
+      // now `previousVisitDate`, so the already-judged week must not be
+      // re-judged, even though it reads clean now.
+      mockRequireAuth.mockResolvedValue([makeSupabaseWithState(), mockUser])
+      const res2 = await GET(new Request(`http://localhost/api/bubbles?date=${today}`))
+      const data2 = await res2.json()
+
+      expect(data2.streak_weeks).toBe(0)
+      expect(upsertMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'weekly_streak' }),
+        expect.anything(),
+      )
+    })
   })
 })
