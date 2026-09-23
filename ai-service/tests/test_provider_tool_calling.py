@@ -518,12 +518,17 @@ class TestGeminiResponseParsing:
         assert result.tool_calls == []
 
     @pytest.mark.asyncio
-    async def test_api_key_sent_as_query_param(self) -> None:
-        """Gemini authenticates via ?key=... query param, not a header."""
+    async def test_api_key_sent_as_header_not_query_param(self) -> None:
+        """Gemini authenticates via the x-goog-api-key header, not a ?key=...
+        query param (issue #515) — a query param lands in plaintext in any
+        log of the outgoing request URL. This test used to assert the
+        opposite (the bug itself)."""
         captured_url: list[str] = []
+        captured_headers: list[httpx.Headers] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
             captured_url.append(str(request.url))
+            captured_headers.append(request.headers)
             return httpx.Response(
                 200,
                 json={
@@ -542,6 +547,7 @@ class TestGeminiResponseParsing:
         )
 
         url = captured_url[0]
-        assert "key=my-gemini-key" in url, (
-            f"Gemini must pass API key as ?key= query param, got URL: {url}"
+        assert "my-gemini-key" not in url, (
+            f"Gemini must not pass the API key in the URL, got URL: {url}"
         )
+        assert captured_headers[0].get("x-goog-api-key") == "my-gemini-key"
