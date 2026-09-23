@@ -6,6 +6,8 @@ import logging
 import re
 from datetime import date
 
+from bubbly_chef.domain.stock import is_usable_stock
+from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.tools.registry import tool
 
@@ -20,6 +22,27 @@ _WORD_RE = re.compile(r"[a-z0-9]+")
 def _words(text: str) -> set[str]:
     """Return the set of lowercase alphanumeric words in ``text``."""
     return set(_WORD_RE.findall(text.lower()))
+
+
+def _found_exact(item: PantryItem) -> str:
+    """A usable row, reported as stock with its expiry countdown."""
+    qty_str = f"{item.quantity} {item.unit}".strip()
+    expiry_note = ""
+    if item.expiry_date:
+        expiry_note = f", expires in {(item.expiry_date - date.today()).days} day(s)"
+    return f"Yes, the pantry has {item.name}: {qty_str}{expiry_note}."
+
+
+def _unusable_note(item: PantryItem) -> str:
+    """An expired or used-up row: present in the table, but not stock (#443)."""
+    if item.expiry_date and item.expiry_date < date.today():
+        reason = f"expired on {item.expiry_date.isoformat()}"
+    else:
+        reason = "used up (quantity 0)"
+    return (
+        f"No usable {item.name} in the pantry: the entry there is {reason}, "
+        "so treat it as not available."
+    )
 
 
 @tool
@@ -40,20 +63,18 @@ async def check_pantry(ingredient: str, *, user_id: str) -> str:
     try:
         repo = await get_repository()
 
-        # 1. Try exact match via find_similar_item (normalized)
+        # Expired and used-up rows stay in the table (#443), and duplicates of
+        # the same item can coexist (#127), so no single row is trusted as
+        # "the" answer: collect every match, answer from a usable one, and only
+        # mention an unusable one when nothing usable exists.
+        unusable: list[PantryItem] = []
+
+        # 1. Exact match via find_similar_item (normalized)
         match = await repo.find_similar_item(user_id, ingredient)
         if match:
-            days_until_expiry: str | None = None
-            if match.expiry_date:
-                days_left = (match.expiry_date - date.today()).days
-                days_until_expiry = (
-                    f", expires in {days_left} day(s)"
-                    if days_left >= 0
-                    else ", EXPIRED"
-                )
-            qty_str = f"{match.quantity} {match.unit}".strip()
-            expiry_note = days_until_expiry or ""
-            return f"Yes, the pantry has {match.name}: {qty_str}{expiry_note}."
+            if is_usable_stock(match.quantity, match.expiry_date):
+                return _found_exact(match)
+            unusable.append(match)
 
         # 2. Fall back to a word-level scan of all items.  Match only on shared
         #    whole words, not raw substrings — otherwise "buttermilk" wrongly
@@ -62,14 +83,25 @@ async def check_pantry(ingredient: str, *, user_id: str) -> str:
         #    word sets keeps "eggs" → "large free-range eggs" and
         #    "chicken" → "chicken breast" while rejecting the false positives.
         items = await repo.get_all_pantry_items(user_id)
+        needle = ingredient.lower().strip()
         needle_words = _words(ingredient)
-        for item in items:
-            if needle_words & _words(item.name):
-                qty_str = f"{item.quantity} {item.unit}".strip()
-                return (
-                    f"The pantry has '{item.name}' which may match "
-                    f"'{ingredient}': {qty_str}."
-                )
+        candidates = [it for it in items if needle_words & _words(it.name)]
+        # A fresh duplicate of the exact name beats a partial-word match.
+        candidates.sort(key=lambda it: it.name.lower().strip() != needle)
+        for item in candidates:
+            if not is_usable_stock(item.quantity, item.expiry_date):
+                unusable.append(item)
+                continue
+            if item.name.lower().strip() == needle:
+                return _found_exact(item)
+            qty_str = f"{item.quantity} {item.unit}".strip()
+            return (
+                f"The pantry has '{item.name}' which may match "
+                f"'{ingredient}': {qty_str}."
+            )
+
+        if unusable:
+            return _unusable_note(unusable[0])
 
         return f"'{ingredient}' was not found in the pantry."
 

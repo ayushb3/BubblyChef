@@ -80,10 +80,17 @@ class WorkflowState(TypedDict, total=False):
     # ==========================================================================
     input_text: str
     input_type: str  # "chat", "receipt", "product", "recipe"
+    # Remaining wall-clock seconds the LLM parse leg may spend (issue #481).
+    # None = unbounded (legacy callers); <= 0 = budget already exhausted, skip.
+    parse_timeout_seconds: float | None
     input_mode: str  # "text" or "voice"
     pantry_snapshot: list[dict[str, Any]] | None
     context: dict[str, Any] | None  # Client-supplied context, e.g. {"cooking_recipe": {...}}
     conversation_history: list[dict[str, Any]]  # Prior turns [{role, content, intent}]
+    # Deterministic intent override from an explicit UI action (chip tap).
+    # When present, classify_intent skips the LLM and uses this directly.
+    # Extension point for [Edit this recipe] / [Start over] chips (#416).
+    forced_intent: str | None
 
     # ==========================================================================
     # Intent Classification
@@ -131,14 +138,30 @@ class WorkflowState(TypedDict, total=False):
     scored_pantry_items: list[dict[str, Any]]
     brainstorm_ideas: list[str]
     selected_recipe_name: str | None
+    # True only when classify_intent resolved a pinned-session turn to a DIFFERENT
+    # already-offered idea; dispatch builds a new card instead of refining.
+    repick_different_idea: bool
     web_search_result: dict[str, Any] | None
     ingredient_availability: list[dict[str, Any]]
+
+    # ==========================================================================
+    # Saved-recipe lookup
+    # ==========================================================================
+    # Raw match rows from `repo.search_saved_recipes` (source-of-truth dicts,
+    # not RecipeCard) — surfaced verbatim to the envelope's
+    # metadata["saved_recipe_matches"] and read by update_session_node to pin
+    # a single unambiguous match.
+    saved_recipe_matches: list[dict[str, Any]]
 
     # ==========================================================================
     # Response Fields
     # ==========================================================================
     assistant_message: str
     next_action: str  # NextAction enum value
+    # The two one-tap choices for a CONFIRM_CHOICE turn (#416 Q5). Each is
+    # {"label": str, "forced_intent": str} so the frontend can render buttons
+    # that POST forced_intent back. Empty on every non-confirm turn.
+    confirm_options: list[dict[str, str]]
 
     # ==========================================================================
     # Clarification & Review

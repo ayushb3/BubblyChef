@@ -23,6 +23,16 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ThemeProvider } from '@/components/ThemeProvider'
 import { endCookSession } from '@/lib/cook-session'
 import type { CookProposal, IngredientMatch } from '@/types/recipes'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+// The chat page reads useQueryClient() (#520, to invalidate the bubbles balance), so
+// it needs a QueryClientProvider to render.
+function QueryWrapper({ children }: { children: React.ReactNode }) {
+  const [client] = React.useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  )
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+}
 
 jest.mock('react-markdown', () => ({
   __esModule: true,
@@ -92,6 +102,7 @@ function renderChat() {
     <ThemeProvider>
       <ChatPage />
     </ThemeProvider>,
+    { wrapper: QueryWrapper },
   )
 }
 

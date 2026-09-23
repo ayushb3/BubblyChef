@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
 import type { CookProposal, CompoundSuggestion, IngredientMatch, DeductionItem, ExpiredMatchedItem } from '@/types/recipes'
@@ -317,6 +318,7 @@ export default function CookModal({
   onStartCooking,
 }: CookModalProps) {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [state, setState] = useState<ModalState>('loading')
   const [proposal, setProposal] = useState<CookProposal | null>(null)
   const [errorMsg, setErrorMsg] = useState<string>('')
@@ -390,6 +392,7 @@ export default function CookModal({
 
     try {
       await confirmCook(recipeId, deductions)
+      queryClient.invalidateQueries({ queryKey: ['bubbles'] })
       // #440 — the deduction just landed, so this cook session is over
       // regardless of which page/flow confirmed it. Recorded outside React
       // state because the non-draft branch below navigates to a fresh mount

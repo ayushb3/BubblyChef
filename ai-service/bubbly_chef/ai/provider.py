@@ -5,7 +5,7 @@ Supports structured output generation with Pydantic models.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
@@ -84,12 +84,17 @@ class AIProvider(ABC):
         mime_type: str = "image/jpeg",
         response_schema: type[T] | None = None,
         temperature: float = 0.3,
+        time_remaining: Callable[[], float] | None = None,
     ) -> T | str:
         """
         Generate a completion from an image + text prompt.
 
         Default: raises NotImplementedError — providers that support vision override this.
         Callers should check supports_vision before calling.
+
+        ``time_remaining``, when given, returns the seconds left in the caller's
+        overall budget (issue #481); a provider should not start, or keep
+        waiting on, a call past it.
         """
         raise NotImplementedError(f"{self.name} does not support vision")
 
