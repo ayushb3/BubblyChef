@@ -101,6 +101,7 @@ Must-use ingredients (the user asked to cook with these — the recipe MUST \
 include them): {must_use_items}
 Priority ingredients (expiring soon — a strong preference, not a \
 requirement): {priority_items}
+Preferred flavors/ingredients (include if sensible): {preferred_ingredients}
 Supporting ingredients available: {supporting_items}
 Context: {context}
 

@@ -5,6 +5,7 @@ Replaces SQLiteRepository. Uses supabase-py with the service_role key
 """
 
 import logging
+import re
 from datetime import UTC, date, datetime
 from typing import Any, cast
 
@@ -24,6 +25,126 @@ from bubbly_chef.models.session import (
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 
 logger = logging.getLogger(__name__)
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+# Filler words that carry no dish-identifying signal in a natural-language
+# lookup request ("show me my saved butter chicken", "do you have a recipe
+# for pasta"). Left in, these spuriously overlap with unrelated recipes'
+# descriptions/tags and pad or corrupt the ranked results. Only stripped from
+# the *query* side of search_saved_recipes — title/description/tags text is
+# scored as written.
+_QUERY_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "my",
+        "me",
+        "i",
+        "you",
+        "your",
+        "we",
+        "it",
+        "that",
+        "this",
+        "those",
+        "these",
+        "do",
+        "does",
+        "did",
+        "have",
+        "has",
+        "had",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "can",
+        "could",
+        "would",
+        "will",
+        "should",
+        "show",
+        "find",
+        "get",
+        "give",
+        "look",
+        "up",
+        "pull",
+        "make",
+        "made",
+        "want",
+        "need",
+        "like",
+        "please",
+        "saved",
+        "save",
+        "recipe",
+        "recipes",
+        "for",
+        "of",
+        "on",
+        "in",
+        "to",
+        "and",
+        "or",
+        "with",
+        "from",
+        "again",
+        "last",
+        "week",
+        "month",
+        "year",
+        "time",
+        "what",
+        "which",
+        # Memory/history phrasing ("find the one we made before", "search
+        # your memory for...") names when, not what.
+        "before",
+        "earlier",
+        "ago",
+        "previously",
+        "remember",
+        "memory",
+        "history",
+        "search",
+        "cooked",
+        "some",
+        "any",
+        "one",
+        "another",
+    }
+)
+
+
+def _tokenize(text: str) -> list[str]:
+    """Lowercase and split into alphanumeric tokens for overlap scoring."""
+    return _TOKEN_RE.findall(text.lower())
+
+
+def _tokenize_query(text: str) -> list[str]:
+    """Tokenize a free-text lookup query, dropping stopword filler.
+
+    A saved-recipe lookup query is a full sentence ("show me my saved butter
+    chicken"), not a keyword. Without stripping filler words, generic tokens
+    like "recipe"/"for"/"a"/"do" spuriously overlap against unrelated recipes'
+    descriptions and tags, padding or corrupting the ranked match list — see
+    issue #533.
+    """
+    return [tok for tok in _tokenize(text) if tok not in _QUERY_STOPWORDS]
+
+
+def lookup_query_terms(text: str) -> list[str]:
+    """The dish-identifying words in a saved-recipe lookup request.
+
+    Empty when the request names no dish at all ("show me my saved recipes",
+    "what recipes do I have saved") — a request to browse the library, which
+    `search_saved_recipes` would otherwise answer with zero matches.
+    """
+    return _tokenize_query(text)
 
 
 def _as_row(value: JSON) -> dict[str, Any]:
@@ -383,6 +504,69 @@ class SupabaseRepository:
         # accessor in this class (e.g. get_recipe below).
         return _as_rows(result.data or [])
 
+    async def search_saved_recipes(
+        self, user_id: str, query: str, limit: int = 5
+    ) -> list[dict[str, Any]]:
+        """Rank a user's saved recipes against a free-text query.
+
+        Full-text search (`text_search`) is deliberately not used: `tags` is a
+        JSONB array, not a text column, so a single Postgres FTS query can't
+        rank across title/description/tags together without a migration.
+        Instead this reuses `get_user_recipes` for the candidate pool — already
+        scoped `.eq("user_id", user_id)`, so another user's rows can never
+        appear here — and tokenizes the query and each row's title,
+        description, and tags in Python.
+
+        Scored by token-overlap ratio *against the title length*, not raw
+        match count: "chicken" against "Butter Chicken" (2 title tokens, 1
+        match = 50%) must outrank "Chicken Stock Notes" (3 title tokens, 1
+        match = 33%) — a raw-count score would tie them. Description and tag
+        overlap contribute a smaller secondary score so a term that only
+        appears there still surfaces the recipe, just ranked below a title
+        match.
+
+        Returns raw dicts, same shape convention as `get_recipe` /
+        `get_user_recipes`, sorted by score descending and capped at `limit`.
+        Rows with zero overlap on all three fields are dropped rather than
+        returned as arbitrary trailing "matches".
+        """
+        query_tokens = set(_tokenize_query(query))
+        if not query_tokens:
+            return []
+
+        candidates = await self.get_user_recipes(user_id, limit=500)
+
+        scored: list[tuple[float, dict[str, Any]]] = []
+        for row in candidates:
+            title_tokens = _tokenize(str(row.get("title") or ""))
+            desc_tokens = _tokenize(str(row.get("description") or ""))
+            raw_tags = row.get("tags")
+            tags_text = " ".join(str(t) for t in raw_tags) if isinstance(raw_tags, list) else ""
+            tags_tokens = _tokenize(tags_text)
+
+            title_score = (
+                len(query_tokens & set(title_tokens)) / len(title_tokens)
+                if title_tokens
+                else 0.0
+            )
+            desc_score = (
+                len(query_tokens & set(desc_tokens)) / len(desc_tokens)
+                if desc_tokens
+                else 0.0
+            )
+            tags_score = (
+                len(query_tokens & set(tags_tokens)) / len(tags_tokens)
+                if tags_tokens
+                else 0.0
+            )
+
+            total = title_score * 1.0 + desc_score * 0.4 + tags_score * 0.4
+            if total > 0:
+                scored.append((total, row))
+
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        return [row for _score, row in scored[:limit]]
+
     async def get_recipe(self, user_id: str, recipe_id: str) -> dict[str, Any] | None:
         """Return the raw `recipes` row for `recipe_id`, or None if absent.
 
@@ -527,6 +711,8 @@ class SupabaseRepository:
         role: str,
         content: str,
         intent: str | None = None,
+        proposal: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         self.client.table("conversation_history").insert(
             {
@@ -535,6 +721,8 @@ class SupabaseRepository:
                 "role": role,
                 "content": content,
                 "intent": intent,
+                "proposal": proposal,
+                "metadata": metadata,
             }
         ).execute()
 
