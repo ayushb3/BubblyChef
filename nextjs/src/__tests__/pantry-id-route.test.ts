@@ -8,7 +8,7 @@
  * the route always clears `estimated_expiry` when one is sent — no override,
  * per the issue's own wording ("regardless of what the row had before").
  */
-import { PUT } from '@/app/api/pantry/[id]/route'
+import { PUT, DELETE } from '@/app/api/pantry/[id]/route'
 
 const mockUser = { id: 'user-1' }
 
@@ -98,5 +98,88 @@ describe('PUT /api/pantry/[id] estimated_expiry clearing (#380)', () => {
     await PUT(request, { params: Promise.resolve({ id: 'item-1' }) })
 
     expect(storedUpdates.current.estimated_expiry).toBeUndefined()
+  })
+})
+
+/**
+ * `DELETE /api/pantry/[id]` waste recording (#524 review finding): deleting
+ * an already-expired item straight from the pantry used to leave no trace at
+ * all, letting a user clear a wasted item (and keep the streak) just by
+ * tidying up before their next visit. Deleting a fresh item must not write
+ * anything — that's an ordinary removal, not waste.
+ */
+describe('DELETE /api/pantry/[id] waste recording (#524)', () => {
+  function makeDeleteSupabase(item: Record<string, unknown> | null, insertMock: jest.Mock) {
+    return {
+      from: (table: string) => {
+        if (table === 'pantry_items') {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  single: async () => ({ data: item, error: item ? null : { message: 'not found' } }),
+                }),
+              }),
+            }),
+            delete: () => ({
+              eq: () => ({
+                eq: async () => ({ error: null }),
+              }),
+            }),
+          }
+        }
+        if (table === 'pantry_events') {
+          return { insert: insertMock }
+        }
+        throw new Error(`unexpected table ${table}`)
+      },
+    }
+  }
+
+  afterEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('records a tossed pantry_event when the deleted item was already expired', async () => {
+    const insertMock = jest.fn(async () => ({ error: null }))
+    const item = {
+      name: 'Spinach',
+      quantity: 1,
+      unit: 'bag',
+      expiry_date: '2020-01-01',
+    }
+    ;(requireAuth as jest.Mock).mockResolvedValue([makeDeleteSupabase(item, insertMock), mockUser])
+
+    const res = await DELETE(new Request('http://localhost/api/pantry/item-1', { method: 'DELETE' }), {
+      params: Promise.resolve({ id: 'item-1' }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(insertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: mockUser.id,
+        pantry_item_id: 'item-1',
+        item_name: 'Spinach',
+        outcome: 'tossed',
+      }),
+    )
+  })
+
+  it('does not record a pantry_event when the deleted item is not expired', async () => {
+    const insertMock = jest.fn(async () => ({ error: null }))
+    const item = {
+      name: 'Spinach',
+      quantity: 1,
+      unit: 'bag',
+      expiry_date: '2099-01-01',
+    }
+    ;(requireAuth as jest.Mock).mockResolvedValue([makeDeleteSupabase(item, insertMock), mockUser])
+
+    const res = await DELETE(new Request('http://localhost/api/pantry/item-1', { method: 'DELETE' }), {
+      params: Promise.resolve({ id: 'item-1' }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(insertMock).not.toHaveBeenCalled()
   })
 })

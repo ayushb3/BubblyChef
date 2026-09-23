@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
-import { enrichPantryItem } from '@/lib/pantry-helpers'
+import { enrichPantryItem, daysUntilExpiry, isExpired } from '@/lib/pantry-helpers'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
 
 export async function GET(
@@ -80,6 +80,32 @@ export async function DELETE(
   if (result instanceof NextResponse) return result
   const [supabase, user] = result
   const { id } = await params
+
+  // Read the item first, purely to detect waste (#524 finding): deleting an
+  // already-expired item straight from the pantry (still reachable from
+  // `AddItemModal`) is one of the two ways a spoiled item could vanish
+  // without ever recording waste — resolving it as `used` is the other, and
+  // that one's handled in `resolve/route.ts`. A read failure here is not
+  // fatal to the delete itself; it just means this particular deletion won't
+  // be recorded as waste.
+  const { data: item } = await supabase
+    .from('pantry_items')
+    .select('name, quantity, unit, expiry_date')
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .single()
+
+  if (item && isExpired(daysUntilExpiry(item.expiry_date))) {
+    await supabase.from('pantry_events').insert({
+      user_id: user.id,
+      pantry_item_id: id,
+      item_name: item.name,
+      outcome: 'tossed',
+      quantity: item.quantity,
+      unit: item.unit,
+      days_until_expiry: daysUntilExpiry(item.expiry_date),
+    })
+  }
 
   const { error } = await supabase
     .from('pantry_items')

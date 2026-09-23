@@ -53,12 +53,14 @@ export async function POST(
     )
   }
 
-  // Client's local date (issue #524) — used to key the `rescue` bubbles
-  // award, same clock-skew tolerance as `GET /api/bubbles`.
+  // Client's local date (issue #524) — used only to key the `rescue` bubbles
+  // award, same clock-skew tolerance as `GET /api/bubbles`. A missing or
+  // out-of-range date must never block the resolve itself (a stale tab with
+  // pre-deploy JS sends no `date` at all) — it only means the rescue award
+  // is skipped, matching the never-block contract every other award call
+  // site follows (see bubbles-award-call-sites.test.ts).
   const date = (body as { date?: unknown } | null)?.date
-  const dateError = validateClientDate(date, 'date')
-  if (dateError) return errorResponse(dateError, 400)
-  const validDate = date as string
+  const validDate = validateClientDate(date, 'date') ? null : (date as string)
 
   // Read the item first — both to confirm ownership and to snapshot the fields
   // the event needs before the row goes away.
@@ -98,7 +100,7 @@ export async function POST(
   // was expiring soon (0-3 days left, `isExpiringSoon` — not merely "not yet
   // expired"). ref_key ties the award to this exact item + day, so retrying
   // a resolve can't double-award.
-  if (outcome !== 'tossed' && isExpiringSoon(daysUntilExpiry(row.expiry_date))) {
+  if (validDate && outcome !== 'tossed' && isExpiringSoon(daysUntilExpiry(row.expiry_date))) {
     await awardBubbles(user.id, 'rescue', `${row.id}:${validDate}`)
   }
 

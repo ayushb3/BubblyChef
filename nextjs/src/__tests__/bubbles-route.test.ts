@@ -53,7 +53,7 @@ function withinLastCompletedWeek(): string {
 /** A query-builder stub: every chainable method returns itself, and it resolves `{ data, error: null }` whether awaited directly or after `.limit()`/`.maybeSingle()`. */
 function chain(data: unknown) {
   const obj: Record<string, unknown> = {}
-  const chainable = ['select', 'eq', 'gte', 'gt', 'lt', 'order', 'in']
+  const chainable = ['select', 'eq', 'gte', 'gt', 'lt', 'order', 'in', 'or']
   for (const method of chainable) {
     obj[method] = () => obj
   }

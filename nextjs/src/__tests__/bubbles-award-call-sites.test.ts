@@ -279,6 +279,21 @@ describe('bubbles award never blocks the underlying write', () => {
     )
   })
 
+  it('POST /api/ai/recipes/cook/confirm still deducts (and skips awards) when the date field is missing', async () => {
+    mockRequireAuth.mockResolvedValue([{}, mockUser])
+
+    const { POST } = await import('@/app/api/ai/recipes/cook/confirm/route')
+    const res = await POST(
+      new Request('http://localhost/api/ai/recipes/cook/confirm', {
+        method: 'POST',
+        body: JSON.stringify({ recipe_id: 'recipe-1', deductions: [] }),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(upsertMock).not.toHaveBeenCalled()
+  })
+
   it('POST /api/ai/recipes/cook/confirm awards rescue for expiring-soon deducted items, capped at 3', async () => {
     const today = new Date().toISOString().slice(0, 10)
     const inTwoDays = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
@@ -539,7 +554,7 @@ describe('bubbles award never blocks the underlying write', () => {
       )
     })
 
-    it('rejects a resolve request missing the date field', async () => {
+    it('still resolves (and skips the rescue award) when the date field is missing', async () => {
       mockRequireAuth.mockResolvedValue([makeResolveSupabase(inTwoDays), mockUser])
 
       const { POST } = await import('@/app/api/pantry/[id]/resolve/route')
@@ -551,7 +566,11 @@ describe('bubbles award never blocks the underlying write', () => {
         { params: Promise.resolve({ id: 'item-1' }) },
       )
 
-      expect(res.status).toBe(400)
+      expect(res.status).toBe(200)
+      expect(upsertMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'rescue' }),
+        expect.anything(),
+      )
     })
   })
 })
