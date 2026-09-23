@@ -23,8 +23,10 @@ describe('KitchenScene (#521)', () => {
   })
 
   it('renders some filled and some empty slots when partially unlocked', () => {
+    // Two entries in different slots: CATALOG[0] and CATALOG[1] are both
+    // wall_shelf, so the second would overwrite the first.
     const first = CATALOG[0]
-    const second = CATALOG[1]
+    const second = CATALOG.find((d) => d.slot !== first.slot)!
     render(
       <KitchenScene
         unlocked={[

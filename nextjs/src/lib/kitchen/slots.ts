@@ -30,7 +30,8 @@ export const SLOTS: Slot[] = [
   { key: 'wall_art', label: 'Wall art', x: 26.5, y: 2, w: 21, h: 26 },
   { key: 'window_sill', label: 'Window sill', x: 51, y: 2, w: 21, h: 26 },
   // Starts below the scene's 🫧 balance pill (KitchenScene.tsx), which sits
-  // in this corner, so the pill never covers a decoration.
+  // in this corner. Clears it at the default text size from 375px up (see
+  // the comment on the pill for when it doesn't).
   { key: 'lights', label: 'Lights', x: 75.5, y: 13, w: 22.5, h: 15 },
 
   // Row 2

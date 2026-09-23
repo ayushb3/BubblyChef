@@ -107,8 +107,11 @@ export default function KitchenScene({ unlocked, balance, loading = false }: Kit
           )
         })}
         {/* The balance sits in the scene's top-right corner. The `lights`
-            slot (slots.ts) starts below it, so the pill never covers a
-            decoration. It is rendered after the slots so it stacks above them. */}
+            slot (slots.ts) starts below it, clearing the pill at the default
+            text size from 375px up. The pill is rem-sized and the slot is a %
+            of the box, so a larger text setting or a narrower screen can
+            overlap the slot's top edge. It is rendered after the slots so it
+            stacks above them. */}
         {balance !== null && (
           <div
             className="absolute top-1.5 right-1.5 z-10 rounded-full px-3 py-1 text-xs font-bold text-[var(--color-text)] shadow-sm border border-[var(--color-border)]"

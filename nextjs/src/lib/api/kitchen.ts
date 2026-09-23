@@ -10,6 +10,8 @@
  * the query key is a single-element array naming the resource, and
  * `staleTime` is left to the provider's default (1 minute).
  */
+'use client'
+
 import { useQuery } from '@tanstack/react-query'
 
 /** A single row from the `decorations` table, as returned by the API route. */
