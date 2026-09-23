@@ -63,6 +63,29 @@ just narrow the list — pinned at the node level in
 alongside its counter-case (two candidates that both have full coverage
 still get the ranked "which one?" list).
 
+Revised again (5th re-review pass, 2026-09-23) for two further gaps:
+
+6. The coverage cutoff's "independent description/tag signal" exemption
+   was `desc_score == 0 and tags_score == 0` — any nonzero description/tag
+   overlap protected a row, even when that overlap was just a token the
+   title had *already* matched (a real "Chicken Tikka Masala Bowl" save
+   naming "chicken" again in its description). "Independent signal" now
+   means the row's title, description, and tags *combined* (all tokenized
+   with `_tokenize_query`, same as the query) cover every query token —
+   not "some field mentions any query word". `TestFullQueryCoverageCutoff`
+   above now uses padding rows with real-looking descriptions/tags that
+   repeat the title's matched token, and asserts they're still dropped;
+   a new case, `test_description_supplying_the_missing_query_token_survives`,
+   confirms a description that supplies the token the title is *missing*
+   still protects the row.
+7. `TestCoverageCutoffAutoPick` mocked `search_saved_recipes` with a
+   hand-written single row, so it never exercised the coverage cutoff
+   itself — only the pre-existing `len(matches) == 1` -> "Found it" node
+   behaviour. Both tests now run realistic rows through a real
+   `_repo_for(...)` patched in as the node's repository, so the auto-pick
+   assertion is pinned end to end: real rows in, cutoff narrows them,
+   node announces the survivor.
+
 Follows the `_FakeClient`/`_FakeQuery` pattern from
 `test_issue_493_saved_recipe_search.py`.
 """
@@ -70,7 +93,7 @@ Follows the `_FakeClient`/`_FakeQuery` pattern from
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -429,7 +452,13 @@ class TestFullQueryCoverageCutoff:
 
     These use titles of realistic length (2-4 tokens), the same shape as
     the issue's own scenario, not synthetic padding built to straddle a
-    constant.
+    constant. The padding rows below (PR #605 5th re-review) also carry
+    real-looking descriptions and tags that repeat a token the title
+    already matched ("chicken") rather than an empty description/tags pair
+    — a row is only "independent signal", and so protected from the
+    cutoff, when its title, description, and tags *combined* cover every
+    query token; a description or tag that merely restates a word the
+    title already has doesn't count.
     """
 
     async def test_padded_list_from_the_issue_scenario_is_shortened(self) -> None:
@@ -437,7 +466,10 @@ class TestFullQueryCoverageCutoff:
         (contains every query word, plus one) alongside several
         'chicken'-only matches that were the padding #542 complained about.
         Once a title contains the full query, the chicken-only rows are
-        dropped rather than padding the list out to `limit`."""
+        dropped rather than padding the list out to `limit` — even though
+        each has a realistic description and tags that share the "chicken"
+        token the title already matched on, since that's not signal for
+        the query token ("butter") the title is missing."""
         rows = [
             {
                 "id": "full_coverage",
@@ -450,22 +482,22 @@ class TestFullQueryCoverageCutoff:
                 "id": "chicken_only_1",
                 "user_id": "u1",
                 "title": "Chicken Tikka Masala Bowl",
-                "description": "",
-                "tags": [],
+                "description": "A creamy chicken curry with warm spices and basmati rice.",
+                "tags": ["chicken", "dinner"],
             },
             {
                 "id": "chicken_only_2",
                 "user_id": "u1",
                 "title": "Chicken Noodle Soup Recipe",
-                "description": "",
-                "tags": [],
+                "description": "A comforting chicken soup with noodles and vegetables.",
+                "tags": ["chicken", "soup"],
             },
             {
                 "id": "chicken_only_3",
                 "user_id": "u1",
                 "title": "Grilled Chicken Skewers Plate",
-                "description": "",
-                "tags": [],
+                "description": "Smoky grilled chicken skewers served with a side salad.",
+                "tags": ["chicken", "grill"],
             },
         ]
         repo = _repo_for(rows)
@@ -473,6 +505,42 @@ class TestFullQueryCoverageCutoff:
         results = await repo.search_saved_recipes("u1", "butter chicken", limit=5)
 
         assert [r["id"] for r in results] == ["full_coverage"]
+
+    async def test_description_supplying_the_missing_query_token_survives(self) -> None:
+        """Regression for PR #605 5th re-review finding 1: a padding row
+        whose description supplies the query token its title is missing
+        ("butter") is genuinely independent signal and must survive the
+        cutoff, unlike a padding row whose description only repeats a word
+        the title already has (covered above)."""
+        rows = [
+            {
+                "id": "full_coverage",
+                "user_id": "u1",
+                "title": "Butter Chicken Curry",
+                "description": "",
+                "tags": [],
+            },
+            {
+                "id": "desc_supplies_missing_token",
+                "user_id": "u1",
+                "title": "Chicken Tikka",
+                "description": "Marinated chicken tikka finished with a rich butter sauce.",
+                "tags": [],
+            },
+            {
+                "id": "chicken_only",
+                "user_id": "u1",
+                "title": "Chicken Noodle Soup Recipe",
+                "description": "A comforting chicken soup with noodles and vegetables.",
+                "tags": ["chicken", "soup"],
+            },
+        ]
+        repo = _repo_for(rows)
+
+        results = await repo.search_saved_recipes("u1", "butter chicken", limit=5)
+
+        ids = {r["id"] for r in results}
+        assert ids == {"full_coverage", "desc_supplies_missing_token"}
 
     async def test_partial_matches_survive_when_nothing_has_full_coverage(self) -> None:
         """No saved title contains every query word, so there's nothing to
@@ -573,14 +641,15 @@ class TestFullQueryCoverageCutoff:
         assert {r["id"] for r in results} == {"roast", "stock"}
 
 
-def _patch_repo(matches: list[dict[str, Any]]) -> Any:
-    """Same pattern as `test_issue_493_saved_recipe_lookup._patch_repo` — the
-    node under test only ever sees what `search_saved_recipes` returns, so
-    the coverage-cutoff arithmetic itself doesn't need to run here; that's
-    covered directly by `TestFullQueryCoverageCutoff` above."""
-    repo = MagicMock()
-    repo.search_saved_recipes = AsyncMock(return_value=matches)
-    repo.get_user_recipes = AsyncMock(return_value=[])
+def _patch_real_repo(rows: list[dict[str, Any]]) -> Any:
+    """Unlike `_patch_repo` above, patches in a *real* `SupabaseRepository`
+    (via `_repo_for`, on the fake in-memory client) as the node's
+    repository, so `search_saved_recipes` — including the coverage cutoff
+    — actually runs against `rows`. Used where the test needs to pin the
+    composition (real rows in -> cutoff narrows them -> node announces the
+    survivor), not just the node's reaction to an already-narrowed list
+    (PR #605 5th re-review finding on `TestCoverageCutoffAutoPick`)."""
+    repo = _repo_for(rows)
     return patch(
         "bubbly_chef.workflows.chat.nodes.get_repository",
         new_callable=AsyncMock,
@@ -606,17 +675,48 @@ class TestCoverageCutoffAutoPick:
     """Regression for PR #605 4th re-review finding 1: Ayush confirmed the
     coverage cutoff should auto-pick, not just narrow the list — when it
     leaves exactly one candidate, the node replies with a confident "Found
-    it", the same as any other single-match result. This pins the node-level
-    behaviour those upstream tokens produce, not the repository arithmetic
-    (already covered by `TestFullQueryCoverageCutoff`)."""
+    it", the same as any other single-match result.
+
+    Unlike the two tests this replaces (PR #605 5th re-review finding on
+    `TestCoverageCutoffAutoPick`), these patch in a *real*
+    `SupabaseRepository` via `_patch_real_repo` rather than mocking
+    `search_saved_recipes` with a hand-written single row — that mock never
+    ran the coverage cutoff at all, so it only pinned the pre-existing
+    `len(matches) == 1` -> "Found it" node behaviour (already covered by the
+    #493 suite). Feeding real rows through means the cutoff itself has to
+    narrow the list down to one for these to pass."""
 
     async def test_full_coverage_cutoff_down_to_one_match_auto_picks(self) -> None:
-        """"butter chicken" against a saved "Butter Chicken Curry" — the
-        repository's coverage cutoff drops the weaker "chicken"-only rows,
-        so the node receives a single match and must announce it directly
-        rather than asking "which one?"."""
-        matches = [{"id": "full_coverage", "title": "Butter Chicken Curry"}]
-        with _patch_repo(matches):
+        """"butter chicken" against a saved "Butter Chicken Curry" plus the
+        padding rows from `TestFullQueryCoverageCutoff`'s issue scenario
+        (realistic descriptions/tags that repeat "chicken" but don't supply
+        the missing "butter" token) — the repository's coverage cutoff
+        drops the padding down to one row, so the node announces it
+        directly rather than asking "which one?"."""
+        rows = [
+            {
+                "id": "full_coverage",
+                "user_id": "u1",
+                "title": "Butter Chicken Curry",
+                "description": "",
+                "tags": [],
+            },
+            {
+                "id": "chicken_only_1",
+                "user_id": "u1",
+                "title": "Chicken Tikka Masala Bowl",
+                "description": "A creamy chicken curry with warm spices and basmati rice.",
+                "tags": ["chicken", "dinner"],
+            },
+            {
+                "id": "chicken_only_2",
+                "user_id": "u1",
+                "title": "Chicken Noodle Soup Recipe",
+                "description": "A comforting chicken soup with noodles and vegetables.",
+                "tags": ["chicken", "soup"],
+            },
+        ]
+        with _patch_real_repo(rows):
             result = await saved_recipe_lookup_response(
                 _node_state("show me my saved butter chicken")
             )
@@ -630,11 +730,23 @@ class TestCoverageCutoffAutoPick:
         the coverage cutoff can't prefer one over the other, so the node
         still receives both and must fall back to the ranked "which one?"
         list rather than guessing."""
-        matches = [
-            {"id": "curry", "title": "Butter Chicken Curry"},
-            {"id": "bowl", "title": "Butter Chicken Bowl"},
+        rows = [
+            {
+                "id": "curry",
+                "user_id": "u1",
+                "title": "Butter Chicken Curry",
+                "description": "",
+                "tags": [],
+            },
+            {
+                "id": "bowl",
+                "user_id": "u1",
+                "title": "Butter Chicken Bowl",
+                "description": "",
+                "tags": [],
+            },
         ]
-        with _patch_repo(matches):
+        with _patch_real_repo(rows):
             result = await saved_recipe_lookup_response(
                 _node_state("show me my saved butter chicken")
             )

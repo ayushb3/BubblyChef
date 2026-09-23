@@ -40,11 +40,13 @@ _HISTORY_DEFAULT_LIMIT = 40
 # for pasta"). Left in, these spuriously overlap with unrelated recipes'
 # descriptions/tags and pad or corrupt the ranked results. Always stripped
 # from the query side of search_saved_recipes. For scoring, title/
-# description/tags text is tokenized as written (`_tokenize`) — but titles
-# are *also* run through this stopword-stripped tokenizer (`_tokenize_query`)
-# for the exact-match short-circuit and the full-query-coverage cutoff, so a
-# saved "Chicken and Rice" matches a query of "chicken rice" there even
-# though "and" still counts toward its title's score.
+# description/tags text is tokenized as written (`_tokenize`) — but title,
+# description, and tags text is *also* run through this stopword-stripped
+# tokenizer (`_tokenize_query`) for the exact-match short-circuit and the
+# full-query-coverage cutoff, so a saved "Chicken and Rice" matches a query
+# of "chicken rice" there even though "and" still counts toward its title's
+# score, and a description/tag can cover a query token its title is missing
+# without needing the stopword to line up either.
 _QUERY_STOPWORDS = frozenset(
     {
         "a",
@@ -576,14 +578,24 @@ class SupabaseRepository:
         floor. Whenever at least one candidate's title contains *every*
         query token (a superset, same stopword-stripped tokenization as the
         short-circuit above — e.g. "Butter Chicken Curry" for query "butter
-        chicken"), any other title-only-signal candidate that's missing at
-        least one query token is dropped as padding, the same way the
-        short-circuit above drops it when the coverage is an exact match
-        rather than a superset. A row with independent description/tag
-        signal is never dropped by this. For a single-token query, every
-        containing title trivially has full coverage, so nothing is dropped
-        for that case — anything containing the single token is just as
-        plausible a match as any other.
+        chicken"), any other candidate that's missing at least one query
+        token is dropped as padding, the same way the short-circuit above
+        drops it when the coverage is an exact match rather than a
+        superset.
+
+        A row is protected from this cutoff only when its *combined*
+        tokens — title, description, and tags, all run through
+        `_tokenize_query` so they fold stopwords the same way the query
+        does — cover every query token between them (PR #605 5th
+        re-review: a description or tag that merely repeats a word the
+        title already matched, e.g. "Chicken Tikka Masala Bowl" whose
+        description says "a creamy chicken curry", is not independent
+        signal and must not save the row; only a description or tag that
+        supplies the token the title is *missing*, e.g. "Chicken Tikka"
+        whose description mentions "butter", counts). For a single-token
+        query, every containing title trivially has full coverage, so
+        nothing is dropped for that case — anything containing the single
+        token is just as plausible a match as any other.
 
         When this cutoff (or the short-circuit above) leaves exactly one
         candidate, the caller (`saved_recipe_lookup_response`) auto-picks it
@@ -607,11 +619,10 @@ class SupabaseRepository:
         if exact_matches and not other_full_match_exists:
             return exact_matches[:limit]
 
-        full_coverage_flags = [tset >= query_tokens for _row, tset in title_token_sets]
-        any_full_coverage = any(full_coverage_flags)
+        any_full_coverage = any(tset >= query_tokens for _row, tset in title_token_sets)
 
         scored: list[tuple[float, dict[str, Any]]] = []
-        for row, has_full_coverage in zip(candidates, full_coverage_flags, strict=True):
+        for row, query_title_tokens in title_token_sets:
             title_tokens = _tokenize(str(row.get("title") or ""))
             desc_tokens = _tokenize(str(row.get("description") or ""))
             raw_tags = row.get("tags")
@@ -637,8 +648,20 @@ class SupabaseRepository:
             total = title_score * 1.0 + desc_score * 0.4 + tags_score * 0.4
             if total <= 0:
                 continue
-            title_only = desc_score == 0 and tags_score == 0
-            partial_coverage_noise = title_only and any_full_coverage and not has_full_coverage
+
+            # Coverage for cutoff purposes is combined across title,
+            # description, and tags — a description/tag token only counts
+            # as independent signal if it covers a query token the title
+            # itself is missing, not just any nonzero overlap (PR #605 5th
+            # re-review). `query_title_tokens` (from `title_token_sets`
+            # above) is already the title run through `_tokenize_query`.
+            combined_query_tokens = (
+                query_title_tokens
+                | set(_tokenize_query(str(row.get("description") or "")))
+                | set(_tokenize_query(tags_text))
+            )
+            row_has_full_coverage = combined_query_tokens >= query_tokens
+            partial_coverage_noise = any_full_coverage and not row_has_full_coverage
             if partial_coverage_noise:
                 continue
             scored.append((total, row))
