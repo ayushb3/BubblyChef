@@ -164,6 +164,10 @@ no food yet. Soft pastel walls (cream #fff9f5 with pink/mint accents). For this 
 ignore the green-background rule: the kitchen IS the background.
 ```
 
+**Next:** the real backgrounds and every decoration now have their own pack,
+[`art/kitchen/PROMPTS.md`](kitchen/PROMPTS.md), with the asset list in
+[`art/kitchen/MANIFEST.md`](kitchen/MANIFEST.md).
+
 ## What to send back
 
 The 4 winners (or screenshots of them). I'll check consistency, pick the final style
