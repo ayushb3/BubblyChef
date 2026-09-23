@@ -92,6 +92,44 @@ class TestAggregatedKindAcrossProviders:
         assert exc_info.value.kind == "quota_exhausted"
 
     @pytest.mark.asyncio
+    async def test_unknown_kind_does_not_outrank_a_later_specific_kind(self) -> None:
+        # #575 review: "unknown" says no more than "network" about why a call
+        # failed, so a later provider's specific kind (here auth) must win.
+        first = _provider("first/test")
+        first.complete = AsyncMock(
+            side_effect=ProviderUnavailableError("something odd", kind="unknown")
+        )
+        second = _provider("second/test")
+        second.complete = AsyncMock(
+            side_effect=ProviderUnavailableError("API key not valid", kind="auth")
+        )
+        manager = AIManager(providers=[first, second])
+
+        with pytest.raises(NoProviderAvailableError) as exc_info:
+            await manager.complete(prompt="hello")
+
+        assert exc_info.value.kind == "auth"
+        status = await manager.health_check()
+        assert status["last_failure_kind"] == "auth"
+
+    @pytest.mark.asyncio
+    async def test_only_generic_kinds_falls_back_to_the_first_seen(self) -> None:
+        first = _provider("first/test")
+        first.complete = AsyncMock(
+            side_effect=ProviderUnavailableError("something odd", kind="unknown")
+        )
+        second = _provider("second/test")
+        second.complete = AsyncMock(
+            side_effect=ProviderUnavailableError("connection refused", kind="network")
+        )
+        manager = AIManager(providers=[first, second])
+
+        with pytest.raises(NoProviderAvailableError) as exc_info:
+            await manager.complete(prompt="hello")
+
+        assert exc_info.value.kind == "unknown"
+
+    @pytest.mark.asyncio
     async def test_gemini_bad_request_survives_ollama_network_fallback(self) -> None:
         gemini = _provider("gemini/test")
         gemini.complete = AsyncMock(

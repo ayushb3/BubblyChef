@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 
+# Kinds that say nothing about *why* a call failed (#514).
+_GENERIC_KINDS = frozenset({"network", "unknown"})
+
+
 def _aggregate_kind(kinds: list[str]) -> str | None:
     """Pick the most informative failure kind out of everything tried.
 
@@ -32,12 +36,13 @@ def _aggregate_kind(kinds: list[str]) -> str | None:
     says nothing about *why* the request actually failed. A specific kind
     from an earlier provider — quota_exhausted, auth, bad_request — is what
     the user needs to hear, so it must win even if a later provider's
-    failure is recorded last. Falls back to the first kind seen (which will
-    be "network") only when nothing more specific occurred, and to ``None``
-    when nothing failed at all.
+    failure is recorded last. "unknown" is just as uninformative: it must
+    not outrank a specific kind from a later provider either. Falls back to
+    the first kind seen (network or unknown) only when nothing more specific
+    occurred, and to ``None`` when nothing failed at all.
     """
     for kind in kinds:
-        if kind != "network":
+        if kind not in _GENERIC_KINDS:
             return kind
     return kinds[0] if kinds else None
 
