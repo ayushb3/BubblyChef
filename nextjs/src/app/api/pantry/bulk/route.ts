@@ -11,6 +11,7 @@ interface BulkItemInput {
   category?: string
   storage_location?: string
   expiry_date?: string | null
+  estimated_expiry?: boolean
 }
 
 export async function POST(request: Request) {
@@ -62,6 +63,14 @@ export async function POST(request: Request) {
         quantity: qty,
         unit,
         expiry_date: expiry || null,
+        // #363/#398/#439: same precedence as the single-item POST route —
+        // when the client didn't supply a date, this route guessed one, so
+        // the flag is always true regardless of what the client sent (a
+        // blank-date row from the Type tab defaults its flag to `false`,
+        // which must not override a real guess). The client's flag is only
+        // honoured when the client actually supplied a date: true means
+        // catalog auto-fill, false means the user typed it themselves.
+        estimated_expiry: item.expiry_date ? Boolean(item.estimated_expiry) : Boolean(expiry),
         slot_index: null,
         quantity_base: quantity_base ?? null,
         unit_base: unit_base ?? null,

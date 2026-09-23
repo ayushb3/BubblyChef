@@ -41,6 +41,7 @@ from bubbly_chef.prompts.recipe import (
     RECIPE_CONSTRAINTS_SYSTEM_PROMPT as RECIPE_CONSTRAINTS_SYSTEM_PROMPT,
 )
 from bubbly_chef.repository.supabase_repo import get_repository
+from bubbly_chef.services.dietary_preferences import get_stored_dietary_preferences
 from bubbly_chef.tools.web_search import search_recipe
 from bubbly_chef.workflows.state import (
     LLMRecipeResult,
@@ -436,6 +437,112 @@ def _merge_constraints(
     return merged
 
 
+# Deterministic dietary-contradiction table (#394). A stored preference now
+# *combines* with whatever the message asks for rather than being replaced by
+# it — it's only set aside, for that one reply, when the message unambiguously
+# asks for an ingredient the stored diet forbids. Small and explicit on
+# purpose: an LLM judgement call here would make the precedence unpredictable
+# turn to turn.
+_DIETARY_FORBIDDEN_INGREDIENTS: dict[str, frozenset[str]] = {
+    "vegetarian": frozenset(
+        {
+            "meat", "beef", "pork", "chicken", "turkey", "lamb", "bacon",
+            "sausage", "ham", "fish", "shrimp", "salmon", "tuna", "seafood",
+        }
+    ),
+    "vegan": frozenset(
+        {
+            "meat", "beef", "pork", "chicken", "turkey", "lamb", "bacon",
+            "sausage", "ham", "fish", "shrimp", "salmon", "tuna", "seafood",
+            "dairy", "cheese", "milk", "butter", "cream", "yogurt",
+            "egg", "eggs", "honey",
+        }
+    ),
+    "pescatarian": frozenset(
+        {"meat", "beef", "pork", "chicken", "turkey", "lamb", "bacon", "sausage", "ham"}
+    ),
+    "dairy-free": frozenset({"dairy", "cheese", "milk", "butter", "cream", "yogurt"}),
+    "nut-free": frozenset(
+        {
+            "nuts", "peanut", "peanuts", "almond", "almonds", "cashew", "cashews",
+            "walnut", "walnuts", "pecan", "pecans", "pistachio", "pistachios",
+            "hazelnut", "hazelnuts",
+        }
+    ),
+}
+
+# A diet named on the left already satisfies every diet in its set — so when
+# both appear together in a combined list, the looser one is redundant and is
+# dropped rather than kept alongside it (e.g. a combined ["Vegan", "Vegetarian"]
+# collapses to ["Vegan"], regardless of which side — stored or message —
+# each label came from).
+_DIETARY_SUBSUMES: dict[str, frozenset[str]] = {
+    "vegan": frozenset({"vegetarian", "dairy-free"}),
+}
+
+
+def _dietary_contradicted(label: str, haystack: str) -> bool:
+    """True if `haystack` names an ingredient the dietary label `label` forbids."""
+    forbidden = _DIETARY_FORBIDDEN_INGREDIENTS.get(label.strip().lower(), frozenset())
+    return any(re.search(rf"\b{re.escape(term)}\b", haystack) for term in forbidden)
+
+
+def _drop_redundant_dietary(labels: list[str]) -> list[str]:
+    """Drop any label a stricter label already subsumes, preserving order."""
+    present = {label.strip().lower() for label in labels}
+    result: list[str] = []
+    for label in labels:
+        key = label.strip().lower()
+        subsumed = any(
+            key in narrower and broad in present and broad != key
+            for broad, narrower in _DIETARY_SUBSUMES.items()
+        )
+        if not subsumed:
+            result.append(label)
+    return result
+
+
+def _combine_dietary_preferences(
+    stored: list[str],
+    requested: list[str],
+    constraints: dict[str, Any],
+    input_text: str,
+) -> list[str]:
+    """Union a stored dietary default with what this message asks for (#394).
+
+    A stored preference stays in force unless the message names an ingredient
+    it forbids — checked against both the raw message text and the extracted
+    ingredient fields, since the constraint extractor may fold a request like
+    "chicken curry" into a dish name rather than into `must_use_ingredients`.
+    A requested label already implied by a surviving stricter label (see
+    `_DIETARY_SUBSUMES`) is dropped as redundant rather than appended.
+    """
+    ingredient_terms = " ".join(
+        [*(constraints.get("must_use_ingredients") or []), *(constraints.get("preferred_ingredients") or [])]
+    )
+    haystack = f"{input_text} {ingredient_terms}".lower()
+
+    survivors: list[str] = []
+    for label in stored:
+        if _dietary_contradicted(label, haystack):
+            logger.info(
+                "Stored dietary preference %r set aside for this reply "
+                "(message names a forbidden ingredient)",
+                label,
+            )
+            continue
+        survivors.append(label)
+
+    combined = list(survivors)
+    present_lower = {label.strip().lower() for label in combined}
+    for label in requested:
+        if label.strip().lower() not in present_lower:
+            combined.append(label)
+            present_lower.add(label.strip().lower())
+
+    return _drop_redundant_dietary(combined)
+
+
 def _prior_constraints_from_state(state: WorkflowState) -> dict[str, Any] | None:
     """Return recipe_constraints stored in the session metadata, if any."""
     session = state.get("session")
@@ -490,6 +597,29 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
     if not constraints.get("meal_type"):
         constraints["meal_type"] = _default_meal_type()
         logger.info("Defaulted meal_type=%s from time of day", constraints["meal_type"])
+
+    # Stored profile default (#394). A stored preference stays in force and
+    # *combines* with whatever this message (or an earlier turn in the same
+    # session, already folded in above by `_merge_constraints`) asks for. It
+    # is only set aside — for this one reply — when the message explicitly
+    # asks for an ingredient the stored diet forbids (see
+    # `_combine_dietary_preferences`). It must never be silently dropped just
+    # because this message didn't repeat it.
+    stored_dietary = await get_stored_dietary_preferences(state.get("user_id") or "")
+    if stored_dietary:
+        requested_dietary = constraints.get("dietary") or []
+        combined_dietary = _combine_dietary_preferences(
+            stored_dietary, requested_dietary, constraints, input_text
+        )
+        if combined_dietary != requested_dietary:
+            logger.info(
+                "Combined stored dietary preferences with this turn's request: "
+                "stored=%s requested=%s -> %s",
+                stored_dietary,
+                requested_dietary,
+                combined_dietary,
+            )
+        constraints["dietary"] = combined_dietary
 
     return {
         **state,
@@ -734,6 +864,18 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
                 "(dietary=%s, must_use=%s)",
                 constraints.get("dietary"),
                 constraints.get("must_use_ingredients"),
+            )
+
+    # Same stored-preference fallback as extract_recipe_constraints, for the
+    # (defensive) case this path is reached with no dietary signal in the
+    # rehydrated session constraints either (#394).
+    if not constraints.get("dietary"):
+        stored_dietary = await get_stored_dietary_preferences(state.get("user_id") or "")
+        if stored_dietary:
+            constraints = {**constraints, "dietary": stored_dietary}
+            logger.info(
+                "research_recipe: applied stored profile dietary preferences as default: %s",
+                stored_dietary,
             )
 
     cuisine_tag = constraints.get("cuisine")
