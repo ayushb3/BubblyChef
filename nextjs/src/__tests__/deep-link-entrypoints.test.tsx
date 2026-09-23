@@ -153,7 +153,10 @@ describe('dashboard tip card (#143)', () => {
     const tipLink = await screen.findByRole('link', { name: /Ask Bubbles about today's tip/i })
     await waitFor(() => expect(hrefParams(tipLink).get('tip')).toBeTruthy())
 
-    const rendered = (tipLink.textContent ?? '').split('Tip:')[1]?.trim()
+    // Since #391 the link is a separate "Ask Bubbles" pill beside the tip, not
+    // the whole card, so the rendered copy is read from the tip paragraph.
+    const rendered = (document.getElementById('home-tip-text')?.textContent ?? '').split('Tip:')[1]?.trim()
+    expect(rendered).toBeTruthy()
     expect(hrefParams(tipLink).get('tip')).toBe(rendered)
     expect(tipLink.getAttribute('href')).toMatch(/^\/chat\?tip=/)
   })
