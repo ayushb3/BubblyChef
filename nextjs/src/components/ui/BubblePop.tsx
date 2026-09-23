@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useBubbles } from '@/lib/api/bubbles'
+import { useMotionConfig } from '@/lib/motion'
 
 interface Pop {
   key: number
@@ -28,6 +29,13 @@ interface Pop {
  * that as "unknown" and resets `lastSeenRef`, so the next user's first
  * balance is always treated as an initial load rather than a delta off the
  * previous user's leftover number (issue #525 review).
+ *
+ * Pinned top-right, just under the app header — the same corner the kitchen
+ * scene's own 🫧 balance pill occupies on home, so the pop reads as feeding
+ * that balance rather than floating disconnected from it. `top-16` clears
+ * the 44px `ProfileHeaderButton` (issue #525 review: the pop must never sit
+ * over it), and the pill's own opaque surface + border keeps it legible over
+ * every page background, including the kitchen scene's pink gradient.
  */
 export default function BubblePop() {
   const pathname = usePathname()
@@ -36,7 +44,7 @@ export default function BubblePop() {
   const lastSeenRef = useRef<number | null>(null)
   const [pop, setPop] = useState<Pop | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const prefersReducedMotion = useReducedMotion() ?? false
+  const { reduced: prefersReducedMotion } = useMotionConfig()
 
   useEffect(() => {
     if (typeof balance !== 'number') {
@@ -64,36 +72,22 @@ export default function BubblePop() {
 
   return (
     <div
-      aria-hidden="true"
-      style={{
-        position: 'fixed',
-        top: '16%',
-        left: '50%',
-        zIndex: 9999,
-        pointerEvents: 'none',
-      }}
+      aria-live="polite"
+      className="fixed top-16 right-3 z-[9999] pointer-events-none"
     >
       <AnimatePresence>
         {pop && (
           <motion.span
             key={pop.key}
             data-testid="bubble-pop"
-            initial={{ opacity: 0, y: 0, x: '-50%' }}
+            initial={{ opacity: 0, y: 0 }}
             animate={
-              prefersReducedMotion
-                ? { opacity: [0, 1, 1, 0], x: '-50%' }
-                : { opacity: [0, 1, 1, 0], y: -40, x: '-50%' }
+              prefersReducedMotion ? { opacity: [0, 1, 1, 0] } : { opacity: [0, 1, 1, 0], y: -40 }
             }
             exit={{ opacity: 0 }}
             transition={{ duration: prefersReducedMotion ? 0.8 : 1, ease: 'easeOut' }}
-            style={{
-              position: 'absolute',
-              whiteSpace: 'nowrap',
-              fontWeight: 800,
-              fontSize: 18,
-              color: 'var(--color-primary-dark)',
-              fontFamily: 'Nunito, sans-serif',
-            }}
+            className="block whitespace-nowrap rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-base font-extrabold shadow-md"
+            style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
           >
             🫧 +{pop.delta}
           </motion.span>

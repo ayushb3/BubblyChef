@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import Image from 'next/image'
-import { motion, useReducedMotion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useMotionConfig } from '@/lib/motion'
 
 export type BubblesState = 'happy' | 'surprised' | 'thinking' | 'worried' | 'celebrate'
 
@@ -40,7 +41,7 @@ export default function BubblesMascot({
   // Gates all new motion (bounce, sparkle burst) on top of the existing
   // `animate` prop gate — `prefers-reduced-motion: reduce` still swaps the
   // image/badge for the right state, it just skips the movement.
-  const prefersReducedMotion = useReducedMotion() ?? false
+  const { reduced: prefersReducedMotion } = useMotionConfig()
   const motionEnabled = animate && !prefersReducedMotion
 
   // Re-mounting BubblesMascot with `state="celebrate"` already replays the
