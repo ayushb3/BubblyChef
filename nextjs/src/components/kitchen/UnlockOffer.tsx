@@ -8,7 +8,7 @@
  * screen must never shift layout on a plain page load with no pending
  * milestone.
  */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
@@ -37,6 +37,25 @@ export default function UnlockOffer() {
       setClaimedId(null)
     },
   })
+
+  // `useMutation`'s `isSuccess` stays true until `reset()` is called or a new
+  // `mutate` runs — it does not clear itself when the invalidated
+  // `['kitchen-offer']` query refetches. Multiple milestones can be pending
+  // at once (an overshoot, or a user returning after a while), so once this
+  // component's `offer` moves on to the next milestone, reset the mutation
+  // so that milestone's card renders instead of staying hidden behind the
+  // previous claim's success state.
+  const previousMilestoneKey = useRef<string | null>(null)
+  useEffect(() => {
+    if (!offer) return
+    if (previousMilestoneKey.current !== null && previousMilestoneKey.current !== offer.milestone_key) {
+      mutation.reset()
+      setClaimedId(null)
+      setError(null)
+    }
+    previousMilestoneKey.current = offer.milestone_key
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offer?.milestone_key])
 
   const handlePick = (decorationId: string) => {
     setError(null)
