@@ -230,15 +230,27 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
 
   return (
     <div className="flex flex-col items-center">
-      {/* Kitchen scene — 12 fixed decoration slots + Bubbles balance (#521) */}
-      <FadeInView delay={0}>
-        <div className="mb-4">
-          <KitchenScene
-            unlocked={unlocked}
-            balance={balance}
-            loading={decorationsLoading || balanceLoading}
-          />
-        </div>
+      {/* Kitchen scene — 12 fixed decoration slots + Bubbles balance (#521).
+          KitchenScene's root has only absolutely-positioned children, so it
+          contributes no intrinsic (max-content) width of its own — a `%`
+          width doesn't count towards that either. Every ancestor down to
+          here sits inside a `flex flex-col items-center` container, whose
+          `items-center` override makes flex items shrink-wrap to their
+          max-content width instead of stretching to the container's width.
+          With zero max-content contribution at the bottom of that chain, the
+          whole chain (including this `FadeInView`, itself a flex item)
+          collapsed to ~2px — text-bearing siblings below don't hit this
+          because their text gives them a non-zero max-content width. Passing
+          `className` all the way down to `FadeInView` (a plain prop it
+          forwards onto its own `motion.div`) breaks the shrink-wrap by
+          giving every link in the chain an explicit width instead of an
+          inferred one. */}
+      <FadeInView delay={0} className="w-full max-w-sm mb-4">
+        <KitchenScene
+          unlocked={unlocked}
+          balance={balance}
+          loading={decorationsLoading || balanceLoading}
+        />
       </FadeInView>
 
       {/* Greeting */}
