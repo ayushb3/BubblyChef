@@ -1,0 +1,125 @@
+name: Claude PR review
+
+# The independent reviewer in WORKFLOW.md §7. It runs in a fresh context that never
+# saw the session that wrote the code, and reads only the diff, the PR body and the
+# linked issue. That separation is the point: a reviewer sharing the author's context
+# shares its blind spots.
+#
+# Review-only by construction: the tool list below has no Edit, Write, git or push,
+# so this job cannot change the code it is reviewing, only comment on it.
+#
+# Kill switch: set the repo variable AGENTS_ENABLED to anything but "true" and this
+# stops firing (docs/WORKFLOW.md, "If the agents need stopping").
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened, synchronize]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Drafts are work in progress; review fires when the PR is marked ready.
+    # New pushes (synchronize) are re-reviewed ONLY on PRs labelled `agent-loop`: the
+    # agent loop's Respond stage fixes the review's findings and pushes, and needs a
+    # fresh review of the new commit to know whether it worked. Human PRs are reviewed
+    # once, on open, as before.
+    if: >-
+      vars.AGENTS_ENABLED == 'true'
+      && github.event.pull_request.draft == false
+      && (github.event.action != 'synchronize'
+          || contains(github.event.pull_request.labels.*.name, 'agent-loop'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the step below can inspect the pushed commit's parents.
+          fetch-depth: 0
+
+      # "Update branch" pushes only merge the base branch into the PR. They don't
+      # change what the PR does, so they don't need a fresh Opus review, and CI
+      # still runs on them. A merge carrying conflict-resolution edits is NOT
+      # skipped: `git show --cc` prints those edits, and a clean merge prints nothing.
+      - name: Skip the re-review when the push only merged the base branch
+        id: baseonly
+        if: github.event.action == 'synchronize'
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -eu
+          read -r _ p1 p2 extra <<<"$(git rev-list --parents -n1 "$AFTER")"
+          if [ -n "${p2:-}" ] && [ -z "${extra:-}" ] && [ "$p1" = "$BEFORE" ]              && git merge-base --is-ancestor "$p2" "origin/$BASE"              && [ -z "$(git show --format= --cc "$AFTER")" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Push only merged $BASE into the branch with no conflict edits; keeping the existing review."
+          fi
+
+      - uses: anthropics/claude-code-action@v1
+        if: steps.baseonly.outputs.skip != 'true'
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          use_sticky_comment: true
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            You are the independent reviewer for BubblyChef. You did not write this
+            change and have not seen the session that did. Review it as someone who
+            has to decide whether it can merge without a human reading the diff.
+
+            Read CLAUDE.md and WORKFLOW.md first. They are this repo's standards.
+
+            Then:
+            1. Read the PR body and any issue it closes (`gh issue view`). The PR
+               body is the review surface here. Check it says what changed in
+               behavioural terms, what was actually verified and how, and what is
+               explicitly NOT covered. A missing gap statement is a finding.
+            2. Read the diff (`gh pr diff`). Look for, in priority order:
+               - Behaviour that does not match what the issue or PR body claims.
+               - Bugs: wrong logic, unhandled errors, broken edge cases, anything
+                 that typechecks and passes tests but is wrong.
+               - Security: auth bypass, missing requireAuth() on an API route,
+                 secrets, user data crossing users (RLS), injection.
+               - Tests that do not actually test the change, or assert what the new
+                 code happens to do rather than what it should do.
+               - Violations of CLAUDE.md's Dev Guidelines.
+            3. If the PR touches a path in .github/CODEOWNERS, say so at the top of
+               your summary: a human must review it, and your review is input to
+               them, not a substitute.
+            4. If this is a re-review (the PR already has your earlier review and a
+               resolutions comment from bubblychef-bot saying "fixed" or "disputed" per
+               finding): check each "fixed" is genuinely fixed in the current diff, and
+               accept a "disputed" only if you agree with the reason. Raise any finding
+               again if it isn't resolved. Then review the new changes as normal.
+
+            Post inline comments only for concrete, specific problems, one per issue,
+            each saying what is wrong and why it matters. Do not comment on style
+            the linters already enforce, and do not praise.
+
+            Finish with one summary comment:
+            - **Verdict:** `looks mergeable`, `needs changes`, or `needs a human`
+              (a protected path, or something you could not verify).
+              `looks mergeable` means an agent may merge this with no human ever
+              reading it. So if the change alters behaviour a user would notice
+              beyond what the issue describes — even if you think the new
+              behaviour is right — the verdict MUST be `needs a human`, with that
+              change named first. Never write "looks mergeable" together with
+              "the human should accept/confirm/decide …"; that combination is
+              `needs a human`.
+            - The findings that drove the verdict, most severe first, one line each.
+            - Anything you could not check.
+            Keep it short enough to read on a phone.
+          claude_args: |
+            --model claude-opus-5
+            --max-turns 40
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh issue view:*),Read,Grep,Glob"

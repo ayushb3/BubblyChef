@@ -348,7 +348,9 @@ depth), and `docs/WORKFLOW.md` for BubblyChef's own operational quick-reference
 
 **Agent team:** `pm` (you, orchestrating) plus `backend`, `frontend`, `ui-ux`,
 `qa-reviewer` — see `docs/agents/roles/` for each role's full mandate and
-ownership boundary. PM delegates one level deep only — dev roles don't spawn
+ownership boundary. Dev roles run on Sonnet, in the session's
+worktree (not their own — see `WORKFLOW.md` §5). Use the `explorer` utility agent
+(Haiku, read-only) for "where is X" lookups instead of a dev role. PM delegates one level deep only — dev roles don't spawn
 further subagents; see `WORKFLOW.md` §5.
 
 **For non-trivial features:**
@@ -412,10 +414,10 @@ watching it stop is evidence; "tests pass" alone is not), and what the change
 explicitly does *not* cover. An unstated gap reads as a claim it was handled.
 Full rules in `WORKFLOW.md` §4.
 
-**Review tiers are enforced by a hook, and they differ.** Opening a PR needs a
-`/code-review` marker (agent-invocable). Merging needs a `thermo-nuclear-review`
-marker — `main` auto-deploys, so every merge gets the deep pass; on a small fix
-it's quick. See `WORKFLOW.md` §7.
+**Review and merge are enforced by GitHub, not by a local hook.** Required checks
+must pass, and a PR touching a CODEOWNERS path needs your review; everything else
+can auto-merge. Marker files in `.git/` are gone — they were honour-system. See
+`WORKFLOW.md` §6–7.
 
 ---
 
@@ -440,6 +442,7 @@ BUBBLY_OLLAMA_BASE_URL=http://localhost:11434   # optional
 BUBBLY_AUTO_ADD_CONFIDENCE_THRESHOLD=0.8
 BUBBLY_REVIEW_CONFIDENCE_THRESHOLD=0.5
 BUBBLY_CORS_ORIGINS=["http://localhost:3000"]
+BUBBLY_GIT_SHA=...                      # optional — deployed commit SHA, surfaced on /health and /health/ai for post-merge smoke tests; falls back to Railway's own RAILWAY_GIT_COMMIT_SHA, then "unknown"
 ```
 
 Every name here must match a field on `Settings` in `ai-service/bubbly_chef/config.py`
@@ -483,13 +486,15 @@ the same credential differently.
 
 **Installed skills live in `.claude/skills/`, committed to the repo** — so they work
 in a fresh clone, in CI, and in cloud sessions, not just on a configured laptop.
-27 skills vendored — 19 from `mattpocock/skills`, 8 from `cursor/plugins`.
-`skills-lock.json` records each upstream commit and per-skill hashes for drift
-detection. See `WORKFLOW.md` §9.
+21 skills loaded from `.claude/skills/` (including the project's own `verify`,
+which runs a production build on the worktree's ports and walks the changed flow);
+9 more sit unloaded in
+`.claude/skills-archive/` (archived 2026-09-17, reversible — move a directory back
+to restore it). `skills-lock.json` records each upstream commit and per-skill hashes
+for drift detection, archived entries included. See `WORKFLOW.md` §9.
 
 Most-used: `/implement-issue` (this project's pickup skill — grab the next
 `ready-for-agent` issue, branch, delegate, gate, open a draft PR),
-`/implement` (build from a ticket — wraps `tdd` + `code-review`),
 `/to-spec` → `/to-tickets` (plan), `/triage` (label state machine),
 `/wayfinder` (chart unknown-shaped work), `/diagnosing-bugs`, `/handoff`.
 
@@ -514,12 +519,15 @@ add a new one.
 
 ### Review
 
-`/code-review` on every PR; `/interrogate` before merging a feature-level PR;
-`thermo-nuclear-review` fires automatically as a `PreToolUse` hook when a PR is
-about to be created or merged — via the `gh` CLI *or* the GitHub MCP tools. It is a
-gate: the call is denied until the review is recorded for the current HEAD. Hook
-script `.claude/hooks/pr-review-gate.sh`, registered in `.claude/settings.json`.
-See `WORKFLOW.md` §7.
+`/code-review` on every PR (agent-invocable, two axes: standards and spec). The
+Claude GitHub Action reviews each PR on open from a fresh context. Merging is gated
+by **GitHub**, not a local hook: required checks (typecheck/test both sides,
+fail-to-pass against the base commit, test-count guard, exemption check, Vercel
+build) plus `.github/CODEOWNERS` review on protected paths — migrations, auth,
+`ai-service/bubbly_chef/prompts/`, `.github/`, `.claude/` config, dependencies.
+`thermo-nuclear-review` is still available and still user-invocation-only, but is no
+longer a mechanical gate — run it before approving anything large or security-shaped.
+See `WORKFLOW.md` §6–7.
 
 ---
 

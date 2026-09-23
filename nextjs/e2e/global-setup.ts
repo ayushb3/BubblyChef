@@ -7,7 +7,19 @@ dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 
 const authFile = path.join(__dirname, '.auth/user.json');
 
-async function globalSetup(_config: FullConfig) {
+async function globalSetup(config: FullConfig) {
+  // Derived from the same baseURL playwright.config.ts computes (PLAYWRIGHT_BASE_URL,
+  // or 127.0.0.1:PORT) rather than a hardcoded host/port — a mismatch here is a
+  // silent auth failure, not a loud one: the cookie gets set for the wrong host,
+  // the browser never sends it, and every test looks like it's not signed in.
+  const baseURL = config.projects[0]?.use?.baseURL;
+  if (!baseURL) {
+    throw new Error('No baseURL resolved from playwright.config.ts — cannot set the auth cookie domain.');
+  }
+  const target = new URL(baseURL);
+  // Cookies are set without a port; only the hostname matters for `domain`.
+  const cookieDomain = target.hostname;
+
   const email = process.env.TEST_USERNAME;
   const password = process.env.TEST_PASSWORD;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -55,17 +67,17 @@ async function globalSetup(_config: FullConfig) {
     {
       name: cookieName,
       value: cookieValue,
-      domain: '127.0.0.1',
+      domain: cookieDomain,
       path: '/',
       httpOnly: false,
-      secure: false,
+      secure: target.protocol === 'https:',
       sameSite: 'Lax',
     },
   ]);
 
   // Verify we land on home (not redirected back to login)
   const page = await context.newPage();
-  await page.goto('http://127.0.0.1:3000/');
+  await page.goto(baseURL);
   await page.waitForLoadState('networkidle');
 
   const finalUrl = page.url();

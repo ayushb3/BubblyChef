@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { ScannedItem } from '@/types/scan'
 import ScannedItemCard from './ScannedItemCard'
@@ -31,6 +31,14 @@ export interface ReviewSurfaceProps {
   isSubmitting: boolean
   /** When true, hides the built-in confirm button (used when embedded in PantryAddSheet) */
   hideConfirmButton?: boolean
+  /**
+   * Fires whenever the checked-item set changes (checkbox toggle, item edit,
+   * or dismiss). Lets an embedding parent (e.g. PantryAddSheet, which hides
+   * the built-in confirm button and owns its own footer/confirm) track the
+   * checked-only count and payload without duplicating checkbox state
+   * (issue #406).
+   */
+  onCheckedItemsChange?: (items: ScannedItem[]) => void
 }
 
 // ─── Stable item key ──────────────────────────────────────────────────────────
@@ -163,6 +171,7 @@ export default function ReviewSurface({
   onConfirm,
   isSubmitting,
   hideConfirmButton = false,
+  onCheckedItemsChange,
 }: ReviewSurfaceProps) {
   // Seed: ready_to_add items start checked; needs_review and skipped start unchecked.
   const initialCheckedKeys = useMemo(() => {
@@ -217,6 +226,13 @@ export default function ReviewSurface({
   }, [readyToAdd, needsReview, skipped, checkedKeys])
 
   const checkedCount = checkedItems.length
+
+  useEffect(() => {
+    onCheckedItemsChange?.(checkedItems)
+    // onCheckedItemsChange is a caller-provided callback; including it would
+    // re-fire this effect whenever the parent re-renders with a new closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkedItems])
 
   return (
     <div>

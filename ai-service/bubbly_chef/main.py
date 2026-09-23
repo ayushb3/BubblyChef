@@ -48,6 +48,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Shutting down AI service")
 
 
+def build_info() -> dict[str, str]:
+    """Version/build block for health responses (agent-loop step 3).
+
+    Lets a post-merge smoke test tell whether it's hitting the new deploy
+    or a stale one still serving — read live from settings so a test can
+    reload/patch `settings.git_sha` without restarting the app.
+    """
+    return {"git_sha": settings.resolved_git_sha, "app_version": "1.0.0"}
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
@@ -68,7 +78,7 @@ def create_app() -> FastAPI:
     # Health check
     @app.get("/health")
     async def health_root() -> dict:
-        return {"status": "ok"}
+        return {"status": "ok", "version": build_info()}
 
     @app.get("/health/ai")
     async def health() -> dict:
@@ -83,6 +93,7 @@ def create_app() -> FastAPI:
             "service": "ai-microservice",
             "ai_available": status["healthy"],
             "providers": status["providers"],
+            "version": build_info(),
         }
 
     # AI routes

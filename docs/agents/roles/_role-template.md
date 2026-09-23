@@ -9,6 +9,21 @@ conventions specific to its domain. The PM delegates by pointing a subagent at t
 file plus a task-specific context packet — the role file should be stable across
 tasks, the context packet is what changes per delegation.
 
+## The agent file vs this file
+
+A role file is the mandate. The matching `.claude/agents/<role>.md` is what Claude
+Code actually loads, and its frontmatter carries the execution tier:
+
+| Key | Use |
+|---|---|
+| `model` | `opus` for judgement (pm, reviewers), `sonnet` for dev roles, `haiku` for read-only utility agents |
+| `effort` | `low`–`max`; set it only to pin a cheap tier (e.g. `explorer`), otherwise it inherits the session |
+| `tools` | Least privilege — a read-only agent gets `Read, Grep, Glob` and no `Bash` |
+
+Do **not** put `isolation: worktree` on a dev role: it branches from the default
+branch rather than the parent session's HEAD, so the role would not see the feature
+branch it is meant to build on. Isolate per session instead (`WORKFLOW.md` §5).
+
 ## Template
 
 ```markdown

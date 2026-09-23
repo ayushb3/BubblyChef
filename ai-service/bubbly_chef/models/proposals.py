@@ -236,6 +236,68 @@ class RecipeAmendmentDetection(BaseModel):
     )
 
 
+class RecipeAmendmentProposal(BaseModel):
+    """Chat proposal for a mid-cook amendment to the pinned recipe's ingredients.
+
+    This is what ``cooking_help_response`` emits into ``state["proposal"]`` when
+    the amendment-detection pass (:class:`RecipeAmendmentDetection`) reports a
+    real change.  It is a member of the discriminated proposal union, so it
+    round-trips through ``AnyProposalAdapter`` like every other proposal.
+
+    Distinct from :class:`bubbly_chef.models.cook.CookProposal`, which is the
+    pantry-deduction proposal returned by ``POST /v1/recipes/cook``.  Applying
+    an amendment to that deduction is a separate ticket; this type only carries
+    the reviewed payload.
+
+    Wire shape: ``is_amendment`` / ``amended_ingredients`` / ``change_summary``
+    match the detection schema so the frontend's existing duck-typing keeps
+    working; ``proposal_type`` is added alongside rather than replacing them.
+    """
+
+    proposal_type: Literal["recipe_amendment"] = "recipe_amendment"
+    is_amendment: bool = Field(
+        default=True,
+        description="Always True for an emitted proposal; kept for wire compatibility",
+    )
+    amended_ingredients: list[RecipeIngredientAmendment] = Field(
+        min_length=1,
+        description="Full amended ingredient list replacing the pinned recipe's",
+    )
+    change_summary: str | None = Field(
+        default=None,
+        description="Short human-readable summary of what changed (1-2 sentences)",
+    )
+    recipe_id: str | None = Field(
+        default=None,
+        description="Pinned recipe id the amendment applies to (None if the pin has no id)",
+    )
+    recipe_title: str | None = Field(
+        default=None, description="Pinned recipe title, for display"
+    )
+
+    @classmethod
+    def from_detection(
+        cls,
+        detection: RecipeAmendmentDetection,
+        *,
+        recipe_id: str | None = None,
+        recipe_title: str | None = None,
+    ) -> "RecipeAmendmentProposal | None":
+        """Convert an LLM detection result into a proposal.
+
+        Returns ``None`` when the detection is not an amendment or carries no
+        ingredients, so callers can fall through to the prose-only path.
+        """
+        if not detection.is_amendment or not detection.amended_ingredients:
+            return None
+        return cls(
+            amended_ingredients=list(detection.amended_ingredients),
+            change_summary=detection.change_summary,
+            recipe_id=recipe_id,
+            recipe_title=recipe_title,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Discriminated proposal union
 # ---------------------------------------------------------------------------
@@ -244,7 +306,9 @@ from bubbly_chef.models.cook import CookProposal  # noqa: E402
 from bubbly_chef.models.pantry import PantryProposal  # noqa: E402
 from bubbly_chef.models.recipe import RecipeCardProposal  # noqa: E402
 
-ProposalUnion = PantryProposal | HandoffProposal | RecipeCardProposal | CookProposal
+ProposalUnion = (
+    PantryProposal | HandoffProposal | RecipeCardProposal | CookProposal | RecipeAmendmentProposal
+)
 """Bare union of all concrete proposal types.
 
 Use this in TypedDict fields and plain ``isinstance`` checks.  For
@@ -253,7 +317,13 @@ use :data:`AnyProposal` / :data:`AnyProposalAdapter` instead.
 """
 
 AnyProposal = Annotated[
-    Union[PantryProposal, HandoffProposal, RecipeCardProposal, CookProposal],
+    Union[
+        PantryProposal,
+        HandoffProposal,
+        RecipeCardProposal,
+        CookProposal,
+        RecipeAmendmentProposal,
+    ],
     Field(discriminator="proposal_type"),
 ]
 """Discriminated union of all concrete proposal types.

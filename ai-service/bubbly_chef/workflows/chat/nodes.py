@@ -14,7 +14,18 @@ import bubbly_chef.tools.cooking  # noqa: F401 — registers check_pantry on imp
 from bubbly_chef.ai.manager import AIManager, NoProviderAvailableError
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
-from bubbly_chef.models.proposals import RecipeAmendmentDetection
+from bubbly_chef.models.proposals import RecipeAmendmentDetection, RecipeAmendmentProposal
+from bubbly_chef.prompts.chat import (
+    _AMENDMENT_DETECTION_PROMPT,
+    _COOKING_REACT_SYSTEM_PROMPT,
+    _COOKING_SYSTEM_PROMPT,
+)
+# Re-exported for callers that import these off this module (e.g.
+# workflows/router.py, workflows/chat/__init__.py) — `as`-aliasing makes the
+# re-export explicit so mypy --strict's --no-implicit-reexport doesn't flag it.
+from bubbly_chef.prompts.chat import GENERAL_CHAT_SYSTEM_PROMPT as GENERAL_CHAT_SYSTEM_PROMPT
+from bubbly_chef.prompts.chat import GENERAL_CHAT_USER_PROMPT as GENERAL_CHAT_USER_PROMPT
+from bubbly_chef.prompts.chat import MODE_SYSTEM_PROMPTS as MODE_SYSTEM_PROMPTS
 from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.tools.registry import get_tool, get_tool_schemas
 from bubbly_chef.workflows.state import WorkflowState
@@ -27,55 +38,6 @@ MAX_ITERATIONS = 5
 
 # Names of tools available in the cooking_help ReAct loop (v1: check_pantry only).
 _COOKING_TOOL_NAMES = ["check_pantry"]
-
-
-# =============================================================================
-# LLM Prompts
-# =============================================================================
-
-GENERAL_CHAT_SYSTEM_PROMPT = """\
-You are a helpful assistant for a pantry/grocery management \
-app called BubblyChef.
-
-You can help users with:
-- Questions about food storage
-- Cooking tips and advice
-- General conversation
-- Redirecting them to use pantry features when relevant
-
-Keep responses friendly and concise. If the user seems to want \
-to track groceries, gently remind them they can say things like \
-"I bought milk" to add items."""
-
-GENERAL_CHAT_USER_PROMPT = """User: {text}
-
-Respond helpfully and concisely. Mention relevant app features if appropriate."""
-
-
-# ─── Mode-specific system prompt prefixes ────────────────────────────────────
-
-MODE_SYSTEM_PROMPTS: dict[str, str] = {
-    "chat": "",  # default — no override
-    "text": "",  # legacy alias for chat
-    "voice": "",  # legacy alias for chat
-    "recipe": (
-        "You are in RECIPE MODE. The user wants recipe suggestions.\n"
-        "Always respond with a structured recipe when possible — include title, "
-        "ingredients with quantities, step-by-step instructions, prep/cook time, "
-        "and difficulty level.\n"
-        "Prioritize ingredients the user already has in their pantry.\n"
-        "If they ask something non-recipe, still help but gently steer back "
-        "toward cooking.\n\n"
-    ),
-    "learn": (
-        "You are in LEARN TO COOK MODE. The user wants to learn cooking skills.\n"
-        "Explain the 'why' behind techniques, not just the 'how'. Use analogies.\n"
-        "Break complex techniques into small, approachable steps.\n"
-        "Be encouraging and patient — assume the user is a beginner unless they "
-        "show otherwise.\n"
-        "Suggest practice exercises when appropriate.\n\n"
-    ),
-}
 
 
 def get_mode_prefix(state: WorkflowState) -> str:
@@ -405,45 +367,6 @@ async def _fetch_pantry_context(state: WorkflowState) -> str:
         return ""
 
 
-_COOKING_SYSTEM_PROMPT = """\
-You are a friendly cooking assistant for BubblyChef, \
-a pantry-aware recipe app.
-
-Help the user with:
-- Cooking techniques and how-to questions
-- Meal ideas and recipe suggestions based on what they have
-- Ingredient substitutions
-- Food storage tips
-- General culinary advice
-
-When suggesting meals or recipes, prioritize ingredients the user \
-already has in their pantry (listed below). If items are expiring soon, \
-suggest ways to use them first.
-
-Keep responses friendly, concise, and practical. If the user asks \
-what they can make, give concrete suggestions from their pantry and \
-mention they can switch to Recipe mode for a full step-by-step recipe."""
-
-
-_AMENDMENT_DETECTION_PROMPT = """\
-You are a structured-output classifier. Given the conversation context below,
-determine whether the user's message requests a change to the recipe ingredients.
-
-Pinned recipe ingredients:
-{ingredient_list}
-
-User message: {user_message}
-
-Assistant prose reply (already produced): {prose_reply}
-
-If the user requested an ingredient substitution, addition, or removal,
-set is_amendment=True and return the FULL amended ingredient list reflecting
-that change. If it was a general technique or timing question, set
-is_amendment=False.
-
-Return ONLY the JSON fields defined in the schema — no extra text."""
-
-
 async def _detect_amendment(
     state: WorkflowState,
     ai_manager: AIManager,
@@ -492,6 +415,27 @@ async def _detect_amendment(
         return None
 
 
+def _build_amendment_proposal(
+    state: WorkflowState,
+    amendment: RecipeAmendmentDetection | None,
+) -> RecipeAmendmentProposal | None:
+    """Turn a detection result into the typed proposal the state carries.
+
+    Returns None when there is nothing to propose (no detection, not an
+    amendment, or an empty ingredient list) so both cooking-help paths can fall
+    through to the prose-only response.
+    """
+    if amendment is None:
+        return None
+    raw_recipe = get_cooking_recipe(state)
+    recipe = normalize_cooking_recipe(raw_recipe) if raw_recipe else {}
+    return RecipeAmendmentProposal.from_detection(
+        amendment,
+        recipe_id=recipe.get("id"),
+        recipe_title=recipe.get("title") or None,
+    )
+
+
 async def _cooking_help_single_shot(
     state: WorkflowState,
     ai_manager: Any,
@@ -512,18 +456,14 @@ async def _cooking_help_single_shot(
         suggested_mode = detect_mode_suggestion(response_text, state.get("input_mode", "chat"))
 
         amendment = await _detect_amendment(state, ai_manager, response_text)
-        if (
-            amendment is not None
-            and amendment.is_amendment
-            and amendment.amended_ingredients is not None
-            and len(amendment.amended_ingredients) > 0
-        ):
+        proposal = _build_amendment_proposal(state, amendment)
+        if proposal is not None:
             return {
                 **state,
                 "intent": Intent.COOKING_HELP.value,
                 "assistant_message": response_text,
                 "next_action": NextAction.REVIEW_PROPOSAL.value,
-                "proposal": amendment.model_dump(),  # type: ignore[typeddict-item]
+                "proposal": proposal,
                 "requires_review": True,
                 "confidence": 1.0,
                 "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
@@ -573,26 +513,6 @@ async def _cooking_help_single_shot(
 # =============================================================================
 # ReAct loop path
 # =============================================================================
-
-_COOKING_REACT_SYSTEM_PROMPT = """\
-You are a friendly cooking assistant for BubblyChef, a pantry-aware recipe app.
-
-You have access to a tool to check the user's live pantry. Use it when the user
-asks about substitutions, whether they have an ingredient, or what they can cook
-from their current supplies. For general techniques, timing, and culinary knowledge
-you already know — answer directly without calling a tool.
-
-Help the user with:
-- Cooking techniques and how-to questions
-- Meal ideas and recipe suggestions based on what they have
-- Ingredient substitutions (check pantry first, then suggest based on availability)
-- Food storage tips
-- General culinary advice
-
-Keep responses friendly, concise, and practical. If the user asks what they can
-make, prioritize ingredients in the pantry and mention they can switch to Recipe
-mode for a full step-by-step recipe."""
-
 
 def _build_react_initial_message(state: WorkflowState) -> str:
     """Build the initial user message text for the ReAct loop."""
@@ -744,18 +664,14 @@ async def _cooking_help_react(
         suggested_mode = detect_mode_suggestion(last_text, state.get("input_mode", "chat"))
 
         amendment = await _detect_amendment(state, ai_manager, last_text)
-        if (
-            amendment is not None
-            and amendment.is_amendment
-            and amendment.amended_ingredients is not None
-            and len(amendment.amended_ingredients) > 0
-        ):
+        proposal = _build_amendment_proposal(state, amendment)
+        if proposal is not None:
             return {
                 **state,
                 "intent": Intent.COOKING_HELP.value,
                 "assistant_message": last_text,
                 "next_action": NextAction.REVIEW_PROPOSAL.value,
-                "proposal": amendment.model_dump(),  # type: ignore[typeddict-item]
+                "proposal": proposal,
                 "requires_review": True,
                 "confidence": 1.0,
                 "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
