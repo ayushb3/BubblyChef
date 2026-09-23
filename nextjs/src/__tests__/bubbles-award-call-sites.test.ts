@@ -341,6 +341,41 @@ describe('bubbles award never blocks the underlying write', () => {
     ])
   })
 
+  it('POST /api/ai/recipes/cook/confirm awards no rescue for an already-expired deducted item', async () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const alreadyExpired = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+    const pantryItems = [{ id: 'item-1', expiry_date: alreadyExpired }]
+    const supabase = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            in: async () => ({ data: pantryItems, error: null }),
+          }),
+        }),
+      }),
+    }
+    mockRequireAuth.mockResolvedValue([supabase, mockUser])
+
+    const { POST } = await import('@/app/api/ai/recipes/cook/confirm/route')
+    const res = await POST(
+      new Request('http://localhost/api/ai/recipes/cook/confirm', {
+        method: 'POST',
+        body: JSON.stringify({
+          recipe_id: 'recipe-1',
+          deductions: pantryItems.map((p) => ({ pantry_item_id: p.id, deduct_qty: 1, base_unit: 'g' })),
+          date: today,
+        }),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(upsertMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'rescue' }),
+      expect.anything(),
+    )
+  })
+
   it('POST /api/ai/workflows/apply still succeeds when the award insert throws', async () => {
     mockRequireAuth.mockResolvedValue([{}, mockUser])
 
@@ -537,6 +572,26 @@ describe('bubbles award never blocks the underlying write', () => {
 
     it('does not award rescue for an item that is not yet expiring soon', async () => {
       mockRequireAuth.mockResolvedValue([makeResolveSupabase(farOut), mockUser])
+
+      const { POST } = await import('@/app/api/pantry/[id]/resolve/route')
+      const res = await POST(
+        new Request('http://localhost/api/pantry/item-1/resolve', {
+          method: 'POST',
+          body: JSON.stringify({ outcome: 'used', date: today }),
+        }),
+        { params: Promise.resolve({ id: 'item-1' }) },
+      )
+
+      expect(res.status).toBe(200)
+      expect(upsertMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'rescue' }),
+        expect.anything(),
+      )
+    })
+
+    it('does not award rescue for an already-expired item, even if used (not tossed)', async () => {
+      const alreadyExpired = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      mockRequireAuth.mockResolvedValue([makeResolveSupabase(alreadyExpired), mockUser])
 
       const { POST } = await import('@/app/api/pantry/[id]/resolve/route')
       const res = await POST(
