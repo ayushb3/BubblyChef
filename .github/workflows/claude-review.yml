@@ -42,9 +42,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          # Full history so the step below can inspect the pushed commit's parents.
+          fetch-depth: 0
+
+      # "Update branch" pushes only merge the base branch into the PR. They don't
+      # change what the PR does, so they don't need a fresh Opus review, and CI
+      # still runs on them. A merge carrying conflict-resolution edits is NOT
+      # skipped: `git show --cc` prints those edits, and a clean merge prints nothing.
+      - name: Skip the re-review when the push only merged the base branch
+        id: baseonly
+        if: github.event.action == 'synchronize'
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -eu
+          read -r _ p1 p2 extra <<<"$(git rev-list --parents -n1 "$AFTER")"
+          if [ -n "${p2:-}" ] && [ -z "${extra:-}" ] && [ "$p1" = "$BEFORE" ]              && git merge-base --is-ancestor "$p2" "origin/$BASE"              && [ -z "$(git show --format= --cc "$AFTER")" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Push only merged $BASE into the branch with no conflict edits; keeping the existing review."
+          fi
 
       - uses: anthropics/claude-code-action@v1
+        if: steps.baseonly.outputs.skip != 'true'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           use_sticky_comment: true

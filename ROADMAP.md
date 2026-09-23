@@ -1,5 +1,9 @@
 # BubblyChef — Roadmap
 
+> **Superseded 2026-09-23.** The plan of record is now
+> [`docs/plans/2026-09-23-v1-friend-ready-prd.md`](docs/plans/2026-09-23-v1-friend-ready-prd.md)
+> (v1 friend-ready PRD). This file is kept for history only and is no longer updated.
+
 ## Vision
 
 A Sanrio-inspired pantry + recipe assistant grounded in your actual kitchen.
