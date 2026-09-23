@@ -17,6 +17,7 @@ from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.domain.mealtime import meal_time_bucket
 from bubbly_chef.domain.normalizer import normalize_food_name
 from bubbly_chef.domain.staples import is_staple
+from bubbly_chef.domain.stock import filter_usable_pantry_rows
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
 from bubbly_chef.models.recipe import (
     Ingredient,
@@ -924,7 +925,11 @@ async def score_pantry_ingredients(state: WorkflowState) -> WorkflowState:
         except Exception as e:
             logger.warning("Could not fetch pantry for scoring: %s", e)
 
-    scored = score_and_rank(pantry_items, constraints)
+    # Expired and zero-quantity rows are not stock: they never enter the
+    # ranked pool, so no prompt-builder downstream can list them as available
+    # (#443). Rows expiring today or later stay in and still get the urgency
+    # bonus in score_and_rank.
+    scored = score_and_rank(filter_usable_pantry_rows(pantry_items), constraints)
 
     return {
         **state,
@@ -976,16 +981,23 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         # would still invite the model to talk about the pantry.
         pantry_context = ""
     elif scored_items:
-        must_use = [i for i in scored_items if i.get("_must_use")]
         # Expired stock is dropped from the suggestion pool entirely (#239):
         # scoring no longer promotes it, but leaving it under "Other available"
         # still let the model build a dish around two-week-old spinach — and on
         # a real pantry (29 of 49 items expired) it crowded out good ingredients.
-        # A must-use item is an explicit user request, so it survives.
+        # Zero-quantity rows (cooked down by the cook flow, never deleted) go
+        # the same way (#443). The filter is repeated here even though
+        # score_pantry_ingredients already applies it, so pre-scored state can't
+        # smuggle a dead row back in. A must-use item the user named still
+        # binds the ideas through constraints_str below, so dropping its
+        # expired/empty pantry row costs nothing — the request survives, the
+        # false "you have this" claim does not.
         # Partition requires expiry_date to be present on scored items
         # (score_and_rank spreads {**item, ...} so original fields are preserved).
+        usable_items = filter_usable_pantry_rows(scored_items)
+        must_use = [i for i in usable_items if i.get("_must_use")]
         rest = [
-            i for i in scored_items if not i.get("_must_use") and not i.get("_expired")
+            i for i in usable_items if not i.get("_must_use") and not i.get("_expired")
         ]
         expiring = [
             i for i in rest
@@ -1190,7 +1202,14 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
             except Exception as e:
                 logger.warning("Could not fetch pantry for recipe generation: %s", e)
         if pantry_snapshot:
-            scored_items = score_and_rank(pantry_snapshot, constraints)
+            scored_items = score_and_rank(filter_usable_pantry_rows(pantry_snapshot), constraints)
+
+    # This is the path that told a user to cook "fresh spinach from your
+    # pantry" from a row that was expired at quantity 0 (#443): expired stock
+    # was only ever flagged by score_and_rank, never removed, so it landed in
+    # the "Supporting ingredients available" line. Nothing below may see a
+    # row that isn't cookable stock.
+    scored_items = filter_usable_pantry_rows(scored_items)
 
     # Must-use names come from the constraint itself so ingredients the user
     # named but doesn't have in the pantry still bind the recipe.
