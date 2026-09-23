@@ -37,6 +37,7 @@ import {
   getBrainstormIdeas,
   getClarificationSuggestions,
   getFollowUpSuggestions,
+  isFollowUpsPending,
   buildClarificationText,
   getConfirmOptions,
 } from '@/types/chat'
@@ -966,7 +967,9 @@ function MessageRenderer({
       </div>
       {/* Follow-up affordances — only under the last settled assistant reply.
           Recipe-card and pantry-proposal messages carry their own actions. */}
-      {isLastSettledAssistant && (
+      {/* While the context-aware chips are still on their way (issue #498)
+          show none rather than flashing the static set and swapping it out. */}
+      {isLastSettledAssistant && !isFollowUpsPending(message.response) && (
         <PostMessageChips
           chips={resolveChips(intent, getFollowUpSuggestions(message.response))}
           onChipTap={onChipTap}

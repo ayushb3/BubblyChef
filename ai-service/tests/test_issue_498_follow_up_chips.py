@@ -131,88 +131,76 @@ class TestSuggestFollowUps:
         manager.complete.assert_not_awaited()
 
 
+
+
 # ---------------------------------------------------------------------------
-# Nodes carry the suggestions in state
+# The prompt lives in prompts/ (CODEOWNERS-reviewed), not inline
 # ---------------------------------------------------------------------------
 
 
-class TestNodesCarrySuggestions:
+def test_follow_up_prompt_is_defined_in_the_prompts_package():
+    from bubbly_chef.prompts import chat as chat_prompts
+    from bubbly_chef.workflows.chat import nodes
+
+    assert "{user_message}" in chat_prompts._FOLLOW_UP_PROMPT
+    assert "{reply_text}" in chat_prompts._FOLLOW_UP_PROMPT
+    assert nodes._FOLLOW_UP_PROMPT is chat_prompts._FOLLOW_UP_PROMPT
+
+
+# ---------------------------------------------------------------------------
+# Graph nodes make no follow-up call: the streaming entry owns the one pass
+# ---------------------------------------------------------------------------
+
+
+class TestNodesMakeNoFollowUpCall:
     @pytest.mark.asyncio
-    async def test_cooking_help_react_path_populates_state(self):
+    async def test_cooking_help_react_path_does_not_run_the_post_pass(self):
         manager = _manager(complete_result=FollowUpSuggestions(follow_up_suggestions=SUGGESTIONS))
         with (
             patch("bubbly_chef.workflows.chat.nodes.get_ai_manager", return_value=manager),
             patch("bubbly_chef.workflows.chat.nodes.get_repository", new_callable=AsyncMock),
         ):
             result = await cooking_help_response(_state())
-        assert result["intent"] == Intent.COOKING_HELP.value
         assert result["assistant_message"] == REPLY
-        assert result["follow_up_suggestions"] == SUGGESTIONS
+        schemas = [c.kwargs.get("response_schema") for c in manager.complete.await_args_list]
+        assert FollowUpSuggestions not in schemas
+        assert "follow_up_suggestions" not in result
 
     @pytest.mark.asyncio
-    async def test_cooking_help_react_path_empty_when_pass_fails(self):
-        """Fallback contract: the key is present and empty, never missing."""
+    async def test_general_chat_node_makes_exactly_one_call(self):
         manager = _manager()
-        manager.complete = AsyncMock(side_effect=RuntimeError("model down"))
-        with (
-            patch("bubbly_chef.workflows.chat.nodes.get_ai_manager", return_value=manager),
-            patch("bubbly_chef.workflows.chat.nodes.get_repository", new_callable=AsyncMock),
-        ):
-            result = await cooking_help_response(_state())
-        assert result["assistant_message"] == REPLY
-        assert result["follow_up_suggestions"] == []
-
-    @pytest.mark.asyncio
-    async def test_general_chat_node_populates_state(self):
-        manager = _manager()
-        manager.complete = AsyncMock(
-            side_effect=[REPLY, FollowUpSuggestions(follow_up_suggestions=SUGGESTIONS[:2])]
-        )
+        manager.complete = AsyncMock(return_value=REPLY)
         with (
             patch("bubbly_chef.workflows.chat.nodes.get_ai_manager", return_value=manager),
             patch("bubbly_chef.workflows.chat.nodes.get_repository", new_callable=AsyncMock),
         ):
             result = await general_chat_response(_state())
-        assert result["intent"] == Intent.GENERAL_CHAT.value
         assert result["assistant_message"] == REPLY
-        assert result["follow_up_suggestions"] == SUGGESTIONS[:2]
+        manager.complete.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
-# Router threads state → envelope.metadata
+# Streaming path (the one the UI uses): envelope first, chips after
 # ---------------------------------------------------------------------------
 
-
-class TestEnvelopeMetadata:
-    def test_build_envelope_from_state_carries_suggestions(self):
-        from bubbly_chef.workflows.router import _build_envelope_from_state
-
-        env = _build_envelope_from_state(
-            {
-                "intent": Intent.COOKING_HELP.value,
-                "assistant_message": REPLY,
-                "follow_up_suggestions": SUGGESTIONS,
-            },
-            "msg",
-            None,
-        )
-        assert env.metadata["follow_up_suggestions"] == SUGGESTIONS
-
-    def test_build_envelope_from_state_defaults_to_empty(self):
-        from bubbly_chef.workflows.router import _build_envelope_from_state
-
-        env = _build_envelope_from_state(
-            {"intent": Intent.GENERAL_CHAT.value, "assistant_message": REPLY}, "msg", None
-        )
-        assert env.metadata["follow_up_suggestions"] == []
+_CLASSIFIED = {
+    "request_id": "11111111-1111-4111-8111-111111111111",
+    "workflow_id": "22222222-2222-4222-8222-222222222222",
+    "conversation_id": None,
+    "user_id": "u",
+    "input_text": "how do I know chicken is done?",
+    "input_mode": "chat",
+    "conversation_history": [],
+    "context": None,
+    "warnings": [],
+    "errors": [],
+    "intent": Intent.COOKING_HELP.value,
+    "session_mode": None,
+    "session": None,
+}
 
 
-# ---------------------------------------------------------------------------
-# Streaming path (the one the UI uses)
-# ---------------------------------------------------------------------------
-
-
-async def _collect_stream(**overrides):
+async def _collect_stream(*, intent=Intent.COOKING_HELP.value, dispatch_final=None, post_pass=None):
     from bubbly_chef.workflows import router as router_mod
 
     async def _tokens(**_kwargs):
@@ -221,32 +209,24 @@ async def _collect_stream(**overrides):
 
     manager = _manager()
     manager.stream_complete = _tokens
-    manager.complete = AsyncMock(
-        return_value=overrides.get(
-            "post_pass", FollowUpSuggestions(follow_up_suggestions=SUGGESTIONS)
+    if isinstance(post_pass, BaseException):
+        manager.complete = AsyncMock(side_effect=post_pass)
+    else:
+        manager.complete = AsyncMock(
+            return_value=post_pass
+            if post_pass is not None
+            else FollowUpSuggestions(follow_up_suggestions=SUGGESTIONS)
         )
-    )
-    classified = {
-        "request_id": "11111111-1111-4111-8111-111111111111",
-        "workflow_id": "22222222-2222-4222-8222-222222222222",
-        "conversation_id": None,
-        "user_id": "u",
-        "input_text": "how do I know chicken is done?",
-        "input_mode": "chat",
-        "conversation_history": [],
-        "context": None,
-        "warnings": [],
-        "errors": [],
-        "intent": Intent.COOKING_HELP.value,
-        "session_mode": None,
-        "session": None,
-    }
+    dispatch_graph = MagicMock()
+    dispatch_graph.ainvoke = AsyncMock(return_value=dispatch_final or {})
 
     with (
-        patch.object(router_mod, "get_chat_router_graph", return_value=MagicMock()),
+        patch.object(router_mod, "get_chat_dispatch_graph", return_value=dispatch_graph),
         patch.object(router_mod, "initialize_state", side_effect=lambda s: s),
         patch.object(router_mod, "load_session", AsyncMock(side_effect=lambda s: s)),
-        patch.object(router_mod, "classify_intent", AsyncMock(return_value=classified)),
+        patch.object(
+            router_mod, "classify_intent", AsyncMock(return_value={**_CLASSIFIED, "intent": intent})
+        ),
         patch.object(router_mod, "get_ai_manager", return_value=manager),
         patch.object(router_mod, "get_repository", AsyncMock(side_effect=RuntimeError("no db"))),
         patch.object(router_mod, "update_session_node", AsyncMock(side_effect=lambda s: s)),
@@ -262,20 +242,86 @@ async def _collect_stream(**overrides):
 
 class TestStreamingPath:
     @pytest.mark.asyncio
-    async def test_envelope_carries_suggestions_after_done(self):
+    async def test_envelope_is_sent_before_the_chips_are_computed(self):
         events, manager = await _collect_stream()
         types = [e["type"] for e in events]
-        assert types.index("done") < types.index("envelope")
+        assert types.index("done") < types.index("envelope") < types.index("follow_ups")
         envelope = next(e for e in events if e["type"] == "envelope")["data"]
-        assert envelope["intent"] == Intent.COOKING_HELP.value
-        assert envelope["metadata"]["follow_up_suggestions"] == SUGGESTIONS
+        # The envelope does not wait for the chips: it says they are coming.
+        assert envelope["metadata"]["follow_ups_pending"] is True
+        assert "follow_up_suggestions" not in envelope["metadata"]
+        follow = next(e for e in events if e["type"] == "follow_ups")["data"]
+        assert follow["suggestions"] == SUGGESTIONS
         # The post-pass saw the fully streamed reply, not a partial one.
         assert "Chicken is done." in manager.complete.await_args.kwargs["prompt"]
 
     @pytest.mark.asyncio
-    async def test_envelope_has_empty_list_when_model_returns_nothing(self):
-        events, _ = await _collect_stream(
-            post_pass=FollowUpSuggestions(follow_up_suggestions=[])
+    async def test_a_text_turn_costs_exactly_one_extra_call(self):
+        _, manager = await _collect_stream()
+        manager.complete.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_empty_model_output_still_sends_an_empty_follow_ups_event(self):
+        events, _ = await _collect_stream(post_pass=FollowUpSuggestions(follow_up_suggestions=[]))
+        follow = next(e for e in events if e["type"] == "follow_ups")["data"]
+        assert follow["suggestions"] == []
+
+    @pytest.mark.asyncio
+    async def test_post_pass_failure_sends_empty_and_the_stream_completes(self):
+        events, _ = await _collect_stream(post_pass=RuntimeError("model down"))
+        assert [e["type"] for e in events][-1] == "follow_ups"
+        assert next(e for e in events if e["type"] == "follow_ups")["data"]["suggestions"] == []
+
+    @pytest.mark.asyncio
+    async def test_reply_with_idea_cards_gets_no_follow_up_pass(self):
+        """A brainstorm reply renders its own tappable idea cards: no chip pass."""
+        events, manager = await _collect_stream(
+            intent=Intent.RECIPE_BRAINSTORM.value,
+            dispatch_final={
+                "intent": Intent.RECIPE_BRAINSTORM.value,
+                "assistant_message": "Here are some ideas",
+                "brainstorm_ideas": ["Stew", "Curry"],
+            },
         )
         envelope = next(e for e in events if e["type"] == "envelope")["data"]
-        assert envelope["metadata"]["follow_up_suggestions"] == []
+        assert envelope["metadata"].get("follow_ups_pending") is False
+        assert "follow_ups" not in [e["type"] for e in events]
+        manager.complete.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_reply_with_confirm_buttons_gets_no_follow_up_pass(self):
+        from bubbly_chef.models.base import NextAction
+
+        events, manager = await _collect_stream(
+            intent=Intent.RECIPE_CARD.value,
+            dispatch_final={
+                "intent": Intent.GENERAL_CHAT.value,
+                "assistant_message": "Tweak this recipe or start fresh?",
+                "next_action": NextAction.CONFIRM_CHOICE.value,
+                "confirm_options": [{"label": "Tweak", "forced_intent": "recipe_card"}],
+            },
+        )
+        assert "follow_ups" not in [e["type"] for e in events]
+        manager.complete.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# The route folds the late event into what it persists
+# ---------------------------------------------------------------------------
+
+
+def test_merge_follow_ups_into_envelope_updates_metadata():
+    from bubbly_chef.workflows.router import merge_follow_ups_into_envelope
+
+    envelope = {"intent": "cooking_help", "metadata": {"follow_ups_pending": True}}
+    merge_follow_ups_into_envelope(envelope, {"suggestions": SUGGESTIONS})
+    assert envelope["metadata"]["follow_up_suggestions"] == SUGGESTIONS
+    assert envelope["metadata"]["follow_ups_pending"] is False
+
+
+def test_merge_follow_ups_into_envelope_tolerates_missing_pieces():
+    from bubbly_chef.workflows.router import merge_follow_ups_into_envelope
+
+    envelope: dict = {"intent": "cooking_help"}
+    merge_follow_ups_into_envelope(envelope, {"suggestions": "not a list"})
+    assert envelope["metadata"] == {"follow_up_suggestions": [], "follow_ups_pending": False}

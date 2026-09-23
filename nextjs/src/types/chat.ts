@@ -210,6 +210,15 @@ export function getBrainstormIdeas(response?: ChatResponse | null): string[] {
  * it through `resolveChips`, which sanitises and falls back to static chips.
  * Returns an empty array when absent, null, or malformed.
  */
+/**
+ * True while the server has promised follow-up chips for this reply but they
+ * haven't arrived yet (issue #498): the envelope is sent first so the input
+ * unlocks immediately, and the chips follow as a separate `follow_ups` event.
+ */
+export function isFollowUpsPending(response?: ChatResponse | null): boolean {
+  return response?.metadata?.follow_ups_pending === true
+}
+
 export function getFollowUpSuggestions(response?: ChatResponse | null): string[] {
   const raw = response?.metadata?.follow_up_suggestions
   if (!Array.isArray(raw)) return []

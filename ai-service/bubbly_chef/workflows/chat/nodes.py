@@ -23,6 +23,7 @@ from bubbly_chef.prompts.chat import (
     _AMENDMENT_DETECTION_PROMPT,
     _COOKING_REACT_SYSTEM_PROMPT,
     _COOKING_SYSTEM_PROMPT,
+    _FOLLOW_UP_PROMPT,
 )
 # Re-exported for callers that import these off this module (e.g.
 # workflows/router.py, workflows/chat/__init__.py) — `as`-aliasing makes the
@@ -50,27 +51,6 @@ _COOKING_TOOL_NAMES = ["check_pantry"]
 # its own cap and sanitising; this one just keeps the payload bounded.
 MAX_FOLLOW_UP_SUGGESTIONS = 3
 
-# Inline (not in prompts/) — a structured post-pass over a reply that has
-# already been produced, the same shape as the amendment-detection pass.
-_FOLLOW_UP_PROMPT = """\
-You are a structured-output assistant. A cooking assistant has just answered a
-user's message. Suggest the follow-up questions the user is most likely to ask
-NEXT, based on what the answer actually said.
-
-User message: {user_message}
-
-Assistant reply (already sent): {reply_text}
-
-Rules:
-- Return 2 or 3 suggestions, each phrased in the user's voice as a short
-  question or request of at most 8 words (e.g. "What internal temperature?",
-  "How long should it rest?", "Can I use the air fryer?").
-- Each must follow directly from the content of the reply. Do not ask about
-  something the reply already fully covered, and do not suggest generic
-  questions the reply gives no reason to ask.
-- Plain text only: no markdown, no numbering, no emoji, no links.
-
-Return ONLY the JSON fields defined in the schema — no extra text."""
 
 
 async def suggest_follow_ups(
