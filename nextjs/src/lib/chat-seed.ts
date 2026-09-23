@@ -19,6 +19,7 @@
  * it without re-tuning `recipe/nodes.py`.
  */
 
+import { parseLocalDate } from '@/lib/pantry-helpers'
 import type { CookingRecipeIdContext } from '@/types/chat'
 
 /**
@@ -101,13 +102,19 @@ export function ingredientSeedMessage(name: string): string {
  * Human phrasing for an ISO expiry date, matching `pantry-helpers`' day maths
  * (midnight-today → expiry, rounded up). Returns null for a missing/unparseable
  * date so callers can fall back.
+ *
+ * Uses `parseLocalDate` (not the bare `Date` constructor) for the same reason
+ * `pantry-helpers` does (#244): a date-only string like "2026-08-25" parses as
+ * *UTC* midnight, while `today` below is *local* midnight. West of UTC that
+ * mismatch could read a same-day-tomorrow item as two days out, and only in
+ * the evening — the exact flake in #438.
  */
 export function expiryPhrase(
   expiryDate: string | null | undefined,
   now: Date = new Date(),
 ): string | null {
   if (!expiryDate) return null
-  const expiry = new Date(expiryDate)
+  const expiry = parseLocalDate(expiryDate)
   if (Number.isNaN(expiry.getTime())) return null
 
   const today = new Date(now)
