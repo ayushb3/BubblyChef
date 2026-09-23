@@ -1,5 +1,5 @@
 /**
- * BubblesMascot (issue #525) — five states, the "worried" 💧 badge, the
+ * BubblesMascot (issue #525, art swapped in #527) — five states, the
  * one-shot celebrate bounce/sparkle burst, and reduced-motion gating.
  */
 import React from 'react'
@@ -55,16 +55,6 @@ describe('BubblesMascot (#525)', () => {
     },
   )
 
-  it('shows the 💧 worried badge in the worried state', () => {
-    render(<BubblesMascot state="worried" />)
-    expect(screen.getByTestId('bubbles-worried-badge')).toBeInTheDocument()
-  })
-
-  it('does not show the worried badge for other states', () => {
-    render(<BubblesMascot state="happy" />)
-    expect(screen.queryByTestId('bubbles-worried-badge')).toBeNull()
-  })
-
   it('fires the sparkle burst when celebrating with motion enabled', () => {
     render(<BubblesMascot state="celebrate" />)
     expect(screen.getByTestId('bubbles-sparkle-burst')).toBeInTheDocument()
@@ -85,7 +75,6 @@ describe('BubblesMascot (#525)', () => {
     mockReducedMotion = true
     render(<BubblesMascot state="worried" />)
     expect(screen.getByAltText('Bubbles worried')).toBeInTheDocument()
-    expect(screen.getByTestId('bubbles-worried-badge')).toBeInTheDocument()
   })
 
   it.each(['happy', 'surprised', 'thinking', 'worried', 'celebrate'] as const)(
