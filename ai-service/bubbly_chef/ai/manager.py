@@ -140,15 +140,14 @@ class AIManager:
 
         for provider in self.providers:
             try:
-                if not await provider.is_available():
-                    logger.warning(
-                        f"AI provider [{provider.name}] not available, skipping"
-                    )
-                    errors.append(
-                        f"{provider.name}: not available (check credentials/model/connection)"
-                    )
-                    continue
-
+                # Deliberately no `is_available()` pre-check here (#514): a
+                # cheap probe request only proves reachability at that
+                # instant, and skipping the real call on its say-so throws
+                # away the classified `ProviderUnavailableError` the actual
+                # request would have raised (auth/model/bad-request/etc.),
+                # collapsing every such failure into a generic "not
+                # available" string with no kind. Attempt the real call and
+                # let it classify its own failure.
                 logger.info(
                     f"AI request starting on [{provider.name}] "
                     f"(prompt_len={len(prompt)}, schema={response_schema is not None})"
@@ -242,10 +241,8 @@ class AIManager:
             if not provider.supports_vision:
                 continue
             try:
-                if not await provider.is_available():
-                    errors.append(f"{provider.name}: not available")
-                    continue
-
+                # See `complete()` for why there's no `is_available()`
+                # pre-check gating this call (#514).
                 logger.info(
                     f"AI vision request starting on [{provider.name}] "
                     f"(image_bytes={len(image_bytes)}, schema={response_schema is not None})"
@@ -315,10 +312,8 @@ class AIManager:
             if not provider.supports_tool_calling:
                 continue
             try:
-                if not await provider.is_available():
-                    errors.append(f"{provider.name}: not available")
-                    continue
-
+                # See `complete()` for why there's no `is_available()`
+                # pre-check gating this call (#514).
                 logger.info(
                     f"AI tool-calling request starting on [{provider.name}] "
                     f"(messages={len(messages)}, tools={len(tools)})"
@@ -370,10 +365,8 @@ class AIManager:
 
         for provider in self.providers:
             try:
-                if not await provider.is_available():
-                    errors.append(f"{provider.name}: not available")
-                    continue
-
+                # See `complete()` for why there's no `is_available()`
+                # pre-check gating this call (#514).
                 logger.info(
                     f"AI stream starting on [{provider.name}] (prompt_len={len(prompt)})"
                 )
