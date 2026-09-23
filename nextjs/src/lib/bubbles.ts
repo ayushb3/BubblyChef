@@ -25,7 +25,19 @@ export const BUBBLE_AMOUNTS = {
   recipe_save: 3,
   cook_confirm: 10,
   daily_visit: 1,
+  /** Using up an item while it's expiring soon (0-3 days left, see `isExpiringSoon`) — issue #524. */
+  rescue: 8,
+  /** A completed Mon-Sun week with at least one bubble_event and no waste — issue #524. */
+  weekly_streak: 20,
 } as const
+
+/**
+ * Most `rescue` awards a single cook confirm can earn (issue #524) — a
+ * recipe with a long ingredient list shouldn't out-earn a whole day of
+ * pantry activity. The resolve route has no cap: it only ever handles one
+ * item per call.
+ */
+export const RESCUE_CAP_PER_COOK = 3
 
 export type BubbleEventType = keyof typeof BUBBLE_AMOUNTS
 

@@ -8,6 +8,8 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { localDateString } from '@/lib/date'
+import { tzOffsetMinutes } from '@/lib/api/dashboard'
 
 export interface BubbleEvent {
   id: string
@@ -21,17 +23,10 @@ export interface BubbleEvent {
 export interface BubblesResult {
   balance: number
   recent: BubbleEvent[]
-}
-
-/**
- * The visitor's local calendar date as YYYY-MM-DD.
- *
- * Deliberately `toLocaleDateString`-based (en-CA formats as YYYY-MM-DD),
- * not `toISOString`, which is UTC and would credit the daily-visit award to
- * the wrong day for anyone not on UTC.
- */
-function localDateString(): string {
-  return new Date().toLocaleDateString('en-CA')
+  /** Consecutive clean (active + no waste) Mon-Sun weeks, most recent completed week counting back (#524). */
+  streak_weeks: number
+  /** Whether the current, still-in-progress week has already seen waste (#524). */
+  wasted_this_week: boolean
 }
 
 /**
@@ -55,7 +50,14 @@ function is401(error: unknown): boolean {
 
 /** Fetch the caller's bubble balance and recent events, awarding today's daily visit. */
 export async function getBubbles(): Promise<BubblesResult> {
-  const res = await fetch(`/api/bubbles?date=${localDateString()}`)
+  // `tz_offset_minutes` lets the route bucket `created_at` timestamps into
+  // this client's local calendar day rather than the server's UTC day
+  // (issue #524 review) — same convention/helper as the dashboard client.
+  const params = new URLSearchParams({
+    date: localDateString(),
+    tz_offset_minutes: String(tzOffsetMinutes()),
+  })
+  const res = await fetch(`/api/bubbles?${params}`)
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({ error: 'Failed to load bubbles' }))

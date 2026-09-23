@@ -5,6 +5,7 @@
  * see the "two API surfaces" rule in CLAUDE.md.
  */
 
+import { localDateString } from '@/lib/date'
 import type { PantryItem } from '@/types/pantry'
 
 /** Item shape accepted by `POST /api/pantry/bulk`. */
@@ -89,7 +90,9 @@ export async function resolvePantryItem(
   const res = await fetch(`/api/pantry/${itemId}/resolve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ outcome }),
+    // The client's own local date, used server-side to key a `rescue`
+    // bubbles award (#524) — same convention as the daily_visit award.
+    body: JSON.stringify({ outcome, date: localDateString() }),
   })
 
   if (!res.ok) {

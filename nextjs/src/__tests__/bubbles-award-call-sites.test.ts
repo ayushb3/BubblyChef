@@ -258,6 +258,33 @@ describe('bubbles award never blocks the underlying write', () => {
 
   it('POST /api/ai/recipes/cook/confirm still succeeds when the award insert throws', async () => {
     mockRequireAuth.mockResolvedValue([{}, mockUser])
+    const today = new Date().toISOString().slice(0, 10)
+
+    const { POST } = await import('@/app/api/ai/recipes/cook/confirm/route')
+    const res = await POST(
+      new Request('http://localhost/api/ai/recipes/cook/confirm', {
+        method: 'POST',
+        body: JSON.stringify({ recipe_id: 'recipe-1', deductions: [], date: today }),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: mockUser.id,
+        event_type: 'cook_confirm',
+        ref_key: `recipe-1:${today}`,
+      }),
+      expect.anything(),
+    )
+  })
+
+  it('POST /api/ai/recipes/cook/confirm still deducts and still awards cook_confirm (server-dated) when the date field is missing (#524 review)', async () => {
+    // `cook_confirm` predates #524 and must stay unconditional on `recipe_id`
+    // — only the newer `rescue` bonus is allowed to depend on a usable
+    // client-local `date`. With no deductions there's nothing to rescue
+    // anyway, so this pins cook_confirm alone.
+    mockRequireAuth.mockResolvedValue([{}, mockUser])
 
     const { POST } = await import('@/app/api/ai/recipes/cook/confirm/route')
     const res = await POST(
@@ -269,11 +296,89 @@ describe('bubbles award never blocks the underlying write', () => {
 
     expect(res.status).toBe(200)
     expect(upsertMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        user_id: mockUser.id,
-        event_type: 'cook_confirm',
-        ref_key: `recipe-1:${new Date().toISOString().slice(0, 10)}`,
+      expect.objectContaining({ event_type: 'cook_confirm' }),
+      expect.anything(),
+    )
+  })
+
+  it('POST /api/ai/recipes/cook/confirm awards rescue for expiring-soon deducted items, capped at 3', async () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const inTwoDays = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const farOut = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+    const pantryItems = [
+      { id: 'item-1', expiry_date: inTwoDays },
+      { id: 'item-2', expiry_date: inTwoDays },
+      { id: 'item-3', expiry_date: inTwoDays },
+      { id: 'item-4', expiry_date: inTwoDays }, // 4th expiring-soon item — must not be awarded (cap)
+      { id: 'item-5', expiry_date: farOut }, // not expiring soon — must not be awarded
+    ]
+    const supabase = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            in: async () => ({ data: pantryItems, error: null }),
+          }),
+        }),
       }),
+    }
+    mockRequireAuth.mockResolvedValue([supabase, mockUser])
+
+    const { POST } = await import('@/app/api/ai/recipes/cook/confirm/route')
+    const res = await POST(
+      new Request('http://localhost/api/ai/recipes/cook/confirm', {
+        method: 'POST',
+        body: JSON.stringify({
+          recipe_id: 'recipe-1',
+          deductions: pantryItems.map((p) => ({ pantry_item_id: p.id, deduct_qty: 1, base_unit: 'g' })),
+          date: today,
+        }),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    const rescueCalls = (upsertMock.mock.calls as unknown as [{ event_type: string; ref_key: string }][]).filter(
+      (call) => call[0].event_type === 'rescue',
+    )
+    expect(rescueCalls).toHaveLength(3)
+    expect(rescueCalls.map((c) => c[0].ref_key)).toEqual([
+      `item-1:${today}`,
+      `item-2:${today}`,
+      `item-3:${today}`,
+    ])
+  })
+
+  it('POST /api/ai/recipes/cook/confirm awards no rescue for an already-expired deducted item', async () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const alreadyExpired = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+    const pantryItems = [{ id: 'item-1', expiry_date: alreadyExpired }]
+    const supabase = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            in: async () => ({ data: pantryItems, error: null }),
+          }),
+        }),
+      }),
+    }
+    mockRequireAuth.mockResolvedValue([supabase, mockUser])
+
+    const { POST } = await import('@/app/api/ai/recipes/cook/confirm/route')
+    const res = await POST(
+      new Request('http://localhost/api/ai/recipes/cook/confirm', {
+        method: 'POST',
+        body: JSON.stringify({
+          recipe_id: 'recipe-1',
+          deductions: pantryItems.map((p) => ({ pantry_item_id: p.id, deduct_qty: 1, base_unit: 'g' })),
+          date: today,
+        }),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(upsertMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'rescue' }),
       expect.anything(),
     )
   })
@@ -394,5 +499,140 @@ describe('bubbles award never blocks the underlying write', () => {
 
     expect(res.status).toBe(200)
     expect(upsertMock).not.toHaveBeenCalled()
+  })
+
+  describe('POST /api/pantry/[id]/resolve rescue bonus (#524)', () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const inTwoDays = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const farOut = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+    function makeResolveSupabase(expiryDate: string | null) {
+      return {
+        from: () => ({
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                single: async () => ({
+                  data: {
+                    id: 'item-1',
+                    name: 'Spinach',
+                    quantity: 1,
+                    unit: 'bag',
+                    expiry_date: expiryDate,
+                  },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+          insert: async () => ({ error: null }),
+          delete: () => ({
+            eq: () => ({
+              eq: async () => ({ error: null }),
+            }),
+          }),
+        }),
+      }
+    }
+
+    it('awards rescue when an expiring-soon item is used (not tossed)', async () => {
+      mockRequireAuth.mockResolvedValue([makeResolveSupabase(inTwoDays), mockUser])
+
+      const { POST } = await import('@/app/api/pantry/[id]/resolve/route')
+      const res = await POST(
+        new Request('http://localhost/api/pantry/item-1/resolve', {
+          method: 'POST',
+          body: JSON.stringify({ outcome: 'used', date: today }),
+        }),
+        { params: Promise.resolve({ id: 'item-1' }) },
+      )
+
+      expect(res.status).toBe(200)
+      expect(upsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: mockUser.id,
+          event_type: 'rescue',
+          ref_key: `item-1:${today}`,
+        }),
+        expect.anything(),
+      )
+    })
+
+    it('does not award rescue for a tossed item, even if it was expiring soon', async () => {
+      mockRequireAuth.mockResolvedValue([makeResolveSupabase(inTwoDays), mockUser])
+
+      const { POST } = await import('@/app/api/pantry/[id]/resolve/route')
+      const res = await POST(
+        new Request('http://localhost/api/pantry/item-1/resolve', {
+          method: 'POST',
+          body: JSON.stringify({ outcome: 'tossed', date: today }),
+        }),
+        { params: Promise.resolve({ id: 'item-1' }) },
+      )
+
+      expect(res.status).toBe(200)
+      expect(upsertMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'rescue' }),
+        expect.anything(),
+      )
+    })
+
+    it('does not award rescue for an item that is not yet expiring soon', async () => {
+      mockRequireAuth.mockResolvedValue([makeResolveSupabase(farOut), mockUser])
+
+      const { POST } = await import('@/app/api/pantry/[id]/resolve/route')
+      const res = await POST(
+        new Request('http://localhost/api/pantry/item-1/resolve', {
+          method: 'POST',
+          body: JSON.stringify({ outcome: 'used', date: today }),
+        }),
+        { params: Promise.resolve({ id: 'item-1' }) },
+      )
+
+      expect(res.status).toBe(200)
+      expect(upsertMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'rescue' }),
+        expect.anything(),
+      )
+    })
+
+    it('does not award rescue for an already-expired item, even if used (not tossed)', async () => {
+      const alreadyExpired = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      mockRequireAuth.mockResolvedValue([makeResolveSupabase(alreadyExpired), mockUser])
+
+      const { POST } = await import('@/app/api/pantry/[id]/resolve/route')
+      const res = await POST(
+        new Request('http://localhost/api/pantry/item-1/resolve', {
+          method: 'POST',
+          body: JSON.stringify({ outcome: 'used', date: today }),
+        }),
+        { params: Promise.resolve({ id: 'item-1' }) },
+      )
+
+      expect(res.status).toBe(200)
+      expect(upsertMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'rescue' }),
+        expect.anything(),
+      )
+    })
+
+    it('still resolves (and skips the rescue award) when the date field is missing', async () => {
+      mockRequireAuth.mockResolvedValue([makeResolveSupabase(inTwoDays), mockUser])
+
+      const { POST } = await import('@/app/api/pantry/[id]/resolve/route')
+      const res = await POST(
+        new Request('http://localhost/api/pantry/item-1/resolve', {
+          method: 'POST',
+          body: JSON.stringify({ outcome: 'used' }),
+        }),
+        { params: Promise.resolve({ id: 'item-1' }) },
+      )
+
+      expect(res.status).toBe(200)
+      expect(upsertMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'rescue' }),
+        expect.anything(),
+      )
+    })
   })
 })
