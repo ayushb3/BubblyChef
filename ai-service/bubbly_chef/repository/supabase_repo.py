@@ -28,10 +28,99 @@ logger = logging.getLogger(__name__)
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
+# Filler words that carry no dish-identifying signal in a natural-language
+# lookup request ("show me my saved butter chicken", "do you have a recipe
+# for pasta"). Left in, these spuriously overlap with unrelated recipes'
+# descriptions/tags and pad or corrupt the ranked results. Only stripped from
+# the *query* side of search_saved_recipes — title/description/tags text is
+# scored as written.
+_QUERY_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "my",
+        "me",
+        "i",
+        "you",
+        "your",
+        "we",
+        "it",
+        "that",
+        "this",
+        "those",
+        "these",
+        "do",
+        "does",
+        "did",
+        "have",
+        "has",
+        "had",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "can",
+        "could",
+        "would",
+        "will",
+        "should",
+        "show",
+        "find",
+        "get",
+        "give",
+        "look",
+        "up",
+        "pull",
+        "make",
+        "made",
+        "want",
+        "need",
+        "like",
+        "please",
+        "saved",
+        "save",
+        "recipe",
+        "recipes",
+        "for",
+        "of",
+        "on",
+        "in",
+        "to",
+        "and",
+        "or",
+        "with",
+        "from",
+        "again",
+        "last",
+        "week",
+        "time",
+        "some",
+        "any",
+        "one",
+        "again",
+        "another",
+    }
+)
+
 
 def _tokenize(text: str) -> list[str]:
     """Lowercase and split into alphanumeric tokens for overlap scoring."""
     return _TOKEN_RE.findall(text.lower())
+
+
+def _tokenize_query(text: str) -> list[str]:
+    """Tokenize a free-text lookup query, dropping stopword filler.
+
+    A saved-recipe lookup query is a full sentence ("show me my saved butter
+    chicken"), not a keyword. Without stripping filler words, generic tokens
+    like "recipe"/"for"/"a"/"do" spuriously overlap against unrelated recipes'
+    descriptions and tags, padding or corrupting the ranked match list — see
+    issue #533.
+    """
+    return [tok for tok in _tokenize(text) if tok not in _QUERY_STOPWORDS]
 
 
 def _as_row(value: JSON) -> dict[str, Any]:
@@ -417,7 +506,7 @@ class SupabaseRepository:
         Rows with zero overlap on all three fields are dropped rather than
         returned as arbitrary trailing "matches".
         """
-        query_tokens = set(_tokenize(query))
+        query_tokens = set(_tokenize_query(query))
         if not query_tokens:
             return []
 

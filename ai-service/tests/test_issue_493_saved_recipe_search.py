@@ -181,3 +181,86 @@ class TestSearchSavedRecipes:
         results = await repo.search_saved_recipes("u1", "chicken", limit=3)
 
         assert len(results) == 3
+
+    async def test_natural_language_query_ignores_filler_words(self) -> None:
+        """Regression for issue #533: a full-sentence query like "show me my
+        saved butter chicken" must rank on "butter chicken" alone. Before the
+        fix, generic tokens ("show", "me", "my", "saved") were scored as
+        query terms and could spuriously overlap other rows' text."""
+        rows = [
+            {
+                "id": "target",
+                "user_id": "u1",
+                "title": "Butter Chicken",
+                "description": "",
+                "tags": [],
+            },
+            {
+                "id": "unrelated",
+                "user_id": "u1",
+                "title": "Weekend Meal Prep",
+                "description": "notes I saved for my own reference, show family",
+                "tags": [],
+            },
+        ]
+        repo = _repo_for(rows)
+
+        results = await repo.search_saved_recipes(
+            "u1", "show me my saved butter chicken", limit=5
+        )
+
+        assert [r["id"] for r in results] == ["target"]
+
+    async def test_nonsense_dish_name_returns_empty_despite_filler_overlap(self) -> None:
+        """"do you have a recipe for <nonsense>" must return 0 matches even
+        though "do"/"have"/"a"/"recipe"/"for" are common words that could
+        otherwise spuriously overlap other recipes' text — the exact failure
+        mode reported against attempt 1 (issue #533)."""
+        rows = [
+            {
+                "id": "r1",
+                "user_id": "u1",
+                "title": "Pancakes",
+                "description": "a great recipe for breakfast, do try it",
+                "tags": ["breakfast"],
+            },
+            {
+                "id": "r2",
+                "user_id": "u1",
+                "title": "Lasagna",
+                "description": "a recipe for a cheesy bake",
+                "tags": [],
+            },
+        ]
+        repo = _repo_for(rows)
+
+        results = await repo.search_saved_recipes(
+            "u1", "do you have a recipe for zzqxnonexistentdish", limit=5
+        )
+
+        assert results == []
+
+    async def test_stopword_heavy_phrasing_still_ranks_content_match_first(self) -> None:
+        rows = [
+            {
+                "id": "title_match",
+                "user_id": "u1",
+                "title": "Butter Chicken",
+                "description": "",
+                "tags": [],
+            },
+            {
+                "id": "desc_match",
+                "user_id": "u1",
+                "title": "Lasagna",
+                "description": "a recipe for chicken lasagna with cheese",
+                "tags": [],
+            },
+        ]
+        repo = _repo_for(rows)
+
+        results = await repo.search_saved_recipes(
+            "u1", "do you have a recipe for the chicken I made last week", limit=5
+        )
+
+        assert [r["id"] for r in results] == ["title_match", "desc_match"]
