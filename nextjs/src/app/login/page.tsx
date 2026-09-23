@@ -78,7 +78,18 @@ export default function LoginPage() {
     setGoogleLoading(true)
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+      // Fail closed. A failed session check (network error, expired token)
+      // returns a null user, which would otherwise read as "not a guest" and
+      // take the signInWithOAuth path, forking a new account and orphaning
+      // the guest's pantry under the old UID (the exact bug #389 fixes).
+      // Only "no session at all" is a genuine non-guest.
+      if (userError && userError.name !== 'AuthSessionMissingError') {
+        setError("Couldn't check your current session. Please try again.")
+        setGoogleLoading(false)
+        return
+      }
 
       if (isGuestUser(user)) {
         // Link the Google identity onto the guest's existing anonymous UID

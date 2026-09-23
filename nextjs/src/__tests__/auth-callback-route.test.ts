@@ -61,6 +61,33 @@ describe('GET /auth/callback (#383)', () => {
     )
   })
 
+  it('forwards error_code from the redirect so the login page can spot an identity collision (#389)', async () => {
+    const request = new Request(
+      'http://localhost/auth/callback?error=server_error&error_code=identity_already_exists&error_description=Identity%20is%20already%20linked'
+    )
+    const res = await GET(request)
+
+    expect(mockExchangeCodeForSession).not.toHaveBeenCalled()
+    const location = new URL(res.headers.get('location')!)
+    expect(location.pathname).toBe('/login')
+    expect(location.searchParams.get('error')).toBe('Identity is already linked')
+    expect(location.searchParams.get('error_code')).toBe('identity_already_exists')
+  })
+
+  it('forwards error_code when the collision surfaces at the code exchange instead (#389)', async () => {
+    mockExchangeCodeForSession.mockResolvedValue({
+      error: { message: 'Identity is already linked', code: 'identity_already_exists' },
+    })
+
+    const request = new Request('http://localhost/auth/callback?code=abc123')
+    const res = await GET(request)
+
+    const location = new URL(res.headers.get('location')!)
+    expect(location.pathname).toBe('/login')
+    expect(location.searchParams.get('error')).toBe('Identity is already linked')
+    expect(location.searchParams.get('error_code')).toBe('identity_already_exists')
+  })
+
   it('redirects to /login with the provider error when Google returns error_description, without attempting an exchange', async () => {
     const request = new Request(
       'http://localhost/auth/callback?error_description=access_denied'

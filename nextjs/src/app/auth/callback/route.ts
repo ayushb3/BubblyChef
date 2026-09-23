@@ -39,8 +39,12 @@ export async function GET(request: Request) {
     if (!error) {
       return NextResponse.redirect(`${origin}${next}`)
     }
+    // The collision can also surface here, at the exchange, rather than on
+    // the redirect — forward its code on this path too so the login page
+    // can show the same friendly message and fallback.
+    const codeParam = error.code ? `&error_code=${encodeURIComponent(error.code)}` : ''
     return NextResponse.redirect(
-      `${origin}/login?error=${encodeURIComponent(error.message)}`
+      `${origin}/login?error=${encodeURIComponent(error.message)}${codeParam}`
     )
   }
 

@@ -103,6 +103,40 @@ describe('guest Google sign-in should link identity, not fork a new account (#38
     expect(mockLinkIdentity).not.toHaveBeenCalled()
   })
 
+  it('fails closed when the session check errors: no signInWithOAuth, no new account (#389 review)', async () => {
+    // A network error or expired token returns a null user WITH an error.
+    // Treating that as "not a guest" would fork a new account and orphan the
+    // guest's pantry, so nothing may be called and the user sees a retry.
+    mockGetUser.mockResolvedValue({
+      data: { user: null },
+      error: { name: 'AuthRetryableFetchError', message: 'fetch failed' },
+    })
+    render(<LoginPage />)
+
+    screen.getByText('Continue with Google').click()
+
+    expect(await screen.findByText(/Couldn't check your current session/)).toBeInTheDocument()
+    expect(mockSignInWithOAuth).not.toHaveBeenCalled()
+    expect(mockLinkIdentity).not.toHaveBeenCalled()
+  })
+
+  it('still signs in normally when getUser reports no session at all', async () => {
+    mockGetUser.mockResolvedValue({
+      data: { user: null },
+      error: { name: 'AuthSessionMissingError', message: 'Auth session missing!' },
+    })
+    render(<LoginPage />)
+
+    screen.getByText('Continue with Google').click()
+
+    await waitFor(() => {
+      expect(mockSignInWithOAuth).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'google' })
+      )
+    })
+    expect(mockLinkIdentity).not.toHaveBeenCalled()
+  })
+
   it('calls signInWithOAuth (not linkIdentity) when the active session is a real (non-guest) user', async () => {
     mockGetUser.mockResolvedValue({
       data: { user: { id: 'real-1', is_anonymous: false } },
