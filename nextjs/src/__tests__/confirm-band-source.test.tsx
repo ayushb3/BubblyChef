@@ -7,9 +7,18 @@
  *    literal words "Tweak this recipe" and produced a chicken curry.
  * 2. The band's options are real buttons to assistive tech, not list items.
  */
+import * as React from 'react'
 import { act, render, renderHook, screen, waitFor } from '@testing-library/react'
 import ConfirmBand from '@/components/chat/ConfirmBand'
 import { useChat } from '@/hooks/useChat'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+// useChat reads useQueryClient() (#520, to invalidate the bubbles balance
+// after a chat approval), so it needs a QueryClientProvider to render.
+function QueryWrapper({ children }: { children: React.ReactNode }) {
+  const [client] = React.useState(() => new QueryClient())
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+}
 import { streamChatMessage } from '@/lib/api/chat'
 
 jest.mock('@/lib/api/chat', () => ({
@@ -45,7 +54,7 @@ describe('confirm band carries the request that raised it', () => {
     mockStream.mockImplementationOnce(async (_req, _onToken, onDone) => {
       onDone(bandEnvelope)
     })
-    const { result } = renderHook(() => useChat({ skipResume: true }))
+    const { result } = renderHook(() => useChat({ skipResume: true }), { wrapper: QueryWrapper })
 
     await act(async () => {
       result.current.sendMessage('hmm what about something with mushrooms')
@@ -70,7 +79,7 @@ describe('confirm band carries the request that raised it', () => {
     mockStream.mockImplementationOnce(async (_req, _onToken, onDone) => {
       onDone({ ...bandEnvelope, next_action: 'none', metadata: {} } as unknown as Envelope)
     })
-    const { result } = renderHook(() => useChat({ skipResume: true }))
+    const { result } = renderHook(() => useChat({ skipResume: true }), { wrapper: QueryWrapper })
 
     await act(async () => {
       result.current.sendMessage('no cheese')
