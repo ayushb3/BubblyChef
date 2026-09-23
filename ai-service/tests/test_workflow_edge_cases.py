@@ -38,49 +38,55 @@ def _mock_ai(intent: str):
 
 
 # ---------------------------------------------------------------------------
-# BubblyChef-747: "no cheese" in RECIPE_EXPLORING must NOT be intercepted
-# by a keyword block and must route to recipe_card via session override.
+# BubblyChef-747: modification follow-ups in RECIPE_EXPLORING must resolve to
+# recipe_card. Under the #416 classifier-primary design (Q1) the prefix/keyword
+# block was deleted: mode BIASES the classifier (soft prior), it does not force
+# the intent deterministically. So the classifier IS consulted, and when the
+# mode-biased prompt yields recipe_card the router passes it through unchanged.
+# These tests assert the RESOLVED intent via the classifier — not that the LLM
+# was skipped (the old hard-forcing behaviour #416 removed).
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_no_cheese_in_recipe_exploring_routes_to_recipe_card():
-    """BubblyChef-747: 'no cheese' follow-up must route to recipe_card, not pantry_update."""
-    with _mock_ai("pantry_update") as mock_mgr:
+    """BubblyChef-747: 'no cheese' follow-up → recipe_card via the mode-biased classifier."""
+    with _mock_ai("recipe_card") as mock_mgr:
         result = await classify_intent(
             _state(
                 input_text="no cheese",
                 session_mode=SessionMode.RECIPE_EXPLORING.value,
             )
         )
-    # Session override must fire; LLM must NOT be consulted
-    mock_mgr.return_value.complete.assert_not_called()
+    # Classifier-primary: the LLM IS consulted (mode biases the prompt) and the
+    # RECIPE_EXPLORING pass-through preserves its recipe_card verdict.
+    mock_mgr.return_value.complete.assert_awaited_once()
     assert result["intent"] == Intent.RECIPE_CARD.value
 
 
 @pytest.mark.asyncio
 async def test_without_bacon_in_recipe_exploring_routes_to_recipe_card():
-    with _mock_ai("pantry_update") as mock_mgr:
+    with _mock_ai("recipe_card") as mock_mgr:
         result = await classify_intent(
             _state(
                 input_text="without bacon",
                 session_mode=SessionMode.RECIPE_EXPLORING.value,
             )
         )
-    mock_mgr.return_value.complete.assert_not_called()
+    mock_mgr.return_value.complete.assert_awaited_once()
     assert result["intent"] == Intent.RECIPE_CARD.value
 
 
 @pytest.mark.asyncio
 async def test_make_it_spicier_in_recipe_exploring_routes_to_recipe_card():
-    with _mock_ai("recipe_brainstorm") as mock_mgr:
+    with _mock_ai("recipe_card") as mock_mgr:
         result = await classify_intent(
             _state(
                 input_text="make it spicier",
                 session_mode=SessionMode.RECIPE_EXPLORING.value,
             )
         )
-    mock_mgr.return_value.complete.assert_not_called()
+    mock_mgr.return_value.complete.assert_awaited_once()
     assert result["intent"] == Intent.RECIPE_CARD.value
 
 

@@ -317,3 +317,35 @@ async def test_chat_stream_context_defaults_to_none(client: AsyncClient) -> None
 
     assert response.status_code == 200
     assert captured["context"] is None
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_forwards_forced_intent_source(client: AsyncClient) -> None:
+    """A confirm-band tap carries the request that raised the band through to the
+    workflow alongside forced_intent (#436 verify finding)."""
+    mock_repo = _make_mock_repo()
+    captured: dict[str, Any] = {}
+
+    async def _capturing_stream(*args: Any, **kwargs: Any) -> AsyncIterator[str]:
+        captured.update(kwargs)
+        async for chunk in _fake_stream():
+            yield chunk
+
+    with patch(_STREAM_PATCH, side_effect=_capturing_stream), patch(
+        "bubbly_chef.api.routes.chat.get_repository",
+        new_callable=AsyncMock,
+        return_value=mock_repo,
+    ):
+        response = await client.post(
+            "/v1/chat/stream",
+            json={
+                "message": "Tweak this recipe",
+                "conversation_id": TEST_CONV_ID,
+                "forced_intent": "recipe_card",
+                "forced_intent_source": "hmm what about something with mushrooms",
+            },
+        )
+
+    assert response.status_code == 200
+    assert captured["forced_intent"] == "recipe_card"
+    assert captured["forced_intent_source"] == "hmm what about something with mushrooms"

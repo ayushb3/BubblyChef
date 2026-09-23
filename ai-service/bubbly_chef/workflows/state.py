@@ -84,6 +84,10 @@ class WorkflowState(TypedDict, total=False):
     pantry_snapshot: list[dict[str, Any]] | None
     context: dict[str, Any] | None  # Client-supplied context, e.g. {"cooking_recipe": {...}}
     conversation_history: list[dict[str, Any]]  # Prior turns [{role, content, intent}]
+    # Deterministic intent override from an explicit UI action (chip tap).
+    # When present, classify_intent skips the LLM and uses this directly.
+    # Extension point for [Edit this recipe] / [Start over] chips (#416).
+    forced_intent: str | None
 
     # ==========================================================================
     # Intent Classification
@@ -131,6 +135,9 @@ class WorkflowState(TypedDict, total=False):
     scored_pantry_items: list[dict[str, Any]]
     brainstorm_ideas: list[str]
     selected_recipe_name: str | None
+    # True only when classify_intent resolved a pinned-session turn to a DIFFERENT
+    # already-offered idea; dispatch builds a new card instead of refining.
+    repick_different_idea: bool
     web_search_result: dict[str, Any] | None
     ingredient_availability: list[dict[str, Any]]
 
@@ -148,6 +155,10 @@ class WorkflowState(TypedDict, total=False):
     # ==========================================================================
     assistant_message: str
     next_action: str  # NextAction enum value
+    # The two one-tap choices for a CONFIRM_CHOICE turn (#416 Q5). Each is
+    # {"label": str, "forced_intent": str} so the frontend can render buttons
+    # that POST forced_intent back. Empty on every non-confirm turn.
+    confirm_options: list[dict[str, str]]
 
     # ==========================================================================
     # Clarification & Review

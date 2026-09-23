@@ -711,6 +711,8 @@ class SupabaseRepository:
         role: str,
         content: str,
         intent: str | None = None,
+        proposal: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         self.client.table("conversation_history").insert(
             {
@@ -719,6 +721,8 @@ class SupabaseRepository:
                 "role": role,
                 "content": content,
                 "intent": intent,
+                "proposal": proposal,
+                "metadata": metadata,
             }
         ).execute()
 
