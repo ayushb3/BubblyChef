@@ -43,6 +43,10 @@ export default function FoodAutocomplete({
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  // Whether the user has typed in this field since it mounted. A focus that
+  // arrives before that — a modal's focus trap landing on a pre-filled name,
+  // say — must not pop last query's suggestions over the form.
+  const userHasTypedRef = useRef(false)
   const listboxId = useId()
   const generatedId = useId()
   const inputId = id ?? generatedId
@@ -78,6 +82,7 @@ export default function FoodAutocomplete({
   }, [isOpen])
 
   const handleInputChange = (next: string) => {
+    userHasTypedRef.current = true
     onChange(next)
     setHighlightedIndex(-1)
     setIsOpen(next.trim().length >= MIN_QUERY_LENGTH)
@@ -148,7 +153,10 @@ export default function FoodAutocomplete({
         autoComplete="off"
         value={value}
         onChange={(e) => handleInputChange(e.target.value)}
-        onFocus={() => setIsOpen(value.trim().length >= MIN_QUERY_LENGTH)}
+        onFocus={() => {
+          if (!userHasTypedRef.current) return
+          setIsOpen(value.trim().length >= MIN_QUERY_LENGTH)
+        }}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         className={className}
