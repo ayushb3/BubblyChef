@@ -19,10 +19,22 @@ const OK = {
 }
 const run = over => decide({ ...OK, ...over })
 
-// parsing, in both shapes the reviewer has actually written
+// parsing, in every shape the reviewer has actually written (issue #559: PR #546 wrote
+// "**Verdict: looks mergeable.**" and PR #552 wrote "**Verdict: needs a human**" — both
+// were held as "unreadable" by the old backtick-only regex)
 check('parses **Verdict: `x`**', parseVerdict('**Verdict: `looks mergeable`** (note)') === 'looks mergeable', '')
 check('parses **Verdict:** `x`', parseVerdict('- **Verdict:** `needs changes`') === 'needs changes', '')
 check('no verdict parses as empty', parseVerdict('no verdict here') === '', '')
+check('parses backticked', parseVerdict('Verdict: `looks mergeable`') === 'looks mergeable', '')
+check('parses plain, no backticks or bold', parseVerdict('Verdict: looks mergeable') === 'looks mergeable', '')
+check('parses bold, no backticks', parseVerdict('**Verdict: looks mergeable**') === 'looks mergeable', '')
+check('parses with trailing period', parseVerdict('Verdict: looks mergeable.') === 'looks mergeable', '')
+check('parses uppercase', parseVerdict('VERDICT: NEEDS A HUMAN') === 'needs a human', '')
+check('an unknown word after Verdict: is unreadable', parseVerdict('Verdict: not sure yet') === '', '')
+check('prose mentioning "verdict" without a colon label is unreadable',
+  parseVerdict("Great work overall; my verdict is that this looks mergeable.") === '', '')
+check('the last of several "Verdict:" lines wins',
+  parseVerdict('Verdict: needs changes\nsome discussion\nVerdict: looks mergeable') === 'looks mergeable', '')
 
 check('passes: fresh "looks mergeable" for this commit', run({}).pass === true, run({}).reason)
 check('passes: a PR without the agent-loop label is not gated', run({ labels: ['bug'], sticky: null, reviewJob: null }).pass === true, '')
