@@ -279,7 +279,11 @@ describe('bubbles award never blocks the underlying write', () => {
     )
   })
 
-  it('POST /api/ai/recipes/cook/confirm still deducts (and skips awards) when the date field is missing', async () => {
+  it('POST /api/ai/recipes/cook/confirm still deducts and still awards cook_confirm (server-dated) when the date field is missing (#524 review)', async () => {
+    // `cook_confirm` predates #524 and must stay unconditional on `recipe_id`
+    // — only the newer `rescue` bonus is allowed to depend on a usable
+    // client-local `date`. With no deductions there's nothing to rescue
+    // anyway, so this pins cook_confirm alone.
     mockRequireAuth.mockResolvedValue([{}, mockUser])
 
     const { POST } = await import('@/app/api/ai/recipes/cook/confirm/route')
@@ -291,7 +295,10 @@ describe('bubbles award never blocks the underlying write', () => {
     )
 
     expect(res.status).toBe(200)
-    expect(upsertMock).not.toHaveBeenCalled()
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'cook_confirm' }),
+      expect.anything(),
+    )
   })
 
   it('POST /api/ai/recipes/cook/confirm awards rescue for expiring-soon deducted items, capped at 3', async () => {

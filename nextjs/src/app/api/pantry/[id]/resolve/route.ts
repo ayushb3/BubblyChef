@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
-import { daysUntilExpiry, isExpiringSoon } from '@/lib/pantry-helpers'
+import { daysUntilExpiry, daysUntilExpiryOn, isExpiringSoon } from '@/lib/pantry-helpers'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
 import { validateClientDate } from '@/lib/date'
 import { awardBubbles } from '@/lib/bubbles'
@@ -75,6 +75,16 @@ export async function POST(
 
   const row = item as PantryItemRow
 
+  // Prefer the client's validated local date over the server's UTC clock
+  // (#524 review): `daysUntilExpiry` alone anchors on `new Date()`, which on
+  // Vercel is UTC and can already be a calendar day ahead of/behind the
+  // client near local midnight — misclassifying a same-day rescue/waste and
+  // writing an off-by-one `days_until_expiry`. Falls back to the old
+  // server-anchored calculation when there's no usable client date.
+  const itemDaysUntilExpiry = validDate
+    ? daysUntilExpiryOn(row.expiry_date, validDate)
+    : daysUntilExpiry(row.expiry_date)
+
   const { error: eventError } = await supabase.from('pantry_events').insert({
     user_id: user.id,
     pantry_item_id: row.id,
@@ -82,7 +92,7 @@ export async function POST(
     outcome,
     quantity: row.quantity,
     unit: row.unit,
-    days_until_expiry: daysUntilExpiry(row.expiry_date),
+    days_until_expiry: itemDaysUntilExpiry,
   })
 
   // Abort rather than delete: an unrecorded deletion is worse than no-op.
@@ -100,7 +110,7 @@ export async function POST(
   // was expiring soon (0-3 days left, `isExpiringSoon` — not merely "not yet
   // expired"). ref_key ties the award to this exact item + day, so retrying
   // a resolve can't double-award.
-  if (validDate && outcome !== 'tossed' && isExpiringSoon(daysUntilExpiry(row.expiry_date))) {
+  if (validDate && outcome !== 'tossed' && isExpiringSoon(itemDaysUntilExpiry)) {
     await awardBubbles(user.id, 'rescue', `${row.id}:${validDate}`)
   }
 

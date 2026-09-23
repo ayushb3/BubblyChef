@@ -166,7 +166,12 @@ export async function updatePantryItem(
  * `resolvePantryItem` instead.
  */
 export async function deletePantryItem(itemId: string): Promise<void> {
-  const res = await fetchOrNetworkError(`/api/pantry/${itemId}`, { method: 'DELETE' })
+  // The client's own local date (#524 review), same convention as
+  // `resolvePantryItem` — used server-side only to classify waste by the
+  // caller's calendar day rather than the server's UTC one; a missing/invalid
+  // value never blocks the delete itself.
+  const url = `/api/pantry/${itemId}?date=${encodeURIComponent(localDateString())}`
+  const res = await fetchOrNetworkError(url, { method: 'DELETE' })
 
   if (!res.ok) {
     throw new Error("Couldn't delete that item. Please try again.")

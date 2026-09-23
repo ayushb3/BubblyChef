@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
-import { enrichPantryItem, daysUntilExpiry, isExpired } from '@/lib/pantry-helpers'
+import { validateClientDate } from '@/lib/date'
+import { enrichPantryItem, daysUntilExpiry, daysUntilExpiryOn, isExpired } from '@/lib/pantry-helpers'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
 
 export async function GET(
@@ -73,13 +74,21 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const result = await requireAuth()
   if (result instanceof NextResponse) return result
   const [supabase, user] = result
   const { id } = await params
+
+  // Client's local date (#524 review), same optional/never-block convention
+  // as `resolve/route.ts` and `GET /api/bubbles` — a missing or out-of-range
+  // `date` query param just means the waste classification below falls back
+  // to the server's UTC clock, never that the delete itself is blocked.
+  const { searchParams } = new URL(request.url)
+  const date = searchParams.get('date')
+  const validDate = validateClientDate(date, 'date') ? null : date
 
   // Read the item first, purely to detect waste (#524 finding): deleting an
   // already-expired item straight from the pantry (still reachable from
@@ -95,18 +104,6 @@ export async function DELETE(
     .eq('user_id', user.id)
     .single()
 
-  if (item && isExpired(daysUntilExpiry(item.expiry_date))) {
-    await supabase.from('pantry_events').insert({
-      user_id: user.id,
-      pantry_item_id: id,
-      item_name: item.name,
-      outcome: 'tossed',
-      quantity: item.quantity,
-      unit: item.unit,
-      days_until_expiry: daysUntilExpiry(item.expiry_date),
-    })
-  }
-
   const { error } = await supabase
     .from('pantry_items')
     .delete()
@@ -114,6 +111,33 @@ export async function DELETE(
     .eq('user_id', user.id)
 
   if (error) return errorResponse(error.message)
+
+  // Waste event is written AFTER the delete succeeds, and only then (#524
+  // review): writing it first meant a failed delete still left a "tossed"
+  // event behind for an item that's still sitting in the pantry. A failure
+  // writing the event itself doesn't fail the response — the delete already
+  // succeeded, and losing this one waste-streak data point is a much smaller
+  // problem than telling the user their delete failed when it didn't.
+  const itemDaysUntilExpiry = item
+    ? validDate
+      ? daysUntilExpiryOn(item.expiry_date, validDate)
+      : daysUntilExpiry(item.expiry_date)
+    : null
+
+  if (item && isExpired(itemDaysUntilExpiry)) {
+    const { error: eventError } = await supabase.from('pantry_events').insert({
+      user_id: user.id,
+      pantry_item_id: id,
+      item_name: item.name,
+      outcome: 'tossed',
+      quantity: item.quantity,
+      unit: item.unit,
+      days_until_expiry: itemDaysUntilExpiry,
+    })
+    if (eventError) {
+      console.error('Failed to record waste pantry_event after delete', eventError)
+    }
+  }
 
   return NextResponse.json({ deleted: true })
 }

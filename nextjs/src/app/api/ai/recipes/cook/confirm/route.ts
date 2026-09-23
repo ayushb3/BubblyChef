@@ -3,7 +3,7 @@ import { aiProxyJson } from '@/lib/api/ai-proxy'
 import { requireAuth } from '@/lib/response-helpers'
 import { awardBubbles, RESCUE_CAP_PER_COOK } from '@/lib/bubbles'
 import { validateClientDate } from '@/lib/date'
-import { daysUntilExpiry, isExpiringSoon } from '@/lib/pantry-helpers'
+import { isExpiringSoon, daysUntilExpiryOn } from '@/lib/pantry-helpers'
 
 export async function POST(request: Request) {
   const auth = await requireAuth()
@@ -42,18 +42,30 @@ export async function POST(request: Request) {
 
   const response = await aiProxyJson('/v1/recipes/cook/confirm', body)
 
-  if (response.status >= 200 && response.status < 300 && validDate) {
+  if (response.status >= 200 && response.status < 300) {
+    // Pre-existing award (predates #524) — unconditional on `recipe_id`, not
+    // on whether the client sent a usable `date`. A client with stale JS
+    // that never sends `date` at all must still get this. Keyed by the
+    // *server's* UTC date, same as before #524, so a client can't mint a
+    // second `cook_confirm` for one cook by sending yesterday's date on one
+    // request and today's on the next — only the new rescue bonus below is
+    // allowed to depend on `validDate`.
     if (body.recipe_id) {
-      await awardBubbles(user.id, 'cook_confirm', `${body.recipe_id}:${validDate}`)
+      const today = new Date().toISOString().slice(0, 10)
+      await awardBubbles(user.id, 'cook_confirm', `${body.recipe_id}:${today}`)
     }
 
     // Rescue bonus (#524): only after the microservice confirms the cook
     // (2xx), one per expiring-soon deducted item, deduplicated and capped.
-    const expiringSoonItemIds = Array.from(new Set(pantryItemIds)).filter((id) =>
-      isExpiringSoon(daysUntilExpiry(expiryByItemId.get(id) ?? null)),
-    )
-    for (const pantryItemId of expiringSoonItemIds.slice(0, RESCUE_CAP_PER_COOK)) {
-      await awardBubbles(user.id, 'rescue', `${pantryItemId}:${validDate}`)
+    // Unlike `cook_confirm` above, this one genuinely needs a client-local
+    // date to key on, so it's skipped (not server-date-keyed) when absent.
+    if (validDate) {
+      const expiringSoonItemIds = Array.from(new Set(pantryItemIds)).filter((id) =>
+        isExpiringSoon(daysUntilExpiryOn(expiryByItemId.get(id) ?? null, validDate)),
+      )
+      for (const pantryItemId of expiringSoonItemIds.slice(0, RESCUE_CAP_PER_COOK)) {
+        await awardBubbles(user.id, 'rescue', `${pantryItemId}:${validDate}`)
+      }
     }
   }
 
