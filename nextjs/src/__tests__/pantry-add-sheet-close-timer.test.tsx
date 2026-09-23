@@ -28,6 +28,29 @@ afterEach(() => {
   jest.useRealTimers()
 })
 
+it('moves focus onto the celebration status, not <body>, after a confirmed add', async () => {
+  mockBulkAdd.mockResolvedValue(undefined as never)
+  const onClose = jest.fn()
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrap = (el: React.ReactElement) => (
+    <QueryClientProvider client={client}>{el}</QueryClientProvider>
+  )
+  render(wrap(sheet(true, onClose)))
+
+  fireEvent.change(screen.getByPlaceholderText('Item name (e.g. Milk, Eggs...)'), {
+    target: { value: 'Milk' },
+  })
+  const addButton = await screen.findByRole('button', { name: /Add 1 Item/i })
+  addButton.focus()
+
+  fireEvent.click(addButton)
+  await waitFor(() => expect(screen.getByText(/Added 1 item!/)).toBeInTheDocument())
+
+  // The confirm button just unmounted (swapped for the celebrate status) —
+  // without an explicit focus move this would strand focus on <body>.
+  expect(screen.getByTestId('pantry-add-sheet-celebrate')).toHaveFocus()
+})
+
 it('Escape during the post-add celebration cancels the auto-close', async () => {
   mockBulkAdd.mockResolvedValue(undefined as never)
   const onClose = jest.fn()

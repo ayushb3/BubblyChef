@@ -29,9 +29,14 @@ jest.mock('framer-motion', () => {
   }
 })
 
+let mockPathname = '/'
+jest.mock('next/navigation', () => ({
+  usePathname: () => mockPathname,
+}))
+
 const useBubblesMock = jest.fn()
 jest.mock('@/lib/api/bubbles', () => ({
-  useBubbles: () => useBubblesMock(),
+  useBubbles: (options?: { enabled?: boolean }) => useBubblesMock(options),
 }))
 
 import BubblePop from '@/components/ui/BubblePop'
@@ -41,6 +46,10 @@ function setBalance(balance: number | undefined) {
 }
 
 describe('BubblePop (#525)', () => {
+  beforeEach(() => {
+    mockPathname = '/'
+  })
+
   afterEach(() => {
     useBubblesMock.mockReset()
   })
@@ -86,6 +95,36 @@ describe('BubblePop (#525)', () => {
   it('renders nothing while the balance is still loading (undefined)', () => {
     setBalance(undefined)
     render(<BubblePop />)
+    expect(screen.queryByTestId('bubble-pop')).toBeNull()
+  })
+
+  it('disables the bubbles query on /login', () => {
+    mockPathname = '/login'
+    setBalance(undefined)
+    render(<BubblePop />)
+    expect(useBubblesMock).toHaveBeenCalledWith({ enabled: false })
+  })
+
+  it('enables the bubbles query on every other page', () => {
+    mockPathname = '/pantry'
+    setBalance(undefined)
+    render(<BubblePop />)
+    expect(useBubblesMock).toHaveBeenCalledWith({ enabled: true })
+  })
+
+  it('resets lastSeen when the balance goes back to unknown, so the next value is a fresh baseline (no pop)', () => {
+    // 100 -> undefined (e.g. sign-out clearing the query cache) -> 50: the
+    // 50 is a first observation off the reset baseline, not a decrease-then-
+    // increase, so it must stay silent even though 50 < 100.
+    setBalance(100)
+    const { rerender } = render(<BubblePop />)
+
+    setBalance(undefined)
+    rerender(<BubblePop />)
+    expect(screen.queryByTestId('bubble-pop')).toBeNull()
+
+    setBalance(50)
+    rerender(<BubblePop />)
     expect(screen.queryByTestId('bubble-pop')).toBeNull()
   })
 })

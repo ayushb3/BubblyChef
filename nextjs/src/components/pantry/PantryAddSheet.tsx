@@ -53,6 +53,13 @@ export default function PantryAddSheet({
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dragControls = useDragControls()
   const panelRef = useRef<HTMLDivElement>(null)
+  // Focus target for the post-add celebration (issue #525 review): the
+  // footer button the user just activated unmounts the instant `justAdded`
+  // flips true (swapped for the celebrate status, and the tab body behind
+  // it goes `inert`), so without an explicit move focus drops to <body> for
+  // the ~1.5s window. `tabIndex={-1}` makes the status programmatically
+  // focusable without adding it to the tab order.
+  const celebrateRef = useRef<HTMLDivElement>(null)
   // `handleClose`, not the raw `onClose`: the focus trap closes on Escape, and
   // that path must cancel a pending auto-close too (issue #525 review).
   useModalFocusTrap(isOpen, handleClose, panelRef)
@@ -73,6 +80,13 @@ export default function PantryAddSheet({
   useEffect(() => {
     if (isOpen) setActiveTab(initialTab)
   }, [isOpen, initialTab])
+
+  // Move focus onto the celebration status as soon as it mounts, so it
+  // doesn't get stranded on <body> when the confirm button it replaces
+  // unmounts (issue #525 review).
+  useEffect(() => {
+    if (justAdded) celebrateRef.current?.focus()
+  }, [justAdded])
 
   // Reset state when sheet closes
   useEffect(() => {
@@ -296,7 +310,9 @@ export default function PantryAddSheet({
             <div className="flex-shrink-0 px-6 pb-4 pt-3 border-t border-[var(--color-border)]">
               {justAdded ? (
                 <div
-                  className="flex items-center justify-center gap-3 py-1"
+                  ref={celebrateRef}
+                  tabIndex={-1}
+                  className="flex items-center justify-center gap-3 py-1 outline-none"
                   role="status"
                   aria-live="polite"
                   data-testid="pantry-add-sheet-celebrate"
