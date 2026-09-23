@@ -115,7 +115,6 @@ _QUERY_STOPWORDS = frozenset(
         "some",
         "any",
         "one",
-        "again",
         "another",
     }
 )

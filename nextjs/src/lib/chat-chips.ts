@@ -60,7 +60,10 @@ export function resolveChips(intent: string | undefined): ChipConfig[] {
       ]
     case 'saved_recipe_lookup':
       return [
-        { label: 'Show me another', message: 'Show me another one of my saved recipes', tone: 'accent', emoji: '🔄' },
+        // A chip can only send a message, and "another" isn't something the
+        // lookup can answer (it would just repeat the list), so offer the
+        // browse list the handler does support.
+        { label: 'My saved recipes', message: 'Show me my saved recipes', tone: 'accent', emoji: '📖' },
         { label: 'Generate a new one', message: 'Generate a new recipe instead', tone: 'primary', emoji: '✨' },
       ]
     default:
