@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { ScannedItem } from '@/types/scan'
+import type { ScannedItemWithId } from '@/lib/scan-helpers'
 import { getFoodEmoji } from '@/lib/food-emoji'
 import Chip from '@/components/ui/Chip'
 
@@ -31,9 +32,9 @@ function confidenceLabel(confidence: number): string {
 }
 
 interface ScannedItemCardProps {
-  item: ScannedItem
+  item: ScannedItemWithId
   checked: boolean
-  onChange: (updated: ScannedItem) => void
+  onChange: (updated: ScannedItemWithId) => void
   onDismiss: () => void
   onCheckedChange: (checked: boolean) => void
   index?: number
@@ -130,7 +131,7 @@ export default function ScannedItemCard({
         >
           <input
             type="checkbox"
-            id={`scan-item-${index}-${item.name}`}
+            id={item._id}
             checked={checked}
             onChange={(e) => onCheckedChange(e.target.checked)}
             className="sr-only peer"

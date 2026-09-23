@@ -461,7 +461,6 @@ export function useChat(options?: UseChatOptions) {
                   actions: mergedActions,
                 }
               } else if (
-                response.requires_review &&
                 response.intent === 'pantry_update' &&
                 proposal &&
                 'actions' in proposal
@@ -480,7 +479,6 @@ export function useChat(options?: UseChatOptions) {
               return next
             })
           } else if (
-            response.requires_review &&
             response.intent === 'pantry_update' &&
             proposal &&
             'actions' in proposal
