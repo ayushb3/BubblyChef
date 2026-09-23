@@ -380,3 +380,78 @@ async def test_cooking_help_context_omits_dead_rows_and_bounds_expiring() -> Non
     assert "yogurt" not in context
     assert "pantry currently has 2 items" in context
     assert "EXPIRING SOON (use first!): milk" in context
+
+
+# ---------------------------------------------------------------------------
+# check_pantry tool (cooking companion) — "do I have spinach?"
+# ---------------------------------------------------------------------------
+
+
+def _tool_item(name: str, *, quantity: float = 1.0, days_until_expiry: int | None = None) -> MagicMock:
+    item = MagicMock()
+    item.name = name
+    item.quantity = quantity
+    item.unit = "bunch"
+    item.expiry_date = (
+        date.today() + timedelta(days=days_until_expiry) if days_until_expiry is not None else None
+    )
+    return item
+
+
+async def _check_pantry(ingredient: str, *, exact: Any, all_items: list[Any]) -> str:
+    import bubbly_chef.tools.cooking  # noqa: F401 — ensure registered
+    from bubbly_chef.tools.cooking.pantry_tools import check_pantry
+
+    repo = MagicMock()
+    repo.find_similar_item = AsyncMock(return_value=exact)
+    repo.get_all_pantry_items = AsyncMock(return_value=all_items)
+    with patch(
+        "bubbly_chef.tools.cooking.pantry_tools.get_repository",
+        new_callable=AsyncMock,
+        return_value=repo,
+    ):
+        return str(await check_pantry(ingredient, user_id="u1"))
+
+
+def _reports_stock(result: str) -> bool:
+    lowered = result.lower()
+    return lowered.startswith("yes") or "which may match" in lowered
+
+
+class TestCheckPantryIgnoresUnusableRows:
+    @pytest.mark.asyncio
+    async def test_expired_exact_match_is_not_stock(self) -> None:
+        spinach = _tool_item("spinach", days_until_expiry=-2)
+        result = await _check_pantry("spinach", exact=spinach, all_items=[spinach])
+        assert not _reports_stock(result)
+        assert "expired" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_zero_quantity_exact_match_is_not_stock(self) -> None:
+        spinach = _tool_item("spinach", quantity=0.0)
+        result = await _check_pantry("spinach", exact=spinach, all_items=[spinach])
+        assert not _reports_stock(result)
+        assert "used up" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_expired_word_match_is_not_stock(self) -> None:
+        spinach = _tool_item("baby spinach", days_until_expiry=-1)
+        result = await _check_pantry("spinach", exact=None, all_items=[spinach])
+        assert not _reports_stock(result)
+
+    @pytest.mark.asyncio
+    async def test_fresh_duplicate_wins_over_expired_exact_row(self) -> None:
+        """Duplicate rows exist (#127): an expired row must not hide a fresh one."""
+        stale = _tool_item("spinach", days_until_expiry=-3)
+        fresh = _tool_item("spinach", quantity=2.0, days_until_expiry=4)
+        result = await _check_pantry("spinach", exact=stale, all_items=[stale, fresh])
+        assert _reports_stock(result)
+        assert "2.0" in result
+
+    @pytest.mark.asyncio
+    async def test_expiring_today_is_still_stock(self) -> None:
+        """Regression guard: food expiring today is exactly what should be offered."""
+        spinach = _tool_item("spinach", days_until_expiry=0)
+        result = await _check_pantry("spinach", exact=spinach, all_items=[spinach])
+        assert result.startswith("Yes")
+        assert "expires in 0 day(s)" in result
