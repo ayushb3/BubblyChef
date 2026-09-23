@@ -6,6 +6,7 @@ export default function ProfileHeaderButton() {
     <Link
       href="/profile"
       aria-label="Profile"
+      data-tour="profile"
       className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform"
       style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
     >

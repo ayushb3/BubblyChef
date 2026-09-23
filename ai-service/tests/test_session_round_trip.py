@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from bubbly_chef.models.recipe import RecipeConstraints
+from bubbly_chef.models.recipe import Ingredient, RecipeCard, RecipeConstraints
 from bubbly_chef.models.session import (
     ConversationSession,
     CookingRecipeSnapshot,
@@ -462,3 +462,221 @@ def test_recipe_exploring_pin_round_trips() -> None:
 
     # last_recipe_title survives
     assert restored.metadata.last_recipe_title == "Spaghetti Aglio e Olio"
+
+
+# ---------------------------------------------------------------------------
+# #416 AC1: picked_recipe (full RecipeCard) survives the ACTUAL persistence
+# seam -- model_dump(mode="json") -> json.dumps -> json.loads ->
+# model_validate. picked_recipe carries a uuid4 id plus nested Ingredient
+# models; either failing to round-trip would break refine-in-place on the
+# SECOND turn in production (after a reload from the metadata JSON column)
+# even though every in-memory node test still passes.
+# ---------------------------------------------------------------------------
+
+
+def test_picked_recipe_survives_json_round_trip_through_the_db_seam() -> None:
+    """picked_recipe must survive the real persistence path: model_dump(mode="json")
+    -> json.dumps -> json.loads -> model_validate -- not just an in-memory
+    model_dump -> model_validate round-trip."""
+    import json
+
+    picked = RecipeCard(
+        title="Creamy Garlic Spaghetti",
+        description="A rich garlic pasta.",
+        ingredients=[
+            Ingredient(name="spaghetti", quantity=200, unit="g"),
+            Ingredient(name="garlic", quantity=3, unit="cloves", preparation="minced"),
+        ],
+        instructions=["Boil pasta.", "Saute garlic.", "Toss together."],
+        servings=2,
+        cuisine="Italian",
+    )
+    session = ConversationSession(
+        conversation_id="conv-rt-picked-recipe",
+        active_mode=SessionMode.RECIPE_EXPLORING,
+        pinned_recipe_id=str(picked.id),
+        metadata=SessionContext(picked_recipe=picked),
+    )
+
+    # The actual persistence seam: JSON column round-trip, not just Python
+    # dict round-trip -- model_dump(mode="json") produces JSON-safe values
+    # (str id, str datetimes), but json.dumps/json.loads is the step that
+    # would surface anything model_dump silently left non-JSON-serializable.
+    dumped = session.model_dump(mode="json")
+    as_json_text = json.dumps(dumped)
+    reloaded = json.loads(as_json_text)
+    restored = ConversationSession.model_validate(reloaded)
+
+    assert isinstance(restored.metadata.picked_recipe, RecipeCard)
+    rp = restored.metadata.picked_recipe
+    assert rp is not None
+    assert rp.id == picked.id
+    assert rp.title == "Creamy Garlic Spaghetti"
+    assert rp.description == "A rich garlic pasta."
+    assert rp.servings == 2
+    assert rp.cuisine == "Italian"
+
+    # Nested Ingredient models survive as typed models, not plain dicts,
+    # with quantities and units intact.
+    assert len(rp.ingredients) == 2
+    assert isinstance(rp.ingredients[0], Ingredient)
+    assert rp.ingredients[0].name == "spaghetti"
+    assert rp.ingredients[0].quantity == 200
+    assert rp.ingredients[0].unit == "g"
+    assert rp.ingredients[1].preparation == "minced"
+
+    assert rp.instructions == ["Boil pasta.", "Saute garlic.", "Toss together."]
+
+
+def test_picked_recipe_none_round_trips_through_the_db_seam() -> None:
+    """No pinned recipe yet -- picked_recipe stays None through the same
+    JSON-column seam, not coerced to an empty dict or missing key error."""
+    import json
+
+    session = ConversationSession(
+        conversation_id="conv-rt-no-pick",
+        metadata=SessionContext(),
+    )
+    dumped = session.model_dump(mode="json")
+    restored = ConversationSession.model_validate(json.loads(json.dumps(dumped)))
+    assert restored.metadata.picked_recipe is None
+
+
+# ---------------------------------------------------------------------------
+# save_message / get_history proposal round-trip (#floating-prancing-rain fix)
+# Verifies that proposal + metadata written by save_message are returned
+# verbatim by get_history (the select("*") path).
+# ---------------------------------------------------------------------------
+
+
+class _FakeHistoryQuery:
+    """Fluent query stub that records inserts and returns rows from a shared store."""
+
+    def __init__(self, store: list[dict[str, Any]], client: "_FakeHistoryClient") -> None:
+        self._store = store
+        self._client = client
+        self.inserted: dict[str, Any] | None = None
+
+    def select(self, *_args: Any, **_kwargs: Any) -> "_FakeHistoryQuery":
+        return self
+
+    def insert(self, payload: dict[str, Any]) -> "_FakeHistoryQuery":
+        self.inserted = payload
+        self._store.append(payload)
+        self._client.last_inserted = payload
+        return self
+
+    def eq(self, *_args: Any, **_kwargs: Any) -> "_FakeHistoryQuery":
+        return self
+
+    def order(self, *_args: Any, **_kwargs: Any) -> "_FakeHistoryQuery":
+        return self
+
+    def limit(self, *_args: Any, **_kwargs: Any) -> "_FakeHistoryQuery":
+        return self
+
+    def execute(self) -> Any:
+        return type("Result", (), {"data": list(self._store)})()
+
+
+class _FakeHistoryClient:
+    def __init__(self) -> None:
+        self._store: list[dict[str, Any]] = []
+        self.last_inserted: dict[str, Any] | None = None
+
+    def table(self, _name: str) -> _FakeHistoryQuery:
+        return _FakeHistoryQuery(self._store, self)
+
+
+def _history_repo() -> tuple[SupabaseRepository, _FakeHistoryClient]:
+    """Return a SupabaseRepository + the client so tests can inspect inserts."""
+    client = _FakeHistoryClient()
+    repo = SupabaseRepository.__new__(SupabaseRepository)
+    repo.client = client  # type: ignore[assignment]
+    return repo, client
+
+
+@pytest.mark.asyncio
+class TestSaveMessageProposalRoundTrip:
+    """save_message persists proposal + metadata; get_history returns them."""
+
+    async def test_recipe_card_proposal_round_trips(self) -> None:
+        """An assistant message saved with a recipe_card proposal dict must be
+        returned intact by get_history (both proposal and metadata fields)."""
+        recipe_card_proposal = {
+            "proposal_type": "recipe_card",
+            "recipe": {
+                "title": "Tomato Pasta",
+                "ingredients": [{"name": "pasta", "quantity": 200.0, "unit": "g"}],
+                "instructions": ["Boil pasta", "Add sauce"],
+            },
+            "pantry_match_score": 0.85,
+        }
+        meta = {"intent": "recipe_card", "workflow_id": "wf-abc123"}
+
+        repo, client = _history_repo()
+
+        await repo.save_message(
+            user_id="u-test",
+            conversation_id="conv-test",
+            role="assistant",
+            content="Here is a pasta recipe for you.",
+            intent="recipe_card",
+            proposal=recipe_card_proposal,
+            metadata=meta,
+        )
+
+        # The insert payload must carry proposal + metadata
+        assert client.last_inserted is not None
+        inserted = client.last_inserted
+        assert inserted["proposal"] == recipe_card_proposal
+        assert inserted["metadata"] == meta
+        assert inserted["role"] == "assistant"
+        assert inserted["intent"] == "recipe_card"
+
+        # get_history returns the same row (fake client returns what was inserted)
+        history = await repo.get_history(
+            user_id="u-test", conversation_id="conv-test"
+        )
+        assert len(history) == 1
+        row = history[0]
+        assert row["proposal"] == recipe_card_proposal
+        assert row["metadata"] == meta
+        assert row["role"] == "assistant"
+
+    async def test_user_message_saves_without_proposal(self) -> None:
+        """A user-turn save (no proposal/metadata args) must still work and
+        leave proposal + metadata as None in the inserted row."""
+        repo, client = _history_repo()
+
+        await repo.save_message(
+            user_id="u-test",
+            conversation_id="conv-test",
+            role="user",
+            content="Make me a pasta recipe",
+        )
+
+        assert client.last_inserted is not None
+        inserted = client.last_inserted
+        assert inserted["proposal"] is None
+        assert inserted["metadata"] is None
+        assert inserted["role"] == "user"
+
+    async def test_assistant_message_none_proposal_saves_cleanly(self) -> None:
+        """Explicit None for proposal/metadata (plain-chat assistant turn) inserts None."""
+        repo, client = _history_repo()
+
+        await repo.save_message(
+            user_id="u-test",
+            conversation_id="conv-test",
+            role="assistant",
+            content="Sure, here are some tips.",
+            intent="general_chat",
+            proposal=None,
+            metadata=None,
+        )
+
+        assert client.last_inserted is not None
+        inserted = client.last_inserted
+        assert inserted["proposal"] is None
+        assert inserted["metadata"] is None

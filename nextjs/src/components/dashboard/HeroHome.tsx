@@ -273,7 +273,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
 
       {/* Speech bubble */}
       <FadeInView delay={0.25}>
-        <div className="relative max-w-sm w-full mx-auto mb-6">
+        <div className="relative max-w-sm w-full mx-auto mb-6" data-tour="hero">
           {/* Triangle pointer */}
           <div
             className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rotate-45 border-l border-t border-[var(--color-border)]"
@@ -309,8 +309,8 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
       </FadeInView>
 
       {/* 3 Action Cards */}
-      <div className="grid grid-cols-3 gap-3 w-full max-w-sm mb-6">
-        {([
+      <div className="grid grid-cols-3 gap-3 w-full max-w-sm mb-6" data-tour="quick-actions">
+        {[
           {
             icon: Fire,
             label: 'Use Soon',
