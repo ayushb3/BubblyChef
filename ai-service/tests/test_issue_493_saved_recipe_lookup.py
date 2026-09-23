@@ -134,9 +134,10 @@ async def test_generation_phrasings_do_not_route_to_saved_recipe_lookup(
 # ---------------------------------------------------------------------------
 
 
-def _patch_repo(matches: list[dict[str, Any]]) -> Any:
+def _patch_repo(matches: list[dict[str, Any]], recent: list[dict[str, Any]] | None = None) -> Any:
     repo = MagicMock()
     repo.search_saved_recipes = AsyncMock(return_value=matches)
+    repo.get_user_recipes = AsyncMock(return_value=recent or [])
     return patch(
         "bubbly_chef.workflows.chat.nodes.get_repository",
         new_callable=AsyncMock,
@@ -171,7 +172,7 @@ async def test_single_match_names_recipe_without_a_question() -> None:
     message = result["assistant_message"]
     assert "Butter Chicken" in message
     assert not message.strip().endswith("?")
-    assert result["saved_recipe_matches"] == matches
+    assert [m["id"] for m in result["saved_recipe_matches"]] == [m["id"] for m in matches]
 
 
 @pytest.mark.asyncio
@@ -190,7 +191,98 @@ async def test_many_matches_lists_ranked_and_asks_which_one() -> None:
     assert "Butter Chicken" in message
     assert "Chicken Tikka Masala" in message
     assert message.strip().endswith("?")
-    assert result["saved_recipe_matches"] == matches
+    assert [m["id"] for m in result["saved_recipe_matches"]] == [m["id"] for m in matches]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", ["show me my saved recipes", "what recipes do I have saved"])
+async def test_request_naming_no_dish_lists_recent_saves(text: str) -> None:
+    """Review finding on PR #536: every word of "show me my saved recipes" is a
+    stopword, so searching it matched nothing and told a user with a full
+    library that no saved recipe existed. With no dish named, browse instead."""
+    recent = [
+        {"id": "r1", "title": "Butter Chicken"},
+        {"id": "r2", "title": "Victoria Sponge"},
+    ]
+    patcher, repo = _patch_repo([], recent=recent)
+    with patcher:
+        result = await saved_recipe_lookup_response(_state(input_text=text, user_id="u1"))
+
+    repo.search_saved_recipes.assert_not_awaited()
+    repo.get_user_recipes.assert_awaited_once_with("u1", limit=5)
+    message = result["assistant_message"]
+    assert "couldn't find" not in message.lower()
+    assert "Butter Chicken" in message
+    assert "Victoria Sponge" in message
+    assert [m["id"] for m in result["saved_recipe_matches"]] == ["r1", "r2"]
+
+
+@pytest.mark.asyncio
+async def test_browse_with_empty_library_says_nothing_saved_yet() -> None:
+    patcher, _repo = _patch_repo([], recent=[])
+    with patcher:
+        result = await saved_recipe_lookup_response(
+            _state(input_text="show me my saved recipes", user_id="u1")
+        )
+
+    message = result["assistant_message"].lower()
+    assert "haven't saved any recipes" in message
+    assert "generate a new one instead" not in message
+    assert result["saved_recipe_matches"] == []
+
+
+@pytest.mark.asyncio
+async def test_lookup_failure_is_not_reported_as_no_match() -> None:
+    """Review finding on PR #536: an infra failure used to fall through to the
+    zero-match reply and offer to generate a duplicate of a saved recipe."""
+    repo = MagicMock()
+    repo.search_saved_recipes = AsyncMock(side_effect=RuntimeError("supabase down"))
+    with patch(
+        "bubbly_chef.workflows.chat.nodes.get_repository",
+        new_callable=AsyncMock,
+        return_value=repo,
+    ):
+        result = await saved_recipe_lookup_response(
+            _state(input_text="show me my saved butter chicken", user_id="u1")
+        )
+
+    message = result["assistant_message"].lower()
+    assert "couldn't find" not in message
+    assert "generate" not in message
+    assert "try again" in message
+    assert result["saved_recipe_matches"] == []
+    assert any("supabase down" in e for e in result["errors"])
+
+
+@pytest.mark.asyncio
+async def test_matches_carry_only_the_contract_fields() -> None:
+    """Review finding on PR #536: whole DB rows (user_id, ingredients,
+    instructions, timestamps) went into chat metadata. Issue #493 specifies
+    [{id, title, description?, cuisine?}]."""
+    row = {
+        "id": "r1",
+        "user_id": "u1",
+        "title": "Butter Chicken",
+        "description": "Creamy and mild",
+        "cuisine": "Indian",
+        "ingredients": [{"name": "chicken"}],
+        "instructions": ["cook it"],
+        "created_at": "2026-09-01T00:00:00Z",
+    }
+    patcher, _repo = _patch_repo([row])
+    with patcher:
+        result = await saved_recipe_lookup_response(
+            _state(input_text="show me my saved butter chicken", user_id="u1")
+        )
+
+    assert result["saved_recipe_matches"] == [
+        {
+            "id": "r1",
+            "title": "Butter Chicken",
+            "description": "Creamy and mild",
+            "cuisine": "Indian",
+        }
+    ]
 
 
 @pytest.mark.asyncio

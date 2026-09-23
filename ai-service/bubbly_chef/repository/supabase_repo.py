@@ -96,7 +96,11 @@ _QUERY_STOPWORDS = frozenset(
         "again",
         "last",
         "week",
+        "month",
+        "year",
         "time",
+        "what",
+        "which",
         "some",
         "any",
         "one",
@@ -121,6 +125,16 @@ def _tokenize_query(text: str) -> list[str]:
     issue #533.
     """
     return [tok for tok in _tokenize(text) if tok not in _QUERY_STOPWORDS]
+
+
+def lookup_query_terms(text: str) -> list[str]:
+    """The dish-identifying words in a saved-recipe lookup request.
+
+    Empty when the request names no dish at all ("show me my saved recipes",
+    "what recipes do I have saved") — a request to browse the library, which
+    `search_saved_recipes` would otherwise answer with zero matches.
+    """
+    return _tokenize_query(text)
 
 
 def _as_row(value: JSON) -> dict[str, Any]:

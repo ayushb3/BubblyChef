@@ -72,7 +72,7 @@
   "save this recipe https://allrecipes.com/123": {
     "intent": "recipe_ingest_request",
     "confidence": 0.95,
-    "reasoning": "URL detected \u2014 recipe ingest shortcut",
+    "reasoning": "URL detected — recipe ingest shortcut",
     "entities": [],
     "expected": "recipe_ingest_request"
   },
@@ -140,7 +140,10 @@
     "entities": [
       "spicy"
     ],
-    "expected": "recipe_brainstorm"
+    "expected": [
+      "recipe_generation",
+      "recipe_brainstorm"
+    ]
   },
   "quick easy meal under 30 minutes": {
     "intent": "recipe_generation",

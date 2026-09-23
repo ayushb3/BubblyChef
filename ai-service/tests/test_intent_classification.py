@@ -96,7 +96,8 @@ async def test_intent_snapshot(input_text: str, fixture_data: dict[str, Any]) ->
     with _mock_ai(fixture_data):
         result = await classify_intent(_base_state(input_text))
 
-    assert result["intent"] == expected_intent, (
+    acceptable = expected_intent if isinstance(expected_intent, list) else [expected_intent]
+    assert result["intent"] in acceptable, (
         f"Expected {expected_intent!r}, got {result['intent']!r} for {input_text!r}"
     )
     assert result.get("intent_confidence", 0) >= 0.7

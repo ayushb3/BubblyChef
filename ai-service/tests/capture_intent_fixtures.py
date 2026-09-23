@@ -42,7 +42,11 @@ _BRAINSTORM_HISTORY = [
     },
 ]
 
-# Each entry: input text + optional state overrides + expected intent (for annotation only).
+# Each entry: input text + optional state overrides + expected intent.
+# `expected` is the ground truth the replay test (test_intent_classification.py)
+# holds the captured model output to — a re-capture where the model drifts
+# must fail, not get silently blessed. A list means the phrasing is genuinely
+# ambiguous and any of those intents is correct.
 CASES: list[dict[str, Any]] = [
     # pantry_update
     {"input": "I bought milk", "expected": "pantry_update"},
@@ -69,7 +73,12 @@ CASES: list[dict[str, Any]] = [
     {"input": "give me a pasta recipe", "expected": "recipe_generation"},
     {"input": "dinner ideas for tonight", "expected": "recipe_brainstorm"},
     {"input": "make me something with chicken", "expected": "recipe_generation"},
-    {"input": "I'm craving something spicy", "expected": "recipe_generation"},
+    # No dish named: generating one spicy recipe and brainstorming spicy
+    # options are both reasonable readings.
+    {
+        "input": "I'm craving something spicy",
+        "expected": ["recipe_generation", "recipe_brainstorm"],
+    },
     {"input": "quick easy meal under 30 minutes", "expected": "recipe_generation"},
     # cooking_help
     {"input": "how do I caramelise onions?", "expected": "cooking_help"},
@@ -159,21 +168,16 @@ async def _capture_all() -> dict[str, Any]:
         reasoning = result.get("intent_reasoning", "")
         entities = result.get("detected_entities", [])
 
-        status = "✓" if got_intent == expected else f"✗ (annotated {expected})"
+        acceptable = expected if isinstance(expected, list) else [expected]
+        status = "✓" if got_intent in acceptable else f"✗ (expected {expected})"
         print(f"{got_intent}  [{confidence:.2f}]  {status}")
 
-        # "expected" here is the fixture's ground truth for the replay test
-        # (test_intent_classification.py) — it must be the intent this capture
-        # actually got, not CASES's `expected` annotation. CASES's `expected`
-        # is doc-only (see its comment) and can legitimately drift from live
-        # model output between captures; using it here would silently pin the
-        # fixture to a value the model didn't produce.
         fixtures[text] = {
             "intent": got_intent,
             "confidence": confidence,
             "reasoning": reasoning,
             "entities": entities,
-            "expected": got_intent,
+            "expected": expected,
         }
 
     return fixtures
