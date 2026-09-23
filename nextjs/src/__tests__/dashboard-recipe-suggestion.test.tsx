@@ -11,6 +11,7 @@
  */
 import React from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import HeroHome from '@/components/dashboard/HeroHome'
 
 jest.mock('next/navigation', () => ({
@@ -20,6 +21,18 @@ jest.mock('next/navigation', () => ({
 
 function jsonResponse(body: unknown, ok = true): Response {
   return { ok, status: ok ? 200 : 500, json: async () => body } as Response
+}
+
+// HeroHome now also fetches decorations via `useDecorations()` (#521),
+// which needs a QueryClient in context — same wrapper as
+// deep-link-entrypoints.test.tsx uses for its own HeroHome renders.
+function renderHero() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <HeroHome displayName="ayush" />
+    </QueryClientProvider>,
+  )
 }
 
 const originalFetch = global.fetch
@@ -56,12 +69,13 @@ describe('HeroHome suggestion href (#168, #306 no-regression)', () => {
           source: 'ai',
         })
       }
+      if (url.includes('/api/decorations')) return jsonResponse({ decorations: [], total: 0 })
       throw new Error(`Unexpected fetch: ${url}`)
     }) as unknown as typeof fetch
   })
 
   it('links the hero action to the specific recipe, not the bare list', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     const link = await screen.findByRole('link', { name: /open recipe/i })
     expect(link.getAttribute('href')).toBe(`/recipes/${suggestion.recipe_id}`)
@@ -69,7 +83,7 @@ describe('HeroHome suggestion href (#168, #306 no-regression)', () => {
   })
 
   it('renders the suggestion copy from the endpoint in the hero message', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     await waitFor(() =>
       expect(screen.getByText(/uses it up fast/i)).toBeInTheDocument()
@@ -77,7 +91,7 @@ describe('HeroHome suggestion href (#168, #306 no-regression)', () => {
   })
 
   it('appends "Only N min!" once when the copy does not already state the time', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     const message = await screen.findByText(/uses it up fast/i)
     expect(message.textContent).toBe(
@@ -112,12 +126,13 @@ describe('HeroHome suggestion copy that already states the time (#225 spec-revie
           source: 'fallback',
         })
       }
+      if (url.includes('/api/decorations')) return jsonResponse({ decorations: [], total: 0 })
       throw new Error(`Unexpected fetch: ${url}`)
     }) as unknown as typeof fetch
   })
 
   it('does not duplicate the minute figure when the copy already states it', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     const message = await screen.findByText(/ready in 25 min/i)
     // The number "25" must appear exactly once in the rendered message.
@@ -141,19 +156,20 @@ describe('HeroHome suggestion: null (#168)', () => {
           source: 'ai',
         })
       }
+      if (url.includes('/api/decorations')) return jsonResponse({ decorations: [], total: 0 })
       throw new Error(`Unexpected fetch: ${url}`)
     }) as unknown as typeof fetch
   })
 
   it('does not render an "Open recipe" link when suggestion is null', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
     expect(screen.queryByRole('link', { name: /open recipe/i })).toBeNull()
   })
 
   it('renders without throwing when suggestion is null', async () => {
-    expect(() => render(<HeroHome displayName="ayush" />)).not.toThrow()
+    expect(() => renderHero()).not.toThrow()
   })
 })
 
@@ -171,12 +187,13 @@ describe('HeroHome tip sourced from the endpoint, not the static array (#225)', 
           source: 'ai',
         })
       }
+      if (url.includes('/api/decorations')) return jsonResponse({ decorations: [], total: 0 })
       throw new Error(`Unexpected fetch: ${url}`)
     }) as unknown as typeof fetch
   })
 
   it('renders the endpoint tip text, which is not a member of the static fallback list', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     await waitFor(() =>
       expect(
@@ -195,12 +212,13 @@ describe('HeroHome tip fallback when the dashboard request fails (#225)', () => 
       if (url.includes('/api/ai/dashboard/daily')) {
         return jsonResponse({ error: 'AI service unreachable' }, false)
       }
+      if (url.includes('/api/decorations')) return jsonResponse({ decorations: [], total: 0 })
       throw new Error(`Unexpected fetch: ${url}`)
     }) as unknown as typeof fetch
   })
 
   it('still renders a tip from the static fallback list, with no error surfaced', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     // One of the static FALLBACK_TIPS strings should be on screen.
     await waitFor(() =>
@@ -213,7 +231,7 @@ describe('HeroHome tip fallback when the dashboard request fails (#225)', () => 
   })
 
   it('does not render an "Open recipe" link (no suggestion to fall back to)', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
     expect(screen.queryByRole('link', { name: /open recipe/i })).toBeNull()
@@ -245,12 +263,13 @@ describe('HeroHome hero priority — suggestion beats urgent expiry (#347)', () 
         return jsonResponse({ items: [urgentExpiringItem], total_count: 1 })
       if (url.includes('/api/ai/dashboard/daily'))
         return jsonResponse({ tip: { text: 'Great tip!' }, suggestion })
+      if (url.includes('/api/decorations')) return jsonResponse({ decorations: [], total: 0 })
       throw new Error(`Unexpected fetch: ${url}`)
     }) as unknown as typeof fetch
   })
 
   it('shows suggestion copy, not the expiry headline, when both exist', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     await waitFor(() => screen.getByText('A quick frittata for your spinach. Only 20 min!'))
     // Urgent-expiry headline must be suppressed
@@ -259,7 +278,7 @@ describe('HeroHome hero priority — suggestion beats urgent expiry (#347)', () 
   })
 
   it('links to the recipe, not the cook-this-now deep-link, when suggestion exists', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     await waitFor(() => screen.getByRole('link', { name: /open recipe/i }))
     const link = screen.getByRole('link', { name: /open recipe/i }) as HTMLAnchorElement
