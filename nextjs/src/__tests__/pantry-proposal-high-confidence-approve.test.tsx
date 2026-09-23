@@ -14,7 +14,7 @@ import { act, renderHook } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useChat } from '@/hooks/useChat'
 import { applyPantryProposal } from '@/lib/api/chat'
-import type { ChatResponse } from '@/types/chat'
+import type { ChatResponse, PantryProposalData } from '@/types/chat'
 
 // useChat invalidates the ['bubbles'] query on proposal approval (#520) —
 // it needs a QueryClientProvider to render.
@@ -91,7 +91,7 @@ describe('approving a high-confidence (requires_review: false) pantry proposal',
 
     expect(applyPantryProposal).toHaveBeenCalledWith(
       'req-high-confidence',
-      HIGH_CONFIDENCE_RESPONSE.proposal!.actions,
+      (HIGH_CONFIDENCE_RESPONSE.proposal as PantryProposalData).actions,
     )
     expect(result.current.proposalStates[assistantMsgId]).toBe('approved')
   })
