@@ -107,6 +107,13 @@ running on PRs. Ayush has said he does not want it on docs PRs in any case.
 Six PRs are stacked. **Merge #475 first, with a real merge commit, not a squash.** A
 squash breaks the history of everything below it.
 
+**Then retarget each child to `main` before merging it** — the rule in
+`docs/agents/lessons.md`: a child still pointing at its parent's branch merges into
+that branch, not `main`, and the change is stranded. GitHub usually retargets
+children when the parent merges; verify it actually happened (each child's base
+should read `main`) rather than assuming. Never merge a child while its parent is
+still open.
+
 ```
 main
  ├─ #475  nine queue issues          ← MERGE FIRST

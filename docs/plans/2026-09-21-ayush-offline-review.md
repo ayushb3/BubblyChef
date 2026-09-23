@@ -3,6 +3,11 @@
 **Written for you, to read on the plane with no GitHub and no network.** Everything
 you need to decide is quoted inline. Nothing here asks you to open a link.
 
+> **This is a point-in-time snapshot taken 2026-09-21.** Commit SHAs, PR counts and
+> merge states below were true then and go stale as soon as anything merges. The
+> *decisions* in §6 and §12 stay valid; the *numbers* do not. Re-check against GitHub
+> before acting on any count.
+
 Two sibling docs exist and are written for an *agent*, not for you:
 `2026-09-20-autonomous-session-report.md` (what the run did) and
 `2026-09-21-handoff-post-autonomous-batch.md` (how the next agent should pick it up).
@@ -17,8 +22,10 @@ Nothing has shipped, so nothing is at risk — the whole batch is still reversib
 
 Three things actually need you:
 
-1. **PR #475 must merge with a real merge commit, not a squash.** Five other PRs are
-   branched off it. A squash rewrites its commits and orphans all five.
+1. **PR #475 must merge with a real merge commit, not a squash.** Six other PRs are
+   branched off it — four directly (#479, #482, #484, #491) and two one level further
+   down (#509 behind #479, #505 behind #491). A squash rewrites its commits and
+   orphans all six. Retarget each child to `main` before merging it (see §3).
 2. **PR #436 has developed a merge conflict** (this is new — it was clean yesterday).
    It blocks PR #492. Three real code files conflict. Details in §4.
 3. **Five product calls were made by an AI standing in for you.** They are provisional

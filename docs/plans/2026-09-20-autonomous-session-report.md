@@ -49,9 +49,14 @@ property.
 turned out false — see §4. The most valuable single output was an agent
 *declining* its instruction.
 
-**Stacking on the correct base.** Every PR branched off whatever open PR it
-actually depended on (#475, #479, #436, #491) rather than `main`, so nothing
-conflicts at merge time. Merge order matters — see §6.
+**Stacking on the correct base — with a caveat that belongs in §3, not here.**
+Every PR branched off whatever open PR it actually depended on (#475, #479, #436,
+#491) rather than `main`, so nothing conflicts at merge time. That avoided
+conflicts, but `docs/agents/lessons.md` already warns that **stacked PRs strand if
+the parent merges first**, and says to base PRs on `main` — or retarget the child
+to `main` before merging. Six PRs deep on two chokepoints is more stacking than
+that rule wants. Treat this as a trade accepted under time pressure, not a
+practice to repeat. Merge order and the required retargeting — see §6.
 
 **Gates re-run on the settled tree.** Every gate claim in an agent report was
 re-run by the orchestrator on the pushed commit. Two reports would otherwise have
@@ -142,6 +147,14 @@ That gap is the cost of the silent deaths — nothing was running and nobody kne
 
 **Merge #475 first, with a real merge commit, not a squash.** Six of these are
 stacked on it or on branches stacked on it; a squash breaks their history.
+
+**Retarget every stacked child to `main` before merging it.** This is the rule in
+`docs/agents/lessons.md` ("Stacked PRs strand if the parent merges first"), and it
+stranded an entire merge-gate change once already. A child left pointing at its
+parent's branch merges *into that branch*, not `main`, and nothing then reads from
+it. GitHub retargets children automatically when the parent merges, but verify it
+landed — confirm each child's base reads `main` before you merge the child, and
+never merge a child while its parent is still open.
 
 | PR | Closes | Base | What it does |
 |---|---|---|---|
