@@ -27,14 +27,19 @@
  * necessarily already considered it (same `MAX_WEEKS` catch-up window, an
  * earlier reference date). `previousVisitDate` is derived from the `events`
  * window already read below (no extra query): the latest `daily_visit`
- * local date strictly before today. `route.ts` calls this function BEFORE
- * awarding today's own `daily_visit` (re-review #4 on issue #524/#570) —
- * settling first and gating the visit award on `ok` means a transient
- * settlement failure never permanently locks out the weeks it would have
- * judged (a failed visit award just gets retried on the next request, since
- * this route runs on nearly every page). Because today's own visit hasn't
- * been written yet when this runs, the `< today` filter below is naturally
- * safe under either ordering.
+ * local date seen, which MAY be today's own (re-review #6 on issue
+ * #524/#570) — `route.ts` calls this function BEFORE awarding today's own
+ * `daily_visit`, so a today-dated row here only exists when a settlement
+ * EARLIER THIS SAME REQUEST-DAY already ran and succeeded (`ok: true`,
+ * which is what gates that award — see `ok` below). Treating today as
+ * eligible to be `previousVisitDate` is exactly what makes a second
+ * same-day visit correctly skip every week the first one already judged,
+ * including one it judged wasted — the live-state re-check this whole
+ * module exists to prevent. Settling first and gating the visit award on
+ * `ok` also means a transient settlement failure never permanently locks
+ * out the weeks it would have judged (a failed visit award just gets
+ * retried on the next request, since this route runs on nearly every
+ * page).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -90,11 +95,16 @@ export async function settleWeeklyStreak(
 
     const activeWeekKeys = new Set<string>()
     // The local date of this user's own previous visit (the last time this
-    // function ran for them) — the latest `daily_visit` local date strictly
-    // before today. `null` means no prior visit is visible in this window
-    // (either a brand new user, or one who's been idle longer than the
-    // window — either way every completed week in the catch-up window below
-    // is a first judgment, so no filtering is needed; see `computeStreak`).
+    // function ran for them) — the latest `daily_visit` local date seen in
+    // the window, which may be TODAY's own row (re-review #6 on issue
+    // #524/#570): `route.ts` awards today's `daily_visit` only after
+    // settlement succeeds, so a today-dated row here means an earlier
+    // settlement this same request-day already judged the current catch-up
+    // window, and a second same-day visit must not re-judge it. `null`
+    // means no prior visit is visible in this window (either a brand new
+    // user, or one who's been idle longer than the window — either way
+    // every completed week in the catch-up window below is a first
+    // judgment, so no filtering is needed; see `computeStreak`).
     let previousVisitDate: string | null = null
     for (const row of (events ?? []) as Array<{ event_type: string; created_at: string }>) {
       const localDate = utcTimestampToLocalDate(row.created_at, offsetMinutes)
