@@ -44,6 +44,7 @@ evidence, not against how the card reads.
 | `needs-info` | Nobody can act until a question is answered. The question goes in `questions`. |
 | `wontfix` | Out of scope or declined. Always low or medium confidence: declining is Ayush's call. |
 | `close` | Already fixed, a duplicate, or stale. Set `closeReason`, and `duplicateOf` for a duplicate. |
+| `hold` | Leave it in `needs-triage` untouched for the next run. Only as a question option ("wait until #546 merges"), never as a card's own move. |
 
 `priority` uses the repo's labels: `high` (user-facing breakage or real value),
 `med`, `low` (polish), `defer` (not now). `category` is `bug`, `enhancement` or
@@ -82,7 +83,16 @@ evidence, not against how the card reads.
     "Not reproduced in a running app",
     "Did not check whether the backend still emits requires_review:false for chat adds"
   ],
-  "questions": [],
+  "questions": [
+    {
+      "text": "Fix it by tracking every pantry proposal as pending, or by auto-applying confident adds?",
+      "options": [
+        {"label": "Track every proposal with actions, so Approve works"},
+        {"label": "Auto-apply confident adds and drop the card", "priority": "med"}
+      ],
+      "recommended": 0
+    }
+  ],
   "followUp": null,
   "order": 1,
   "applied": null
@@ -91,7 +101,16 @@ evidence, not against how the card reads.
 
 - `summary`: what is wrong or wanted, in plain words, from the user's side. Not the title reworded.
 - `checked` and `notChecked`: short, concrete, one fact per item.
-- `questions`: only questions whose answer changes the move or the priority.
+- `questions`: only questions whose answer changes the outcome. Write each as a
+  choice, `{"text", "options": [...], "recommended": <index or null>}`. Each option
+  is `{"label"}` plus any of `move`, `priority`, `closeReason`, `duplicateOf` that
+  picking it would set. The board shows the result live ("If approved: …").
+  - `recommended` pre-selects an option, so Approve takes it. Set it only when you
+    would defend that choice. Leave it `null` for a real product call: Approve then
+    stays disabled until Ayush picks, so no default slips through unexamined.
+  - An option may name extra work in its label ("split the helper into its own
+    issue"). The apply step does it.
+  - A plain string is an open question, answered in free text.
 - `followUp`: filled only after Ayush asks for more on this card (see the skill's sign-off step).
 - `order`: sort order within the group, most important first.
 - `applied`: written by the apply step. The pass leaves it `null`.

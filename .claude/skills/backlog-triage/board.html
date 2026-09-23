@@ -126,7 +126,20 @@
   .why { margin: 0; color: var(--ink); max-width: 65ch; }
   .why .lbl, .qs .lbl, .follow .lbl { font-weight: 800; }
   .qs { background: var(--lavender-soft); border-radius: 10px; padding: 8px 12px; }
-  .qs ul { margin: 4px 0 0; padding-left: 20px; }
+  .qs { display: grid; gap: 10px; }
+  .q { display: grid; gap: 6px; }
+  .qtext { margin: 0; }
+  .opts { display: grid; gap: 4px; }
+  .opt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; cursor: pointer; padding: 4px 8px; border-radius: 8px; background: var(--surface); }
+  .opt input { margin: 0; accent-color: var(--lavender); }
+  .opt-label { flex: 1 1 200px; min-width: 0; }
+  .opt-eff { font-size: 0.8rem; color: var(--ink-soft); }
+  .chip.sugg { background: var(--lavender); color: var(--surface); font-size: 0.72rem; padding: 0 8px; }
+  input.qa { font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--surface); border: 1.5px solid var(--line); border-radius: 8px; padding: 4px 8px; width: 100%; box-sizing: border-box; }
+  .outcome { margin: 0; font-size: 0.9rem; }
+  .outcome .lbl { font-weight: 800; }
+  .warn { color: var(--coral); font-weight: 700; }
+  button.linkish { border: none; background: none; color: var(--accent); padding: 5px 4px; }
   .follow { background: var(--peach-soft); border-radius: 10px; padding: 8px 12px; white-space: pre-wrap; }
   details { font-size: 0.9rem; }
   details summary { cursor: pointer; color: var(--ink-soft); font-weight: 700; }
@@ -220,6 +233,7 @@
   }
 
   function moveText(c) {
+    if (c.move === "hold") return "Hold: stays needs-triage for the next run";
     if (c.move === "close") {
       if (c.closeReason === "duplicate" && c.duplicateOf) return "Close: duplicate of #" + c.duplicateOf;
       return "Close: " + (c.closeReason || "no reason given");
@@ -246,27 +260,109 @@
     }
   }
 
+  // A question is either a plain string (open, answered in text) or
+  // {text, options: [{label, move?, priority?, closeReason?, duplicateOf?}], recommended}.
+  function questionsOf(c) {
+    return (c.questions || []).map(q => typeof q === "string" ? { text: q, options: [], recommended: null } : Object.assign({ options: [], recommended: null }, q));
+  }
+
+  // The answer in force for question i: the viewer's pick, else the suggested option.
+  function answerOf(q, i, d) {
+    const a = (d.answers || {})[i];
+    if (a !== undefined && a !== null && a !== "") return a;
+    return q.options.length && q.recommended != null ? q.recommended : null;
+  }
+
+  // What approving this card would do, after the chosen options apply their effects.
+  function resolved(c, d) {
+    const r = { move: c.move, priority: c.priority, closeReason: c.closeReason, duplicateOf: c.duplicateOf };
+    questionsOf(c).forEach((q, i) => {
+      const a = answerOf(q, i, d);
+      const opt = typeof a === "number" ? q.options[a] : null;
+      if (opt) for (const k of ["move", "priority", "closeReason", "duplicateOf"]) if (opt[k] != null) r[k] = opt[k];
+    });
+    return r;
+  }
+
+  function effectText(o) {
+    const bits = [];
+    if (o.move === "close") bits.push(o.duplicateOf ? "close as dup of #" + o.duplicateOf : "close" + (o.closeReason ? " (" + o.closeReason + ")" : ""));
+    else if (o.move) bits.push(o.move);
+    if (o.priority) bits.push(o.priority);
+    return bits.length ? "→ " + bits.join(" · ") : "";
+  }
+
+  const openNotes = new Set();
+
   function renderCard(c) {
     const d = state.decisions[c.issue] || {};
+    const locked = state.readOnly || !!c.applied;
+    const qs = questionsOf(c);
     const status = el("span", { class: "status", role: "status" });
     if (d.verdict) status.textContent = VERDICT_LABEL[d.verdict] + (d.decidedAt ? " · " + new Date(d.decidedAt).toLocaleString() : "");
 
-    const verdictBtn = (v, label, cls) => el("button", {
-      class: cls, type: "button", "aria-pressed": d.verdict === v ? "true" : "false",
-      disabled: state.readOnly || !!c.applied,
-      onclick: () => {
-        if (v === "change") {
-          saveDecision(c, { verdict: "change", move: d.move || c.move, priority: d.priority || c.priority, note: noteBox.value }, status);
-        } else {
-          saveDecision(c, { verdict: v, move: null, priority: null, note: noteBox.value }, status);
-        }
-      },
-    }, label);
+    const unanswered = qs.filter((q, i) => q.options.length && answerOf(q, i, d) === null).length;
+    const explicitAnswers = () => {
+      const a = Object.assign({}, d.answers || {});
+      qs.forEach((q, i) => { const v = answerOf(q, i, d); if (v !== null) a[i] = v; });
+      return a;
+    };
 
-    const noteBox = el("textarea", { id: "note-" + c.issue, rows: "2", placeholder: "Note for Claude (optional): why, or what to look at", disabled: state.readOnly || !!c.applied });
+    const noteBox = el("textarea", { id: "note-" + c.issue, rows: "2", disabled: locked,
+      placeholder: d.verdict === "ask" ? "What should Claude look at?" : d.verdict === "skip" ? "Why not now? (optional)" : "Note for Claude: why, or anything the apply step should know" });
     noteBox.value = d.note || "";
     const saveNote = el("button", { class: "ghost", type: "button", hidden: true, onclick: () => { saveDecision(c, { note: noteBox.value }, status); saveNote.hidden = true; } }, "Save note");
     noteBox.addEventListener("input", () => { saveNote.hidden = noteBox.value === (d.note || ""); });
+    const noteShown = openNotes.has(c.issue) || !!d.note || ["change", "ask", "skip"].includes(d.verdict);
+    const noteWrap = el("div", { class: "note-wrap", hidden: !noteShown }, noteBox);
+    const addNote = el("button", { class: "linkish", type: "button", hidden: noteShown || locked, onclick: () => { openNotes.add(c.issue); noteWrap.hidden = false; addNote.hidden = true; noteBox.focus(); } }, "+ note");
+
+    const verdictBtn = (v, label, cls) => el("button", {
+      class: cls, type: "button", "aria-pressed": d.verdict === v ? "true" : "false",
+      disabled: locked || (v === "approve" && unanswered > 0),
+      title: v === "approve" && unanswered > 0 ? "Pick an answer to every question first" : null,
+      onclick: () => {
+        if (v !== "approve") openNotes.add(c.issue);
+        if (v === "change") {
+          const r = resolved(c, d);
+          saveDecision(c, { verdict: "change", move: d.move || r.move, priority: d.priority || r.priority, note: noteBox.value }, status);
+        } else if (v === "approve") {
+          saveDecision(c, { verdict: "approve", move: null, priority: null, answers: explicitAnswers(), note: noteBox.value }, status);
+        } else {
+          saveDecision(c, { verdict: v, move: null, priority: null, note: noteBox.value }, status);
+        }
+        if (v === "ask") setTimeout(() => { const n = document.getElementById("note-" + c.issue); if (n) n.focus(); }, 60);
+      },
+    }, label);
+
+    const qBlock = qs.length ? el("div", { class: "qs" }, el("span", { class: "lbl" }, qs.length > 1 ? "Questions for you" : "Question for you"),
+      qs.map((q, i) => {
+        const cur = answerOf(q, i, d);
+        const body = [el("p", { class: "qtext", text: q.text })];
+        if (q.options.length) {
+          body.push(el("div", { class: "opts", role: "radiogroup", "aria-label": q.text }, q.options.map((o, oi) => {
+            const id = "q-" + c.issue + "-" + i + "-" + oi;
+            const input = el("input", { type: "radio", id, name: "q-" + c.issue + "-" + i, checked: cur === oi, disabled: locked,
+              onchange: () => saveDecision(c, { answers: Object.assign({}, d.answers || {}, { [i]: oi }) }, status) });
+            return el("label", { class: "opt", for: id }, input,
+              el("span", { class: "opt-label", text: o.label }),
+              q.recommended === oi ? el("span", { class: "chip sugg", text: "suggested" }) : null,
+              effectText(o) ? el("span", { class: "opt-eff", text: effectText(o) }) : null);
+          })));
+        } else {
+          const ta = el("input", { type: "text", id: "qa-" + c.issue + "-" + i, class: "qa", disabled: locked, placeholder: "Your answer (optional)", value: typeof cur === "string" ? cur : "" });
+          ta.addEventListener("change", () => saveDecision(c, { answers: Object.assign({}, d.answers || {}, { [i]: ta.value }) }, status));
+          body.push(ta);
+        }
+        return el("div", { class: "q" }, body);
+      })) : null;
+
+    const r = resolved(c, d);
+    const outcome = d.verdict === "change" ? { move: d.move || r.move, priority: d.priority || r.priority, closeReason: r.closeReason, duplicateOf: r.duplicateOf } : r;
+    const outcomeLine = el("p", { class: "outcome" },
+      el("span", { class: "lbl" }, d.verdict === "change" ? "You set: " : "If approved: "),
+      moveText(outcome),
+      unanswered ? el("span", { class: "warn", text: " · answer " + (unanswered > 1 ? unanswered + " questions" : "the question") + " first" }) : null);
 
     let changeRow = null;
     if (d.verdict === "change") {
@@ -283,27 +379,29 @@
         el("a", { class: "num mono", href: c.url, target: "_blank", rel: "noopener" }, "#" + c.issue),
         el("span", { class: "t", text: c.title })),
       el("div", { class: "chips" },
-        el("span", { class: "chip move", text: moveText(c) }),
+        el("span", { class: "chip move", text: "Suggested: " + moveText(c) }),
         el("span", { class: "chip conf-" + c.confidence, text: c.confidence + " confidence" }),
         c.category ? el("span", { class: "chip", text: c.category }) : null,
         c.applied ? el("span", { class: "chip applied", text: "Applied on GitHub" }) : null),
       el("p", { class: "summary", text: c.summary }),
       el("p", { class: "why" }, el("span", { class: "lbl" }, "Why: "), c.why),
-      c.questions && c.questions.length ? el("div", { class: "qs" }, el("span", { class: "lbl" }, "Questions for you"), el("ul", {}, c.questions.map(q => el("li", { text: q })))) : null,
       c.followUp ? el("div", { class: "follow" }, el("span", { class: "lbl" }, "Claude looked again: "), c.followUp) : null,
       el("details", {},
         el("summary", {}, "Evidence: " + (c.checked || []).length + " checked, " + (c.notChecked || []).length + " not checked"),
         el("div", { class: "ev" },
           el("div", {}, el("h4", { text: "Checked" }), el("ul", {}, (c.checked || []).map(x => el("li", { text: x })))),
           el("div", {}, el("h4", { text: "Not checked" }), el("ul", {}, (c.notChecked || []).map(x => el("li", { text: x })))))),
+      qBlock,
       el("div", { class: "decide" },
+        outcomeLine,
         el("div", { class: "btns" },
           verdictBtn("approve", "Approve", "approve"),
           verdictBtn("change", "Change…", "change"),
           verdictBtn("ask", "Ask Claude", "ask"),
-          verdictBtn("skip", "Not now", "skip")),
+          verdictBtn("skip", "Not now", "skip"),
+          addNote),
         changeRow,
-        noteBox,
+        noteWrap,
         el("div", { class: "btns" }, saveNote, status)));
   }
 
@@ -318,8 +416,12 @@
     btn.disabled = true;
     let done = 0;
     for (const c of cards) {
+      const answers = {};
+      let open = false;
+      questionsOf(c).forEach((q, i) => { const a = answerOf(q, i, {}); if (a !== null) answers[i] = a; else if (q.options.length) open = true; });
+      if (open) continue;
       try {
-        await state.db.doc(decisionPath(c.issue)).set({ run: state.runId, issue: c.issue, verdict: "approve", move: null, priority: null, note: "", bulk: true, decidedAt: new Date().toISOString() });
+        await state.db.doc(decisionPath(c.issue)).set({ run: state.runId, issue: c.issue, verdict: "approve", move: null, priority: null, answers, note: "", bulk: true, decidedAt: new Date().toISOString() });
         done++;
         statusEl.textContent = "Approved " + done + " of " + cards.length;
       } catch (e) {

@@ -103,8 +103,11 @@ where the questions are. Answer what he asks in chat. Anything he decides in cha
 also goes onto the board (`set` the decision doc) so the board stays the record.
 
 Each decision lives at `decisions/<runId>-<issue>`:
-`{verdict: approve | change | ask | skip, move, priority, note}`. A `change`
-carries his `move` and `priority`. His words win over the card.
+`{verdict: approve | change | ask | skip, move, priority, answers, note}`.
+`answers` maps each question's index to the option he picked (or his text, for an
+open question). An `approve` means the card with those answers. A `change` carries
+his own `move` and `priority`, which win over everything. His words win over the
+card.
 
 For every `ask`: dig into what his note asks, then `update` that card's
 `followUp` with what you found and re-grade its confidence. Leave his decision
@@ -116,10 +119,15 @@ is decided so far.
 ## 5. Apply
 
 Read every decision with `ArtifactData` `list` on `decisions` for this run. For
-each `approve` or `change`, compute the final move and priority (his values over
-the card's). Read his note first: when it asks for something other than the verdict
-(an "approve" whose note says "fold this into #502"), hold that issue and ask him
-which one he meant. Then on GitHub:
+each `approve` or `change`, compute the final outcome: start from the card, apply
+each picked option's `move`, `priority`, `closeReason` and `duplicateOf` in
+question order, then his own `change` values on top. A final move of `hold` means
+leave the issue alone. Do any extra work a picked option's label names (filing a
+split-out issue, retitling), and put the answers in the triage comment.
+
+Read his note first: when it asks for something other than the verdict and answers
+say (an "approve" whose note says "fold this into #502"), hold that issue and ask
+him which one he meant. Then on GitHub:
 
 | move | action |
 |---|---|
