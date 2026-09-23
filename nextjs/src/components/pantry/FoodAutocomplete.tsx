@@ -113,6 +113,13 @@ export default function FoodAutocomplete({
         }
         break
       case 'Escape':
+        // Only close the dropdown, not the sheet it lives in (issue #439).
+        // `preventDefault` is the signal: `useModalFocusTrap` skips an Escape
+        // that's already been handled. (`stopPropagation` alone is not enough —
+        // React's delegated listener lives on `document` in this app, next to
+        // the trap's own listener, so it can't stop a sibling on the same node.)
+        e.preventDefault()
+        e.stopPropagation()
         setIsOpen(false)
         setHighlightedIndex(-1)
         break

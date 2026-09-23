@@ -578,7 +578,7 @@ async def _resolve_cook_context(
             f"{user_id!r}; leaving session un-pinned"
         )
         return None
-    return dict(resolved)
+    return resolved
 
 
 async def update_session_node(state: WorkflowState) -> WorkflowState:
@@ -636,6 +636,14 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
             session.metadata.brainstorm_ideas = state.get("brainstorm_ideas", [])
             # Persist constraints so the follow-up turn (research_recipe) can inherit
             # them even though it bypasses extract_recipe_constraints (#144).
+            #
+            # This may persist a stored dietary preference that was combined in, or
+            # one that was set aside because this turn's message contradicted it
+            # (#394) — either way that's fine and doesn't stick: `dietary` here is
+            # only ever *inherited* as a starting point by `_merge_constraints` next
+            # turn, then `extract_recipe_constraints` re-runs the contradiction check
+            # against that NEXT turn's own message. A preference set aside this turn
+            # reasserts itself as soon as a later message stops contradicting it.
             constraints = state.get("recipe_constraints")
             if constraints:
                 session.metadata.recipe_constraints = RecipeConstraints.model_validate(
@@ -685,7 +693,10 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                         title=str(getattr(recipe_obj, "title", "") or "").strip(),
                         ingredients=flat_ingredients,
                     )
-                # Keep constraints alive across further refinement turns.
+                # Keep constraints alive across further refinement turns. See the
+                # #394 note at the RECIPE_BRAINSTORM/RECIPE_GENERATION branch above —
+                # a combined-or-set-aside stored dietary preference here is
+                # re-evaluated fresh next turn, so it self-heals rather than sticking.
                 constraints = state.get("recipe_constraints")
                 if constraints:
                     session.metadata.recipe_constraints = RecipeConstraints.model_validate(
@@ -792,6 +803,8 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
             if state.get("brainstorm_ideas") and old_mode != SessionMode.COOKING.value:
                 session.active_mode = SessionMode.RECIPE_EXPLORING
                 session.metadata.brainstorm_ideas = state.get("brainstorm_ideas", [])
+                # See the #394 note at the RECIPE_BRAINSTORM/RECIPE_GENERATION
+                # branch above re: persisted dietary constraints self-healing.
                 constraints = state.get("recipe_constraints")
                 if constraints:
                     session.metadata.recipe_constraints = RecipeConstraints.model_validate(

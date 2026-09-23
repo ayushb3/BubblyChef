@@ -204,17 +204,14 @@ async def cook_recipe(
 
         repo = await get_repository()
 
-        # Fetch recipe (raw dict — get_recipe returns dict)
         recipe_data = await repo.get_recipe(user_id, request.recipe_id)
         if recipe_data is None:
             raise HTTPException(status_code=404, detail="Recipe not found")
 
         pantry_items = await repo.get_all_pantry_items(user_id)
 
-        # get_recipe returns a raw Supabase dict at runtime despite the RecipeCard type hint
-        recipe_dict: dict[str, Any] = recipe_data  # type: ignore[assignment]
-        ingredients: list[dict[str, Any]] = recipe_dict.get("ingredients", [])
-        title: str = recipe_dict.get("title", "")
+        ingredients: list[dict[str, Any]] = recipe_data.get("ingredients", [])
+        title: str = recipe_data.get("title", "")
 
         # Deterministic matching first; the model is only consulted for whatever
         # the synonym table cannot place, and a provider outage degrades those

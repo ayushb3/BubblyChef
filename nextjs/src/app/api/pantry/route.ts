@@ -78,17 +78,13 @@ export async function POST(request: Request) {
       quantity: qty,
       unit,
       expiry_date: expiry || null,
-      // #363/#398: mirror the precedence in apply_pantry_proposal
-      // (supabase_repo.py) — "an explicit estimated_expiry on the action
-      // always wins... otherwise it follows raw_expiry." An explicit flag
-      // from the client (e.g. a catalog-auto-filled date, #398) always wins;
-      // otherwise fall back to the #363 heuristic-derived guess. A genuinely
-      // user-typed date (no explicit flag, expiry_date supplied) still comes
-      // out false; no date at all is still not an estimate.
-      estimated_expiry:
-        body.estimated_expiry !== undefined
-          ? Boolean(body.estimated_expiry)
-          : !body.expiry_date && Boolean(expiry),
+      // #363/#398/#439: when the client didn't supply a date, this route
+      // guessed one itself, so the flag is always true regardless of what
+      // the client sent (a blank-date row defaults its flag to `false`,
+      // which must not override a real guess). The client's flag is only
+      // honoured when the client actually supplied a date: true means
+      // catalog auto-fill (#398), false means the user typed it themselves.
+      estimated_expiry: body.expiry_date ? Boolean(body.estimated_expiry) : Boolean(expiry),
       slot_index: body.slot_index ?? null,
       quantity_base: quantity_base ?? null,
       unit_base: unit_base ?? null,

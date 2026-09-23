@@ -10,8 +10,7 @@ per attempt.
 
 from __future__ import annotations
 
-import time
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -126,16 +125,93 @@ async def test_vision_uses_per_attempt_timeout_not_the_text_timeout() -> None:
 
 @pytest.mark.asyncio
 async def test_retry_elapsed_time_reflects_configured_backoff() -> None:
-    """Sanity check the backoff is actually awaited between attempts (using a
-    tiny real backoff so the test stays fast but still observes ordering).
+    """The configured backoff is actually awaited between attempts.
+
+    Asserted on the awaited sleep rather than on wall-clock elapsed time: a
+    real 50ms sleep measured with time.monotonic() can come back a few ms
+    short on Windows' ~15ms timer resolution, which made this flaky.
     """
     provider = _make_provider(vision_retry_backoff=0.05)
     ok = _ok_response()
     post = AsyncMock(side_effect=[httpx.ReadTimeout("timed out"), ok])
     provider._client.post = post  # type: ignore[method-assign]
 
-    start = time.monotonic()
-    await provider.vision_complete(prompt="extract text", image_bytes=b"fake")
-    elapsed = time.monotonic() - start
+    with patch("bubbly_chef.ai.gemini.asyncio.sleep", new_callable=AsyncMock) as sleep:
+        await provider.vision_complete(prompt="extract text", image_bytes=b"fake")
 
-    assert elapsed >= 0.05
+    sleep.assert_awaited_once_with(0.05)
+
+
+def _status_error(code: int) -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "https://example.test")
+    response = httpx.Response(status_code=code, text=f"status {code}", request=request)
+    return httpx.HTTPStatusError(f"{code}", request=request, response=response)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", [500, 502, 503, 504])
+async def test_transient_server_error_then_success_is_retried(code: int) -> None:
+    """Gemini 5xx (overloaded / internal) is transient: retried once, then succeeds."""
+    provider = _make_provider(vision_retry_backoff=0.0)
+    post = AsyncMock(side_effect=[_status_error(code), _ok_response()])
+    provider._client.post = post  # type: ignore[method-assign]
+
+    result = await provider.vision_complete(prompt="extract text", image_bytes=b"fake")
+
+    assert result == "MILK 1.99"
+    assert post.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_server_error_exhausted_raises_after_one_retry() -> None:
+    provider = _make_provider(vision_retry_backoff=0.0)
+    post = AsyncMock(side_effect=_status_error(503))
+    provider._client.post = post  # type: ignore[method-assign]
+
+    with pytest.raises(ProviderUnavailableError, match="503"):
+        await provider.vision_complete(prompt="extract text", image_bytes=b"fake")
+    assert post.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", [400, 403, 404, 429])
+async def test_client_errors_and_rate_limit_are_not_retried(code: int) -> None:
+    provider = _make_provider(vision_retry_backoff=0.0)
+    post = AsyncMock(side_effect=_status_error(code))
+    provider._client.post = post  # type: ignore[method-assign]
+
+    with pytest.raises(ProviderUnavailableError):
+        await provider.vision_complete(prompt="extract text", image_bytes=b"fake")
+    post.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_availability_check_uses_a_short_explicit_timeout() -> None:
+    """is_available() runs before every scan; it must not inherit the 60s client default."""
+    provider = _make_provider()
+    ok = MagicMock(spec=httpx.Response)
+    ok.status_code = 200
+    get = AsyncMock(return_value=ok)
+    provider._client.get = get  # type: ignore[method-assign]
+
+    assert await provider.is_available() is True
+    timeout = get.await_args.kwargs.get("timeout")
+    assert timeout is not None and timeout <= 5.0
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("gemini_vision_timeout_seconds", 0),
+        ("gemini_vision_timeout_seconds", -1),
+        ("gemini_vision_max_retries", -1),
+        ("gemini_vision_retry_backoff_seconds", -0.5),
+    ],
+)
+def test_vision_settings_reject_out_of_range_values(field: str, value: float) -> None:
+    from pydantic import ValidationError
+
+    from bubbly_chef.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(**{field: value})  # type: ignore[arg-type]
