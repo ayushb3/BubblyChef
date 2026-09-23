@@ -486,7 +486,7 @@ the same credential differently.
 
 **Installed skills live in `.claude/skills/`, committed to the repo** — so they work
 in a fresh clone, in CI, and in cloud sessions, not just on a configured laptop.
-21 skills loaded from `.claude/skills/` (including the project's own `verify`,
+22 skills loaded from `.claude/skills/` (including the project's own `verify`,
 which runs a production build on the worktree's ports and walks the changed flow);
 9 more sit unloaded in
 `.claude/skills-archive/` (archived 2026-09-17, reversible — move a directory back
@@ -496,6 +496,7 @@ for drift detection, archived entries included. See `WORKFLOW.md` §9.
 Most-used: `/implement-issue` (this project's pickup skill — grab the next
 `ready-for-agent` issue, branch, delegate, gate, open a draft PR),
 `/to-spec` → `/to-tickets` (plan), `/triage` (label state machine),
+`/backlog-triage` (batch the needs-triage pile onto a sign-off board),
 `/wayfinder` (chart unknown-shaped work), `/diagnosing-bugs`, `/handoff`.
 
 ### Issue tracker
