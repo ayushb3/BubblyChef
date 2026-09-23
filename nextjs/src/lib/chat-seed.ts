@@ -19,6 +19,7 @@
  * it without re-tuning `recipe/nodes.py`.
  */
 
+import { parseLocalDate } from '@/lib/pantry-helpers'
 import type { CookingRecipeIdContext } from '@/types/chat'
 
 /**
@@ -99,20 +100,38 @@ export function ingredientSeedMessage(name: string): string {
 
 /**
  * Human phrasing for an ISO expiry date, matching `pantry-helpers`' day maths
- * (midnight-today → expiry, rounded up). Returns null for a missing/unparseable
- * date so callers can fall back.
+ * (midnight-today → expiry, `Math.round`) exactly. Returns null for a
+ * missing/unparseable date so callers can fall back.
+ *
+ * Uses `parseLocalDate` (not the bare `Date` constructor) for the same reason
+ * `pantry-helpers` does (#244): a date-only string like "2026-08-25" parses as
+ * *UTC* midnight, while `today` below is *local* midnight. East of UTC that
+ * constant offset pushed the old `Math.ceil`-based day count up by exactly
+ * one, at every hour of every day — an item due tomorrow always read as two
+ * days out. (The #438 flake itself was in the *test's* "tomorrow" fixture,
+ * not this function — see `chat-deep-links.test.tsx`'s history — but this
+ * function had the same latent UTC/local mismatch bug in its own right,
+ * just one that only bites users east of UTC.)
+ *
+ * `Math.round`, not `Math.ceil`: with both sides now local midnights, the
+ * gap is a whole number of days except on a DST transition day, where it's
+ * 23 or 25 hours. `Math.ceil` would turn the fall-back day's 25h gap into 2
+ * days (disagreeing with the pantry badge's 1) and the spring-forward day's
+ * −23h gap into `-0`, which reads as "expires today" for an item that
+ * already expired. `Math.round` matches `pantry-helpers.daysUntilExpiry` on
+ * both.
  */
 export function expiryPhrase(
   expiryDate: string | null | undefined,
   now: Date = new Date(),
 ): string | null {
   if (!expiryDate) return null
-  const expiry = new Date(expiryDate)
+  const expiry = parseLocalDate(expiryDate)
   if (Number.isNaN(expiry.getTime())) return null
 
   const today = new Date(now)
   today.setHours(0, 0, 0, 0)
-  const days = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  const days = Math.round((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 
   if (days < 0) return 'already expired'
   if (days === 0) return 'expires today'
