@@ -63,6 +63,12 @@ class TestPromptDisambiguation:
         assert "show me my saved butter chicken" in INTENT_CLASSIFICATION_SYSTEM_PROMPT
         assert "the pasta I made last week" in INTENT_CLASSIFICATION_SYSTEM_PROMPT
 
+    def test_memory_and_history_examples_present(self) -> None:
+        """Asking the assistant to recall a past recipe ("do you remember…",
+        "look in my history…") is a lookup, not a request for a new one."""
+        for phrase in MEMORY_PHRASINGS:
+            assert phrase in INTENT_CLASSIFICATION_SYSTEM_PROMPT, phrase
+
     def test_generation_examples_unchanged(self) -> None:
         assert "make me a butter chicken" in INTENT_CLASSIFICATION_SYSTEM_PROMPT
         assert "give me a pasta recipe" in INTENT_CLASSIFICATION_SYSTEM_PROMPT
@@ -72,7 +78,16 @@ class TestPromptDisambiguation:
 # Classifier routing — table-driven, mocked LLM
 # ---------------------------------------------------------------------------
 
+MEMORY_PHRASINGS = [
+    "do you remember that curry recipe?",
+    "search your memory for the soup we made",
+    "look in my history for that pasta",
+    "what was that recipe from last time?",
+    "find the one we made before",
+]
+
 LOOKUP_PHRASINGS = [
+    *MEMORY_PHRASINGS,
     "make that butter chicken I saved",
     "show me my saved butter chicken",
     "the pasta I made last week",

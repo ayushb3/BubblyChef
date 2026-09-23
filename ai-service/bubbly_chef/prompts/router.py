@@ -30,8 +30,9 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     "cooking times (NOT recipe requests)\n"
     "- saved_recipe_lookup: User wants to find or reference a recipe they "
     "ALREADY SAVED — 'show me my saved X', 'the pasta I made last week', "
-    "'make that butter chicken I saved' (this is NOT a request to generate "
-    "a new recipe)\n"
+    "'make that butter chicken I saved', or asks you to remember or search "
+    "their history for one — 'do you remember that curry recipe?' (this is "
+    "NOT a request to generate a new recipe)\n"
     "- general_chat: ONLY for messages truly unrelated to food, cooking, "
     "or the kitchen (e.g. greetings, app questions, small talk)\n\n"
     "IMPORTANT: Distinguish recipe_brainstorm from recipe_generation:\n"
@@ -48,6 +49,11 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     "- 'make that butter chicken I saved' → saved_recipe_lookup\n"
     "- 'show me my saved butter chicken' → saved_recipe_lookup\n"
     "- 'the pasta I made last week' → saved_recipe_lookup\n"
+    "- 'do you remember that curry recipe?' → saved_recipe_lookup\n"
+    "- 'search your memory for the soup we made' → saved_recipe_lookup\n"
+    "- 'look in my history for that pasta' → saved_recipe_lookup\n"
+    "- 'what was that recipe from last time?' → saved_recipe_lookup\n"
+    "- 'find the one we made before' → saved_recipe_lookup\n"
     "- 'make me a butter chicken' → recipe_generation\n"
     "- 'give me a pasta recipe' → recipe_generation\n\n"
     "Be accurate. Look for key indicators:\n"
@@ -67,8 +73,10 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     " (in context of prior recipe) -> recipe_card\n"
     '- "how to cook", "how long does X last", "substitute for",'
     ' "food storage", "what temperature" -> cooking_help\n'
-    '- "show me my saved", "the one I saved", "I saved", "made last week"'
-    " (referencing an existing saved recipe) -> saved_recipe_lookup\n"
+    '- "show me my saved", "the one I saved", "I saved", "made last week",'
+    ' "do you remember", "search your memory", "in my history", "last time",'
+    ' "we made before" (referencing an existing saved recipe)'
+    " -> saved_recipe_lookup\n"
     "- Everything else -> general_chat"
 )
 

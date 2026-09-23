@@ -80,6 +80,12 @@ CASES: list[dict[str, Any]] = [
     {"input": "show me my saved butter chicken", "expected": "saved_recipe_lookup"},
     {"input": "make that pasta I saved last week", "expected": "saved_recipe_lookup"},
     {"input": "the chicken curry I made last week", "expected": "saved_recipe_lookup"},
+    {"input": "do you remember that curry recipe?", "expected": "saved_recipe_lookup"},
+    {"input": "search your memory for the soup we made", "expected": "saved_recipe_lookup"},
+    {"input": "look in my history for that pasta", "expected": "saved_recipe_lookup"},
+    {"input": "what was that recipe from last time?", "expected": "saved_recipe_lookup"},
+    {"input": "find the one we made before", "expected": "saved_recipe_lookup"},
+    {"input": "make me a butter chicken", "expected": "recipe_generation"},
     # general_chat
     {"input": "hello, how are you?", "expected": "general_chat"},
     {"input": "what does this app do?", "expected": "general_chat"},
