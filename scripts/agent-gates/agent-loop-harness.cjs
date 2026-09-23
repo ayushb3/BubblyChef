@@ -54,7 +54,7 @@ function harness(respond) {
 
 const FACTS = {
   agentsEnabled: 'true', agentsEnabledRead: true, agentsEnabledError: '', runsLast24h: 0, issueState: 'OPEN', issueLabels: ['ready-for-agent'],
-  openPrsForIssue: [], title: 'T', kind: 'feature', devRole: 'frontend', slug: 's', summary: 'x',
+  openPrsForIssue: [], title: 'T', kind: 'feature', devRole: 'frontend', slug: 's', summary: 'x', requiredChecks: [],
 }
 const SETUP_OK = { ok: true, branchCreated: true, path: '/wt', branch: 'feat/x', originalBranch: 'main', problem: '' }
 // The environment probe every other test needs to pass before it reaches its own subject.
@@ -467,6 +467,166 @@ async function main() {
     const h = harness(ghSeq(['needs changes', 'looks mergeable'], FIXED))
     await h.run({ issue: 405 })
     check('respond fixes must re-verify user-visible changes before pushing', /re-verify that flow on your new commit/.test(h.prompts['respond-fix-1'] || ''), 'respond-fix prompt')
+  }
+
+  // ── Size tiers: decided in code, can only go up, never lower the bar ──
+  // A small plan: few lines, few files, no protected path. The implement/ship mocks
+  // report a real small diff so the tier survives the re-checks unless a test says otherwise.
+  const SMALL_PLAN = { plan: 'p', filesToChange: ['a.ts', 'a.test.ts'], protectedPaths: [], expectedChangedLines: 40, userVisible: true, questions: [] }
+  const SMALL_IMPL = { gatesPassed: true, gateOutput: 'ok', summary: 'did it', filesChanged: ['a.ts', 'a.test.ts'], linesChanged: 40, protectedPaths: [] }
+  const SMALL_SHIP = { prUrl: 'u', prNumber: 1, headSha: 'sha-ship', protectedPaths: [], linesChanged: 40, filesChanged: 2, wouldAutoMerge: true, lessonsProposed: [] }
+  // By default main requires the verdict gate, so small can skip the wait; tests that
+  // are about the gate being absent override requiredChecks.
+  const GATED = { requiredChecks: ['Agent loop limits hold', 'Claude review verdict'] }
+  const tiered = (o = {}) => label => {
+    if (label === 'preflight') return { ...FACTS, ...GATED, ...(o.facts || {}) }
+    if (label === 'plan') return { ...SMALL_PLAN, ...(o.plan || {}) }
+    if (label.startsWith('implement')) return { ...SMALL_IMPL, ...(o.impl || {}) }
+    if (label === 'ship') return { ...SMALL_SHIP, ...(o.ship || {}) }
+    if (label.startsWith('reproduce')) return { failedAsExpected: true, testFiles: ['a.test.ts'], failureOutput: 'fails', beforeScreenshots: [], notes: '' }
+    if (o.review && label.startsWith('review')) return o.review(label)
+    if (o.fix && label.startsWith('fix')) return o.fix
+    if (label.startsWith('decide')) return { decision: 'd', reasoning: 'r', escalate: false, escalateReason: '' }
+    return HAPPY(label)
+  }
+  const BUG = { kind: 'bug' }
+  {
+    const h = harness(tiered())
+    const r = await h.run({ issue: 405, shadow: false })
+    check('tier: a small plan with a small diff runs as small', r.tier === 'small', `tier ${r.tier}; ${r.tierLog}`)
+    check('tier small: no GitHub-review wait (Respond skipped)', count(h, 'gh-review') === 0 && count(h, 'respond-fix') === 0 && r.githubReview === 'gated by required check (small tier)',
+      `gh-review ${count(h, 'gh-review')} outcome ${r.githubReview}`)
+    check('tier small: the in-loop Opus review still runs', count(h, 'review') >= 1 && h.opts['review-1'] && h.opts['review-1'].model === 'opus', `calls ${h.calls.join()}`)
+    check('tier small (gated, not shadow): requests auto-merge, and GitHub waits on the verdict check',
+      r.autoMergeRequested === true && /gh pr merge \d+ --repo \S+ --auto/.test(h.prompts.finish || '') && /including "Claude review verdict"/.test(h.prompts.finish || ''),
+      `autoMerge ${r.autoMergeRequested}`)
+    check('tier small: the PR body says the verdict check gates the merge', /Loop tier: small/.test(h.prompts.ship || '') && /required "Claude review verdict" check holds the merge/.test(h.prompts.ship || ''), 'ship prompt')
+    check('tier small: no open questions -> no Decide agent', count(h, 'decide') === 0, `calls ${h.calls.join()}`)
+  }
+  {
+    const h = harness(tiered())
+    const r = await h.run({ issue: 405 })
+    check('tier small in shadow mode: still never requests auto-merge', r.tier === 'small' && r.autoMergeRequested === false && !/--auto/.test(h.prompts.finish || ''), `autoMerge ${r.autoMergeRequested}`)
+  }
+  {
+    // main does NOT require the verdict gate: nothing would hold an unreviewed merge, so
+    // small must wait for and read the GitHub review like any other tier.
+    for (const [name, requiredChecks] of [['absent', ['Agent loop limits hold']], ['unreadable', []], ['near-miss name', ['Claude review verdicts']]]) {
+      const h = harness(tiered({ facts: { requiredChecks } }))
+      const r = await h.run({ issue: 405, shadow: false })
+      check(`tier small, verdict gate ${name}: waits for the GitHub review (Respond runs)`, r.tier === 'small' && count(h, 'gh-review') >= 1, `gh-review ${count(h, 'gh-review')}`)
+      check(`tier small, verdict gate ${name}: auto-merge only on Respond's own "looks mergeable"`, r.githubReview === 'looks mergeable' && r.autoMergeRequested === true, `${r.githubReview} ${r.autoMergeRequested}`)
+    }
+    const h = harness(label => label.startsWith('gh-review') ? { reviewRan: true, verdict: 'needs a human', findings: [], note: '' } : tiered({ facts: { requiredChecks: [] } })(label))
+    const r = await h.run({ issue: 405, shadow: false })
+    check('tier small, no verdict gate, reviewer says "needs a human": no auto-merge', r.autoMergeRequested === false, `autoMerge ${r.autoMergeRequested}`)
+  }
+  {
+    const h = harness(tiered())
+    await h.run({ issue: 405, dryRun: true })
+    check('preflight reads the required checks on main from the rules API', /repos\/ayushb3\/BubblyChef\/rules\/branches\/main/.test(h.prompts.preflight || ''), 'preflight prompt')
+  }
+  {
+    const h = harness(tiered({ plan: { questions: [{ question: 'q', options: ['a', 'b'], implementerTake: 'a' }] } }))
+    await h.run({ issue: 405 })
+    check('tier small: an open question still gets a Decide agent', count(h, 'decide') === 1, `calls ${h.calls.join()}`)
+  }
+  {
+    const h = harness(tiered({ facts: BUG, plan: { userVisible: false } }))
+    const r = await h.run({ issue: 405 })
+    check('tier small, bug, not user-visible: no separate Reproduce agent', r.tier === 'small' && count(h, 'reproduce') === 0, `calls ${h.calls.join()}`)
+    check('...and Implement must write the failing test first', /BEFORE changing any code, write the smallest unit test that reproduces it/.test(h.prompts['implement-1'] || ''), 'implement prompt')
+  }
+  {
+    const h = harness(tiered({ facts: BUG, plan: { userVisible: true } }))
+    await h.run({ issue: 405 })
+    check('tier small, bug, user-visible: Reproduce still runs (before-screenshots)', count(h, 'reproduce') === 1, `calls ${h.calls.join()}`)
+  }
+  {
+    const h = harness(tiered({ facts: BUG, plan: { userVisible: false, expectedChangedLines: 700 } }))
+    const r = await h.run({ issue: 405 })
+    check('tier standard, bug, not user-visible: Reproduce still runs', r.tier === 'standard' && count(h, 'reproduce') === 1, `tier ${r.tier} calls ${h.calls.join()}`)
+  }
+  {
+    // Verify is never skipped for a user-visible change, whatever the tier.
+    for (const [name, o] of [['small', {}], ['standard', { plan: { expectedChangedLines: 700 } }], ['small bug', { facts: BUG }]]) {
+      const h = harness(tiered(o))
+      await h.run({ issue: 405 })
+      check(`verify always runs for a user-visible change (${name})`, count(h, 'verify') >= 1, `calls ${h.calls.join()}`)
+    }
+  }
+  {
+    // protected is never small, however tiny the change
+    const h = harness(tiered({ plan: { protectedPaths: ['.github/CODEOWNERS'], expectedChangedLines: 1, filesToChange: ['.github/CODEOWNERS'] } }))
+    const r = await h.run({ issue: 405 })
+    check('tier: a protected path is never small, even at 1 line', r.tier === 'protected' && count(h, 'gh-review') >= 1, `tier ${r.tier} gh-review ${count(h, 'gh-review')}`)
+  }
+  {
+    const cases = [
+      ['over the line limit', { expectedChangedLines: 501 }, 'standard'],
+      ['at the line limit', { expectedChangedLines: 500 }, 'small'],
+      ['a #537-sized fix (295 lines)', { expectedChangedLines: 295 }, 'small'],
+      ['a #536-sized change (959 lines)', { expectedChangedLines: 959 }, 'standard'],
+      ['at the file limit', { filesToChange: ['1', '2', '3', '4', '5'] }, 'small'],
+      ['screenshots under docs/media/ are not counted as files', { filesToChange: ['a.ts', 'a.test.ts', 'docs/media/issue-1/x-before.png', 'docs/media/issue-1/x-after.png', 'docs/media/issue-1/y-before.png', 'docs/media/issue-1/y-after.png'] }, 'small'],
+      ['a docs/ file outside media/ still counts', { filesToChange: ['1', '2', '3', '4', '5', 'docs/plan.md'] }, 'standard'],
+      ['over the file limit', { filesToChange: ['1', '2', '3', '4', '5', '6'] }, 'standard'],
+      ['unknown size', { expectedChangedLines: undefined }, 'standard'],
+    ]
+    for (const [name, plan, expect] of cases) {
+      const h = harness(tiered({ plan, impl: { linesChanged: 1, filesChanged: ['a'] }, ship: { linesChanged: 1, filesChanged: 1 } }))
+      const r = await h.run({ issue: 405, dryRun: true })
+      check(`tier from plan: ${name} -> ${expect}`, r.tier === expect, `tier ${r.tier}; ${r.tierLog}`)
+    }
+  }
+  {
+    // bump UP when the real diff grows past the plan
+    const h = harness(tiered({ impl: { linesChanged: 700 }, ship: { linesChanged: 700 } }))
+    const r = await h.run({ issue: 405 })
+    check('tier bumps up when Implement\'s diff outgrows the plan', r.tier === 'standard' && count(h, 'gh-review') >= 1, `tier ${r.tier}; ${r.tierLog}`)
+  }
+  {
+    // review fixes grow the diff: only Ship sees it
+    const h = harness(tiered({ ship: { linesChanged: 600, filesChanged: 3 } }))
+    const r = await h.run({ issue: 405 })
+    check('tier bumps up at Ship when review fixes grew the diff', r.tier === 'standard' && count(h, 'gh-review') >= 1, `tier ${r.tier}; ${r.tierLog}`)
+  }
+  {
+    const h = harness(tiered({ impl: { protectedPaths: ['supabase/migrations/x.sql'] }, ship: { protectedPaths: ['supabase/migrations/x.sql'] } }))
+    const r = await h.run({ issue: 405 })
+    check('tier bumps to protected when Implement touches a protected path', r.tier === 'protected' && count(h, 'gh-review') >= 1, `tier ${r.tier}`)
+  }
+  {
+    const h = harness(tiered({ ship: { protectedPaths: ['.claude/settings.json'] } }))
+    const r = await h.run({ issue: 405 })
+    check('tier bumps to protected when the shipped diff touches a protected path', r.tier === 'protected' && count(h, 'gh-review') >= 1, `tier ${r.tier}`)
+  }
+  {
+    // never DOWN: a standard plan whose diff came out tiny stays standard
+    const h = harness(tiered({ plan: { expectedChangedLines: 700 } }))
+    const r = await h.run({ issue: 405 })
+    check('tier never goes down when the diff comes out smaller than planned', r.tier === 'standard' && count(h, 'gh-review') >= 1, `tier ${r.tier}`)
+  }
+  {
+    // #537's real shape: 4 code/test files plus 4 verify screenshots stays small after Implement
+    const files = ['nextjs/src/hooks/useChat.ts', 'nextjs/src/lib/api/chat.ts', 'nextjs/src/__tests__/a.test.tsx', 'nextjs/src/__tests__/b.test.tsx',
+      'docs/media/issue-513/1-after.png', 'docs/media/issue-513/2-after.png', 'docs/media/issue-513/3-after.png', 'docs/media/issue-513/3-before.png']
+    const h = harness(tiered({ impl: { linesChanged: 295, filesChanged: files }, ship: { linesChanged: 295, filesChanged: 4 } }))
+    const r = await h.run({ issue: 513 })
+    check('tier: screenshots Implement committed under docs/media/ do not push a small fix out of small', r.tier === 'small', `tier ${r.tier}; ${r.tierLog}`)
+    check('ship is told not to count docs/media/ files', /NOT counting files under docs\/media\//.test(h.prompts.ship || ''), 'ship prompt')
+  }
+  {
+    // ...but six real code files after Implement still bump it up
+    const h = harness(tiered({ impl: { filesChanged: ['1', '2', '3', '4', '5', '6', 'docs/media/x.png'] } }))
+    const r = await h.run({ issue: 405 })
+    check('tier: six code files after Implement bump to standard, screenshots aside', r.tier === 'standard', `tier ${r.tier}`)
+  }
+  {
+    // an implement agent that doesn't report its size can't keep a run small
+    const h = harness(tiered({ impl: { linesChanged: undefined } }))
+    const r = await h.run({ issue: 405 })
+    check('tier: an unreported diff size after Implement counts as standard', r.tier === 'standard', `tier ${r.tier}`)
   }
 
   // ── The loop never merges in shadow mode ──

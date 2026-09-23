@@ -103,7 +103,7 @@ def test_finds_the_listener_lsof_cannot_parse(listener) -> None:
     """The actual #477 bug: the truncated Next.js title breaks lsof's parser."""
     port, pid = listener("next-server (v16.2.2)")
 
-    comm = Path(f"/proc/{pid}/comm").read_text().strip()
+    comm = Path(f"/proc/{pid}/comm").read_text(encoding="utf-8").strip()
     assert comm == "next-server (v1", "expected the kernel's 15-char truncation"
 
     assert str(pid) in _proc_listening_pids(port)

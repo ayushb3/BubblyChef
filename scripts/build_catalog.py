@@ -206,7 +206,7 @@ def build_catalog() -> list[dict[str, object]]:
         sys.exit(1)
 
     print(f"Loading USDA data from {USDA_JSON}...")
-    raw = json.loads(USDA_JSON.read_text())
+    raw = json.loads(USDA_JSON.read_text(encoding="utf-8"))
     foods = raw["FoundationFoods"]
     print(f"  Loaded {len(foods)} USDA items")
 
@@ -261,7 +261,7 @@ def main() -> None:
     catalog = build_catalog()
 
     OUTPUT_JSON.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_JSON.write_text(json.dumps(catalog, ensure_ascii=False, indent=2))
+    OUTPUT_JSON.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\nWrote {len(catalog)} entries to {OUTPUT_JSON}")
 
     # Quick sanity check

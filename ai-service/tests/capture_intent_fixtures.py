@@ -187,7 +187,7 @@ async def main() -> None:
     new_json = json.dumps(fixtures, indent=2) + "\n"
 
     if FIXTURES_PATH.exists():
-        old_json = FIXTURES_PATH.read_text()
+        old_json = FIXTURES_PATH.read_text(encoding="utf-8")
         delta = _diff(old_json, new_json)
         if delta:
             print("\n--- diff from existing fixtures ---")
@@ -196,7 +196,7 @@ async def main() -> None:
         else:
             print("\nNo changes from existing fixtures.")
 
-    FIXTURES_PATH.write_text(new_json)
+    FIXTURES_PATH.write_text(new_json, encoding="utf-8")
     print(f"\nWrote {FIXTURES_PATH}")
     print(f"Prompt hash: {fixtures['_meta']['prompt_hash'][:16]}...")
 
