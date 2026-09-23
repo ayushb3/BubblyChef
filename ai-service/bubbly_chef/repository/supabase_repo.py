@@ -29,6 +29,15 @@ logger = logging.getLogger(__name__)
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
+# #384: how many recent conversation_history messages get_history() returns
+# by default, and the generous cap it fetches under the hood before slicing
+# to the tail (see get_history's docstring for why ordering + limiting in
+# the same query is unsafe). 40 messages is ~20 user/assistant exchanges —
+# enough for a real multi-step cooking conversation without summarization,
+# which is a separate, later piece of work.
+_HISTORY_DEFAULT_LIMIT = 40
+_HISTORY_FETCH_CAP = 500
+
 # Filler words that carry no dish-identifying signal in a natural-language
 # lookup request ("show me my saved butter chicken", "do you have a recipe
 # for pasta"). Left in, these spuriously overlap with unrelated recipes'
@@ -741,18 +750,31 @@ class SupabaseRepository:
         ).execute()
 
     async def get_history(
-        self, user_id: str, conversation_id: str, limit: int = 20
+        self, user_id: str, conversation_id: str, limit: int = _HISTORY_DEFAULT_LIMIT
     ) -> list[dict[str, Any]]:
+        """Return the most recent `limit` messages, oldest-first.
+
+        The query orders ascending and fetches a generous cap (#384) rather
+        than `limit` directly: PostgREST applies `.limit()` after `.order()`,
+        so ordering ascending and limiting to `limit` returns the *oldest*
+        `limit` rows, not the most recent ones. For any conversation longer
+        than `limit` messages, that silently pins the model's context to the
+        start of the conversation and it can never see anything newer — the
+        opposite of what callers want. Fetching a wide cap and slicing the
+        tail in Python keeps ascending order (callers expect oldest-first)
+        while guaranteeing recency.
+        """
         result = (
             self.client.table("conversation_history")
             .select("*")
             .eq("user_id", user_id)
             .eq("conversation_id", conversation_id)
             .order("created_at")
-            .limit(limit)
+            .limit(_HISTORY_FETCH_CAP)
             .execute()
         )
-        return _as_rows(result.data)
+        rows = _as_rows(result.data)
+        return rows[-limit:] if limit else rows
 
     # =========================================================================
     # Session operations
