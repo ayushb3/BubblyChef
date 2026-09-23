@@ -165,7 +165,7 @@ test.describe('3b — receipt ingestion (stubbed, CI-safe)', () => {
     // ── 5. Verify the sheet opened on the Scan tab ────────────────────────
     // Source: PantryAddSheet.tsx — h2 "Add to Pantry" + tab buttons
     await expect(page.getByRole('heading', { name: 'Add to Pantry' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /📷 Scan/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Scan', exact: true })).toBeVisible();
 
     // ── 6. Trigger file upload via the hidden input ───────────────────────
     // Source: ScanTab.tsx L114: input type="file" accept="image/*" className="hidden"
@@ -305,9 +305,9 @@ test.describe('3b — receipt ingestion (stubbed, CI-safe)', () => {
     const fileInput = page.locator('input[type="file"][accept="image/*"]');
     await fileInput.setInputFiles(RECEIPT_STUB_PNG);
 
-    // Source: ScanTab.tsx ~L88 — error div with text of the thrown Error message
-    // uploadReceipt() throws Error(err.error ?? ...) on non-ok response
-    await expect(page.getByText(/OCR service unavailable/)).toBeVisible({ timeout: 8_000 });
+    // A failed scan shows friendly copy, not the raw backend error string.
+    await expect(page.getByText(/Couldn't read that receipt/)).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByText(/OCR service unavailable/)).toHaveCount(0);
 
     // Upload affordance must be re-shown (state back to 'upload')
     await expect(page.getByText(/Drop your receipt here/)).toBeVisible();
