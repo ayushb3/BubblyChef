@@ -46,7 +46,10 @@ export interface UseKitchenThemeResult {
    * A theme that just became unlocked and hasn't been shown to this browser
    * yet — render the "New kitchen theme unlocked" card while this is
    * non-null. Always the *newest* (highest-threshold) unseen unlocked theme,
-   * not the oldest. `null` once dismissed or once there's nothing new to show.
+   * not the oldest, and always at most one at a time — every *older*
+   * unseen-but-unlocked theme is marked seen in the same pass (see the
+   * effect below), so a backlog never drains one card per later balance
+   * change. `null` once dismissed or once there's nothing new to show.
    */
   newlyUnlocked: KitchenTheme | null
   /** Dismisses `newlyUnlocked` and records it as seen so it won't reappear. */
@@ -54,9 +57,16 @@ export interface UseKitchenThemeResult {
   /**
    * Set when the last `selectTheme` call's persistence failed — the
    * selection was reverted, and this should be surfaced inline (picker
-   * sheet). `null` once a selection succeeds or another is attempted.
+   * sheet). `null` once a selection succeeds, another is attempted, or
+   * `clearError` is called.
    */
   error: string | null
+  /**
+   * Clears `error` without touching the selection — the picker sheet calls
+   * this on open so a stale failure from a previous, already-reverted
+   * attempt doesn't sit there for the rest of the page's life (#598 review).
+   */
+  clearError: () => void
 }
 
 /**
@@ -83,13 +93,23 @@ export function useKitchenTheme(
 
   // Fire the unlock card whenever the balance changes and names an unlocked,
   // non-default theme this browser hasn't been shown yet — recomputed fresh
-  // from `balance` every time it changes (review finding 1: the old
-  // `checkedRef` latch only ever ran once, on the first non-null balance, so
-  // a threshold crossed mid-session — a React Query refetch pushing the
-  // balance past 500 — never surfaced anything). Among unseen unlocked
-  // themes this always picks the *newest* (highest threshold), not the
-  // first found, so a user who is already far past several thresholds is
-  // told about the one they just reached rather than their oldest.
+  // from `balance` every time it changes (review finding 1 on PR #594: the
+  // old `checkedRef` latch only ever ran once, on the first non-null
+  // balance, so a threshold crossed mid-session — a React Query refetch
+  // pushing the balance past 500 — never surfaced anything).
+  //
+  // At most ONE card per unlock event, always the newest (highest-threshold)
+  // unseen unlocked theme (#598 review, finding 1): a fresh device that
+  // jumps straight to 🫧1400 — every theme unlocked, nothing seen yet — gets
+  // "Seasonal" once. Every *older* unseen candidate (`cozy_cottage`,
+  // `night_kitchen` in that example) is marked seen in this same pass rather
+  // than left pending, specifically so a later balance change (one bubble
+  // earned adding a pantry item) doesn't re-run this effect and surface the
+  // next-oldest as if it had just unlocked — that would drain the backlog
+  // one card per earn event instead of showing it once per session. This is
+  // a deliberate behaviour choice, not just a dedupe: "seen" here means
+  // "this browser has been told its themes are current", not literally
+  // "this exact card was shown".
   const previousBalanceRef = useRef<number | null>(null)
   useEffect(() => {
     if (balance === null) return
@@ -100,6 +120,9 @@ export function useKitchenTheme(
     )
     if (candidates.length === 0) return
     const newest = candidates.reduce((a, b) => (b.threshold > a.threshold ? b : a))
+    for (const candidate of candidates) {
+      if (candidate.key !== newest.key) markThemeUnlockSeen(candidate.key)
+    }
     // Reading localStorage (via hasSeenThemeUnlock above) is an external,
     // impure source that can't be reproduced during render — this can't be
     // hoisted out of the effect the way a plain derived value would be,
@@ -135,5 +158,7 @@ export function useKitchenTheme(
     setNewlyUnlocked(null)
   }
 
-  return { theme, unlocked, saving, selectTheme, newlyUnlocked, dismissUnlock, error }
+  const clearError = () => setError(null)
+
+  return { theme, unlocked, saving, selectTheme, newlyUnlocked, dismissUnlock, error, clearError }
 }

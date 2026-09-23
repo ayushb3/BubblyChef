@@ -93,6 +93,31 @@ describe('useKitchenTheme', () => {
       const { result } = renderHook(() => useKitchenTheme(null, 500))
       expect(result.current.newlyUnlocked).toBeNull()
     })
+
+    // #598 review, finding 1: a fresh device that jumps straight past every
+    // threshold must show the newest theme once, not drain the rest one
+    // card per later balance change.
+    it('a fresh device at the top balance announces only the newest theme, once', () => {
+      const { result, rerender } = renderHook(
+        ({ balance }) => useKitchenTheme(null, balance),
+        { initialProps: { balance: 1400 as number | null } },
+      )
+      expect(result.current.newlyUnlocked?.key).toBe('seasonal')
+      // The older unlocked-but-unseen themes are marked seen in the same
+      // pass — not left pending to surface later.
+      expect(hasSeenThemeUnlock('cozy_cottage')).toBe(true)
+      expect(hasSeenThemeUnlock('night_kitchen')).toBe(true)
+
+      act(() => {
+        result.current.dismissUnlock()
+      })
+      expect(result.current.newlyUnlocked).toBeNull()
+
+      // A later balance change (one bubble earned) must not surface
+      // Night Kitchen or Cozy Cottage as if they had just unlocked.
+      rerender({ balance: 1401 })
+      expect(result.current.newlyUnlocked).toBeNull()
+    })
   })
 
   describe('persistence (review finding 4)', () => {
@@ -131,6 +156,24 @@ describe('useKitchenTheme', () => {
 
       expect(result.current.theme.key).toBe('pastel')
       expect(updateUser).not.toHaveBeenCalled()
+    })
+
+    // #598 review, finding 2: the hook exposes clearError so a consumer
+    // (KitchenThemePicker) can scope a failure to the sheet it happened in.
+    it('clearError resets the error without touching the selection', async () => {
+      updateUser.mockResolvedValueOnce({ data: null, error: new Error('network down') })
+      const { result } = renderHook(() => useKitchenTheme(null, 500))
+
+      await act(async () => {
+        result.current.selectTheme('cozy_cottage')
+      })
+      expect(result.current.error).not.toBeNull()
+
+      act(() => {
+        result.current.clearError()
+      })
+      expect(result.current.error).toBeNull()
+      expect(result.current.theme.key).toBe('pastel')
     })
   })
 })

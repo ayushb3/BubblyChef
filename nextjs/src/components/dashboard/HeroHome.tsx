@@ -235,6 +235,7 @@ export default function HeroHome({ displayName, initialKitchenTheme = null }: He
     newlyUnlocked,
     dismissUnlock,
     error: themeError,
+    clearError: clearThemeError,
   } = useKitchenTheme(initialKitchenTheme, balance)
   const unlockedThemeKeys = new Set(unlockedThemes.map((t) => t.key))
 
@@ -343,6 +344,7 @@ export default function HeroHome({ displayName, initialKitchenTheme = null }: He
           onSelect={selectTheme}
           saving={themeSaving}
           error={themeError}
+          clearError={clearThemeError}
         />
       </div>
 

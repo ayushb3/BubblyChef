@@ -15,7 +15,7 @@
  * Follows the same backdrop + drag-dismiss + focus-trap shape as
  * `PantryAddSheet`/`ThemePicker`.
  */
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { motion, AnimatePresence, useDragControls } from 'framer-motion'
 import { KITCHEN_THEMES, type KitchenTheme } from '@/lib/kitchen/themes'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
@@ -33,6 +33,12 @@ export interface KitchenThemePickerProps {
   saving?: boolean
   /** Set when the last selection failed to persist (issue #523 review, finding 4) — shown inline. */
   error?: string | null
+  /**
+   * Clears `error` — called whenever the sheet opens (#598 review, finding
+   * 2) so a failure from an earlier, already-reverted attempt doesn't keep
+   * announcing itself (`role="alert"`) every time the sheet is reopened.
+   */
+  clearError?: () => void
 }
 
 export default function KitchenThemePicker({
@@ -45,9 +51,18 @@ export default function KitchenThemePicker({
   onSelect,
   saving = false,
   error = null,
+  clearError,
 }: KitchenThemePickerProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const dragControls = useDragControls()
+
+  // Scope the error banner to this open — a failed save from a previous
+  // visit must not still be sitting there, `role="alert"`, the next time
+  // the sheet opens (#598 review, finding 2).
+  useEffect(() => {
+    if (isOpen) clearError?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen])
   useModalFocusTrap(isOpen, onClose, panelRef)
 
   return (
