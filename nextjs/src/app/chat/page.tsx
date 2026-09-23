@@ -677,6 +677,8 @@ function ChatSurface() {
           }}
           onAddToLibrary={cookTarget.isDraft ? async () => {
             await promoteRecipeDraft(cookTarget.recipeId)
+            // Promotion awards recipe_save (#520) — refetch the balance.
+            queryClient.invalidateQueries({ queryKey: ['bubbles'] })
             setDraftRecipeIds((prev) => {
               const next = new Set(prev)
               const msgId = msgIdForRecipeId(cookTarget.recipeId)
