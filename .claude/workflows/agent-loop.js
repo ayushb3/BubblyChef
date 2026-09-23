@@ -12,7 +12,7 @@ export const meta = {
     { title: 'Verify', detail: 'run the real app and walk the flow (verify skill)' },
     { title: 'Review', detail: 'fresh-context Opus review, up to 3 fix rounds' },
     { title: 'Ship', detail: 'commit and PR as bubblychef-bot; or the blocked path' },
-    { title: 'Respond', detail: 'read the GitHub review and answer it, max 2 fix rounds (skipped for the small tier); then finish' },
+    { title: 'Respond', detail: 'read the GitHub review and answer it, max 2 fix rounds (small tier: left to the required verdict check); then finish' },
   ],
 }
 
@@ -63,6 +63,12 @@ const MAX_REVIEW_ROUNDS = 3
 // An unknown size (an agent that didn't report it) is standard, not small.
 const SMALL_MAX_LINES = 150
 const SMALL_MAX_FILES = 5
+// Small tier skips waiting for the GitHub review only when that review is a merge gate
+// in its own right: this required check (the `verdict` job in claude-review.yml) holds
+// an agent-loop PR until the reviewer says "looks mergeable" for its exact head commit.
+// If main doesn't require it, skipping the wait would let auto-merge land unreviewed, so
+// a small run then waits like any other.
+const VERDICT_GATE = 'Claude review verdict'
 const TIER_RANK = { small: 0, standard: 1, protected: 2 }
 
 function sizeTier({ lines, files, protectedPaths }) {
@@ -139,9 +145,10 @@ const PREFLIGHT = {
     devRole: { type: 'string', enum: ['frontend', 'backend', 'ui-ux'] },
     slug: { type: 'string', description: 'kebab-case, <= 5 words' },
     agentsEnabledError: { type: 'string', description: 'error text if the AGENTS_ENABLED read failed, else ""' },
+    requiredChecks: { type: 'array', items: { type: 'string' }, description: 'the required status check names on main, exactly as the rules API lists them; [] if the read failed' },
     summary: { type: 'string', description: 'what the issue asks for, 2-3 sentences' },
   },
-  required: ['agentsEnabled', 'agentsEnabledRead', 'runsLast24h', 'issueState', 'issueLabels', 'openPrsForIssue', 'title', 'kind', 'devRole', 'slug', 'summary', 'agentsEnabledError'],
+  required: ['agentsEnabled', 'agentsEnabledRead', 'runsLast24h', 'issueState', 'issueLabels', 'openPrsForIssue', 'title', 'kind', 'devRole', 'slug', 'summary', 'agentsEnabledError', 'requiredChecks'],
 }
 
 const SETUP = {
@@ -432,6 +439,9 @@ Use the default \`gh\` (Ayush's login) for these reads.
       gh api graphql -f query='query{repository(owner:"ayushb3",name:"BubblyChef"){issue(number:${ISSUE}){closedByPullRequestsReferences(first:20,includeClosedPrs:false){nodes{number}}}}}' --jq '[.data.repository.issue.closedByPullRequestsReferences.nodes[].number]'
    b. Open PRs on a branch named for this issue:
       gh pr list --repo ${REPO} --state open --json number,headRefName --jq '[.[] | select(.headRefName | test("issue-${ISSUE}-")) | .number]'
+5. requiredChecks: the required status checks on main:
+     gh api repos/${REPO}/rules/branches/main --jq '[.[] | select(.type=="required_status_checks") | .parameters.required_status_checks[].context]'
+   If the command fails, report []. Never add a name it did not print.
 
 Then classify from the issue's labels, title, body and comments:
 - kind: "bug" if it has the "bug" label; else feature/refactor/docs by content.
@@ -457,6 +467,9 @@ const stopReason =
   : ''
 const preSkip = skip(stopReason)
 if (preSkip) return preSkip
+// Read once, here, from the raw fact: does main hold agent-loop PRs on the review verdict?
+const verdictGateOn = (pre.requiredChecks || []).includes(VERDICT_GATE)
+log(`Merge gate "${VERDICT_GATE}" ${verdictGateOn ? 'is' : 'is NOT'} a required check on main`)
 
 // ── Setup ────────────────────────────────────────────────────────────────────
 phase('Setup')
@@ -819,7 +832,7 @@ Open the PR for issue #${ISSUE}: "${pre.title}".
      Embed the screenshots (${verify.screenshots.concat(repro ? repro.beforeScreenshots : []).join(', ') || 'none'}), before/after side by side where both exist.
    ${repro ? `- Fail-to-pass: ${repro.testFiles.join(', ')} failed on the unfixed code:\n     ${repro.failureOutput.slice(0, 600)}` : ''}
    - Decisions made during the run: ${settled.length ? settled.map(d => `${d.question} → ${d.decision} (${d.reasoning})`).join('; ') : 'none needed'}
-   - Loop tier: ${tier.tier} (${tier.why}).${tier.tier === 'small' ? ' If the final diff is still small, the loop does NOT wait for or answer the GitHub review on this PR (it passed the in-loop review); a human reads it before merging.' : ''}
+   - Loop tier: ${tier.tier} (${tier.why}).${tier.tier === 'small' && verdictGateOn ? ` If the final diff is still small, the loop does NOT wait for or answer the GitHub review on this PR (it passed the in-loop review). The required "${VERDICT_GATE}" check holds the merge until that review says "looks mergeable" for the final commit, or Ayush approves it.` : ''}
    - Review — report these three lists separately and truthfully; never call a disputed finding fixed:
        fixed: ${fixedFindings.length ? fixedFindings.join('; ') : 'none'}${!fixedFindings.length && !disputedFindings.length ? ' (passed the first review)' : ''}
        disputed and accepted by the re-review: ${disputedFindings.length ? disputedFindings.map(d => `${d.finding} (${d.reason})`).join('; ') : 'none'}
@@ -854,11 +867,13 @@ raiseTier('ship', { lines: ship.linesChanged, files: ship.filesChanged, protecte
 // Re-reviews: claude-review.yml also fires on pushes to PRs labelled `agent-loop`, so
 // each fix push gets a fresh GitHub review of the new commit.
 //
-// Small tier: skipped. The in-loop Opus review already passed, and it's the one that
-// runs before the PR opens, so the fixes it asks for are re-verified before any evidence
-// goes into the PR. The GitHub reviewer still runs and posts on the PR for a human; the
-// loop just doesn't wait on it. And because auto-merge needs that reviewer's "looks
-// mergeable", a small-tier PR is never auto-merged: this saves time, it doesn't lower the bar.
+// Small tier: skipped, when main requires the "Claude review verdict" check. The in-loop
+// Opus review already passed, and it runs before the PR opens, so the fixes it asks for
+// are re-verified before any evidence goes into the PR. The GitHub reviewer still runs;
+// the loop just doesn't wait on it. Its verdict still binds: that required check holds
+// the merge until it says "looks mergeable" for the exact head commit (or Ayush approves
+// that commit). So a small PR can auto-merge on both reviews without the loop waiting.
+// Without the check, nothing would hold the merge, so small then waits like standard.
 phase('Respond')
 const MAX_RESPOND_ROUNDS = 2
 let expectedSha = ship.headSha
@@ -867,10 +882,12 @@ let ghReview = null
 let respondOutcome = 'looks mergeable'
 const respondFixed = []
 const respondDisputed = []
-const skipRespond = tier.tier === 'small'
+const skipRespond = tier.tier === 'small' && verdictGateOn
 if (skipRespond) {
-  respondOutcome = 'not read (small tier)'
-  log('Respond: small tier — not waiting for the GitHub review; a human reads it, and no auto-merge')
+  respondOutcome = 'gated by required check (small tier)'
+  log(`Respond: small tier — not waiting for the GitHub review; the required "${VERDICT_GATE}" check gates the merge on it`)
+} else if (tier.tier === 'small') {
+  log(`Respond: small tier, but main does not require "${VERDICT_GATE}" — waiting for the GitHub review as usual`)
 }
 for (let round = 0; !skipRespond && round <= MAX_RESPOND_ROUNDS; round++) {
   ghReview = await agent(
@@ -969,9 +986,11 @@ Then, as the bot:
 // ── Finish ───────────────────────────────────────────────────────────────────
 // Always runs once a PR exists: labels an unresolved PR for Ayush, requests auto-merge
 // only when EVERY condition holds, and returns the caller's checkout. Auto-merge needs
-// the reviewer's own "looks mergeable" on the exact final commit, and protected paths
-// are taken from the WHOLE diff after any Respond fixes, not just what Ship saw.
-const mayAutoMerge = !SHADOW && respondOutcome === 'looks mergeable' && protectedNow.length === 0
+// the reviewer's own "looks mergeable" on the exact final commit: read by Respond, or,
+// for the small tier, enforced by GitHub through the required "Claude review verdict"
+// check. Protected paths are taken from the WHOLE diff after any Respond fixes, not just
+// what Ship saw.
+const mayAutoMerge = !SHADOW && protectedNow.length === 0 && (respondOutcome === 'looks mergeable' || skipRespond)
 const finishPrompt = `${WORKTREE_RULES(wt)}
 ${AS_BOT}
 
@@ -984,7 +1003,7 @@ Finish the agent loop run for PR #${ship.prNumber} (issue #${ISSUE}). Do exactly
         ? `The GitHub review needs a human (a protected path, or findings disputed without a new commit). As the bot, comment on PR #${ship.prNumber} saying what Ayush needs to decide.`
         : 'Nothing to label.'}
 2. ${mayAutoMerge
-    ? `Every condition holds (not shadow mode; the GitHub review of the final commit says "looks mergeable"; no protected paths): as the bot, enable auto-merge with gh pr merge ${ship.prNumber} --repo ${REPO} --auto --merge. GitHub still waits for every required check.`
+    ? `Every condition holds (not shadow mode; no protected paths; ${skipRespond ? `a small change, whose GitHub review is enforced by the required "${VERDICT_GATE}" check` : 'the GitHub review of the final commit says "looks mergeable"'}): as the bot, enable auto-merge with gh pr merge ${ship.prNumber} --repo ${REPO} --auto --merge. GitHub still waits for every required check${skipRespond ? `, including "${VERDICT_GATE}"` : ''}.`
     : 'Do NOT enable auto-merge and do not run any gh pr merge command.'}
 3. Stop any stack you started, then return the checkout to its original branch:
    git checkout "${wt.originalBranch}"  (keep the local issue branch; it is pushed).

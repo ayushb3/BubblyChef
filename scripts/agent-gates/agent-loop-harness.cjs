@@ -54,7 +54,7 @@ function harness(respond) {
 
 const FACTS = {
   agentsEnabled: 'true', agentsEnabledRead: true, agentsEnabledError: '', runsLast24h: 0, issueState: 'OPEN', issueLabels: ['ready-for-agent'],
-  openPrsForIssue: [], title: 'T', kind: 'feature', devRole: 'frontend', slug: 's', summary: 'x',
+  openPrsForIssue: [], title: 'T', kind: 'feature', devRole: 'frontend', slug: 's', summary: 'x', requiredChecks: [],
 }
 const SETUP_OK = { ok: true, branchCreated: true, path: '/wt', branch: 'feat/x', originalBranch: 'main', problem: '' }
 // The environment probe every other test needs to pass before it reaches its own subject.
@@ -475,8 +475,11 @@ async function main() {
   const SMALL_PLAN = { plan: 'p', filesToChange: ['a.ts', 'a.test.ts'], protectedPaths: [], expectedChangedLines: 40, userVisible: true, questions: [] }
   const SMALL_IMPL = { gatesPassed: true, gateOutput: 'ok', summary: 'did it', filesChanged: ['a.ts', 'a.test.ts'], linesChanged: 40, protectedPaths: [] }
   const SMALL_SHIP = { prUrl: 'u', prNumber: 1, headSha: 'sha-ship', protectedPaths: [], linesChanged: 40, filesChanged: 2, wouldAutoMerge: true, lessonsProposed: [] }
+  // By default main requires the verdict gate, so small can skip the wait; tests that
+  // are about the gate being absent override requiredChecks.
+  const GATED = { requiredChecks: ['Agent loop limits hold', 'Claude review verdict'] }
   const tiered = (o = {}) => label => {
-    if (label === 'preflight') return { ...FACTS, ...(o.facts || {}) }
+    if (label === 'preflight') return { ...FACTS, ...GATED, ...(o.facts || {}) }
     if (label === 'plan') return { ...SMALL_PLAN, ...(o.plan || {}) }
     if (label.startsWith('implement')) return { ...SMALL_IMPL, ...(o.impl || {}) }
     if (label === 'ship') return { ...SMALL_SHIP, ...(o.ship || {}) }
@@ -491,13 +494,37 @@ async function main() {
     const h = harness(tiered())
     const r = await h.run({ issue: 405, shadow: false })
     check('tier: a small plan with a small diff runs as small', r.tier === 'small', `tier ${r.tier}; ${r.tierLog}`)
-    check('tier small: no GitHub-review wait (Respond skipped)', count(h, 'gh-review') === 0 && count(h, 'respond-fix') === 0 && r.githubReview === 'not read (small tier)',
+    check('tier small: no GitHub-review wait (Respond skipped)', count(h, 'gh-review') === 0 && count(h, 'respond-fix') === 0 && r.githubReview === 'gated by required check (small tier)',
       `gh-review ${count(h, 'gh-review')} outcome ${r.githubReview}`)
     check('tier small: the in-loop Opus review still runs', count(h, 'review') >= 1 && h.opts['review-1'] && h.opts['review-1'].model === 'opus', `calls ${h.calls.join()}`)
-    check('tier small: never requests auto-merge, even outside shadow mode', r.autoMergeRequested === false && !/--auto/.test(h.prompts.finish || ''),
+    check('tier small (gated, not shadow): requests auto-merge, and GitHub waits on the verdict check',
+      r.autoMergeRequested === true && /gh pr merge \d+ --repo \S+ --auto/.test(h.prompts.finish || '') && /including "Claude review verdict"/.test(h.prompts.finish || ''),
       `autoMerge ${r.autoMergeRequested}`)
-    check('tier small: the PR body says the GitHub review was not waited for', /Loop tier: small/.test(h.prompts.ship || '') && /does NOT wait for or answer the GitHub review/.test(h.prompts.ship || ''), 'ship prompt')
+    check('tier small: the PR body says the verdict check gates the merge', /Loop tier: small/.test(h.prompts.ship || '') && /required "Claude review verdict" check holds the merge/.test(h.prompts.ship || ''), 'ship prompt')
     check('tier small: no open questions -> no Decide agent', count(h, 'decide') === 0, `calls ${h.calls.join()}`)
+  }
+  {
+    const h = harness(tiered())
+    const r = await h.run({ issue: 405 })
+    check('tier small in shadow mode: still never requests auto-merge', r.tier === 'small' && r.autoMergeRequested === false && !/--auto/.test(h.prompts.finish || ''), `autoMerge ${r.autoMergeRequested}`)
+  }
+  {
+    // main does NOT require the verdict gate: nothing would hold an unreviewed merge, so
+    // small must wait for and read the GitHub review like any other tier.
+    for (const [name, requiredChecks] of [['absent', ['Agent loop limits hold']], ['unreadable', []], ['near-miss name', ['Claude review verdicts']]]) {
+      const h = harness(tiered({ facts: { requiredChecks } }))
+      const r = await h.run({ issue: 405, shadow: false })
+      check(`tier small, verdict gate ${name}: waits for the GitHub review (Respond runs)`, r.tier === 'small' && count(h, 'gh-review') >= 1, `gh-review ${count(h, 'gh-review')}`)
+      check(`tier small, verdict gate ${name}: auto-merge only on Respond's own "looks mergeable"`, r.githubReview === 'looks mergeable' && r.autoMergeRequested === true, `${r.githubReview} ${r.autoMergeRequested}`)
+    }
+    const h = harness(label => label.startsWith('gh-review') ? { reviewRan: true, verdict: 'needs a human', findings: [], note: '' } : tiered({ facts: { requiredChecks: [] } })(label))
+    const r = await h.run({ issue: 405, shadow: false })
+    check('tier small, no verdict gate, reviewer says "needs a human": no auto-merge', r.autoMergeRequested === false, `autoMerge ${r.autoMergeRequested}`)
+  }
+  {
+    const h = harness(tiered())
+    await h.run({ issue: 405, dryRun: true })
+    check('preflight reads the required checks on main from the rules API', /repos\/ayushb3\/BubblyChef\/rules\/branches\/main/.test(h.prompts.preflight || ''), 'preflight prompt')
   }
   {
     const h = harness(tiered({ plan: { questions: [{ question: 'q', options: ['a', 'b'], implementerTake: 'a' }] } }))
