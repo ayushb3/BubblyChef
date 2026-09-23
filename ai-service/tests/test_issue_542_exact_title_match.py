@@ -42,16 +42,26 @@ Revised again (3rd re-review pass, 2026-09-23) for two further gaps:
    it also tripped the strict-superset guard, suppressing the short-circuit
    even when it was the only saved recipe. Both sides are now tokenized with
    `_tokenize_query` for this comparison.
-5. The `_MIN_TITLE_SCORE` floor only ever fires against a title of 21+
-   tokens (1/21 ≈ 0.048 < 0.05); every realistic title (2-5 tokens) scores
-   well above it on a single shared word, so the "score cutoff" half of
-   #542's scope did nothing against the issue's actual padded-list scenario.
-   `search_saved_recipes` now also drops a title-only match that's missing
-   at least one query token when another candidate's title contains *every*
-   query token (`TestFullQueryCoverageCutoff` below) — the generalisation of
-   the exact-match short-circuit to a title with an exact match plus extra
-   words ("Butter Chicken Curry" for query "butter chicken"). The absolute
-   floor still exists for the case where no candidate has full coverage.
+5. The absolute `_MIN_TITLE_SCORE` floor only ever fired against a title of
+   21+ tokens (1/21 ≈ 0.048 < 0.05); every realistic title (2-5 tokens)
+   scored well above it on a single shared word, so the "score cutoff" half
+   of #542's scope did nothing against the issue's actual padded-list
+   scenario. `search_saved_recipes` now instead drops a title-only match
+   that's missing at least one query token when another candidate's title
+   contains *every* query token (`TestFullQueryCoverageCutoff` below) — the
+   generalisation of the exact-match short-circuit to a title with an exact
+   match plus extra words ("Butter Chicken Curry" for query "butter
+   chicken"). The dead absolute floor and its three synthetic-title tests
+   (`_title_with_padding(..., 25/15)`) were removed on the 4th re-review
+   pass — they never fired on any realistic input, and the coverage cutoff
+   above already covers the real scenario.
+
+Revised again (4th re-review pass, 2026-09-23): Ayush confirmed the
+coverage cutoff should auto-pick when it leaves exactly one candidate, not
+just narrow the list — pinned at the node level in
+`TestCoverageCutoffAutoPick` below (`test_issue_542_exact_title_match.py`),
+alongside its counter-case (two candidates that both have full coverage
+still get the ranked "which one?" list).
 
 Follows the `_FakeClient`/`_FakeQuery` pattern from
 `test_issue_493_saved_recipe_search.py`.
@@ -60,10 +70,12 @@ Follows the `_FakeClient`/`_FakeQuery` pattern from
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from bubbly_chef.repository.supabase_repo import SupabaseRepository
+from bubbly_chef.workflows.chat.nodes import saved_recipe_lookup_response
 
 
 class _FakeQuery:
@@ -373,88 +385,8 @@ class TestExactMatchStopwordTokenization:
         assert [r["id"] for r in results] == ["exact"]
 
 
-def _title_with_padding(word: str, total_tokens: int) -> str:
-    """Build a title with exactly `total_tokens` tokens, one of which is
-    `word` — lets a test target a precise token-overlap ratio (1/total)."""
-    filler = [f"tok{i}" for i in range(total_tokens - 1)]
-    return " ".join([word, *filler])
-
-
 @pytest.mark.asyncio
 class TestScoreCutoff:
-    async def test_below_cutoff_title_only_match_is_dropped(self) -> None:
-        """A title whose only overlap is a single token in a long field
-        scores under `_MIN_TITLE_SCORE` (1/25 = 0.04) and, with no
-        description/tag signal at all, must not pad the result list."""
-        rows = [
-            {
-                "id": "strong",
-                "user_id": "u1",
-                "title": "Butter Chicken",
-                "description": "",
-                "tags": [],
-            },
-            {
-                "id": "below_cutoff",
-                "user_id": "u1",
-                "title": _title_with_padding("chicken", 25),
-                "description": "",
-                "tags": [],
-            },
-        ]
-        repo = _repo_for(rows)
-
-        results = await repo.search_saved_recipes("u1", "chicken", limit=5)
-
-        assert [r["id"] for r in results] == ["strong"]
-
-    async def test_near_miss_above_cutoff_still_shown(self) -> None:
-        """A weak but real title-only match just above `_MIN_TITLE_SCORE`
-        (1/15 = 0.0667) must still surface, ranked below the stronger
-        match — the cutoff drops noise, not genuine partial matches."""
-        rows = [
-            {
-                "id": "strong",
-                "user_id": "u1",
-                "title": "Butter Chicken",
-                "description": "",
-                "tags": [],
-            },
-            {
-                "id": "near_miss",
-                "user_id": "u1",
-                "title": _title_with_padding("chicken", 15),
-                "description": "",
-                "tags": [],
-            },
-        ]
-        repo = _repo_for(rows)
-
-        results = await repo.search_saved_recipes("u1", "chicken", limit=5)
-
-        assert [r["id"] for r in results] == ["strong", "near_miss"]
-
-    async def test_nothing_above_cutoff_returns_empty_list(self) -> None:
-        """When the only candidate is a title-only near-zero overlap (no
-        description/tag signal at all), the caller gets the same empty list
-        it gets today for zero overlap — the `saved_recipe_lookup_response`
-        node already turns that into the "couldn't find" + "generate a new
-        one instead" reply (`test_zero_matches_offers_to_generate`)."""
-        rows = [
-            {
-                "id": "below_cutoff",
-                "user_id": "u1",
-                "title": _title_with_padding("chicken", 25),
-                "description": "",
-                "tags": [],
-            },
-        ]
-        repo = _repo_for(rows)
-
-        results = await repo.search_saved_recipes("u1", "chicken", limit=5)
-
-        assert results == []
-
     async def test_description_only_match_in_a_realistic_length_description_still_shown(
         self,
     ) -> None:
@@ -639,3 +571,77 @@ class TestFullQueryCoverageCutoff:
         results = await repo.search_saved_recipes("u1", "chicken", limit=5)
 
         assert {r["id"] for r in results} == {"roast", "stock"}
+
+
+def _patch_repo(matches: list[dict[str, Any]]) -> Any:
+    """Same pattern as `test_issue_493_saved_recipe_lookup._patch_repo` — the
+    node under test only ever sees what `search_saved_recipes` returns, so
+    the coverage-cutoff arithmetic itself doesn't need to run here; that's
+    covered directly by `TestFullQueryCoverageCutoff` above."""
+    repo = MagicMock()
+    repo.search_saved_recipes = AsyncMock(return_value=matches)
+    repo.get_user_recipes = AsyncMock(return_value=[])
+    return patch(
+        "bubbly_chef.workflows.chat.nodes.get_repository",
+        new_callable=AsyncMock,
+        return_value=repo,
+    )
+
+
+def _node_state(input_text: str) -> dict[str, Any]:
+    return {
+        "input_text": input_text,
+        "user_id": "u1",
+        "errors": [],
+        "warnings": [],
+        "session_mode": None,
+        "session": None,
+        "conversation_history": [],
+        "selected_recipe_name": None,
+    }
+
+
+@pytest.mark.asyncio
+class TestCoverageCutoffAutoPick:
+    """Regression for PR #605 4th re-review finding 1: Ayush confirmed the
+    coverage cutoff should auto-pick, not just narrow the list — when it
+    leaves exactly one candidate, the node replies with a confident "Found
+    it", the same as any other single-match result. This pins the node-level
+    behaviour those upstream tokens produce, not the repository arithmetic
+    (already covered by `TestFullQueryCoverageCutoff`)."""
+
+    async def test_full_coverage_cutoff_down_to_one_match_auto_picks(self) -> None:
+        """"butter chicken" against a saved "Butter Chicken Curry" — the
+        repository's coverage cutoff drops the weaker "chicken"-only rows,
+        so the node receives a single match and must announce it directly
+        rather than asking "which one?"."""
+        matches = [{"id": "full_coverage", "title": "Butter Chicken Curry"}]
+        with _patch_repo(matches):
+            result = await saved_recipe_lookup_response(
+                _node_state("show me my saved butter chicken")
+            )
+
+        message = result["assistant_message"]
+        assert message == "Found it — your saved Butter Chicken Curry!"
+        assert [m["id"] for m in result["saved_recipe_matches"]] == ["full_coverage"]
+
+    async def test_two_full_coverage_matches_still_lists_and_asks(self) -> None:
+        """Counter-case: when two saved titles both cover every query token,
+        the coverage cutoff can't prefer one over the other, so the node
+        still receives both and must fall back to the ranked "which one?"
+        list rather than guessing."""
+        matches = [
+            {"id": "curry", "title": "Butter Chicken Curry"},
+            {"id": "bowl", "title": "Butter Chicken Bowl"},
+        ]
+        with _patch_repo(matches):
+            result = await saved_recipe_lookup_response(
+                _node_state("show me my saved butter chicken")
+            )
+
+        message = result["assistant_message"]
+        assert "I found a few saved recipes" in message
+        assert "Butter Chicken Curry" in message
+        assert "Butter Chicken Bowl" in message
+        assert message.strip().endswith("?")
+        assert [m["id"] for m in result["saved_recipe_matches"]] == ["curry", "bowl"]
