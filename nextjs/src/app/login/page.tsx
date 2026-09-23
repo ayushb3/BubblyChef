@@ -2,10 +2,44 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { isGuestUser } from '@/lib/auth/guest'
 import { useRouter } from 'next/navigation'
 import FloatingBubbles from '@/components/ui/FloatingBubbles'
 import SpringButton from '@/components/ui/SpringButton'
 import BubblesMascot from '@/components/ui/BubblesMascot'
+
+const IDENTITY_ALREADY_EXISTS_MESSAGE =
+  "That Google account already belongs to a different BubblyChef account. You can sign in to it instead, but your guest pantry won't move over."
+
+// Both codes mean "this Google account maps to another BubblyChef user":
+// identity_already_exists = the Google identity is linked elsewhere;
+// email_exists = its email matches an existing (e.g. email/password) user.
+const COLLISION_CODES = new Set(['identity_already_exists', 'email_exists'])
+
+// Shown when a collision can't be solved by switching accounts: the visitor
+// isn't a guest (so the plain sign-in itself collided), or a switch was
+// already tried once and came back with the same error.
+const EXISTING_EMAIL_MESSAGE =
+  'That email already has a BubblyChef account. Sign in with your email and password instead.'
+
+// One-shot guard so an auto-switch that collides again can't loop.
+const SWITCH_TRIED_KEY = 'bubblychef:collision-switch-tried'
+
+function readSwitchTried(): boolean {
+  try { return window.sessionStorage.getItem(SWITCH_TRIED_KEY) === '1' } catch { return false }
+}
+function writeSwitchTried(tried: boolean): void {
+  try {
+    if (tried) window.sessionStorage.setItem(SWITCH_TRIED_KEY, '1')
+    else window.sessionStorage.removeItem(SWITCH_TRIED_KEY)
+  } catch {
+    // ignore: without storage the worst case is the manual button below
+  }
+}
+
+// Shown while a collision auto-switches to a plain Google sign-in.
+const COLLISION_SWITCHING_MESSAGE =
+  "You already have a BubblyChef account with that Google login — signing you in. Your guest pantry stays behind."
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -15,6 +49,11 @@ export default function LoginPage() {
   const [checkEmail, setCheckEmail] = useState(false)
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
+  // True only for the identity_already_exists collision — shows the
+  // "sign in to that account instead" fallback button alongside the error.
+  const [showSignInInstead, setShowSignInInstead] = useState(false)
+  // Set while a collision is auto-switching to the existing account.
+  const [switchingAccount, setSwitchingAccount] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -24,39 +63,145 @@ export default function LoginPage() {
   // useSearchParams() to avoid a Suspense boundary for what's otherwise a
   // plain client page. Read once on mount and strip the param so a refresh
   // doesn't keep re-showing a stale error.
+  //
+  // A guest's linkIdentity collision (issue #389) mostly arrives this way
+  // rather than as a synchronous error: Supabase only discovers the Google
+  // account is already linked elsewhere after Google redirects back, so it
+  // shows up as ?error=...&error_code=identity_already_exists (or
+  // email_exists). Detect those codes and switch straight to the existing
+  // account instead of showing the raw error text.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const oauthError = params.get('error')
+    const oauthErrorCode = params.get('error_code')
     if (oauthError) {
-      setError(oauthError)
+      if (oauthErrorCode && COLLISION_CODES.has(oauthErrorCode)) {
+        void handleCollision()
+      } else {
+        writeSwitchTried(false)
+        setError(oauthError)
+      }
       const url = new URL(window.location.href)
       url.searchParams.delete('error')
+      url.searchParams.delete('error_code')
       window.history.replaceState({}, '', url.toString())
+    } else {
+      writeSwitchTried(false)
     }
+    // Mount-only: read the redirect's error params once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Plain Google sign-in, bypassing any guest check — used both for a
+  // non-guest's normal "Continue with Google" click and as the fallback
+  // action on the identity_already_exists collision ("sign in to that
+  // account instead"). Never merges accounts; the guest's data is simply
+  // left behind under the untouched anonymous UID.
+  const signInWithGoogle = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    })
+    if (error) throw error
+  }
+
+  // Collision (the Google account already belongs to another BubblyChef
+  // user): someone clicking Google wants into their account, so sign in to
+  // it directly rather than asking for a second click. The guest's data
+  // stays behind under the anonymous UID. If the redirect can't start, fall
+  // back to the explicit "sign in to that account instead" button.
+  const switchToExistingAccount = async () => {
+    setError(null)
+    setShowSignInInstead(false)
+    setSwitchingAccount(true)
+    setGoogleLoading(true)
+    try {
+      await signInWithGoogle()
+    } catch {
+      setSwitchingAccount(false)
+      setError(IDENTITY_ALREADY_EXISTS_MESSAGE)
+      setShowSignInInstead(true)
+      setGoogleLoading(false)
+    }
+  }
+
+  // Only a guest whose link collided is switched, and only once per attempt.
+  // A non-guest got here from a plain sign-in, so switching would just repeat
+  // it; a second collision after a switch means the same thing. Both get the
+  // email/password hint instead, with no mention of a guest pantry.
+  const handleCollision = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!isGuestUser(user) || readSwitchTried()) {
+      writeSwitchTried(false)
+      setSwitchingAccount(false)
+      setShowSignInInstead(false)
+      setGoogleLoading(false)
+      setError(EXISTING_EMAIL_MESSAGE)
+      return
+    }
+    writeSwitchTried(true)
+    await switchToExistingAccount()
+  }
 
   const handleGoogleSignIn = async () => {
     setError(null)
     setCheckEmail(false)
+    setShowSignInInstead(false)
     setGoogleLoading(true)
 
-    // TODO(#382 composition point): if an anonymous (guest) session is active
-    // here, this should call `supabase.auth.linkIdentity({ provider: 'google', ... })`
-    // instead of `signInWithOAuth`, so the Google identity attaches to the
-    // guest's existing UID/pantry instead of starting a fresh account. No
-    // #382 branch was available to check against while building this, so
-    // this is the straightforward new-sign-in path only. See the callback
-    // route (`app/auth/callback/route.ts`) for the fuller note.
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
-      if (error) throw error
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+      // Fail closed. A failed session check (network error, expired token)
+      // returns a null user, which would otherwise read as "not a guest" and
+      // take the signInWithOAuth path, forking a new account and orphaning
+      // the guest's pantry under the old UID (the exact bug #389 fixes).
+      // Only "no session at all" is a genuine non-guest.
+      if (userError && userError.name !== 'AuthSessionMissingError') {
+        setError("Couldn't check your current session. Please try again.")
+        setGoogleLoading(false)
+        return
+      }
+
+      if (isGuestUser(user)) {
+        // Link the Google identity onto the guest's existing anonymous UID
+        // so their pantry/recipes carry over, instead of starting a fresh
+        // account. See lib/auth/guest.ts and SaveAccountBanner.tsx (#382)
+        // for the same pattern.
+        const { error } = await supabase.auth.linkIdentity({
+          provider: 'google',
+          options: {
+            redirectTo: `${window.location.origin}/auth/callback`,
+          },
+        })
+        if (error) {
+          // Synchronous collision path — the async/redirect path is handled
+          // by the ?error_code=identity_already_exists branch above.
+          if (error.code && COLLISION_CODES.has(error.code)) {
+            await handleCollision()
+            return
+          }
+          throw error
+        }
+      } else {
+        await signInWithGoogle()
+      }
       // On success the browser is redirected to Google, then back to
       // /auth/callback — nothing more to do here.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
+      setGoogleLoading(false)
+    }
+  }
+
+  const handleSignInInstead = async () => {
+    setError(null)
+    setShowSignInInstead(false)
+    setGoogleLoading(true)
+    try {
+      await signInWithGoogle()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setGoogleLoading(false)
@@ -67,6 +212,7 @@ export default function LoginPage() {
     e.preventDefault()
     setError(null)
     setCheckEmail(false)
+    setShowSignInInstead(false)
     setLoading(true)
 
     try {
@@ -159,10 +305,27 @@ export default function LoginPage() {
               </p>
             )}
 
+            {switchingAccount && (
+              <p className="text-sm text-[var(--color-text)] bg-[var(--color-accent)]/10 px-4 py-2 rounded-2xl">
+                {COLLISION_SWITCHING_MESSAGE}
+              </p>
+            )}
+
             {error && (
               <p className="text-sm text-[#ff9aa2] bg-[#ff9aa2]/10 px-4 py-2 rounded-2xl">
                 {error}
               </p>
+            )}
+
+            {showSignInInstead && (
+              <SpringButton
+                type="button"
+                onClick={handleSignInInstead}
+                disabled={googleLoading}
+                className="w-full py-2.5 px-4 rounded-full bg-white border border-[var(--color-border)] text-[var(--color-text)] text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Sign in to that account instead
+              </SpringButton>
             )}
 
             <SpringButton
@@ -211,7 +374,7 @@ export default function LoginPage() {
             {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
             <button
               type="button"
-              onClick={() => { setIsSignUp(!isSignUp); setError(null); setCheckEmail(false) }}
+              onClick={() => { setIsSignUp(!isSignUp); setError(null); setCheckEmail(false); setShowSignInInstead(false) }}
               className="text-[var(--color-accent)] underline font-medium"
             >
               {isSignUp ? 'Sign In' : 'Sign Up'}

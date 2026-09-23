@@ -8,31 +8,32 @@ import { createClient } from '@/lib/supabase/server'
  * authorizes. We exchange it for a session (this sets the auth cookies via
  * the server client's `setAll`) and then send the user into the app.
  *
- * Composition point with issue #382 (guest mode / anonymous auth, landing in
- * parallel — no branch for it was visible in this worktree at the time this
- * was written): if the browser still holds an anonymous session when Google
- * redirects back here, `exchangeCodeForSession` as used below will replace it
- * with a brand new signed-in session/UID rather than linking the Google
- * identity onto the existing anonymous UID, so the guest's pantry data would
- * be silently orphaned. Supabase's fix for that is to call
- * `linkIdentity({ provider: 'google' })` from the *client* while the
- * anonymous session is still active (before ever hitting this route), instead
- * of `signInWithOAuth` — that's a change to the caller in `login/page.tsx`
- * (or wherever the guest's "upgrade to a real account" entry point lives),
- * not to this callback. Left as-is pending #382 landing; whoever picks this
- * up next should check for an active anonymous session before choosing
- * `signInWithOAuth` vs `linkIdentity`.
+ * `exchangeCodeForSession` is the correct call for both the plain
+ * `signInWithOAuth` flow and the guest `linkIdentity` flow (issue #389) — a
+ * guest's `linkIdentity({ provider: 'google' })` redirect also lands back
+ * here with a `code` param, and Supabase resolves the link server-side
+ * during the exchange. The one case that needs special handling is a
+ * collision: if the Google account is already linked to a different
+ * BubblyChef account, Supabase can't discover that until Google redirects
+ * back, so it arrives here as `error_code=identity_already_exists` rather
+ * than as a synchronous error from `linkIdentity`. We forward `error_code`
+ * alongside `error` so `login/page.tsx` can show a friendly message and a
+ * "sign in to that account instead" fallback instead of the raw error text.
  */
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
   const errorDescription = searchParams.get('error_description')
+  const errorCode = searchParams.get('error_code')
   const next = searchParams.get('next') ?? '/'
 
-  if (errorDescription) {
-    return NextResponse.redirect(
-      `${origin}/login?error=${encodeURIComponent(errorDescription)}`
-    )
+  // Any provider error, even one without a description, goes back to
+  // /login with its code so a collision (#389) is still recognised.
+  const providerError = errorDescription ?? searchParams.get('error')
+  if (providerError || errorCode) {
+    const params = new URLSearchParams({ error: providerError ?? 'Sign-in failed' })
+    if (errorCode) params.set('error_code', errorCode)
+    return NextResponse.redirect(`${origin}/login?${params.toString()}`)
   }
 
   if (code) {
@@ -41,8 +42,12 @@ export async function GET(request: Request) {
     if (!error) {
       return NextResponse.redirect(`${origin}${next}`)
     }
+    // The collision can also surface here, at the exchange, rather than on
+    // the redirect — forward its code on this path too so the login page
+    // can show the same friendly message and fallback.
+    const codeParam = error.code ? `&error_code=${encodeURIComponent(error.code)}` : ''
     return NextResponse.redirect(
-      `${origin}/login?error=${encodeURIComponent(error.message)}`
+      `${origin}/login?error=${encodeURIComponent(error.message)}${codeParam}`
     )
   }
 
