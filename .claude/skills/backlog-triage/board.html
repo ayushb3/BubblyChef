@@ -208,7 +208,11 @@
 
   const board = document.getElementById("board");
   const state = { runId: null, run: null, cards: [], decisions: {}, db: null, readOnly: false, subs: [] };
-  const pendingBulk = { armed: false };
+  // Bulk approve needs two clicks on the same button within BULK_CONFIRM_MS.
+  // The armed state lives on the button itself, and render() builds a fresh
+  // button, so a snapshot update always disarms it: one stray click after a
+  // re-render can never approve a whole group.
+  const BULK_CONFIRM_MS = 8000;
   let onlyUndecided = false;
   try { onlyUndecided = localStorage.getItem("triage.onlyUndecided") === "1"; } catch (e) {}
   const filterBox = document.getElementById("filter");
@@ -406,16 +410,25 @@
   }
 
   async function bulkApprove(cards, btn, statusEl) {
-    if (!pendingBulk.armed) {
-      pendingBulk.armed = true;
+    if (!btn._armed) {
+      const label = btn.textContent;
+      btn._armed = true;
       btn.textContent = "Confirm: approve " + cards.length;
-      statusEl.textContent = "Click again to approve all " + cards.length + " as suggested.";
+      statusEl.textContent = "Click again within " + (BULK_CONFIRM_MS / 1000) + " s to approve all " + cards.length + " as suggested.";
+      btn._disarm = setTimeout(() => {
+        btn._armed = false;
+        btn.textContent = label;
+        statusEl.textContent = "";
+      }, BULK_CONFIRM_MS);
       return;
     }
-    pendingBulk.armed = false;
+    clearTimeout(btn._disarm);
+    btn._armed = false;
     btn.disabled = true;
     let done = 0;
     for (const c of cards) {
+      // Re-check the gate at write time: only high-confidence, still-undecided cards.
+      if (c.confidence !== "high" || (state.decisions[c.issue] || {}).verdict || c.applied) continue;
       const answers = {};
       let open = false;
       questionsOf(c).forEach((q, i) => { const a = answerOf(q, i, {}); if (a !== null) answers[i] = a; else if (q.options.length) open = true; });
@@ -460,14 +473,17 @@
       let list = cards.filter(c => c.group === g.key).sort((a, b) => (a.order || 0) - (b.order || 0));
       if (!list.length) continue;
       const undecided = list.filter(c => !(state.decisions[c.issue] || {}).verdict && !c.applied);
+      // Bulk approve trusts confidence, not the group label: a mis-grouped or
+      // hand-edited card must still be decided on its own.
+      const bulkable = undecided.filter(c => c.confidence === "high");
       if (onlyUndecided) list = undecided;
       const sec = el("section", { class: "group", id: "g-" + g.key },
         el("h2", { text: g.title + " (" + cards.filter(c => c.group === g.key).length + ")" }),
         el("p", { class: "gdesc", text: g.desc }));
-      if (g.key === "quick" && undecided.length && !state.readOnly) {
+      if (g.key === "quick" && bulkable.length && !state.readOnly) {
         const st = el("span", { class: "status", role: "status" });
-        const btn = el("button", { class: "primary", type: "button" }, "Approve all " + undecided.length + " undecided");
-        btn.addEventListener("click", () => bulkApprove(undecided, btn, st));
+        const btn = el("button", { class: "primary", type: "button" }, "Approve all " + bulkable.length + " undecided");
+        btn.addEventListener("click", () => bulkApprove(bulkable, btn, st));
         sec.append(el("div", { class: "group-actions" }, btn, st));
       }
       sec.append(el("div", { class: "cards" }, list.map(renderCard)));
