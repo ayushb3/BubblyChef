@@ -13,6 +13,7 @@ from datetime import date, datetime
 from typing import Any
 
 from bubbly_chef.ai.manager import NoProviderAvailableError
+from bubbly_chef.ai.provider import user_message_for_failure
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.domain.mealtime import meal_time_bucket
 from bubbly_chef.domain.normalizer import normalize_food_name
@@ -1108,11 +1109,8 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         response_text = (
             result if isinstance(result, str) else getattr(result, "response", str(result))
         )
-    except NoProviderAvailableError:
-        response_text = (
-            "I'd love to suggest some recipes, but no AI provider is configured. "
-            "Please add a Gemini API key or start Ollama."
-        )
+    except NoProviderAvailableError as e:
+        response_text = user_message_for_failure(e.kind, e.configured)
     except Exception as e:
         logger.error("Brainstorm error: %s", e)
         response_text = "Sorry, I ran into an error generating recipe ideas. Please try again."
@@ -1259,6 +1257,19 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
         if not isinstance(result, LLMRecipeResult):
             raise ValueError("Unexpected response type from AI provider")
         llm_result = result
+    except NoProviderAvailableError as e:
+        logger.error("Grounded recipe generation failed: %s", e)
+        return {
+            **state,
+            "intent": Intent.GENERAL_CHAT.value,
+            "assistant_message": user_message_for_failure(e.kind, e.configured),
+            "next_action": NextAction.NONE.value,
+            "proposal": None,
+            "requires_review": False,
+            "confidence": 0.5,
+            "errors": state.get("errors", []) + [f"Recipe generation error: {e}"],
+            "workflow_status": WorkflowStatus.COMPLETED.value,
+        }
     except Exception as e:
         logger.error("Grounded recipe generation failed: %s", e)
         return {
@@ -1478,6 +1489,19 @@ async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
             ai_manager=ai_manager,
             previous_recipe=previous_recipe,
         )
+    except NoProviderAvailableError as e:
+        logger.error("Recipe refinement failed: %s", e)
+        return {
+            **state,
+            "intent": Intent.GENERAL_CHAT.value,
+            "assistant_message": user_message_for_failure(e.kind, e.configured),
+            "next_action": NextAction.NONE.value,
+            "proposal": None,
+            "requires_review": False,
+            "confidence": 0.5,
+            "errors": state.get("errors", []) + [f"Recipe refinement error: {e}"],
+            "workflow_status": WorkflowStatus.COMPLETED.value,
+        }
     except Exception as e:
         logger.error("Recipe refinement failed: %s", e)
         return {
