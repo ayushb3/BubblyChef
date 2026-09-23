@@ -33,10 +33,10 @@ function emptyRect(): SpotRect {
  * Returns null if the element isn't in the DOM.
  * Skips scrollIntoView for fixed-position targets (bottom-nav, profile header).
  */
-function measureTarget(selector: string, stepId: string): SpotRect | null {
+function measureTarget(selector: string, stepId: string, scroll = true): SpotRect | null {
   const el = document.querySelector<HTMLElement>(selector)
   if (!el) return null
-  if (!FIXED_TARGET_IDS.has(stepId)) {
+  if (scroll && !FIXED_TARGET_IDS.has(stepId)) {
     el.scrollIntoView({ block: 'nearest', behavior: 'instant' })
   }
   const r = el.getBoundingClientRect()
@@ -47,6 +47,20 @@ function measureTarget(selector: string, stepId: string): SpotRect | null {
     height: r.height + PAD * 2,
   }
 }
+
+function sameRect(a: SpotRect, b: SpotRect): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
+}
+
+/**
+ * How often the open tour re-reads its target's position. The home screen
+ * settles after the tour opens: FadeInView slides content in and the hero
+ * bubble grows from its loading skeleton to the real message once pantry data
+ * lands. Nothing fires resize/scroll for that, so a one-off measure leaves the
+ * spotlight on a stale box. One getBoundingClientRect per tick is cheap, and
+ * state only changes when the box actually moved.
+ */
+const SETTLE_POLL_MS = 250
 
 function useReducedMotion(): boolean {
   const [reduced, setReduced] = useState(() => {
@@ -110,6 +124,21 @@ export function TourOverlay() {
     })
   }, [step])
 
+  // --- (c) Follow layout shifts while open — no scrolling, never skips ---
+  useEffect(() => {
+    if (!isOpen || !step) return
+    const id = window.setInterval(() => {
+      const r = measureTarget(step.selector, step.id, false)
+      if (r) setRect((prev) => (sameRect(prev, r) ? prev : r))
+      setVp((prev) =>
+        prev.w === window.innerWidth && prev.h === window.innerHeight
+          ? prev
+          : { w: window.innerWidth, h: window.innerHeight },
+      )
+    }, SETTLE_POLL_MS)
+    return () => window.clearInterval(id)
+  }, [isOpen, step])
+
   useEffect(() => {
     if (!isOpen) return
     window.addEventListener('resize', remeasureOnly, { passive: true })
@@ -130,11 +159,15 @@ export function TourOverlay() {
   // Keyboard / focus trap — Esc = Skip.
   useModalFocusTrap(isOpen, closeTour, tooltipRef as React.RefObject<HTMLElement | null>)
 
-  // Tooltip vertical position: above or below the spotlight.
-  const tooltipTop =
+  // Tooltip vertical position: above or below the spotlight. 'above' anchors
+  // the tooltip's bottom edge to the spotlight's top via `bottom` rather than a
+  // translateY(-100%): the tooltip is a motion.div animating `y`, and framer
+  // motion owns `transform`, so a transform in `style` gets overwritten and the
+  // tooltip drops below the bottom nav, off-screen.
+  const tooltipVertical =
     step?.placement === 'above'
-      ? rect.y - 8 // translated upward via transform
-      : rect.y + rect.height + 8
+      ? { bottom: Math.max(vp.h - rect.y + 8, 8) }
+      : { top: rect.y + rect.height + 8 }
 
   // Horizontal centre — clamp inside viewport.
   const tooltipLeft = Math.min(
@@ -226,10 +259,9 @@ export function TourOverlay() {
             aria-label={`Onboarding tour step ${stepIndex + 1} of ${totalSteps}`}
             className="fixed z-[63]"
             style={{
-              top: tooltipTop,
+              ...tooltipVertical,
               left: tooltipLeft,
               width: TOOLTIP_WIDTH,
-              ...(step?.placement === 'above' ? { transform: 'translateY(-100%)' } : {}),
             }}
             initial="hidden"
             animate="visible"

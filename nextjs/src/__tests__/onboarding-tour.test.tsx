@@ -240,3 +240,107 @@ describe('TourProvider: pathname guard', () => {
     expect(screen.getByTestId('open-state').textContent).toBe('false')
   })
 })
+
+// ---------------------------------------------------------------------------
+// 4. Positioning — both found in a live 375px build (PR #437 verify)
+//
+//  a. 'above' steps anchor by `bottom`: the tooltip is a framer-motion element
+//     animating `y`, which overwrites any `transform` in `style`, so the old
+//     translateY(-100%) was dropped and the tooltip fell off-screen below the
+//     bottom nav, taking Next/Skip with it.
+//  b. The spotlight follows a target that moves after the tour opens (the home
+//     hero grows from its loading skeleton once data lands).
+// ---------------------------------------------------------------------------
+describe('TourOverlay: positioning', () => {
+  type Box = { x: number; y: number; width: number; height: number }
+  const boxes: Record<string, Box> = {}
+  const realRect = Element.prototype.getBoundingClientRect
+
+  beforeEach(() => {
+    getUserMock.mockResolvedValue({
+      data: { user: { user_metadata: { onboarding_completed: true } } },
+    })
+    Object.assign(window, { innerWidth: 375, innerHeight: 812 })
+    for (const s of TOUR_STEPS) boxes[s.id] = { x: 20, y: 200, width: 100, height: 50 }
+    boxes['nav-pantry'] = { x: 94, y: 746, width: 94, height: 66 }
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const id = this.getAttribute('data-tour')
+      const b = id ? boxes[id] : undefined
+      if (!b) return realRect.call(this)
+      return {
+        ...b,
+        left: b.x,
+        top: b.y,
+        right: b.x + b.width,
+        bottom: b.y + b.height,
+        toJSON: () => b,
+      } as DOMRect
+    }
+  })
+  afterEach(() => {
+    Element.prototype.getBoundingClientRect = realRect
+  })
+
+  function Harness() {
+    const { openTour, goNext } = useTour()
+    React.useEffect(() => {
+      openTour()
+    }, [openTour])
+    return (
+      <div>
+        {TOUR_STEPS.map((s) => (
+          <div key={s.id} data-tour={s.id} />
+        ))}
+        <button data-testid="next" onClick={() => void goNext()} />
+      </div>
+    )
+  }
+
+  const settle = (ms: number) =>
+    act(async () => {
+      await new Promise((r) => setTimeout(r, ms))
+    })
+
+  it("anchors an 'above' tooltip by bottom so it stays on-screen over the bottom nav", async () => {
+    await act(async () => {
+      render(
+        <TourProvider>
+          <Harness />
+          <TourOverlay />
+        </TourProvider>,
+      )
+    })
+    await settle(50)
+    const pantryIndex = TOUR_STEPS.findIndex((s) => s.id === 'nav-pantry')
+    for (let i = 0; i < pantryIndex; i++) {
+      await act(async () => {
+        screen.getByTestId('next').click()
+      })
+      await settle(30)
+    }
+    const dialog = screen.getByRole('dialog', {
+      name: `Onboarding tour step ${pantryIndex + 1} of ${TOUR_STEPS.length}`,
+    })
+    // Spotlight top = 746 - PAD(8) = 738; the tooltip's bottom edge sits 8px above it.
+    expect(dialog.style.bottom).toBe(`${812 - 738 + 8}px`)
+    expect(dialog.style.top).toBe('')
+  })
+
+  it('moves the spotlight when the target shifts after the tour opened', async () => {
+    await act(async () => {
+      render(
+        <TourProvider>
+          <Harness />
+          <TourOverlay />
+        </TourProvider>,
+      )
+    })
+    await settle(50)
+    boxes['hero'] = { x: 50, y: 257, width: 272, height: 101 }
+    await settle(400)
+    // The decorative ring is the only rect with a stroke.
+    const ring = document.body.querySelector('rect[stroke="white"]')
+    expect(ring?.getAttribute('x')).toBe(String(50 - 8))
+    expect(ring?.getAttribute('width')).toBe(String(272 + 16))
+  })
+})
