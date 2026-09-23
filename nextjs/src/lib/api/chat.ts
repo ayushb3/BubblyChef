@@ -115,8 +115,15 @@ export async function streamChatMessage(
           currentEventType = line.slice(7).trim()
         } else if (line.startsWith('data: ')) {
           const jsonStr = line.slice(6)
+          let parsed: { type?: string; content?: string; data?: ChatResponse; message?: string }
           try {
-            const parsed = JSON.parse(jsonStr)
+            parsed = JSON.parse(jsonStr)
+          } catch (err) {
+            console.error('[streamChatMessage] Failed to parse SSE line:', err)
+            continue
+          }
+
+          try {
             if (parsed.type === 'token' || currentEventType === 'token') {
               onToken(parsed.content ?? '')
               // 20ms visual throttle for streaming effect
@@ -125,7 +132,7 @@ export async function streamChatMessage(
               parsed.type === 'envelope' ||
               currentEventType === 'envelope'
             ) {
-              settle(() => onDone(parsed.data))
+              settle(() => onDone(parsed.data as ChatResponse))
             } else if (
               parsed.type === 'error' ||
               currentEventType === 'error'
@@ -137,7 +144,17 @@ export async function streamChatMessage(
             }
             // 'done' event is informational; envelope follows it
           } catch (err) {
-            console.error('[streamChatMessage] Failed to process SSE line:', err)
+            // A callback (onToken/onDone/onError) threw — not a parse failure.
+            // `settle()` marks itself settled before invoking its callback, so
+            // if onDone/onError threw, `settled` is already true; go around
+            // `settle()` directly so this corrective error still reaches the
+            // caller instead of being silently swallowed as a no-op.
+            console.error(
+              '[streamChatMessage] Callback threw while handling SSE line:',
+              err,
+            )
+            onError(err instanceof Error ? err : new Error(String(err)))
+            return
           }
         }
       }

@@ -93,3 +93,47 @@ describe('streamChatMessage terminal-callback guarantee (#241)', () => {
     expect(onError).not.toHaveBeenCalled()
   })
 })
+
+describe('streamChatMessage surfaces callback failures (#539)', () => {
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  it('calls onError exactly once when onDone throws, and stops reading', async () => {
+    let readCount = 0
+    const reader = {
+      read: async () => {
+        readCount += 1
+        if (readCount === 1) {
+          return {
+            done: false,
+            value: new TextEncoder().encode(
+              'event: envelope\ndata: {"data":{"intent":"chat"}}\n\n',
+            ),
+          }
+        }
+        return { done: true, value: undefined }
+      },
+      releaseLock: () => {},
+    }
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: { getReader: () => reader },
+    }) as unknown as typeof fetch
+
+    const onToken = jest.fn()
+    const onDone = jest.fn(() => {
+      throw new Error('boom')
+    })
+    const onError = jest.fn()
+
+    await streamChatMessage(request, onToken, onDone, onError)
+
+    expect(onDone).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0][0]).toBeInstanceOf(Error)
+    // The read loop stops on the callback failure instead of continuing.
+    expect(readCount).toBe(1)
+  })
+})
