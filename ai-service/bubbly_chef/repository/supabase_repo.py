@@ -101,6 +101,17 @@ _QUERY_STOPWORDS = frozenset(
         "time",
         "what",
         "which",
+        # Memory/history phrasing ("find the one we made before", "search
+        # your memory for...") names when, not what.
+        "before",
+        "earlier",
+        "ago",
+        "previously",
+        "remember",
+        "memory",
+        "history",
+        "search",
+        "cooked",
         "some",
         "any",
         "one",

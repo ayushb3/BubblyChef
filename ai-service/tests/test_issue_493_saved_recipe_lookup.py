@@ -195,7 +195,15 @@ async def test_many_matches_lists_ranked_and_asks_which_one() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("text", ["show me my saved recipes", "what recipes do I have saved"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "show me my saved recipes",
+        "what recipes do I have saved",
+        "find the one we made before",
+        "what was that recipe from last time?",
+    ],
+)
 async def test_request_naming_no_dish_lists_recent_saves(text: str) -> None:
     """Review finding on PR #536: every word of "show me my saved recipes" is a
     stopword, so searching it matched nothing and told a user with a full
