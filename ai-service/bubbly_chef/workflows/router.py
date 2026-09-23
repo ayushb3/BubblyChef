@@ -110,6 +110,14 @@ _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 # session.metadata (persisted to the DB on every pantry-update turn).
 _PENDING_PROPOSAL_HISTORY_LIMIT = 20
 
+# #370: how many further pantry-update turns a *cleanly-resolved* turn's
+# item_names stay available as "you already added X" context before they
+# decay. Ayush's call in triage: keep for about 5 turns. Only applies to
+# item_names written by a turn with no unclear_terms attached -- the
+# pre-existing "still pending until resolved" continuity (#307-followup)
+# is untouched and has no expiry.
+_CLEAN_TURN_ITEM_CONTINUITY_TURNS = 5
+
 
 def _extract_url(text: str) -> str | None:
     m = _URL_RE.search(text)
@@ -1086,6 +1094,24 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
             # else: stay in current mode
 
         elif intent == Intent.PANTRY_UPDATE.value:
+            existing = session.pending_proposal or PendingProposalMemory()
+            # #370: decay a clean turn's item_names after a few more
+            # pantry-update turns, rather than either wiping them the
+            # instant the very next turn also resolves cleanly (the
+            # original bug) or keeping them forever. Only ever set on
+            # `existing` below by the clean branch (unclear_terms empty);
+            # a real pending clarification always writes
+            # item_continuity_ttl=None (unset), so this decrement never
+            # fires against it.
+            ttl = existing.item_continuity_ttl
+            if ttl is not None:
+                if ttl <= 1:
+                    existing = existing.model_copy(
+                        update={"item_names": [], "item_continuity_ttl": None}
+                    )
+                else:
+                    existing = existing.model_copy(update={"item_continuity_ttl": ttl - 1})
+
             if state.get("requires_review"):
                 session.active_mode = SessionMode.INGESTING
                 # Remember what's still unresolved so the next turn's
@@ -1095,7 +1121,6 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 # never actually written before now.
                 item_names = [a.item.name for a in state.get("actions", [])]
                 unclear_terms = state.get("generic_pantry_terms", [])
-                existing = session.pending_proposal or PendingProposalMemory()
                 merged_items = _merge_dedup_case_insensitive(
                     existing.item_names, item_names
                 )
@@ -1174,7 +1199,29 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                     )
             else:
                 session.active_mode = SessionMode.DEFAULT
-                session.pending_proposal = None
+                # #370: a turn that resolves cleanly (nothing left unclear)
+                # used to wipe pending_proposal to None outright, so the
+                # very next turn had no memory that these items were just
+                # added — a vague follow-up like "some dairy" couldn't be
+                # told "you already added apples and eggs". Keep the item
+                # names as short-lived continuity instead (decayed above,
+                # _CLEAN_TURN_ITEM_CONTINUITY_TURNS turns out).
+                item_names = [a.item.name for a in state.get("actions", [])]
+                if item_names:
+                    merged_items = _merge_dedup_case_insensitive(
+                        existing.item_names, item_names
+                    )
+                    session.pending_proposal = PendingProposalMemory(
+                        item_names=merged_items[-_PENDING_PROPOSAL_HISTORY_LIMIT:],
+                        item_continuity_ttl=_CLEAN_TURN_ITEM_CONTINUITY_TURNS,
+                    )
+                elif existing.item_names:
+                    # Nothing recognized this turn, but a still-live decaying
+                    # memory (already ticked down above) survives untouched
+                    # rather than being wiped early.
+                    session.pending_proposal = existing
+                else:
+                    session.pending_proposal = None
 
         elif intent == Intent.SAVED_RECIPE_LOOKUP.value:
             # Pin only on an unambiguous single match — the same

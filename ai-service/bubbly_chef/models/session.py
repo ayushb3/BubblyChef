@@ -52,6 +52,17 @@ class PendingProposalMemory(BaseModel):
         default_factory=dict,
         description="term.lower() -> concrete suggestion list",
     )
+    item_continuity_ttl: int | None = Field(
+        default=None,
+        description=(
+            "Turns remaining before item_names from a cleanly-resolved "
+            "pantry turn (no unclear_terms attached) decays away (#370). "
+            "None means no decay -- either there is nothing to decay, or "
+            "unclear_terms is non-empty and the pre-existing 'still "
+            "pending until resolved' continuity (#307-followup) applies "
+            "instead, which never expires on its own."
+        ),
+    )
 
 
 class SessionContext(BaseModel):
