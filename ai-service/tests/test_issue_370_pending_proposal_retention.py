@@ -66,7 +66,7 @@ from bubbly_chef.workflows.router import (
     update_session_node,
 )
 
-_CONTINUITY_NOTE_SNIPPET = "you already added"
+_CONTINUITY_NOTE_SNIPPET = "earlier you mentioned"
 _STILL_PENDING_SNIPPET = "from earlier in this chat"
 
 
@@ -252,7 +252,7 @@ class TestCleanTurnKeepsItemContinuity:
         (no generic_pantry_terms of its own) must NOT prepend "(still with
         apples, eggs from earlier in this chat.)" just because an earlier
         clean turn is still within its retention window. Those items were
-        already added -- there's nothing here for this turn to resolve
+        already proposed -- there's nothing here for this turn to resolve
         against them."""
         _, after_turn1 = await _run_pantry_turn(_session(pending=None), ["apples", "eggs"])
 
@@ -287,14 +287,14 @@ class TestReviewTurnDoesNotLeakContinuityForward:
     used to rebuild ``PendingProposalMemory`` without that field, dropping
     it to ``None`` while the carried item names survived the merge -- so an
     ordinary add one turn *after* a review turn would resurrect the note
-    about items that were already added."""
+    about items that were already proposed."""
 
     @pytest.mark.asyncio
     async def test_clean_vague_clean_stays_silent_on_the_final_clean_turn(self) -> None:
         """The exact trace from the review comment: 'I have apples and
         eggs' (clean) -> 'some dairy' (vague, review) -> 'I bought milk'
         (clean). Turn 3 must not say '(still with Apples, Eggs from earlier
-        in this chat)' -- those items were applied in turn 1, and turn 2
+        in this chat)' -- those items were proposed in turn 1, and turn 2
         already surfaced them as context once."""
         _, after_turn1 = await _run_pantry_turn(_session(pending=None), ["apples", "eggs"])
 
@@ -305,9 +305,9 @@ class TestReviewTurnDoesNotLeakContinuityForward:
         message, after_turn3 = await _run_pantry_turn(after_turn2, ["milk"])
 
         assert _CONTINUITY_NOTE_SNIPPET not in message, (
-            f"turn 3 is an ordinary add; it must not resurrect 'you already "
-            f"added apples, eggs' about items already added two turns "
-            f"earlier, got: {message!r}"
+            f"turn 3 is an ordinary add; it must not resurrect 'earlier you "
+            f"mentioned apples, eggs' about items already surfaced two "
+            f"turns earlier, got: {message!r}"
         )
         assert _STILL_PENDING_SNIPPET not in message, (
             f"turn 3 must not treat apples/eggs as still-unresolved "
@@ -321,7 +321,7 @@ class TestReviewTurnDoesNotLeakContinuityForward:
         """Documents existing (pre-#370, out-of-scope) behaviour rather than
         changing it: an intervening ordinary clean turn resets
         unclear_terms just like it always has -- this PR only stops it
-        from also resurrecting already-applied item names. A follow-up
+        from also resurrecting already-mentioned item names. A follow-up
         vague turn after that clean turn gets a fresh slate, not a
         reprint of apples/eggs."""
         _, after_turn1 = await _run_pantry_turn(_session(pending=None), ["apples", "eggs"])
@@ -335,7 +335,7 @@ class TestReviewTurnDoesNotLeakContinuityForward:
         )
 
         assert "apples" not in message.lower() and "eggs" not in message.lower(), (
-            f"the already-applied apples/eggs must not reappear even once "
+            f"the already-mentioned apples/eggs must not reappear even once "
             f"a fresh unclear term shows up, got: {message!r}"
         )
 
@@ -362,6 +362,49 @@ class TestReviewTurnDoesNotLeakContinuityForward:
         assert "tofu" in names_lower, (
             "a genuinely still-pending item must survive a further review "
             "turn's merge, not just clean-turn continuity items"
+        )
+
+    @pytest.mark.asyncio
+    async def test_note_does_not_name_the_same_item_in_both_halves(self) -> None:
+        """Orchestrator third-round review on PR #600, finding 3: a name can
+        land in both `continuity_item_names` (clean-turn snapshot) and
+        `item_names` (genuinely still-pending) -- clean add of 'apples',
+        then a later review turn that re-adds 'apples' alongside a vague
+        term keeps 'apples' in both buckets. A further turn with its own
+        unclear term (which is what turns already_added_items on) must not
+        then produce a self-contradicting note naming apples as both
+        already-mentioned AND still-pending in the same sentence."""
+        _, after_turn1 = await _run_pantry_turn(_session(pending=None), ["apples"])
+        assert "apples" in [
+            n.lower() for n in after_turn1.pending_proposal.continuity_item_names
+        ]
+
+        _, after_turn2 = await _run_pantry_turn(
+            after_turn1, ["apples"], generic_pantry_terms=["some snacks"]
+        )
+        # Sanity: turn 2 is genuinely a review turn that leaves "apples" in
+        # BOTH buckets, which is the precondition for the overlap this test
+        # guards against.
+        assert after_turn2.pending_proposal is not None
+        assert "apples" in [
+            n.lower() for n in after_turn2.pending_proposal.item_names
+        ]
+        assert "apples" in [
+            n.lower() for n in after_turn2.pending_proposal.continuity_item_names
+        ]
+
+        message, _after_turn3 = await _run_pantry_turn(
+            after_turn2, ["butter"], generic_pantry_terms=["some veggies"]
+        )
+
+        assert message.lower().count("apples") == 1, (
+            f"'apples' must not be named twice in one note -- once as "
+            f"still-pending and once as merely mentioned earlier, got: "
+            f"{message!r}"
+        )
+        assert _STILL_PENDING_SNIPPET in message, (
+            f"the genuinely still-pending 'apples' must still surface, "
+            f"got: {message!r}"
         )
 
 

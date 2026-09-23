@@ -111,8 +111,8 @@ _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 _PENDING_PROPOSAL_HISTORY_LIMIT = 20
 
 # #370: how many further pantry-update turns a *cleanly-resolved* turn's
-# item_names stay available as "you already added X" context before they
-# decay. Ayush's call in triage: keep for about 5 turns. Only applies to
+# item_names stay available as "earlier you mentioned X" context before
+# they decay. Ayush's call in triage: keep for about 5 turns. Only applies to
 # item_names written by a turn with no unclear_terms attached -- the
 # pre-existing "still pending until resolved" continuity (#307-followup)
 # is untouched and has no expiry.
@@ -1213,8 +1213,8 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 # #370: a turn that resolves cleanly (nothing left unclear)
                 # used to wipe pending_proposal to None outright, so the
                 # very next turn had no memory that these items were just
-                # added — a vague follow-up like "some dairy" couldn't be
-                # told "you already added apples and eggs". Keep the item
+                # proposed — a vague follow-up like "some dairy" couldn't be
+                # told "earlier you mentioned apples and eggs". Keep the item
                 # names as short-lived continuity instead, in the dedicated
                 # `continuity_item_names` field (orchestrator re-review on
                 # PR #600, inline comment on nodes.py:609) -- NOT
@@ -1245,12 +1245,19 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                         item_continuity_ttl=_CLEAN_TURN_ITEM_CONTINUITY_TURNS,
                     )
                     continuity_refreshed_this_turn = True
-                elif existing.item_names or existing.continuity_item_names:
-                    # Nothing recognized this turn, but a still-live decaying
-                    # memory survives untouched -- the decay step below (which
-                    # runs for every intent) ticks it down.
-                    session.pending_proposal = existing
                 else:
+                    # Unreachable from the real graph, not defensive dead
+                    # code kept on purpose: `requires_review` is False only
+                    # when `review_gate` found `actions` non-empty
+                    # (`pantry/nodes.py` forces `requires_review = True`
+                    # whenever `not actions`), so this branch never sees
+                    # empty `item_names` (orchestrator third-round review on
+                    # PR #600, finding 2). A prior version here had an
+                    # `elif existing.item_names or existing.continuity_item_names:`
+                    # arm that preserved a still-live decaying memory in
+                    # that impossible case; removed rather than kept, since
+                    # a branch that can't execute is more likely to rot
+                    # silently than to ever matter.
                     session.pending_proposal = None
 
         elif intent == Intent.SAVED_RECIPE_LOOKUP.value:
