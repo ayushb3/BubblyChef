@@ -11,6 +11,9 @@ import { fetchDashboardDaily } from '@/lib/api/dashboard'
 import type { DashboardTip, DashboardSuggestion } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
 import { estimatedExpirySuffix } from '@/lib/pantry-helpers'
+import { useDecorations } from '@/lib/api/kitchen'
+import { useBubbles } from '@/lib/api/bubbles'
+import KitchenScene from '@/components/kitchen/KitchenScene'
 
 interface HomeData {
   totalCount: number
@@ -167,6 +170,16 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
   const emoji = clockReady ? getGreetingEmoji() : '👋'
   const { totalCount, expiringCount, urgentItem, tip: dashboardTip, suggestion } = data
 
+  // Kitchen scene (#521): `decorations` rows use `name`/`decoration_type`;
+  // KitchenScene expects `id`/`slot`. `useBubbles` is a stub today (#520's
+  // frontend half hasn't landed) — see `lib/api/bubbles.ts`.
+  const { data: decorationsData, isLoading: decorationsLoading } = useDecorations()
+  const { balance, isLoading: balanceLoading } = useBubbles()
+  const unlocked = (decorationsData?.decorations ?? []).map((row) => ({
+    id: row.name,
+    slot: row.decoration_type,
+  }))
+
   // Tip text now comes from `GET /v1/dashboard/daily` (#225) — per-user,
   // grounded in that user's own pantry. FALLBACK_TIPS only renders when the
   // request itself failed (dashboardTip stays null), or before it resolves.
@@ -217,6 +230,17 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
 
   return (
     <div className="flex flex-col items-center">
+      {/* Kitchen scene — 12 fixed decoration slots + Bubbles balance (#521) */}
+      <FadeInView delay={0}>
+        <div className="mb-4">
+          <KitchenScene
+            unlocked={unlocked}
+            balance={balance}
+            loading={decorationsLoading || balanceLoading}
+          />
+        </div>
+      </FadeInView>
+
       {/* Greeting */}
       <FadeInView delay={0}>
         <p className="text-sm text-[var(--color-muted)] font-medium mb-1">
