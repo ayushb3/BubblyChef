@@ -31,7 +31,7 @@ def _load_fixtures() -> dict[str, Any]:
             "run `python tests/capture_intent_fixtures.py` first",
             allow_module_level=True,
         )
-    with _FIXTURES_PATH.open() as f:
+    with _FIXTURES_PATH.open(encoding="utf-8") as f:
         return json.load(f)  # type: ignore[no-any-return]
 
 

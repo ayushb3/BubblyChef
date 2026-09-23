@@ -75,8 +75,8 @@ describe('TypeTab catalog autofill -> bulk add payload (#398)', () => {
     expect(screen.getByDisplayValue('milk')).toBeInTheDocument()
     expect(screen.getByLabelText('Unit')).toHaveValue('gallon')
     expect(screen.getByLabelText('Category')).toHaveValue('dairy')
-    // No kitchen-location control any more (#397); the catalog's
-    // `default_location` is simply not used.
+    // No kitchen-location control any more (#397) — but the catalog's
+    // `default_location` is still written, silently (milk -> fridge).
     expect(screen.queryByLabelText('Storage location')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Expiry date')).not.toHaveValue('')
     expect(screen.getByText('(est.)')).toBeInTheDocument()
@@ -92,9 +92,36 @@ describe('TypeTab catalog autofill -> bulk add payload (#398)', () => {
       category: 'dairy',
       estimated_expiry: true,
     })
-    // Manual adds no longer send a location; the server default applies (#397).
-    expect(payload[0]).not.toHaveProperty('storage_location')
+    // The picker is gone, but the catalog's location is still stored (#397).
+    expect(payload[0].storage_location).toBe('fridge')
     expect(payload[0].expiry_date).toEqual(expect.any(String))
+  })
+
+  it('a freehand name with no catalog pick sends no location, so the server default applies', async () => {
+    renderSheet()
+
+    fireEvent.change(screen.getByPlaceholderText('Item name (e.g. Milk, Eggs...)'), {
+      target: { value: 'Salt' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Add 1 Item/i }))
+
+    await waitFor(() => expect(mockBulkAddPantryItems).toHaveBeenCalledTimes(1))
+    expect(mockBulkAddPantryItems.mock.calls[0][0][0]).not.toHaveProperty('storage_location')
+  })
+
+  it('retyping the name after a catalog pick drops the picked location', async () => {
+    // The location is invisible now, so it can't be corrected by hand; it must
+    // not outlive the pick it came from (milk -> fridge, then renamed to rice).
+    renderSheet()
+
+    await selectMilkSuggestion()
+    fireEvent.change(screen.getByDisplayValue('milk'), { target: { value: 'rice' } })
+    fireEvent.click(screen.getByRole('button', { name: /Add 1 Item/i }))
+
+    await waitFor(() => expect(mockBulkAddPantryItems).toHaveBeenCalledTimes(1))
+    const item = mockBulkAddPantryItems.mock.calls[0][0][0]
+    expect(item.name).toBe('rice')
+    expect(item).not.toHaveProperty('storage_location')
   })
 
   it('a purely user-typed expiry date (no autofill) confirms with estimated_expiry: false', async () => {

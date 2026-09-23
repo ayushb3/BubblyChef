@@ -73,13 +73,23 @@ describe('updatePantryItem (#478)', () => {
     await expect(updatePantryItem('abc', { name: 'x' })).rejects.toThrow(/sign in again/i)
   })
 
-  it('surfaces the server error message on any other failure', async () => {
+  it('shows friendly copy, not the raw server error, on any other failure', async () => {
     global.fetch = jest.fn(async () => jsonResponse({ error: 'row is locked' }, 500)) as unknown as typeof fetch
 
-    await expect(updatePantryItem('abc', { name: 'x' })).rejects.toThrow('row is locked')
+    const err = await updatePantryItem('abc', { name: 'x' }).catch((e: Error) => e)
+    expect((err as Error).message).toBe("Couldn't save that item. Please try again.")
   })
 
-  it('falls back to a status-bearing message when the error body is not JSON', async () => {
+  it('shows the network message, not "Failed to fetch", when the request never lands', async () => {
+    global.fetch = jest.fn(async () => {
+      throw new TypeError('Failed to fetch')
+    }) as unknown as typeof fetch
+
+    const err = await updatePantryItem('abc', { name: 'x' }).catch((e: Error) => e)
+    expect((err as Error).message).toBe('Network problem — check your connection and try again.')
+  })
+
+  it('uses the same friendly copy when the error body is not JSON', async () => {
     global.fetch = jest.fn(async () => ({
       ok: false,
       status: 502,
@@ -88,7 +98,9 @@ describe('updatePantryItem (#478)', () => {
       },
     })) as unknown as typeof fetch
 
-    await expect(updatePantryItem('abc', { name: 'x' })).rejects.toThrow('502')
+    await expect(updatePantryItem('abc', { name: 'x' })).rejects.toThrow(
+      "Couldn't save that item. Please try again.",
+    )
   })
 })
 
@@ -104,9 +116,19 @@ describe('deletePantryItem (#478)', () => {
     expect(init.method).toBe('DELETE')
   })
 
-  it('throws with the server message when the delete is rejected', async () => {
+  it('shows friendly copy, not the raw server error, when the delete is rejected', async () => {
     global.fetch = jest.fn(async () => jsonResponse({ error: 'Pantry item not found' }, 404)) as unknown as typeof fetch
 
-    await expect(deletePantryItem('missing')).rejects.toThrow('Pantry item not found')
+    const err = await deletePantryItem('missing').catch((e: Error) => e)
+    expect((err as Error).message).toBe("Couldn't delete that item. Please try again.")
+  })
+
+  it('shows the network message when the delete never lands', async () => {
+    global.fetch = jest.fn(async () => {
+      throw new TypeError('Failed to fetch')
+    }) as unknown as typeof fetch
+
+    const err = await deletePantryItem('abc').catch((e: Error) => e)
+    expect((err as Error).message).toBe('Network problem — check your connection and try again.')
   })
 })

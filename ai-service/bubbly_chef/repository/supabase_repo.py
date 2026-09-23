@@ -383,7 +383,15 @@ class SupabaseRepository:
         # accessor in this class (e.g. get_recipe below).
         return _as_rows(result.data or [])
 
-    async def get_recipe(self, user_id: str, recipe_id: str) -> RecipeCard | None:
+    async def get_recipe(self, user_id: str, recipe_id: str) -> dict[str, Any] | None:
+        """Return the raw `recipes` row for `recipe_id`, or None if absent.
+
+        Raw dict, like `get_user_recipes` — the declared type is the shape
+        that actually comes back from `.select("*")`, not a `RecipeCard`
+        (issue #376 / #417). Callers that need a model construct it
+        themselves; the JSONB `ingredients` column can hold objects or plain
+        strings, so `normalize_cooking_recipe` handles both.
+        """
         result = (
             self.client.table("recipes")
             .select("*")
@@ -394,12 +402,7 @@ class SupabaseRepository:
         )
         if not result.data:
             return None
-        # Return raw dict — caller can construct RecipeCard if needed. The
-        # declared -> RecipeCard | None return type is aspirational for
-        # callers, not what this method actually returns; that mismatch is
-        # pre-existing and out of scope here (issue #128 slice 1 is row
-        # narrowing, not fixing return-type contracts).
-        return _as_row(result.data)  # type: ignore[return-value]
+        return _as_row(result.data)
 
     async def update_recipe_cooked(self, user_id: str, recipe_id: str) -> None:
         """Increment times_cooked and set last_cooked_at to now."""

@@ -9,6 +9,14 @@ export interface ManualRow {
   quantity: number
   unit: string
   category: string
+  /**
+   * The catalog's `default_location` for the picked suggestion (milk ->
+   * fridge). Never shown or edited — the row has no location control any
+   * more (issue #397) — but still stored, since the server's expiry
+   * estimate scales by it (freezer x6). Unset for a freehand name, so the
+   * server default applies.
+   */
+  storage_location?: string
   expiry_date: string
   /**
    * True when `expiry_date` came from the food catalog's default expiry-days
@@ -20,11 +28,21 @@ export interface ManualRow {
   estimated_expiry: boolean
 }
 
-/** `YYYY-MM-DD` for `today + days`, matching the `<input type="date">` format. */
+/**
+ * `YYYY-MM-DD` for `today + days`, matching the `<input type="date">` format.
+ *
+ * Uses local date components, not `toISOString()` — `toISOString()` reports
+ * the date in UTC, which is a calendar day behind local time for anyone west
+ * of UTC in the evening (issue #439), silently shortening the catalog's
+ * auto-filled expiry by a day.
+ */
 function expiryDateFromDays(days: number): string {
   const d = new Date()
   d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 const UNITS = ['item', 'g', 'kg', 'ml', 'L', 'lb', 'oz', 'dozen', 'bunch', 'bag', 'can', 'bottle']
@@ -67,14 +85,15 @@ export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRo
 
   // Selecting a catalog suggestion auto-fills unit, category and expiry
   // (today + the catalog's expiry_days) — the user can still override any of
-  // it afterwards (issue #398). The catalog's `default_location` is ignored:
-  // the row has no kitchen-location field any more (issue #397).
+  // it afterwards (issue #398). The catalog's `default_location` is kept on the
+  // row without a visible field (issue #397).
   const handleCatalogSelect = (entry: FoodCatalogEntry) => {
     onChange({
       ...row,
       name: entry.canonical,
       unit: entry.valid_units[0] || row.unit,
       category: entry.category || row.category,
+      storage_location: entry.default_location || undefined,
       expiry_date: expiryDateFromDays(entry.expiry_days),
       estimated_expiry: true,
     })
@@ -104,7 +123,9 @@ export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRo
       {/* Name — with catalog autocomplete (#398) */}
       <FoodAutocomplete
         value={row.name}
-        onChange={(value) => set('name', value)}
+        // Typing a different name leaves the catalog pick behind, so its
+        // hidden location goes with it — it can't be corrected by hand.
+        onChange={(value) => onChange({ ...row, name: value, storage_location: undefined })}
         onSelect={handleCatalogSelect}
         placeholder="Item name (e.g. Milk, Eggs...)"
         ariaLabel="Item name"

@@ -13,11 +13,13 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import EditItemModal from '@/components/pantry/AddItemModal'
 import type { PantryItem } from '@/types/pantry'
+import * as foodsApi from '@/lib/api/foods'
 
 // The name field is a FoodAutocomplete (#398), which reads the catalog via
 // React Query; the query is disabled until the user types, so no request is
 // ever made here, but the provider still has to exist.
 jest.mock('@/lib/api/foods')
+const mockSearchFoods = foodsApi.searchFoods as jest.MockedFunction<typeof foodsApi.searchFoods>
 
 const ITEM: PantryItem = {
   id: 'item-1',
@@ -95,5 +97,35 @@ describe('AddItemModal focus trap', () => {
 
     expect(dialog).toContainElement(document.activeElement as HTMLElement)
     expect(document.activeElement).not.toBe(screen.getByText('Add item'))
+  })
+
+  it('does not pop the suggestion list open when the trap focuses the pre-filled name', async () => {
+    // The trap focuses the first field (the name, pre-filled with the item's
+    // own name). Opening the catalog list on that focus drops a stale
+    // dropdown over the form every time the modal opens.
+    mockSearchFoods.mockResolvedValue([
+      { canonical: 'milk', category: 'dairy', default_location: 'fridge', expiry_days: 7 },
+    ] as unknown as Awaited<ReturnType<typeof foodsApi.searchFoods>>)
+    render(<Harness />)
+
+    for (let open = 0; open < 2; open++) {
+      fireEvent.click(screen.getByText('Add item'))
+      const name = screen.getByLabelText('Item name')
+      await waitFor(() => expect(name).toHaveFocus())
+      await new Promise((r) => setTimeout(r, 400)) // past the search debounce
+      expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+      fireEvent.keyDown(document, { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    }
+  })
+
+  it('still offers suggestions once the user types in the name', async () => {
+    mockSearchFoods.mockResolvedValue([
+      { canonical: 'oat milk', category: 'dairy', default_location: 'fridge', expiry_days: 7 },
+    ] as unknown as Awaited<ReturnType<typeof foodsApi.searchFoods>>)
+    render(<Harness initialOpen />)
+
+    fireEvent.change(screen.getByLabelText('Item name'), { target: { value: 'oat m' } })
+    expect(await screen.findByRole('listbox', {}, { timeout: 2000 })).toBeInTheDocument()
   })
 })

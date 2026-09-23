@@ -210,7 +210,20 @@ export default function PantryAddSheet({
               */}
               <div className="relative">
                 <div
+                  // `inert` (not just `aria-hidden`) removes the inactive
+                  // panel from the tab order outright — without it, a
+                  // keyboard user could Tab into the hidden panel's
+                  // controls even though they're invisible and unclickable
+                  // (issue #439). `aria-hidden` stays alongside it rather
+                  // than being dropped as "redundant": real browsers treat
+                  // `inert` as implying `aria-hidden` for assistive tech,
+                  // but jsdom/testing-library's role queries only look at
+                  // `aria-hidden` (they don't special-case `inert`), and the
+                  // existing tab-persistence tests query both tabs' buttons
+                  // by role while only one is active — dropping `aria-hidden`
+                  // regresses those queries.
                   aria-hidden={activeTab !== 'scan'}
+                  inert={activeTab !== 'scan'}
                   className={`transition-all duration-200 ease-out ${
                     activeTab === 'scan'
                       ? 'relative opacity-100 translate-x-0'
@@ -221,6 +234,7 @@ export default function PantryAddSheet({
                 </div>
                 <div
                   aria-hidden={activeTab !== 'type'}
+                  inert={activeTab !== 'type'}
                   className={`transition-all duration-200 ease-out ${
                     activeTab === 'type'
                       ? 'relative opacity-100 translate-x-0'

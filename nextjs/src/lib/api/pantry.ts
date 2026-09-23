@@ -106,18 +106,33 @@ export interface UpdatePantryItemInput {
   expiry_date?: string | null
 }
 
+const NETWORK_ERROR_COPY = 'Network problem — check your connection and try again.'
+
+/**
+ * `fetch`, with a network failure (it rejects with a bare
+ * `TypeError: Failed to fetch`) turned into copy a user can act on.
+ */
+async function fetchOrNetworkError(input: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init)
+  } catch {
+    throw new Error(NETWORK_ERROR_COPY)
+  }
+}
+
 /**
  * Update one pantry item in place — the only single-item write path in the
  * app (issue #478: the edit modal is the sole consumer, and it was calling
- * `fetch` directly). Rejects with a message the caller can show as-is; a 401
+ * `fetch` directly). Rejects with a message the caller can show as-is: a 401
  * is called out specifically because the fix ("sign in again") is different
- * from every other failure.
+ * from every other failure, and a raw server/DB error string is never
+ * surfaced.
  */
 export async function updatePantryItem(
   itemId: string,
   updates: UpdatePantryItemInput,
 ): Promise<PantryItem> {
-  const res = await fetch(`/api/pantry/${itemId}`, {
+  const res = await fetchOrNetworkError(`/api/pantry/${itemId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates),
@@ -127,8 +142,7 @@ export async function updatePantryItem(
     if (res.status === 401) {
       throw new Error('Your session expired — sign in again to save.')
     }
-    const detail = await res.json().catch(() => null)
-    throw new Error(detail?.error ?? `Could not save item (${res.status})`)
+    throw new Error("Couldn't save that item. Please try again.")
   }
 
   return res.json()
@@ -140,10 +154,9 @@ export async function updatePantryItem(
  * `resolvePantryItem` instead.
  */
 export async function deletePantryItem(itemId: string): Promise<void> {
-  const res = await fetch(`/api/pantry/${itemId}`, { method: 'DELETE' })
+  const res = await fetchOrNetworkError(`/api/pantry/${itemId}`, { method: 'DELETE' })
 
   if (!res.ok) {
-    const detail = await res.json().catch(() => null)
-    throw new Error(detail?.error ?? `Could not delete item (${res.status})`)
+    throw new Error("Couldn't delete that item. Please try again.")
   }
 }
