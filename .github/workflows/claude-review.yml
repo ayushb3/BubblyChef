@@ -10,13 +10,24 @@ name: Claude PR review
 #
 # Kill switch: set the repo variable AGENTS_ENABLED to anything but "true" and this
 # stops firing (docs/WORKFLOW.md, "If the agents need stopping").
+#
+# The `verdict` job ("Claude review verdict") turns the review into a merge gate for
+# PRs labelled `agent-loop`: it passes only on "looks mergeable" for the exact head
+# commit, or on a code owner's approval of that commit. It is a required check on main,
+# which is what lets the agent loop request auto-merge on a small PR without waiting
+# for this review itself. Human PRs pass it straight through.
 
 on:
   pull_request:
     types: [opened, ready_for_review, reopened, synchronize]
+  # Only re-evaluates the verdict gate (a code owner's approval clears a hold). The
+  # review itself never runs on this event.
+  pull_request_review:
+    types: [submitted]
 
+# Separate groups per event, so an approval arriving mid-review doesn't cancel the review.
 concurrency:
-  group: claude-review-${{ github.event.pull_request.number }}
+  group: claude-review-${{ github.event.pull_request.number }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -27,7 +38,8 @@ jobs:
     # fresh review of the new commit to know whether it worked. Human PRs are reviewed
     # once, on open, as before.
     if: >-
-      vars.AGENTS_ENABLED == 'true'
+      github.event_name == 'pull_request'
+      && vars.AGENTS_ENABLED == 'true'
       && github.event.pull_request.draft == false
       && (github.event.action != 'synchronize'
           || contains(github.event.pull_request.labels.*.name, 'agent-loop'))
@@ -42,9 +54,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          # Full history so the step below can inspect the pushed commit's parents.
+          fetch-depth: 0
 
-      - uses: anthropics/claude-code-action@v1
+      # "Update branch" pushes only merge the base branch into the PR. They don't
+      # change what the PR does, so they don't need a fresh Opus review, and CI
+      # still runs on them. A merge carrying conflict-resolution edits is NOT
+      # skipped: `git show --cc` prints those edits, and a clean merge prints nothing.
+      - name: Skip the re-review when the push only merged the base branch
+        id: baseonly
+        if: github.event.action == 'synchronize'
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -eu
+          read -r _ p1 p2 extra <<<"$(git rev-list --parents -n1 "$AFTER")"
+          if [ -n "${p2:-}" ] && [ -z "${extra:-}" ] && [ "$p1" = "$BEFORE" ]              && git merge-base --is-ancestor "$p2" "origin/$BASE"              && [ -z "$(git show --format= --cc "$AFTER")" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Push only merged $BASE into the branch with no conflict edits; keeping the existing review."
+          fi
+
+      - name: Claude review
+        uses: anthropics/claude-code-action@v1
+        if: steps.baseonly.outputs.skip != 'true'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           use_sticky_comment: true
@@ -102,3 +136,44 @@ jobs:
             --model claude-opus-5
             --max-turns 40
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh issue view:*),Read,Grep,Glob"
+
+  # The merge gate. `if: always()` and nothing else: a SKIPPED required check counts as
+  # passing, so this job must run and decide on every event, even when the review above
+  # was skipped (kill switch off, draft) — for an agent-loop PR that decision is "hold".
+  verdict:
+    name: Claude review verdict
+    needs: review
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      actions: read
+    steps:
+      # The gate script comes from the BASE commit, so a PR can't loosen the check
+      # that gates it. (The script's own path is also in .github/CODEOWNERS.)
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          if [ ! -f scripts/agent-gates/review-verdict.cjs ]; then
+            # Only while the PR that introduces the gate is open: base has no script yet.
+            if gh api "repos/$REPO/issues/$PR/labels" --jq '.[].name' | grep -qx agent-loop; then
+              echo "::error::No gate script on the base commit; holding this agent-loop PR."
+              exit 1
+            fi
+            echo "No gate script on the base commit; not an agent-loop PR, so not gated."
+            exit 0
+          fi
+          node scripts/agent-gates/review-verdict.cjs "$REPO" "$PR" "$HEAD_SHA"
