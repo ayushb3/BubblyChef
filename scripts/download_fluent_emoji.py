@@ -127,7 +127,7 @@ def download_png(url: str, dest: Path, retries: int = 2) -> bool:
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    catalog: list[dict] = json.loads(CATALOG_PATH.read_text())
+    catalog: list[dict] = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
     log.info("Loaded %d catalog entries", len(catalog))
 
     # Build unique emoji → (canonical_name, folder, slug) mapping
@@ -272,7 +272,7 @@ def write_icon_map(canonical_to_slug: dict[str, str]) -> None:
     lines.append("}")
     lines.append("")
 
-    ICON_MAP_PATH.write_text("\n".join(lines))
+    ICON_MAP_PATH.write_text("\n".join(lines), encoding="utf-8")
 
 
 if __name__ == "__main__":

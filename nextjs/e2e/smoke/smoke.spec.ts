@@ -48,7 +48,7 @@ test.describe('smoke — navigation', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('smoke — pantry add/delete', () => {
-  test('add a pantry item through the Type tab, then delete it', async ({ page }) => {
+  test('add a pantry item through the Manual tab, then delete it', async ({ page }) => {
     // Clearly-marked, timestamp-unique name — self-cleaning even if a run
     // gets interrupted before the delete step, a leftover is unmistakably a
     // smoke-test artifact and safe to remove by hand.

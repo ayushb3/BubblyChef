@@ -160,7 +160,7 @@ export default function PantryAddSheet({
                       : 'bg-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'
                   }`}
                 >
-                  📷 Scan
+                  Scan
                 </button>
                 <button
                   type="button"
@@ -183,7 +183,7 @@ export default function PantryAddSheet({
                         : 'bg-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'
                   }`}
                 >
-                  {scanProcessing ? '✍️ Type (Scanning…)' : '✍️ Type'}
+                  {scanProcessing ? 'Manual (Scanning…)' : 'Manual'}
                 </button>
               </div>
             </div>
