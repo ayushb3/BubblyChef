@@ -2,9 +2,9 @@ import { createClient } from '@/lib/supabase/server'
 import SaveAccountBanner from '@/components/auth/SaveAccountBanner'
 import SignOutButton from '@/components/auth/SignOutButton'
 import DisplayNameField from '@/components/profile/DisplayNameField'
+import DietaryPreferences from '@/components/profile/DietaryPreferences'
+import TakeTourButton from '@/components/profile/TakeTourButton'
 import ThemePicker from '@/components/ui/ThemePicker'
-
-const dietaryPrefs = ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free']
 
 export default async function ProfilePage() {
   const supabase = await createClient()
@@ -13,6 +13,23 @@ export default async function ProfilePage() {
   const rawUsername = user?.user_metadata?.username as string | undefined
   const displayName = rawUsername || user?.email?.split('@')[0] || 'Guest'
   const hasRealName = !!rawUsername
+
+  // Guests without an attached email have no user_profiles row yet (see
+  // 00009_guest_profile_on_email.sql) — "no profile yet" is a handled state,
+  // not an error, so profileId/initialSelected fall back to null/[].
+  let profileId: string | null = null
+  let initialDietaryPreferences: string[] = []
+  if (user) {
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('id, dietary_preferences')
+      .eq('user_id', user.id)
+      .single()
+    if (profile) {
+      profileId = profile.id as string
+      initialDietaryPreferences = (profile.dietary_preferences as string[] | null) ?? []
+    }
+  }
 
   return (
     <div className="pb-24">
@@ -66,33 +83,15 @@ export default async function ProfilePage() {
           <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">
             Dietary Preferences
           </p>
-          <div className="flex flex-wrap gap-2">
-            {dietaryPrefs.map((pref) => (
-              <span
-                key={pref}
-                className="px-4 py-1.5 rounded-full border border-[var(--color-primary)] text-[var(--color-primary)] text-sm font-medium"
-              >
-                {pref}
-              </span>
-            ))}
-          </div>
+          <DietaryPreferences profileId={profileId} initialSelected={initialDietaryPreferences} />
         </section>
 
-        {/* About */}
+        {/* Help — replay the first-run coach-mark tour (#390) */}
         <section>
           <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">
-            About
+            Help
           </p>
-          <div className="bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-            <div className="px-4 py-3 flex justify-between text-sm">
-              <span className="text-[var(--color-muted)]">Version</span>
-              <span className="text-[var(--color-text)] font-medium">0.1.0</span>
-            </div>
-            <div className="px-4 py-3 flex justify-between text-sm">
-              <span className="text-[var(--color-muted)]">App</span>
-              <span className="text-[var(--color-text)] font-medium">BubblyChef ✨</span>
-            </div>
-          </div>
+          <TakeTourButton />
         </section>
       </div>
     </div>

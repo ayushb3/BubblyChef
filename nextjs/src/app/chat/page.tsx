@@ -16,6 +16,7 @@ import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
 import ClarificationCard from '@/components/chat/ClarificationCard'
 import BrainstormOptions from '@/components/chat/BrainstormOptions'
+import ConfirmBand from '@/components/chat/ConfirmBand'
 import CookModal from '@/components/recipes/CookModal'
 import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
 import Chip, { type ChipTone } from '@/components/ui/Chip'
@@ -24,6 +25,7 @@ import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
 import { fetchRecipe, promoteRecipeDraft } from '@/lib/api/recipes'
 import { cookingContextForId, deriveChatSeed } from '@/lib/chat-seed'
+import { startCookSession, isCookSessionEnded } from '@/lib/cook-session'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import type {
   ChatMessage,
@@ -36,6 +38,7 @@ import {
   getClarificationSuggestions,
   getFollowUpSuggestions,
   buildClarificationText,
+  getConfirmOptions,
 } from '@/types/chat'
 import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
 
@@ -103,6 +106,7 @@ function ChatSurface() {
     proposalErrors,
     sendMessage,
     sendChipMessage,
+    sendConfirmChoice,
     cancelStream,
     startNewChat,
     approveProposal,
@@ -159,6 +163,21 @@ function ChatSurface() {
       .catch(() => setAiAvailable(false))
   }, [])
 
+  // Two-tab double deduction guard (PR #475), part 1: `cookingRecipe` below
+  // reads `isCookSessionEnded` at render, which goes stale the instant a
+  // *different* tab confirms this same recipe's deduction — `storage` events
+  // only fire in tabs other than the one that wrote the change, which is
+  // exactly the case this needs to catch live. `cookTick` has no meaning of
+  // its own; bumping it just forces this tab to recompute `cookingRecipe`
+  // (and therefore hide the stale COOKING banner) the moment that happens,
+  // rather than waiting for some unrelated re-render to notice.
+  const [, setCookTick] = useState(0)
+  useEffect(() => {
+    const handleStorage = () => setCookTick((n) => n + 1)
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
+
   // Load the recipe named by ?cooking=
   useEffect(() => {
     if (!cookingRecipeId) return
@@ -180,12 +199,30 @@ function ChatSurface() {
   // Derived, not stored: the card shows only while the loaded recipe still
   // matches the URL param and hasn't been dismissed. Keeps a stale recipe from
   // flashing between navigations without clearing state inside an effect.
+  //
+  // #440 — also gated on the persisted cook-session record, not just local
+  // `dismissedRecipeId` state. A confirmed deduction from a route other than
+  // /chat (e.g. the recipe library's guided cook flow) redirects here with a
+  // *fresh* mount of this page, so `dismissedRecipeId` was never set for this
+  // recipe — only `isCookSessionEnded` (backed by localStorage) survives that
+  // navigation and can still recognise the session is already over.
   const cookingRecipe =
     cookingRecipeId &&
     cookingRecipeId !== dismissedRecipeId &&
+    !isCookSessionEnded(cookingRecipeId) &&
     loadedRecipe?.id === cookingRecipeId
       ? loadedRecipe
       : null
+
+  // Strip a `?cooking=` param that names an already-ended session — e.g. the
+  // redirect CookModal performs right after a confirmed deduction, or the
+  // back button returning to a stale URL. Without this the param lingers
+  // indefinitely even though the banner itself is correctly hidden above.
+  useEffect(() => {
+    if (cookingRecipeId && isCookSessionEnded(cookingRecipeId)) {
+      router.replace('/chat', { scroll: false })
+    }
+  }, [cookingRecipeId, router])
 
   /**
    * Attach the cook context to the first message of the conversation only.
@@ -377,6 +414,14 @@ function ChatSurface() {
     sendMessage(idea)
   }
 
+  const handleConfirmChoice = (
+    forcedIntent: 'recipe_card' | 'recipe_brainstorm',
+    label: string,
+    source?: string,
+  ) => {
+    sendConfirmChoice(label, forcedIntent, source)
+  }
+
   // Determine if the typing indicator should show
   // (streaming has started but no content yet on the last assistant message)
   const lastMsg = messages[messages.length - 1]
@@ -434,6 +479,15 @@ function ChatSurface() {
               onDismiss={dismissCookingCard}
               onFinishCooking={() => {
                 if (!cookingRecipeId) return
+                // Two-tab double deduction guard (PR #475), checkpoint 1:
+                // `cookingRecipe` above is only recomputed on render, so a
+                // confirm from a *different* tab in between could leave this
+                // tab's stale banner tappable. Re-check right here, at the
+                // moment of the tap, before ever opening the confirm sheet.
+                if (isCookSessionEnded(cookingRecipeId)) {
+                  endCookingSession(cookingRecipeId)
+                  return
+                }
                 const isDraft = draftRecipeIds.has(msgIdForRecipeId(cookingRecipeId) ?? '')
                 setCookTarget({
                   recipeId: cookingRecipeId,
@@ -530,6 +584,7 @@ function ChatSurface() {
                 onTryAnother={handleChipTap.bind(null, 'Give me a different recipe')}
                 onChipTap={handleChipTap}
                 onPickIdea={handlePickIdea}
+                onConfirmChoice={handleConfirmChoice}
                 onStageText={handleStageText}
               />
             ))}
@@ -627,6 +682,10 @@ function ChatSurface() {
             // begins. Nothing was deducted by the preview.
             const { recipeId, msgId } = cookTarget
             if (msgId) setCookStartedIds((prev) => new Set(prev).add(msgId))
+            // #440 — a fresh session starts now. Clear any stale "ended" record
+            // from a previous cook of this same recipe so this legitimate new
+            // session isn't mistaken for a stale re-entry and hidden.
+            startCookSession(recipeId)
             setCookTarget(null)
             router.replace(`/chat?cooking=${encodeURIComponent(recipeId)}`, { scroll: false })
           }}
@@ -681,6 +740,12 @@ interface MessageRendererProps {
   onTryAnother: () => void
   onChipTap: (message: string) => void
   onPickIdea: (idea: string) => void
+  /** Called when the user taps a confirm-band button (#416 AC3). */
+  onConfirmChoice: (
+    forcedIntent: 'recipe_card' | 'recipe_brainstorm',
+    label: string,
+    source?: string,
+  ) => void
   /** Stage text in the input field (clarification pill selections). */
   onStageText: (text: string) => void
 }
@@ -705,6 +770,7 @@ function MessageRenderer({
   onTryAnother,
   onChipTap,
   onPickIdea,
+  onConfirmChoice,
   onStageText,
 }: MessageRendererProps) {
   // User messages — simple bubble
@@ -722,6 +788,36 @@ function MessageRenderer({
 
   const mascotState = isLastAssistant && isStreaming ? 'thinking' : 'happy'
   const intent = message.intent ?? message.response?.intent
+
+  // Confirm-choice band — renders before brainstorm so the explicit
+  // next_action gate fires first. The band fires when the backend can't
+  // decide between "tweak this" and "start fresh" (#416 AC3).
+  if (message.response?.next_action === 'confirm_choice') {
+    const confirmOptions = getConfirmOptions(message.response)
+    if (confirmOptions.length > 0) {
+      return (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+        >
+          <div className="flex items-end gap-2">
+            <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+            <div className="flex flex-col gap-2 items-start">
+              {message.content && <MessageBubble message={message} />}
+              <ConfirmBand
+                options={confirmOptions}
+                onSelect={(forcedIntent, label) =>
+                  onConfirmChoice(forcedIntent, label, message.confirmSource)
+                }
+                disabled={!isLastSettledAssistant}
+              />
+            </div>
+          </div>
+        </motion.div>
+      )
+    }
+  }
 
   // Brainstorm intent — render intro bubble + tappable idea cards
   // Falls through to plain markdown if metadata.brainstorm_ideas is absent (backward compat).

@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
 import type { CookProposal, CompoundSuggestion, IngredientMatch, DeductionItem, ExpiredMatchedItem } from '@/types/recipes'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
+import { endCookSession, isCookSessionEnded } from '@/lib/cook-session'
 
 interface CookModalProps {
   recipeId: string
@@ -372,12 +373,29 @@ export default function CookModal({
 
   const handleConfirm = async () => {
     if (!proposal || !summary) return
+    // Two-tab double deduction guard (PR #475), checkpoint 2: the sheet can
+    // sit open for a while between loading its proposal and the user tapping
+    // confirm — long enough for a *different* tab (or window) to confirm
+    // this exact same recipe's deduction in the meantime. Re-check right
+    // here, immediately before the network call that actually deducts,
+    // rather than trusting whatever was true when the sheet opened.
+    if (isCookSessionEnded(recipeId)) {
+      onCooked()
+      onClose()
+      return
+    }
     setState('confirming')
 
     const { deductions } = summary
 
     try {
       await confirmCook(recipeId, deductions)
+      // #440 — the deduction just landed, so this cook session is over
+      // regardless of which page/flow confirmed it. Recorded outside React
+      // state because the non-draft branch below navigates to a fresh mount
+      // of /chat, which would otherwise have no way to know a deduction it
+      // didn't witness already happened and re-offer "Finished cooking".
+      endCookSession(recipeId)
       setState('success')
       if (!isDraft) {
         redirectTimerRef.current = setTimeout(() => {

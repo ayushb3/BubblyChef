@@ -16,6 +16,7 @@
 
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ScanTab from '@/components/pantry/ScanTab'
 import PantryAddSheet from '@/components/pantry/PantryAddSheet'
 import * as scanApi from '@/lib/api/scan'
@@ -120,8 +121,11 @@ it('PantryAddSheet footer count and bulkAddPantryItems payload both drop after a
   mockUploadReceipt.mockResolvedValue(SCAN_RESULT)
   mockBulkAddPantryItems.mockResolvedValue({ count: 2, items: [] })
 
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
-    <PantryAddSheet isOpen onClose={jest.fn()} initialTab="scan" onItemsAdded={jest.fn()} />,
+    <QueryClientProvider client={queryClient}>
+      <PantryAddSheet isOpen onClose={jest.fn()} initialTab="scan" onItemsAdded={jest.fn()} />
+    </QueryClientProvider>,
   )
   selectFile()
 

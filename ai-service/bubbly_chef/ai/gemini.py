@@ -3,6 +3,7 @@
 Google Gemini provider using the free tier API.
 """
 
+import asyncio
 import base64
 import json
 import logging
@@ -19,6 +20,17 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 
+# Gemini 5xx responses (overloaded / internal / gateway) are transient; the
+# same request usually succeeds a moment later.
+_TRANSIENT_STATUS_CODES = frozenset({500, 502, 503, 504})
+
+# The availability pre-check runs before every request. It only has to prove
+# the key and model resolve, so it gets a short timeout of its own instead of
+# the 60s client default — otherwise a slow check alone could eat most of the
+# scan client's 45s budget before the vision call even starts.
+_AVAILABILITY_TIMEOUT_SECONDS = 5.0
+
+
 class GeminiProvider(AIProvider):
     """Google Gemini API provider."""
 
@@ -29,6 +41,9 @@ class GeminiProvider(AIProvider):
         api_key: str,
         model: str = "gemini-3.1-flash-lite",
         timeout: float = 60.0,
+        vision_timeout: float = 18.0,
+        vision_max_retries: int = 1,
+        vision_retry_backoff: float = 1.0,
     ):
         """
         Initialize Gemini provider.
@@ -38,11 +53,24 @@ class GeminiProvider(AIProvider):
             model: Model to use (gemini-3.1-flash-lite recommended for free tier —
                 fastest and most token-efficient of the current Flash lineup;
                 gemini-2.5-flash is deprecated, retiring no earlier than 2026-10-16)
-            timeout: Request timeout in seconds
+            timeout: Request timeout in seconds for text completions
+            vision_timeout: Per-attempt request timeout in seconds for vision
+                calls (issue #476). Deliberately shorter than ``timeout`` so a
+                single retry still fits inside the Next.js scan client's fixed
+                45s abort budget instead of racing it.
+            vision_max_retries: Number of retries (beyond the first attempt)
+                for vision calls that fail transiently: a network error
+                (timeout, connection error) or a Gemini 5xx (overloaded /
+                internal error). 4xx responses (auth, malformed request, rate
+                limit) are not retried — retrying them can't help.
+            vision_retry_backoff: Seconds to wait before a vision retry.
         """
         self.api_key = api_key
         self.model = model
         self.timeout = timeout
+        self.vision_timeout = vision_timeout
+        self.vision_max_retries = vision_max_retries
+        self.vision_retry_backoff = vision_retry_backoff
         self._client = httpx.AsyncClient(timeout=timeout)
 
     @property
@@ -318,27 +346,54 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             "generationConfig": generation_config,
         }
 
-        try:
-            response = await self._client.post(
-                url,
-                json=payload,
-                params={"key": self.api_key},
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            error_body = e.response.text[:500] if hasattr(e.response, "text") else str(e)
-            if e.response.status_code == 429:
+        # Retry loop (issue #476): network-layer failures (timeout, connection
+        # error — httpx.RequestError) and Gemini 5xx responses are transient
+        # and worth one more try. 4xx responses (rate limit, auth, bad
+        # request) are raised immediately without a retry.
+        response: httpx.Response | None = None
+        attempts = 1 + self.vision_max_retries
+        for attempt in range(attempts):
+            try:
+                response = await self._client.post(
+                    url,
+                    json=payload,
+                    params={"key": self.api_key},
+                    timeout=self.vision_timeout,
+                )
+                response.raise_for_status()
+                break
+            except httpx.HTTPStatusError as e:
+                error_body = e.response.text[:500] if hasattr(e.response, "text") else str(e)
+                status = e.response.status_code
+                if status in _TRANSIENT_STATUS_CODES and attempt < attempts - 1:
+                    logger.warning(
+                        f"Gemini [{self.model}] vision attempt {attempt + 1}/{attempts} "
+                        f"got HTTP {status}, retrying after {self.vision_retry_backoff}s"
+                    )
+                    await asyncio.sleep(self.vision_retry_backoff)
+                    continue
+                if status == 429:
+                    raise ProviderUnavailableError(
+                        f"Gemini [{self.model}] vision rate limit 429: {error_body}"
+                    ) from e
                 raise ProviderUnavailableError(
-                    f"Gemini [{self.model}] vision rate limit 429: {error_body}"
+                    f"Gemini [{self.model}] vision API error {e.response.status_code}: "
+                    f"{error_body}"
                 ) from e
-            raise ProviderUnavailableError(
-                f"Gemini [{self.model}] vision API error {e.response.status_code}: "
-                f"{error_body}"
-            ) from e
-        except httpx.RequestError as e:
-            raise ProviderUnavailableError(
-                f"Gemini [{self.model}] vision connection error: {type(e).__name__}: {e}"
-            ) from e
+            except httpx.RequestError as e:
+                if attempt < attempts - 1:
+                    logger.warning(
+                        f"Gemini [{self.model}] vision attempt {attempt + 1}/{attempts} "
+                        f"failed with {type(e).__name__}, retrying after "
+                        f"{self.vision_retry_backoff}s"
+                    )
+                    await asyncio.sleep(self.vision_retry_backoff)
+                    continue
+                raise ProviderUnavailableError(
+                    f"Gemini [{self.model}] vision connection error: {type(e).__name__}: {e}"
+                ) from e
+
+        assert response is not None  # loop always ends via break or raise
 
         data = response.json()
         try:
@@ -445,6 +500,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             response = await self._client.get(
                 url,
                 params={"key": self.api_key},
+                timeout=_AVAILABILITY_TIMEOUT_SECONDS,
             )
             if response.status_code == 200:
                 return True

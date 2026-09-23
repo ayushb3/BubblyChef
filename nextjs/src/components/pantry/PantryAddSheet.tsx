@@ -37,6 +37,10 @@ export default function PantryAddSheet({
   const [typeItems, setTypeItems] = useState<AddItem[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // While a scan is in flight, switching to Type is not offered — but the
+  // sheet's own close paths (X, backdrop, drag-to-dismiss) stay unaffected;
+  // a tab switch is not an abandon gesture, closing the sheet is (issue #402).
+  const [scanProcessing, setScanProcessing] = useState(false)
   const dragControls = useDragControls()
   const panelRef = useRef<HTMLDivElement>(null)
   useModalFocusTrap(isOpen, onClose, panelRef)
@@ -53,6 +57,7 @@ export default function PantryAddSheet({
       setTypeItems([])
       setError(null)
       setIsSubmitting(false)
+      setScanProcessing(false)
     }
   }, [isOpen])
 
@@ -155,18 +160,30 @@ export default function PantryAddSheet({
                       : 'bg-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'
                   }`}
                 >
-                  📷 Scan
+                  Scan
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('type')}
+                  onClick={() => {
+                    // A tab switch is not an abandon gesture, so a scan in
+                    // flight blocks it rather than silently killing it
+                    // (issue #402). Use aria-disabled + a no-op click, not
+                    // the `disabled` attribute, so the control stays
+                    // focusable and announced.
+                    if (scanProcessing) return
+                    setActiveTab('type')
+                  }}
+                  aria-disabled={scanProcessing}
+                  title={scanProcessing ? 'Scanning… please wait' : undefined}
                   className={`flex-1 py-2 rounded-full text-sm font-semibold transition-colors ${
-                    activeTab === 'type'
-                      ? 'bg-[var(--color-primary)] text-white'
-                      : 'bg-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'
+                    scanProcessing
+                      ? 'bg-[var(--color-border)] text-[var(--color-muted)] opacity-50 cursor-not-allowed'
+                      : activeTab === 'type'
+                        ? 'bg-[var(--color-primary)] text-white'
+                        : 'bg-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'
                   }`}
                 >
-                  ✍️ Type
+                  {scanProcessing ? 'Manual (Scanning…)' : 'Manual'}
                 </button>
               </div>
             </div>
@@ -179,29 +196,53 @@ export default function PantryAddSheet({
                 </div>
               )}
 
-              <AnimatePresence mode="wait">
-                {activeTab === 'scan' ? (
-                  <motion.div
-                    key="scan"
-                    initial={{ opacity: 0, x: -12 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 12 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <ScanTab onItemsReady={setScanItems} />
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="type"
-                    initial={{ opacity: 0, x: 12 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -12 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <TypeTab onItemsReady={setTypeItems} />
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {/*
+                Both tabs stay mounted at all times — switching tabs must not
+                destroy component state (issue #402: typed rows and a
+                completed scan review both have to survive a switch away and
+                back). AnimatePresence's exit animation requires unmounting
+                the outgoing child, which is exactly the bug, so the slide
+                transition here is done with plain CSS transitions on
+                permanently-mounted wrappers instead: the inactive tab is
+                `absolute` + `opacity-0` + `pointer-events-none` (out of flow,
+                invisible, unclickable, but never removed from the DOM).
+              */}
+              <div className="relative">
+                <div
+                  // `inert` (not just `aria-hidden`) removes the inactive
+                  // panel from the tab order outright — without it, a
+                  // keyboard user could Tab into the hidden panel's
+                  // controls even though they're invisible and unclickable
+                  // (issue #439). `aria-hidden` stays alongside it rather
+                  // than being dropped as "redundant": real browsers treat
+                  // `inert` as implying `aria-hidden` for assistive tech,
+                  // but jsdom/testing-library's role queries only look at
+                  // `aria-hidden` (they don't special-case `inert`), and the
+                  // existing tab-persistence tests query both tabs' buttons
+                  // by role while only one is active — dropping `aria-hidden`
+                  // regresses those queries.
+                  aria-hidden={activeTab !== 'scan'}
+                  inert={activeTab !== 'scan'}
+                  className={`transition-all duration-200 ease-out ${
+                    activeTab === 'scan'
+                      ? 'relative opacity-100 translate-x-0'
+                      : 'absolute inset-0 opacity-0 -translate-x-3 pointer-events-none'
+                  }`}
+                >
+                  <ScanTab onItemsReady={setScanItems} onProcessingChange={setScanProcessing} />
+                </div>
+                <div
+                  aria-hidden={activeTab !== 'type'}
+                  inert={activeTab !== 'type'}
+                  className={`transition-all duration-200 ease-out ${
+                    activeTab === 'type'
+                      ? 'relative opacity-100 translate-x-0'
+                      : 'absolute inset-0 opacity-0 translate-x-3 pointer-events-none'
+                  }`}
+                >
+                  <TypeTab onItemsReady={setTypeItems} />
+                </div>
+              </div>
             </div>
 
             {/* Sticky confirm footer */}
