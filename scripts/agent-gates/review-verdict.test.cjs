@@ -34,7 +34,10 @@ for (const v of ['needs changes', 'needs a human']) {
 check('holds: an unreadable verdict', run({ sticky: { ...OK.sticky, body: 'Verdict unclear' } }).pass === false, '')
 check('holds: "looks mergeable" in prose but a different verdict', run({ sticky: { ...OK.sticky, body: '**Verdict: `needs changes`** — would otherwise be looks mergeable' } }).pass === false, '')
 check('holds: no review run for this commit', run({ reviewJob: null }).pass === false, '')
-check('holds: review still running', run({ reviewJob: { ...OK.reviewJob, status: 'in_progress', conclusion: null } }).pass === false, '')
+{
+  const r = run({ reviewJob: { ...OK.reviewJob, status: 'in_progress', conclusion: null } })
+  check('holds: review still running, and says so', r.pass === false && /still running/.test(r.reason), r.reason)
+}
 check('holds: review job failed', run({ reviewJob: { ...OK.reviewJob, conclusion: 'failure' } }).pass === false, '')
 check('holds: review job skipped (kill switch off, draft)', run({ reviewJob: { ...OK.reviewJob, conclusion: 'skipped' } }).pass === false, '')
 check('holds: no summary comment', run({ sticky: null }).pass === false, '')
