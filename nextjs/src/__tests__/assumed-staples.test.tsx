@@ -10,8 +10,17 @@
 
 import React from 'react'
 import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { summariseDeductions, MissingItemsList } from '@/components/recipes/CookModal'
 import type { CookProposal, IngredientMatch } from '@/types/recipes'
+
+// CookModal reads useQueryClient() (#520, to invalidate the bubbles balance
+// after a cook confirm), so it needs a provider even in tests that never
+// exercise the confirm button.
+function renderWithQuery(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+}
 
 // Minimal mock helpers matching the pattern in cook-flow-redesign.test.tsx
 
@@ -141,7 +150,7 @@ describe('CookModal — assumed staples rendering (#305)', () => {
   it('renders the "Basics assumed:" summary line with staple names', async () => {
     mockCookRecipe.mockResolvedValue(assumedProposal(['salt', 'black pepper', 'olive oil']))
 
-    render(
+    renderWithQuery(
       <CookModal recipeId="r1" recipeTitle="Simple Pasta" onClose={jest.fn()} onCooked={jest.fn()} />,
     )
 
@@ -155,7 +164,7 @@ describe('CookModal — assumed staples rendering (#305)', () => {
   it('does NOT show assumed items in the main ingredient table rows', async () => {
     mockCookRecipe.mockResolvedValue(assumedProposal(['salt']))
 
-    render(
+    renderWithQuery(
       <CookModal recipeId="r1" recipeTitle="Simple Pasta" onClose={jest.fn()} onCooked={jest.fn()} />,
     )
 
@@ -170,7 +179,7 @@ describe('CookModal — assumed staples rendering (#305)', () => {
   it('does NOT render the "Basics assumed:" line when no assumed items exist', async () => {
     mockCookRecipe.mockResolvedValue(assumedProposal([]))
 
-    render(
+    renderWithQuery(
       <CookModal recipeId="r1" recipeTitle="Simple Pasta" onClose={jest.fn()} onCooked={jest.fn()} />,
     )
 
@@ -183,7 +192,7 @@ describe('CookModal — assumed staples rendering (#305)', () => {
   it('shows missing section for non-staple missing items alongside assumed summary', async () => {
     mockCookRecipe.mockResolvedValue(assumedProposal(['salt'], ['truffle oil']))
 
-    render(
+    renderWithQuery(
       <CookModal recipeId="r1" recipeTitle="Simple Pasta" onClose={jest.fn()} onCooked={jest.fn()} />,
     )
 

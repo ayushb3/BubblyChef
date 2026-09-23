@@ -90,6 +90,7 @@ export default function ScanPage() {
     try {
       await bulkAddPantryItems(checkedItems.map(scannedToBulkAddItem))
       queryClient.invalidateQueries({ queryKey: ['pantry'] })
+      queryClient.invalidateQueries({ queryKey: ['bubbles'] })
       router.push('/pantry')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add items')

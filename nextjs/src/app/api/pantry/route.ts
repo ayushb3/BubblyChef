@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse } from '@/lib/response-helpers'
 import { enrichPantryItem, buildPantryListResponse } from '@/lib/pantry-helpers'
 import { estimateExpiry, estimateCategory, normalizeBaseUnit } from '@/lib/api/ai-proxy'
+import { awardBubbles } from '@/lib/bubbles'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
 
 export async function GET(request: Request) {
@@ -93,6 +94,8 @@ export async function POST(request: Request) {
     .single()
 
   if (error) return errorResponse(error.message)
+
+  await awardBubbles(user.id, 'pantry_add', data.id)
 
   return NextResponse.json(enrichPantryItem(data as PantryItemRow), { status: 201 })
 }

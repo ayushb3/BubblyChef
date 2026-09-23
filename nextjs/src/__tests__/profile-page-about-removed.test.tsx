@@ -38,6 +38,12 @@ jest.mock('@/components/profile/DisplayNameField', () => ({
   __esModule: true,
   default: ({ initialName }: { initialName: string }) => <p>{initialName}</p>,
 }))
+// Needs the app-level TourProvider (onboarding tour, #390), which this
+// server-page render doesn't mount.
+jest.mock('@/components/profile/TakeTourButton', () => ({
+  __esModule: true,
+  default: () => <button>Take the tour</button>,
+}))
 jest.mock('@/components/ui/ThemePicker', () => ({
   __esModule: true,
   default: () => <div data-testid="theme-picker" />,

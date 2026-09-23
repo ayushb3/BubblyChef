@@ -20,6 +20,16 @@ import React from 'react'
 import { render, screen } from '@testing-library/react'
 import { ThemeProvider } from '@/components/ThemeProvider'
 import type { ChatMessage, ChatResponse } from '@/types/chat'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+// The chat page reads useQueryClient() (#520, to invalidate the bubbles balance), so
+// it needs a QueryClientProvider to render.
+function QueryWrapper({ children }: { children: React.ReactNode }) {
+  const [client] = React.useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  )
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+}
 
 // react-markdown / remark-gfm ship ESM only and jest runs this suite as CJS.
 // Stubbing them keeps the transform out of the picture — this suite never
@@ -119,6 +129,7 @@ function renderChat() {
     <ThemeProvider>
       <ChatPage />
     </ThemeProvider>,
+    { wrapper: QueryWrapper },
   )
 }
 
