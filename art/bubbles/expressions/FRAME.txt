@@ -1,0 +1,3 @@
+Shared crop frame (in the 2000px Nano Banana output frame): 361,338,1639,1668
+Every expression is cut with this same box so Bubbles stays at the same size and position when the app swaps expressions.
+sad.png: pending the approved v2 source (hat fixed).
