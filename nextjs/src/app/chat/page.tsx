@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
 import BubblesHeader from '@/components/layout/BubblesHeader'
@@ -81,6 +82,7 @@ export default function ChatPage() {
 
 function ChatSurface() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   // Set by the Cook flow: /chat?cooking=<recipeId>. Changing recipes changes
   // the param, so the context resets for free when the user cooks again.
@@ -346,6 +348,7 @@ function ChatSurface() {
       const res = await persistRecipe(recipe, { draft: false })
       if (res.ok) {
         setSaveStates((prev) => ({ ...prev, [msgId]: 'saved' }))
+        queryClient.invalidateQueries({ queryKey: ['bubbles'] })
         const saved = await res.json().catch(() => null) as { id?: string } | null
         if (saved?.id) {
           setSavedRecipeIds((prev) => ({ ...prev, [msgId]: saved.id as string }))
@@ -692,6 +695,8 @@ function ChatSurface() {
           }}
           onAddToLibrary={cookTarget.isDraft ? async () => {
             await promoteRecipeDraft(cookTarget.recipeId)
+            // Promotion awards recipe_save (#520) — refetch the balance.
+            queryClient.invalidateQueries({ queryKey: ['bubbles'] })
             setDraftRecipeIds((prev) => {
               const next = new Set(prev)
               const msgId = msgIdForRecipeId(cookTarget.recipeId)

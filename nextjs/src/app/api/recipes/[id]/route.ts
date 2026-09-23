@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
 import { mergeTags } from '@/lib/recipe-helpers'
+import { awardBubbles } from '@/lib/bubbles'
 
 export async function GET(
   _request: Request,
@@ -65,6 +66,14 @@ export async function PUT(
 
   if (error) return errorResponse(error.message)
   if (!data) return notFound('Recipe')
+
+  // A draft being promoted to a real save earns the same recipe_save bubbles
+  // a fresh non-draft POST does (#520). The unique (user_id, event_type,
+  // ref_key) constraint means a recipe earns once no matter which path saves
+  // it — using the recipe id as the ref covers both POST and this PUT.
+  if (updates.is_draft === false) {
+    await awardBubbles(user.id, 'recipe_save', data.id)
+  }
 
   return NextResponse.json(data)
 }

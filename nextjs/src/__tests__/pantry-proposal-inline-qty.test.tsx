@@ -14,9 +14,17 @@
 
 import { act, renderHook } from '@testing-library/react'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
 import { useChat } from '@/hooks/useChat'
 import type { PantryProposalData, ChatResponse, PantryProposalAction } from '@/types/chat'
+
+// useChat invalidates the ['bubbles'] query on proposal approval (#520) —
+// it needs a QueryClientProvider to render.
+function wrapper({ children }: { children: React.ReactNode }) {
+  const client = new QueryClient()
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+}
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 
@@ -198,7 +206,7 @@ describe('ActionRow inline qty editor — onChange', () => {
 
 describe('useChat — edited qty/unit flows through to applyPantryProposal', () => {
   it('sends edited actions when the user changes qty/unit before approving', async () => {
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     // Simulate a chat response with a "1 item" default for eggs
     const response = baseResponse({
@@ -236,7 +244,7 @@ describe('useChat — edited qty/unit flows through to applyPantryProposal', () 
   })
 
   it('sends original backend values when the user does not edit', async () => {
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     const response = baseResponse({
       proposal: {
@@ -264,7 +272,7 @@ describe('useChat — edited qty/unit flows through to applyPantryProposal', () 
   })
 
   it('updateProposalActions is a no-op when msgId has no pending proposal', () => {
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
     // Should not throw for an unknown msgId
     act(() => {
       result.current.updateProposalActions('unknown-id', [
@@ -289,7 +297,7 @@ describe('useChat — edited qty/unit flows through to applyPantryProposal', () 
    * reflect the edit (Eggs = 12 dozen, Milk = 2 litres).
    */
   it('edit-then-merge: displayed proposal and applied actions both reflect the user edit', async () => {
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     // Turn 1: Eggs with the backend's "1 item" default
     const turn1Response = baseResponse({

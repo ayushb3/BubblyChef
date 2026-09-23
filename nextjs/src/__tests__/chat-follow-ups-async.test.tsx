@@ -7,7 +7,9 @@
  * — on the envelope, patches the chips in when they land, and falls back to
  * the static set if the stream ends without them.
  */
+import React from 'react'
 import { act, renderHook, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TextDecoder, TextEncoder } from 'util'
 import { streamChatMessage } from '@/lib/api/chat'
 import { useChat } from '@/hooks/useChat'
@@ -95,6 +97,12 @@ jest.mock('@/lib/api/chat', () => {
   return { ...actual, fetchChatHistory: jest.fn(), streamChatMessage: jest.fn(actual.streamChatMessage) }
 })
 
+// useChat reads the React Query client (#543), so it needs a provider to render.
+function Wrapper({ children }: { children: React.ReactNode }) {
+  const [client] = React.useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+}
+
 describe('useChat — input unlocks before the chips arrive', () => {
   beforeEach(() => window.localStorage.clear())
 
@@ -109,7 +117,7 @@ describe('useChat — input unlocks before the chips arrive', () => {
       extra?.onStreamEnd?.()
     })
 
-    const { result } = renderHook(() => useChat({ skipResume: true }))
+    const { result } = renderHook(() => useChat({ skipResume: true }), { wrapper: Wrapper })
     await act(async () => {
       result.current.sendMessage('is my chicken done?')
     })
@@ -138,7 +146,7 @@ describe('useChat — input unlocks before the chips arrive', () => {
       extra?.onStreamEnd?.()
     })
 
-    const { result } = renderHook(() => useChat({ skipResume: true }))
+    const { result } = renderHook(() => useChat({ skipResume: true }), { wrapper: Wrapper })
     await act(async () => {
       result.current.sendMessage('is my chicken done?')
     })
@@ -169,7 +177,7 @@ describe('useChat — input unlocks before the chips arrive', () => {
     ])
     window.localStorage.setItem('bubblychef:chat:conversationId', 'conv-restore-498')
 
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper: Wrapper })
 
     await waitFor(() => expect(result.current.messages).toHaveLength(2))
     const restored = result.current.messages[1]

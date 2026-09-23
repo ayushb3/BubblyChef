@@ -82,6 +82,11 @@ class IngestPayload:
         barcode: EAN/UPC barcode string (modality=BARCODE).
         text: Arbitrary plain text (modality=TEXT).
         raw: Original untyped payload for extensibility.
+        parse_timeout_seconds: Remaining wall-clock seconds the LLM parse leg
+            may spend (issue #481). Set by ``/v1/scan/receipt`` from what is
+            left of ``settings.scan_request_budget_seconds`` after OCR.
+            ``None`` leaves the parse unbounded (existing behaviour for
+            callers that have no upstream leg to draw down).
     """
 
     modality: IngestModality
@@ -91,6 +96,7 @@ class IngestPayload:
     barcode: str | None = None
     text: str | None = None
     raw: dict[str, Any] | None = None
+    parse_timeout_seconds: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +248,7 @@ class ModalityDispatcher:
                 barcode=payload.barcode,
                 text=payload.text,
                 raw=payload.raw,
+                parse_timeout_seconds=payload.parse_timeout_seconds,
             )
 
         if modality is IngestModality.UNKNOWN:
@@ -298,7 +305,9 @@ async def _receipt_extractor(payload: IngestPayload) -> ProposalEnvelope[PantryP
     if not ocr_text:
         raise ValueError("Receipt extractor requires ocr_text")
 
-    return await run_receipt_ingest(ocr_text=ocr_text)
+    return await run_receipt_ingest(
+        ocr_text=ocr_text, parse_timeout_seconds=payload.parse_timeout_seconds
+    )
 
 
 # Register the receipt extractor on module load
