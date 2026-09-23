@@ -1,16 +1,15 @@
 """Fetch a user's stored dietary preferences (issue #394).
 
 Single call site for the "profile default" half of the recipe/chat dietary
-precedence rule:
-
-- An explicit dietary ask made *in this message* (captured via
-  ``RecipeConstraints.dietary`` extraction, or a plain-text ask in chat)
-  always wins for that turn — a stored preference is a default, not a
-  prohibition.
-- The stored profile preference is the fallback used when the message (and,
-  for recipe grounding, the constraints carried over from earlier turns in
-  the session) say nothing about diet at all — it must never be silently
-  dropped just because the user didn't repeat it this turn.
+rule: a stored preference stays in force and *combines* with whatever this
+message (or, for recipe grounding, an earlier turn in the same session) asks
+for — it is never silently dropped just because a turn didn't repeat it. A
+stored preference is set aside, for that one reply only, when the message
+explicitly asks for an ingredient it forbids (e.g. a meat dish despite a
+stored "Vegetarian"). See `workflows/recipe/nodes.py`'s
+`_combine_dietary_preferences` for the recipe-grounding implementation of
+this rule, and `workflows/chat/nodes.py`'s `format_dietary_context` for the
+prompt-text equivalent used in plain chat.
 
 A profile row that is missing, empty, or unreachable (DB error, RLS denial,
 etc.) degrades to "no stored preferences" and never raises — a dietary

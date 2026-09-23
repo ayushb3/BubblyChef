@@ -165,7 +165,7 @@ test.describe('3b — receipt ingestion (stubbed, CI-safe)', () => {
     // ── 5. Verify the sheet opened on the Scan tab ────────────────────────
     // Source: PantryAddSheet.tsx — h2 "Add to Pantry" + tab buttons
     await expect(page.getByRole('heading', { name: 'Add to Pantry' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /📷 Scan/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Scan', exact: true })).toBeVisible();
 
     // ── 6. Trigger file upload via the hidden input ───────────────────────
     // Source: ScanTab.tsx L114: input type="file" accept="image/*" className="hidden"

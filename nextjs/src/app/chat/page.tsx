@@ -155,6 +155,21 @@ function ChatSurface() {
       .catch(() => setAiAvailable(false))
   }, [])
 
+  // Two-tab double deduction guard (PR #475), part 1: `cookingRecipe` below
+  // reads `isCookSessionEnded` at render, which goes stale the instant a
+  // *different* tab confirms this same recipe's deduction — `storage` events
+  // only fire in tabs other than the one that wrote the change, which is
+  // exactly the case this needs to catch live. `cookTick` has no meaning of
+  // its own; bumping it just forces this tab to recompute `cookingRecipe`
+  // (and therefore hide the stale COOKING banner) the moment that happens,
+  // rather than waiting for some unrelated re-render to notice.
+  const [, setCookTick] = useState(0)
+  useEffect(() => {
+    const handleStorage = () => setCookTick((n) => n + 1)
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
+
   // Load the recipe named by ?cooking=
   useEffect(() => {
     if (!cookingRecipeId) return
@@ -448,6 +463,15 @@ function ChatSurface() {
               onDismiss={dismissCookingCard}
               onFinishCooking={() => {
                 if (!cookingRecipeId) return
+                // Two-tab double deduction guard (PR #475), checkpoint 1:
+                // `cookingRecipe` above is only recomputed on render, so a
+                // confirm from a *different* tab in between could leave this
+                // tab's stale banner tappable. Re-check right here, at the
+                // moment of the tap, before ever opening the confirm sheet.
+                if (isCookSessionEnded(cookingRecipeId)) {
+                  endCookingSession(cookingRecipeId)
+                  return
+                }
                 const isDraft = draftRecipeIds.has(msgIdForRecipeId(cookingRecipeId) ?? '')
                 setCookTarget({
                   recipeId: cookingRecipeId,

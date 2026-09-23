@@ -4,13 +4,18 @@ recipe generation and chat, not just save into a void.
 Covers:
 - `get_stored_dietary_preferences`: happy path, missing profile, empty list,
   malformed column, unreachable DB (degrades, never raises), empty user_id.
-- `extract_recipe_constraints` (recipe grounding): stored preferences fill in
-  the `dietary` constraint when the message says nothing about diet; an
-  explicit in-message ask wins over the stored default (the precedence this
-  ticket calls for); an empty stored list changes nothing.
+- `extract_recipe_constraints` (recipe grounding): a stored preference
+  COMBINES with whatever the message (or an inherited session constraint)
+  asks for, rather than being replaced by it. A stricter requested/inherited
+  diet collapses the redundant looser one (Vegan + Vegetarian -> Vegan); a
+  compatible one is kept alongside the stored default (Vegetarian +
+  Gluten-Free -> both); the stored default is set aside for that one reply
+  only when the message names an ingredient it forbids (Vegetarian +
+  "chicken curry" -> Vegetarian dropped for this reply); an empty stored
+  list changes nothing.
 - `format_dietary_context` (chat): stored preferences are surfaced as prompt
-  context with the same "default, not a prohibition" wording; no stored
-  preferences yields "" so callers can concatenate unconditionally.
+  context with the "combine, don't replace" wording; no stored preferences
+  yields "" so callers can concatenate unconditionally.
 """
 
 from typing import Any
@@ -153,8 +158,11 @@ async def test_stored_dietary_fills_in_when_message_says_nothing() -> None:
 
 
 @pytest.mark.asyncio
-async def test_explicit_message_dietary_wins_over_stored_default() -> None:
-    """Precedence: an explicit ask *this message* overrides the stored default."""
+async def test_explicit_stricter_message_dietary_combines_with_stored_default() -> None:
+    """COMBINE rule (#394): a stricter explicit ask doesn't drop a compatible
+    stored default — it collapses it, since Vegan already satisfies
+    Vegetarian. The stored lookup is now always consulted (it's needed to
+    know what to combine with)."""
     fresh_llm_explicit = RecipeConstraints(meal_type="dinner", dietary=["Vegan"])
 
     stored_default = AsyncMock(return_value=["Vegetarian"])
@@ -168,10 +176,70 @@ async def test_explicit_message_dietary_wins_over_stored_default() -> None:
     ):
         result = await extract_recipe_constraints(_base_state("make me something vegan tonight"))
 
+    # Vegan subsumes Vegetarian, so the redundant looser label is dropped —
+    # not because the message "won", but because both are already satisfied.
     assert result["recipe_constraints"]["dietary"] == ["Vegan"]
-    # The stored-preference lookup must not even be needed to win — but it's
-    # fine if it's called; what matters is it never overwrites the explicit value.
-    stored_default.assert_not_called()
+    stored_default.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_explicit_contradicting_message_sets_stored_default_aside() -> None:
+    """COMBINE rule (#394): a message that names an ingredient the stored diet
+    forbids sets that stored preference aside for this reply only."""
+    fresh_llm = RecipeConstraints(meal_type="dinner")  # dietary itself untouched
+    stored_default = AsyncMock(return_value=["Vegetarian"])
+
+    with (
+        _mock_recipe_nodes_ai(fresh_llm),
+        patch(
+            "bubbly_chef.workflows.recipe.nodes.get_stored_dietary_preferences",
+            stored_default,
+        ),
+    ):
+        result = await extract_recipe_constraints(_base_state("make me a chicken curry"))
+
+    assert result["recipe_constraints"]["dietary"] == []
+
+
+@pytest.mark.asyncio
+async def test_compatible_message_dietary_combines_with_stored_default() -> None:
+    """COMBINE rule (#394): a compatible dietary ask this message is kept
+    alongside the stored default rather than replacing it — a stored
+    Vegetarian preference doesn't mean today's pasta can contain meat."""
+    fresh_llm = RecipeConstraints(meal_type="dinner", dietary=["Gluten-Free"])
+    stored_default = AsyncMock(return_value=["Vegetarian"])
+
+    with (
+        _mock_recipe_nodes_ai(fresh_llm),
+        patch(
+            "bubbly_chef.workflows.recipe.nodes.get_stored_dietary_preferences",
+            stored_default,
+        ),
+    ):
+        result = await extract_recipe_constraints(_base_state("gluten-free pasta please"))
+
+    assert set(result["recipe_constraints"]["dietary"]) == {"Vegetarian", "Gluten-Free"}
+
+
+@pytest.mark.asyncio
+async def test_contradiction_detected_via_extracted_ingredient_field() -> None:
+    """The contradiction check also looks at the structured ingredient
+    fields, not just the raw message text — covers the case where the
+    extractor puts the forbidden ingredient into `must_use_ingredients`
+    rather than it appearing literally as a dish name in the message."""
+    fresh_llm = RecipeConstraints(meal_type="dinner", must_use_ingredients=["chicken"])
+    stored_default = AsyncMock(return_value=["Vegetarian"])
+
+    with (
+        _mock_recipe_nodes_ai(fresh_llm),
+        patch(
+            "bubbly_chef.workflows.recipe.nodes.get_stored_dietary_preferences",
+            stored_default,
+        ),
+    ):
+        result = await extract_recipe_constraints(_base_state("use up what's in the fridge"))
+
+    assert result["recipe_constraints"]["dietary"] == []
 
 
 @pytest.mark.asyncio
@@ -191,10 +259,11 @@ async def test_empty_stored_preferences_changes_nothing() -> None:
 
 
 @pytest.mark.asyncio
-async def test_session_inherited_dietary_wins_over_stored_default() -> None:
-    """A dietary constraint carried over from an earlier turn in the same
-    session also outranks the stored profile default — the user already
-    made an explicit choice this conversation."""
+async def test_session_inherited_dietary_combines_with_stored_default() -> None:
+    """COMBINE rule (#394): a dietary constraint carried over from an earlier
+    turn in the same session (via `_merge_constraints`) also combines with
+    the stored profile default rather than replacing it — Dairy-Free and
+    Vegetarian are compatible, so the user gets both, not just one."""
     prior = {"dietary": ["Dairy-Free"]}
     fresh_llm = RecipeConstraints(meal_type="dinner")  # nothing new this turn
     stored_default = AsyncMock(return_value=["Vegetarian"])
@@ -216,8 +285,8 @@ async def test_session_inherited_dietary_wins_over_stored_default() -> None:
     ):
         result = await extract_recipe_constraints(state)
 
-    assert result["recipe_constraints"]["dietary"] == ["Dairy-Free"]
-    stored_default.assert_not_called()
+    assert set(result["recipe_constraints"]["dietary"]) == {"Dairy-Free", "Vegetarian"}
+    stored_default.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -252,7 +321,7 @@ async def test_chat_dietary_context_includes_stored_preferences() -> None:
         context = await format_dietary_context(_base_state("what's for dinner?"))
 
     assert "Vegetarian, Gluten-Free" in context
-    assert "default" in context.lower()
+    assert "respect" in context.lower()
 
 
 @pytest.mark.asyncio

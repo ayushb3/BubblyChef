@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import ReviewSurface from '@/components/scan/ReviewSurface'
@@ -41,21 +41,50 @@ export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabPro
 
   const { isDragActive, dropzoneHandlers } = useFileDropzone({ onFile: handleFileSelect })
 
+  // Guards against a scan abandoned by closing the sheet mid-flight (issue
+  // #439): PantryAddSheet's own inner content — and this ScanTab along with
+  // it — unmounts on close and remounts fresh on reopen, but the
+  // `scanProcessing` state (and the `onProcessingChange` setter that writes
+  // it) lives on the persistent parent, so an old scan's `finally` settling
+  // after a new scan has started would otherwise clear the lock the new scan
+  // still holds. `scanTokenRef` disambiguates overlapping scans within the
+  // same mount; `unmountedRef` + the aborted request cover the cross-mount
+  // case where a whole new instance (with its own fresh token) is scanning.
+  const scanTokenRef = useRef(0)
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const unmountedRef = useRef(false)
+
+  useEffect(() => {
+    return () => {
+      unmountedRef.current = true
+      // Stop billing a vision call the user already walked away from.
+      abortControllerRef.current?.abort()
+    }
+  }, [])
+
   async function handleFileSelect(file: File) {
+    const token = ++scanTokenRef.current
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     setError(null)
     const objectUrl = URL.createObjectURL(file)
     setPreview(objectUrl)
     setState('processing')
     onProcessingChange?.(true)
 
+    const isStale = () => unmountedRef.current || scanTokenRef.current !== token
+
     try {
-      const result: ScanResult = await uploadReceipt(file)
+      const result: ScanResult = await uploadReceipt(file, { signal: controller.signal })
+      if (isStale()) return
       setReadyToAdd(result.ready_to_add)
       setNeedsReview(result.needs_review)
       setSkipped(result.skipped)
       setWarnings(result.warnings ?? [])
       setState('results')
     } catch (err) {
+      if (isStale()) return
       // Never render a raw server/provider string — always route through the
       // code -> copy mapping, falling back to generic friendly copy for
       // anything unrecognized (issue #396). This also covers the
@@ -71,8 +100,10 @@ export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabPro
     } finally {
       setTimeout(() => URL.revokeObjectURL(objectUrl), 500)
       // Every path out of `processing` — results or upload/error — must
-      // release the Type-tab lock (issue #402).
-      onProcessingChange?.(false)
+      // release the Type-tab lock (issue #402), but only for the scan that
+      // is still current; an abandoned/superseded scan must not touch it
+      // (issue #439).
+      if (!isStale()) onProcessingChange?.(false)
     }
   }
 
