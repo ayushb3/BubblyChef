@@ -25,6 +25,15 @@ from bubbly_chef.repository.supabase_repo import get_repository
 import bubbly_chef.services.url_extractor as _url_extractor_registration  # noqa: F401
 
 logging.basicConfig(level=logging.INFO)
+# #515: httpx logs every outgoing request line (method + full URL, including
+# query params) at INFO by default. The Gemini key now travels as a header
+# rather than a `?key=...` query param, but this is a second, independent
+# layer against the same class of leak — quieting httpx/httpcore to WARNING
+# means neither library's own request logging can ever put a secret (this
+# key or any other) into the service logs, regardless of how a future call
+# site is written.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 

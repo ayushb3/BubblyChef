@@ -20,7 +20,18 @@ BASE_SHA="${1:?usage: f2p-check.sh <base-sha> <head-sha> <required>}"
 HEAD_SHA="${2:?}"
 REQUIRED="${3:-false}"
 
-mapfile -t changed_tests < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
+# Which test files are *this PR's*: diff from the merge base, not the base branch's
+# current tip. CI passes pull_request.base.sha (main *now*); a two-dot diff from
+# there attributes tests that landed on main after the branch point to this PR
+# (see test-count-guard.sh, #609). The tests still RUN against BASE_SHA, main's
+# tip, below: evidence must fail on main as it is now, so a stale branch whose bug
+# main already fixed does not clear the gate for free.
+DIFF_BASE="$BASE_SHA"
+if MB=$(git merge-base "$BASE_SHA" "$HEAD_SHA" 2>/dev/null) && [ -n "$MB" ]; then
+  DIFF_BASE="$MB"
+fi
+
+mapfile -t changed_tests < <(git diff --name-only "$DIFF_BASE" "$HEAD_SHA" \
   | grep -E '^(ai-service/tests/.*\.py|nextjs/.*\.(test|spec)\.(ts|tsx|js|jsx))$' \
   | grep -v '^nextjs/e2e/' || true)
 
