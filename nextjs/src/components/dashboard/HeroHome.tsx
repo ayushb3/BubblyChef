@@ -1,11 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
+import { useSearchParams } from 'next/navigation'
 import { Camera, Fire, Lightbulb, Sparkle } from '@phosphor-icons/react/dist/ssr'
 import type { ComponentType } from 'react'
 import BubblesMascot from '@/components/ui/BubblesMascot'
+import type { BubblesState } from '@/components/ui/BubblesMascot'
 import FadeInView from '@/components/ui/FadeInView'
 import { titleCase } from '@/lib/format'
 import { useMotionConfig } from '@/lib/motion'
@@ -14,10 +16,19 @@ import { fetchDashboardDaily } from '@/lib/api/dashboard'
 import type { DashboardTip, DashboardSuggestion } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
 import { estimatedExpirySuffix } from '@/lib/pantry-helpers'
-import { useDecorations } from '@/lib/api/kitchen'
+import { useDecorations, useKitchenOffer } from '@/lib/api/kitchen'
 import { useBubbles } from '@/lib/api/bubbles'
 import KitchenScene from '@/components/kitchen/KitchenScene'
 import UnlockOffer from '@/components/kitchen/UnlockOffer'
+// --- PROTOTYPE (throwaway, issue #586/#593/#554): everything below this
+// banner down to the `return` swap is scaffolding for `?variant=A|B|C` — it
+// reuses every fetch/derivation above unchanged and only branches the JSX.
+import PrototypeSwitcher from '@/components/prototype/PrototypeSwitcher'
+import HomeVariantA from '@/components/dashboard/prototype/HomeVariantA'
+import HomeVariantB from '@/components/dashboard/prototype/HomeVariantB'
+import HomeVariantC from '@/components/dashboard/prototype/HomeVariantC'
+import { deriveMoodAndSpeech, MOCK_MILESTONE_OPTIONS } from '@/components/dashboard/prototype/speech'
+import type { QuickAction } from '@/components/dashboard/prototype/types'
 
 interface HomeData {
   totalCount: number
@@ -27,6 +38,12 @@ interface HomeData {
   suggestion: DashboardSuggestion | null
   /** True when the pantry has an expired item that hasn't been used up (issue #525). */
   hasUnusedExpired: boolean
+  // PROTOTYPE (#593): the #525 boolean alone can't name the item in the
+  // "worried" speech-bubble copy — these two are additive, derived from the
+  // same already-fetched `allItems`, and unused by the default (non-variant)
+  // render below.
+  expiredItem: EnrichedPantryItem | null
+  expiredCount: number
 }
 
 // Client-side fallback only — used when `GET /v1/dashboard/daily` (#225, #168)
@@ -107,7 +124,18 @@ function Skeleton({
   )
 }
 
-export default function HeroHome({ displayName }: HeroHomeProps) {
+// PROTOTYPE (#586/#593/#554): `useSearchParams` requires a Suspense boundary
+// around its consumer. Wrapping here (rather than in `app/page.tsx`) keeps
+// the route file untouched, per this prototype's "sub-shape A" brief.
+export default function HeroHome(props: HeroHomeProps) {
+  return (
+    <Suspense fallback={null}>
+      <HeroHomeInner {...props} />
+    </Suspense>
+  )
+}
+
+function HeroHomeInner({ displayName }: HeroHomeProps) {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<HomeData>({
     totalCount: 0,
@@ -116,6 +144,8 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
     tip: null,
     suggestion: null,
     hasUnusedExpired: false,
+    expiredItem: null,
+    expiredCount: 0,
   })
 
   useEffect(() => {
@@ -162,6 +192,9 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
         // #525 — Bubbles goes "worried" when there's expired food sitting
         // unused (still has quantity) rather than already used up or cleared.
         const hasUnusedExpired = allItems.some((item) => item.is_expired && item.quantity > 0)
+        // PROTOTYPE (#593): same predicate as hasUnusedExpired, kept so the
+        // "worried" speech bubble can name the actual item.
+        const unusedExpiredItems = allItems.filter((item) => item.is_expired && item.quantity > 0)
 
         setData({
           totalCount: pantryData.total_count ?? allItems.length,
@@ -170,6 +203,8 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
           tip: dashboardDaily?.tip ?? null,
           suggestion: dashboardDaily?.suggestion ?? null,
           hasUnusedExpired,
+          expiredItem: unusedExpiredItems[0] ?? null,
+          expiredCount: unusedExpiredItems.length,
         })
       } catch {
         // silent
@@ -264,10 +299,85 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
           ? { label: 'View pantry', href: '/pantry' }
           : { label: 'Ask Bubbles', href: '/chat' }
 
-  // Measure whether the clamped tip actually overflows. Runs once the tip has
-  // rendered (after `loading` flips) and again on resize, since a tip that fits
-  // at 480px can wrap to three lines on a narrower phone. Only meaningful while
-  // collapsed — an expanded paragraph never overflows its own box.
+  // --- PROTOTYPE (#586/#593/#554) -------------------------------------
+  // Everything in this block is additive: it reuses `data` above unchanged
+  // and only decides whether to render a variant instead of the default JSX
+  // further down. `?variant=` absent (or unrecognised) => `variant` stays
+  // null and the component falls through to the exact original return.
+  const searchParams = useSearchParams()
+  const variantParam = searchParams?.get('variant')
+  const variant: 'A' | 'B' | 'C' | null =
+    variantParam === 'A' || variantParam === 'B' || variantParam === 'C' ? variantParam : null
+
+  const moodParam = searchParams?.get('mood')
+  const moodOverride: BubblesState | null =
+    moodParam === 'happy' || moodParam === 'surprised' || moodParam === 'worried' || moodParam === 'celebrate'
+      ? moodParam
+      : null
+
+  const milestoneForced = searchParams?.get('milestone') === '1'
+
+  // `hasUnusedExpired`, `expiredItem`.. already destructured further below;
+  // pull them here too since this block runs ahead of that destructure.
+  const { hasUnusedExpired: protoHasUnusedExpired, expiredItem, expiredCount } = data
+
+  const speech = variant
+    ? deriveMoodAndSpeech({
+        totalCount,
+        hasUnusedExpired: protoHasUnusedExpired,
+        expiredItem,
+        expiredCount,
+        urgentItem,
+        expiringCount,
+        suggestion,
+        moodOverride,
+      })
+    : null
+
+  const { data: kitchenOfferData } = useKitchenOffer()
+  const realMilestoneOptions = kitchenOfferData?.options ?? []
+  const showMilestone = variant
+    ? milestoneForced || realMilestoneOptions.length > 0
+    : false
+  const milestoneOptions =
+    realMilestoneOptions.length > 0
+      ? realMilestoneOptions
+      : milestoneForced
+        ? MOCK_MILESTONE_OPTIONS
+        : []
+  const milestoneThreshold = kitchenOfferData?.threshold ?? (milestoneForced ? 500 : null)
+
+  const quickActions: QuickAction[] = [
+    {
+      icon: Fire,
+      label: 'Use Soon',
+      detail: expiringCount > 0 ? `${expiringCount} item${expiringCount > 1 ? 's' : ''}` : 'All fresh!',
+      pending: loading,
+      href: '/pantry',
+      gradient: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
+    },
+    {
+      icon: Camera,
+      label: 'Scan',
+      detail: 'Receipt',
+      pending: false,
+      href: '/pantry?add=scan',
+      gradient: 'linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-dark) 100%)',
+    },
+    {
+      icon: Sparkle,
+      label: 'Ask',
+      detail: 'Bubbles',
+      pending: false,
+      href: '/chat',
+      gradient: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-accent-dark) 100%)',
+    },
+  ]
+
+  // PROTOTYPE: this effect must run on every render regardless of `variant`
+  // (rules of hooks — the branch below returns early), so it's hoisted above
+  // that branch. It's a no-op whenever `tipTextRef` isn't mounted (i.e. any
+  // variant is active), same as it always was a no-op before `loading` flips.
   useEffect(() => {
     if (loading || tipExpanded) return
     const el = tipTextRef.current
@@ -277,6 +387,38 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
   }, [loading, tipExpanded, tip])
+
+  if (variant && speech) {
+    const variantProps = {
+      displayName,
+      greeting,
+      emoji,
+      loading,
+      totalCount,
+      expiringCount,
+      tip,
+      tipHref: tipChatHref(tip),
+      mood: speech.mood,
+      speechMessage: speech.message,
+      speechButton: speech.button,
+      kitchen: { unlocked, balance, loading: decorationsLoading },
+      showMilestone,
+      milestoneOptions,
+      milestoneThreshold,
+      quickActions,
+    }
+    return (
+      <>
+        {variant === 'A' && <HomeVariantA {...variantProps} />}
+        {variant === 'B' && <HomeVariantB {...variantProps} />}
+        {variant === 'C' && (
+          <HomeVariantC {...variantProps} forceExpanded={searchParams?.get('sheet') === 'expanded'} />
+        )}
+        <PrototypeSwitcher />
+      </>
+    )
+  }
+  // --- END PROTOTYPE branch — everything below is the untouched original.
 
   return (
     <div className="flex flex-col items-center">
