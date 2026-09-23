@@ -12,6 +12,15 @@
 
 import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+// CookModal reads useQueryClient() (#520, to invalidate the bubbles balance
+// after a cook confirm), so it needs a provider even in tests that never
+// exercise the confirm button.
+function renderWithQuery(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+}
 
 // ─── ChatRecipeCard ───────────────────────────────────────────────────────────
 
@@ -481,7 +490,7 @@ describe('CookModal — compound suggestion rendering (#281)', () => {
       ]),
     )
 
-    render(
+    renderWithQuery(
       <CookModal
         recipeId="r1"
         recipeTitle="Cream Sauce"
@@ -500,7 +509,7 @@ describe('CookModal — compound suggestion rendering (#281)', () => {
   it('renders the missing ingredient tag without a suggestion when none is provided', async () => {
     mockCookRecipe.mockResolvedValue(compoundProposal([]))
 
-    render(
+    renderWithQuery(
       <CookModal
         recipeId="r1"
         recipeTitle="Cream Sauce"
@@ -583,7 +592,7 @@ describe('CookModal — none-match note rendered instead of bare chip (#425)', (
 
     mockCookRecipe.mockResolvedValue(proposal)
 
-    render(
+    renderWithQuery(
       <CookModal
         recipeId="r-sauce"
         recipeTitle="Cream Sauce"
@@ -614,7 +623,7 @@ describe('CookModal — none-match note rendered instead of bare chip (#425)', (
 
     mockCookRecipe.mockResolvedValue(proposal)
 
-    render(
+    renderWithQuery(
       <CookModal
         recipeId="r-sauce"
         recipeTitle="Cream Sauce"

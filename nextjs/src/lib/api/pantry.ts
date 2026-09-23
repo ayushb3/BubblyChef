@@ -14,6 +14,15 @@ export interface BulkAddItem {
   storage_location: string
   expiry_date: string | null
   /**
+   * Where this item came from. Drives the `scan_confirm` bubbles award
+   * (#520) — a request with at least one `source: 'scan'` item earns the
+   * scan award once, in addition to the per-item `pantry_add` award every
+   * item earns regardless of source. The award's ref_key is derived
+   * server-side from the date and item names (see `/api/pantry/bulk`), not
+   * from anything sent here, so it can't be farmed by resubmitting.
+   */
+  source?: 'scan' | 'manual'
+  /**
    * Explicit override for whether `expiry_date` is an estimate rather than
    * a date the user actually chose (issue #398, mirrors #363's precedence
    * on the server: an explicit flag from the client always wins). Omit for

@@ -1,7 +1,9 @@
+import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse } from '@/lib/response-helpers'
 import { enrichPantryItem } from '@/lib/pantry-helpers'
 import { estimateExpiry, estimateCategory, normalizeBaseUnit } from '@/lib/api/ai-proxy'
+import { awardBubbles } from '@/lib/bubbles'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
 
 interface BulkItemInput {
@@ -11,6 +13,7 @@ interface BulkItemInput {
   category?: string
   storage_location?: string
   expiry_date?: string | null
+  source?: 'scan' | 'manual'
   estimated_expiry?: boolean
 }
 
@@ -85,6 +88,31 @@ export async function POST(request: Request) {
 
   if (error) return errorResponse(error.message)
 
-  const enriched = (data as PantryItemRow[]).map(enrichPantryItem)
+  const insertedRows = data as PantryItemRow[]
+  await Promise.all(insertedRows.map((row) => awardBubbles(user.id, 'pantry_add', row.id)))
+
+  // scan_confirm's ref_key must not come from client input — a hand-rolled
+  // POST could otherwise supply a fresh id on every call and farm the award
+  // indefinitely. Instead it's derived entirely from server-known state: the
+  // server's UTC date plus the (sorted, lowercased, trimmed) set of item
+  // names being confirmed, hashed to stay well under the 200-char ref_key
+  // limit (see the CHECK constraint in
+  // supabase/migrations/00011_gamification_bubbles_ledger.sql). That makes
+  // confirming the same set of items on the same day earn the award once —
+  // re-POSTing the identical payload (a real network retry, or a replay
+  // attempt) earns nothing, and it doesn't require trusting anything the
+  // client sent.
+  const hasScanItem = items.some((item) => item.source === 'scan')
+  if (hasScanItem) {
+    const utcDate = new Date().toISOString().slice(0, 10)
+    const nameSet = items
+      .map((item) => item.name.toLowerCase().trim())
+      .sort()
+      .join(',')
+    const digest = createHash('sha256').update(nameSet).digest('hex')
+    await awardBubbles(user.id, 'scan_confirm', `${utcDate}:${digest}`)
+  }
+
+  const enriched = insertedRows.map(enrichPantryItem)
   return NextResponse.json({ items: enriched, count: enriched.length }, { status: 201 })
 }

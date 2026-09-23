@@ -13,8 +13,16 @@
  */
 
 import { act, renderHook } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useChat } from '@/hooks/useChat'
 import type { ChatResponse } from '@/types/chat'
+
+// useChat invalidates the ['bubbles'] query on proposal approval (#520) —
+// it needs a QueryClientProvider to render.
+function wrapper({ children }: { children: React.ReactNode }) {
+  const client = new QueryClient()
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+}
 
 const streamChatMessage = jest.fn()
 
@@ -90,7 +98,7 @@ function respondWith(response: ChatResponse) {
 
 describe('pantry card merge across turns', () => {
   it('moves the pantry card to the latest turn when a vague turn merges in', () => {
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     act(() => {
       result.current.sendMessage('add 2 apples and a dozen eggs')
@@ -144,7 +152,7 @@ describe('pantry card merge across turns', () => {
   })
 
   it('does not merge into a card that has already been approved or rejected', async () => {
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     act(() => {
       result.current.sendMessage('add 2 apples and a dozen eggs')
@@ -170,7 +178,7 @@ describe('pantry card merge across turns', () => {
   })
 
   it('opens its own card when nothing earlier is pending (first message is vague)', () => {
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     act(() => {
       result.current.sendMessage('got some veggies and dairy things')
