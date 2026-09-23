@@ -15,6 +15,21 @@
  * read here is bucketed into the client's local calendar day, not the raw
  * UTC day, so a Sunday-evening-local event for a client west of UTC doesn't
  * silently land in Monday's week (issue #524 review).
+ *
+ * Judge-once (issue #524/#570): waste is partly LIVE state (an expired item
+ * still sitting in the pantry, see `lib/waste.ts`), so re-evaluating an
+ * already-judged week on a later visit can flip it from wasted to clean once
+ * the user deletes the offending item — paying out a week that was
+ * correctly denied at the time. `computeStreak` is given `previousVisitDate`
+ * (the local date of this user's own previous visit) and refuses to judge
+ * any completed week that had already ended by then, regardless of whether
+ * `settledWeekKeys` shows it as awarded — that prior settlement call
+ * necessarily already considered it (same `MAX_WEEKS` catch-up window, an
+ * earlier reference date). `route.ts` awards today's own `daily_visit`
+ * BEFORE calling this function, so `previousVisitDate` is derived from the
+ * `events` window already read below (no extra query), filtering out
+ * `daily_visit` rows bucketed to today so today's own just-inserted visit
+ * is never mistaken for the previous one.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -58,8 +73,23 @@ export async function settleWeeklyStreak(
     ])
 
     const activeWeekKeys = new Set<string>()
+    // The local date of this user's own previous visit (the last time this
+    // function ran for them) — the latest `daily_visit` local date strictly
+    // before today. `null` means no prior visit is visible in this window
+    // (either a brand new user, or one who's been idle longer than the
+    // window — either way every completed week in the catch-up window below
+    // is a first judgment, so no filtering is needed; see `computeStreak`).
+    let previousVisitDate: string | null = null
     for (const row of (events ?? []) as Array<{ event_type: string; created_at: string }>) {
-      activeWeekKeys.add(isoWeekKey(utcTimestampToLocalDate(row.created_at, offsetMinutes)))
+      const localDate = utcTimestampToLocalDate(row.created_at, offsetMinutes)
+      activeWeekKeys.add(isoWeekKey(localDate))
+      if (
+        row.event_type === 'daily_visit' &&
+        localDate < today &&
+        (previousVisitDate === null || localDate > previousVisitDate)
+      ) {
+        previousVisitDate = localDate
+      }
     }
 
     const settledWeekKeys = new Set<string>()
@@ -75,6 +105,7 @@ export async function settleWeeklyStreak(
       activeWeekKeys: Array.from(activeWeekKeys),
       wastedWeekKeys: Array.from(wastedWeekKeys),
       maxWeeksToCheck: MAX_WEEKS,
+      previousVisitDate,
     })
 
     for (const weekKey of weeksToAward) {

@@ -162,4 +162,70 @@ describe('computeStreak', () => {
     expect(result.weeksToAward).toEqual([])
     expect(result.currentStreak).toBe(0)
   })
+
+  describe('previousVisitDate (judge-once, issue #524/#570)', () => {
+    // W38 = 2026-09-14..2026-09-20 (see the `weekRange` tests above).
+
+    it('never re-awards a completed week that already ended by the previous visit, even if it now reads clean', () => {
+      // W38 had already ended (2026-09-20) by the time of the previous visit
+      // (2026-09-22) — it was judged then, and whatever that judgment was,
+      // it must stand. Simulates the regression: the week was wasted at
+      // that settlement, the offending item has since been deleted so
+      // `wastedWeekKeys` is empty now, but the week must stay unpaid.
+      const result = computeStreak({
+        referenceDate,
+        settledWeekKeys: [],
+        activeWeekKeys: ['2026-W38'],
+        wastedWeekKeys: [], // clean NOW — but that's not this test's point
+        previousVisitDate: '2026-09-22',
+      })
+
+      expect(result.weeksToAward).toEqual([])
+      expect(result.currentStreak).toBe(0)
+    })
+
+    it('still pays a clean week exactly once, on its first-ever settlement (previousVisitDate null)', () => {
+      const result = computeStreak({
+        referenceDate,
+        settledWeekKeys: [],
+        activeWeekKeys: ['2026-W38'],
+        wastedWeekKeys: [],
+        previousVisitDate: null,
+      })
+
+      expect(result.weeksToAward).toEqual(['2026-W38'])
+      expect(result.currentStreak).toBe(1)
+    })
+
+    it('still judges a completed week that ended AFTER the previous visit — it was never judged before', () => {
+      // Previous visit was during W37 (before W38 even started), so W38 —
+      // which ends 2026-09-20, after the previous visit — has never been
+      // judged and is still eligible.
+      const result = computeStreak({
+        referenceDate,
+        settledWeekKeys: [],
+        activeWeekKeys: ['2026-W38'],
+        wastedWeekKeys: [],
+        previousVisitDate: '2026-09-13', // last day of W37
+      })
+
+      expect(result.weeksToAward).toEqual(['2026-W38'])
+      expect(result.currentStreak).toBe(1)
+    })
+
+    it('catches up every never-judged week after returning from several idle weeks', () => {
+      // Previous visit predates all three of these completed weeks, so all
+      // three are first judgments and all three are clean.
+      const result = computeStreak({
+        referenceDate,
+        settledWeekKeys: [],
+        activeWeekKeys: ['2026-W36', '2026-W37', '2026-W38'],
+        wastedWeekKeys: [],
+        previousVisitDate: '2026-08-23', // well before W36 starts
+      })
+
+      expect(result.weeksToAward).toEqual(['2026-W36', '2026-W37', '2026-W38'])
+      expect(result.currentStreak).toBe(3)
+    })
+  })
 })

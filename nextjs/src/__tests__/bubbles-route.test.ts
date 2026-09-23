@@ -262,5 +262,38 @@ describe('GET /api/bubbles', () => {
 
       expect(data.wasted_this_week).toBe(true)
     })
+
+    it('a week settled as wasted stays unpaid on a later visit after the expired item is deleted (regression, issue #524/#570)', async () => {
+      // A `daily_visit` from yesterday stands in for "settlement already ran
+      // once" — the last completed week had already ended by then, so it
+      // was already judged (and, per this scenario, judged wasted: no
+      // `weekly_streak` row exists for it). Today there's no waste at all
+      // (`pantry_items`/`pantry_events` are both empty, as if the expired
+      // item had since been deleted) — without the judge-once fix this
+      // would now read clean and pay retroactively.
+      const lastWeekTimestamp = withinLastCompletedWeek()
+      const previousVisitDate = addDaysToDateString(today, -1)
+      const supabase = makeSupabase({
+        bubble_events: [
+          { event_type: 'pantry_add', ref_key: 'item-1', created_at: lastWeekTimestamp },
+          {
+            event_type: 'daily_visit',
+            ref_key: previousVisitDate,
+            created_at: `${previousVisitDate}T12:00:00Z`,
+          },
+        ],
+      })
+      mockRequireAuth.mockResolvedValue([supabase, mockUser])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request(`http://localhost/api/bubbles?date=${today}`))
+      const data = await res.json()
+
+      expect(data.streak_weeks).toBe(0)
+      expect(upsertMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'weekly_streak' }),
+        expect.anything(),
+      )
+    })
   })
 })

@@ -113,11 +113,7 @@ describe('PUT /api/pantry/[id] estimated_expiry clearing (#380)', () => {
  * `lib/waste.ts`.
  */
 describe('DELETE /api/pantry/[id] does not record waste (#524/#570)', () => {
-  function makeDeleteSupabase(
-    item: Record<string, unknown> | null,
-    deleteError: { message: string } | null,
-    calls: string[],
-  ) {
+  function makeDeleteSupabase(deleteError: { message: string } | null, calls: string[]) {
     return {
       from: (table: string) => {
         if (table === 'pantry_items') {
@@ -146,8 +142,7 @@ describe('DELETE /api/pantry/[id] does not record waste (#524/#570)', () => {
 
   it('deletes an already-expired item and writes no pantry_event — the streak stays clean', async () => {
     const calls: string[] = []
-    const item = { name: 'Spinach', quantity: 1, unit: 'bag', expiry_date: '2020-01-01' }
-    ;(requireAuth as jest.Mock).mockResolvedValue([makeDeleteSupabase(item, null, calls), mockUser])
+    ;(requireAuth as jest.Mock).mockResolvedValue([makeDeleteSupabase(null, calls), mockUser])
 
     const res = await DELETE(new Request('http://localhost/api/pantry/item-1', { method: 'DELETE' }), {
       params: Promise.resolve({ id: 'item-1' }),
@@ -159,8 +154,7 @@ describe('DELETE /api/pantry/[id] does not record waste (#524/#570)', () => {
 
   it('deletes a fresh (not-yet-expired) item and writes no pantry_event', async () => {
     const calls: string[] = []
-    const item = { name: 'Spinach', quantity: 1, unit: 'bag', expiry_date: '2099-01-01' }
-    ;(requireAuth as jest.Mock).mockResolvedValue([makeDeleteSupabase(item, null, calls), mockUser])
+    ;(requireAuth as jest.Mock).mockResolvedValue([makeDeleteSupabase(null, calls), mockUser])
 
     const res = await DELETE(new Request('http://localhost/api/pantry/item-1', { method: 'DELETE' }), {
       params: Promise.resolve({ id: 'item-1' }),
@@ -172,9 +166,8 @@ describe('DELETE /api/pantry/[id] does not record waste (#524/#570)', () => {
 
   it('fails the response when the delete itself fails, still writing nothing', async () => {
     const calls: string[] = []
-    const item = { name: 'Spinach', quantity: 1, unit: 'bag', expiry_date: '2020-01-01' }
     ;(requireAuth as jest.Mock).mockResolvedValue([
-      makeDeleteSupabase(item, { message: 'db down' }, calls),
+      makeDeleteSupabase({ message: 'db down' }, calls),
       mockUser,
     ])
 

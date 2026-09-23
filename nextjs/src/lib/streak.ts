@@ -75,6 +75,20 @@ export interface ComputeStreakInput {
   wastedWeekKeys: string[]
   /** How many completed weeks back to catch up on new awards. Default 12 — far enough to catch a returning user, bounded so one call can't walk forever. Does NOT bound `currentStreak`. */
   maxWeeksToCheck?: number
+  /**
+   * The local date (YYYY-MM-DD) of the caller's own previous visit — i.e.
+   * the last time settlement ran for this user — or `null`/`undefined` on a
+   * user's first-ever visit. A completed week is judged EXACTLY ONCE, at the
+   * first settlement that runs after it completes (issue #524/#570): any
+   * week that had already ended by this date was necessarily inside that
+   * prior settlement's own catch-up window (same `maxWeeksToCheck`, an
+   * earlier `referenceDate`), so it was judged then — whether that judgment
+   * landed in `settledWeekKeys` (clean, awarded) or not (wasted, or idle).
+   * Only weeks that ended AFTER this date are eligible to be judged now.
+   * `null`/`undefined` (no previous visit) imposes no filter — every
+   * completed week in the catch-up window is a first judgment.
+   */
+  previousVisitDate?: string | null
 }
 
 export interface ComputeStreakResult {
@@ -120,6 +134,13 @@ export function computeStreak(input: ComputeStreakInput): ComputeStreakResult {
   const weeksToAward: string[] = []
   for (const wk of completedWeeks) {
     if (settled.has(wk)) continue
+    // Already judged at a prior settlement — even if that judgment was
+    // "wasted" (never landed in `settled`). Re-checking live state (e.g.
+    // an expired item since deleted from the pantry) would flip an already
+    // -judged wasted week to clean and pay it retroactively (issue
+    // #524/#570). A week is judged exactly once, at the first settlement
+    // after it completes.
+    if (input.previousVisitDate != null && weekRange(wk).end <= input.previousVisitDate) continue
     if (active.has(wk) && !wasted.has(wk)) {
       weeksToAward.push(wk)
     }
