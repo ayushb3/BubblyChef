@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     # Confidence thresholds
     auto_add_confidence_threshold: float = 0.8
     review_confidence_threshold: float = 0.5
+    # Minimum confidence to auto-act on modify-vs-new-dish decisions in
+    # RECIPE_EXPLORING mode.  Below this threshold the workflow emits a
+    # CONFIRM_CHOICE next_action instead of acting immediately (#416 Q5).
+    confirm_band_confidence_threshold: float = 0.85
 
     # Testing
     run_live_tests: bool = False
