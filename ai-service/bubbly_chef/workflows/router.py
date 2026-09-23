@@ -68,6 +68,7 @@ from bubbly_chef.workflows.chat.nodes import (
     get_mode_prefix,
     normalize_cooking_recipe,
     saved_recipe_lookup_response,
+    suggest_follow_ups,
 )
 from bubbly_chef.workflows.pantry.nodes import (
     apply_expiry_heuristics,
@@ -1776,6 +1777,63 @@ def _build_envelope_from_state(
     return envelope
 
 
+# Intents whose reply is plain prose with nothing tappable under it. Every
+# other reply already carries its own actions (idea cards, recipe card,
+# pantry proposal), so it gets no follow-up chips and no extra model call.
+_FOLLOW_UP_INTENTS = frozenset({Intent.GENERAL_CHAT.value, Intent.COOKING_HELP.value})
+
+
+def _wants_follow_ups(envelope: Any) -> bool:
+    """True when a reply should get context-aware follow-up chips (issue #498)."""
+    intent = getattr(envelope.intent, "value", envelope.intent)
+    return (
+        intent in _FOLLOW_UP_INTENTS
+        and envelope.proposal is None
+        and envelope.next_action == NextAction.NONE
+        and bool((envelope.assistant_message or "").strip())
+    )
+
+
+async def _envelope_then_follow_ups(
+    envelope: Any, message: str, ai_manager: Any | None = None, *, allowed: bool = True
+) -> AsyncIterator[str]:
+    """Yield the envelope, then (when wanted) the follow-up chips as their own event.
+
+    The envelope goes out first so the client can settle the turn and unlock
+    its input the moment the reply is done; the chip suggestions follow as a
+    separate ``follow_ups`` event. ``metadata.follow_ups_pending`` tells the
+    client whether to wait for one. This is the only place the follow-up
+    pass runs, so a turn costs at most one extra model call.
+
+    ``allowed=False`` skips the pass outright: a caller that renders no chips,
+    or a reply that is the streaming error fallback.
+    """
+    import json as _json
+
+    wants = allowed and _wants_follow_ups(envelope)
+    envelope.metadata["follow_ups_pending"] = wants
+    yield _json.dumps({"type": "envelope", "data": envelope.model_dump(mode="json")})
+    if not wants:
+        return
+    suggestions = await suggest_follow_ups(
+        ai_manager or get_ai_manager(), message, envelope.assistant_message
+    )
+    yield _json.dumps({"type": "follow_ups", "data": {"suggestions": suggestions}})
+
+
+def merge_follow_ups_into_envelope(envelope_data: dict[str, Any], data: dict[str, Any]) -> None:
+    """Fold a ``follow_ups`` event into an already-received envelope dict.
+
+    The chat route persists the envelope after the stream ends; this keeps
+    the saved metadata in step with what the client showed.
+    """
+    raw = data.get("suggestions")
+    suggestions = [s for s in raw if isinstance(s, str)] if isinstance(raw, list) else []
+    metadata = envelope_data.setdefault("metadata", {})
+    metadata["follow_up_suggestions"] = suggestions
+    metadata["follow_ups_pending"] = False
+
+
 async def run_chat_workflow_streaming(
     message: str,
     conversation_id: str | None = None,
@@ -1786,6 +1844,7 @@ async def run_chat_workflow_streaming(
     context: dict[str, Any] | None = None,
     forced_intent: str | None = None,
     forced_intent_source: str | None = None,
+    follow_up_chips: bool = True,
 ) -> AsyncIterator[str]:
     """
     Streaming variant of run_chat_workflow.
@@ -1859,7 +1918,8 @@ async def run_chat_workflow_streaming(
         }
         final_state = await dispatch_graph.ainvoke(dispatch_state)
         env = _build_envelope_from_state(final_state, message, conversation_id)
-        yield _json.dumps({"type": "envelope", "data": env.model_dump(mode="json")})
+        async for chunk in _envelope_then_follow_ups(env, message, allowed=follow_up_chips):
+            yield chunk
         return
 
     if intent not in streamable_intents:
@@ -1869,7 +1929,8 @@ async def run_chat_workflow_streaming(
         # confirm/forced-intent decision (#416 #2).
         final_state = await dispatch_graph.ainvoke(classified_state)
         env = _build_envelope_from_state(final_state, message, conversation_id)
-        yield _json.dumps({"type": "envelope", "data": env.model_dump(mode="json")})
+        async for chunk in _envelope_then_follow_ups(env, message, allowed=follow_up_chips):
+            yield chunk
         return
 
     # ── Streamable intent: build prompt and stream tokens ──
@@ -1946,12 +2007,16 @@ async def run_chat_workflow_streaming(
 
     # Stream tokens
     collected_text = ""
+    # Set when the reply below is a canned failure message rather than an
+    # answer: there's nothing to suggest follow-ups for (issue #498).
+    stream_failed = False
 
     try:
         async for token in ai_manager.stream_complete(prompt=prompt, temperature=0.7):
             collected_text += token
             yield _json.dumps({"type": "token", "content": token})
     except NoProviderAvailableError:
+        stream_failed = True
         collected_text = (
             "No AI provider is configured. "
             "Please add a Gemini API key or start Ollama."
@@ -1959,6 +2024,7 @@ async def run_chat_workflow_streaming(
         yield _json.dumps({"type": "token", "content": collected_text})
     except Exception as e:
         logger.error(f"Streaming error: {e}")
+        stream_failed = True
         collected_text = "Sorry, I ran into an error. Please try again."
         yield _json.dumps({"type": "token", "content": collected_text})
 
@@ -1992,7 +2058,11 @@ async def run_chat_workflow_streaming(
     envelope.suggested_mode = suggested_mode
 
     yield _json.dumps({"type": "done"})
-    yield _json.dumps({"type": "envelope", "data": envelope.model_dump(mode="json")})
+
+    async for chunk in _envelope_then_follow_ups(
+        envelope, message, ai_manager, allowed=follow_up_chips and not stream_failed
+    ):
+        yield chunk
 
 
 # =============================================================================

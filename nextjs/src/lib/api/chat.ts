@@ -58,12 +58,24 @@ async function aiFetch(
  *
  * Ported from web/src/api/client.ts:487-556 with Supabase auth.
  */
+/** Optional callbacks for events that can arrive after the envelope. */
+export interface StreamExtras {
+  /** Context-aware chip suggestions, sent after the envelope (issue #498). */
+  onFollowUps?: (suggestions: string[]) => void
+  /**
+   * The stream is over — however it ended (clean close, error, abort). Lets
+   * the caller stop waiting for a `follow_ups` event that will never come.
+   */
+  onStreamEnd?: () => void
+}
+
 export async function streamChatMessage(
   request: ChatRequest,
   onToken: (token: string) => void,
   onDone: (response: ChatResponse) => void,
   onError: (error: Error) => void,
   signal?: AbortSignal,
+  extra?: StreamExtras,
 ): Promise<void> {
   let response: Response
   try {
@@ -134,6 +146,14 @@ export async function streamChatMessage(
             ) {
               settle(() => onDone(parsed.data as ChatResponse))
             } else if (
+              parsed.type === 'follow_ups' ||
+              currentEventType === 'follow_ups'
+            ) {
+              const raw = parsed.data?.suggestions
+              extra?.onFollowUps?.(
+                Array.isArray(raw) ? raw.filter((s: unknown): s is string => typeof s === 'string') : [],
+              )
+            } else if (
               parsed.type === 'error' ||
               currentEventType === 'error'
             ) {
@@ -195,6 +215,7 @@ export async function streamChatMessage(
     settle(() =>
       onError(new Error('The response ended unexpectedly. Please try again.')),
     )
+    extra?.onStreamEnd?.()
   }
 }
 
