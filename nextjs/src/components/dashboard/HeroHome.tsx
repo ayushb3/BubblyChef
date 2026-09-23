@@ -310,7 +310,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
 
       {/* 3 Action Cards */}
       <div className="grid grid-cols-3 gap-3 w-full max-w-sm mb-6" data-tour="quick-actions">
-        {[
+        {([
           {
             icon: Fire,
             label: 'Use Soon',
