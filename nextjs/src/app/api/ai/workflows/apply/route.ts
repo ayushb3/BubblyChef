@@ -5,6 +5,7 @@ import { awardBubbles } from '@/lib/bubbles'
 
 interface ApplyProposalAction {
   name?: string
+  action?: string
   [key: string]: unknown
 }
 
@@ -13,6 +14,17 @@ interface ApplyProposalAction {
 // ai-service/bubbly_chef/api/routes/workflows.py), so this synthesizes a
 // ref_key from the request id + item name instead of a real pantry item id.
 // Swap to affected_item_ids once the backend populates it.
+//
+// Known gap (issue #541, "POST /v1/workflows/apply never populates
+// ApplyResponse.affected_item_ids"): this route gates the whole award on
+// `data.success === true`, which the ai-service only sets when
+// `failed == 0`. On a partial failure nothing here is awarded, even for the
+// actions that did apply, because the proxy has no per-action success
+// signal to award against (only the aggregate `applied_count`). useChat
+// retries only the failed actions under the same request_id, so the
+// first-pass successful items never get awarded. Fixing #541 (populating
+// affected_item_ids) would let this award per successfully-applied item
+// instead of all-or-nothing.
 export async function POST(request: Request) {
   const auth = await requireAuth()
   if (auth instanceof NextResponse) return auth
@@ -27,9 +39,13 @@ export async function POST(request: Request) {
       if (data.success === true) {
         const requestId: string | undefined = body.request_id
         const actions: ApplyProposalAction[] = body.proposal?.actions ?? []
+        // Only 'add' actions earn pantry_add — 'update', 'remove', and 'use'
+        // are not adds and must not mint bubbles for them (see
+        // PantryProposalAction.action_type in nextjs/src/types/chat.ts).
+        const addActions = actions.filter((action) => action.action === 'add')
         if (requestId) {
           await Promise.all(
-            actions.map((action) => {
+            addActions.map((action) => {
               const normalizedName = String(action.name ?? '').toLowerCase().trim()
               const refKey = `${requestId}:${normalizedName}`.slice(0, 200)
               return awardBubbles(user.id, 'pantry_add', refKey)

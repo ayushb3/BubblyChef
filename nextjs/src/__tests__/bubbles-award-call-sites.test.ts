@@ -12,6 +12,12 @@
  * these mock only the Supabase service client the award helper builds
  * internally, so the assertion is against the real end-to-end call path
  * each route takes.
+ *
+ * `upsertMock` throws on every call (to prove the award never blocks the
+ * response), but `jest.fn()` still records each call's arguments before it
+ * throws — so every test below also asserts on `upsertMock.mock.calls` to
+ * pin down which `event_type`/`ref_key` (or none at all) each route awards,
+ * not just that *some* insert happened.
  */
 
 const mockUser = { id: 'user-1' }
@@ -79,7 +85,14 @@ describe('bubbles award never blocks the underlying write', () => {
     )
 
     expect(res.status).toBe(201)
-    expect(upsertMock).toHaveBeenCalled()
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: mockUser.id,
+        event_type: 'pantry_add',
+        ref_key: 'item-1',
+      }),
+      expect.anything(),
+    )
   })
 
   it('POST /api/pantry/bulk still succeeds when the award insert throws', async () => {
@@ -107,7 +120,25 @@ describe('bubbles award never blocks the underlying write', () => {
     )
 
     expect(res.status).toBe(201)
-    expect(upsertMock).toHaveBeenCalled()
+    // One pantry_add per inserted row, keyed on the row id (not the request
+    // id), plus one scan_confirm keyed on the request id.
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: mockUser.id,
+        event_type: 'pantry_add',
+        ref_key: 'item-1',
+      }),
+      expect.anything(),
+    )
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: mockUser.id,
+        event_type: 'scan_confirm',
+        ref_key: 'req-1',
+      }),
+      expect.anything(),
+    )
+    expect(upsertMock).toHaveBeenCalledTimes(2)
   })
 
   it('POST /api/recipes still succeeds when the award insert throws', async () => {
@@ -141,7 +172,14 @@ describe('bubbles award never blocks the underlying write', () => {
     )
 
     expect(res.status).toBe(201)
-    expect(upsertMock).toHaveBeenCalled()
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: mockUser.id,
+        event_type: 'recipe_save',
+        ref_key: 'recipe-1',
+      }),
+      expect.anything(),
+    )
   })
 
   it('does not award recipe_save for a draft', async () => {
@@ -190,7 +228,14 @@ describe('bubbles award never blocks the underlying write', () => {
     )
 
     expect(res.status).toBe(200)
-    expect(upsertMock).toHaveBeenCalled()
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: mockUser.id,
+        event_type: 'cook_confirm',
+        ref_key: `recipe-1:${new Date().toISOString().slice(0, 10)}`,
+      }),
+      expect.anything(),
+    )
   })
 
   it('POST /api/ai/workflows/apply still succeeds when the award insert throws', async () => {
@@ -209,7 +254,48 @@ describe('bubbles award never blocks the underlying write', () => {
     )
 
     expect(res.status).toBe(200)
-    expect(upsertMock).toHaveBeenCalled()
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: mockUser.id,
+        event_type: 'pantry_add',
+        ref_key: 'req-1:milk',
+      }),
+      expect.anything(),
+    )
+  })
+
+  it('POST /api/ai/workflows/apply only awards "add" actions, not update/remove/use', async () => {
+    mockRequireAuth.mockResolvedValue([{}, mockUser])
+
+    const { POST } = await import('@/app/api/ai/workflows/apply/route')
+    const res = await POST(
+      new Request('http://localhost/api/ai/workflows/apply', {
+        method: 'POST',
+        body: JSON.stringify({
+          request_id: 'req-2',
+          intent: 'pantry_update',
+          proposal: {
+            actions: [
+              { action: 'add', name: 'Milk' },
+              { action: 'update', name: 'Cheese' },
+              { action: 'remove', name: 'Eggs' },
+              { action: 'use', name: 'Butter' },
+            ],
+          },
+        }),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(upsertMock).toHaveBeenCalledTimes(1)
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: mockUser.id,
+        event_type: 'pantry_add',
+        ref_key: 'req-2:milk',
+      }),
+      expect.anything(),
+    )
   })
 
   it('PUT /api/recipes/[id] still succeeds when the award insert throws, on draft promotion', async () => {
@@ -241,7 +327,14 @@ describe('bubbles award never blocks the underlying write', () => {
     )
 
     expect(res.status).toBe(200)
-    expect(upsertMock).toHaveBeenCalled()
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: mockUser.id,
+        event_type: 'recipe_save',
+        ref_key: 'recipe-3',
+      }),
+      expect.anything(),
+    )
   })
 
   it('POST /api/ai/workflows/apply does not award for a recipe_card intent', async () => {
