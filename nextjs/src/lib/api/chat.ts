@@ -137,22 +137,38 @@ export async function streamChatMessage(
               parsed.type === 'error' ||
               currentEventType === 'error'
             ) {
-              settle(() =>
-                onError(new Error(parsed.message ?? 'Stream error')),
-              )
+              // onError is the terminal callback for this branch, so if it
+              // throws there is no second callback left to redispatch to —
+              // swallow locally instead of letting it fall into the generic
+              // "a callback threw" catch below, which would call onError a
+              // second time for the same event.
+              try {
+                settle(() =>
+                  onError(new Error(parsed.message ?? 'Stream error')),
+                )
+              } catch (onErrorErr) {
+                console.error(
+                  '[streamChatMessage] onError callback itself threw:',
+                  onErrorErr,
+                )
+              }
               return
             }
             // 'done' event is informational; envelope follows it
           } catch (err) {
-            // A callback (onToken/onDone/onError) threw — not a parse failure.
-            // `settle()` marks itself settled before invoking its callback, so
-            // if onDone/onError threw, `settled` is already true; go around
-            // `settle()` directly so this corrective error still reaches the
-            // caller instead of being silently swallowed as a no-op.
+            // onToken/onDone threw (onError's own throw is handled above and
+            // never reaches here). `settle()` marks itself settled before
+            // invoking its callback, so if onDone threw, `settled` is already
+            // true; go around `settle()` directly so this corrective error
+            // still reaches the caller. Mark `settled` here too (it may still
+            // be false, e.g. a throwing onToken) so the `finally` block's
+            // fallback onError does not fire a second terminal callback on
+            // top of this one.
             console.error(
               '[streamChatMessage] Callback threw while handling SSE line:',
               err,
             )
+            settled = true
             onError(err instanceof Error ? err : new Error(String(err)))
             return
           }
