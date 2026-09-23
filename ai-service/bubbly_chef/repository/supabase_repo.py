@@ -38,9 +38,15 @@ _HISTORY_DEFAULT_LIMIT = 40
 # Filler words that carry no dish-identifying signal in a natural-language
 # lookup request ("show me my saved butter chicken", "do you have a recipe
 # for pasta"). Left in, these spuriously overlap with unrelated recipes'
-# descriptions/tags and pad or corrupt the ranked results. Only stripped from
-# the *query* side of search_saved_recipes — title/description/tags text is
-# scored as written.
+# descriptions/tags and pad or corrupt the ranked results. Always stripped
+# from the query side of search_saved_recipes. For scoring, title/
+# description/tags text is tokenized as written (`_tokenize`) — but title,
+# description, and tags text is *also* run through this stopword-stripped
+# tokenizer (`_tokenize_query`) for the exact-match short-circuit and the
+# full-query-coverage cutoff, so a saved "Chicken and Rice" matches a query
+# of "chicken rice" there even though "and" still counts toward its title's
+# score, and a description/tag can cover a query token its title is missing
+# without needing the stopword to line up either.
 _QUERY_STOPWORDS = frozenset(
     {
         "a",
@@ -547,17 +553,76 @@ class SupabaseRepository:
 
         Returns raw dicts, same shape convention as `get_recipe` /
         `get_user_recipes`, sorted by score descending and capped at `limit`.
-        Rows with zero overlap on all three fields are dropped rather than
-        returned as arbitrary trailing "matches".
+
+        Exact-title short-circuit (issue #542 re-review): compares the
+        *tokenized* query (`_tokenize_query` — lower-cased, punctuation
+        stripped, stopwords removed) against each candidate's *tokenized
+        title, also run through `_tokenize_query`* so both sides fold
+        stopwords the same way — a saved "Chicken and Rice" must equal a
+        query of "chicken rice", not silently miss because "and" survived
+        on one side only. This resolves "butter chicken", "show me my saved
+        butter chicken", "butter chicken?", and "chicken and rice" all to
+        the token sets a bare title comparison would expect, and any of them
+        short-circuits. The short-circuit only fires when exactly one
+        *distinct* title token set equals the query's: if another
+        candidate's title is a strict superset of the query tokens (e.g.
+        querying "chicken" when both "Chicken" and "Roast Chicken" are
+        saved), that other title is just as plausible a match, so the ranked
+        list is returned instead — with the exact match still sorted first,
+        since it scores highest.
+
+        Full-query-coverage cutoff (issue #542 re-review, scope item 2):
+        real saved titles are 2-5 tokens, so a multi-word query matching
+        several titles on only one shared word — #542's actual padded-list
+        complaint — needs a cutoff keyed to coverage, not a fixed score
+        floor. Whenever at least one candidate's title contains *every*
+        query token (a superset, same stopword-stripped tokenization as the
+        short-circuit above — e.g. "Butter Chicken Curry" for query "butter
+        chicken"), any other candidate that's missing at least one query
+        token is dropped as padding, the same way the short-circuit above
+        drops it when the coverage is an exact match rather than a
+        superset.
+
+        A row is protected from this cutoff only when its *combined*
+        tokens — title, description, and tags, all run through
+        `_tokenize_query` so they fold stopwords the same way the query
+        does — cover every query token between them (PR #605 5th
+        re-review: a description or tag that merely repeats a word the
+        title already matched, e.g. "Chicken Tikka Masala Bowl" whose
+        description says "a creamy chicken curry", is not independent
+        signal and must not save the row; only a description or tag that
+        supplies the token the title is *missing*, e.g. "Chicken Tikka"
+        whose description mentions "butter", counts). For a single-token
+        query, every containing title trivially has full coverage, so
+        nothing is dropped for that case — anything containing the single
+        token is just as plausible a match as any other.
+
+        When this cutoff (or the short-circuit above) leaves exactly one
+        candidate, the caller (`saved_recipe_lookup_response`) auto-picks it
+        and announces it directly rather than asking "which one?" — Ayush's
+        call on PR #605's 4th re-review, since every row this drops already
+        scores strictly weaker on word overlap than the one it keeps.
         """
         query_tokens = set(_tokenize_query(query))
         if not query_tokens:
             return []
 
         candidates = await self.get_user_recipes(user_id, limit=500)
+        title_token_sets = [
+            (row, set(_tokenize_query(str(row.get("title") or "")))) for row in candidates
+        ]
+
+        exact_matches = [row for row, tset in title_token_sets if tset == query_tokens]
+        other_full_match_exists = any(
+            tset != query_tokens and tset >= query_tokens for _row, tset in title_token_sets
+        )
+        if exact_matches and not other_full_match_exists:
+            return exact_matches[:limit]
+
+        any_full_coverage = any(tset >= query_tokens for _row, tset in title_token_sets)
 
         scored: list[tuple[float, dict[str, Any]]] = []
-        for row in candidates:
+        for row, query_title_tokens in title_token_sets:
             title_tokens = _tokenize(str(row.get("title") or ""))
             desc_tokens = _tokenize(str(row.get("description") or ""))
             raw_tags = row.get("tags")
@@ -581,8 +646,25 @@ class SupabaseRepository:
             )
 
             total = title_score * 1.0 + desc_score * 0.4 + tags_score * 0.4
-            if total > 0:
-                scored.append((total, row))
+            if total <= 0:
+                continue
+
+            # Coverage for cutoff purposes is combined across title,
+            # description, and tags — a description/tag token only counts
+            # as independent signal if it covers a query token the title
+            # itself is missing, not just any nonzero overlap (PR #605 5th
+            # re-review). `query_title_tokens` (from `title_token_sets`
+            # above) is already the title run through `_tokenize_query`.
+            combined_query_tokens = (
+                query_title_tokens
+                | set(_tokenize_query(str(row.get("description") or "")))
+                | set(_tokenize_query(tags_text))
+            )
+            row_has_full_coverage = combined_query_tokens >= query_tokens
+            partial_coverage_noise = any_full_coverage and not row_has_full_coverage
+            if partial_coverage_noise:
+                continue
+            scored.append((total, row))
 
         scored.sort(key=lambda pair: pair[0], reverse=True)
         return [row for _score, row in scored[:limit]]
