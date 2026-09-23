@@ -31,6 +31,8 @@ export interface KitchenThemePickerProps {
   balance: number | null
   onSelect: (key: string) => void
   saving?: boolean
+  /** Set when the last selection failed to persist (issue #523 review, finding 4) — shown inline. */
+  error?: string | null
 }
 
 export default function KitchenThemePicker({
@@ -42,6 +44,7 @@ export default function KitchenThemePicker({
   balance,
   onSelect,
   saving = false,
+  error = null,
 }: KitchenThemePickerProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const dragControls = useDragControls()
@@ -118,6 +121,12 @@ export default function KitchenThemePicker({
                   </button>
                 </div>
               </div>
+
+              {error && (
+                <p className="px-6 pb-2 text-xs text-center text-[#ff9aa2]" role="alert">
+                  {error}
+                </p>
+              )}
 
               <div className="flex-1 overflow-y-auto px-6 pb-6 min-h-0 flex flex-col gap-2">
                 {KITCHEN_THEMES.map((theme) => (

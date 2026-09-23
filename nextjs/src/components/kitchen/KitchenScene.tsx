@@ -90,8 +90,12 @@ export default function KitchenScene({
             background out while the new one fades in; `reduced` collapses
             both to a near-instant swap. Absolutely positioned behind the
             slots (z-index 0 by DOM order), never adding any of its own
-            layout. */}
-        <AnimatePresence>
+            layout. `initial={false}` on AnimatePresence itself (not just the
+            child's `initial` prop) is what matters here (review finding 5,
+            PR #594): without it, the very first mount plays the "enter"
+            animation too, so the background used to fade in from opacity 0
+            on every page load, not just on a theme switch. */}
+        <AnimatePresence initial={false}>
           <motion.div
             key={theme.key}
             className="absolute inset-0"
