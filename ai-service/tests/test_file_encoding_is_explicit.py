@@ -121,9 +121,21 @@ def _offenders_in(source: str) -> list[tuple[int, str]]:
             elif not node.args:
                 # `p.open()` — Path.open defaults to text mode.
                 found.append((node.lineno, ".open(...)"))
-            # Otherwise a positional arg with no mode-shaped string: a path
-            # being handed to something like Image.open. Left alone, so this
-            # guard stays silent on non-filesystem `.open` calls.
+            # KNOWN BLIND SPOT: a positional arg that is not a mode-shaped
+            # literal is left alone. Usually it really is a path handed to a
+            # non-filesystem `.open` (`Image.open(photo)`, `zf.open(name)`),
+            # but it also covers `p.open(mode_var)` / `p.open("r" if x
+            # else "rb")` — a genuine text-mode Path.open this guard then
+            # misses. Builtin `open()` above has no such gap, because its
+            # mode is unambiguously arg 1, so it can flag an unknown mode.
+            #
+            # Deliberately not closed: telling the two apart needs the
+            # receiver's type, which the AST does not carry, and guessing
+            # from the receiver's *name* would make `Image.open(path_var)`
+            # a false positive. A false positive breaks the build for
+            # everyone; this false negative only narrows the guard, and the
+            # forms that actually caused #451 (bare `read_text()`,
+            # `open(p)`, literal modes) are all still covered.
 
     return found
 
@@ -143,3 +155,60 @@ def test_no_text_file_io_without_an_explicit_encoding() -> None:
         "locale encoding, so they pass on Linux CI and raise "
         "UnicodeDecodeError on Windows:\n  " + "\n  ".join(offenders)
     )
+
+
+def test_matcher_flags_the_forms_that_caused_issue_451() -> None:
+    """The shapes the guard must never miss."""
+    for source in (
+        "p.read_text()",
+        "p.write_text(s)",
+        "open(f)",
+        'open(f, "w")',
+        "p.open()",
+        'p.open("r")',
+        'p.open(mode="w")',
+        'gzip.open(path, "rt")',
+        # `encoding=None` IS the locale default, so it must not count as
+        # "an encoding was given" — the bug wearing the fix's clothes.
+        "open(p, encoding=None)",
+        # A mode the matcher cannot read is assumed text for builtin open,
+        # whose mode position is unambiguous.
+        "open(p, mode_var)",
+    ):
+        assert _offenders_in(source), f"should have been flagged: {source}"
+
+
+def test_matcher_stays_silent_on_safe_and_non_filesystem_calls() -> None:
+    """False positives break the build for everyone, so these must not fire."""
+    for source in (
+        'p.read_text(encoding="utf-8")',
+        'p.write_text(s, encoding="utf-8")',
+        'open(f, encoding="utf-8")',
+        'open(f, "rb")',
+        'open(f, mode="wb")',
+        'p.open(encoding="utf-8")',
+        'p.open("rb")',
+        'gzip.open(path, "rb")',
+        # Not filesystem text reads: arg 0 is a path or a stream, not a mode.
+        'Image.open("photo.png")',
+        'Image.open(io.BytesIO(b""))',
+        "os.open(path, flags)",
+        'zf.open("manifest.json")',
+    ):
+        assert not _offenders_in(source), f"should have been left alone: {source}"
+
+
+def test_known_blind_spot_is_deliberate_not_accidental() -> None:
+    """`Path.open()` with a non-literal mode is missed — see the comment in
+    `_offenders_in`. Pinned so the gap is a recorded decision rather than a
+    surprise, and so closing it later is a visible change to this test.
+    """
+    for source in (
+        "p.open(mode_var)",
+        'p.open("r" if binary else "rb")',
+        'p.open(f"{m}")',
+    ):
+        assert not _offenders_in(source), (
+            f"blind spot changed for {source} — if this was closed on purpose, "
+            "update this test and the comment in _offenders_in"
+        )

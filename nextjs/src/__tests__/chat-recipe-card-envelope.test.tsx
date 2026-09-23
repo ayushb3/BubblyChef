@@ -26,8 +26,16 @@
  */
 
 import { act, renderHook } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useChat } from '@/hooks/useChat'
 import type { ChatResponse } from '@/types/chat'
+
+// useChat invalidates the ['bubbles'] query on proposal approval (#520) —
+// it needs a QueryClientProvider to render.
+function wrapper({ children }: { children: React.ReactNode }) {
+  const client = new QueryClient()
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+}
 
 const streamChatMessage = jest.fn()
 
@@ -95,7 +103,7 @@ function respondWith(response: ChatResponse) {
 
 describe('recipe_card onDone envelope (issue #513)', () => {
   it('does not throw and attaches the wrapped recipe proposal to the assistant message', () => {
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     act(() => {
       result.current.sendMessage('give me a pasta recipe')

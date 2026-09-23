@@ -117,6 +117,20 @@ jest.mock('@/lib/api/recipes', () => ({
 
 import CookModal from '@/components/recipes/CookModal'
 import type { CookProposal, IngredientMatch } from '@/types/recipes'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+// CookModal reads useQueryClient() (#520, to invalidate the bubbles balance), so
+// it needs a QueryClientProvider to render.
+function QueryWrapper({ children }: { children: React.ReactNode }) {
+  const [client] = React.useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  )
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+}
+
+function renderWithQuery(ui: React.ReactElement) {
+  return render(ui, { wrapper: QueryWrapper })
+}
 
 const readyMatch = (over: Partial<IngredientMatch> = {}): IngredientMatch =>
   ({
@@ -149,7 +163,7 @@ describe('CookModal — confirm vs. cancel (#440)', () => {
   })
 
   it('"Yes, I cooked this" ends the cook session for the recipe once the deduction confirms', async () => {
-    render(
+    renderWithQuery(
       <CookModal recipeId="r1" recipeTitle="Omelette" onClose={jest.fn()} onCooked={jest.fn()} />,
     )
 
@@ -166,7 +180,7 @@ describe('CookModal — confirm vs. cancel (#440)', () => {
 
   it('Cancel does not confirm the deduction and does not end the session', async () => {
     const onClose = jest.fn()
-    render(
+    renderWithQuery(
       <CookModal recipeId="r1" recipeTitle="Omelette" onClose={onClose} onCooked={jest.fn()} />,
     )
 

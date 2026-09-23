@@ -217,6 +217,7 @@ function PantryPageInner() {
 
   const handleItemsAdded = () => {
     queryClient.invalidateQueries({ queryKey: ['pantry'] })
+    queryClient.invalidateQueries({ queryKey: ['bubbles'] })
   }
 
   // Resolving deletes the pantry row and writes an append-only event, so the

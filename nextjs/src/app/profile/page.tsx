@@ -3,6 +3,7 @@ import SaveAccountBanner from '@/components/auth/SaveAccountBanner'
 import SignOutButton from '@/components/auth/SignOutButton'
 import DisplayNameField from '@/components/profile/DisplayNameField'
 import DietaryPreferences from '@/components/profile/DietaryPreferences'
+import TakeTourButton from '@/components/profile/TakeTourButton'
 import ThemePicker from '@/components/ui/ThemePicker'
 
 export default async function ProfilePage() {
@@ -83,6 +84,14 @@ export default async function ProfilePage() {
             Dietary Preferences
           </p>
           <DietaryPreferences profileId={profileId} initialSelected={initialDietaryPreferences} />
+        </section>
+
+        {/* Help — replay the first-run coach-mark tour (#390) */}
+        <section>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">
+            Help
+          </p>
+          <TakeTourButton />
         </section>
       </div>
     </div>

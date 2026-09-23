@@ -19,6 +19,7 @@ class Intent(StrEnum):
     RECIPE_BRAINSTORM = "recipe_brainstorm"
     RECIPE_GENERATION = "recipe_generation"  # User wants a recipe generated (not advice)
     COOKING_HELP = "cooking_help"  # Advice: how-to, storage, substitutions (not generation)
+    SAVED_RECIPE_LOOKUP = "saved_recipe_lookup"  # Find an already-saved recipe (not generation)
     GENERAL_CHAT = "general_chat"
 
 
@@ -37,6 +38,7 @@ class NextAction(StrEnum):
     REQUEST_CLARIFICATION = "request_clarification"  # Need user to clarify something
     REVIEW_PROPOSAL = "review_proposal"  # Show proposal for user review/edit
     PICK_RECIPE = "pick_recipe"  # Hint that user should pick a brainstorm option
+    CONFIRM_CHOICE = "confirm_choice"  # Ask user to confirm between two options (modify vs new)
 
 
 class WorkflowStatus(StrEnum):

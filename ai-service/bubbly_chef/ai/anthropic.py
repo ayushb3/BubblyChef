@@ -9,7 +9,7 @@ BUBBLY_USE_ANTHROPIC_PROXY=true.  Do NOT enable it in production.
 
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any, TypeVar
 
 import httpx
@@ -304,8 +304,13 @@ Return ONLY the JSON, no markdown formatting or extra text."""
         mime_type: str = "image/jpeg",
         response_schema: type[T] | None = None,
         temperature: float = 0.3,
+        time_remaining: Callable[[], float] | None = None,
     ) -> T | str:
-        """Generate a completion from an image + text prompt."""
+        """Generate a completion from an image + text prompt.
+
+        ``time_remaining`` is accepted for interface parity and not enforced:
+        this provider is a dev-only proxy, never used for production scans.
+        """
         import base64
 
         url = f"{self.base_url}/v1/messages"
