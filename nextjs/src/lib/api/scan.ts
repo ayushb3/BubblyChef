@@ -9,6 +9,33 @@ import type { ScanResult, ConfirmedItem } from '@/types/scan'
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024 // 4MB — stay under Vercel's 4.5MB limit
 
+// Gemini Vision OCR on a receipt photo is genuinely slow — multi-second
+// round trips are normal, not a sign anything is wrong. This needs to be
+// long enough that a real (if sluggish) scan is never cut off, while still
+// giving the UI a bounded worst case instead of hanging forever if the
+// provider wedges (issue #396 / #402). 45s is comfortably above observed
+// scan latency plus headroom for a cold provider connection.
+const SCAN_TIMEOUT_MS = 45_000
+
+/**
+ * Error thrown by `uploadReceipt`. `code` lets callers distinguish failure
+ * kinds (client-side timeout vs. a sanitized code from the AI service, see
+ * `nextjs/src/app/api/ai/scan/route.ts`) without string-matching on
+ * `message`, which is user-facing copy and not a stable identifier.
+ */
+export class ScanError extends Error {
+  code: string
+
+  constructor(message: string, code: string) {
+    super(message)
+    this.name = 'ScanError'
+    this.code = code
+  }
+}
+
+/** Stable code for a scan aborted client-side by `SCAN_TIMEOUT_MS`. */
+export const SCAN_CLIENT_TIMEOUT_CODE = 'client_timeout'
+
 /**
  * Resize image to stay under the upload limit.
  * Scales down progressively until the file is small enough.
@@ -51,7 +78,7 @@ async function compressImage(file: File): Promise<File> {
  */
 export async function uploadReceipt(
   file: File,
-  options?: { preprocess?: boolean; preprocess_mode?: string },
+  options?: { preprocess?: boolean; preprocess_mode?: string; signal?: AbortSignal },
 ): Promise<ScanResult> {
   const formData = new FormData()
   formData.append('file', await compressImage(file))
@@ -62,17 +89,43 @@ export async function uploadReceipt(
     formData.append('preprocess_mode', options.preprocess_mode)
   }
 
-  const res = await fetch('/api/ai/scan', {
-    method: 'POST',
-    body: formData,
-  })
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS)
+  // Lets a caller (ScanTab, on unmount/abandonment — issue #439) tear down
+  // the request early too, not just the SCAN_TIMEOUT_MS deadline.
+  const onExternalAbort = () => controller.abort()
+  options?.signal?.addEventListener('abort', onExternalAbort)
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Scan failed' }))
-    throw new Error(err.error ?? `Scan failed: ${res.status}`)
+  try {
+    const res = await fetch('/api/ai/scan', {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    })
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Scan failed' }))
+      const message: string = err.error ?? `Scan failed: ${res.status}`
+      const code: string | undefined = err.code
+      throw new ScanError(message, code ?? 'scan_failed')
+    }
+
+    return await res.json()
+  } catch (err) {
+    // Covers an abort firing at any point in the request — while `fetch`
+    // itself is still in flight, or while the response body is still being
+    // read by `res.json()` (issue #439: the previous code only wrapped the
+    // `fetch` call, so a slow body read that got aborted mid-parse leaked a
+    // raw `AbortError` instead of this friendly, code-bearing `ScanError`).
+    if (err instanceof ScanError) throw err
+    if ((err as DOMException)?.name === 'AbortError') {
+      throw new ScanError('Scan timed out', SCAN_CLIENT_TIMEOUT_CODE)
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+    options?.signal?.removeEventListener('abort', onExternalAbort)
   }
-
-  return res.json()
 }
 
 /**

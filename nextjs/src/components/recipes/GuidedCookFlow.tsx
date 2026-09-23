@@ -27,6 +27,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ingredientLabel } from '@/lib/recipe-helpers'
 import { useMotionConfig } from '@/lib/motion'
 import { streamChatMessage } from '@/lib/api/chat'
+import { saveCookProgress } from '@/lib/cook-session'
 import type { Recipe } from './RecipePage'
 
 // ---------------------------------------------------------------------------
@@ -488,13 +489,28 @@ export interface GuidedCookFlowProps {
    * done-state shows only a plain exit.
    */
   onFinish?: () => void
+  /**
+   * Step index to resume at on mount (issue #441) — the caller looks this up
+   * from `getActiveCookSession(recipe.id)` before rendering. Defaults to the
+   * prep screen for a fresh session. Only consulted on first mount.
+   */
+  initialStep?: number
 }
 
-export default function GuidedCookFlow({ recipe, onExit, onFinish }: GuidedCookFlowProps) {
+export default function GuidedCookFlow({ recipe, onExit, onFinish, initialStep }: GuidedCookFlowProps) {
   const { springs } = useMotionConfig()
   const steps = buildSteps(recipe)
-  const [idx, setIdx] = useState<number>(PREP)
+  const [idx, setIdx] = useState<number>(initialStep ?? PREP)
   const [chatOpen, setChatOpen] = useState(false)
+
+  // #441 — persist the step position on every change so a full page reload
+  // (refresh, restored tab, a backgrounded mobile tab getting reclaimed) can
+  // rehydrate at the same step instead of silently discarding progress.
+  // `saveCookProgress` itself no-ops once the session is recorded as ended,
+  // so this can't resurrect a confirmed cook (#440).
+  useEffect(() => {
+    saveCookProgress(recipe.id, idx)
+  }, [recipe.id, idx])
 
   const isPrep = idx === PREP
   const isDone = steps.length > 0 && idx >= steps.length

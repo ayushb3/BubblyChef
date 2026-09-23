@@ -130,11 +130,16 @@ it('a failed confirm shows an error and stays on the review step (no redirect)',
 })
 
 it('a failed upload shows an error and returns to the upload state', async () => {
+  // #396: this used to assert the raw upstream message was rendered verbatim,
+  // which is the leak that issue describes. The route now maps failures to
+  // user-facing copy, so the assertion is inverted: friendly text shown, the
+  // upstream string absent. Returning to the upload state is unchanged.
   mockUploadReceipt.mockRejectedValue(new Error('OCR service unavailable'))
   renderPage()
 
   selectFile()
 
-  await waitFor(() => expect(screen.getByText('OCR service unavailable')).toBeInTheDocument())
+  await waitFor(() => expect(screen.getByText(/add items manually/i)).toBeInTheDocument())
+  expect(screen.queryByText('OCR service unavailable')).not.toBeInTheDocument()
   expect(screen.getByText(/Drop your receipt here/)).toBeInTheDocument()
 })
