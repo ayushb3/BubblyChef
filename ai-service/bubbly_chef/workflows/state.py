@@ -135,6 +135,15 @@ class WorkflowState(TypedDict, total=False):
     ingredient_availability: list[dict[str, Any]]
 
     # ==========================================================================
+    # Saved-recipe lookup
+    # ==========================================================================
+    # Raw match rows from `repo.search_saved_recipes` (source-of-truth dicts,
+    # not RecipeCard) — surfaced verbatim to the envelope's
+    # metadata["saved_recipe_matches"] and read by update_session_node to pin
+    # a single unambiguous match.
+    saved_recipe_matches: list[dict[str, Any]]
+
+    # ==========================================================================
     # Response Fields
     # ==========================================================================
     assistant_message: str

@@ -58,6 +58,11 @@ export function resolveChips(intent: string | undefined): ChipConfig[] {
         { label: 'Explore this idea', message: 'Tell me more about this recipe idea', tone: 'accent', emoji: '✨' },
         { label: 'Try a different direction', message: 'Give me some different recipe ideas', tone: 'primary', emoji: '🔀' },
       ]
+    case 'saved_recipe_lookup':
+      return [
+        { label: 'Show me another', message: 'Show me another one of my saved recipes', tone: 'accent', emoji: '🔄' },
+        { label: 'Generate a new one', message: 'Generate a new recipe instead', tone: 'primary', emoji: '✨' },
+      ]
     default:
       return [
         { label: 'Try another', message: 'Give me a different answer', tone: 'accent', emoji: '🔄' },

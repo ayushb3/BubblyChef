@@ -61,6 +61,7 @@ from bubbly_chef.workflows.chat.nodes import (
     general_chat_response,
     get_mode_prefix,
     normalize_cooking_recipe,
+    saved_recipe_lookup_response,
 )
 from bubbly_chef.workflows.pantry.nodes import (
     apply_expiry_heuristics,
@@ -381,6 +382,7 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "recipe_brainstorm": Intent.RECIPE_BRAINSTORM.value,
             "recipe_card": Intent.RECIPE_CARD.value,
             "cooking_help": Intent.COOKING_HELP.value,
+            "saved_recipe_lookup": Intent.SAVED_RECIPE_LOOKUP.value,
             "general_chat": Intent.GENERAL_CHAT.value,
         }
 
@@ -438,6 +440,8 @@ def route_by_intent(state: WorkflowState) -> str:
         return "build_handoff_recipe"
     elif intent == Intent.COOKING_HELP.value:
         return "cooking_help_response"
+    elif intent == Intent.SAVED_RECIPE_LOOKUP.value:
+        return "saved_recipe_lookup_response"
     elif intent == Intent.RECIPE_GENERATION.value:
         return "extract_recipe_constraints"
     elif intent == Intent.RECIPE_BRAINSTORM.value:
@@ -784,6 +788,18 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 session.active_mode = SessionMode.DEFAULT
                 session.pending_proposal = None
 
+        elif intent == Intent.SAVED_RECIPE_LOOKUP.value:
+            # Pin only on an unambiguous single match — the same
+            # pinned_recipe_id / last_recipe_title path RECIPE_CARD uses above,
+            # but here the id is the real DB row id from search_saved_recipes,
+            # not an ephemeral session-local card uuid. 0 or many matches leave
+            # the session untouched: there is nothing unambiguous to pin yet.
+            matches = state.get("saved_recipe_matches") or []
+            if len(matches) == 1:
+                match = matches[0]
+                session.pinned_recipe_id = str(match.get("id"))
+                session.metadata.last_recipe_title = match.get("title")
+
         elif intent == Intent.COOKING_HELP.value:
             # Belt-and-suspenders: if brainstorm_ideas exist in state, the brainstorm
             # pipeline ran. BUT only flip to RECIPE_EXPLORING when the session is NOT
@@ -870,6 +886,9 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
     # Cooking help path
     workflow.add_node("cooking_help_response", cooking_help_response)
 
+    # Saved-recipe lookup path
+    workflow.add_node("saved_recipe_lookup_response", saved_recipe_lookup_response)
+
     # Recipe grounding path (brainstorm)
     workflow.add_node("extract_recipe_constraints", extract_recipe_constraints)
     workflow.add_node("score_pantry", score_pantry_ingredients)
@@ -899,6 +918,7 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
             "build_handoff_product": "build_handoff_product",
             "build_handoff_recipe": "build_handoff_recipe",
             "cooking_help_response": "cooking_help_response",
+            "saved_recipe_lookup_response": "saved_recipe_lookup_response",
             "general_chat_response": "general_chat_response",
             "extract_recipe_constraints": "extract_recipe_constraints",
             "research_recipe": "research_recipe",
@@ -925,6 +945,9 @@ def build_chat_router_graph() -> StateGraph[WorkflowState]:
 
     # Cooking help → update_session → END
     workflow.add_edge("cooking_help_response", "update_session")
+
+    # Saved-recipe lookup → update_session → END
+    workflow.add_edge("saved_recipe_lookup_response", "update_session")
 
     # Brainstorm path → update_session → END
     workflow.add_edge("extract_recipe_constraints", "score_pantry")
@@ -1121,6 +1144,7 @@ async def run_chat_workflow(
         envelope.suggested_mode = final_state.get("suggested_mode")
         envelope.suggested_action = final_state.get("suggested_action")
         envelope.metadata["brainstorm_ideas"] = final_state.get("brainstorm_ideas", [])
+        envelope.metadata["saved_recipe_matches"] = final_state.get("saved_recipe_matches", [])
         return envelope
 
 
@@ -1250,6 +1274,8 @@ def _build_envelope_from_state(
         Intent.RECIPE_BRAINSTORM.value,
     ):
         envelope.metadata["brainstorm_ideas"] = final_state.get("brainstorm_ideas", [])
+    if intent == Intent.SAVED_RECIPE_LOOKUP.value:
+        envelope.metadata["saved_recipe_matches"] = final_state.get("saved_recipe_matches", [])
     return envelope
 
 

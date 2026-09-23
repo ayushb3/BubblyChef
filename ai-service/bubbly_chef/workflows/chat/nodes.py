@@ -289,6 +289,56 @@ async def general_chat_response(state: WorkflowState) -> WorkflowState:
         }
 
 
+async def saved_recipe_lookup_response(state: WorkflowState) -> WorkflowState:
+    """
+    Node: Look up a recipe the user already saved.
+    Routes here when intent == SAVED_RECIPE_LOOKUP.
+
+    Deterministic — no LLM call. Searches only this user's own saved recipes
+    (`SupabaseRepository.search_saved_recipes` is scoped by user_id) and
+    replies with a ranked text summary. Never generates a new recipe; a
+    0-match reply invites the user to ask for generation explicitly instead,
+    which a follow-up already routes to recipe_generation.
+    """
+    user_id = state.get("user_id") or ""
+    input_text = state.get("input_text", "")
+
+    matches: list[dict[str, Any]] = []
+    try:
+        repo = await get_repository()
+        matches = await repo.search_saved_recipes(user_id, input_text, limit=5)
+    except Exception as e:
+        logger.warning(f"saved_recipe_lookup_response: search failed: {e}")
+
+    if not matches:
+        message = (
+            "I couldn't find a saved recipe matching that."
+            " Want me to generate a new one instead?"
+        )
+    elif len(matches) == 1:
+        title = str(matches[0].get("title") or "that recipe")
+        message = f"Found it — your saved {title}!"
+    else:
+        lines = [f"{i + 1}. {m.get('title') or 'Untitled'}" for i, m in enumerate(matches)]
+        message = (
+            "I found a few saved recipes that might match:\n"
+            + "\n".join(lines)
+            + "\nWhich one did you mean?"
+        )
+
+    return {
+        **state,
+        "intent": Intent.SAVED_RECIPE_LOOKUP.value,
+        "assistant_message": message,
+        "next_action": NextAction.NONE.value,
+        "proposal": None,
+        "requires_review": False,
+        "confidence": 1.0,
+        "workflow_status": WorkflowStatus.COMPLETED.value,
+        "saved_recipe_matches": matches,
+    }
+
+
 async def cooking_help_response(state: WorkflowState) -> WorkflowState:
     """
     Node: Generate a cooking help response (techniques, meal ideas, substitutions).

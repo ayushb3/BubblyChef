@@ -28,6 +28,10 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     "- cooking_help: User asking HOW-TO questions about cooking — "
     "techniques, food storage, substitutions, temperatures, "
     "cooking times (NOT recipe requests)\n"
+    "- saved_recipe_lookup: User wants to find or reference a recipe they "
+    "ALREADY SAVED — 'show me my saved X', 'the pasta I made last week', "
+    "'make that butter chicken I saved' (this is NOT a request to generate "
+    "a new recipe)\n"
     "- general_chat: ONLY for messages truly unrelated to food, cooking, "
     "or the kitchen (e.g. greetings, app questions, small talk)\n\n"
     "IMPORTANT: Distinguish recipe_brainstorm from recipe_generation:\n"
@@ -39,6 +43,13 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     "- 'give me a pasta recipe' → recipe_generation\n"
     "- 'how do I cook pasta?' → cooking_help\n"
     "- 'how long does chicken last?' → cooking_help\n\n"
+    "IMPORTANT: Distinguish saved_recipe_lookup from recipe_generation "
+    "(a saved-recipe reference is NOT a request to make a new one):\n"
+    "- 'make that butter chicken I saved' → saved_recipe_lookup\n"
+    "- 'show me my saved butter chicken' → saved_recipe_lookup\n"
+    "- 'the pasta I made last week' → saved_recipe_lookup\n"
+    "- 'make me a butter chicken' → recipe_generation\n"
+    "- 'give me a pasta recipe' → recipe_generation\n\n"
     "Be accurate. Look for key indicators:\n"
     '- "bought", "got", "purchased", "used", "consumed", "threw away",'
     ' "add", "remove" -> pantry_update\n'
@@ -56,6 +67,8 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     " (in context of prior recipe) -> recipe_card\n"
     '- "how to cook", "how long does X last", "substitute for",'
     ' "food storage", "what temperature" -> cooking_help\n'
+    '- "show me my saved", "the one I saved", "I saved", "made last week"'
+    " (referencing an existing saved recipe) -> saved_recipe_lookup\n"
     "- Everything else -> general_chat"
 )
 

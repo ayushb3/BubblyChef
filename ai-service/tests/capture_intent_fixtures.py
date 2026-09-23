@@ -76,6 +76,10 @@ CASES: list[dict[str, Any]] = [
     {"input": "how long does chicken last in the fridge?", "expected": "cooking_help"},
     {"input": "substitute for butter in baking?", "expected": "cooking_help"},
     {"input": "can I freeze cooked pasta?", "expected": "cooking_help"},
+    # saved_recipe_lookup
+    {"input": "show me my saved butter chicken", "expected": "saved_recipe_lookup"},
+    {"input": "make that pasta I saved last week", "expected": "saved_recipe_lookup"},
+    {"input": "the chicken curry I made last week", "expected": "saved_recipe_lookup"},
     # general_chat
     {"input": "hello, how are you?", "expected": "general_chat"},
     {"input": "what does this app do?", "expected": "general_chat"},
@@ -149,15 +153,21 @@ async def _capture_all() -> dict[str, Any]:
         reasoning = result.get("intent_reasoning", "")
         entities = result.get("detected_entities", [])
 
-        status = "✓" if got_intent == expected else f"✗ (expected {expected})"
+        status = "✓" if got_intent == expected else f"✗ (annotated {expected})"
         print(f"{got_intent}  [{confidence:.2f}]  {status}")
 
+        # "expected" here is the fixture's ground truth for the replay test
+        # (test_intent_classification.py) — it must be the intent this capture
+        # actually got, not CASES's `expected` annotation. CASES's `expected`
+        # is doc-only (see its comment) and can legitimately drift from live
+        # model output between captures; using it here would silently pin the
+        # fixture to a value the model didn't produce.
         fixtures[text] = {
             "intent": got_intent,
             "confidence": confidence,
             "reasoning": reasoning,
             "entities": entities,
-            "expected": expected,
+            "expected": got_intent,
         }
 
     return fixtures
