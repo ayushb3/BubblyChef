@@ -298,7 +298,7 @@ the agents it calls:
 | Stage | Who | Way out |
 |---|---|---|
 | Preflight — step 0, environment | Sonnet probes; **the script decides** | Stops before anything else if `gh` is missing, or if the identity the bot config dir resolves to isn't `bubblychef-bot`. Writing as anyone else would skip code-owner review on protected paths, so the run never starts (issue #474) |
-| Preflight — step 1, readiness | Sonnet gathers facts; **the script decides** | Stops if `AGENTS_ENABLED` isn't `true` or couldn't be read at all, 6 loop PRs were opened in the last 24 hours (raised from 3 on 2026-09-19), the issue isn't open and `ready-for-agent`, or a PR is already on it |
+| Preflight — step 1, readiness | Sonnet gathers facts; **the script decides** | Stops if `AGENTS_ENABLED` isn't `true` or couldn't be read at all, 15 loop PRs were opened in the last 24 hours (raised from 3 to 6 on 2026-09-19, to 15 on 2026-09-23 for ship mode), the issue isn't open and `ready-for-agent`, or a PR is already on it |
 | Setup | Sonnet, low effort | A fresh branch from `main` **in the session's own checkout** (never a separate worktree; see below). Refuses to start on uncommitted work |
 | Plan | the dev role for the domain | Lists genuine ambiguities, each with its own take |
 | Decide | **Opus, high effort** | Settles each ambiguity; escalates to Ayush (`needs-decision`) only for protected paths or product behaviour beyond the issue |
