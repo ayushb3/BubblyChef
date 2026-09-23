@@ -130,6 +130,89 @@ class TestAggregatedKindAcrossProviders:
         assert exc_info.value.kind == "network"
 
 
+class TestNoIsAvailablePreCheck:
+    """Regression coverage for the attempt-2 fix (#514): complete(),
+    vision_complete(), complete_with_tools() and stream_complete() must call
+    the provider directly and surface its classified failure kind, rather
+    than gating the call on a cheap ``is_available()`` probe first.
+
+    Attempt 1 left the pre-check in place; it made every manager-level test
+    pass because those tests stub ``is_available`` to return True. Here
+    ``is_available`` returns False on purpose — if any cascade method put the
+    pre-check back, these would either skip the provider entirely (no call
+    to raise a classified error) or otherwise fail to surface the kind the
+    real call would have classified, which is exactly what shipped broken to
+    production the first time.
+    """
+
+    @pytest.mark.asyncio
+    async def test_complete_ignores_false_is_available_and_surfaces_kind(self) -> None:
+        provider = _provider()
+        provider.is_available = AsyncMock(return_value=False)
+        provider.complete = AsyncMock(
+            side_effect=ProviderUnavailableError("auth failed", kind="auth")
+        )
+        manager = AIManager(providers=[provider])
+
+        with pytest.raises(NoProviderAvailableError) as exc_info:
+            await manager.complete(prompt="hello")
+
+        provider.complete.assert_awaited_once()
+        assert exc_info.value.kind == "auth"
+
+    @pytest.mark.asyncio
+    async def test_vision_complete_ignores_false_is_available_and_surfaces_kind(self) -> None:
+        provider = _provider()
+        provider.is_available = AsyncMock(return_value=False)
+        provider.supports_vision = True
+        provider.vision_complete = AsyncMock(
+            side_effect=ProviderUnavailableError("model not found", kind="model_not_found")
+        )
+        manager = AIManager(providers=[provider])
+
+        with pytest.raises(NoProviderAvailableError) as exc_info:
+            await manager.vision_complete(prompt="extract", image_bytes=b"fake")
+
+        provider.vision_complete.assert_awaited_once()
+        assert exc_info.value.kind == "model_not_found"
+
+    @pytest.mark.asyncio
+    async def test_complete_with_tools_ignores_false_is_available_and_surfaces_kind(
+        self,
+    ) -> None:
+        provider = _provider()
+        provider.is_available = AsyncMock(return_value=False)
+        provider.supports_tool_calling = True
+        provider.complete_with_tools = AsyncMock(
+            side_effect=ProviderUnavailableError("bad request", kind="bad_request")
+        )
+        manager = AIManager(providers=[provider])
+
+        with pytest.raises(NoProviderAvailableError) as exc_info:
+            await manager.complete_with_tools(messages=[{"role": "user", "content": "hi"}], tools=[])
+
+        provider.complete_with_tools.assert_awaited_once()
+        assert exc_info.value.kind == "bad_request"
+
+    @pytest.mark.asyncio
+    async def test_stream_complete_ignores_false_is_available_and_surfaces_kind(self) -> None:
+        provider = _provider()
+        provider.is_available = AsyncMock(return_value=False)
+
+        async def _raise_overloaded(*args: object, **kwargs: object) -> AsyncMock:
+            raise ProviderUnavailableError("overloaded", kind="overloaded")
+            yield  # pragma: no cover - makes this an async generator
+
+        provider.stream_complete = _raise_overloaded
+        manager = AIManager(providers=[provider])
+
+        with pytest.raises(NoProviderAvailableError) as exc_info:
+            async for _ in manager.stream_complete(prompt="hello"):
+                pass
+
+        assert exc_info.value.kind == "overloaded"
+
+
 class TestNoProviderAvailableErrorConfigured:
     @pytest.mark.asyncio
     async def test_configured_is_false_when_no_providers_registered(self) -> None:

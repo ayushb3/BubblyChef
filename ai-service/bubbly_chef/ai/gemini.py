@@ -7,6 +7,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 from collections.abc import AsyncIterator, Callable
 from typing import Any, TypeVar
 
@@ -26,19 +27,44 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
+# A real Gemini 429 carries `"status": "RESOURCE_EXHAUSTED"` and the message
+# "You exceeded your current quota, please check your plan and billing
+# details" for *both* a brief per-minute throttle and an actual daily/spend
+# cap — those words alone can't tell the two apart, and a per-minute throttle
+# is the common free-tier case. The one field that does distinguish them is
+# the QuotaFailure detail's `quotaId`, e.g.
+# `GenerateRequestsPerMinutePerProjectPerModel-FreeTier` vs
+# `GenerateRequestsPerDayPerProjectPerModel-FreeTier`. Match it directly
+# instead of keying off words that appear in both cases.
+_QUOTA_ID_RE = re.compile(r'"quotaId"\s*:\s*"([^"]+)"', re.IGNORECASE)
+
 
 def _classify_http_error(status_code: int, body: str) -> ProviderFailureKind:
     """Classify a Gemini HTTP error response into a `ProviderFailureKind`.
 
     Args:
-        status_code: The HTTP status code Gemini returned.
+        status_code: The HTTP status code Gemini returned. Callers must pass
+            the *full*, untruncated response body — the `quotaId` detail this
+            relies on can sit past any prefix used for logging/display.
         body: The raw response body (used to tell a quota/billing 429 apart
-            from a plain rate-limit 429).
+            from a plain per-minute rate-limit 429).
     """
-    body_lower = body.lower()
     if status_code == 429:
-        if any(term in body_lower for term in ("quota", "billing", "resource_exhausted")):
-            return "quota_exhausted"
+        quota_match = _QUOTA_ID_RE.search(body)
+        if quota_match:
+            quota_id = quota_match.group(1).lower()
+            if "day" in quota_id:
+                return "quota_exhausted"
+            if "minute" in quota_id or "second" in quota_id:
+                return "rate_limited"
+        # No quotaId detail to key off. Gemini's per-minute throttle and its
+        # daily/spend-cap 429 share the same RESOURCE_EXHAUSTED status and
+        # the same "exceeded your current quota ... billing details"
+        # message, so "quota"/"billing"/"resource_exhausted" in the body
+        # can't distinguish them — treating any of those words as decisive
+        # is exactly what made every real 429 classify as quota_exhausted
+        # before this fix. Default to the more common, more benign case
+        # (a brief throttle) rather than the alarming one.
         return "rate_limited"
     if status_code in (401, 403):
         return "auth"
@@ -162,9 +188,13 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            error_body = e.response.text[:500] if hasattr(e.response, "text") else str(e)
+            full_body = e.response.text if hasattr(e.response, "text") else str(e)
+            error_body = full_body[:500]
             status = e.response.status_code
-            kind = _classify_http_error(status, error_body)
+            # Classify off the full, untruncated body (issue #514): the
+            # QuotaFailure `quotaId` detail this relies on can sit past the
+            # 500-char prefix used for the display message below.
+            kind = _classify_http_error(status, full_body)
             if status == 429:
                 raise ProviderUnavailableError(
                     f"Gemini [{self.model}] rate limit 429: {error_body}",
@@ -304,9 +334,11 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            error_body = e.response.text[:500] if hasattr(e.response, "text") else str(e)
+            full_body = e.response.text if hasattr(e.response, "text") else str(e)
+            error_body = full_body[:500]
             status = e.response.status_code
-            kind = _classify_http_error(status, error_body)
+            # See `complete()` for why classification uses the full body.
+            kind = _classify_http_error(status, full_body)
             if status == 429:
                 raise ProviderUnavailableError(
                     f"Gemini [{self.model}] tool-calling rate limit 429: {error_body}",
@@ -433,7 +465,8 @@ Return ONLY the JSON, no markdown formatting or extra text."""
                 response.raise_for_status()
                 break
             except httpx.HTTPStatusError as e:
-                error_body = e.response.text[:500] if hasattr(e.response, "text") else str(e)
+                full_body = e.response.text if hasattr(e.response, "text") else str(e)
+                error_body = full_body[:500]
                 status = e.response.status_code
                 if (
                     status in _TRANSIENT_STATUS_CODES
@@ -446,7 +479,8 @@ Return ONLY the JSON, no markdown formatting or extra text."""
                     )
                     await asyncio.sleep(self.vision_retry_backoff)
                     continue
-                kind = _classify_http_error(status, error_body)
+                # See `complete()` for why classification uses the full body.
+                kind = _classify_http_error(status, full_body)
                 if status == 429:
                     raise ProviderUnavailableError(
                         f"Gemini [{self.model}] vision rate limit 429: {error_body}",
@@ -546,14 +580,16 @@ Return ONLY the JSON, no markdown formatting or extra text."""
                         continue
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
-                error_body = e.response.text[:500] if hasattr(e.response, "text") else str(e)
+                full_body = e.response.text if hasattr(e.response, "text") else str(e)
+                error_body = full_body[:500]
                 logger.warning(
                     f"Gemini [{self.model}] stream hit 429 rate limit, cascading: "
                     f"{error_body[:200]}"
                 )
+                # See `complete()` for why classification uses the full body.
                 raise ProviderUnavailableError(
                     f"Gemini stream rate limit exceeded: {error_body}",
-                    kind=_classify_http_error(429, error_body),
+                    kind=_classify_http_error(429, full_body),
                     status_code=429,
                 ) from e
             # Non-429 HTTP errors: fallback to non-streaming on same model
