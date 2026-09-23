@@ -18,8 +18,6 @@ const CATEGORIES = [
   'other',
 ]
 
-const LOCATIONS = ['fridge', 'freezer', 'pantry', 'counter']
-
 function confidenceChipTone(confidence: number): 'fresh' | 'expiring' | 'muted' {
   if (confidence >= 0.8) return 'fresh'
   if (confidence >= 0.5) return 'expiring'
@@ -202,38 +200,24 @@ export default function ScannedItemCard({
         </div>
       </div>
 
-      {/* Category + Location row */}
-      <div className="flex gap-2">
-        <div className="flex-1">
-          <label className="block text-xs text-[var(--color-muted)] mb-1">Category</label>
-          <select
-            aria-label="Category"
-            value={item.category}
-            onChange={(e) => update('category', e.target.value)}
-            className="w-full text-sm text-[var(--color-text)] bg-[var(--color-bg,#FFF0F5)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:border-[var(--color-primary)] transition-colors"
-          >
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c.replace('_', ' ')}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex-1">
-          <label className="block text-xs text-[var(--color-muted)] mb-1">Location</label>
-          <select
-            aria-label="Location"
-            value={item.location}
-            onChange={(e) => update('location', e.target.value)}
-            className="w-full text-sm text-[var(--color-text)] bg-[var(--color-bg,#FFF0F5)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:border-[var(--color-primary)] transition-colors"
-          >
-            {LOCATIONS.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* Category. The Location select that used to share this row is gone
+          (issue #397); `item.location` still rides along unchanged from the
+          AI service's parse so the server's expiry heuristic keeps its
+          storage modifier (freezer ×6), it just isn't user-editable. */}
+      <div>
+        <label className="block text-xs text-[var(--color-muted)] mb-1">Category</label>
+        <select
+          aria-label="Category"
+          value={item.category}
+          onChange={(e) => update('category', e.target.value)}
+          className="w-full text-sm text-[var(--color-text)] bg-[var(--color-bg,#FFF0F5)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:border-[var(--color-primary)] transition-colors"
+        >
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {c.replace('_', ' ')}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Raw face — toggles open beneath the fields */}

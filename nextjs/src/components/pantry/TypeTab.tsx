@@ -13,7 +13,6 @@ function newRow(): ManualRow {
     quantity: 1,
     unit: 'item',
     category: 'other',
-    storage_location: 'pantry',
     expiry_date: '',
     estimated_expiry: false,
   }
@@ -63,7 +62,9 @@ export default function TypeTab({ onItemsReady }: TypeTabProps) {
           quantity: r.quantity,
           unit: r.unit,
           category: r.category,
-          storage_location: r.storage_location,
+          // Only a catalog pick carries a location (issue #397); a freehand
+          // name omits it and the bulk route stores its own default.
+          ...(r.storage_location ? { storage_location: r.storage_location } : {}),
           expiry_date: r.expiry_date || null,
           source: 'manual' as const,
           // Only meaningful when a date is actually present.

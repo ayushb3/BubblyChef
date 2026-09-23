@@ -34,6 +34,17 @@ afterEach(() => {
   jest.restoreAllMocks()
 })
 
+// HeroHome now also fetches decorations via `useDecorations()` (#521), which
+// needs a QueryClient in context — same wrapper `renderPantry()` below uses.
+function renderHero() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <HeroHome displayName="ayush" />
+    </QueryClientProvider>,
+  )
+}
+
 describe('dashboard hero CTA (#138)', () => {
   const urgentItem = {
     id: 'p1',
@@ -57,7 +68,7 @@ describe('dashboard hero CTA (#138)', () => {
   })
 
   it('deep-links the urgent item into a seeded chat, name verbatim', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     const cta = await screen.findByRole('link', { name: /find a recipe/i })
     const params = hrefParams(cta)
@@ -93,7 +104,7 @@ describe('dashboard hero ignores already-expired items', () => {
   })
 
   it('does not describe an expired item as expiring today or tomorrow', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     await waitFor(() =>
       expect(screen.queryByText(/your pantry is empty/i)).not.toBeInTheDocument()
@@ -102,7 +113,7 @@ describe('dashboard hero ignores already-expired items', () => {
   })
 
   it('does not count an expired item toward the expiring total', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     await waitFor(() => expect(screen.getByText(/items? in pantry/i)).toBeInTheDocument())
     expect(screen.queryByText(/expiring/i)).not.toBeInTheDocument()
@@ -132,7 +143,7 @@ describe('dashboard tip card (#143)', () => {
   })
 
   it('carries the tip the user is actually looking at', async () => {
-    render(<HeroHome displayName="ayush" />)
+    renderHero()
 
     // The tip is corrected after hydration (#135's neutral-render convention),
     // so read the rendered copy rather than assuming a fixed index.
