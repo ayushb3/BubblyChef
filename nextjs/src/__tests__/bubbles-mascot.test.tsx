@@ -21,6 +21,12 @@ jest.mock('framer-motion', () => {
       const domProps = Object.fromEntries(
         Object.entries(rest).filter(([key]) => !MOTION_ONLY_PROPS.includes(key)),
       )
+      // Surface the `animate` keyframes actually handed to framer-motion as a
+      // DOM attribute so tests can assert on it directly, instead of only
+      // inferring motion from the presence/absence of testid wrapper elements.
+      if ('animate' in rest) {
+        domProps['data-motion-animate'] = JSON.stringify(rest.animate ?? {})
+      }
       return React.createElement(Tag, domProps, children)
     }
     MotionStub.displayName = `motion.${Tag}`
@@ -81,4 +87,19 @@ describe('BubblesMascot (#525)', () => {
     expect(screen.getByAltText('Bubbles worried')).toBeInTheDocument()
     expect(screen.getByTestId('bubbles-worried-badge')).toBeInTheDocument()
   })
+
+  it.each(['happy', 'surprised', 'thinking', 'worried', 'celebrate'] as const)(
+    'sends no motion keyframes for the %s state under prefers-reduced-motion (no infinite float)',
+    (state) => {
+      mockReducedMotion = true
+      render(<BubblesMascot state={state} />)
+      const img = screen.getByAltText(`Bubbles ${state}`)
+      const motionWrapper = img.closest('[data-motion-animate]')
+      expect(motionWrapper).not.toBeNull()
+      // Empty object == no keyframes handed to framer-motion == nothing to
+      // animate, i.e. the idle float (`y: [0, -6, 0]`, repeat: Infinity)
+      // does not leak through for any state when motion is disabled.
+      expect(motionWrapper?.getAttribute('data-motion-animate')).toBe('{}')
+    },
+  )
 })

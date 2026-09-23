@@ -58,14 +58,19 @@ export default function BubblesMascot({
     if (state === 'celebrate') setCelebrateKey((k) => k + 1)
   }
 
-  const floatAnimation = animate ? { y: [0, -6, 0] } : {}
-  const floatTransition = animate
+  // Gated on `motionEnabled` (not just `animate`) so `prefers-reduced-motion:
+  // reduce` also stops the idle float — otherwise every state that falls
+  // through to this branch (celebrate/worried/happy/surprised with reduced
+  // motion) would still bounce forever.
+  const floatAnimation = motionEnabled ? { y: [0, -6, 0] } : {}
+  const floatTransition = motionEnabled
     ? { duration: 3, repeat: Infinity, ease: 'easeInOut' as const }
     : {}
 
   // Wobble is new-ish motion layered on top of `thinking` — gated on reduced
   // motion (not just `animate`) so `prefers-reduced-motion: reduce` drops it
-  // and falls back to the plain float, same as the bounce/sparkle below.
+  // entirely (the float it would otherwise fall back to is itself gated off
+  // above), same as the bounce/sparkle below.
   const wobbleAnimation =
     motionEnabled && state === 'thinking' ? { rotate: [0, -3, 3, -2, 2, 0] } : {}
   const wobbleTransition =
