@@ -42,6 +42,10 @@ from bubbly_chef.models.session import (
     PendingProposalMemory,
     SessionMode,
 )
+from bubbly_chef.prompts.router import (
+    INTENT_CLASSIFICATION_SYSTEM_PROMPT,
+    INTENT_CLASSIFICATION_USER_PROMPT,
+)
 from bubbly_chef.repository.supabase_repo import SupabaseRepository, get_repository
 from bubbly_chef.services.recipe_url_ingestor import ingest_recipe_from_url
 from bubbly_chef.workflows.chat.nodes import (
@@ -99,71 +103,6 @@ _PENDING_PROPOSAL_HISTORY_LIMIT = 20
 def _extract_url(text: str) -> str | None:
     m = _URL_RE.search(text)
     return m.group(0) if m else None
-
-
-# =============================================================================
-# LLM Prompts
-# =============================================================================
-
-INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
-    "You are an intent classifier for a pantry/grocery management app.\n\n"
-    "Classify the user's message into ONE of these intents:\n"
-    "- pantry_update: User is telling you about groceries they bought, "
-    "consumed, or want to add/remove from their pantry\n"
-    "- receipt_ingest_request: User mentions scanning, photographing, "
-    "or uploading a receipt\n"
-    "- product_ingest_request: User mentions scanning a barcode, "
-    "photographing a product, or looking up a specific product\n"
-    "- recipe_ingest_request: User wants to SAVE, IMPORT, or STORE a "
-    "recipe from a URL or text (must have save/import intent)\n"
-    "- recipe_brainstorm: User asks open-ended 'what can I make?' style "
-    "questions — brainstorm ideas from pantry, 'recipe suggestions', "
-    "'what should I cook tonight?'\n"
-    "- recipe_generation: User wants a SPECIFIC recipe MADE for them — "
-    "meal ideas, dinner suggestions, 'give me a recipe for X', "
-    "'recipe for X', 'what's for dinner'\n"
-    "- recipe_card: User is selecting or refining a specific recipe from "
-    "a prior brainstorm — 'make me the pasta one', 'no cheese', 'less salt'\n"
-    "- cooking_help: User asking HOW-TO questions about cooking — "
-    "techniques, food storage, substitutions, temperatures, "
-    "cooking times (NOT recipe requests)\n"
-    "- general_chat: ONLY for messages truly unrelated to food, cooking, "
-    "or the kitchen (e.g. greetings, app questions, small talk)\n\n"
-    "IMPORTANT: Distinguish recipe_brainstorm from recipe_generation:\n"
-    "- 'what can I make with what I have?' → recipe_brainstorm\n"
-    "- 'give me a pasta recipe' → recipe_generation\n"
-    "- 'dinner ideas' → recipe_brainstorm\n"
-    "- 'recipe for chicken tikka masala' → recipe_generation\n\n"
-    "IMPORTANT: Distinguish recipe_generation from cooking_help:\n"
-    "- 'give me a pasta recipe' → recipe_generation\n"
-    "- 'how do I cook pasta?' → cooking_help\n"
-    "- 'how long does chicken last?' → cooking_help\n\n"
-    "Be accurate. Look for key indicators:\n"
-    '- "bought", "got", "purchased", "used", "consumed", "threw away",'
-    ' "add", "remove" -> pantry_update\n'
-    '- "scanned a receipt", "here\'s my receipt", "receipt photo",'
-    ' "uploaded receipt" -> receipt_ingest_request\n'
-    '- "scan barcode", "photo of this product", "look up this",'
-    ' "what\'s this product" -> product_ingest_request\n'
-    '- "save recipe", "import recipe", "add this recipe",'
-    " has URL -> recipe_ingest_request\n"
-    '- "what can I make", "recipe ideas", "what should I cook",'
-    ' "suggestions" -> recipe_brainstorm\n'
-    '- "give me a recipe", "recipe for", "meal ideas",'
-    ' "make me something", "suggest a meal" -> recipe_generation\n'
-    '- "no X", "less X", "without X", "make it more X"'
-    " (in context of prior recipe) -> recipe_card\n"
-    '- "how to cook", "how long does X last", "substitute for",'
-    ' "food storage", "what temperature" -> cooking_help\n'
-    "- Everything else -> general_chat"
-)
-
-INTENT_CLASSIFICATION_USER_PROMPT = """Classify this message:
-
-"{text}"
-
-Return the intent, confidence (0-1), brief reasoning, and any key entities you detected."""
-
 
 
 # =============================================================================
@@ -639,7 +578,7 @@ async def _resolve_cook_context(
             f"{user_id!r}; leaving session un-pinned"
         )
         return None
-    return dict(resolved)
+    return resolved
 
 
 async def update_session_node(state: WorkflowState) -> WorkflowState:
@@ -697,6 +636,14 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
             session.metadata.brainstorm_ideas = state.get("brainstorm_ideas", [])
             # Persist constraints so the follow-up turn (research_recipe) can inherit
             # them even though it bypasses extract_recipe_constraints (#144).
+            #
+            # This may persist a stored dietary preference that was combined in, or
+            # one that was set aside because this turn's message contradicted it
+            # (#394) — either way that's fine and doesn't stick: `dietary` here is
+            # only ever *inherited* as a starting point by `_merge_constraints` next
+            # turn, then `extract_recipe_constraints` re-runs the contradiction check
+            # against that NEXT turn's own message. A preference set aside this turn
+            # reasserts itself as soon as a later message stops contradicting it.
             constraints = state.get("recipe_constraints")
             if constraints:
                 session.metadata.recipe_constraints = RecipeConstraints.model_validate(
@@ -746,7 +693,10 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                         title=str(getattr(recipe_obj, "title", "") or "").strip(),
                         ingredients=flat_ingredients,
                     )
-                # Keep constraints alive across further refinement turns.
+                # Keep constraints alive across further refinement turns. See the
+                # #394 note at the RECIPE_BRAINSTORM/RECIPE_GENERATION branch above —
+                # a combined-or-set-aside stored dietary preference here is
+                # re-evaluated fresh next turn, so it self-heals rather than sticking.
                 constraints = state.get("recipe_constraints")
                 if constraints:
                     session.metadata.recipe_constraints = RecipeConstraints.model_validate(
@@ -853,6 +803,8 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
             if state.get("brainstorm_ideas") and old_mode != SessionMode.COOKING.value:
                 session.active_mode = SessionMode.RECIPE_EXPLORING
                 session.metadata.brainstorm_ideas = state.get("brainstorm_ideas", [])
+                # See the #394 note at the RECIPE_BRAINSTORM/RECIPE_GENERATION
+                # branch above re: persisted dietary constraints self-healing.
                 constraints = state.get("recipe_constraints")
                 if constraints:
                     session.metadata.recipe_constraints = RecipeConstraints.model_validate(

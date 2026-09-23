@@ -112,6 +112,26 @@ Every project gets a `pm` role (the human) plus 2–5 domain-specific dev roles.
 `docs/agents/roles/pm.md` for the PM role file itself. BubblyChef's team:
 `pm`, `backend`, `frontend`, `ui-ux`, `qa-reviewer` — see `docs/agents/roles/`.
 
+**Model tiers are pinned in each agent's frontmatter** (`.claude/agents/*.md`), not
+left to the orchestrator's judgement: `pm` runs on Opus, the dev roles (`backend`,
+`frontend`, `ui-ux`, `qa-reviewer`) on Sonnet.
+
+**Isolation belongs to the session, not the role.** Subagent `isolation: worktree`
+branches from the *default branch*, not the parent session's HEAD — so a dev role
+delegated on a feature branch would not see the branch it is supposed to build on
+(including a failing test written moments earlier). Parallel work is therefore
+isolated one level up: one worktree per issue/session, with dev roles working inside
+it.
+
+**Utility agents** sit beside the roles. They own no files, have no role file, and
+are invoked as tools: `explorer` (Haiku, low effort, Read/Grep/Glob only) answers
+"where is X" and "how is Y wired" so no one spends an implementer on searching.
+`loop-runner` (Bash/Read/Grep/Glob only) runs the agent loop's plumbing stages;
+untyped agents load every tool the session has, about 40k tokens before doing
+anything, which was the largest cost in the first full loop run. They
+are leaves, so they don't count against the one-level cap below. See
+`docs/plans/2026-09-17-autonomous-agent-loop.md` for the tiering rationale.
+
 Role files are **committed to the repo, never gitignored.** A workflow that
 disappears on a fresh clone doesn't survive switching machines — that's the whole
 point of writing it down.
@@ -161,99 +181,153 @@ Concretely:
 
 ## 6. Autonomy gate
 
-Not everything needs to wait for a human. The line sits at **merge**, and only at
-merge:
+The line used to sit at **merge**, and only at merge: an agent could do everything
+up to opening a draft PR, and a human merged. That has moved. The gate now sits at
+**risk**, judged by the paths a PR touches.
 
-- **Everything up to and including opening a draft PR is autonomous.** Picking up a
-  `ready-for-agent` ticket, branching, implementing, running the quality gates,
-  running `/code-review`, recording its marker, pushing, and opening a draft PR with
-  a legible summary and demo — none of that waits for a human.
-- **Merging always waits for a human.** `main` auto-deploys to Vercel and Railway, so
-  a merge is a production deploy. The §7 gate enforces this mechanically: merge
-  requires a `thermo-nuclear-review` marker, and that skill is user-invocation-only.
-  An agent cannot produce it, by design.
+**Agents merge their own work** when the PR touches none of the protected paths and
+every required check passes. Most work is here: UI, copy, deterministic
+`ai-service/` code, tests, docs.
 
-This is still **never-block-on-the-human**, applied where it belongs: the expensive
-thing to undo is a bad deploy, not a draft PR nobody has read yet. Work never
-strands half-finished waiting for permission — it strands, if at all, in a reviewable
-state with the diff, the demo and the review findings already attached.
+**A human merges** when the PR touches a path in `.github/CODEOWNERS`: database
+migrations, the auth boundary, `ai-service/bubbly_chef/prompts/`, `.github/`,
+`.claude/` configuration and hooks, dependency manifests, and deploy config. GitHub
+enforces this through "Require review from Code Owners" — not convention, not a
+local hook an agent could satisfy by touching a file.
 
-> **Changed from the earlier policy.** This section previously allowed agents to
-> merge sub-PRs autonomously once CI was green. That is no longer true and the gate
-> now prevents it. The reason is honest rather than theoretical: CI green plus an
-> agent's own review is weaker evidence than it feels like, because the reviewing
-> agent shares the implementing agent's blind spots — their failures correlate. A
-> defect that typechecks, passes tests, and reads plausibly is exactly the kind this
-> repo has already shipped (a chat action posting to a route that did not exist,
-> reporting success, and losing every item the user added). One human at the
-> irreversible step is cheap; an unnoticed bad deploy is not.
+**Why this is not the same as trusting agents more.** §7's old text said CI green
+plus an agent's own review is weaker evidence than it feels like, because the
+reviewing agent shares the implementing agent's blind spots. That is still true, and
+nothing here contradicts it. What changed is the *evidence*, not the confidence:
 
-Because the human at merge may not read the diff, **the PR body carries the review**
-— see §4. That is what makes a merge-only gate safe rather than a rubber stamp.
+- A bug fix must ship a test that **failed on the base commit** — CI re-runs the
+  PR's own tests against base and demands a failure there (§7).
+- The suite may not shrink and tests may not be skipped (§7).
+- The change is **exercised in a running app**, with screenshots attached.
+- Review comes from a **fresh context** that never saw the implementation session.
+
+The chat action that posted to a route which did not exist — the failure that
+justified the human-only gate — is caught by the third of those, not by a second
+reader of the diff.
+
+**What makes this safe to get wrong:** a bad deploy on Vercel or Railway rolls back
+in minutes, and a post-merge smoke test opens the revert automatically. The things
+that *don't* roll back — schema, auth, the gates themselves — are exactly the
+CODEOWNERS list. The tiering is not about how likely a mistake is; it is about
+whether the mistake is undoable.
+
+**Still irreversible, still human, regardless of path:** force-push to a shared
+branch, deleting data, sending external messages, rotating credentials.
+
+Because the human at merge may not read the diff — and on an auto-merged PR, will
+not read it at all — **the PR body carries the review** (§4). That is what makes
+this a gate rather than a rubber stamp.
 
 **Guard the context window:** agents post *summaries* to the issue/PR, not full
 transcripts or diffs. Detail lives in linked artifacts (a demo doc, a decisions log,
 screenshots under `docs/media/`) — link to it, don't paste it inline.
 
-**PR bodies stay reviewable at a glance.** The human reviews feature-level PRs from
-whatever device is at hand, including a phone browser — a PR body padded with
-pasted logs, full diffs, or raw agent transcript pushes the actually-relevant
-Summary/What-lands/Demo below the fold. Concretely: no pasted stack traces (link the
-CI run instead), no pasted diffs (the PR already has one), no multi-paragraph
-narration of what was tried and discarded (that belongs in a linked decisions log,
-not the PR body). If `/interrogate` or `thermo-nuclear-review` surfaced
-findings, state the resolution in one line per finding ("fixed", "won't fix —
-reason"), not the full back-and-forth.
+**PR bodies stay reviewable at a glance.** The human reviews from whatever device is
+at hand, including a phone browser — a PR body padded with pasted logs, full diffs,
+or raw agent transcript pushes the actually-relevant Summary/What-lands/Demo below
+the fold. Concretely: no pasted stack traces (link the CI run instead), no pasted
+diffs (the PR already has one), no multi-paragraph narration of what was tried and
+discarded. If a review surfaced findings, state the resolution in one line per
+finding ("fixed", "won't fix — reason"), not the full back-and-forth.
 
 ## 7. Review, layered
 
-Three layers, increasing in cost and decreasing in frequency:
+Review is **enforced by GitHub**, not by a local hook. The previous design gated PR
+creation and merge on marker files in `.git/` written by the reviewing session. Those
+markers were honour-system: any agent could `touch` one. That was tolerable while a
+human merged everything, and is not tolerable now that agents merge. The hook
+(`.claude/hooks/pr-review-gate.sh`) is deleted.
 
-1. **`/code-review`** — on every PR. Cheap, always on, standard.
-2. **`/interrogate`** — a multi-model adversarial pass. Run before merging any
-   feature-level PR (not sub-PRs).
-3. **`thermo-nuclear-review`** — wired as a Claude Code `PreToolUse` hook, not a
-   GitHub Action. It fires once per PR, at the moment the PR is about to become
-   real, not on every commit or file edit inside it. This applies to both sub-PRs
-   and feature PRs.
+### Required checks (branch protection on `main`)
 
-   The hook is `.claude/hooks/pr-review-gate.sh`, registered in
-   `.claude/settings.json` — both committed, so it exists in a fresh clone rather
-   than on one laptop. It keys on the **action, not the transport**: a `Bash`
-   command running `gh pr create`/`gh pr merge`, *and* the `mcp__github__*` PR
-   create/merge tools, since a cloud session opens PRs through the MCP tools and
-   never touches the `gh` CLI. Matching only the CLI is how this layer came to be
-   documented-but-absent everywhere except one machine.
+| Check | What it proves |
+|---|---|
+| `Next.js (typecheck + test)` | Frontend compiles and its tests pass |
+| `AI service (lint + typecheck + test)` | Backend lints, typechecks against the mypy baseline, tests pass |
+| `Bug fix fails on base` | The PR's tests **fail on the base commit** — the fix is real, not a test written to match the code |
+| `Test suite did not shrink` | No test deleted, no test skipped |
+| `F2P exemption is legitimate` | A `no-f2p` label is only valid on a docs-only diff |
+| Vercel preview build | The frontend actually builds |
 
-   Mechanically it is a gate, not a notifier: it denies the call unless a marker
-   for the current HEAD exists, which the review records once it has run. Markers
-   are per-commit, so a later push re-arms the gate, and they live in `.git/` so
-   they are never committed. Bypass deliberately (`touch` the marker) only when
-   you have a reason you would defend in review.
+Scripts live in `scripts/agent-gates/`, wired by `.github/workflows/agent-gates.yml`.
+Both are CODEOWNERS-protected: an agent cannot weaken its own gates.
 
-   **Two tiers, because create and merge differ in risk and in who can satisfy
-   them.** `thermo-nuclear-review` is user-invocation-only — an agent cannot run
-   it. Gating PR *creation* on it therefore deadlocked every autonomous session at
-   the exact moment its work would have become visible, which is the worst possible
-   place to stop: the work is finished, and stranded.
+### Fail-to-pass, specifically
 
-   | Action | Satisfied by |
-   |---|---|
-   | PR **create** | `.git/code-review-<sha>` *or* `.git/thermo-nuclear-review-<sha>` |
-   | PR **merge** | `.git/thermo-nuclear-review-<sha>` only |
+CI checks out the base commit, copies **the PR's test files** onto it, and runs them.
+At least one must fail. A collection or import error counts — a test for code that
+does not exist yet cannot run, which is the evidence we want.
 
-   Opening a draft PR is not the dangerous act — it is how work becomes reviewable.
-   Merging is the irreversible one, and `main` auto-deploys to Vercel and Railway,
-   so merge keeps the strong gate. `/code-review` **is** agent-invocable, which is
-   what makes the create tier satisfiable without a human in the loop.
+It is required when the PR closes an issue labelled `bug`. Features must add tests
+but have nothing to fail against first. Docs and refactors use the `no-f2p` label,
+which the exemption check validates against the diff.
 
-   In practice this means **every merge needs a thermo-nuclear pass**. On a major
-   PR that is obviously worth it. On a small bug fix it is quick — a small diff is
-   cheap to validate, so the gate costs little; it is not a reason to skip it.
+This is the counter to the documented failure mode where agents satisfy a benchmark
+without solving the task: the check is re-run by CI, never self-reported.
 
-   Kept as a local hook rather than a GitHub Actions bot because the latter needs
-   API-key plumbing and per-repo billing setup — worth revisiting later, not bundled
-   into this template.
+### Human review layers
+
+1. **`/code-review`** — on every PR, agent-invocable. Two axes: repo standards and
+   the originating spec.
+2. **PR review by the Claude GitHub Action** — fires on PR open in a fresh context
+   that never saw the implementation session. This is the independent read.
+3. **`thermo-nuclear-review`** — user-invocation-only, still available, no longer a
+   mechanical gate. Run it on anything large, cross-cutting, or security-shaped
+   before approving a CODEOWNERS-protected PR.
+
+### Deploy-side checks
+
+`main` auto-deploys to Vercel and Railway, so the last line of defence is after the
+merge, not before it. Both services report their commit SHA from `/health`; the
+post-merge smoke test waits until both match the merged commit, exercises core flows
+against production, and on failure an agent opens a revert PR that may auto-merge —
+a pure revert being the one change that is always safe.
+
+### The agent loop
+
+One `ready-for-agent` issue goes end to end through a saved Workflow script,
+`.claude/workflows/agent-loop.js`, run with `{issue: <n>}`.
+Control flow lives in the script so it behaves the same every run; judgement lives in
+the agents it calls:
+
+| Stage | Who | Way out |
+|---|---|---|
+| Preflight — step 0, environment | Sonnet probes; **the script decides** | Stops before anything else if `gh` is missing, or if the identity the bot config dir resolves to isn't `bubblychef-bot`. Writing as anyone else would skip code-owner review on protected paths, so the run never starts (issue #474) |
+| Preflight — step 1, readiness | Sonnet gathers facts; **the script decides** | Stops if `AGENTS_ENABLED` isn't `true` or couldn't be read at all, 15 loop PRs were opened in the last 24 hours (raised from 3 to 6 on 2026-09-19, to 15 on 2026-09-23 for ship mode), the issue isn't open and `ready-for-agent`, or a PR is already on it |
+| Setup | Sonnet, low effort | A fresh branch from `main` **in the session's own checkout** (never a separate worktree; see below). Refuses to start on uncommitted work |
+| Plan | the dev role for the domain | Lists genuine ambiguities, each with its own take |
+| Decide | **Opus, high effort** | Settles each ambiguity; escalates to Ayush (`needs-decision`) only for protected paths or product behaviour beyond the issue |
+| Reproduce | dev role | Bugs only: a test that fails on the unfixed code, plus before-screenshots |
+| Implement + Verify | dev role | Quality gates, then the `verify` skill; **2 attempts total** |
+| Review | **Opus**, fresh context | Up to **3** fix rounds; if any fix happened, **verification re-runs on the final commit** before Ship, and a failed re-verification takes the blocked path |
+| Ship | Sonnet | PR as `bubblychef-bot`, protected paths flagged at the top |
+| Respond | Sonnet reads, dev role fixes | Waits for the **GitHub review** of the PR, and answers it: each finding fixed or disputed with a reason, a resolutions comment on the PR, and a push that triggers a fresh GitHub review. **Up to 2 rounds**; still unresolved → PR drafted and labelled `agent-blocked`. `needs a human` (e.g. a protected path) is left for Ayush |
+
+Any stage that can't finish takes the **blocked path**: a draft PR labelled
+`agent-blocked` with the work so far and where it stopped, and the issue moved back to
+`needs-triage` so it isn't picked up again until a human has looked. A stuck run is a
+normal outcome; a silent half-done branch is not.
+
+The loop never merges. In shadow mode (the default) it never requests auto-merge
+either; it marks PRs that *would* auto-merge and Ayush merges. Outside shadow mode it
+requests auto-merge only when **all** of these hold: the GitHub review says `looks
+mergeable`, and the PR touches no protected path. GitHub then still waits for every
+required check.
+
+`claude-review.yml` re-reviews new pushes **only on PRs labelled `agent-loop`**, which
+is what gives Respond a fresh review after each fix. Human PRs are reviewed once, on open. The script itself is
+CODEOWNERS-protected: an agent that could edit it could raise its own limits.
+
+**It runs in the calling session's own checkout,** switching it to a new branch and back at the end. The host only lets a session, and every agent it launches, write inside that session's own worktree, so a loop that created a separate worktree could read it but never write to it (the first pilot run blocked on exactly this). Running several issues at once therefore means several sessions, each in its own worktree, which is what §5 already says.
+
+`dryRun: true` stops after Decide and deletes the issue branch: a cheap way to see how the
+loop reads an issue before letting it write anything.
+
 
 ## 8. House rules
 
@@ -286,30 +360,19 @@ for why this changed.
 | Layer | Skills | Status |
 |---|---|---|
 | Planning/tracking | `wayfinder`, `triage`, `to-spec`, `to-tickets`, `handoff` | ✅ vendored |
-| Build | `implement`, `tdd`, `codebase-design`, `domain-modeling`, `prototype` | ✅ vendored |
+| Build | `tdd`, `domain-modeling`, `prototype` | ✅ vendored |
+| Verify (project) | `verify` — run a production build on this worktree's ports and walk the flow, with screenshots | 🏠 project-local |
 | Build (project) | `implement-issue` | 🏠 project-local |
-| Review | `code-review` | ✅ vendored |
-| Investigation | `diagnosing-bugs`, `research`, `improve-codebase-architecture`, `resolving-merge-conflicts` | ✅ vendored |
-| Design interviews | `grill-with-docs`, `grill-me`, `grilling` | ✅ vendored |
+| Review | `code-review`, `thermo-nuclear-review` | ✅ vendored |
+| Investigation | `diagnosing-bugs`, `research`, `resolving-merge-conflicts` | ✅ vendored |
+| Design interviews | `grilling`, `grill-with-docs` | ✅ vendored |
+| Understanding (PM-facing) | `how`, `why` | ✅ vendored |
 | Setup | `setup-matt-pocock-skills` | ✅ vendored |
-| Review (extra layers) | `interrogate`, `thermo-nuclear-review` | ✅ vendored |
-| Understanding (PM-facing) | `how`, `why`, `blast-radius` | ✅ vendored |
-| Process hygiene | `show-me-your-work`, `figure-it-out` | ✅ vendored |
-| Self-tuning | `automate-me` | ✅ vendored |
+| Media | `prune-media` | 🏠 project-local |
 | House rules | see §8 | folded into prose, not skills |
 
-27 skills total — 19 from `mattpocock/skills`, 8 from `cursor/plugins`
-(`pstack/` and `thermos/`). `skills-lock.json` records the upstream commit per
-source plus a per-skill hash, so drift stays detectable against both.
-
-`implement-issue` (🏠) is authored in this repo, not vendored from upstream —
-it has no upstream source and is deliberately absent from `skills-lock.json`.
-It codifies the pickup loop this document already specifies (§2 queue → §4
-branch → §5 delegation → §6 autonomy gate) as one invocable skill; upstream
-`implement` is the generic spec/ticket builder it delegates the actual coding to.
-
-**Naming note:** the skill is `thermo-nuclear-review` upstream, not
-`thermo-nuclear-code-quality-review` as earlier drafts of this doc called it.
+**21 skills loaded.** `skills-lock.json` records the upstream commit per source plus
+a per-skill hash, so drift stays detectable against both.
 
 ### 9.1 Why vendoring, and what's still broken
 
@@ -332,6 +395,36 @@ nowhere in the repo, and the trigger it described — `Bash` running `gh pr crea
 would not have fired in a session that opens PRs through the GitHub MCP tools. It
 now exists as a committed script + `settings.json` entry covering both paths; see
 §7 layer 3.
+
+### 9.2 Archived skills
+
+Nine skills moved to `.claude/skills-archive/` on 2026-09-17 (step 1 of
+`docs/plans/2026-09-17-autonomous-agent-loop.md`). Claude Code does not load that
+directory, so they cost no context and cannot be invoked; moving a directory back
+into `.claude/skills/` restores it. Their `skills-lock.json` entries stay, so drift
+against upstream is still detectable if one is restored.
+
+| Archived | Why |
+|---|---|
+| `implement` | The agent loop replaces it; `implement-issue` is the pickup path |
+| `interrogate` | The plan drops multi-model review — independence comes from evidence (F2P against base, clickthrough) and a fresh-context reviewer |
+| `grill-me` | One-line alias for `grilling` |
+| `figure-it-out`, `show-me-your-work` | The loop is the standing playbook and the PR is the decision trail; archived together since the first invokes the second |
+| `blast-radius`, `codebase-design`, `improve-codebase-architecture` | Never used here; `how`/`why`/`diagnosing-bugs` cover the same ground |
+| `automate-me` | Authors a personal mode skill — a laptop-level concern, not a repo one |
+
+Known inert references: vendored upstream text in `diagnosing-bugs` still suggests
+handing off to `/improve-codebase-architecture`. The files are left unedited so they
+keep matching their lockfile hashes; the suggestion simply won't resolve.
+
+`implement-issue` (🏠) is authored in this repo, not vendored from upstream —
+it has no upstream source and is deliberately absent from `skills-lock.json`.
+It codifies the pickup loop this document already specifies (§2 queue → §4
+branch → §5 delegation → §6 autonomy gate) as one invocable skill; upstream
+`implement` is the generic spec/ticket builder it delegates the actual coding to.
+
+**Naming note:** the skill is `thermo-nuclear-review` upstream, not
+`thermo-nuclear-code-quality-review` as earlier drafts of this doc called it.
 
 ## 10. What's explicitly skipped
 

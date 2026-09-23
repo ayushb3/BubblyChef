@@ -138,6 +138,12 @@ function PantryPageInner() {
   })
 
   const allItems: PantryItem[] = data?.items ?? []
+  // The facet bar filters existing items; on a truly empty pantry there is
+  // nothing to filter and it renders as visibly broken chrome (#405). Gate
+  // on `allItems.length`, not the post-filter count — a search/facet
+  // combination that matches zero items must still show the bar so the user
+  // can change their filters.
+  const hasItems = !isLoading && allItems.length > 0
 
   const [search, setSearch] = useState('')
   const [locationFacet, setLocationFacet] = useState<string[]>([])
@@ -254,32 +260,34 @@ function PantryPageInner() {
       {/* Filter facets — location (compact icon), category, expiry status.
           Each is independently multi-select; see `itemMatchesFacets` for the
           OR-within/AND-across-facet combination semantics (#228). */}
-      <div className="px-6 mb-4 flex gap-2 overflow-x-auto">
-        <FacetDropdown
-          iconOnly
-          triggerEmoji="📍"
-          ariaLabel={`Filter by location${locationFacet.length > 0 ? `, ${locationFacet.length} selected` : ''}`}
-          options={LOCATION_OPTIONS}
-          selected={locationFacet}
-          onChange={setLocationFacet}
-        />
-        <FacetDropdown
-          triggerEmoji="🗂️"
-          triggerLabel="Category"
-          ariaLabel={`Filter by category${categoryFacet.length > 0 ? `, ${categoryFacet.length} selected` : ''}`}
-          options={CATEGORY_OPTIONS}
-          selected={categoryFacet}
-          onChange={setCategoryFacet}
-        />
-        <FacetDropdown
-          triggerEmoji="⏳"
-          triggerLabel="Expiry"
-          ariaLabel={`Filter by expiry status${expiryFacet.length > 0 ? `, ${expiryFacet.length} selected` : ''}`}
-          options={EXPIRY_OPTIONS}
-          selected={expiryFacet}
-          onChange={setExpiryFacet}
-        />
-      </div>
+      {hasItems && (
+        <div className="px-6 mb-4 flex gap-2 overflow-x-auto">
+          <FacetDropdown
+            iconOnly
+            triggerEmoji="📍"
+            ariaLabel={`Filter by location${locationFacet.length > 0 ? `, ${locationFacet.length} selected` : ''}`}
+            options={LOCATION_OPTIONS}
+            selected={locationFacet}
+            onChange={setLocationFacet}
+          />
+          <FacetDropdown
+            triggerEmoji="🗂️"
+            triggerLabel="Category"
+            ariaLabel={`Filter by category${categoryFacet.length > 0 ? `, ${categoryFacet.length} selected` : ''}`}
+            options={CATEGORY_OPTIONS}
+            selected={categoryFacet}
+            onChange={setCategoryFacet}
+          />
+          <FacetDropdown
+            triggerEmoji="⏳"
+            triggerLabel="Expiry"
+            ariaLabel={`Filter by expiry status${expiryFacet.length > 0 ? `, ${expiryFacet.length} selected` : ''}`}
+            options={EXPIRY_OPTIONS}
+            selected={expiryFacet}
+            onChange={setExpiryFacet}
+          />
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex flex-col items-center justify-center py-20 gap-3">

@@ -14,7 +14,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from bubbly_chef.api.auth import get_current_user_id
-from bubbly_chef.models.cook import CookConfirmRequest, CookProposal
+from bubbly_chef.models.cook import CookConfirmRequest, CookProposal, ExpiredMatchedItem
+from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.repository.supabase_repo import get_repository
 
 logger = logging.getLogger(__name__)
@@ -203,17 +204,14 @@ async def cook_recipe(
 
         repo = await get_repository()
 
-        # Fetch recipe (raw dict — get_recipe returns dict)
         recipe_data = await repo.get_recipe(user_id, request.recipe_id)
         if recipe_data is None:
             raise HTTPException(status_code=404, detail="Recipe not found")
 
         pantry_items = await repo.get_all_pantry_items(user_id)
 
-        # get_recipe returns a raw Supabase dict at runtime despite the RecipeCard type hint
-        recipe_dict: dict[str, Any] = recipe_data  # type: ignore[assignment]
-        ingredients: list[dict[str, Any]] = recipe_dict.get("ingredients", [])
-        title: str = recipe_dict.get("title", "")
+        ingredients: list[dict[str, Any]] = recipe_data.get("ingredients", [])
+        title: str = recipe_data.get("title", "")
 
         # Deterministic matching first; the model is only consulted for whatever
         # the synonym table cannot place, and a provider outage degrades those
@@ -225,6 +223,30 @@ async def cook_recipe(
             pantry_items=pantry_items,
             ai_manager=get_ai_manager(),
         )
+
+        # Post-hoc expiry correlation: identify which matched ingredients
+        # are backed by an expired pantry row.  We do this in the route
+        # rather than inside cook_matcher so the matcher stays untouched.
+        expired_by_id: dict[str, PantryItem] = {
+            str(item.id): item for item in pantry_items if item.is_expired
+        }
+        expired_items: list[ExpiredMatchedItem] = []
+        for match in proposal.matches:
+            if match.pantry_item_id is None:
+                continue
+            expired_row = expired_by_id.get(str(match.pantry_item_id))
+            if expired_row is None:
+                continue
+            days_expired = abs(expired_row.days_until_expiry or 0)
+            expired_items.append(
+                ExpiredMatchedItem(
+                    ingredient_name=match.ingredient_name,
+                    pantry_item_name=expired_row.name,
+                    days_expired=max(1, days_expired),
+                )
+            )
+        proposal = proposal.model_copy(update={"expired_items": expired_items})
+
         return proposal
 
     except HTTPException:

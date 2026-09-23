@@ -13,6 +13,7 @@ export interface TourStep {
   placement: 'above' | 'below'
 }
 
+// Bottom-nav steps follow the nav's left-to-right order (Pantry, Chat, Recipes).
 export const TOUR_STEPS: TourStep[] = [
   {
     id: 'hero',
@@ -23,25 +24,25 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'quick-actions',
     selector: '[data-tour="quick-actions"]',
-    copy: 'Quick actions: find a recipe, scan a receipt, or ask me anything.',
+    copy: 'Quick actions: see what to use soon, scan a receipt, or ask me anything.',
     placement: 'below',
   },
   {
     id: 'nav-pantry',
     selector: '[data-tour="nav-pantry"]',
-    copy: 'Your pantry lives here — and tap Scan inside it to add receipts fast.',
-    placement: 'above',
-  },
-  {
-    id: 'nav-recipes',
-    selector: '[data-tour="nav-recipes"]',
-    copy: 'Browse and save recipes here.',
+    copy: 'Your pantry lives here — tap + Add Item inside it to scan a receipt.',
     placement: 'above',
   },
   {
     id: 'nav-chat',
     selector: '[data-tour="nav-chat"]',
     copy: 'Ask me anything about cooking, anytime.',
+    placement: 'above',
+  },
+  {
+    id: 'nav-recipes',
+    selector: '[data-tour="nav-recipes"]',
+    copy: 'Browse and save recipes here.',
     placement: 'above',
   },
   {

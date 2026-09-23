@@ -17,6 +17,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from bubbly_chef.domain.normalizer import (
+    get_unit_dimension,
     is_package_unit,
     is_piece_unit,
     normalize_food_name,
@@ -26,6 +27,7 @@ from bubbly_chef.domain.normalizer import SIZE_ADJECTIVE_UNITS  # noqa: F401  re
 from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.models.cook import CompoundSuggestion, CookProposal, IngredientMatch
 from bubbly_chef.models.pantry import PantryItem
+from bubbly_chef.prompts.cook import _SUBSTITUTION_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -179,46 +181,6 @@ class _LLMMatchBatch(BaseModel):
 
     results: list[_LLMIngredientMatch] = Field(default_factory=list)
 
-
-_SUBSTITUTION_PROMPT = """You are helping a home cook decide whether anything in their \
-pantry can stand in for recipe ingredients they appear to be missing.
-
-Recipe ingredients with no pantry match:
-{unmatched}
-
-Everything currently in their pantry:
-{pantry}
-
-For each unmatched ingredient:
-
-1. PREFER a single pantry item when one genuinely works:
-   - Use match_type "exact" when it is the same ingredient under a different name \
-(scallion and green onion are the same; pecorino romano and parmesan are NOT).
-   - Use match_type "substitute" when a different ingredient would still work; note \
-briefly what changes — flavour, texture, sweetness.
-   - Set best_match to the pantry item name. Leave compound_components null.
-
-2. If NO single item works but 2-3 pantry items COMBINED can approximate the missing \
-ingredient, set match_type "none", best_match null, and populate compound_components \
-with the pantry item names AND compound_note with a short instruction (under 20 words).
-   Example: heavy cream is missing, pantry has butter, milk, and flour →
-     compound_components: ["butter", "milk", "flour"]
-     compound_note: "Melt butter, whisk in flour, stir in milk until thickened"
-   ONLY list items the user actually has. Do not invent ingredients.
-
-3. If nothing works, set match_type "none", best_match null, compound_components null.
-
-Do not suggest a swap that would change the dish into something else, and do not treat \
-derivatives as interchangeable: lemon juice cannot replace lemon zest, and vice versa. \
-Set confidence below {threshold} for anything you are unsure about.
-
-Always fill substitution_note, including when match_type is "none" — there, say what the \
-cook should do about it: whether the dish works without it, what it costs them, or what \
-they would need to buy. "No good stand-in; the sauce will be thinner" is more use than \
-silence.
-
-Keep substitution_note and compound_note under 20 words each. Return one result per \
-unmatched ingredient."""
 
 # Matches leading quantity+unit in a raw ingredient string, e.g.:
 #   "2 large eggs"       → qty=2,  unit=None,   rest="large eggs"
@@ -541,29 +503,93 @@ def match_ingredients(
             )
             continue
 
-        # --- Unit conflict: can't convert either side ---
+        # --- Unit conflict or soft fallback: can't convert either side ---
+        #
+        # Two distinct situations both land here after normalize_to_base_unit
+        # returns (None, None) or produces mismatched base units:
+        #
+        # 1. GENUINE DIMENSION MISMATCH — both sides have a known unit dimension
+        #    (g vs ml, g vs count, …) but those dimensions are different.
+        #    No conversion is possible even in principle; keep this as a hard
+        #    unit_conflict so the user knows something is structurally wrong.
+        #
+        # 2. UNRESOLVABLE UNIT — at least one side uses a unit not in the
+        #    recognised vocabulary (e.g. "handful" on the recipe side, or an
+        #    unregistered pantry label).  The ingredient IS matched to a pantry
+        #    row; we just can't express the quantity precisely.  Blocking the
+        #    whole flow on this is worse UX than surfacing a soft "imprecise"
+        #    line — but we must NOT invent a deduction.  `imprecise` is a
+        #    never-auto-deduct status everywhere in the stack (the frontend
+        #    summary shows an "left as it is" notice and skips the deduction),
+        #    so the line carries deduct_qty=None and claims nothing in the
+        #    consumption ledger.  A pre-filled deduct_qty here would (a) be
+        #    silently applied by confirm despite the "left as it is" copy, and
+        #    (b) be interpreted by deduct_pantry_item as a BASE-unit quantity
+        #    while it was expressed in the display unit — corrupting stock when
+        #    display != base (1 "dozen" != 1 egg, 1 "kg" != 1 g).
         if req_base_qty is None or pantry_base_qty is None or req_base_unit != pantry_base_unit:
-            conflict_info = {
-                "ingredient": raw_name,
-                "recipe_unit": ing_unit,
-                "pantry_unit": pantry_item.unit,
-            }
-            unit_conflicts.append(conflict_info)
-            matches.append(
-                IngredientMatch(
-                    ingredient_name=raw_name,
-                    ingredient_qty=ing_qty,
-                    ingredient_unit=ing_unit,
-                    pantry_item_id=pantry_item.id,
-                    pantry_item_name=pantry_item.name,
-                    pantry_qty_available=pantry_base_qty,
-                    deduct_qty=None,
-                    base_unit=pantry_base_unit or ing_unit,
-                    status="unit_conflict",
-                    match_type=match_type,
-                    substitution_note=note,
-                )
+            req_dim = get_unit_dimension(ing_unit)
+            pantry_dim = get_unit_dimension(pantry_item.unit)
+
+            genuine_conflict = (
+                req_dim is not None
+                and pantry_dim is not None
+                and req_dim != pantry_dim
             )
+
+            if genuine_conflict:
+                conflict_info = {
+                    "ingredient": raw_name,
+                    "recipe_unit": ing_unit,
+                    "pantry_unit": pantry_item.unit,
+                }
+                unit_conflicts.append(conflict_info)
+                matches.append(
+                    IngredientMatch(
+                        ingredient_name=raw_name,
+                        ingredient_qty=ing_qty,
+                        ingredient_unit=ing_unit,
+                        pantry_item_id=pantry_item.id,
+                        pantry_item_name=pantry_item.name,
+                        pantry_qty_available=pantry_base_qty,
+                        deduct_qty=None,
+                        base_unit=pantry_base_unit or ing_unit,
+                        status="unit_conflict",
+                        match_type=match_type,
+                        substitution_note=note,
+                    )
+                )
+            else:
+                # Soft fallback: the ingredient is matched but the quantity is
+                # not expressible in a shared unit.  Surface it as an editable,
+                # non-blocking "imprecise" line that deducts nothing on its own
+                # (deduct_qty=None) — the user has the item; we just can't say
+                # how much the recipe uses.  Claim nothing in the ledger so a
+                # later recipe line sees the full remaining stock (an imprecise
+                # line makes no reservation, matching the pieces-vs-package
+                # branch above).  base_unit reports the pantry row's base unit
+                # so if the user does fill in a deduction, confirm interprets it
+                # in the same unit deduct_pantry_item expects.
+                unclaimed = (
+                    None
+                    if pantry_base_qty is None
+                    else max(0.0, pantry_base_qty - already_claimed)
+                )
+                matches.append(
+                    IngredientMatch(
+                        ingredient_name=raw_name,
+                        ingredient_qty=ing_qty,
+                        ingredient_unit=ing_unit,
+                        pantry_item_id=pantry_item.id,
+                        pantry_item_name=pantry_item.name,
+                        pantry_qty_available=unclaimed,
+                        deduct_qty=None,
+                        base_unit=pantry_base_unit or pantry_item.unit,
+                        status="imprecise",
+                        match_type=match_type,
+                        substitution_note=note,
+                    )
+                )
             continue
 
         # --- Quantity comparison ---

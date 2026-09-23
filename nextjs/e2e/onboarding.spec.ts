@@ -47,10 +47,10 @@ freshTest.describe('onboarding / TC2: full step navigation', () => {
 
     const steps = [
       "Hi! I'm Bubbles, your kitchen assistant.",
-      'Quick actions: find a recipe, scan a receipt, or ask me anything.',
-      'Your pantry lives here — and tap Scan inside it to add receipts fast.',
-      'Browse and save recipes here.',
+      'Quick actions: see what to use soon, scan a receipt, or ask me anything.',
+      'Your pantry lives here — tap + Add Item inside it to scan a receipt.',
       'Ask me anything about cooking, anytime.',
+      'Browse and save recipes here.',
       'Your profile and settings — re-take this tour here whenever you like.',
     ]
 

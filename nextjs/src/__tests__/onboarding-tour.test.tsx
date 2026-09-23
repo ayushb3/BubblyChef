@@ -80,8 +80,8 @@ describe('TOUR_STEPS definitions', () => {
       'hero',
       'quick-actions',
       'nav-pantry',
-      'nav-recipes',
       'nav-chat',
+      'nav-recipes',
       'profile',
     ])
   })
@@ -89,7 +89,7 @@ describe('TOUR_STEPS definitions', () => {
   it('placement is above for bottom-nav steps, below for header/hero', () => {
     const above = TOUR_STEPS.filter((s) => s.placement === 'above').map((s) => s.id)
     const below = TOUR_STEPS.filter((s) => s.placement === 'below').map((s) => s.id)
-    expect(above).toEqual(['nav-pantry', 'nav-recipes', 'nav-chat'])
+    expect(above).toEqual(['nav-pantry', 'nav-chat', 'nav-recipes'])
     expect(below).toEqual(['hero', 'quick-actions', 'profile'])
   })
 })

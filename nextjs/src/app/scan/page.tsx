@@ -8,7 +8,9 @@ import { useQueryClient } from '@tanstack/react-query'
 import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import ReviewSurface from '@/components/scan/ReviewSurface'
-import { uploadReceipt } from '@/lib/api/scan'
+import { useFileDropzone } from '@/hooks/useFileDropzone'
+import { uploadReceipt, ScanError } from '@/lib/api/scan'
+import { scanErrorCopy } from '@/lib/scan-error-copy'
 import { bulkAddPantryItems } from '@/lib/api/pantry'
 import { scannedToBulkAddItem } from '@/lib/scan-helpers'
 import type { ScannedItem, ScanResult } from '@/types/scan'
@@ -39,6 +41,8 @@ export default function ScanPage() {
   const [skipped, setSkipped] = useState<ScannedItem[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
 
+  const { isDragActive, dropzoneHandlers } = useFileDropzone({ onFile: handleFileSelect })
+
   async function handleFileSelect(file: File) {
     setError(null)
     const objectUrl = URL.createObjectURL(file)
@@ -53,7 +57,10 @@ export default function ScanPage() {
       setWarnings(result.warnings ?? [])
       setState('review')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      // #396 — never render a raw error at the user. ScanTab had this fixed;
+      // this route builds its own state machine and was missed, so a network
+      // TypeError or a proxy 502 still leaked raw text here.
+      setError(scanErrorCopy(err instanceof ScanError ? err.code : undefined))
       setState('upload')
       // Retrying the same receipt is the obvious next move after a transient
       // failure, but `onChange` doesn't fire for an unchanged value — so
@@ -122,12 +129,19 @@ export default function ScanPage() {
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="w-full border-2 border-dashed border-[var(--color-primary)] rounded-3xl p-10 text-center bg-[var(--color-surface)] hover:bg-[var(--color-border)] transition-colors active:scale-95"
+                {...dropzoneHandlers}
+                className={`w-full border-2 border-dashed rounded-3xl p-10 text-center transition-colors active:scale-95 ${
+                  isDragActive
+                    ? 'border-[var(--color-primary)] bg-[var(--color-border)] scale-[1.02]'
+                    : 'border-[var(--color-primary)] bg-[var(--color-surface)] hover:bg-[var(--color-border)]'
+                }`}
               >
                 <div className="flex justify-center mb-3">
                   <BubblesMascot state="happy" size={72} />
                 </div>
-                <p className="font-semibold text-[var(--color-text)] mb-1">Drop your receipt here</p>
+                <p className="font-semibold text-[var(--color-text)] mb-1">
+                  {isDragActive ? 'Drop it here!' : 'Drop your receipt here'}
+                </p>
                 <p className="text-sm text-[var(--color-muted)]">or tap to upload</p>
               </button>
 

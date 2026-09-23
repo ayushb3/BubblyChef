@@ -11,6 +11,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from pydantic import ValidationError
 
 from bubbly_chef.models.cook import CookProposal, IngredientMatch
 from bubbly_chef.models.pantry import (
@@ -25,6 +26,9 @@ from bubbly_chef.models.proposals import (
     AnyProposalAdapter,
     HandoffKind,
     HandoffProposal,
+    RecipeAmendmentDetection,
+    RecipeAmendmentProposal,
+    RecipeIngredientAmendment,
 )
 from bubbly_chef.models.recipe import Ingredient, RecipeCard, RecipeCardProposal
 
@@ -87,6 +91,20 @@ def _cook_proposal() -> CookProposal:
         recipe_id=uuid.uuid4(),
         recipe_title="Scrambled Eggs",
         matches=[match],
+    )
+
+
+def _recipe_amendment_proposal() -> RecipeAmendmentProposal:
+    return RecipeAmendmentProposal(
+        amended_ingredients=[
+            RecipeIngredientAmendment(name="pasta", quantity=200.0, unit="g"),
+            RecipeIngredientAmendment(
+                name="milk", quantity=200.0, unit="ml", notes="substituted for heavy cream"
+            ),
+        ],
+        change_summary="Replaced heavy cream with milk.",
+        recipe_id="recipe-487",
+        recipe_title="Creamy Pasta",
     )
 
 
@@ -160,6 +178,67 @@ class TestCookProposalRoundTrip:
         assert reloaded.matches[0].ingredient_name == "eggs"
 
 
+class TestRecipeAmendmentProposalRoundTrip:
+    """Issue #487: the chat amendment is a real union member, not a bare dict."""
+
+    def test_proposal_type_tag(self) -> None:
+        p = _recipe_amendment_proposal()
+        assert p.proposal_type == "recipe_amendment"
+
+    def test_round_trip(self) -> None:
+        original = _recipe_amendment_proposal()
+        dumped = original.model_dump(mode="json")
+        reloaded = AnyProposalAdapter.validate_python(dumped)
+        assert isinstance(reloaded, RecipeAmendmentProposal)
+        assert reloaded == original
+        assert reloaded.recipe_id == "recipe-487"
+        assert reloaded.change_summary == "Replaced heavy cream with milk."
+        assert [i.name for i in reloaded.amended_ingredients] == ["pasta", "milk"]
+
+    def test_wire_shape_keeps_detection_fields(self) -> None:
+        """Frontend duck-types on these keys; proposal_type is added, nothing renamed."""
+        dumped = _recipe_amendment_proposal().model_dump(mode="json")
+        assert dumped["is_amendment"] is True
+        assert dumped["proposal_type"] == "recipe_amendment"
+        assert set(dumped) >= {"is_amendment", "amended_ingredients", "change_summary"}
+
+    def test_from_detection_converts_amendment(self) -> None:
+        detection = RecipeAmendmentDetection(
+            is_amendment=True,
+            amended_ingredients=[RecipeIngredientAmendment(name="milk")],
+            change_summary="Swap cream for milk.",
+        )
+        proposal = RecipeAmendmentProposal.from_detection(
+            detection, recipe_id="r1", recipe_title="Pasta"
+        )
+        assert isinstance(proposal, RecipeAmendmentProposal)
+        assert proposal.recipe_id == "r1"
+        assert proposal.recipe_title == "Pasta"
+        assert proposal.change_summary == "Swap cream for milk."
+
+    @pytest.mark.parametrize(
+        "detection",
+        [
+            RecipeAmendmentDetection(is_amendment=False),
+            RecipeAmendmentDetection(is_amendment=True, amended_ingredients=None),
+            RecipeAmendmentDetection(is_amendment=True, amended_ingredients=[]),
+        ],
+        ids=["not-amendment", "no-ingredients", "empty-ingredients"],
+    )
+    def test_from_detection_returns_none_when_nothing_to_propose(
+        self, detection: RecipeAmendmentDetection
+    ) -> None:
+        assert RecipeAmendmentProposal.from_detection(detection) is None
+
+    def test_detection_dict_is_not_a_union_member(self) -> None:
+        """The pre-#487 shape (no discriminator) is rejected, not silently accepted."""
+        detection = RecipeAmendmentDetection(
+            is_amendment=True, amended_ingredients=[RecipeIngredientAmendment(name="milk")]
+        )
+        with pytest.raises(ValidationError):
+            AnyProposalAdapter.validate_python(detection.model_dump(mode="json"))
+
+
 class TestDiscriminatorIntegrity:
     """Ensure the discriminator field itself does not break existing constructors."""
 
@@ -184,3 +263,7 @@ class TestDiscriminatorIntegrity:
     def test_cook_proposal_no_explicit_tag(self) -> None:
         p = CookProposal(recipe_id=uuid.uuid4(), recipe_title="Test", matches=[])
         assert p.proposal_type == "cook"
+
+    def test_recipe_amendment_proposal_no_explicit_tag(self) -> None:
+        p = RecipeAmendmentProposal(amended_ingredients=[RecipeIngredientAmendment(name="x")])
+        assert p.proposal_type == "recipe_amendment"

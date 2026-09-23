@@ -13,11 +13,25 @@ function newRow(): ManualRow {
     category: 'other',
     storage_location: 'pantry',
     expiry_date: '',
+    estimated_expiry: false,
   }
 }
 
 interface TypeTabProps {
   onItemsReady: (items: AddItem[]) => void
+}
+
+/**
+ * `AddItem` (owned by `PantryAddSheet`) doesn't declare `estimated_expiry` —
+ * we don't touch that file (issue #402's tab-persistence fix just landed
+ * there). This local extension lets the object literal below legally carry
+ * the field at the type level; `PantryAddSheet`'s `{ source, ...rest }`
+ * spread forwards it at runtime regardless of what `AddItem` declares, and
+ * `BulkAddItem` (lib/api/pantry.ts) declares it as optional so the eventual
+ * `bulkAddPantryItems` call still type-checks.
+ */
+interface ManualAddItem extends AddItem {
+  estimated_expiry: boolean
 }
 
 export default function TypeTab({ onItemsReady }: TypeTabProps) {
@@ -26,15 +40,19 @@ export default function TypeTab({ onItemsReady }: TypeTabProps) {
   function toAddItems(updated: ManualRow[]): AddItem[] {
     return updated
       .filter((r) => r.name.trim().length > 0)
-      .map((r) => ({
-        name: r.name.trim(),
-        quantity: r.quantity,
-        unit: r.unit,
-        category: r.category,
-        storage_location: r.storage_location,
-        expiry_date: r.expiry_date || null,
-        source: 'manual' as const,
-      }))
+      .map(
+        (r): ManualAddItem => ({
+          name: r.name.trim(),
+          quantity: r.quantity,
+          unit: r.unit,
+          category: r.category,
+          storage_location: r.storage_location,
+          expiry_date: r.expiry_date || null,
+          source: 'manual' as const,
+          // Only meaningful when a date is actually present.
+          estimated_expiry: Boolean(r.expiry_date) && r.estimated_expiry,
+        }),
+      )
   }
 
   const handleChange = (updated: ManualRow[]) => {

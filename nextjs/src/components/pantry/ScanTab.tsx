@@ -1,11 +1,13 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import ReviewSurface from '@/components/scan/ReviewSurface'
-import { uploadReceipt } from '@/lib/api/scan'
+import { useFileDropzone } from '@/hooks/useFileDropzone'
+import { uploadReceipt, ScanError } from '@/lib/api/scan'
 import { scannedToBulkAddItem } from '@/lib/scan-helpers'
+import { scanErrorCopy } from '@/lib/scan-error-copy'
 import type { ScannedItem, ScanResult } from '@/types/scan'
 import type { AddItem } from './PantryAddSheet'
 
@@ -13,13 +15,20 @@ type ScanTabState = 'upload' | 'processing' | 'results'
 
 interface ScanTabProps {
   onItemsReady: (items: AddItem[]) => void
+  /**
+   * Reports whether a scan is currently in flight so the parent sheet can
+   * lock the Type tab for the duration (issue #402). Must fire `true` right
+   * before the upload starts and `false` on every path out of `processing`
+   * — success and failure/timeout alike — or the lock never releases.
+   */
+  onProcessingChange?: (processing: boolean) => void
 }
 
 function scannedToAddItem(item: ScannedItem): AddItem {
   return { ...scannedToBulkAddItem(item), source: 'scan' }
 }
 
-export default function ScanTab({ onItemsReady }: ScanTabProps) {
+export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [state, setState] = useState<ScanTabState>('upload')
   const [preview, setPreview] = useState<string | null>(null)
@@ -30,26 +39,59 @@ export default function ScanTab({ onItemsReady }: ScanTabProps) {
   const [skipped, setSkipped] = useState<ScannedItem[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
 
-  function notifyParent(ready: ScannedItem[], review: ScannedItem[]) {
-    onItemsReady([...ready, ...review].map(scannedToAddItem))
-  }
+  const { isDragActive, dropzoneHandlers } = useFileDropzone({ onFile: handleFileSelect })
+
+  // Guards against a scan abandoned by closing the sheet mid-flight (issue
+  // #439): PantryAddSheet's own inner content — and this ScanTab along with
+  // it — unmounts on close and remounts fresh on reopen, but the
+  // `scanProcessing` state (and the `onProcessingChange` setter that writes
+  // it) lives on the persistent parent, so an old scan's `finally` settling
+  // after a new scan has started would otherwise clear the lock the new scan
+  // still holds. `scanTokenRef` disambiguates overlapping scans within the
+  // same mount; `unmountedRef` + the aborted request cover the cross-mount
+  // case where a whole new instance (with its own fresh token) is scanning.
+  const scanTokenRef = useRef(0)
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const unmountedRef = useRef(false)
+
+  useEffect(() => {
+    return () => {
+      unmountedRef.current = true
+      // Stop billing a vision call the user already walked away from.
+      abortControllerRef.current?.abort()
+    }
+  }, [])
 
   async function handleFileSelect(file: File) {
+    const token = ++scanTokenRef.current
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     setError(null)
     const objectUrl = URL.createObjectURL(file)
     setPreview(objectUrl)
     setState('processing')
+    onProcessingChange?.(true)
+
+    const isStale = () => unmountedRef.current || scanTokenRef.current !== token
 
     try {
-      const result: ScanResult = await uploadReceipt(file)
+      const result: ScanResult = await uploadReceipt(file, { signal: controller.signal })
+      if (isStale()) return
       setReadyToAdd(result.ready_to_add)
       setNeedsReview(result.needs_review)
       setSkipped(result.skipped)
       setWarnings(result.warnings ?? [])
       setState('results')
-      notifyParent(result.ready_to_add, result.needs_review)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      if (isStale()) return
+      // Never render a raw server/provider string — always route through the
+      // code -> copy mapping, falling back to generic friendly copy for
+      // anything unrecognized (issue #396). This also covers the
+      // client-side upload timeout (issue #402): it comes back as a
+      // `ScanError` and must land here, not in some separate stuck state.
+      const code = err instanceof ScanError ? err.code : undefined
+      setError(scanErrorCopy(code))
       setState('upload')
       // Retrying the same receipt is the obvious next move after a transient
       // failure, but `onChange` doesn't fire for an unchanged value — so
@@ -57,6 +99,11 @@ export default function ScanTab({ onItemsReady }: ScanTabProps) {
       if (inputRef.current) inputRef.current.value = ''
     } finally {
       setTimeout(() => URL.revokeObjectURL(objectUrl), 500)
+      // Every path out of `processing` — results or upload/error — must
+      // release the Type-tab lock (issue #402), but only for the scan that
+      // is still current; an abandoned/superseded scan must not touch it
+      // (issue #439).
+      if (!isStale()) onProcessingChange?.(false)
     }
   }
 
@@ -74,12 +121,10 @@ export default function ScanTab({ onItemsReady }: ScanTabProps) {
 
   const handleReadyChange = (items: ScannedItem[]) => {
     setReadyToAdd(items)
-    notifyParent(items, needsReview)
   }
 
   const handleReviewChange = (items: ScannedItem[]) => {
     setNeedsReview(items)
-    notifyParent(readyToAdd, items)
   }
 
   return (
@@ -102,12 +147,19 @@ export default function ScanTab({ onItemsReady }: ScanTabProps) {
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="w-full border-2 border-dashed border-[var(--color-primary)] rounded-3xl p-10 text-center bg-[var(--color-surface)] hover:bg-[var(--color-border)] transition-colors active:scale-95"
+              {...dropzoneHandlers}
+              className={`w-full border-2 border-dashed rounded-3xl p-10 text-center transition-colors active:scale-95 ${
+                isDragActive
+                  ? 'border-[var(--color-primary)] bg-[var(--color-border)] scale-[1.02]'
+                  : 'border-[var(--color-primary)] bg-[var(--color-surface)] hover:bg-[var(--color-border)]'
+              }`}
             >
               <div className="flex justify-center mb-3">
                 <BubblesMascot state="happy" size={72} />
               </div>
-              <p className="font-semibold text-[var(--color-text)] mb-1">Drop your receipt here</p>
+              <p className="font-semibold text-[var(--color-text)] mb-1">
+                {isDragActive ? 'Drop it here!' : 'Drop your receipt here'}
+              </p>
               <p className="text-sm text-[var(--color-muted)]">or tap to upload</p>
             </button>
 
@@ -193,6 +245,7 @@ export default function ScanTab({ onItemsReady }: ScanTabProps) {
               onConfirm={() => {/* confirm handled by PantryAddSheet */}}
               isSubmitting={false}
               hideConfirmButton
+              onCheckedItemsChange={(checked) => onItemsReady(checked.map(scannedToAddItem))}
             />
           </motion.div>
         )}

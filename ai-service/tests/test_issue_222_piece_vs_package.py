@@ -168,12 +168,19 @@ class TestGenuineConversionsAreUnchanged:
         assert proposal.matches[0].status == "ready"
         assert proposal.matches[0].deduct_qty == 2.0
 
-    def test_unconvertible_pair_is_still_a_unit_conflict(self) -> None:
-        """A non-piece recipe unit against a package row keeps the old refusal."""
+    def test_unconvertible_pair_is_a_soft_imprecise_fallback(self) -> None:
+        """A non-piece recipe unit against a package row soft-falls back to
+        imprecise (#209): no hard refusal, no deduction, no phantom reservation.
+
+        Previously this raised a blocking ``unit_conflict``. #209 changed
+        unresolvable unit pairs (neither side convertible) to ``imprecise`` so
+        the cook can still proceed, with the item left untouched.
+        """
         pantry = [_make_item("matcha", 1.0, "bag", qty_base=1.0, unit_base="count")]
         ingredients = [{"name": "matcha", "quantity": 2.0, "unit": "handful"}]
 
         proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
 
-        assert proposal.matches[0].status == "unit_conflict"
-        assert len(proposal.unit_conflicts) == 1
+        assert proposal.matches[0].status == "imprecise"
+        assert proposal.matches[0].deduct_qty is None
+        assert proposal.unit_conflicts == []
