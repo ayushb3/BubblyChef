@@ -100,3 +100,6 @@ Thumbs.db
 
 # Local verify stack (scripts/dev/stack.sh): pids and logs
 .verify/
+
+# Kitchen art previews (scripts/art/kitchen.py preview), regenerable
+art/kitchen/preview/
