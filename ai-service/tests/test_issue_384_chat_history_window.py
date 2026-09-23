@@ -12,10 +12,18 @@ Two stacked bugs made long cooking conversations forget early context:
    that returns the *oldest* rows, not the most recent ones. For any
    conversation longer than the limit, the model could never see anything
    newer than the fetch window, no matter how high the formatter's cap was
-   raised.
+   raised. Fixed by ordering descending, limiting at the DB, then reversing
+   in Python — no over-fetch.
 
-Both tests below reproduce their bug directly (fail before the fix, pass
-after) rather than asserting on the new constant.
+This also changes what ``GET /v1/chat/history/{id}`` returns for a
+conversation longer than `limit`: reopening a long chat now restores its
+*most recent* messages instead of its *first* `limit` messages. That's an
+intentional, reviewed behaviour change (a restored chat should show its
+latest messages), not a side effect — see
+``TestGetHistoryRecency::test_endpoint_default_limit_restores_recent_messages_not_oldest``.
+
+Tests below reproduce their bug directly (fail before the fix, pass after)
+rather than asserting on the new constant.
 """
 
 from __future__ import annotations
@@ -145,19 +153,38 @@ class TestGetHistoryRecency:
         # Must be the most recent 10 (messages 14-23), oldest-first.
         assert [row["content"] for row in history] == [f"message {i}" for i in range(14, 24)]
 
-    async def test_default_limit_covers_a_real_multi_step_conversation(self) -> None:
-        """22 messages (11 turns) preceding turn 12 must all survive the
-        default fetch — turn 1's content must still be present."""
+    async def test_default_limit_restores_the_most_recent_turn_not_the_first(self) -> None:
+        """30 messages (well over the old default of 20, under the new
+        default of 40) with a marker on the LAST message. The old
+        ascending-order-then-limit(20) code would drop the marker entirely
+        (it kept messages 0-19); the fix must surface it, since it never
+        drops recent messages while the conversation fits under the new
+        default limit."""
         rows = [
-            {"role": "user", "content": "I'm marinating chicken, 3:1 oil to acid ratio."},
-            {"role": "assistant", "content": "Got it."},
-        ] + [
             {"role": "user" if i % 2 == 0 else "assistant", "content": f"turn {i}"}
-            for i in range(2, 22)
-        ]
+            for i in range(29)
+        ] + [{"role": "assistant", "content": "LATEST: use the 3:1 marinade ratio again."}]
         repo = _repo_with_rows(rows)
 
         history = await repo.get_history(user_id="u1", conversation_id="c1")
 
         contents = [row["content"] for row in history]
-        assert "I'm marinating chicken, 3:1 oil to acid ratio." in contents
+        assert "LATEST: use the 3:1 marinade ratio again." in contents
+
+    async def test_limit_zero_returns_nothing(self) -> None:
+        """limit=0 must return [] outright, not silently mean 'everything'."""
+        rows = [{"role": "user", "content": "hi", "created_at": "2026-01-01T00:00:00Z"}]
+        repo = _repo_with_rows(rows)
+
+        history = await repo.get_history(user_id="u1", conversation_id="c1", limit=0)
+
+        assert history == []
+
+    async def test_negative_limit_returns_nothing(self) -> None:
+        """A negative limit must not invert into a Python negative-index slice."""
+        rows = [{"role": "user", "content": "hi", "created_at": "2026-01-01T00:00:00Z"}]
+        repo = _repo_with_rows(rows)
+
+        history = await repo.get_history(user_id="u1", conversation_id="c1", limit=-5)
+
+        assert history == []

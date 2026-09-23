@@ -192,6 +192,27 @@ async def test_chat_history_returns_messages(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("bad_limit", [0, -5, 201])
+async def test_chat_history_rejects_out_of_bounds_limit(
+    client: AsyncClient, bad_limit: int
+) -> None:
+    """#384: `limit` is bounded (1-200) at the route so a caller can't turn
+    it into "return nothing" (0, negative) or an unbounded fetch (too large)."""
+    mock_repo = _make_mock_repo()
+
+    with patch(
+        "bubbly_chef.api.routes.chat.get_repository",
+        new_callable=AsyncMock,
+        return_value=mock_repo,
+    ):
+        response = await client.get(
+            f"/v1/chat/history/{TEST_CONV_ID}", params={"limit": bad_limit}
+        )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_chat_history_requires_auth(app) -> None:
     """GET /v1/chat/history/{id} without auth header returns 401."""
     app.dependency_overrides.clear()

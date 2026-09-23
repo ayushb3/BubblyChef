@@ -12,7 +12,7 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from bubbly_chef.api.auth import get_current_user_id
@@ -261,9 +261,14 @@ async def chat_non_streaming(
 async def get_history(
     conversation_id: str,
     user_id: str = Depends(get_current_user_id),
-    limit: int = 20,
+    limit: int = Query(default=20, ge=1, le=200),
 ) -> list[dict[str, Any]]:
-    """Return conversation history for a given conversation_id."""
+    """Return conversation history for a given conversation_id.
+
+    Returns the most recent `limit` messages, oldest-first (#384 fixed
+    get_history to actually honor "most recent"; reopening a long chat now
+    restores its latest messages rather than its first 20).
+    """
     try:
         repo = await get_repository()
         return await repo.get_history(
