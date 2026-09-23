@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { usePathname } from 'next/navigation'
 import SpringButton from '@/components/ui/SpringButton'
 import { TOUR_STEPS } from './steps'
 import { useTour } from './TourProvider'
@@ -77,7 +78,13 @@ function useReducedMotion(): boolean {
 }
 
 export function TourOverlay() {
-  const { isOpen, stepIndex, goNext, goBack, closeTour, totalSteps } = useTour()
+  const { isOpen: tourOpen, stepIndex, goNext, goBack, closeTour, totalSteps } = useTour()
+  // Every step targets the home screen. "Take the tour" on /profile opens the
+  // tour and then navigates to '/'; if the overlay ran while still on
+  // /profile, it would find no hero/quick-actions and auto-skip them, so the
+  // replay started at step 3. It only shows (and measures, and skips) on '/'.
+  const pathname = usePathname()
+  const isOpen = tourOpen && pathname === '/'
   const step = TOUR_STEPS[stepIndex]
   const isLast = stepIndex === totalSteps - 1
 

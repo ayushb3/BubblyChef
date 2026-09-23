@@ -343,4 +343,54 @@ describe('TourOverlay: positioning', () => {
     expect(ring?.getAttribute('x')).toBe(String(50 - 8))
     expect(ring?.getAttribute('width')).toBe(String(272 + 16))
   })
+
+  // "Take the tour" on /profile opens the tour, then navigates to '/'. The
+  // overlay used to run on /profile first, find no home targets, and auto-skip
+  // to step 3 before the home screen ever loaded.
+  it('a tour opened off "/" waits for home instead of auto-skipping', async () => {
+    mockPathname = '/profile'
+    function Page() {
+      const { stepIndex } = useTour()
+      return (
+        <div>
+          <div data-testid="step-index">{stepIndex}</div>
+          {/* /profile has the bottom nav + profile button, but no home targets */}
+          {mockPathname === '/' && <div data-tour="hero" />}
+          <div data-tour="nav-pantry" />
+          <div data-tour="profile" />
+        </div>
+      )
+    }
+    function Opener() {
+      const { openTour } = useTour()
+      React.useEffect(() => {
+        openTour()
+      }, [openTour])
+      return null
+    }
+    let rerender!: (ui: React.ReactElement) => void
+    const tree = () => (
+      <TourProvider>
+        <Opener />
+        <Page />
+        <TourOverlay />
+      </TourProvider>
+    )
+    await act(async () => {
+      ;({ rerender } = render(tree()))
+    })
+    await settle(100)
+    expect(screen.getByTestId('step-index').textContent).toBe('0')
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    mockPathname = '/'
+    await act(async () => {
+      rerender(tree())
+    })
+    await settle(100)
+    expect(screen.getByTestId('step-index').textContent).toBe('0')
+    expect(
+      screen.getByRole('dialog', { name: `Onboarding tour step 1 of ${TOUR_STEPS.length}` }),
+    ).toBeTruthy()
+  })
 })
