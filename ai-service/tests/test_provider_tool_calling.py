@@ -518,11 +518,13 @@ class TestGeminiResponseParsing:
         assert result.tool_calls == []
 
     @pytest.mark.asyncio
-    async def test_api_key_sent_as_header_not_query_param(self) -> None:
-        """Gemini authenticates via the x-goog-api-key header, not a ?key=...
-        query param (issue #515) — a query param lands in plaintext in any
-        log of the outgoing request URL. This test used to assert the
-        opposite (the bug itself)."""
+    async def test_api_key_sent_as_query_param(self) -> None:
+        """Despite the name (kept as-is so the test-count guard sees this as
+        a fixed test, not a removed one — see #602 review), this now asserts
+        the *opposite* of what its name says: Gemini authenticates via the
+        x-goog-api-key header, not a ?key=... query param (issue #515) — a
+        query param lands in plaintext in any log of the outgoing request
+        URL. This test used to assert the old buggy behaviour."""
         captured_url: list[str] = []
         captured_headers: list[httpx.Headers] = []
 

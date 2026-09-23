@@ -8,127 +8,231 @@ a second, independent layer against the same class of leak.
 
 Key rotation is out of scope for this PR and stays with Ayush -- the key has
 already been exposed in logs and should be rotated after this fix lands.
+
+Two groups of tests:
+
+- `TestApiKeySentAsHeaderForEveryRequestSite` uses `httpx.MockTransport` for
+  all five request sites, including `stream_complete` (whose
+  `async with self._client.stream(...)` context manager the review on #602
+  correctly flagged as untested by the original kwargs-mocking approach).
+  Each asserts the header carries the key and the URL the transport actually
+  received does not.
+- `TestNoKeyInLogsAcrossARealRequestPath` implements issue #515's step 3
+  directly: a `caplog`-based test that runs a real request through the
+  `httpx`/`httpcore` logging path (bypassing the production WARNING
+  suppression on purpose, to prove the fix holds even if that second layer
+  is ever loosened) and asserts the key is absent from every captured log
+  record. A second test pins the `main.py` suppression itself.
 """
 
 from __future__ import annotations
 
-import re
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+import logging
 
 import httpx
 import pytest
 
 from bubbly_chef.ai.gemini import GeminiProvider
 
-_GEMINI_SOURCE = Path(__file__).parent.parent / "bubbly_chef" / "ai" / "gemini.py"
+_TEST_KEY = "super-secret-test-key"
 
 
 def _make_provider(**overrides: object) -> GeminiProvider:
     defaults: dict[str, object] = {
-        "api_key": "super-secret-test-key",
+        "api_key": _TEST_KEY,
         "model": "gemini-3.1-flash-lite",
     }
     defaults.update(overrides)
     return GeminiProvider(**defaults)  # type: ignore[arg-type]
 
 
-def _ok_json_response(text: str = "hello") -> MagicMock:
-    resp = MagicMock(spec=httpx.Response)
-    resp.raise_for_status = MagicMock(return_value=None)
-    resp.json = MagicMock(
-        return_value={"candidates": [{"content": {"parts": [{"text": text}]}}]}
+def _inject_transport(provider: GeminiProvider, handler: object) -> None:
+    provider._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))  # type: ignore[arg-type]
+
+
+def _ok_json_response(text: str = "hello") -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={"candidates": [{"content": {"parts": [{"text": text}]}}]},
     )
-    return resp
 
 
-def _get_response(status_code: int = 200) -> MagicMock:
-    resp = MagicMock(spec=httpx.Response)
-    resp.status_code = status_code
-    return resp
-
-
-class TestApiKeySentAsHeaderNotQueryParam:
-    """Direct reproduction: for each request site, the key must be in
-    `headers`, and `params` (if present at all) must not carry it."""
+class TestApiKeySentAsHeaderForEveryRequestSite:
+    """MockTransport-backed behavioural tests for all five request sites —
+    replaces the brittle source-grep regression guard from the first version
+    of this PR (flagged on review: `>= 5` passes even if a sixth unauthenticated
+    site is added, and the string check misses other spellings)."""
 
     @pytest.mark.asyncio
-    async def test_complete_sends_key_as_header(self) -> None:
+    async def test_complete_sends_key_as_header_not_url(self) -> None:
+        captured: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["url"] = str(request.url)
+            captured["headers"] = request.headers
+            return _ok_json_response()
+
         provider = _make_provider()
-        post = AsyncMock(return_value=_ok_json_response())
-        provider._client.post = post  # type: ignore[method-assign]
+        _inject_transport(provider, handler)
 
         await provider.complete(prompt="hi")
 
-        _, kwargs = post.await_args
-        assert kwargs["headers"].get("x-goog-api-key") == "super-secret-test-key"
-        assert "super-secret-test-key" not in str(kwargs.get("params", {}))
-        assert "key" not in kwargs.get("params", {})
+        assert _TEST_KEY not in str(captured["url"])
+        assert captured["headers"]["x-goog-api-key"] == _TEST_KEY  # type: ignore[index]
 
     @pytest.mark.asyncio
-    async def test_complete_with_tools_sends_key_as_header(self) -> None:
+    async def test_complete_with_tools_sends_key_as_header_not_url(self) -> None:
+        captured: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["url"] = str(request.url)
+            captured["headers"] = request.headers
+            return _ok_json_response("ok")
+
         provider = _make_provider()
-        post = AsyncMock(
-            return_value=MagicMock(
-                spec=httpx.Response,
-                raise_for_status=MagicMock(return_value=None),
-                json=MagicMock(
-                    return_value={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}
-                ),
-            )
-        )
-        provider._client.post = post  # type: ignore[method-assign]
+        _inject_transport(provider, handler)
 
         await provider.complete_with_tools(
             messages=[{"role": "user", "content": "hi"}],
             tools=[],
         )
 
-        _, kwargs = post.await_args
-        assert kwargs["headers"].get("x-goog-api-key") == "super-secret-test-key"
-        assert "super-secret-test-key" not in str(kwargs.get("params", {}))
+        assert _TEST_KEY not in str(captured["url"])
+        assert captured["headers"]["x-goog-api-key"] == _TEST_KEY  # type: ignore[index]
 
     @pytest.mark.asyncio
-    async def test_vision_complete_sends_key_as_header(self) -> None:
+    async def test_vision_complete_sends_key_as_header_not_url(self) -> None:
+        captured: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["url"] = str(request.url)
+            captured["headers"] = request.headers
+            return _ok_json_response("MILK 1.99")
+
         provider = _make_provider()
-        post = AsyncMock(return_value=_ok_json_response("MILK 1.99"))
-        provider._client.post = post  # type: ignore[method-assign]
+        _inject_transport(provider, handler)
 
         await provider.vision_complete(prompt="extract text", image_bytes=b"fake")
 
-        _, kwargs = post.await_args
-        assert kwargs["headers"].get("x-goog-api-key") == "super-secret-test-key"
-        assert "super-secret-test-key" not in str(kwargs.get("params", {}))
+        assert _TEST_KEY not in str(captured["url"])
+        assert captured["headers"]["x-goog-api-key"] == _TEST_KEY  # type: ignore[index]
 
     @pytest.mark.asyncio
-    async def test_is_available_sends_key_as_header(self) -> None:
+    async def test_stream_complete_sends_key_as_header_not_url(self) -> None:
+        """stream_complete uses `async with self._client.stream(...)`, not a
+        plain post() -- the one site the original AsyncMock-based tests
+        couldn't reach. MockTransport handles it the same as any other
+        request; only the response body needs to look like an SSE stream."""
+        captured: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["url"] = str(request.url)
+            captured["headers"] = request.headers
+            body = b'data: {"candidates": [{"content": {"parts": [{"text": "hi"}]}}]}\n\n'
+            return httpx.Response(200, content=body)
+
         provider = _make_provider()
-        get = AsyncMock(return_value=_get_response(200))
-        provider._client.get = get  # type: ignore[method-assign]
+        _inject_transport(provider, handler)
+
+        chunks = [chunk async for chunk in provider.stream_complete(prompt="hi")]
+
+        assert chunks == ["hi"]
+        assert _TEST_KEY not in str(captured["url"])
+        assert captured["headers"]["x-goog-api-key"] == _TEST_KEY  # type: ignore[index]
+        # 'alt=sse' is not secret and stays a query param.
+        assert "alt=sse" in str(captured["url"])
+
+    @pytest.mark.asyncio
+    async def test_is_available_sends_key_as_header_not_url(self) -> None:
+        captured: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["url"] = str(request.url)
+            captured["headers"] = request.headers
+            return httpx.Response(200, json={})
+
+        provider = _make_provider()
+        _inject_transport(provider, handler)
 
         result = await provider.is_available()
 
         assert result is True
-        _, kwargs = get.await_args
-        assert kwargs["headers"].get("x-goog-api-key") == "super-secret-test-key"
-        assert "super-secret-test-key" not in str(kwargs.get("params", {}))
+        assert _TEST_KEY not in str(captured["url"])
+        assert captured["headers"]["x-goog-api-key"] == _TEST_KEY  # type: ignore[index]
 
 
-class TestNoKeyLeftInAnyQueryParam:
-    """Source-level regression guard covering every request site, including
-    stream_complete (its `async with self._client.stream(...)` context
-    manager isn't easily mocked the way the plain post()/get() calls above
-    are). Fails before the fix -- `params={"key": self.api_key}` is grep-able
-    on main -- and passes after."""
+class TestNoKeyInLogsAcrossARealRequestPath:
+    """Issue #515 step 3: capture log output across a real request and
+    assert the key never appears in it."""
 
-    def test_no_call_site_puts_key_in_params(self) -> None:
-        source = _GEMINI_SOURCE.read_text(encoding="utf-8")
-        assert '"key": self.api_key' not in source
-        assert "'key': self.api_key" not in source
+    @pytest.mark.asyncio
+    async def test_key_absent_from_every_log_record_during_a_real_request(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Force httpx/httpcore's own request logging to DEBUG -- the
+        opposite of what main.py does in production -- so this proves the
+        fix holds on the header/URL split itself, independent of (and in
+        addition to) the WARNING suppression covered by the next test. If
+        the key were still in the URL, httpx's INFO "HTTP Request: ..." log
+        line would contain it; forcing DEBUG also exercises httpcore's more
+        verbose connection/header logging."""
+        provider = _make_provider()
 
-    def test_every_request_call_site_sends_auth_headers(self) -> None:
-        source = _GEMINI_SOURCE.read_text(encoding="utf-8")
-        # Every outgoing request (post/get/stream) in this file must carry
-        # the auth header. Five call sites as of #515: complete,
-        # complete_with_tools, vision_complete, stream_complete, is_available.
-        assert len(re.findall(r"headers=self\._auth_headers", source)) >= 5
+        def handler(request: httpx.Request) -> httpx.Response:
+            return _ok_json_response()
+
+        _inject_transport(provider, handler)
+
+        with caplog.at_level(logging.DEBUG, logger="httpx"), caplog.at_level(
+            logging.DEBUG, logger="httpcore"
+        ):
+            await provider.complete(prompt="hi")
+
+        assert caplog.records, (
+            "expected httpx/httpcore to emit at least one log record at DEBUG "
+            "-- if this is empty the test isn't exercising real request logging"
+        )
+        for record in caplog.records:
+            message = record.getMessage()
+            assert _TEST_KEY not in message, (
+                f"API key leaked into a log record: {record.name} — {message!r}"
+            )
+
+    def test_main_quiets_httpx_and_httpcore_loggers(self) -> None:
+        """Pins the two setLevel(WARNING) lines in main.py -- without them,
+        this test fails, and it's the only test that would notice if they
+        were ever deleted or reverted to INFO."""
+        import importlib
+
+        import bubbly_chef.main as main_module
+
+        importlib.reload(main_module)
+
+        assert logging.getLogger("httpx").level == logging.WARNING
+        assert logging.getLogger("httpcore").level == logging.WARNING
+
+    @pytest.mark.asyncio
+    async def test_no_log_records_at_all_under_production_logging_config(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """With the production config actually applied (httpx/httpcore at
+        WARNING, as main.py sets), a normal 200 request must produce zero
+        httpx/httpcore log records -- the second, independent layer against
+        the same class of leak."""
+        import bubbly_chef.main  # noqa: F401 -- applies the setLevel(WARNING) calls
+
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+        provider = _make_provider()
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return _ok_json_response()
+
+        _inject_transport(provider, handler)
+
+        with caplog.at_level(logging.DEBUG):
+            await provider.complete(prompt="hi")
+
+        httpx_records = [r for r in caplog.records if r.name in ("httpx", "httpcore")]
+        assert httpx_records == []
