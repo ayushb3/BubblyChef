@@ -33,8 +33,26 @@ import { useEffect, useRef } from 'react'
  * conditional JSX).
  */
 
+// Note the trailing `:not(:disabled)` on the `[tabindex]` branch (PR #475):
+// `:not([disabled])` on the other branches only narrows *that* branch's own
+// tag match (`button:not([disabled])`, etc.) — it says nothing about the
+// separate `[tabindex]:not([tabindex="-1"])` branch, so a disabled control
+// that also carries an explicit `tabindex="0"` still matched via that last
+// branch even though real browsers never let Tab land on it (the `disabled`
+// attribute wins over any `tabindex`). This bit in practice: framer-motion's
+// `motion.button` stamps a bare `tabIndex={0}` onto every button using
+// `whileHover`/`whileTap` regardless of its `disabled` state (PantryAddSheet's
+// disabled "Add Items" footer CTA is one), so the trap's "last focusable"
+// element was one Tab always skips — forward-Tab from the real last control
+// walked off the end of the trap instead of wrapping back to the first.
+// `:disabled` is the CSS pseudo-class (true for the *actual* disabled state,
+// not merely "has a disabled attribute" in some non-form element), and is
+// deliberately NOT applied to `[aria-disabled="true"]` controls — those are
+// used elsewhere in this codebase (PantryAddSheet's "Type" tab switcher,
+// issue #402) specifically to stay focusable and announced while visually
+// looking disabled, and must keep working.
 const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"]):not(:disabled)'
 
 // `offsetParent !== null` is the usual cheap visibility check, but every
 // modal panel in this codebase (`AddItemModal`, `PantryAddSheet`, `CookModal`,
@@ -215,6 +233,13 @@ export function useModalFocusTrap(
 
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
+        // A control inside the modal (e.g. an open autocomplete listbox) that
+        // handles Escape itself calls preventDefault. Respect that instead of
+        // closing the whole modal. stopPropagation in that control can't do
+        // this job: Next.js hydrates the entire document, so React's delegated
+        // listener sits on `document` alongside this one, and a sibling listener
+        // on the same node isn't stopped by stopPropagation (issue #439).
+        if (e.defaultPrevented) return
         e.preventDefault()
         onCloseRef.current()
         return
