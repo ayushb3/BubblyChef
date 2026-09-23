@@ -14,7 +14,7 @@ import bubbly_chef.tools.cooking  # noqa: F401 — registers check_pantry on imp
 from bubbly_chef.ai.manager import AIManager, NoProviderAvailableError
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
-from bubbly_chef.models.proposals import RecipeAmendmentDetection
+from bubbly_chef.models.proposals import RecipeAmendmentDetection, RecipeAmendmentProposal
 from bubbly_chef.prompts.chat import (
     _AMENDMENT_DETECTION_PROMPT,
     _COOKING_REACT_SYSTEM_PROMPT,
@@ -163,23 +163,24 @@ def format_cooking_recipe_context(state: WorkflowState) -> str:
 async def format_dietary_context(state: WorkflowState) -> str:
     """Format the user's stored dietary preferences as a compact prompt block.
 
-    Precedence (#394): a stored preference is a default, not a prohibition.
-    Chat has no structured constraint extraction like recipe grounding does,
-    so the LLM itself must reconcile the two — the wording below tells it
-    explicitly that what the user asks for *this message* overrides the
-    stored default for this turn, while the default still applies whenever
-    the message says nothing about diet. Returns "" when there are no stored
-    preferences, so callers can concatenate it unconditionally.
+    Precedence (#394): a stored preference stays in force and combines with
+    whatever this message asks for — it is not replaced by a diet named in
+    the message. Chat has no structured constraint extraction like recipe
+    grounding does, so the LLM itself must reconcile the two — the wording
+    below tells it explicitly to respect both together, and to set the
+    stored preference aside, for this reply only, when the message
+    explicitly asks for something it forbids. Returns "" when there are no
+    stored preferences, so callers can concatenate it unconditionally.
     """
     prefs = await get_stored_dietary_preferences(state.get("user_id") or "")
     if not prefs:
         return ""
     return (
         f"\n\nThe user's stored dietary preferences: {', '.join(prefs)}. "
-        "Default to respecting these. If this message explicitly asks for "
-        "something that conflicts with them, follow the message for this "
-        "reply instead — a stored preference is a default, not a rule to "
-        "enforce against an explicit request."
+        "Always respect these, together with anything this message asks "
+        "for. Only set a stored preference aside if this message explicitly "
+        "asks for something it forbids (e.g. a meat dish despite "
+        "'Vegetarian'), and then only for this reply."
     )
 
 
@@ -443,6 +444,27 @@ async def _detect_amendment(
         return None
 
 
+def _build_amendment_proposal(
+    state: WorkflowState,
+    amendment: RecipeAmendmentDetection | None,
+) -> RecipeAmendmentProposal | None:
+    """Turn a detection result into the typed proposal the state carries.
+
+    Returns None when there is nothing to propose (no detection, not an
+    amendment, or an empty ingredient list) so both cooking-help paths can fall
+    through to the prose-only response.
+    """
+    if amendment is None:
+        return None
+    raw_recipe = get_cooking_recipe(state)
+    recipe = normalize_cooking_recipe(raw_recipe) if raw_recipe else {}
+    return RecipeAmendmentProposal.from_detection(
+        amendment,
+        recipe_id=recipe.get("id"),
+        recipe_title=recipe.get("title") or None,
+    )
+
+
 async def _cooking_help_single_shot(
     state: WorkflowState,
     ai_manager: Any,
@@ -464,18 +486,14 @@ async def _cooking_help_single_shot(
         suggested_mode = detect_mode_suggestion(response_text, state.get("input_mode", "chat"))
 
         amendment = await _detect_amendment(state, ai_manager, response_text)
-        if (
-            amendment is not None
-            and amendment.is_amendment
-            and amendment.amended_ingredients is not None
-            and len(amendment.amended_ingredients) > 0
-        ):
+        proposal = _build_amendment_proposal(state, amendment)
+        if proposal is not None:
             return {
                 **state,
                 "intent": Intent.COOKING_HELP.value,
                 "assistant_message": response_text,
                 "next_action": NextAction.REVIEW_PROPOSAL.value,
-                "proposal": amendment.model_dump(),  # type: ignore[typeddict-item]
+                "proposal": proposal,
                 "requires_review": True,
                 "confidence": 1.0,
                 "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
@@ -679,18 +697,14 @@ async def _cooking_help_react(
         suggested_mode = detect_mode_suggestion(last_text, state.get("input_mode", "chat"))
 
         amendment = await _detect_amendment(state, ai_manager, last_text)
-        if (
-            amendment is not None
-            and amendment.is_amendment
-            and amendment.amended_ingredients is not None
-            and len(amendment.amended_ingredients) > 0
-        ):
+        proposal = _build_amendment_proposal(state, amendment)
+        if proposal is not None:
             return {
                 **state,
                 "intent": Intent.COOKING_HELP.value,
                 "assistant_message": last_text,
                 "next_action": NextAction.REVIEW_PROPOSAL.value,
-                "proposal": amendment.model_dump(),  # type: ignore[typeddict-item]
+                "proposal": proposal,
                 "requires_review": True,
                 "confidence": 1.0,
                 "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,

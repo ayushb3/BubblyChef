@@ -194,7 +194,10 @@ describe('ScanTab drag-and-drop', () => {
       dataTransfer: { files: [file], types: ['Files'] },
     })
 
-    await waitFor(() => expect(mockUploadReceipt).toHaveBeenCalledWith(file))
+    // Second arg is `{ signal }` (issue #439 — lets an abandoned scan's
+    // request be aborted), so match on the file and let the options object
+    // through unchecked here.
+    await waitFor(() => expect(mockUploadReceipt).toHaveBeenCalledWith(file, expect.anything()))
     await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
   })
 
