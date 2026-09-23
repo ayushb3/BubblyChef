@@ -80,6 +80,9 @@ class WorkflowState(TypedDict, total=False):
     # ==========================================================================
     input_text: str
     input_type: str  # "chat", "receipt", "product", "recipe"
+    # Remaining wall-clock seconds the LLM parse leg may spend (issue #481).
+    # None = unbounded (legacy callers); <= 0 = budget already exhausted, skip.
+    parse_timeout_seconds: float | None
     input_mode: str  # "text" or "voice"
     pantry_snapshot: list[dict[str, Any]] | None
     context: dict[str, Any] | None  # Client-supplied context, e.g. {"cooking_recipe": {...}}
@@ -140,6 +143,15 @@ class WorkflowState(TypedDict, total=False):
     repick_different_idea: bool
     web_search_result: dict[str, Any] | None
     ingredient_availability: list[dict[str, Any]]
+
+    # ==========================================================================
+    # Saved-recipe lookup
+    # ==========================================================================
+    # Raw match rows from `repo.search_saved_recipes` (source-of-truth dicts,
+    # not RecipeCard) — surfaced verbatim to the envelope's
+    # metadata["saved_recipe_matches"] and read by update_session_node to pin
+    # a single unambiguous match.
+    saved_recipe_matches: list[dict[str, Any]]
 
     # ==========================================================================
     # Response Fields

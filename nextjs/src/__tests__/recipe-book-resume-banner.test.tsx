@@ -69,6 +69,20 @@ jest.mock('@phosphor-icons/react', () => ({
 import RecipeBook from '@/components/recipes/RecipeBook'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import { startGuidedCookSession, saveCookProgress, getActiveCookSession } from '@/lib/cook-session'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+// RecipeBook reads useQueryClient() (#520, to invalidate the bubbles balance), so
+// it needs a QueryClientProvider to render.
+function QueryWrapper({ children }: { children: React.ReactNode }) {
+  const [client] = React.useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  )
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+}
+
+function renderWithQuery(ui: React.ReactElement) {
+  return render(ui, { wrapper: QueryWrapper })
+}
 
 const RECIPE: Recipe = {
   id: 'r1',
@@ -97,7 +111,7 @@ describe('RecipeBook — "Resume cooking?" banner (PR #475)', () => {
     startGuidedCookSession('r1')
     saveCookProgress('r1', 1) // step index 1 -> "step 2 of 3"
 
-    render(<RecipeBook recipes={[RECIPE]} />)
+    renderWithQuery(<RecipeBook recipes={[RECIPE]} />)
 
     const banner = screen.getByTestId('resume-cook-banner')
     expect(within(banner).getByText(/creamy tomato pasta/i)).toBeInTheDocument()
@@ -106,7 +120,7 @@ describe('RecipeBook — "Resume cooking?" banner (PR #475)', () => {
   })
 
   it('no banner and no auto-open when there is no saved session', () => {
-    render(<RecipeBook recipes={[RECIPE]} />)
+    renderWithQuery(<RecipeBook recipes={[RECIPE]} />)
     expect(screen.queryByTestId('resume-cook-banner')).not.toBeInTheDocument()
     expect(screen.queryByTestId('guided-cook-flow')).not.toBeInTheDocument()
   })
@@ -115,7 +129,7 @@ describe('RecipeBook — "Resume cooking?" banner (PR #475)', () => {
     startGuidedCookSession('r1')
     saveCookProgress('r1', 1)
 
-    render(<RecipeBook recipes={[RECIPE]} />)
+    renderWithQuery(<RecipeBook recipes={[RECIPE]} />)
 
     fireEvent.click(screen.getByRole('button', { name: /resume/i }))
 
@@ -129,7 +143,7 @@ describe('RecipeBook — "Resume cooking?" banner (PR #475)', () => {
     startGuidedCookSession('r1')
     saveCookProgress('r1', 1)
 
-    render(<RecipeBook recipes={[RECIPE]} />)
+    renderWithQuery(<RecipeBook recipes={[RECIPE]} />)
 
     fireEvent.click(screen.getByRole('button', { name: /dismiss/i }))
 
@@ -145,7 +159,7 @@ describe('RecipeBook — "Resume cooking?" banner (PR #475)', () => {
     // markGuidedFlowOpen was called and its cleanup never ran.
     window.sessionStorage.setItem('bubblychef:cook:guidedFlowOpen', 'r1')
 
-    render(<RecipeBook recipes={[RECIPE]} />)
+    renderWithQuery(<RecipeBook recipes={[RECIPE]} />)
 
     expect(screen.getByTestId('guided-cook-flow')).toBeInTheDocument()
     expect(screen.queryByTestId('resume-cook-banner')).not.toBeInTheDocument()

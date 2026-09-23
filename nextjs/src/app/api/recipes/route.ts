@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { requireAuth, errorResponse } from '@/lib/response-helpers'
 import { mergeTags } from '@/lib/recipe-helpers'
+import { awardBubbles } from '@/lib/bubbles'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -160,6 +161,12 @@ export async function POST(request: Request) {
     .single()
 
   if (error) return errorResponse(error.message)
+
+  // Only a non-draft save counts as a real recipe save (#520) — otherwise
+  // every autosaved draft would earn bubbles before the user finished it.
+  if (!data.is_draft) {
+    await awardBubbles(user.id, 'recipe_save', data.id)
+  }
 
   return NextResponse.json(data, { status: 201 })
 }
