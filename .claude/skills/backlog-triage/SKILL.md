@@ -117,7 +117,9 @@ is decided so far.
 
 Read every decision with `ArtifactData` `list` on `decisions` for this run. For
 each `approve` or `change`, compute the final move and priority (his values over
-the card's), then on GitHub:
+the card's). Read his note first: when it asks for something other than the verdict
+(an "approve" whose note says "fold this into #502"), hold that issue and ask him
+which one he meant. Then on GitHub:
 
 | move | action |
 |---|---|
