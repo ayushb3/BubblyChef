@@ -52,54 +52,68 @@ export default function KitchenScene({ unlocked, balance, loading = false }: Kit
   }
 
   return (
-    <div
-      className="relative w-full max-w-[480px] aspect-[4/3] rounded-2xl overflow-hidden border border-[var(--color-border)]"
-      style={{
-        background:
-          'linear-gradient(160deg, var(--pastel-peach, #ffdab3) 0%, var(--pastel-pink, #ffb5c5) 55%, var(--pastel-lavender, #c9b5e8) 100%)',
-      }}
-      data-testid="kitchen-scene"
-    >
-      {SLOTS.map((slot) => {
-        const decoration = decorationBySlot.get(slot.key)
-        return (
-          <div
-            key={slot.key}
-            data-testid={`kitchen-slot-${slot.key}`}
-            data-filled={decoration ? 'true' : 'false'}
-            className="absolute flex items-center justify-center"
-            style={{
-              left: `${slot.x}%`,
-              top: `${slot.y}%`,
-              width: `${slot.w}%`,
-              height: `${slot.h}%`,
-            }}
-            aria-label={slot.label}
-          >
-            {decoration ? (
-              decoration.art ? (
-                <Image
-                  src={decoration.art}
-                  alt={slot.label}
-                  fill
-                  sizes="120px"
-                  className="object-contain"
-                />
-              ) : (
-                <span className="text-3xl leading-none" role="img" aria-label={slot.label}>
-                  {decoration.emoji}
-                </span>
-              )
-            ) : (
-              <div className="w-full h-full rounded-xl border-2 border-dashed border-white/60" />
-            )}
-          </div>
-        )
-      })}
-
+    <div className="relative w-full max-w-[480px]">
       <div
-        className="absolute top-2 right-2 rounded-full px-3 py-1 text-xs font-bold text-[var(--color-text,#4a4a4a)] shadow-sm"
-        style={{ background: 'var(--cream-white, #fff9f5)' }}
+        className="relative aspect-[4/3] rounded-2xl overflow-hidden border border-[var(--color-border)]"
+        style={{
+          background:
+            'linear-gradient(160deg, var(--color-bg) 0%, var(--color-primary) 55%, var(--color-accent) 100%)',
+        }}
+        data-testid="kitchen-scene"
+      >
+        {SLOTS.map((slot) => {
+          const decoration = decorationBySlot.get(slot.key)
+          return (
+            <div
+              key={slot.key}
+              data-testid={`kitchen-slot-${slot.key}`}
+              data-filled={decoration ? 'true' : 'false'}
+              // Only labelled here when empty — a role-less wrapper's
+              // aria-label is dropped by most screen readers, so when the
+              // slot is filled the accessible name lives on the actual
+              // content node below (the <img>'s alt or the emoji's
+              // role="img") using the decoration's own name, not the slot's.
+              {...(!decoration ? { role: 'img', 'aria-label': `${slot.label} (empty)` } : {})}
+              className="absolute flex items-center justify-center"
+              style={{
+                left: `${slot.x}%`,
+                top: `${slot.y}%`,
+                width: `${slot.w}%`,
+                height: `${slot.h}%`,
+              }}
+            >
+              {decoration ? (
+                decoration.art ? (
+                  <Image
+                    src={decoration.art}
+                    alt={decoration.name}
+                    fill
+                    sizes="120px"
+                    className="object-contain"
+                  />
+                ) : (
+                  <span className="text-3xl leading-none" role="img" aria-label={decoration.name}>
+                    {decoration.emoji}
+                  </span>
+                )
+              ) : (
+                <div
+                  className="w-full h-full rounded-xl border-2 border-dashed border-white/60"
+                  aria-hidden="true"
+                />
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Sits in this wrapper (not the overflow-hidden scene box) and pokes
+          outside the box's top-right corner via negative offsets — placing it
+          inside the box would land it on top of the `lights` slot (x 75.5,
+          y 2), which becomes visible once lights can be unlocked. */}
+      <div
+        className="absolute -top-2 -right-2 rounded-full px-3 py-1 text-xs font-bold text-[var(--color-text)] shadow-sm border border-[var(--color-border)]"
+        style={{ background: 'var(--color-surface)' }}
         data-testid="kitchen-bubbles-balance"
       >
         🫧 {balance}

@@ -244,8 +244,10 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
           `className` all the way down to `FadeInView` (a plain prop it
           forwards onto its own `motion.div`) breaks the shrink-wrap by
           giving every link in the chain an explicit width instead of an
-          inferred one. */}
-      <FadeInView delay={0} className="w-full max-w-sm mb-4">
+          inferred one. `max-w-[480px]` (not `max-w-sm`'s 384px) matches
+          KitchenScene's own cap so the scene can actually reach the full
+          480px column issue #521 asks for. */}
+      <FadeInView delay={0} className="w-full max-w-[480px] mb-4">
         <KitchenScene
           unlocked={unlocked}
           balance={balance}
