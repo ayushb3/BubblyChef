@@ -97,8 +97,11 @@ Safe, boring, and each step is independently revertible:
 1. **#511** (docs only — the three planning docs, including this file). Zero code risk.
 2. **#507, #504, #503, #506, #486, #508** — independent, green, straight off main.
    #508 is the only one with a visual change you may want to eyeball first (§6).
-3. **#475** — *real merge commit.* Then #479, #482, #484, #491 retarget to main
-   automatically, then #505 behind #491, then #509 behind #479.
+3. **#475** — *real merge commit.* GitHub should retarget #479, #482, #484 and #491
+   to `main` — **verify each child's base actually reads `main` before you merge it**,
+   rather than assuming. Then #505 behind #491, then #509 behind #479, same check.
+   Never merge a child while its parent is still open: it merges into the parent's
+   branch, not `main`, and the change is stranded (`docs/agents/lessons.md`).
 4. **#436** — only after resolving its conflict (§4) and after it has actually run the
    agent gates once (§5). Then #492.
 
