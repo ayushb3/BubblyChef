@@ -240,6 +240,101 @@ describe('useModalFocusTrap', () => {
     expect(screen.getByText('Last')).toHaveFocus()
   })
 
+  // ─── PR #475 — disabled elements with tabindex="0" must not count as focusable ──
+
+  it('a disabled button carrying tabindex="0" (framer motion.button pattern) is excluded — Tab wraps to the first real control instead', () => {
+    // Models PantryAddSheet's disabled "Add Items" footer button: a
+    // `motion.button` that sets `disabled` for the native semantics but
+    // whose `whileHover`/`whileTap` gesture wiring also stamps a bare
+    // `tabIndex={0}` (framer-motion's own doing, not this component's),
+    // regardless of the disabled state. `[tabindex]:not([tabindex="-1"])`
+    // alone matches it even though a real Tab press skips it (disabled wins
+    // over tabindex in every browser) — so the trap's "last focusable" was
+    // this dead element, and forward-Tab from it never re-entered the panel.
+    function DisabledTabindexHarness() {
+      const [open, setOpen] = useState(false)
+      const panelRef = useRef<HTMLDivElement>(null)
+      useModalFocusTrap(open, () => setOpen(false), panelRef)
+      return (
+        <div>
+          <button onClick={() => setOpen(true)}>Open</button>
+          {open && (
+            <div ref={panelRef} role="dialog" tabIndex={-1}>
+              <button>First</button>
+              <button>Last real control</button>
+              <button disabled tabIndex={0}>
+                Disabled footer button
+              </button>
+            </div>
+          )}
+        </div>
+      )
+    }
+    render(<DisabledTabindexHarness />)
+    fireEvent.click(screen.getByText('Open'))
+    screen.getByText('Last real control').focus()
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(screen.getByText('First')).toHaveFocus()
+  })
+
+  it('a disabled element with tabindex="0" never receives initial focus placement either', () => {
+    function DisabledLeadingHarness() {
+      const [open, setOpen] = useState(false)
+      const panelRef = useRef<HTMLDivElement>(null)
+      useModalFocusTrap(open, () => setOpen(false), panelRef)
+      return (
+        <div>
+          <button onClick={() => setOpen(true)}>Open</button>
+          {open && (
+            <div ref={panelRef} role="dialog" tabIndex={-1}>
+              <button disabled tabIndex={0}>
+                Disabled leading button
+              </button>
+              <button>Real first</button>
+            </div>
+          )}
+        </div>
+      )
+    }
+    render(<DisabledLeadingHarness />)
+    fireEvent.click(screen.getByText('Open'))
+    expect(screen.getByText('Real first')).toHaveFocus()
+  })
+
+  it('an aria-disabled (but not natively disabled) control stays focusable — the Type-tab pattern must keep working', () => {
+    // PantryAddSheet's "Type" tab switcher deliberately uses `aria-disabled`
+    // instead of the `disabled` attribute while a scan is in flight, so it
+    // stays focusable and announced (issue #402) — the fix for the framer
+    // motion.button bug above must not regress this by treating
+    // `aria-disabled` the same as real `disabled`.
+    function AriaDisabledHarness() {
+      const [open, setOpen] = useState(false)
+      const panelRef = useRef<HTMLDivElement>(null)
+      useModalFocusTrap(open, () => setOpen(false), panelRef)
+      return (
+        <div>
+          <button onClick={() => setOpen(true)}>Open</button>
+          {open && (
+            <div ref={panelRef} role="dialog" tabIndex={-1}>
+              <button>First</button>
+              <button aria-disabled="true">aria-disabled Type tab</button>
+            </div>
+          )}
+        </div>
+      )
+    }
+    render(<AriaDisabledHarness />)
+    fireEvent.click(screen.getByText('Open'))
+    expect(screen.getByText('First')).toHaveFocus()
+    // Shift+Tab from the first element wraps to the *last* focusable one —
+    // this only lands on the aria-disabled button if it's still counted as
+    // focusable at all. (jsdom doesn't simulate native mid-list Tab
+    // traversal, so the boundary-wrap case is what actually exercises the
+    // trap's own focusable-list computation.)
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    expect(screen.getByText('aria-disabled Type tab')).toHaveFocus()
+  })
+
   it('does not throw and does not crash focus restore when the trigger has been unmounted', () => {
     function UnmountingTriggerHarness() {
       const [showTrigger, setShowTrigger] = useState(true)
