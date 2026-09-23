@@ -724,7 +724,7 @@ def build_library() -> list[dict]:
     # Step 2: Merge with existing catalog if it exists
     if CATALOG_PATH.is_file():
         try:
-            with open(CATALOG_PATH) as f:
+            with open(CATALOG_PATH, encoding="utf-8") as f:
                 catalog = json.load(f)
             for entry in catalog:
                 canonical = entry.get("canonical", "").lower().strip()
@@ -767,7 +767,7 @@ def build_library() -> list[dict]:
 def main() -> None:
     library = build_library()
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT_PATH, "w") as f:
+    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
         json.dump(library, f, indent=2, ensure_ascii=False)
     print(f"Wrote {len(library)} entries to {OUTPUT_PATH}")
 

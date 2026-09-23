@@ -31,8 +31,16 @@ export async function POST(request: Request) {
 
   const data = await res.json()
   if (!res.ok) {
+    // The AI service sends a sanitized { message, code } object as `detail`
+    // (see ai-service/bubbly_chef/services/scan_errors.py, issue #396).
+    // Fall back to a plain string for older/other error shapes.
+    const detail = data.detail
+    const message =
+      detail && typeof detail === 'object' ? (detail.message ?? 'Scan failed') : (detail ?? 'Scan failed')
+    const code = detail && typeof detail === 'object' ? detail.code : undefined
+
     return NextResponse.json(
-      { error: data.detail ?? 'Scan failed' },
+      { error: message, ...(code ? { code } : {}) },
       { status: res.status },
     )
   }
