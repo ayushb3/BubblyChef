@@ -85,12 +85,15 @@ export default function KitchenScene({ unlocked, balance, loading = false }: Kit
               key={slot.key}
               data-testid={`kitchen-slot-${slot.key}`}
               data-filled={decoration ? 'true' : 'false'}
-              // Only labelled here when empty — a role-less wrapper's
-              // aria-label is dropped by most screen readers, so when the
-              // slot is filled the accessible name lives on the actual
-              // content node below (the <img>'s alt or the emoji's
-              // role="img") using the decoration's own name, not the slot's.
-              {...(!decoration ? { role: 'img', 'aria-label': `${slot.label} (empty)` } : {})}
+              // Filled slots carry no label of their own — the accessible
+              // name lives on the actual content node below (the <img>'s
+              // alt or the emoji's role="img") using the decoration's own
+              // name, not the slot's. Empty slots are decorative filler with
+              // nothing for a screen reader to announce, so they're hidden
+              // outright rather than each narrating "<label> (empty)" —
+              // a new user's empty home screen would otherwise announce 12
+              // placeholders before the greeting and hero.
+              {...(!decoration ? { 'aria-hidden': true } : {})}
               className="absolute flex items-center justify-center"
               style={{
                 left: `${slot.x}%`,
@@ -114,10 +117,7 @@ export default function KitchenScene({ unlocked, balance, loading = false }: Kit
                   </span>
                 )
               ) : (
-                <div
-                  className="w-full h-full rounded-xl border-2 border-dashed border-white/60"
-                  aria-hidden="true"
-                />
+                <div className="w-full h-full rounded-xl border-2 border-dashed border-white/60" />
               )}
             </div>
           )

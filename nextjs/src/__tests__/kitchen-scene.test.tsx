@@ -92,4 +92,30 @@ describe('KitchenScene (#521)', () => {
       )
     }
   })
+
+  it('does not paint slots from already-held unlocked data while still loading', () => {
+    // Same shape as the "every slot filled" case above, but with `loading`
+    // set — this is the one case that actually exercises the `if (!loading)`
+    // guard in KitchenScene. A test that pairs `loading` with an empty
+    // `unlocked` array can't tell the guard apart from simply having no data
+    // to render; passing real, resolvable rows here means the assertions
+    // below only pass because the guard suppresses them, not because there
+    // was nothing to show.
+    const oneEntryPerSlot = SLOTS.map(
+      (slot) => CATALOG.find((d) => d.slot === slot.key)!,
+    )
+    render(
+      <KitchenScene
+        unlocked={oneEntryPerSlot.map((d) => ({ id: d.id, slot: d.slot }))}
+        balance={42}
+        loading
+      />,
+    )
+
+    for (const slot of SLOTS) {
+      expect(screen.getByTestId(`kitchen-slot-${slot.key}`).getAttribute('data-filled')).toBe(
+        'false',
+      )
+    }
+  })
 })
