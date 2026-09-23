@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { isGuestUser } from '@/lib/auth/guest'
+import { stashLoginEmail } from '@/lib/auth/login-prefill'
 import SpringButton from '@/components/ui/SpringButton'
 
 /**
@@ -32,8 +34,15 @@ interface SaveAccountBannerProps {
   persistent?: boolean
 }
 
+// updateUser rejects an email that already belongs to another user. This card
+// only converts the current guest, so that person is a returning user who
+// needs /login instead (#588).
+const EMAIL_TAKEN_CODES = new Set(['email_exists', 'user_already_exists'])
+
 export default function SaveAccountBanner({ persistent = false }: SaveAccountBannerProps) {
   const [isGuest, setIsGuest] = useState(false)
+  // True when the typed email already has an account: point to /login.
+  const [emailTaken, setEmailTaken] = useState(false)
   const [expanded, setExpanded] = useState(persistent)
   const [dismissed, setDismissed] = useState(false)
   const [email, setEmail] = useState('')
@@ -68,12 +77,19 @@ export default function SaveAccountBanner({ persistent = false }: SaveAccountBan
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+    setEmailTaken(false)
     setLoading(true)
 
     try {
       const supabase = createClient()
       const { error: updateError } = await supabase.auth.updateUser({ email, password })
-      if (updateError) throw updateError
+      if (updateError) {
+        if (updateError.code && EMAIL_TAKEN_CODES.has(updateError.code)) {
+          setEmailTaken(true)
+          return
+        }
+        throw updateError
+      }
       setCheckEmail(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
@@ -186,6 +202,19 @@ export default function SaveAccountBanner({ persistent = false }: SaveAccountBan
                 {error}
               </p>
             )}
+            {emailTaken && (
+              <p className="text-sm text-[var(--color-text)] bg-[var(--color-accent)]/10 px-4 py-2 rounded-2xl">
+                That email already has a BubblyChef account.{' '}
+                <Link
+                  href="/login"
+                  onClick={() => stashLoginEmail(email)}
+                  className="font-semibold text-[var(--color-primary)] underline"
+                >
+                  Sign in to it instead
+                </Link>{' '}
+                — your guest pantry won&apos;t move over.
+              </p>
+            )}
             <SpringButton
               type="submit"
               disabled={loading}
@@ -227,6 +256,17 @@ export default function SaveAccountBanner({ persistent = false }: SaveAccountBan
             </svg>
             {googleLoading ? '...' : 'Continue with Google'}
           </SpringButton>
+
+          <p className="mt-4 text-center text-xs text-[var(--color-muted)]">
+            Already have an account?{' '}
+            <Link
+              href="/login"
+              onClick={() => stashLoginEmail(email)}
+              className="font-semibold text-[var(--color-primary)]"
+            >
+              Sign in
+            </Link>
+          </p>
         </>
       )}
     </div>

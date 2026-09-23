@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { takeLoginEmail } from '@/lib/auth/login-prefill'
 import { useRouter } from 'next/navigation'
 import FloatingBubbles from '@/components/ui/FloatingBubbles'
 import SpringButton from '@/components/ui/SpringButton'
@@ -24,6 +25,13 @@ export default function LoginPage() {
   // useSearchParams() to avoid a Suspense boundary for what's otherwise a
   // plain client page. Read once on mount and strip the param so a refresh
   // doesn't keep re-showing a stale error.
+  // Prefill the email handed over from the profile's "Save your account"
+  // card (#588).
+  useEffect(() => {
+    const stashed = takeLoginEmail()
+    if (stashed) setEmail(stashed)
+  }, [])
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const oauthError = params.get('error')
