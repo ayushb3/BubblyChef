@@ -38,6 +38,13 @@ T = TypeVar("T", bound=BaseModel)
 # instead of keying off words that appear in both cases.
 _QUOTA_ID_RE = re.compile(r'"quotaId"\s*:\s*"([^"]+)"', re.IGNORECASE)
 
+# A missing or revoked Gemini API key surfaces as HTTP 400 INVALID_ARGUMENT
+# (reason `API_KEY_INVALID`, message "API key not valid") — not 401/403 like
+# most auth failures. A bare 400-means-bad_request mapping puts the most
+# common auth failure in the generic bucket instead of the distinct "auth"
+# one users need to hear about (#514).
+_API_KEY_INVALID_RE = re.compile(r"API_KEY_INVALID|API key not valid", re.IGNORECASE)
+
 
 def _classify_http_error(status_code: int, body: str) -> ProviderFailureKind:
     """Classify a Gemini HTTP error response into a `ProviderFailureKind`.
@@ -71,6 +78,8 @@ def _classify_http_error(status_code: int, body: str) -> ProviderFailureKind:
     if status_code == 404:
         return "model_not_found"
     if status_code == 400:
+        if _API_KEY_INVALID_RE.search(body):
+            return "auth"
         return "bad_request"
     if status_code >= 500:
         return "overloaded"

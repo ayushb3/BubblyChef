@@ -111,6 +111,33 @@ class TestAggregatedKindAcrossProviders:
         assert exc_info.value.kind == "bad_request"
 
     @pytest.mark.asyncio
+    async def test_health_check_reflects_aggregated_kind_not_last_provider_tried(self) -> None:
+        # Production shape (#514): Gemini fails with a classified kind, then
+        # the local Ollama fallback fails with a generic "network" kind
+        # because it's unreachable. `_record_failure` used to overwrite
+        # `_last_failure_kind` with whichever provider failed *last* — so
+        # `/health/ai` reported "network" during a real Gemini quota/auth/5xx
+        # outage even though the raised error's `.kind` was correct. This
+        # must read the same aggregated kind the raised error carries.
+        gemini = _provider("gemini/test")
+        gemini.complete = AsyncMock(
+            side_effect=ProviderUnavailableError("API key not valid", kind="auth")
+        )
+        ollama = _provider("ollama/test")
+        ollama.complete = AsyncMock(
+            side_effect=ProviderUnavailableError(
+                "Ollama connection error: [Errno 111] Connection refused", kind="network"
+            )
+        )
+        manager = AIManager(providers=[gemini, ollama])
+
+        with pytest.raises(NoProviderAvailableError):
+            await manager.complete(prompt="hello")
+
+        status = await manager.health_check()
+        assert status["last_failure_kind"] == "auth"
+
+    @pytest.mark.asyncio
     async def test_falls_back_to_network_when_every_provider_is_network(self) -> None:
         gemini = _provider("gemini/test")
         gemini.complete = AsyncMock(

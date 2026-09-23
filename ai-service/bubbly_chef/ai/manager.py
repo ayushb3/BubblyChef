@@ -104,21 +104,41 @@ class AIManager:
         return self._last_failure_at
 
     def _record_failure(self, provider: AIProvider, error: ProviderUnavailableError) -> str:
-        """Record a provider failure and return the formatted string for the
+        """Log a provider failure and return the formatted string for the
         method's ``errors`` list.
 
-        Sets ``_last_failure_kind`` / ``_last_failure_at`` and logs once at
-        WARNING with the failure's ``kind`` and ``status_code`` — the single
-        log site for a provider failure across all four call methods
-        (replaces each method's own, previously inconsistent, logging).
+        Does *not* set ``_last_failure_kind`` / ``_last_failure_at`` itself —
+        with Gemini tried before Ollama (see ``ollama_base_url`` default in
+        config.py), setting it here unconditionally would let a later,
+        generic Ollama "network" failure overwrite an earlier, more
+        informative Gemini kind (quota_exhausted/auth/etc.) once the whole
+        cascade finishes. ``_finalize_failure`` sets the aggregated kind once
+        the cascade for the call is done, the same way ``NoProviderAvailableError.kind``
+        is computed (#514). This is the single log site for a provider
+        failure across all four call methods (replaces each method's own,
+        previously inconsistent, logging).
         """
-        self._last_failure_kind = error.kind
-        self._last_failure_at = datetime.now()
         logger.warning(
             f"AI provider [{provider.name}] failed: kind={error.kind} "
             f"status_code={error.status_code}: {error}"
         )
         return f"{provider.name}: {error}"
+
+    def _finalize_failure(self, failure_kinds: list[str]) -> str | None:
+        """Record the most informative kind out of a completed cascade.
+
+        Called once, after every provider in the cascade has been tried and
+        none succeeded — mirrors how ``NoProviderAvailableError.kind`` is
+        computed via ``_aggregate_kind`` so ``/health/ai`` reports the same
+        kind the raised error carries, instead of whichever provider merely
+        failed last (#514). Returns the aggregated kind for reuse when
+        raising ``NoProviderAvailableError``.
+        """
+        aggregated = _aggregate_kind(failure_kinds)
+        if aggregated is not None:
+            self._last_failure_kind = aggregated
+            self._last_failure_at = datetime.now()
+        return aggregated
 
     def _clear_failure(self) -> None:
         """Clear the last-recorded failure after a success."""
@@ -237,7 +257,7 @@ class AIManager:
         )
         raise NoProviderAvailableError(
             f"All providers failed. Errors: {errors}",
-            kind=_aggregate_kind(failure_kinds),
+            kind=self._finalize_failure(failure_kinds),
             configured=bool(self.providers),
         )
 
@@ -304,7 +324,7 @@ class AIManager:
 
         raise NoProviderAvailableError(
             f"No vision-capable provider available. Errors: {errors}",
-            kind=_aggregate_kind(failure_kinds),
+            kind=self._finalize_failure(failure_kinds),
             configured=bool(self.providers),
         )
 
@@ -375,7 +395,7 @@ class AIManager:
 
         raise NoProviderAvailableError(
             f"No tool-calling-capable provider available. Errors: {errors}",
-            kind=_aggregate_kind(failure_kinds),
+            kind=self._finalize_failure(failure_kinds),
             configured=bool(self.providers),
         )
 
@@ -421,7 +441,7 @@ class AIManager:
 
         raise NoProviderAvailableError(
             f"All providers failed for streaming. Errors: {errors}",
-            kind=_aggregate_kind(failure_kinds),
+            kind=self._finalize_failure(failure_kinds),
             configured=bool(self.providers),
         )
 

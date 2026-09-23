@@ -94,6 +94,22 @@ class TestClassifyHttpError:
     def test_400_is_bad_request(self) -> None:
         assert _classify_http_error(400, "invalid argument") == "bad_request"
 
+    def test_400_with_api_key_invalid_reason_is_auth(self) -> None:
+        # A missing/revoked Gemini API key comes back as HTTP 400
+        # INVALID_ARGUMENT with reason API_KEY_INVALID, not 401/403 — the
+        # most common real-world auth failure. Must not land in the generic
+        # bad_request bucket.
+        body = (
+            '{"error": {"code": 400, "message": "API key not valid. Please pass a '
+            'valid API key.", "status": "INVALID_ARGUMENT", "details": [{'
+            '"@type": "type.googleapis.com/google.rpc.ErrorInfo", '
+            '"reason": "API_KEY_INVALID"}]}}'
+        )
+        assert _classify_http_error(400, body) == "auth"
+
+    def test_400_with_bare_api_key_not_valid_message_is_auth(self) -> None:
+        assert _classify_http_error(400, "API key not valid") == "auth"
+
     def test_5xx_is_overloaded(self) -> None:
         for status in (500, 502, 503, 504):
             assert _classify_http_error(status, "internal error") == "overloaded"
