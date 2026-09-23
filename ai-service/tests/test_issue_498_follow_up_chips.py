@@ -6,13 +6,17 @@ and zero consumers. This test file pins the producer side:
 - `suggest_follow_ups` is a structured-output post-pass over the finished
   reply (schema `FollowUpSuggestions`, never raw-string parsing), capped at
   `MAX_FOLLOW_UP_SUGGESTIONS`, deduped, and best-effort (any failure → `[]`).
-- The cooking-help ReAct path and the general-chat node carry the result in
-  state as `follow_up_suggestions`.
-- The router threads it into `envelope.metadata["follow_up_suggestions"]` on
-  both the non-streaming and the streaming (SSE) path, the latter being the
-  one the UI actually uses.
-- The fallback contract: when the pass yields nothing, the key is present and
-  empty so the frontend falls back to its static per-intent chips.
+- The graph nodes never run it. The streaming entry point is the only caller:
+  it sends the envelope first (with `metadata.follow_ups_pending`), then the
+  suggestions as a separate `follow_ups` SSE event, so a turn costs at most
+  one extra model call and the reply is never held back for the chips.
+- No pass for replies that carry their own actions (idea cards, recipe or
+  pantry proposals, the confirm band), for callers that render no chips
+  (`follow_up_chips=False`, the guided-cook overlay), or for the error
+  fallback reply.
+- The fallback contract: when the pass yields nothing, the `follow_ups` event
+  still arrives with an empty list, so the frontend falls back to its static
+  per-intent chips.
 """
 
 from __future__ import annotations
@@ -200,10 +204,19 @@ _CLASSIFIED = {
 }
 
 
-async def _collect_stream(*, intent=Intent.COOKING_HELP.value, dispatch_final=None, post_pass=None):
+async def _collect_stream(
+    *,
+    intent=Intent.COOKING_HELP.value,
+    dispatch_final=None,
+    post_pass=None,
+    stream_error=None,
+    follow_up_chips=True,
+):
     from bubbly_chef.workflows import router as router_mod
 
     async def _tokens(**_kwargs):
+        if stream_error is not None:
+            raise stream_error
         for tok in ("Chicken ", "is done."):
             yield tok
 
@@ -234,7 +247,9 @@ async def _collect_stream(*, intent=Intent.COOKING_HELP.value, dispatch_final=No
         events = [
             json.loads(chunk)
             async for chunk in router_mod.run_chat_workflow_streaming(
-                message="how do I know chicken is done?", user_id="u"
+                message="how do I know chicken is done?",
+                user_id="u",
+                follow_up_chips=follow_up_chips,
             )
         ]
     return events, manager
@@ -301,6 +316,27 @@ class TestStreamingPath:
                 "confirm_options": [{"label": "Tweak", "forced_intent": "recipe_card"}],
             },
         )
+        assert "follow_ups" not in [e["type"] for e in events]
+        manager.complete.assert_not_awaited()
+
+
+class TestSkippedWhenNobodyShowsChips:
+    @pytest.mark.asyncio
+    async def test_caller_that_renders_no_chips_makes_no_call(self):
+        """The guided-cook overlay streams chat but never renders chips."""
+        events, manager = await _collect_stream(follow_up_chips=False)
+        envelope = next(e for e in events if e["type"] == "envelope")["data"]
+        assert envelope["metadata"]["follow_ups_pending"] is False
+        assert "follow_ups" not in [e["type"] for e in events]
+        manager.complete.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_error_fallback_reply_makes_no_call(self):
+        """'Sorry, I ran into an error' is not something to suggest follow-ups for."""
+        events, manager = await _collect_stream(stream_error=RuntimeError("gemini 500"))
+        envelope = next(e for e in events if e["type"] == "envelope")["data"]
+        assert envelope["assistant_message"].startswith("Sorry, I ran into an error")
+        assert envelope["metadata"]["follow_ups_pending"] is False
         assert "follow_ups" not in [e["type"] for e in events]
         manager.complete.assert_not_awaited()
 

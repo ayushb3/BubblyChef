@@ -132,6 +132,14 @@ class ChatRequest(BaseModel):
             "lose the actual request. Ignored when forced_intent is unset."
         ),
     )
+    follow_up_chips: bool = Field(
+        default=True,
+        description=(
+            "Whether this caller renders context-aware follow-up chips (issue "
+            "#498). False skips the extra model call that produces them — the "
+            "guided-cook overlay streams chat but shows no chips."
+        ),
+    )
 
     model_config = ConfigDict(json_schema_extra={
         "example": {

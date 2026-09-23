@@ -53,7 +53,6 @@ _COOKING_TOOL_NAMES = ["check_pantry"]
 MAX_FOLLOW_UP_SUGGESTIONS = 3
 
 
-
 async def suggest_follow_ups(
     ai_manager: AIManager,
     user_message: str,
@@ -624,9 +623,7 @@ async def _cooking_help_single_shot(
     """Original single-shot cooking help path (pre-R3 behavior).
 
     Used as the graceful fallback when no tool-calling-capable provider is
-    available.  Deliberately runs no follow-up-chip post-pass (issue #498):
-    this is the degraded single-call path, so the frontend shows its static
-    chips here.
+    available.
     """
     pantry_context = await _fetch_pantry_context(state)
     dietary_context = await format_dietary_context(state)
@@ -863,7 +860,7 @@ async def _cooking_help_react(
                 "confidence": 1.0,
                 "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
                 "suggested_mode": suggested_mode,
-                }
+            }
 
         return {
             **state,

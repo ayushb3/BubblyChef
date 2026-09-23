@@ -1795,7 +1795,7 @@ def _wants_follow_ups(envelope: Any) -> bool:
 
 
 async def _envelope_then_follow_ups(
-    envelope: Any, message: str, ai_manager: Any | None = None
+    envelope: Any, message: str, ai_manager: Any | None = None, *, allowed: bool = True
 ) -> AsyncIterator[str]:
     """Yield the envelope, then (when wanted) the follow-up chips as their own event.
 
@@ -1804,10 +1804,13 @@ async def _envelope_then_follow_ups(
     separate ``follow_ups`` event. ``metadata.follow_ups_pending`` tells the
     client whether to wait for one. This is the only place the follow-up
     pass runs, so a turn costs at most one extra model call.
+
+    ``allowed=False`` skips the pass outright: a caller that renders no chips,
+    or a reply that is the streaming error fallback.
     """
     import json as _json
 
-    wants = _wants_follow_ups(envelope)
+    wants = allowed and _wants_follow_ups(envelope)
     envelope.metadata["follow_ups_pending"] = wants
     yield _json.dumps({"type": "envelope", "data": envelope.model_dump(mode="json")})
     if not wants:
@@ -1841,6 +1844,7 @@ async def run_chat_workflow_streaming(
     context: dict[str, Any] | None = None,
     forced_intent: str | None = None,
     forced_intent_source: str | None = None,
+    follow_up_chips: bool = True,
 ) -> AsyncIterator[str]:
     """
     Streaming variant of run_chat_workflow.
@@ -1914,7 +1918,7 @@ async def run_chat_workflow_streaming(
         }
         final_state = await dispatch_graph.ainvoke(dispatch_state)
         env = _build_envelope_from_state(final_state, message, conversation_id)
-        async for chunk in _envelope_then_follow_ups(env, message):
+        async for chunk in _envelope_then_follow_ups(env, message, allowed=follow_up_chips):
             yield chunk
         return
 
@@ -1925,7 +1929,7 @@ async def run_chat_workflow_streaming(
         # confirm/forced-intent decision (#416 #2).
         final_state = await dispatch_graph.ainvoke(classified_state)
         env = _build_envelope_from_state(final_state, message, conversation_id)
-        async for chunk in _envelope_then_follow_ups(env, message):
+        async for chunk in _envelope_then_follow_ups(env, message, allowed=follow_up_chips):
             yield chunk
         return
 
@@ -2003,12 +2007,16 @@ async def run_chat_workflow_streaming(
 
     # Stream tokens
     collected_text = ""
+    # Set when the reply below is a canned failure message rather than an
+    # answer: there's nothing to suggest follow-ups for (issue #498).
+    stream_failed = False
 
     try:
         async for token in ai_manager.stream_complete(prompt=prompt, temperature=0.7):
             collected_text += token
             yield _json.dumps({"type": "token", "content": token})
     except NoProviderAvailableError:
+        stream_failed = True
         collected_text = (
             "No AI provider is configured. "
             "Please add a Gemini API key or start Ollama."
@@ -2016,6 +2024,7 @@ async def run_chat_workflow_streaming(
         yield _json.dumps({"type": "token", "content": collected_text})
     except Exception as e:
         logger.error(f"Streaming error: {e}")
+        stream_failed = True
         collected_text = "Sorry, I ran into an error. Please try again."
         yield _json.dumps({"type": "token", "content": collected_text})
 
@@ -2050,7 +2059,9 @@ async def run_chat_workflow_streaming(
 
     yield _json.dumps({"type": "done"})
 
-    async for chunk in _envelope_then_follow_ups(envelope, message, ai_manager):
+    async for chunk in _envelope_then_follow_ups(
+        envelope, message, ai_manager, allowed=follow_up_chips and not stream_failed
+    ):
         yield chunk
 
 

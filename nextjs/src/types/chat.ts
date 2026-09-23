@@ -128,6 +128,11 @@ export interface ChatRequest {
   forced_intent?: 'recipe_card' | 'recipe_brainstorm' | null
   /** With forced_intent: the user message that raised the confirm band. */
   forced_intent_source?: string | null
+  /**
+   * False when this caller renders no follow-up chips (issue #498), so the
+   * server skips the extra model call that produces them. Defaults to true.
+   */
+  follow_up_chips?: boolean
 }
 
 /**

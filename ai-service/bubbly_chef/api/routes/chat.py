@@ -96,6 +96,7 @@ async def chat_stream(
                 context=request.context,
                 forced_intent=request.forced_intent,
                 forced_intent_source=request.forced_intent_source,
+                follow_up_chips=request.follow_up_chips,
             ):
                 parsed = json.loads(chunk_json)
                 event_type = parsed.get("type", "token")
@@ -205,6 +206,7 @@ async def chat_non_streaming(
             context=request.context,
             forced_intent=request.forced_intent,
             forced_intent_source=request.forced_intent_source,
+            follow_up_chips=request.follow_up_chips,
         ):
             parsed = json.loads(chunk_json)
             event_type = parsed.get("type", "token")
