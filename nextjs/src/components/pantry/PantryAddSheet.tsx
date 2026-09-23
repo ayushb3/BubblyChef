@@ -53,7 +53,9 @@ export default function PantryAddSheet({
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dragControls = useDragControls()
   const panelRef = useRef<HTMLDivElement>(null)
-  useModalFocusTrap(isOpen, onClose, panelRef)
+  // `handleClose`, not the raw `onClose`: the focus trap closes on Escape, and
+  // that path must cancel a pending auto-close too (issue #525 review).
+  useModalFocusTrap(isOpen, handleClose, panelRef)
 
   function clearCloseTimer() {
     if (closeTimerRef.current) {
@@ -81,6 +83,9 @@ export default function PantryAddSheet({
       setIsSubmitting(false)
       setScanProcessing(false)
       setJustAdded(false)
+      // However the sheet was closed, a pending auto-close from a confirmed
+      // add must not fire into the next open.
+      clearCloseTimer()
     }
   }, [isOpen])
 
