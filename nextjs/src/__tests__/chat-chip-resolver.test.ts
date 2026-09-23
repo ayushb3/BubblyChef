@@ -24,6 +24,7 @@ const INTENT_SET: Record<ChatIntent, true> = {
   cooking_help: true,
   general_chat: true,
   recipe_brainstorm: true,
+  saved_recipe_lookup: true,
 }
 const VALID_INTENTS = Object.keys(INTENT_SET) as ChatIntent[]
 

@@ -17,6 +17,7 @@ from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.domain.mealtime import meal_time_bucket
 from bubbly_chef.domain.normalizer import normalize_food_name
 from bubbly_chef.domain.staples import is_staple
+from bubbly_chef.domain.stock import filter_usable_pantry_rows
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
 from bubbly_chef.models.recipe import (
     Ingredient,
@@ -42,6 +43,7 @@ from bubbly_chef.prompts.recipe import (
 )
 from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.services.dietary_preferences import get_stored_dietary_preferences
+from bubbly_chef.services.recipe_generator import generate_recipe as _generate_recipe_followup
 from bubbly_chef.tools.web_search import search_recipe
 from bubbly_chef.workflows.state import (
     LLMRecipeResult,
@@ -198,14 +200,100 @@ def detect_brainstorm_followup(state: WorkflowState) -> bool:
     return False
 
 
+# Word-boundary containment — a keyword/phrase must appear as a whole word (or
+# whole phrase) in the text, never as a bare substring (e.g. "any" inside
+# "many", "one" inside "someone"). #436 finding 1: the old `kw in text_lower`
+# checks let "how many eggs do I need" match "any" and misfire a re-pick.
+def _has_word(text_lower: str, phrase: str) -> bool:
+    return re.search(r"\b" + re.escape(phrase) + r"\b", text_lower) is not None
+
+
+# Pantry-update indicator words — mirrors the vocabulary the intent
+# classifier prompt itself uses to detect pantry_update ("bought", "got",
+# "purchased", "used", "consumed", "threw away", "add", "remove"). A message
+# using this vocabulary is describing groceries, not selecting a brainstormed
+# dish, even when a stored idea's name happens to appear in it as a literal
+# substring (#436 finding 1: "add tomato soup to my pantry" and "I bought
+# chicken curry paste" both fuzzy-match a stored idea at ~100 but are pantry
+# statements, not picks). Erring toward excluding is safe: it only skips the
+# repick shortcut, falling through to the LLM classifier rather than
+# mis-selecting.
+_PANTRY_UPDATE_WORDS = {
+    "bought", "buy", "buying", "got", "purchased", "purchase",
+    "used", "consumed", "add", "adding", "remove", "removing", "removed",
+}
+_PANTRY_UPDATE_PHRASES = {"threw away", "ran out"}
+
+
+def _looks_like_pantry_update(text_lower: str) -> bool:
+    return any(_has_word(text_lower, w) for w in _PANTRY_UPDATE_WORDS) or any(
+        p in text_lower for p in _PANTRY_UPDATE_PHRASES
+    )
+
+
+# Modification-intent indicator words — words that signal the user wants to
+# CHANGE the current dish rather than switch to a different offered idea.
+# These comparative adjectives and modification verbs are clear enough to
+# block a name-only re-pick under a pin (e.g. "make the Pesto Pasta one
+# spicier" → modification, not a switch to Pesto Pasta from a different pin).
+# Erring toward excluding is safe: it only skips the re-pick shortcut, falling
+# through to the LLM classifier rather than mis-categorizing a modification as
+# a dish switch.
+#
+# Comparatives — two-part approach to avoid false-positive food nouns:
+#
+# 1. -ier suffix regex: almost no food names end -ier, so a wildcard is safe.
+#    Minimum 4 root chars (total word >= 7) avoids "tier", "pier".
+#    Catches: spicier, creamier, gooier, zestier, smokier, crispier, saltier…
+_MODIFICATION_COMPARATIVE_IER_RE = re.compile(r"\b\w{4,}ier\b")
+#
+# 2. Explicit -er comparatives: we can't wildcard -er because common food
+#    nouns end -er (burger, butter, pepper, lobster, cheeseburger, chowder…).
+#    Keep only adjectives that are unambiguously comparative in cooking context.
+_MODIFICATION_COMPARATIVE_ER = {
+    "sweeter", "hotter", "milder", "richer", "softer",
+    "thicker", "warmer", "cooler", "drier", "lighter",
+    "heavier", "stronger",
+}
+_MODIFICATION_WORDS = {
+    "without", "substitute", "swap", "replace", "tweak",
+    "adjust", "change",
+}
+_MODIFICATION_PHRASES = {"make it", "make this"}
+
+
+def _looks_like_modification(text_lower: str) -> bool:
+    """True when the text is clearly a request to modify an attribute of the
+    current dish — not a switch to a different offered idea."""
+    if _MODIFICATION_COMPARATIVE_IER_RE.search(text_lower):
+        return True
+    if any(_has_word(text_lower, w) for w in _MODIFICATION_COMPARATIVE_ER):
+        return True
+    if any(_has_word(text_lower, w) for w in _MODIFICATION_WORDS):
+        return True
+    if any(phrase in text_lower for phrase in _MODIFICATION_PHRASES):
+        return True
+    if _has_word(text_lower, "less") or _has_word(text_lower, "more"):
+        return True
+    return False
+
+
 def extract_selected_recipe(
     user_text: str,
     history: list[dict[str, Any]],
+    stored_ideas: list[str] | None = None,
 ) -> str | None:
     """Extract which recipe the user selected from the last brainstorm response.
 
     Returns the matched recipe name, or None when the message is a conversational
-    follow-up (informational question) rather than a selection.
+    follow-up (informational question), an unrelated statement that merely
+    mentions an idea's name (e.g. "add tomato soup to my pantry"), rather than
+    an actual selection.
+
+    `stored_ideas` is the retained brainstorm set from the session (Q6). When the
+    conversation history has been truncated and carries no **bold** idea names,
+    the stored set is used as the candidate list so a re-pick still resolves
+    without regeneration.
     """
     from rapidfuzz import fuzz  # local import — optional dep already in pyproject.toml
 
@@ -217,6 +305,11 @@ def extract_selected_recipe(
 
     # Extract **bold** recipe names from brainstorm
     ideas: list[str] = re.findall(r"\*\*(.+?)\*\*", brainstorm_text)
+
+    # Q6 fallback: history had no bold idea names (e.g. truncated history) —
+    # resolve against the retained session set instead so a re-pick still works.
+    if not ideas and stored_ideas:
+        ideas = list(stored_ideas)
 
     text_lower = user_text.lower()
 
@@ -235,37 +328,220 @@ def extract_selected_recipe(
         "what are",
         "details",
     }
-    ordinal_words = {
+    # Unambiguous ordinals ("the first", "2nd one") only. Bare cardinals
+    # ("one"/"two"/...) are deliberately NOT here: "the porridge one" is a name
+    # selection, not a request for idea index 0 (issue #442). They rejoin the
+    # matcher only as a last-resort fallback below, after name matching fails.
+    selection_words = {
         "first", "second", "third", "fourth",
         "1st", "2nd", "3rd", "4th",
-        "one", "two", "three", "four",
-        "surprise", "any", "random", "you pick", "all of them",
     }
+    # Multi-word/unambiguous quick-pick phrases only — a bare "any" or
+    # "random" is too generic a word to ever safely stand for "pick one for
+    # me" (#436 finding 1: "is any of this gluten free" is not a pick).
+    quick_pick_phrases = {"surprise me", "any of them", "pick any", "you pick", "all of them"}
     has_informational = any(phrase in text_lower for phrase in informational_phrases)
-    has_ordinal = any(word in text_lower for word in ordinal_words)
-    if has_informational and not has_ordinal:
+    # A bare cardinal ("number one") also counts as a selection cue for the
+    # informational guard, so "what's in idea one?" still resolves rather than
+    # bailing — the cardinal only loses to a name match, it is not ignored.
+    _cardinal_words = {"one", "two", "three", "four"}
+    has_selection = (
+        any(_has_word(text_lower, word) for word in selection_words)
+        or any(_has_word(text_lower, word) for word in _cardinal_words)
+        or any(phrase in text_lower for phrase in quick_pick_phrases)
+    )
+    if has_informational and not has_selection:
         return None
 
     if not ideas:
         return None  # no brainstorm context to match against
 
+    # 1. Explicit ordinals win — unambiguous positional reference.
     ordinal_map = {
         "first": 0, "second": 1, "third": 2, "fourth": 3,
         "1st": 0, "2nd": 1, "3rd": 2, "4th": 3,
-        "one": 0, "two": 1, "three": 2, "four": 3,
     }
-
     for word, idx in ordinal_map.items():
-        if word in text_lower and idx < len(ideas):
+        if _has_word(text_lower, word) and idx < len(ideas):
             return ideas[idx]
 
-    if any(kw in text_lower for kw in ["surprise", "any", "random", "you pick", "all of them"]):
+    if any(phrase in text_lower for phrase in quick_pick_phrases):
         return ideas[0]
 
-    # Fuzzy match against idea names — raised threshold (>=80) to avoid false positives
+    # 2. Whole-phrase fuzzy match — high bar, catches when the user typed most
+    #    of the idea name ("I want pasta primavera", "beef tacos sound great").
+    #    Excluded when the message reads as a pantry statement rather than a
+    #    pick (#436 finding 1).
     best_match = max(ideas, key=lambda idea: fuzz.partial_ratio(text_lower, idea.lower()))
-    if fuzz.partial_ratio(text_lower, best_match.lower()) >= 80:
+    if (
+        fuzz.partial_ratio(text_lower, best_match.lower()) >= 80
+        and not _looks_like_pantry_update(text_lower)
+    ):
         return best_match
+
+    # 3. Distinctive-word match — a name buried in filler ("the tacos one
+    #    instead", "show me the porridge one") dilutes the whole-phrase score
+    #    below the bar, but a distinctive content word of the idea still names
+    #    it unambiguously. Match when exactly ONE idea shares a content word
+    #    (>=4 chars, not a generic food/filler word) with the text; ambiguous
+    #    overlaps (two ideas both matching) fall through rather than guess (#442).
+    _GENERIC = {
+        "recipe", "dish", "bowl", "plate", "style", "quick", "easy",
+        "fresh", "creamy", "savory", "sweet", "spicy", "with", "over",
+    }
+    text_words = set(re.findall(r"\b\w{4,}\b", text_lower))
+    name_hits = [
+        idea
+        for idea in ideas
+        if {
+            w for w in re.findall(r"\b\w{4,}\b", idea.lower()) if w not in _GENERIC
+        }
+        & text_words
+    ]
+    if len(name_hits) == 1 and not _looks_like_pantry_update(text_lower):
+        return name_hits[0]
+
+    # 4. Bare-cardinal fallback, last: only when no name matched does "give me
+    #    number two" mean an index. Word-boundary so "the <name> one" handled
+    #    above never reaches here for idx 0.
+    cardinal_map = {"one": 0, "two": 1, "three": 2, "four": 3}
+    for word, idx in cardinal_map.items():
+        if _has_word(text_lower, word) and idx < len(ideas):
+            return ideas[idx]
+
+    return None
+
+
+def extract_selected_recipe_by_name(
+    user_text: str,
+    history: list[dict[str, Any]],
+    stored_ideas: list[str] | None = None,
+    picked_title: str | None = None,
+) -> str | None:
+    """Name-match-only variant of extract_selected_recipe.
+
+    Runs ONLY the two name-based passes (whole-phrase fuzzy >=80 and
+    single-hit distinctive-word overlap) — positional passes (ordinal_map,
+    quick_pick_phrases, bare-cardinal fallback) are deliberately excluded.
+
+    This is used when a recipe is already pinned: a bare ordinal or cardinal
+    ("the first one", "number two") is too weak to override a pin and is
+    ambiguous with modification intent.  Only a distinctive-name reference may
+    trigger a switch to a different already-offered idea.
+
+    `picked_title` — the title of the currently-pinned recipe. When provided,
+    Pass 1 returns None if the pinned dish scores within 10 fuzzy points of the
+    winner (near-tie = ambiguous; fall through to LLM).  Pass 2 returns None if
+    the pinned dish shares any of the same decisive distinctive tokens as the
+    winner (shared token = ambiguous).  This prevents a sibling idea that shares
+    a token with the pinned dish from being silently substituted for it.
+
+    Returns the matched idea name, or None when positional, informational,
+    a pantry or modification statement, ambiguous with the pinned dish, or
+    unresolvable.
+
+    The caller still checks that the resolved name differs from the currently-
+    picked recipe as a second belt.
+    """
+    from rapidfuzz import fuzz  # local import — optional dep already in pyproject.toml
+
+    brainstorm_text = ""
+    for turn in reversed(history):
+        if turn.get("role") == "assistant" and turn.get("intent") == Intent.RECIPE_BRAINSTORM.value:
+            brainstorm_text = turn.get("content", "")
+            break
+
+    ideas: list[str] = re.findall(r"\*\*(.+?)\*\*", brainstorm_text)
+    if not ideas and stored_ideas:
+        ideas = list(stored_ideas)
+
+    if not ideas:
+        return None
+
+    text_lower = user_text.lower()
+
+    # Informational guard (identical to the full function): if it reads as an
+    # elaboration request and carries no selection cue, it is not a pick.
+    informational_phrases = {
+        "tell me more",
+        "more info",
+        "more about",
+        "explain",
+        "what's in",
+        "whats in",
+        "how do i make",
+        "how do you make",
+        "what are",
+        "details",
+    }
+    # For the informational guard we deliberately do NOT include cardinals here:
+    # a bare cardinal alone does NOT constitute a name match, and if the guard
+    # would fire we want it to fire (return None) rather than a cardinal
+    # rescuing a name match that doesn't exist.
+    selection_words = {
+        "first", "second", "third", "fourth",
+        "1st", "2nd", "3rd", "4th",
+    }
+    has_informational = any(phrase in text_lower for phrase in informational_phrases)
+    has_selection = any(_has_word(text_lower, word) for word in selection_words)
+    if has_informational and not has_selection:
+        return None
+
+    _GENERIC = {
+        "recipe", "dish", "bowl", "plate", "style", "quick", "easy",
+        "fresh", "creamy", "savory", "sweet", "spicy", "with", "over",
+    }
+
+    # Pass 1: Whole-phrase fuzzy match (threshold >=80, pantry-update guard,
+    # modification-intent guard, near-tie-with-pinned guard).
+    best_match = max(ideas, key=lambda idea: fuzz.partial_ratio(text_lower, idea.lower()))
+    winner_score = fuzz.partial_ratio(text_lower, best_match.lower())
+    if (
+        winner_score >= 80
+        and not _looks_like_pantry_update(text_lower)
+        and not _looks_like_modification(text_lower)
+    ):
+        # Ambiguity guard: if the pinned dish scores within 10 of the winner it
+        # is a near-tie — the user may mean the pinned dish, not the sibling.
+        # Return None so the LLM resolves the ambiguity rather than silently
+        # switching to the wrong idea.
+        if picked_title:
+            pinned_score = fuzz.partial_ratio(text_lower, picked_title.lower())
+            if pinned_score >= winner_score - 10:
+                return None
+        return best_match
+
+    # Pass 2: Distinctive-word overlap (single-hit, pantry-update guard,
+    # modification-intent guard, shared-token-with-pinned guard).
+    text_words = set(re.findall(r"\b\w{4,}\b", text_lower))
+    name_hits = [
+        idea
+        for idea in ideas
+        if {
+            w for w in re.findall(r"\b\w{4,}\b", idea.lower()) if w not in _GENERIC
+        }
+        & text_words
+    ]
+    if (
+        len(name_hits) == 1
+        and not _looks_like_pantry_update(text_lower)
+        and not _looks_like_modification(text_lower)
+    ):
+        # Ambiguity guard: if the pinned dish shares any of the same decisive
+        # non-generic tokens that caused the single hit, the match is ambiguous
+        # (the user may be referring to the pinned dish, not the sibling).
+        if picked_title:
+            winning_tokens = {
+                w for w in re.findall(r"\b\w{4,}\b", name_hits[0].lower())
+                if w not in _GENERIC
+            } & text_words
+            pinned_tokens = {
+                w for w in re.findall(r"\b\w{4,}\b", picked_title.lower())
+                if w not in _GENERIC
+            }
+            if winning_tokens & pinned_tokens:
+                return None
+        return name_hits[0]
 
     return None
 
@@ -649,7 +925,11 @@ async def score_pantry_ingredients(state: WorkflowState) -> WorkflowState:
         except Exception as e:
             logger.warning("Could not fetch pantry for scoring: %s", e)
 
-    scored = score_and_rank(pantry_items, constraints)
+    # Expired and zero-quantity rows are not stock: they never enter the
+    # ranked pool, so no prompt-builder downstream can list them as available
+    # (#443). Rows expiring today or later stay in and still get the urgency
+    # bonus in score_and_rank.
+    scored = score_and_rank(filter_usable_pantry_rows(pantry_items), constraints)
 
     return {
         **state,
@@ -701,16 +981,23 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         # would still invite the model to talk about the pantry.
         pantry_context = ""
     elif scored_items:
-        must_use = [i for i in scored_items if i.get("_must_use")]
         # Expired stock is dropped from the suggestion pool entirely (#239):
         # scoring no longer promotes it, but leaving it under "Other available"
         # still let the model build a dish around two-week-old spinach — and on
         # a real pantry (29 of 49 items expired) it crowded out good ingredients.
-        # A must-use item is an explicit user request, so it survives.
+        # Zero-quantity rows (cooked down by the cook flow, never deleted) go
+        # the same way (#443). The filter is repeated here even though
+        # score_pantry_ingredients already applies it, so pre-scored state can't
+        # smuggle a dead row back in. A must-use item the user named still
+        # binds the ideas through constraints_str below, so dropping its
+        # expired/empty pantry row costs nothing — the request survives, the
+        # false "you have this" claim does not.
         # Partition requires expiry_date to be present on scored items
         # (score_and_rank spreads {**item, ...} so original fields are preserved).
+        usable_items = filter_usable_pantry_rows(scored_items)
+        must_use = [i for i in usable_items if i.get("_must_use")]
         rest = [
-            i for i in scored_items if not i.get("_must_use") and not i.get("_expired")
+            i for i in usable_items if not i.get("_must_use") and not i.get("_expired")
         ]
         expiring = [
             i for i in rest
@@ -792,6 +1079,11 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         constraints_str += f"\nDietary: {', '.join(constraints['dietary'])}"
     if constraints.get("max_time_minutes"):
         constraints_str += f"\nMax time: {constraints['max_time_minutes']} minutes"
+    if constraints.get("preferred_ingredients"):
+        constraints_str += (
+            f"\nPreferred flavors/ingredients (include if sensible): "
+            f"{', '.join(constraints['preferred_ingredients'])}"
+        )
     if constraints.get("excluded_ingredients"):
         constraints_str += f"\nExclude: {', '.join(constraints['excluded_ingredients'])}"
 
@@ -910,7 +1202,14 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
             except Exception as e:
                 logger.warning("Could not fetch pantry for recipe generation: %s", e)
         if pantry_snapshot:
-            scored_items = score_and_rank(pantry_snapshot, constraints)
+            scored_items = score_and_rank(filter_usable_pantry_rows(pantry_snapshot), constraints)
+
+    # This is the path that told a user to cook "fresh spinach from your
+    # pantry" from a row that was expired at quantity 0 (#443): expired stock
+    # was only ever flagged by score_and_rank, never removed, so it landed in
+    # the "Supporting ingredients available" line. Nothing below may see a
+    # row that isn't cookable stock.
+    scored_items = filter_usable_pantry_rows(scored_items)
 
     # Must-use names come from the constraint itself so ingredients the user
     # named but doesn't have in the pantry still bind the recipe.
@@ -937,11 +1236,15 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
     constraints_json = _json.dumps(
         {k: v for k, v in constraints.items() if v and k != "use_pantry"}
     )
+    preferred_ingredients_str = (
+        ", ".join(constraints.get("preferred_ingredients") or []) or "none specified"
+    )
     prompt = GROUNDED_RECIPE_SYSTEM_PROMPT.format(
         recipe_name=recipe_name,
         constraints_json=constraints_json,
         must_use_items=", ".join(must_use_names[:5]) or "none specified",
         priority_items=", ".join(priority_items[:8]) or "none specified",
+        preferred_ingredients=preferred_ingredients_str,
         supporting_items=", ".join(supporting_items[:10]) or "none",
         context=context,
     )
@@ -1116,5 +1419,122 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
         "requires_review": True,
         "confidence": llm_result.confidence,
         "ingredient_availability": avail_dicts,
+        "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
+    }
+
+
+async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
+    """Node: refine the currently-pinned recipe in place (#416 AC1).
+
+    Reached when intent==recipe_card AND a full recipe is already pinned in
+    session (`session.metadata.picked_recipe`) — i.e. this turn is a
+    modification ("make it spicier", "add tomato") rather than a first pick
+    from brainstorm (which still routes to research_recipe ->
+    generate_grounded_recipe above).
+
+    Reuses the existing, already-shipped follow-up engine —
+    `services/recipe_generator.py::generate_recipe(previous_recipe=...)`,
+    the same function `/v1/recipes/refine` calls — instead of reimplementing
+    the follow-up prompt. Preserves the pinned recipe's id so the card
+    replaces in place (same identity) rather than rendering as a distinct
+    new card.
+    """
+    input_text = state.get("input_text", "")
+    session = state.get("session") or {}
+    picked_recipe_raw = (session.get("metadata") or {}).get("picked_recipe")
+
+    if not picked_recipe_raw:
+        # Defensive only: route_by_intent sends turns here exactly when
+        # picked_recipe is set. Guards direct state construction (tests,
+        # future callers) from crashing on a missing pin.
+        logger.warning("refine_recipe_node reached with no picked_recipe in session")
+        return {
+            **state,
+            "intent": Intent.GENERAL_CHAT.value,
+            "assistant_message": (
+                "I don't have a recipe pinned to refine yet — ask me for one first!"
+            ),
+            "next_action": NextAction.NONE.value,
+            "proposal": None,
+            "requires_review": False,
+            "confidence": 0.5,
+            "workflow_status": WorkflowStatus.COMPLETED.value,
+        }
+
+    previous_recipe = RecipeCard.model_validate(picked_recipe_raw)
+
+    pantry_items: list[Any] = []
+    try:
+        repo = await get_repository()
+        pantry_items = await repo.get_all_pantry_items(state.get("user_id") or "")
+    except Exception as e:
+        logger.warning("Could not fetch pantry for recipe refinement: %s", e)
+
+    ai_manager = get_ai_manager()
+    try:
+        result = await _generate_recipe_followup(
+            prompt=input_text,
+            pantry_items=pantry_items,
+            ai_manager=ai_manager,
+            previous_recipe=previous_recipe,
+        )
+    except Exception as e:
+        logger.error("Recipe refinement failed: %s", e)
+        return {
+            **state,
+            "intent": Intent.GENERAL_CHAT.value,
+            "assistant_message": (
+                f"Sorry, I couldn't refine '{previous_recipe.title}'. Please try again."
+            ),
+            "next_action": NextAction.NONE.value,
+            "proposal": None,
+            "requires_review": False,
+            "confidence": 0.5,
+            "errors": state.get("errors", []) + [f"Recipe refinement error: {e}"],
+            "workflow_status": WorkflowStatus.COMPLETED.value,
+        }
+
+    # Preserve the pinned recipe's id so the card replaces in place instead
+    # of rendering as a new, distinct card (identity requirement, #416 AC1).
+    refined_recipe = result.recipe.model_copy(update={"id": previous_recipe.id})
+
+    availability = [
+        IngredientAvailability(
+            name=s.ingredient_name,
+            status="have" if s.status in ("have", "partial") else "missing",
+            pantry_item_name=s.pantry_item_name,
+        )
+        for s in result.ingredients_status
+    ]
+    missing = [s.ingredient_name for s in result.ingredients_status if s.status == "missing"]
+    available = [s.ingredient_name for s in result.ingredients_status if s.status != "missing"]
+
+    proposal = RecipeCardProposal(
+        recipe=refined_recipe,
+        pantry_match_score=result.pantry_match_score,
+        missing_ingredients=missing,
+        available_ingredients=available,
+    )
+
+    envelope = create_recipe_envelope(
+        proposal=proposal,
+        confidence=0.9,
+        field_confidences={},
+        warnings=state.get("warnings", []),
+        errors=state.get("errors", []),
+        assistant_message=f"Updated {refined_recipe.title}!",
+        request_id=state.get("request_id"),
+        workflow_id=state.get("workflow_id"),
+    )
+
+    return {
+        **state,
+        "intent": Intent.RECIPE_CARD.value,
+        "assistant_message": envelope.assistant_message,
+        "next_action": NextAction.REVIEW_PROPOSAL.value,
+        "proposal": proposal,
+        "requires_review": True,
+        "confidence": 0.9,
+        "ingredient_availability": [a.model_dump() for a in availability],
         "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
     }

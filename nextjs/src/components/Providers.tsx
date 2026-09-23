@@ -3,6 +3,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ThemeProvider } from './ThemeProvider'
+import { TourProvider } from './onboarding/TourProvider'
+import { TourOverlay } from './onboarding/TourOverlay'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -19,7 +21,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        {children}
+        <TourProvider>
+          {children}
+          <TourOverlay />
+        </TourProvider>
       </ThemeProvider>
     </QueryClientProvider>
   )

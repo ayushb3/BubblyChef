@@ -28,6 +28,11 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     "- cooking_help: User asking HOW-TO questions about cooking — "
     "techniques, food storage, substitutions, temperatures, "
     "cooking times (NOT recipe requests)\n"
+    "- saved_recipe_lookup: User wants to find or reference a recipe they "
+    "ALREADY SAVED — 'show me my saved X', 'the pasta I made last week', "
+    "'make that butter chicken I saved', or asks you to remember or search "
+    "their history for one — 'do you remember that curry recipe?' (this is "
+    "NOT a request to generate a new recipe)\n"
     "- general_chat: ONLY for messages truly unrelated to food, cooking, "
     "or the kitchen (e.g. greetings, app questions, small talk)\n\n"
     "IMPORTANT: Distinguish recipe_brainstorm from recipe_generation:\n"
@@ -39,6 +44,18 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     "- 'give me a pasta recipe' → recipe_generation\n"
     "- 'how do I cook pasta?' → cooking_help\n"
     "- 'how long does chicken last?' → cooking_help\n\n"
+    "IMPORTANT: Distinguish saved_recipe_lookup from recipe_generation "
+    "(a saved-recipe reference is NOT a request to make a new one):\n"
+    "- 'make that butter chicken I saved' → saved_recipe_lookup\n"
+    "- 'show me my saved butter chicken' → saved_recipe_lookup\n"
+    "- 'the pasta I made last week' → saved_recipe_lookup\n"
+    "- 'do you remember that curry recipe?' → saved_recipe_lookup\n"
+    "- 'search your memory for the soup we made' → saved_recipe_lookup\n"
+    "- 'look in my history for that pasta' → saved_recipe_lookup\n"
+    "- 'what was that recipe from last time?' → saved_recipe_lookup\n"
+    "- 'find the one we made before' → saved_recipe_lookup\n"
+    "- 'make me a butter chicken' → recipe_generation\n"
+    "- 'give me a pasta recipe' → recipe_generation\n\n"
     "Be accurate. Look for key indicators:\n"
     '- "bought", "got", "purchased", "used", "consumed", "threw away",'
     ' "add", "remove" -> pantry_update\n'
@@ -56,6 +73,10 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     " (in context of prior recipe) -> recipe_card\n"
     '- "how to cook", "how long does X last", "substitute for",'
     ' "food storage", "what temperature" -> cooking_help\n'
+    '- "show me my saved", "the one I saved", "I saved", "made last week",'
+    ' "do you remember", "search your memory", "in my history", "last time",'
+    ' "we made before" (referencing an existing saved recipe)'
+    " -> saved_recipe_lookup\n"
     "- Everything else -> general_chat"
 )
 
@@ -64,3 +85,54 @@ INTENT_CLASSIFICATION_USER_PROMPT = """Classify this message:
 "{text}"
 
 Return the intent, confidence (0-1), brief reasoning, and any key entities you detected."""
+
+# Session-mode bias appended to the classifier system prompt as a soft prior
+# (#416). The classifier can still return any intent; these only tilt it.
+
+MODE_BIAS_RECIPE_PICKED_PROMPT = (
+    "\n\nSESSION CONTEXT: The user is in recipe-exploring mode with a picked recipe. "
+    "Bias toward 'recipe_card' for a follow-up that COMMANDS a tweak, "
+    "substitution, or refinement of the current recipe (e.g. 'make it spicier', "
+    "'no cheese', 'add a fig glaze', 'swap the cream for yoghurt'). "
+    "Only classify as 'recipe_brainstorm' if the user clearly wants to start fresh "
+    "(e.g. 'actually something else', 'show me different options', 'start over'). "
+    "CRITICAL — question vs. command: a follow-up that ASKS ABOUT the current "
+    "recipe rather than telling you to change it is 'cooking_help', NOT 'recipe_card'. "
+    "Do NOT rewrite the card to answer a question. Examples that are 'cooking_help': "
+    "'does it have yogurt?', 'is this a traditional stroganoff?', 'why sourdough?', "
+    "'can I use butter instead of oil?' (asking whether, not instructing), "
+    "'how long will it keep?', 'what does the flour do?'. "
+    "The line: an IMPERATIVE that changes the recipe is 'recipe_card'; an "
+    "INTERROGATIVE about the recipe (does/is/why/what/can-I/should-I as a genuine "
+    "question) is 'cooking_help'. "
+    "A modification phrased as a question ('add a fig glaze?') is still a "
+    "command to modify — that stays 'recipe_card'. But a genuine question seeking "
+    "an answer ('does it have X?') is 'cooking_help'. "
+    "CRITICAL: adding, removing, or substituting a NAMED INGREDIENT is ALWAYS a plain "
+    "tweak (recipe_card), no matter how tentatively it is phrased — 'add mushrooms', "
+    "'can we add mushrooms', 'could we throw in some garlic', 'swap the cream for yoghurt' "
+    "are all clear tweaks and do NOT get the ambiguous flag. "
+    "IMPORTANT: set modify_or_new_ambiguous:true ONLY when the follow-up names a "
+    "DIFFERENT DISH or DISH-TYPE rather than editing the current one — i.e. it could "
+    "plausibly mean 'make me a different recipe instead' "
+    "(e.g. 'hmm what about something with mushrooms', 'what about a pasta dish?', "
+    "'could we do something lighter?'). That is the only fuzzy middle ground; "
+    "ingredient edits, clear tweaks, and clear new-dish requests all do NOT get this flag."
+)
+
+MODE_BIAS_RECIPE_BROWSING_PROMPT = (
+    "\n\nSESSION CONTEXT: The user is browsing recipe brainstorm ideas. "
+    "Bias toward 'recipe_card' if the user is selecting or refining a specific idea. "
+    "Use 'recipe_brainstorm' if they want new ideas."
+)
+
+MODE_BIAS_COOKING_PROMPT = (
+    "\n\nSESSION CONTEXT: The user is actively cooking a recipe. "
+    "Bias toward 'cooking_help' for questions about technique, timing, or substitutions. "
+    "Do NOT classify as 'recipe_brainstorm' or 'recipe_generation' mid-cook."
+)
+
+MODE_BIAS_PANTRY_PROMPT = (
+    "\n\nSESSION CONTEXT: The user is in the middle of a pantry update. "
+    "Bias toward 'pantry_update' for grocery or food item mentions."
+)

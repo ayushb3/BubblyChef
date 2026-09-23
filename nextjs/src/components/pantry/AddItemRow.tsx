@@ -26,6 +26,14 @@ export interface ManualRow {
    * the date themselves — it's no longer an estimate at that point.
    */
   estimated_expiry: boolean
+  /**
+   * Catalog emoji (issue #398's `FoodCatalogEntry.emoji`), captured when the
+   * row was filled via a catalog suggestion. Purely cosmetic — used by the
+   * collapsed-row summary (issue #404) so a filled row still shows an icon
+   * without re-deriving it. `null`/absent for freehand-typed names, which
+   * the summary falls back to a category-based icon for.
+   */
+  emoji?: string | null
 }
 
 /**
@@ -64,12 +72,20 @@ interface AddItemRowProps {
   onChange: (updated: ManualRow) => void
   onRemove: () => void
   index: number
+  /** Focus the name field on mount (set when the row is re-expanded). */
+  autoFocusName?: boolean
 }
 
 const inputClass =
   'w-full rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]'
 
-export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRowProps) {
+export default function AddItemRow({
+  row,
+  onChange,
+  onRemove,
+  index,
+  autoFocusName = false,
+}: AddItemRowProps) {
   const set = (field: keyof ManualRow, value: string | number | boolean) =>
     onChange({ ...row, [field]: value })
 
@@ -96,6 +112,7 @@ export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRo
       storage_location: entry.default_location || undefined,
       expiry_date: expiryDateFromDays(entry.expiry_days),
       estimated_expiry: true,
+      emoji: entry.emoji,
     })
   }
 
@@ -130,6 +147,7 @@ export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRo
         placeholder="Item name (e.g. Milk, Eggs...)"
         ariaLabel="Item name"
         className={inputClass}
+        autoFocus={autoFocusName}
       />
 
       {/* Quantity + Unit */}

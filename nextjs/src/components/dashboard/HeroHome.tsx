@@ -1,16 +1,22 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
+import { Camera, Fire, Lightbulb, Sparkle } from '@phosphor-icons/react/dist/ssr'
+import type { ComponentType } from 'react'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import FadeInView from '@/components/ui/FadeInView'
 import { titleCase } from '@/lib/format'
+import { useMotionConfig } from '@/lib/motion'
 import { cookThisHref, tipChatHref } from '@/lib/chat-seed'
 import { fetchDashboardDaily } from '@/lib/api/dashboard'
 import type { DashboardTip, DashboardSuggestion } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
 import { estimatedExpirySuffix } from '@/lib/pantry-helpers'
+import { useDecorations } from '@/lib/api/kitchen'
+import { useBubbles } from '@/lib/api/bubbles'
+import KitchenScene from '@/components/kitchen/KitchenScene'
 
 interface HomeData {
   totalCount: number
@@ -62,6 +68,18 @@ function getGreetingEmoji(): string {
 
 interface HeroHomeProps {
   displayName: string
+}
+
+/**
+ * Same shape `BottomNav` uses for its Phosphor tabs. The action cards share
+ * the nav's icon set (Phosphor, `weight="fill"`) so the home screen reads as
+ * one system instead of three platform-dependent emoji next to line icons
+ * (#391).
+ */
+interface IconProps {
+  size?: number
+  weight?: 'fill' | 'regular'
+  className?: string
 }
 
 /**
@@ -163,9 +181,31 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
     setClockReady(true)
   }, [])
 
+  const { springs } = useMotionConfig()
+
+  // Tip expand/collapse (#391). The card used to `line-clamp-2` the tip with
+  // no way to read the rest: sighted users silently lost the end of the
+  // sentence while screen-reader users got the full text via the link's
+  // aria-label. `tipOverflows` is measured, not assumed, so a short tip that
+  // fits in two lines never grows a pointless "Read more" control.
+  const [tipExpanded, setTipExpanded] = useState(false)
+  const [tipOverflows, setTipOverflows] = useState(false)
+  const tipTextRef = useRef<HTMLParagraphElement>(null)
+
   const greeting = clockReady ? getGreeting() : 'Hello'
   const emoji = clockReady ? getGreetingEmoji() : '👋'
   const { totalCount, expiringCount, urgentItem, tip: dashboardTip, suggestion } = data
+
+  // Kitchen scene (#521): `decorations` rows use `name`/`decoration_type`;
+  // KitchenScene expects `id`/`slot`. The balance is `null` until `/api/bubbles`
+  // answers, so the scene hides its pill rather than flashing a `0`.
+  const { data: decorationsData, isLoading: decorationsLoading } = useDecorations()
+  const { data: bubblesData } = useBubbles()
+  const balance = bubblesData?.balance ?? null
+  const unlocked = (decorationsData?.decorations ?? []).map((row) => ({
+    id: row.name,
+    slot: row.decoration_type,
+  }))
 
   // Tip text now comes from `GET /v1/dashboard/daily` (#225) — per-user,
   // grounded in that user's own pantry. FALLBACK_TIPS only renders when the
@@ -215,8 +255,47 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
           ? { label: 'View pantry', href: '/pantry' }
           : { label: 'Ask Bubbles', href: '/chat' }
 
+  // Measure whether the clamped tip actually overflows. Runs once the tip has
+  // rendered (after `loading` flips) and again on resize, since a tip that fits
+  // at 480px can wrap to three lines on a narrower phone. Only meaningful while
+  // collapsed — an expanded paragraph never overflows its own box.
+  useEffect(() => {
+    if (loading || tipExpanded) return
+    const el = tipTextRef.current
+    if (!el) return
+    const measure = () => setTipOverflows(el.scrollHeight > el.clientHeight + 1)
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [loading, tipExpanded, tip])
+
   return (
     <div className="flex flex-col items-center">
+      {/* Kitchen scene — 12 fixed decoration slots + Bubbles balance (#521).
+          KitchenScene's root has only absolutely-positioned children, so it
+          contributes no intrinsic (max-content) width of its own — a `%`
+          width doesn't count towards that either. Every ancestor down to
+          here sits inside a `flex flex-col items-center` container, whose
+          `items-center` override makes flex items shrink-wrap to their
+          max-content width instead of stretching to the container's width.
+          With zero max-content contribution at the bottom of that chain, the
+          whole chain (including this `FadeInView`, itself a flex item)
+          collapsed to ~2px — text-bearing siblings below don't hit this
+          because their text gives them a non-zero max-content width. Passing
+          `className` all the way down to `FadeInView` (a plain prop it
+          forwards onto its own `motion.div`) breaks the shrink-wrap by
+          giving every link in the chain an explicit width instead of an
+          inferred one. `max-w-[480px]` (not `max-w-sm`'s 384px) matches
+          KitchenScene's own cap so the scene can actually reach the full
+          480px column issue #521 asks for. */}
+      <FadeInView delay={0} className="w-full max-w-[480px] mb-4">
+        <KitchenScene
+          unlocked={unlocked}
+          balance={balance}
+          loading={decorationsLoading}
+        />
+      </FadeInView>
+
       {/* Greeting */}
       <FadeInView delay={0}>
         <p className="text-sm text-[var(--color-muted)] font-medium mb-1">
@@ -233,7 +312,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
 
       {/* Speech bubble */}
       <FadeInView delay={0.25}>
-        <div className="relative max-w-sm w-full mx-auto mb-6">
+        <div className="relative max-w-sm w-full mx-auto mb-6" data-tour="hero">
           {/* Triangle pointer */}
           <div
             className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rotate-45 border-l border-t border-[var(--color-border)]"
@@ -269,10 +348,10 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
       </FadeInView>
 
       {/* 3 Action Cards */}
-      <div className="grid grid-cols-3 gap-3 w-full max-w-sm mb-6">
-        {[
+      <div className="grid grid-cols-3 gap-3 w-full max-w-sm mb-6" data-tour="quick-actions">
+        {([
           {
-            emoji: '🔥',
+            icon: Fire,
             label: 'Use Soon',
             detail: expiringCount > 0 ? `${expiringCount} item${expiringCount > 1 ? 's' : ''}` : 'All fresh!',
             // Only this card's detail depends on fetched data.
@@ -281,7 +360,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
             gradient: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
           },
           {
-            emoji: '📷',
+            icon: Camera,
             label: 'Scan',
             detail: 'Receipt',
             pending: false,
@@ -289,14 +368,23 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
             gradient: 'linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-dark) 100%)',
           },
           {
-            emoji: '✨',
+            icon: Sparkle,
             label: 'Ask',
             detail: 'Bubbles',
             pending: false,
             href: '/chat',
             gradient: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-accent-dark) 100%)',
           },
-        ].map((card, i) => (
+        ] satisfies Array<{
+          icon: ComponentType<IconProps>
+          label: string
+          detail: string
+          pending: boolean
+          href: string
+          gradient: string
+        }>).map((card, i) => {
+          const Icon = card.icon
+          return (
           <FadeInView key={card.href} delay={0.35 + i * 0.08}>
             <Link href={card.href}>
               <motion.div
@@ -305,7 +393,8 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
                 className="flex flex-col items-center rounded-2xl p-4 shadow-sm border border-white/30 text-white text-center"
                 style={{ background: card.gradient }}
               >
-                <span className="text-2xl mb-1">{card.emoji}</span>
+                {/* Decorative: the card's label is the accessible name. */}
+                <Icon size={28} weight="fill" className="mb-1" aria-hidden="true" />
                 <span className="text-sm font-bold">{card.label}</span>
                 {card.pending ? (
                   <Skeleton onColor className="w-10 h-2 mt-1.5 mb-0.5" />
@@ -315,14 +404,14 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
               </motion.div>
             </Link>
           </FadeInView>
-        ))}
+          )
+        })}
       </div>
 
       {/* Tip of the day — compact. Gated on `loading` like its three siblings
           above: without this, the fallback tip renders on first paint and gets
-          swapped for the AI tip once the fetch lands, reflowing the
-          `line-clamp-2` card and changing `tipChatHref` out from under a fast
-          click. */}
+          swapped for the AI tip once the fetch lands, reflowing the clamped
+          card and changing `tipChatHref` out from under a fast click. */}
       <FadeInView delay={0.6}>
         {loading ? (
           <div
@@ -330,35 +419,67 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
             style={{ background: 'var(--color-surface)' }}
             aria-busy="true"
           >
-            <span className="text-lg flex-shrink-0">💡</span>
+            <Lightbulb size={20} weight="fill" className="flex-shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
             <div className="flex-1 flex flex-col gap-1.5">
               <Skeleton className="w-11/12 h-2.5" />
               <Skeleton className="w-2/3 h-2.5" />
             </div>
           </div>
         ) : (
-          <>
-            {/* href is derived from the same `tip` the card renders, so the
-                post-hydration correction moves both together (#143). */}
-            {/* Without an explicit label the accessible name is just the raw tip
-                text, which gives no hint that activating it opens a chat. */}
-            <Link
-              href={tipChatHref(tip)}
-              aria-label={`Ask Bubbles about today's tip: ${tip}`}
-              className="block max-w-sm w-full"
-            >
-              <div
-                className="flex items-center gap-3 rounded-2xl px-4 py-3 border border-[var(--color-border)]"
-                style={{ background: 'var(--color-surface)' }}
+          /* Two distinct affordances rather than one overloaded tap (#391):
+             the card body expands/collapses the clamped tip, and a separate
+             "Ask Bubbles" pill carries the seeded-chat deep link that used to
+             be the whole card. The full tip text is always in the DOM — the
+             clamp is purely visual — so the screen-reader path is unchanged. */
+          <motion.div
+            layout
+            transition={springs.soft}
+            className="rounded-2xl px-4 py-3 border border-[var(--color-border)] max-w-sm w-full"
+            style={{ background: 'var(--color-surface)' }}
+          >
+            <div className="flex items-start gap-3">
+              <Lightbulb
+                size={20}
+                weight="fill"
+                className="flex-shrink-0 mt-0.5 text-[var(--color-primary)]"
+                aria-hidden="true"
+              />
+              <p
+                id="home-tip-text"
+                ref={tipTextRef}
+                className={`flex-1 text-xs text-[var(--color-muted)] leading-snug ${tipExpanded ? '' : 'line-clamp-2'}`}
               >
-                <span className="text-lg flex-shrink-0">💡</span>
-                <p className="text-xs text-[var(--color-muted)] leading-snug line-clamp-2">
-                  <strong className="text-[var(--color-text)] font-semibold">Tip: </strong>
-                  {tip}
-                </p>
-              </div>
-            </Link>
-          </>
+                <strong className="text-[var(--color-text)] font-semibold">Tip: </strong>
+                {tip}
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 mt-2">
+              {(tipOverflows || tipExpanded) && (
+                <button
+                  type="button"
+                  onClick={() => setTipExpanded((e) => !e)}
+                  aria-expanded={tipExpanded}
+                  aria-controls="home-tip-text"
+                  className="text-xs font-semibold px-3 py-2 rounded-full text-[var(--color-text)] border border-[var(--color-border)] active:scale-95 transition-transform motion-reduce:transition-none"
+                  style={{ background: 'var(--color-bg)' }}
+                >
+                  {tipExpanded ? 'Show less' : 'Read more'}
+                </button>
+              )}
+              {/* href is derived from the same `tip` the card renders, so the
+                  post-hydration correction moves both together (#143). Without
+                  an explicit label the accessible name would be just "Ask
+                  Bubbles", which gives no hint of what the chat is seeded with. */}
+              <Link
+                href={tipChatHref(tip)}
+                aria-label={`Ask Bubbles about today's tip: ${tip}`}
+                className="text-xs font-semibold px-3 py-2 rounded-full text-white active:scale-95 transition-transform motion-reduce:transition-none"
+                style={{ background: 'var(--color-primary)' }}
+              >
+                Ask Bubbles
+              </Link>
+            </div>
+          </motion.div>
         )}
       </FadeInView>
 

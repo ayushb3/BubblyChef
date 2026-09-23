@@ -71,13 +71,7 @@ export default function PantryAddSheet({
     setError(null)
 
     try {
-      await bulkAddPantryItems(
-        allItems.map((item) => {
-          const { source, ...rest } = item
-          void source
-          return rest
-        }),
-      )
+      await bulkAddPantryItems(allItems)
 
       onItemsAdded()
       onClose()
@@ -161,7 +155,7 @@ export default function PantryAddSheet({
                       : 'bg-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'
                   }`}
                 >
-                  📷 Scan
+                  Scan
                 </button>
                 <button
                   type="button"
@@ -184,7 +178,7 @@ export default function PantryAddSheet({
                         : 'bg-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'
                   }`}
                 >
-                  {scanProcessing ? '✍️ Type (Scanning…)' : '✍️ Type'}
+                  {scanProcessing ? 'Manual (Scanning…)' : 'Manual'}
                 </button>
               </div>
             </div>

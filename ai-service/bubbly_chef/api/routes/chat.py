@@ -91,6 +91,8 @@ async def chat_stream(
                 history=history,
                 user_id=user_id,
                 context=request.context,
+                forced_intent=request.forced_intent,
+                forced_intent_source=request.forced_intent_source,
             ):
                 parsed = json.loads(chunk_json)
                 event_type = parsed.get("type", "token")
@@ -127,6 +129,8 @@ async def chat_stream(
                     role="assistant",
                     content=save_content,
                     intent=intent_str,
+                    proposal=envelope_data.get("proposal") if envelope_data else None,
+                    metadata=envelope_data.get("metadata") if envelope_data else None,
                 )
                 logger.info(
                     f"Saved assistant message: intent={intent_str}, "
@@ -190,6 +194,8 @@ async def chat_non_streaming(
             history=history,
             user_id=user_id,
             context=request.context,
+            forced_intent=request.forced_intent,
+            forced_intent_source=request.forced_intent_source,
         ):
             parsed = json.loads(chunk_json)
             event_type = parsed.get("type", "token")
@@ -222,6 +228,8 @@ async def chat_non_streaming(
                     role="assistant",
                     content=save_content,
                     intent=envelope_data.get("intent", "general_chat"),
+                    proposal=envelope_data.get("proposal"),
+                    metadata=envelope_data.get("metadata"),
                 )
         except Exception as save_err:
             logger.warning(f"Failed to persist messages: {save_err}")

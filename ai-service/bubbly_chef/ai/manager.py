@@ -4,7 +4,7 @@ Manages AI provider selection and fallback logic.
 """
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from typing import Any, TypeVar
 
@@ -166,6 +166,7 @@ class AIManager:
         mime_type: str = "image/jpeg",
         response_schema: type[T] | None = None,
         temperature: float = 0.3,
+        time_remaining: Callable[[], float] | None = None,
     ) -> T | str:
         """
         Generate a completion from an image + text prompt.
@@ -197,6 +198,7 @@ class AIManager:
                     mime_type=mime_type,
                     response_schema=response_schema,
                     temperature=temperature,
+                    time_remaining=time_remaining,
                 )
                 self._current_provider = provider
 
