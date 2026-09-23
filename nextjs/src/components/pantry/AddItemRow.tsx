@@ -1,5 +1,8 @@
 'use client'
 
+import FoodAutocomplete from './FoodAutocomplete'
+import type { FoodCatalogEntry } from '@/lib/api/foods'
+
 export interface ManualRow {
   id: string
   name: string
@@ -8,6 +11,31 @@ export interface ManualRow {
   category: string
   storage_location: string
   expiry_date: string
+  /**
+   * True when `expiry_date` came from the food catalog's default expiry-days
+   * rather than something the user typed (issue #398). Carried through to
+   * the write path so the pantry's "(est.)" marker (#182/#363) renders for
+   * catalog-filled dates too. Flips back to false the moment the user edits
+   * the date themselves — it's no longer an estimate at that point.
+   */
+  estimated_expiry: boolean
+}
+
+/**
+ * `YYYY-MM-DD` for `today + days`, matching the `<input type="date">` format.
+ *
+ * Uses local date components, not `toISOString()` — `toISOString()` reports
+ * the date in UTC, which is a calendar day behind local time for anyone west
+ * of UTC in the evening (issue #439), silently shortening the catalog's
+ * auto-filled expiry by a day.
+ */
+function expiryDateFromDays(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 const UNITS = ['item', 'g', 'kg', 'ml', 'L', 'lb', 'oz', 'dozen', 'bunch', 'bag', 'can', 'bottle']
@@ -42,8 +70,39 @@ const inputClass =
   'w-full rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]'
 
 export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRowProps) {
-  const set = (field: keyof ManualRow, value: string | number) =>
+  const set = (field: keyof ManualRow, value: string | number | boolean) =>
     onChange({ ...row, [field]: value })
+
+  // A catalog-supplied unit or category (issue #398) may not be one of the
+  // hardcoded options below (e.g. "gallon", or "seafood"/"canned"/"bakery"
+  // categories the catalog uses that this row's fixed list predates) — fold
+  // it in so the <select> always has a matching <option> and doesn't
+  // silently fall back to the first entry.
+  const unitOptions = UNITS.includes(row.unit) ? UNITS : [row.unit, ...UNITS]
+  const categoryOptions = CATEGORIES.some((c) => c.value === row.category)
+    ? CATEGORIES
+    : [{ value: row.category, label: row.category }, ...CATEGORIES]
+
+  // Selecting a catalog suggestion auto-fills unit, category, location and
+  // expiry (today + the catalog's expiry_days) — the user can still
+  // override any of it afterwards (issue #398).
+  const handleCatalogSelect = (entry: FoodCatalogEntry) => {
+    onChange({
+      ...row,
+      name: entry.canonical,
+      unit: entry.valid_units[0] || row.unit,
+      category: entry.category || row.category,
+      storage_location: entry.default_location || row.storage_location,
+      expiry_date: expiryDateFromDays(entry.expiry_days),
+      estimated_expiry: true,
+    })
+  }
+
+  // A user-typed/edited date is no longer an estimate, even if it started
+  // out auto-filled from the catalog.
+  const handleExpiryChange = (value: string) => {
+    onChange({ ...row, expiry_date: value, estimated_expiry: false })
+  }
 
   return (
     <div className="bg-white rounded-2xl border border-[var(--color-border)] p-3 space-y-2">
@@ -60,14 +119,14 @@ export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRo
         </button>
       </div>
 
-      {/* Name */}
-      <input
-        type="text"
+      {/* Name — with catalog autocomplete (#398) */}
+      <FoodAutocomplete
         value={row.name}
-        onChange={(e) => set('name', e.target.value)}
+        onChange={(value) => set('name', value)}
+        onSelect={handleCatalogSelect}
         placeholder="Item name (e.g. Milk, Eggs...)"
+        ariaLabel="Item name"
         className={inputClass}
-        aria-label="Item name"
       />
 
       {/* Quantity + Unit */}
@@ -87,7 +146,7 @@ export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRo
           className="flex-1 rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
           aria-label="Unit"
         >
-          {UNITS.map((u) => (
+          {unitOptions.map((u) => (
             <option key={u} value={u}>{u}</option>
           ))}
         </select>
@@ -101,7 +160,7 @@ export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRo
           className="flex-1 rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-sm focus:border-[var(--color-primary)]"
           aria-label="Category"
         >
-          {CATEGORIES.map((c) => (
+          {categoryOptions.map((c) => (
             <option key={c.value} value={c.value}>{c.label}</option>
           ))}
         </select>
@@ -119,11 +178,16 @@ export default function AddItemRow({ row, onChange, onRemove, index }: AddItemRo
 
       {/* Optional expiry */}
       <div>
-        <label className="text-xs text-[var(--color-muted)] mb-1 block">Expiry date (optional)</label>
+        <label className="text-xs text-[var(--color-muted)] mb-1 block">
+          Expiry date (optional)
+          {row.estimated_expiry && row.expiry_date && (
+            <span className="text-[var(--color-muted)]"> (est.)</span>
+          )}
+        </label>
         <input
           type="date"
           value={row.expiry_date}
-          onChange={(e) => set('expiry_date', e.target.value)}
+          onChange={(e) => handleExpiryChange(e.target.value)}
           className={inputClass}
           aria-label="Expiry date"
         />

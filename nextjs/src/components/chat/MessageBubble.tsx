@@ -18,6 +18,7 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
       className={`flex flex-col gap-1 ${isUser ? 'items-end' : 'items-start'}`}
+      data-testid={isUser ? 'chat-message-user' : 'chat-message-assistant'}
     >
       <div
         className={[

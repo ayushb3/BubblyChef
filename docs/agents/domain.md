@@ -21,7 +21,7 @@ BubblyChef/                          # Repo root
 ## How Skills Use These
 
 ### CONTEXT.md
-**Read by**: `tdd`, `improve-codebase-architecture`, `diagnosing-bugs`
+**Read by**: `tdd`, `diagnosing-bugs`, `domain-modeling`
 
 Skills read `CONTEXT.md` at the repo root to understand:
 - Domain entities (Recipe, Pantry, Grounding Workflow, etc.)
@@ -32,7 +32,7 @@ Skills read `CONTEXT.md` at the repo root to understand:
 **How to maintain**: Add new domain terms as you introduce them. Update existing definitions as understanding evolves. Keep it concise — this is a reference, not a tutorial.
 
 ### docs/adr/
-**Read by**: `diagnosing-bugs`, `improve-codebase-architecture`
+**Read by**: `diagnosing-bugs`, `domain-modeling`, `grill-with-docs`
 
 Skills read ADRs to understand *why* architectural decisions were made. This prevents reverting decisions or proposing contradictory changes.
 

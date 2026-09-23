@@ -79,6 +79,7 @@ function renderResults(overrides: Partial<{
   hideConfirmButton: boolean
   isSubmitting: boolean
   onConfirm: (items: ScannedItem[]) => void
+  onCheckedItemsChange: (items: ScannedItem[]) => void
 }> = {}) {
   const props = {
     readyToAdd: STUB_RESULT.ready_to_add,
@@ -171,6 +172,54 @@ it('onConfirm is called with only the checked items', () => {
   const called: ScannedItem[] = onConfirm.mock.calls[0][0]
   expect(called).toHaveLength(1)
   expect(called[0].name).toBe(READY_ITEM.name)
+})
+
+// ─── 3b. onCheckedItemsChange (issue #406) ────────────────────────────────────
+// An embedding parent (PantryAddSheet's ScanTab) hides the built-in confirm
+// button and instead tracks the checked set via this callback. It must fire
+// with the reduced list when a checked item is unchecked, not the full found
+// set.
+
+it('onCheckedItemsChange fires with the initial checked set on mount', async () => {
+  const onCheckedItemsChange = jest.fn()
+  renderResults({ hideConfirmButton: true, onCheckedItemsChange })
+
+  await waitFor(() => {
+    expect(onCheckedItemsChange).toHaveBeenCalled()
+  })
+  const lastCall = onCheckedItemsChange.mock.calls[onCheckedItemsChange.mock.calls.length - 1][0]
+  expect(lastCall).toHaveLength(1)
+  expect(lastCall[0].name).toBe(READY_ITEM.name)
+})
+
+it('onCheckedItemsChange fires with the reduced list when a checked item is unchecked', async () => {
+  const onCheckedItemsChange = jest.fn()
+  renderResults({ hideConfirmButton: true, onCheckedItemsChange })
+
+  const readyCheckbox = screen.getByRole('checkbox', {
+    name: new RegExp(`Include ${READY_ITEM.name}`, 'i'),
+  })
+  fireEvent.click(readyCheckbox)
+
+  await waitFor(() => {
+    const lastCall = onCheckedItemsChange.mock.calls[onCheckedItemsChange.mock.calls.length - 1][0]
+    expect(lastCall).toHaveLength(0)
+  })
+})
+
+it('onCheckedItemsChange fires with the increased list when a review item is checked', async () => {
+  const onCheckedItemsChange = jest.fn()
+  renderResults({ hideConfirmButton: true, onCheckedItemsChange })
+
+  const reviewCheckbox = screen.getByRole('checkbox', {
+    name: new RegExp(`Include ${REVIEW_ITEM.name}`, 'i'),
+  })
+  fireEvent.click(reviewCheckbox)
+
+  await waitFor(() => {
+    const lastCall = onCheckedItemsChange.mock.calls[onCheckedItemsChange.mock.calls.length - 1][0]
+    expect(lastCall).toHaveLength(2)
+  })
 })
 
 // ─── 4. Eye toggle ────────────────────────────────────────────────────────────
@@ -301,4 +350,63 @@ it('ScanResult has all pinned contract fields', () => {
   expect(Array.isArray(result.skipped)).toBe(true)
   expect(typeof result.total_items).toBe('number')
   expect(Array.isArray(result.warnings)).toBe(true)
+})
+
+// ─── 7. Category shown once (issue #400) ──────────────────────────────────────
+// The category used to appear twice: a read-only pill next to the confidence
+// badge, and again as the editable <select>. Two on-screen copies of the same
+// value can drift apart when one is edited without the other. The editable
+// select is now the single source of truth — no separate pill exists.
+
+it('renders the category value exactly once per card', () => {
+  render(
+    <ScannedItemCard
+      item={READY_ITEM}
+      index={0}
+      checked
+      onChange={noop}
+      onDismiss={noop}
+      onCheckedChange={noop}
+    />,
+  )
+  // The only place "condiments" can appear is as the selected <option> text
+  // inside the Category <select>.
+  const matches = screen.getAllByText(/condiments/i)
+  expect(matches).toHaveLength(1)
+  expect(screen.getByRole('combobox', { name: 'Category' })).toHaveValue(READY_ITEM.category)
+})
+
+it('editing the category select is the only way to change it — no separate pill to disagree with', () => {
+  const onChange = jest.fn()
+  render(
+    <ScannedItemCard
+      item={READY_ITEM}
+      index={0}
+      checked
+      onChange={onChange}
+      onDismiss={noop}
+      onCheckedChange={noop}
+    />,
+  )
+  const select = screen.getByRole('combobox', { name: 'Category' })
+  fireEvent.change(select, { target: { value: 'produce' } })
+  expect(onChange).toHaveBeenCalledWith({ ...READY_ITEM, category: 'produce' })
+})
+
+// ─── 8. Selection checkbox matches the app's custom-checkbox pattern ──────────
+// Same visual language as the ingredient checklist on the recipe detail page
+// (recipes/[id]/page.tsx): a visually-hidden native <input type="checkbox">
+// for state/keyboard handling, with a styled circular indicator driven by
+// `checked`, rather than a bare browser checkbox.
+
+it('selection checkbox is a real, labelled, keyboard-operable checkbox input', () => {
+  renderResults()
+  const checkbox = screen.getByRole('checkbox', {
+    name: new RegExp(`Include ${READY_ITEM.name}`, 'i'),
+  })
+  expect(checkbox).toBeChecked()
+  // Visually hidden (custom indicator renders the visible state), not a bare
+  // native checkbox — matches the sr-only + styled-indicator pattern used
+  // elsewhere in the app.
+  expect(checkbox.className).toContain('sr-only')
 })
