@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useBubbles } from '@/lib/api/bubbles'
 
@@ -19,9 +20,18 @@ interface Pop {
  *  - the first observation (balance goes from unknown to a number) — that's
  *    just the initial load, not an award;
  *  - an equal or lower balance — nothing to celebrate.
+ *
+ * Mounted once in `Providers`, so it outlives sign-out → sign-in in the same
+ * tab. Not fetched at all on `/login`, where there's no session to read a
+ * balance for. `SignOutButton` clears the whole React Query cache on
+ * sign-out, which drops `data` back to `undefined`; the effect below treats
+ * that as "unknown" and resets `lastSeenRef`, so the next user's first
+ * balance is always treated as an initial load rather than a delta off the
+ * previous user's leftover number (issue #525 review).
  */
 export default function BubblePop() {
-  const { data } = useBubbles()
+  const pathname = usePathname()
+  const { data } = useBubbles({ enabled: pathname !== '/login' })
   const balance = data?.balance
   const lastSeenRef = useRef<number | null>(null)
   const [pop, setPop] = useState<Pop | null>(null)
@@ -29,7 +39,13 @@ export default function BubblePop() {
   const prefersReducedMotion = useReducedMotion() ?? false
 
   useEffect(() => {
-    if (typeof balance !== 'number') return
+    if (typeof balance !== 'number') {
+      // Balance went from known back to unknown — most commonly a sign-out
+      // clearing the query cache. Reset so the next observation (the next
+      // user's balance) is treated as an initial load, not a delta.
+      lastSeenRef.current = null
+      return
+    }
     const lastSeen = lastSeenRef.current
     if (lastSeen !== null && balance > lastSeen) {
       const delta = balance - lastSeen

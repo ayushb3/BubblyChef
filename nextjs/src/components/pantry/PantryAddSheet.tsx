@@ -218,8 +218,17 @@ export default function PantryAddSheet({
               </div>
             </div>
 
-            {/* Tab content — scrollable */}
-            <div className="flex-1 overflow-y-auto px-6 pb-4 min-h-0">
+            {/* Tab content — scrollable. `inert` while celebrating (issue
+                #525 review): the footer swaps to the celebrate state and
+                stops accepting input, but the tab bodies underneath stayed
+                mounted and interactive for the full 1.5s auto-close window —
+                a tap there edited state that was about to be discarded
+                anyway, with no feedback that it wouldn't stick. */}
+            <div
+              className={`flex-1 overflow-y-auto px-6 pb-4 min-h-0 ${justAdded ? 'pointer-events-none opacity-60' : ''}`}
+              aria-hidden={justAdded}
+              inert={justAdded}
+            >
               {error && (
                 <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 rounded-2xl text-sm">
                   {error}

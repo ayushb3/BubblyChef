@@ -2,12 +2,14 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { SignOut } from '@phosphor-icons/react/dist/ssr'
 import { createClient } from '@/lib/supabase/client'
 import SpringButton from '@/components/ui/SpringButton'
 
 export default function SignOutButton() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [error, setError] = useState<string | null>(null)
 
   const handleSignOut = async () => {
@@ -19,6 +21,12 @@ export default function SignOutButton() {
       setError('Could not sign out. Please try again.')
       return
     }
+    // Drop every cached query (pantry, recipes, bubbles, ...) — otherwise
+    // the next sign-in in the same tab renders whatever the previous user
+    // last fetched until each query happens to refetch. `BubblePop` in
+    // particular derives an award popup from the bubbles balance delta, so
+    // a stale cache can show user B an award computed off user A's balance.
+    queryClient.clear()
     router.push('/login')
     router.refresh()
   }

@@ -47,9 +47,13 @@ export async function getBubbles(): Promise<BubblesResult> {
 }
 
 /** React Query hook for the caller's bubble balance — query key `['bubbles']`. */
-export function useBubbles() {
+export function useBubbles(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['bubbles'],
     queryFn: getBubbles,
+    enabled: options?.enabled,
+    // No signed-in user on e.g. `/login` means every call 401s — don't
+    // retry a request that can't succeed (default is 3 retries).
+    retry: false,
   })
 }
