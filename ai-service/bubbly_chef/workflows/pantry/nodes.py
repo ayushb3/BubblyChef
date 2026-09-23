@@ -590,24 +590,33 @@ def review_gate(state: WorkflowState) -> WorkflowState:
     current_names_lower = {action.item.name.lower() for action in actions}
     current_generic_lower = {term.lower() for term in generic_pantry_terms}
 
+    # Genuinely still-pending items (the #307-followup mechanism --
+    # `pending.item_names`, e.g. a proposal awaiting confirmation) always
+    # surface: they are unresolved regardless of what this turn is about.
     still_pending_items = [
         name
         for name in pending.item_names
         if name.lower() not in current_names_lower
     ]
-    # #370 (orchestrator review on PR #600): item_names carried from a
-    # cleanly-resolved turn (item_continuity_ttl is not None -- see
-    # update_session_node's PANTRY_UPDATE clean branch) must stay SILENT on
-    # an ordinary add. Those items were already added, not left pending, so
-    # "still with X" is only true -- and only useful -- when THIS turn is
-    # itself ambiguous (has its own generic_pantry_terms) and is actually
-    # trying to resolve something against them, i.e. issue #370's own
-    # repro ("I have apples and eggs" -> "some dairy"). A genuine
-    # still-pending memory from the #307-followup mechanism
-    # (item_continuity_ttl is None -- a real proposal still awaiting
-    # resolution) is unaffected and always surfaces, exactly as before.
-    if pending.item_continuity_ttl is not None and not generic_pantry_terms:
-        still_pending_items = []
+    # `pending.continuity_item_names` (#370) is a SEPARATE, already-applied
+    # set from a recent clean turn -- kept only as short-lived context, not
+    # as something still awaiting resolution. Issue #370's own suggested
+    # wording ("you already added eggs, apples") is only true -- and only
+    # useful -- when THIS turn is itself ambiguous (has its own
+    # generic_pantry_terms) and is actually trying to resolve something
+    # against them, i.e. issue #370's own repro ("I have apples and eggs"
+    # -> "some dairy"). An ordinary add with nothing of its own to resolve
+    # must stay silent about them (orchestrator review on PR #600, finding
+    # 1).
+    already_added_items = (
+        [
+            name
+            for name in pending.continuity_item_names
+            if name.lower() not in current_names_lower
+        ]
+        if generic_pantry_terms
+        else []
+    )
     still_unclear_terms = [
         term
         for term in pending.unclear_terms
@@ -615,6 +624,8 @@ def review_gate(state: WorkflowState) -> WorkflowState:
     ]
 
     note_clauses = []
+    if already_added_items:
+        note_clauses.append(f"you already added {', '.join(already_added_items)}")
     if still_pending_items:
         note_clauses.append(f"still with {', '.join(still_pending_items)} from earlier in this chat")
     if still_unclear_terms:

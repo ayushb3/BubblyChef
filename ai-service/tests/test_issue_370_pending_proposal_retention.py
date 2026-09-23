@@ -66,7 +66,8 @@ from bubbly_chef.workflows.router import (
     update_session_node,
 )
 
-_CONTINUITY_NOTE_SNIPPET = "from earlier in this chat"
+_CONTINUITY_NOTE_SNIPPET = "you already added"
+_STILL_PENDING_SNIPPET = "from earlier in this chat"
 
 
 def _fake_item(name: str) -> PantryItem:
@@ -213,7 +214,7 @@ class TestCleanTurnKeepsItemContinuity:
             "just added items -- that erases the continuity the very next "
             "vague turn needs"
         )
-        names_lower = [n.lower() for n in saved.pending_proposal.item_names]
+        names_lower = [n.lower() for n in saved.pending_proposal.continuity_item_names]
         assert "apples" in names_lower
         assert "eggs" in names_lower
 
@@ -236,7 +237,9 @@ class TestCleanTurnKeepsItemContinuity:
         assert "apples" in message.lower() or "eggs" in message.lower()
 
         assert after_turn2.pending_proposal is not None
-        names_lower = [n.lower() for n in after_turn2.pending_proposal.item_names]
+        names_lower = [
+            n.lower() for n in after_turn2.pending_proposal.continuity_item_names
+        ]
         assert "apples" in names_lower
         assert "eggs" in names_lower
         assert "dairy products" in [
@@ -269,9 +272,96 @@ class TestCleanTurnKeepsItemContinuity:
         _, after_turn2 = await _run_pantry_turn(after_turn1, ["milk"])
 
         assert after_turn2.pending_proposal is not None
-        names_lower = [n.lower() for n in after_turn2.pending_proposal.item_names]
+        names_lower = [
+            n.lower() for n in after_turn2.pending_proposal.continuity_item_names
+        ]
         assert names_lower == ["milk"], (
             f"expected only the latest turn's items, got {names_lower!r}"
+        )
+
+
+class TestReviewTurnDoesNotLeakContinuityForward:
+    """Orchestrator re-review on PR #600, inline comment on
+    ``pantry/nodes.py:609``: the silence gate keys on
+    ``item_continuity_ttl is not None``, but the PANTRY_UPDATE review branch
+    used to rebuild ``PendingProposalMemory`` without that field, dropping
+    it to ``None`` while the carried item names survived the merge -- so an
+    ordinary add one turn *after* a review turn would resurrect the note
+    about items that were already added."""
+
+    @pytest.mark.asyncio
+    async def test_clean_vague_clean_stays_silent_on_the_final_clean_turn(self) -> None:
+        """The exact trace from the review comment: 'I have apples and
+        eggs' (clean) -> 'some dairy' (vague, review) -> 'I bought milk'
+        (clean). Turn 3 must not say '(still with Apples, Eggs from earlier
+        in this chat)' -- those items were applied in turn 1, and turn 2
+        already surfaced them as context once."""
+        _, after_turn1 = await _run_pantry_turn(_session(pending=None), ["apples", "eggs"])
+
+        _, after_turn2 = await _run_pantry_turn(
+            after_turn1, [], generic_pantry_terms=["dairy products"]
+        )
+
+        message, after_turn3 = await _run_pantry_turn(after_turn2, ["milk"])
+
+        assert _CONTINUITY_NOTE_SNIPPET not in message, (
+            f"turn 3 is an ordinary add; it must not resurrect 'you already "
+            f"added apples, eggs' about items already added two turns "
+            f"earlier, got: {message!r}"
+        )
+        assert _STILL_PENDING_SNIPPET not in message, (
+            f"turn 3 must not treat apples/eggs as still-unresolved "
+            f"either, got: {message!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_clean_turn_between_two_vague_turns_does_not_resurrect_old_items_either(
+        self,
+    ) -> None:
+        """Documents existing (pre-#370, out-of-scope) behaviour rather than
+        changing it: an intervening ordinary clean turn resets
+        unclear_terms just like it always has -- this PR only stops it
+        from also resurrecting already-applied item names. A follow-up
+        vague turn after that clean turn gets a fresh slate, not a
+        reprint of apples/eggs."""
+        _, after_turn1 = await _run_pantry_turn(_session(pending=None), ["apples", "eggs"])
+        _, after_turn2 = await _run_pantry_turn(
+            after_turn1, [], generic_pantry_terms=["dairy products"]
+        )
+        _, after_turn3 = await _run_pantry_turn(after_turn2, ["milk"])
+
+        message, _after_turn4 = await _run_pantry_turn(
+            after_turn3, [], generic_pantry_terms=["some snacks"]
+        )
+
+        assert "apples" not in message.lower() and "eggs" not in message.lower(), (
+            f"the already-applied apples/eggs must not reappear even once "
+            f"a fresh unclear term shows up, got: {message!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_genuinely_pending_review_items_still_carry_forward(self) -> None:
+        """Guard against overcorrecting: when the existing memory is a real
+        still-pending proposal (item_continuity_ttl is None because it came
+        from a previous review turn, not a clean one), a further review
+        turn must still merge its item_names forward -- only clean-turn
+        continuity snapshots are excluded from the merge."""
+        session = _session(
+            pending=PendingProposalMemory(
+                item_names=["Tofu"],
+                unclear_terms=["some veggies"],
+            )
+        )
+
+        _, after = await _run_pantry_turn(
+            session, [], generic_pantry_terms=["more snacks"]
+        )
+
+        assert after.pending_proposal is not None
+        names_lower = [n.lower() for n in after.pending_proposal.item_names]
+        assert "tofu" in names_lower, (
+            "a genuinely still-pending item must survive a further review "
+            "turn's merge, not just clean-turn continuity items"
         )
 
 
@@ -283,21 +373,23 @@ class TestCleanTurnContinuityDecays:
     async def test_item_continuity_survives_within_the_window(self) -> None:
         """A vague turn arriving within the retention window still sees the
         earlier clean turn's items, even after some intervening non-pantry
-        turns."""
+        turns. (The turn that actually *uses* the continuity is itself the
+        last turn within the window -- it still counts for decay purposes,
+        same as any other turn, so the persisted memory is consumed by the
+        time this turn is saved. What matters here is that the message
+        this turn produces got to see it.)"""
         _, session = await _run_pantry_turn(_session(pending=None), ["apples", "eggs"])
 
         # Fewer than the full window's worth of intervening turns.
         for _ in range(_CLEAN_TURN_ITEM_CONTINUITY_TURNS - 1):
             session = await _run_non_pantry_turn(session)
 
-        message, saved = await _run_pantry_turn(
+        message, _saved = await _run_pantry_turn(
             session, [], generic_pantry_terms=["dairy products"]
         )
 
         assert _CONTINUITY_NOTE_SNIPPET in message
-        names_lower = [n.lower() for n in saved.pending_proposal.item_names]
-        assert "apples" in names_lower
-        assert "eggs" in names_lower
+        assert "apples" in message.lower() or "eggs" in message.lower()
 
     @pytest.mark.asyncio
     async def test_item_continuity_expires_after_the_window(self) -> None:
@@ -320,24 +412,41 @@ class TestCleanTurnContinuityDecays:
         assert _CONTINUITY_NOTE_SNIPPET not in message, (
             f"continuity should have expired by now, got: {message!r}"
         )
-        item_names = saved.pending_proposal.item_names if saved.pending_proposal else []
-        assert "apples" not in [n.lower() for n in item_names]
-        assert "eggs" not in [n.lower() for n in item_names]
+        continuity_names = (
+            saved.pending_proposal.continuity_item_names if saved.pending_proposal else []
+        )
+        assert "apples" not in [n.lower() for n in continuity_names]
+        assert "eggs" not in [n.lower() for n in continuity_names]
 
     @pytest.mark.asyncio
-    async def test_a_review_turn_does_not_refresh_or_reset_the_ttl_early(self) -> None:
+    async def test_a_review_turn_ticks_the_ttl_down_without_resetting_it(self) -> None:
         """A turn that itself resolves against the carried items (a review
-        turn, requires_review=True) must not reset the decay clock --
-        continuity from a genuinely-resolved vague follow-up is governed by
-        the pre-existing non-expiring #307-followup mechanism from then on,
-        not the clean-turn TTL."""
+        turn, requires_review=True) must not reset the decay clock back to
+        the full window -- but it also must not drop the ttl marker
+        entirely (orchestrator re-review on PR #600, inline comment on
+        nodes.py:609): continuity_item_names / item_continuity_ttl are a
+        separate field from the genuinely-still-pending item_names /
+        unclear_terms this branch merges, and must pass through untouched
+        (just ticking down like any other turn) rather than being folded
+        into the never-expiring #307-followup memory."""
         _, session = await _run_pantry_turn(_session(pending=None), ["apples", "eggs"])
+        assert session.pending_proposal is not None
+        assert session.pending_proposal.item_continuity_ttl == _CLEAN_TURN_ITEM_CONTINUITY_TURNS
 
         _, session = await _run_pantry_turn(
             session, [], generic_pantry_terms=["dairy products"]
         )
 
-        # The vague-turn merge folds item_continuity_ttl away (the memory
-        # is now a real pending clarification, not clean-turn decay).
         assert session.pending_proposal is not None
-        assert session.pending_proposal.item_continuity_ttl is None
+        assert session.pending_proposal.continuity_item_names, (
+            "the review turn must not drop the earlier clean turn's "
+            "continuity items"
+        )
+        assert (
+            session.pending_proposal.item_continuity_ttl
+            == _CLEAN_TURN_ITEM_CONTINUITY_TURNS - 1
+        ), (
+            "a review turn is still a turn for decay purposes -- it must "
+            "tick the ttl down by exactly one, neither resetting it back "
+            "to the full window nor dropping it to None"
+        )

@@ -1169,8 +1169,26 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 # empty) must NOT clear pending_proposal — it still needs to
                 # carry the item_names for context continuity.
                 had_unclear_terms = bool(existing.unclear_terms)
+                # #370 (orchestrator re-review on PR #600, inline comment on
+                # nodes.py:609): `existing.continuity_item_names` /
+                # `item_continuity_ttl` track a recent CLEAN turn's
+                # already-applied items -- a wholly separate concern from
+                # this branch's genuinely-still-pending `item_names` /
+                # `unclear_terms` merge below. Pass them through untouched
+                # (not merged, not reset) so a review turn neither drops
+                # the ttl marker (which used to make the carried names
+                # silently fall into the never-expiring item_names bucket
+                # and leak "still with ..." onto a later ordinary add) nor
+                # refreshes/resets the decay clock early.
                 if merged_items and not merged_terms and had_unclear_terms:
-                    session.pending_proposal = None
+                    session.pending_proposal = (
+                        PendingProposalMemory(
+                            continuity_item_names=existing.continuity_item_names,
+                            item_continuity_ttl=existing.item_continuity_ttl,
+                        )
+                        if existing.continuity_item_names
+                        else None
+                    )
                     logger.info(
                         "pending_proposal cleared: all unclear_terms resolved"
                     )
@@ -1187,6 +1205,8 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                         item_names=merged_items[-_PENDING_PROPOSAL_HISTORY_LIMIT:],
                         unclear_terms=sliced_terms,
                         suggestions=pruned_suggestions,
+                        continuity_item_names=existing.continuity_item_names,
+                        item_continuity_ttl=existing.item_continuity_ttl,
                     )
             else:
                 session.active_mode = SessionMode.DEFAULT
@@ -1195,24 +1215,37 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 # very next turn had no memory that these items were just
                 # added — a vague follow-up like "some dairy" couldn't be
                 # told "you already added apples and eggs". Keep the item
-                # names as short-lived continuity instead.
+                # names as short-lived continuity instead, in the dedicated
+                # `continuity_item_names` field (orchestrator re-review on
+                # PR #600, inline comment on nodes.py:609) -- NOT
+                # `item_names`, which is reserved for genuinely-still-
+                # pending review items and never expires on its own. Using
+                # `item_names` here made a later review turn's merge (the
+                # branch above) drop the ttl marker while the names
+                # survived, leaking "still with ..." onto an ordinary add
+                # a turn after that.
                 #
-                # Deliberately NOT merged with existing.item_names (per
-                # orchestrator review on PR #600): this is a snapshot of
-                # what THIS turn just added, not an accumulating list —
-                # merging let it grow up to _PENDING_PROPOSAL_HISTORY_LIMIT
-                # (20) across every clean turn in a long conversation, and
-                # review_gate's "still with ..." note (gated separately,
-                # see pantry/nodes.py::review_gate) would otherwise quote
-                # an ever-growing item list on every reply.
+                # Deliberately NOT merged with existing.continuity_item_names:
+                # this is a snapshot of what THIS turn just added, not an
+                # accumulating list — merging let it grow up to
+                # _PENDING_PROPOSAL_HISTORY_LIMIT (20) across every clean
+                # turn in a long conversation, and review_gate's "still
+                # with ..." note (gated separately, see
+                # pantry/nodes.py::review_gate) would otherwise quote an
+                # ever-growing item list on every reply.
                 item_names = [a.item.name for a in state.get("actions", [])]
                 if item_names:
+                    # Matches the pre-#370 behaviour of this branch: a
+                    # clean turn's fresh pending_proposal does not carry
+                    # existing.item_names/unclear_terms/suggestions
+                    # forward either (out of scope here -- untouched by
+                    # both the original #370 fix and this re-review pass).
                     session.pending_proposal = PendingProposalMemory(
-                        item_names=item_names,
+                        continuity_item_names=item_names,
                         item_continuity_ttl=_CLEAN_TURN_ITEM_CONTINUITY_TURNS,
                     )
                     continuity_refreshed_this_turn = True
-                elif existing.item_names:
+                elif existing.item_names or existing.continuity_item_names:
                     # Nothing recognized this turn, but a still-live decaying
                     # memory survives untouched -- the decay step below (which
                     # runs for every intent) ticks it down.
@@ -1277,7 +1310,7 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
             if ttl is not None:
                 if ttl <= 1:
                     session.pending_proposal = session.pending_proposal.model_copy(
-                        update={"item_names": [], "item_continuity_ttl": None}
+                        update={"continuity_item_names": [], "item_continuity_ttl": None}
                     )
                 else:
                     session.pending_proposal = session.pending_proposal.model_copy(
