@@ -290,7 +290,8 @@ describe('useChat — conversation persistence (#265)', () => {
     expect(result.current.isStreaming).toBe(false)
   })
 
-  it('a send that races an in-flight resume fetch survives that fetch subsequently failing', async () => {    window.localStorage.setItem(STORAGE_KEY, 'conv-race-2')
+  it('a send that races an in-flight resume fetch survives that fetch subsequently failing', async () => {
+    window.localStorage.setItem(STORAGE_KEY, 'conv-race-2')
 
     let rejectHistory!: (err: Error) => void
     const historyPromise = new Promise<ConversationHistoryTurn[]>((_resolve, reject) => {

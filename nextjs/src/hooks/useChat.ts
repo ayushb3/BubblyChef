@@ -308,9 +308,10 @@ export function useChat(options?: UseChatOptions) {
             "I'm not sure how to help with that. Try asking about recipes or groceries!"
 
           const proposal = response.proposal as PantryProposalData | null
-          const hasActions = !!proposal && Array.isArray(proposal.actions) && proposal.actions.length > 0
           const clarificationTerms = getClarificationSuggestions(response)
           const isPantryTurn = response.intent === 'pantry_update'
+          const hasActions =
+            isPantryTurn && !!proposal && Array.isArray(proposal.actions) && proposal.actions.length > 0
 
           // Find the nearest earlier pantry card that's still open (pending).
           // Both vague-only turns (0 actions, new clarification pills) AND

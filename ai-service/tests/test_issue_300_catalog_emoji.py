@@ -40,7 +40,7 @@ ALLOWED_EMOJI = {
 
 
 def _load_catalog() -> list[dict]:
-    return json.loads(CATALOG_PATH.read_text())
+    return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
 
 
 def test_every_emoji_is_from_the_curated_allow_list() -> None:
