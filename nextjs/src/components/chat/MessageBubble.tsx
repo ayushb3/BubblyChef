@@ -87,13 +87,47 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
                 // preflight (which zeroes out list markers) went unopposed and
                 // every numbered/bulleted list in chat rendered with no
                 // markers (issue #566). Style list elements directly instead.
-                ol: ({ children }) => (
-                  <ol className="list-decimal list-outside pl-5 my-1 space-y-0.5">{children}</ol>
+                // `node` is react-markdown's own extra prop, not a valid DOM
+                // attribute — dropped rather than spread. Everything else
+                // (`start` on a resumed `<ol>`, remark-gfm's own
+                // `className` — e.g. "contains-task-list" on a task list's
+                // wrapper, "task-list-item" on a checkbox `<li>`) must pass
+                // through: dropping `start` renumbers a resumed list from 1,
+                // and dropping `className` loses remark-gfm's own markup.
+                // A task list already has its own checkbox marker, so
+                // `list-decimal`/`list-disc` is skipped for
+                // "contains-task-list" — otherwise every checkbox item also
+                // grew a stray bullet/number next to it.
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to keep it out of `...props`
+                ol: ({ node: _node, className, ...props }) => (
+                  <ol
+                    className={[
+                      'list-outside pl-5 my-1 space-y-0.5',
+                      className?.includes('contains-task-list') ? '' : 'list-decimal',
+                      className ?? '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    {...props}
+                  />
                 ),
-                ul: ({ children }) => (
-                  <ul className="list-disc list-outside pl-5 my-1 space-y-0.5">{children}</ul>
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to keep it out of `...props`
+                ul: ({ node: _node, className, ...props }) => (
+                  <ul
+                    className={[
+                      'list-outside pl-5 my-1 space-y-0.5',
+                      className?.includes('contains-task-list') ? '' : 'list-disc',
+                      className ?? '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    {...props}
+                  />
                 ),
-                li: ({ children }) => <li className="pl-0.5">{children}</li>,
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to keep it out of `...props`
+                li: ({ node: _node, className, ...props }) => (
+                  <li className={['pl-0.5', className ?? ''].filter(Boolean).join(' ')} {...props} />
+                ),
               }}
             >
               {message.content}
