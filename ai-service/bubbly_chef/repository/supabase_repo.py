@@ -8,6 +8,7 @@ import logging
 import re
 from datetime import UTC, date, datetime
 from typing import Any, cast
+from uuid import UUID
 
 from postgrest.types import JSON
 from supabase import Client, create_client
@@ -329,10 +330,17 @@ class SupabaseRepository:
 
     async def apply_pantry_proposal(
         self, user_id: str, actions: list[dict[str, Any]]
-    ) -> tuple[int, int, list[str]]:
+    ) -> tuple[int, int, list[str], list[UUID]]:
+        """Apply reviewed pantry actions; returns (applied, failed, errors,
+        affected_item_ids). #541: affected_item_ids is every pantry row this
+        call created, updated, or deleted -- ApplyResponse was always
+        dropping this on the floor, so a caller (the bubbles ledger) had no
+        way to award credit for items that did apply on a partial failure.
+        """
         applied = 0
         failed = 0
         errors: list[str] = []
+        affected_item_ids: list[UUID] = []
 
         for action in actions:
             try:
@@ -352,7 +360,7 @@ class SupabaseRepository:
                             unit=action.get("unit", existing.unit),
                             category=action.get("category", existing.category.value),
                         )
-                        await self.update_pantry_item(
+                        updated = await self.update_pantry_item(
                             user_id,
                             str(existing.id),
                             {
@@ -361,6 +369,7 @@ class SupabaseRepository:
                                 "unit_base": _unit_base,
                             },
                         )
+                        affected_item_ids.append(updated.id if updated else existing.id)
                     else:
                         # F5: pass quantity_base and unit_base to PantryItem constructor
                         item_category = FoodCategory(action.get("category", "other"))
@@ -406,7 +415,8 @@ class SupabaseRepository:
                             expiry_date=item_expiry,
                             estimated_expiry=bool(item_estimated_expiry),
                         )
-                        await self.add_pantry_item(user_id, item)
+                        created = await self.add_pantry_item(user_id, item)
+                        affected_item_ids.append(created.id)
                     applied += 1
 
                 elif action_type in ("update", "use"):
@@ -423,25 +433,29 @@ class SupabaseRepository:
                         )
                         if new_qty <= 0:
                             await self.delete_pantry_item(user_id, str(existing.id))
+                            affected_item_ids.append(existing.id)
                         else:
-                            await self.update_pantry_item(
+                            updated = await self.update_pantry_item(
                                 user_id, str(existing.id), {"quantity": new_qty}
                             )
+                            affected_item_ids.append(updated.id if updated else existing.id)
                     else:
                         updates = {
                             k: v
                             for k, v in action.items()
                             if k not in ("action", "name") and v is not None
                         }
-                        await self.update_pantry_item(
+                        updated = await self.update_pantry_item(
                             user_id, str(existing.id), updates
                         )
+                        affected_item_ids.append(updated.id if updated else existing.id)
                     applied += 1
 
                 elif action_type == "remove":
                     existing = await self.find_similar_item(user_id, name)
                     if existing:
                         await self.delete_pantry_item(user_id, str(existing.id))
+                        affected_item_ids.append(existing.id)
                         applied += 1
                     else:
                         errors.append(f"Item not found for removal: {name}")
@@ -451,7 +465,7 @@ class SupabaseRepository:
                 errors.append(f"Error processing {action}: {e}")
                 failed += 1
 
-        return applied, failed, errors
+        return applied, failed, errors, affected_item_ids
 
     # =========================================================================
     # Recipe operations

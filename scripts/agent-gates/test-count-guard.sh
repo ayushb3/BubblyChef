@@ -24,6 +24,16 @@ BASE_SHA="${1:?usage: test-count-guard.sh <base-sha> <head-sha> [labels-json]}"
 HEAD_SHA="${2:?}"
 LABELS="${3:-[]}"
 
+# Compare against the merge base, not the base branch's tip. CI passes
+# pull_request.base.sha, which is main *now*; a branch cut before main gained new
+# tests would otherwise "remove" them in a two-dot diff and "drop" the count, so the
+# gate went red on any PR that was merely behind main. The question is what this
+# PR removed, which is exactly the merge base -> head diff.
+if MB=$(git merge-base "$BASE_SHA" "$HEAD_SHA" 2>/dev/null) && [ -n "$MB" ]; then
+  [ "$MB" != "$(git rev-parse "$BASE_SHA")" ] &&     echo "Base $BASE_SHA is ahead of the branch point; comparing against merge base $MB."
+  BASE_SHA="$MB"
+fi
+
 has_label() { printf '%s' "$LABELS" | grep -q "\"$1\""; }
 
 # Each counter prints exactly one integer. `|| echo 0` after a pipeline that has

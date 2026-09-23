@@ -8,6 +8,7 @@ import {
   unlockedThemes,
   isThemeUnlocked,
   resolveKitchenTheme,
+  resolveKitchenThemeOptimistic,
 } from '@/lib/kitchen/themes'
 
 describe('KITCHEN_THEMES', () => {
@@ -102,5 +103,31 @@ describe('resolveKitchenTheme', () => {
   it('never throws for a malformed stored key', () => {
     expect(() => resolveKitchenTheme('', 100000)).not.toThrow()
     expect(resolveKitchenTheme('', 100000).key).toBe('pastel')
+  })
+})
+
+describe('resolveKitchenThemeOptimistic (#523 review finding 2)', () => {
+  it('trusts a known stored key while the balance is still null, instead of assuming 0', () => {
+    expect(resolveKitchenThemeOptimistic('night_kitchen', null).key).toBe('night_kitchen')
+  })
+
+  it('falls back to pastel for an unknown stored key even while balance is null', () => {
+    expect(resolveKitchenThemeOptimistic('not_a_real_theme', null).key).toBe('pastel')
+  })
+
+  it('falls back to pastel for a null/undefined stored key while balance is null', () => {
+    expect(resolveKitchenThemeOptimistic(null, null).key).toBe('pastel')
+    expect(resolveKitchenThemeOptimistic(undefined, null).key).toBe('pastel')
+  })
+
+  it('once balance is known, re-validates and still falls back for a locked theme', () => {
+    expect(resolveKitchenThemeOptimistic('night_kitchen', 0).key).toBe('pastel')
+  })
+
+  it('once balance is known, returns the stored theme when it is actually unlocked', () => {
+    const nightKitchen = KITCHEN_THEMES.find((t) => t.key === 'night_kitchen')!
+    expect(resolveKitchenThemeOptimistic('night_kitchen', nightKitchen.threshold).key).toBe(
+      'night_kitchen',
+    )
   })
 })

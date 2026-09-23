@@ -62,7 +62,7 @@ function getGreeting(): string {
   if (hour >= 5 && hour < 12) return 'Good morning'
   if (hour >= 12 && hour < 18) return 'Good afternoon'
   if (hour >= 18 && hour < 22) return 'Good evening'
-  return 'Late night snack?'
+  return 'Late night snack'
 }
 
 function getGreetingEmoji(): string {
@@ -234,6 +234,8 @@ export default function HeroHome({ displayName, initialKitchenTheme = null }: He
     selectTheme,
     newlyUnlocked,
     dismissUnlock,
+    error: themeError,
+    clearError: clearThemeError,
   } = useKitchenTheme(initialKitchenTheme, balance)
   const unlockedThemeKeys = new Set(unlockedThemes.map((t) => t.key))
 
@@ -341,6 +343,8 @@ export default function HeroHome({ displayName, initialKitchenTheme = null }: He
           balance={balance}
           onSelect={selectTheme}
           saving={themeSaving}
+          error={themeError}
+          clearError={clearThemeError}
         />
       </div>
 
