@@ -349,3 +349,33 @@ async def test_chat_stream_forwards_forced_intent_source(client: AsyncClient) ->
     assert response.status_code == 200
     assert captured["forced_intent"] == "recipe_card"
     assert captured["forced_intent_source"] == "hmm what about something with mushrooms"
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_forwards_follow_up_chips_flag(client: AsyncClient) -> None:
+    """A caller that renders no chips (guided cook) can opt out of the pass (#506)."""
+    mock_repo = _make_mock_repo()
+    captured: dict[str, Any] = {}
+
+    async def _capturing_stream(*args: Any, **kwargs: Any) -> AsyncIterator[str]:
+        captured.update(kwargs)
+        async for chunk in _fake_stream():
+            yield chunk
+
+    with patch(_STREAM_PATCH, side_effect=_capturing_stream), patch(
+        "bubbly_chef.api.routes.chat.get_repository",
+        new_callable=AsyncMock,
+        return_value=mock_repo,
+    ):
+        default = await client.post(
+            "/v1/chat/stream", json={"message": "hi", "conversation_id": TEST_CONV_ID}
+        )
+        assert default.status_code == 200
+        assert captured["follow_up_chips"] is True
+
+        opted_out = await client.post(
+            "/v1/chat/stream",
+            json={"message": "hi", "conversation_id": TEST_CONV_ID, "follow_up_chips": False},
+        )
+        assert opted_out.status_code == 200
+        assert captured["follow_up_chips"] is False

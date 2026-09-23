@@ -58,12 +58,24 @@ async function aiFetch(
  *
  * Ported from web/src/api/client.ts:487-556 with Supabase auth.
  */
+/** Optional callbacks for events that can arrive after the envelope. */
+export interface StreamExtras {
+  /** Context-aware chip suggestions, sent after the envelope (issue #498). */
+  onFollowUps?: (suggestions: string[]) => void
+  /**
+   * The stream is over — however it ended (clean close, error, abort). Lets
+   * the caller stop waiting for a `follow_ups` event that will never come.
+   */
+  onStreamEnd?: () => void
+}
+
 export async function streamChatMessage(
   request: ChatRequest,
   onToken: (token: string) => void,
   onDone: (response: ChatResponse) => void,
   onError: (error: Error) => void,
   signal?: AbortSignal,
+  extra?: StreamExtras,
 ): Promise<void> {
   let response: Response
   try {
@@ -115,8 +127,15 @@ export async function streamChatMessage(
           currentEventType = line.slice(7).trim()
         } else if (line.startsWith('data: ')) {
           const jsonStr = line.slice(6)
+          let parsed: { type?: string; content?: string; data?: ChatResponse; message?: string }
           try {
-            const parsed = JSON.parse(jsonStr)
+            parsed = JSON.parse(jsonStr)
+          } catch (err) {
+            console.error('[streamChatMessage] Failed to parse SSE line:', err)
+            continue
+          }
+
+          try {
             if (parsed.type === 'token' || currentEventType === 'token') {
               onToken(parsed.content ?? '')
               // 20ms visual throttle for streaming effect
@@ -125,19 +144,60 @@ export async function streamChatMessage(
               parsed.type === 'envelope' ||
               currentEventType === 'envelope'
             ) {
-              settle(() => onDone(parsed.data))
+              settle(() => onDone(parsed.data as ChatResponse))
+            } else if (
+              parsed.type === 'follow_ups' ||
+              currentEventType === 'follow_ups'
+            ) {
+              // `follow_ups` carries { suggestions }, not a ChatResponse (issue #498).
+              const raw = (parsed.data as { suggestions?: unknown } | undefined)?.suggestions
+              extra?.onFollowUps?.(
+                Array.isArray(raw) ? raw.filter((s: unknown): s is string => typeof s === 'string') : [],
+              )
             } else if (
               parsed.type === 'error' ||
               currentEventType === 'error'
             ) {
-              settle(() =>
-                onError(new Error(parsed.message ?? 'Stream error')),
-              )
+              // onError is the terminal callback for this branch, so if it
+              // throws there is no second callback left to redispatch to —
+              // swallow locally instead of letting it fall into the generic
+              // "a callback threw" catch below, which would call onError a
+              // second time for the same event.
+              try {
+                settle(() =>
+                  onError(new Error(parsed.message ?? 'Stream error')),
+                )
+              } catch (onErrorErr) {
+                console.error(
+                  '[streamChatMessage] onError callback itself threw:',
+                  onErrorErr,
+                )
+              }
               return
             }
             // 'done' event is informational; envelope follows it
           } catch (err) {
-            console.error('[streamChatMessage] Failed to process SSE line:', err)
+            // onToken/onDone threw (onError's own throw is handled above and
+            // never reaches here). `settle()` marks itself settled before
+            // invoking its callback, so if onDone threw, `settled` is already
+            // true; go around `settle()` directly so this corrective error
+            // still reaches the caller. Mark `settled` here too (it may still
+            // be false, e.g. a throwing onToken) so the `finally` block's
+            // fallback onError does not fire a second terminal callback on
+            // top of this one.
+            //
+            // Bypassing `settle()` means "exactly one terminal callback"
+            // (#241) now also relies on the backend sending nothing after the
+            // envelope: every envelope yield in ai-service's workflows/router.py
+            // is followed by `return`. If that ever changes, a callback throwing
+            // on a later line would overwrite a reply that already rendered.
+            console.error(
+              '[streamChatMessage] Callback threw while handling SSE line:',
+              err,
+            )
+            settled = true
+            onError(err instanceof Error ? err : new Error(String(err)))
+            return
           }
         }
       }
@@ -156,6 +216,7 @@ export async function streamChatMessage(
     settle(() =>
       onError(new Error('The response ended unexpectedly. Please try again.')),
     )
+    extra?.onStreamEnd?.()
   }
 }
 

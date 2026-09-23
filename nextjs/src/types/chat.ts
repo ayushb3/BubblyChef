@@ -128,6 +128,11 @@ export interface ChatRequest {
   forced_intent?: 'recipe_card' | 'recipe_brainstorm' | null
   /** With forced_intent: the user message that raised the confirm band. */
   forced_intent_source?: string | null
+  /**
+   * False when this caller renders no follow-up chips (issue #498), so the
+   * server skips the extra model call that produces them. Defaults to true.
+   */
+  follow_up_chips?: boolean
 }
 
 /**
@@ -201,6 +206,27 @@ export interface ConversationSession {
  */
 export function getBrainstormIdeas(response?: ChatResponse | null): string[] {
   const raw = response?.metadata?.brainstorm_ideas
+  if (!Array.isArray(raw)) return []
+  return raw.filter((item): item is string => typeof item === 'string')
+}
+
+/**
+ * Extract the backend's context-aware follow-up suggestions from a
+ * ChatResponse's metadata (issue #498). Raw model output — callers must pass
+ * it through `resolveChips`, which sanitises and falls back to static chips.
+ * Returns an empty array when absent, null, or malformed.
+ */
+/**
+ * True while the server has promised follow-up chips for this reply but they
+ * haven't arrived yet (issue #498): the envelope is sent first so the input
+ * unlocks immediately, and the chips follow as a separate `follow_ups` event.
+ */
+export function isFollowUpsPending(response?: ChatResponse | null): boolean {
+  return response?.metadata?.follow_ups_pending === true
+}
+
+export function getFollowUpSuggestions(response?: ChatResponse | null): string[] {
+  const raw = response?.metadata?.follow_up_suggestions
   if (!Array.isArray(raw)) return []
   return raw.filter((item): item is string => typeof item === 'string')
 }

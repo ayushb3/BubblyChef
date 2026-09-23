@@ -93,3 +93,114 @@ describe('streamChatMessage terminal-callback guarantee (#241)', () => {
     expect(onError).not.toHaveBeenCalled()
   })
 })
+
+describe('streamChatMessage surfaces callback failures (#539)', () => {
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  it('calls onError exactly once when onDone throws, and stops reading', async () => {
+    let readCount = 0
+    const reader = {
+      read: async () => {
+        readCount += 1
+        if (readCount === 1) {
+          return {
+            done: false,
+            value: new TextEncoder().encode(
+              'event: envelope\ndata: {"data":{"intent":"chat"}}\n\n',
+            ),
+          }
+        }
+        return { done: true, value: undefined }
+      },
+      releaseLock: () => {},
+    }
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: { getReader: () => reader },
+    }) as unknown as typeof fetch
+
+    const onToken = jest.fn()
+    const onDone = jest.fn(() => {
+      throw new Error('boom')
+    })
+    const onError = jest.fn()
+
+    await streamChatMessage(request, onToken, onDone, onError)
+
+    expect(onDone).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0][0]).toBeInstanceOf(Error)
+    // The read loop stops on the callback failure instead of continuing.
+    expect(readCount).toBe(1)
+  })
+
+  it('calls onError exactly once when onToken throws, not a second time from the fallback', async () => {
+    // onToken throwing leaves `settled` false going into the catch (only
+    // onDone/onError route through settle()) — the finally block's fallback
+    // onError must not also fire.
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        sseResponse('event: token\ndata: {"content":"partial"}\n\n'),
+      ) as unknown as typeof fetch
+
+    const onToken = jest.fn(() => {
+      throw new Error('token callback boom')
+    })
+    const onDone = jest.fn()
+    const onError = jest.fn()
+
+    await streamChatMessage(request, onToken, onDone, onError)
+
+    expect(onToken).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0][0]).toBeInstanceOf(Error)
+    expect(onError.mock.calls[0][0].message).toBe('token callback boom')
+  })
+
+  it('calls onError exactly once when onError itself throws on an error event', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        sseResponse('event: error\ndata: {"message":"server said no"}\n\n'),
+      ) as unknown as typeof fetch
+
+    const onToken = jest.fn()
+    const onDone = jest.fn()
+    const onError = jest
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('error callback boom')
+      })
+
+    await streamChatMessage(request, onToken, onDone, onError)
+
+    // The first call is the real error event; settle() marks settled before
+    // invoking it, so it throwing must not trigger a second onError from
+    // either the outer catch's re-dispatch or the finally fallback.
+    expect(onError).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips a malformed data line but still delivers a later envelope', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        sseResponse(
+          'event: envelope\ndata: not-json\n\nevent: envelope\ndata: {"data":{"intent":"chat"}}\n\n',
+        ),
+      ) as unknown as typeof fetch
+
+    const onToken = jest.fn()
+    const onDone = jest.fn()
+    const onError = jest.fn()
+
+    await streamChatMessage(request, onToken, onDone, onError)
+
+    expect(onDone).toHaveBeenCalledTimes(1)
+    expect(onDone).toHaveBeenCalledWith({ intent: 'chat' })
+    expect(onError).not.toHaveBeenCalled()
+  })
+})
