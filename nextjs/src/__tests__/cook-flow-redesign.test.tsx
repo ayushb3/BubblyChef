@@ -30,6 +30,7 @@ jest.mock('framer-motion', () => ({
     button: ({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...rest}>{children}</button>,
   },
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useReducedMotion: () => false,
 }))
 
 jest.mock('@/lib/format', () => ({ titleCase: (s: string) => s }))

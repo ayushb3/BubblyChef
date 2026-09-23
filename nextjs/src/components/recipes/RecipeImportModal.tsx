@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import BubblesMascot from '@/components/ui/BubblesMascot'
 import { type Recipe } from './RecipePage'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
@@ -213,7 +214,7 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
                 className="text-xs text-[var(--color-muted)] flex items-center gap-1.5"
                 style={{ fontFamily: 'Nunito, sans-serif' }}
               >
-                <span className="inline-block animate-spin">⏳</span>
+                <BubblesMascot state="thinking" size={20} />
                 Extracting recipe…
               </p>
             )}

@@ -112,8 +112,12 @@ jest.mock('framer-motion', () => ({
     }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
       <button {...rest}>{children}</button>
     ),
+    span: ({ children, ...rest }: React.HTMLAttributes<HTMLSpanElement>) => (
+      <span {...rest}>{children}</span>
+    ),
   },
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useReducedMotion: () => false,
 }))
 
 import CookModal from '@/components/recipes/CookModal'

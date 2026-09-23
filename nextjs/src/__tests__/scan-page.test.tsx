@@ -111,7 +111,10 @@ it('confirming the review writes via bulkAddPantryItems and redirects to /pantry
       source: 'scan',
     },
   ])
-  await waitFor(() => expect(push).toHaveBeenCalledWith('/pantry'))
+  // The route shows a brief "celebrate" mascot state before redirecting
+  // (issue #525), so the push happens ~1.5s after confirm rather than
+  // immediately — give waitFor enough headroom for that timer.
+  await waitFor(() => expect(push).toHaveBeenCalledWith('/pantry'), { timeout: 3000 })
 })
 
 it('a failed confirm shows an error and stays on the review step (no redirect)', async () => {

@@ -25,7 +25,7 @@ import type { ScannedItem, ScanResult } from '@/types/scan'
  * taps the confirm button (issue #259).
  */
 
-type ScanPageState = 'upload' | 'processing' | 'review' | 'submitting'
+type ScanPageState = 'upload' | 'processing' | 'review' | 'submitting' | 'celebrating'
 
 export default function ScanPage() {
   const router = useRouter()
@@ -40,6 +40,7 @@ export default function ScanPage() {
   const [needsReview, setNeedsReview] = useState<ScannedItem[]>([])
   const [skipped, setSkipped] = useState<ScannedItem[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
+  const [addedCount, setAddedCount] = useState(0)
 
   const { isDragActive, dropzoneHandlers } = useFileDropzone({ onFile: handleFileSelect })
 
@@ -91,7 +92,14 @@ export default function ScanPage() {
       await bulkAddPantryItems(checkedItems.map(scannedToBulkAddItem))
       queryClient.invalidateQueries({ queryKey: ['pantry'] })
       queryClient.invalidateQueries({ queryKey: ['bubbles'] })
-      router.push('/pantry')
+      // Celebrate briefly before leaving the page (issue #525) — the redirect
+      // itself unmounts everything, so the timer doesn't need cleanup on
+      // unmount beyond what navigation already does.
+      setAddedCount(checkedItems.length)
+      setState('celebrating')
+      setTimeout(() => {
+        router.push('/pantry')
+      }, 1500)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add items')
       setState('review')
@@ -228,6 +236,24 @@ export default function ScanPage() {
                 onConfirm={handleConfirm}
                 isSubmitting={state === 'submitting'}
               />
+            </motion.div>
+          )}
+
+          {state === 'celebrating' && (
+            <motion.div
+              key="celebrating"
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.97 }}
+              transition={{ duration: 0.25 }}
+              className="text-center"
+            >
+              <div className="flex justify-center mb-3">
+                <BubblesMascot state="celebrate" size={88} />
+              </div>
+              <p className="font-semibold text-[var(--color-text)]">
+                Added {addedCount} item{addedCount === 1 ? '' : 's'} to your pantry!
+              </p>
             </motion.div>
           )}
         </AnimatePresence>

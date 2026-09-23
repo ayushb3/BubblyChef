@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence, useDragControls } from 'framer-motion'
 import ScanTab from './ScanTab'
 import TypeTab from './TypeTab'
+import BubblesMascot from '@/components/ui/BubblesMascot'
 import { bulkAddPantryItems } from '@/lib/api/pantry'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
@@ -42,9 +43,29 @@ export default function PantryAddSheet({
   // sheet's own close paths (X, backdrop, drag-to-dismiss) stay unaffected;
   // a tab switch is not an abandon gesture, closing the sheet is (issue #402).
   const [scanProcessing, setScanProcessing] = useState(false)
+  // Success state after a confirmed add (issue #525) — the footer swaps to a
+  // celebrate mascot + count for ~1.5s, mirroring CookModal's success state,
+  // then the sheet auto-closes. `onItemsAdded()` fires immediately (so the
+  // pantry list behind the sheet refetches right away); only `onClose()`
+  // waits for the celebration.
+  const [justAdded, setJustAdded] = useState(false)
+  const [addedCount, setAddedCount] = useState(0)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dragControls = useDragControls()
   const panelRef = useRef<HTMLDivElement>(null)
   useModalFocusTrap(isOpen, onClose, panelRef)
+
+  function clearCloseTimer() {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+  }
+
+  // Cancel the pending auto-close if the user closes the sheet early
+  // (backdrop, swipe, close button) or the component unmounts — otherwise
+  // `onClose` could fire twice, or fire after the sheet is already gone.
+  useEffect(() => clearCloseTimer, [])
 
   // Update tab when prop changes (e.g. URL param triggers re-open)
   useEffect(() => {
@@ -59,11 +80,18 @@ export default function PantryAddSheet({
       setError(null)
       setIsSubmitting(false)
       setScanProcessing(false)
+      setJustAdded(false)
     }
   }, [isOpen])
 
   const allItems = [...scanItems, ...typeItems]
   const itemCount = allItems.length
+
+  /** Wraps `onClose` so an early close (backdrop, swipe, X) cancels the pending auto-close timer. */
+  function handleClose() {
+    clearCloseTimer()
+    onClose()
+  }
 
   async function handleConfirm() {
     if (itemCount === 0) return
@@ -73,8 +101,15 @@ export default function PantryAddSheet({
     try {
       await bulkAddPantryItems(allItems)
 
+      // Refetch the pantry list behind the sheet right away — only the
+      // sheet's own close waits for the celebration (issue #525).
       onItemsAdded()
-      onClose()
+      setAddedCount(itemCount)
+      setJustAdded(true)
+      closeTimerRef.current = setTimeout(() => {
+        closeTimerRef.current = null
+        onClose()
+      }, 1500)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add items')
     } finally {
@@ -92,7 +127,7 @@ export default function PantryAddSheet({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
+            onClick={handleClose}
           />
 
           {/* Sheet — slides up from bottom, sits above the bottom nav */}
@@ -117,7 +152,7 @@ export default function PantryAddSheet({
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={{ top: 0, bottom: 0.3 }}
             onDragEnd={(_e, info) => {
-              if (info.offset.y > 80 || info.velocity.y > 500) onClose()
+              if (info.offset.y > 80 || info.velocity.y > 500) handleClose()
             }}
           >
             {/* Handle bar — drag initiator */}
@@ -136,7 +171,7 @@ export default function PantryAddSheet({
                 </h2>
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={handleClose}
                   className="text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors text-xl leading-none px-1"
                   aria-label="Close"
                 >
@@ -240,24 +275,41 @@ export default function PantryAddSheet({
               </div>
             </div>
 
-            {/* Sticky confirm footer */}
+            {/* Sticky confirm footer — swaps to a celebrate state after a
+                successful add (issue #525), mirroring CookModal's success
+                state. No button is clickable while celebrating; the sheet
+                auto-closes via the timer started in handleConfirm. */}
             <div className="flex-shrink-0 px-6 pb-4 pt-3 border-t border-[var(--color-border)]">
-              <motion.button
-                type="button"
-                onClick={handleConfirm}
-                disabled={itemCount === 0 || isSubmitting}
-                whileHover={{ scale: itemCount === 0 || isSubmitting ? 1 : 1.02 }}
-                whileTap={{ scale: itemCount === 0 || isSubmitting ? 1 : 0.96 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-                className="w-full py-4 rounded-full font-bold text-white shadow-lg transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ background: 'var(--color-primary-dark, #FF8FAB)' }}
-              >
-                {isSubmitting
-                  ? 'Adding…'
-                  : itemCount === 0
-                    ? 'Add Items'
-                    : `Add ${itemCount} Item${itemCount !== 1 ? 's' : ''} 🛒`}
-              </motion.button>
+              {justAdded ? (
+                <div
+                  className="flex items-center justify-center gap-3 py-1"
+                  role="status"
+                  aria-live="polite"
+                  data-testid="pantry-add-sheet-celebrate"
+                >
+                  <BubblesMascot state="celebrate" size={48} />
+                  <p className="font-bold text-[var(--color-text)]">
+                    Added {addedCount} item{addedCount === 1 ? '' : 's'}!
+                  </p>
+                </div>
+              ) : (
+                <motion.button
+                  type="button"
+                  onClick={handleConfirm}
+                  disabled={itemCount === 0 || isSubmitting}
+                  whileHover={{ scale: itemCount === 0 || isSubmitting ? 1 : 1.02 }}
+                  whileTap={{ scale: itemCount === 0 || isSubmitting ? 1 : 0.96 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+                  className="w-full py-4 rounded-full font-bold text-white shadow-lg transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ background: 'var(--color-primary-dark, #FF8FAB)' }}
+                >
+                  {isSubmitting
+                    ? 'Adding…'
+                    : itemCount === 0
+                      ? 'Add Items'
+                      : `Add ${itemCount} Item${itemCount !== 1 ? 's' : ''} 🛒`}
+                </motion.button>
+              )}
             </div>
           </motion.div>
         </>

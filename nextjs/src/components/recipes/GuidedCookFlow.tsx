@@ -24,6 +24,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import BubblesMascot from '@/components/ui/BubblesMascot'
 import { ingredientLabel } from '@/lib/recipe-helpers'
 import { useMotionConfig } from '@/lib/motion'
 import { streamChatMessage } from '@/lib/api/chat'
@@ -437,7 +438,9 @@ function DoneState({ recipe, onExit, onFinish }: { recipe: Recipe; onExit: () =>
       }}
       data-testid="guided-cook-done"
     >
-      <div className="text-5xl mb-3" aria-hidden="true">🎉</div>
+      <div className="flex justify-center mb-3">
+        <BubblesMascot state="celebrate" size={90} />
+      </div>
       <h2 className="text-xl font-extrabold mb-1" style={{ color: 'var(--color-text)' }}>
         Nicely done!
       </h2>

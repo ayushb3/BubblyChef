@@ -24,6 +24,8 @@ interface HomeData {
   urgentItem: EnrichedPantryItem | null
   tip: DashboardTip | null
   suggestion: DashboardSuggestion | null
+  /** True when the pantry has an expired item that hasn't been used up (issue #525). */
+  hasUnusedExpired: boolean
 }
 
 // Client-side fallback only — used when `GET /v1/dashboard/daily` (#225, #168)
@@ -112,6 +114,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
     urgentItem: null,
     tip: null,
     suggestion: null,
+    hasUnusedExpired: false,
   })
 
   useEffect(() => {
@@ -155,12 +158,17 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
               item.days_until_expiry <= 7)
         ).length
 
+        // #525 — Bubbles goes "worried" when there's expired food sitting
+        // unused (still has quantity) rather than already used up or cleared.
+        const hasUnusedExpired = allItems.some((item) => item.is_expired && item.quantity > 0)
+
         setData({
           totalCount: pantryData.total_count ?? allItems.length,
           expiringCount,
           urgentItem,
           tip: dashboardDaily?.tip ?? null,
           suggestion: dashboardDaily?.suggestion ?? null,
+          hasUnusedExpired,
         })
       } catch {
         // silent
@@ -194,7 +202,7 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
 
   const greeting = clockReady ? getGreeting() : 'Hello'
   const emoji = clockReady ? getGreetingEmoji() : '👋'
-  const { totalCount, expiringCount, urgentItem, tip: dashboardTip, suggestion } = data
+  const { totalCount, expiringCount, urgentItem, tip: dashboardTip, suggestion, hasUnusedExpired } = data
 
   // Kitchen scene (#521): `decorations` rows use `name`/`decoration_type`;
   // KitchenScene expects `id`/`slot`. The balance is `null` until `/api/bubbles`
@@ -306,7 +314,12 @@ export default function HeroHome({ displayName }: HeroHomeProps) {
       {/* Hero Bubbles */}
       <FadeInView delay={0.1}>
         <div className="flex flex-col items-center mt-2 mb-4">
-          <BubblesMascot state={!suggestion && urgentItem ? 'surprised' : 'happy'} size={120} />
+          <BubblesMascot
+            state={
+              hasUnusedExpired ? 'worried' : !suggestion && urgentItem ? 'surprised' : 'happy'
+            }
+            size={120}
+          />
         </div>
       </FadeInView>
 
