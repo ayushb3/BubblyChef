@@ -3,7 +3,7 @@
 Feeds `bubbly_chef.workflows.chat.nodes`: `general_chat_response` (small talk,
 food-storage questions) and `cooking_help_response` (single-shot and ReAct
 cooking-help paths, plus the recipe-amendment detector run after a cooking
-reply). Edits here are CODEOWNERS-gated: prompt wording changes model
+reply), and the follow-up-chip pass run after a streamed chat reply. Edits here are CODEOWNERS-gated: prompt wording changes model
 behavior even though the test suite can stay green.
 """
 
@@ -109,3 +109,26 @@ Help the user with:
 Keep responses friendly, concise, and practical. If the user asks what they can
 make, prioritize ingredients in the pantry and mention they can switch to Recipe
 mode for a full step-by-step recipe."""
+
+
+# Follow-up chips (issue #498): one structured pass over a reply that has
+# already been streamed, turning it into 2-3 tappable next questions.
+_FOLLOW_UP_PROMPT = """\
+You are a structured-output assistant. A cooking assistant has just answered a
+user's message. Suggest the follow-up questions the user is most likely to ask
+NEXT, based on what the answer actually said.
+
+User message: {user_message}
+
+Assistant reply (already sent): {reply_text}
+
+Rules:
+- Return 2 or 3 suggestions, each phrased in the user's voice as a short
+  question or request of at most 8 words (e.g. "What internal temperature?",
+  "How long should it rest?", "Can I use the air fryer?").
+- Each must follow directly from the content of the reply. Do not ask about
+  something the reply already fully covered, and do not suggest generic
+  questions the reply gives no reason to ask.
+- Plain text only: no markdown, no numbering, no emoji, no links.
+
+Return ONLY the JSON fields defined in the schema — no extra text."""

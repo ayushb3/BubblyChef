@@ -193,7 +193,9 @@ export function useChat(options?: UseChatOptions) {
                 intent: (turn.intent ?? 'general_chat') as ChatIntent,
                 assistant_message: turn.content,
                 proposal: turn.proposal ?? null,
-                metadata: turn.metadata ?? null,
+                // A restored turn has no live stream behind it, so it can't still
+                // be waiting for follow-up chips (#498).
+                metadata: turn.metadata ? { ...turn.metadata, follow_ups_pending: false } : null,
                 // fill required fields with safe defaults; the real confidence
                 // is not persisted, so restored turns report unknown (0), not a
                 // fabricated 1.0 that a future confidence indicator would trust.
@@ -514,6 +516,47 @@ export function useChat(options?: UseChatOptions) {
         },
 
         abortController.signal,
+
+        {
+          // Chips land after the envelope (issue #498); the turn is already
+          // settled and the input unlocked by then.
+          onFollowUps: (suggestions: string[]) => {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMsgId && msg.response
+                  ? {
+                      ...msg,
+                      response: {
+                        ...msg.response,
+                        metadata: {
+                          ...msg.response.metadata,
+                          follow_up_suggestions: suggestions,
+                          follow_ups_pending: false,
+                        },
+                      },
+                    }
+                  : msg,
+              ),
+            )
+          },
+          // However the stream ended, stop waiting for chips; a reply that
+          // never got them falls back to the static set.
+          onStreamEnd: () => {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMsgId && msg.response?.metadata?.follow_ups_pending === true
+                  ? {
+                      ...msg,
+                      response: {
+                        ...msg.response,
+                        metadata: { ...msg.response.metadata, follow_ups_pending: false },
+                      },
+                    }
+                  : msg,
+              ),
+            )
+          },
+        },
       )
     },
     [isStreaming, conversationId],
