@@ -1,5 +1,7 @@
+'use client'
+
 /**
- * Home-screen kitchen scene (issue #521).
+ * Home-screen kitchen scene (issue #521, themes added in #523).
  *
  * Pure presentation component: 12 fixed slots (`lib/kitchen/slots.ts`) laid
  * out over a fixed 4:3 box, each showing the matched unlocked decoration's
@@ -16,10 +18,20 @@
  * Everything visual comes from the catalog entry, not from this component —
  * issue #527's art swap is meant to be a data change (filling in `art`),
  * not a code change here.
+ *
+ * `theme` (#523) only swaps the background behind the slots — decorations
+ * render identically regardless of theme, which is the point: placed
+ * decorations "stay exactly where they are" when the theme changes. The
+ * background cross-fades on theme change (`AnimatePresence` keyed on
+ * `theme.key`); `prefers-reduced-motion` collapses that to an instant swap
+ * via `useMotionConfig`.
  */
 import Image from 'next/image'
+import { motion, AnimatePresence } from 'framer-motion'
 import { SLOTS } from '@/lib/kitchen/slots'
 import { CATALOG, type Decoration } from '@/lib/kitchen/catalog'
+import { getDefaultKitchenTheme, type KitchenTheme } from '@/lib/kitchen/themes'
+import { useMotionConfig } from '@/lib/motion'
 
 export interface UnlockedDecoration {
   id: string
@@ -36,6 +48,8 @@ export interface KitchenSceneProps {
    * and `0` both hide the indicator — nothing to celebrate yet either way.
    */
   streakWeeks?: number | null
+  /** Defaults to `pastel` — every existing caller that predates #523 keeps rendering unchanged. */
+  theme?: KitchenTheme
 }
 
 const CATALOG_BY_ID = new Map(CATALOG.map((d) => [d.id, d]))
@@ -46,7 +60,9 @@ export default function KitchenScene({
   balance,
   loading = false,
   streakWeeks = null,
+  theme = getDefaultKitchenTheme(),
 }: KitchenSceneProps) {
+  const { reduced } = useMotionConfig()
   // Build slot -> decoration lookup from the rows that actually resolve. A row
   // whose id isn't in the catalog, or whose slot isn't one of SLOTS', is
   // dropped here rather than thrown on — the source data (a decorations
@@ -66,12 +82,26 @@ export default function KitchenScene({
     <div className="w-full max-w-[480px]">
       <div
         className="relative aspect-[4/3] rounded-2xl overflow-hidden border border-[var(--color-border)]"
-        style={{
-          background:
-            'linear-gradient(160deg, var(--color-bg) 0%, var(--color-primary) 55%, var(--color-accent) 100%)',
-        }}
         data-testid="kitchen-scene"
+        data-kitchen-theme={theme.key}
       >
+        {/* Background layer — the only thing that changes between themes.
+            Keyed on `theme.key` so AnimatePresence crossfades the old
+            background out while the new one fades in; `reduced` collapses
+            both to a near-instant swap. Absolutely positioned behind the
+            slots (z-index 0 by DOM order), never adding any of its own
+            layout. */}
+        <AnimatePresence>
+          <motion.div
+            key={theme.key}
+            className="absolute inset-0"
+            style={{ background: theme.background }}
+            initial={{ opacity: reduced ? 1 : 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: reduced ? 0.01 : 0.4 }}
+          />
+        </AnimatePresence>
         {SLOTS.map((slot) => {
           const decoration = decorationBySlot.get(slot.key)
           return (
