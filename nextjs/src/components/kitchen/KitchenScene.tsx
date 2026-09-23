@@ -53,23 +53,6 @@ export default function KitchenScene({ unlocked, balance, loading = false }: Kit
 
   return (
     <div className="w-full max-w-[480px]">
-      {/* A separate row above the scene box, not overlaid on it — the 12
-          slots tile the box's entire 4:3 area with no gap, so any
-          absolutely-positioned badge inside or overhanging the box lands on
-          top of a slot's content. Today that's harmless (nothing can unlock
-          'lights', the top-right slot the old overlay sat on), but it stops
-          being harmless the moment issue #522 (Milestones) lets 'lights' be
-          unlocked. A row above the box can never overlap a slot. */}
-      <div className="flex justify-end mb-1.5">
-        <div
-          className="rounded-full px-3 py-1 text-xs font-bold text-[var(--color-text)] shadow-sm border border-[var(--color-border)]"
-          style={{ background: 'var(--color-surface)' }}
-          data-testid="kitchen-bubbles-balance"
-        >
-          🫧 {balance}
-        </div>
-      </div>
-
       <div
         className="relative aspect-[4/3] rounded-2xl overflow-hidden border border-[var(--color-border)]"
         style={{
@@ -122,6 +105,16 @@ export default function KitchenScene({ unlocked, balance, loading = false }: Kit
             </div>
           )
         })}
+        {/* The balance sits in the scene's top-right corner. The `lights`
+            slot (slots.ts) starts below it, so the pill never covers a
+            decoration. It is rendered after the slots so it stacks above them. */}
+        <div
+          className="absolute top-1.5 right-1.5 z-10 rounded-full px-3 py-1 text-xs font-bold text-[var(--color-text)] shadow-sm border border-[var(--color-border)]"
+          style={{ background: 'var(--color-surface)' }}
+          data-testid="kitchen-bubbles-balance"
+        >
+          🫧 {balance}
+        </div>
       </div>
     </div>
   )
