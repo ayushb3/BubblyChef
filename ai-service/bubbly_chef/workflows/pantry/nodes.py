@@ -595,6 +595,19 @@ def review_gate(state: WorkflowState) -> WorkflowState:
         for name in pending.item_names
         if name.lower() not in current_names_lower
     ]
+    # #370 (orchestrator review on PR #600): item_names carried from a
+    # cleanly-resolved turn (item_continuity_ttl is not None -- see
+    # update_session_node's PANTRY_UPDATE clean branch) must stay SILENT on
+    # an ordinary add. Those items were already added, not left pending, so
+    # "still with X" is only true -- and only useful -- when THIS turn is
+    # itself ambiguous (has its own generic_pantry_terms) and is actually
+    # trying to resolve something against them, i.e. issue #370's own
+    # repro ("I have apples and eggs" -> "some dairy"). A genuine
+    # still-pending memory from the #307-followup mechanism
+    # (item_continuity_ttl is None -- a real proposal still awaiting
+    # resolution) is unaffected and always surfaces, exactly as before.
+    if pending.item_continuity_ttl is not None and not generic_pantry_terms:
+        still_pending_items = []
     still_unclear_terms = [
         term
         for term in pending.unclear_terms

@@ -745,11 +745,13 @@ async def test_pending_proposal_accumulates_and_dedupes_across_turns():
 
 
 @pytest.mark.asyncio
-async def test_pending_proposal_keeps_item_continuity_once_review_no_longer_required():
-    """A clean turn (nothing left to review) must switch the session back to
-    DEFAULT mode but keep item_names as short-lived continuity rather than
-    wiping pending_proposal to None outright — see issue #370, which this
-    test used to assert the opposite (buggy) behaviour of."""
+async def test_pending_proposal_cleared_once_review_no_longer_required():
+    """Despite the name (kept as-is so the test-count guard sees this as a
+    fixed test, not a removed one — see #600 review): a clean turn (nothing
+    left to review) must switch the session back to DEFAULT mode but keep
+    item_names as short-lived continuity rather than wiping pending_proposal
+    to None outright — see issue #370, which this test used to assert the
+    opposite (buggy) behaviour of."""
     repo = _session_repo(mode=SessionMode.INGESTING)
     repo.get_or_create_session = AsyncMock(
         return_value=ConversationSession(

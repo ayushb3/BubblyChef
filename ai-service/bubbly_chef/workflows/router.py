@@ -954,6 +954,13 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
         session = await repo.get_or_create_session(state.get("user_id", ""), conversation_id)
         intent = state.get("intent", Intent.GENERAL_CHAT.value)
         old_mode = session.active_mode.value
+        # #370: set True only by the PANTRY_UPDATE clean-turn branch below,
+        # exactly when it writes a *fresh* item_continuity_ttl. Every other
+        # turn -- including non-pantry intents -- falls through to the
+        # decay step near the end of this function, which is what makes
+        # the "~5 turns" retention window actually elapse instead of
+        # resetting itself on every pantry-update turn.
+        continuity_refreshed_this_turn = False
 
         # Handle explicit exit — checked before the cook handoff so "stop" still
         # breaks out of COOKING even if the client keeps resending the recipe.
@@ -1095,22 +1102,6 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
 
         elif intent == Intent.PANTRY_UPDATE.value:
             existing = session.pending_proposal or PendingProposalMemory()
-            # #370: decay a clean turn's item_names after a few more
-            # pantry-update turns, rather than either wiping them the
-            # instant the very next turn also resolves cleanly (the
-            # original bug) or keeping them forever. Only ever set on
-            # `existing` below by the clean branch (unclear_terms empty);
-            # a real pending clarification always writes
-            # item_continuity_ttl=None (unset), so this decrement never
-            # fires against it.
-            ttl = existing.item_continuity_ttl
-            if ttl is not None:
-                if ttl <= 1:
-                    existing = existing.model_copy(
-                        update={"item_names": [], "item_continuity_ttl": None}
-                    )
-                else:
-                    existing = existing.model_copy(update={"item_continuity_ttl": ttl - 1})
 
             if state.get("requires_review"):
                 session.active_mode = SessionMode.INGESTING
@@ -1204,21 +1195,27 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 # very next turn had no memory that these items were just
                 # added — a vague follow-up like "some dairy" couldn't be
                 # told "you already added apples and eggs". Keep the item
-                # names as short-lived continuity instead (decayed above,
-                # _CLEAN_TURN_ITEM_CONTINUITY_TURNS turns out).
+                # names as short-lived continuity instead.
+                #
+                # Deliberately NOT merged with existing.item_names (per
+                # orchestrator review on PR #600): this is a snapshot of
+                # what THIS turn just added, not an accumulating list —
+                # merging let it grow up to _PENDING_PROPOSAL_HISTORY_LIMIT
+                # (20) across every clean turn in a long conversation, and
+                # review_gate's "still with ..." note (gated separately,
+                # see pantry/nodes.py::review_gate) would otherwise quote
+                # an ever-growing item list on every reply.
                 item_names = [a.item.name for a in state.get("actions", [])]
                 if item_names:
-                    merged_items = _merge_dedup_case_insensitive(
-                        existing.item_names, item_names
-                    )
                     session.pending_proposal = PendingProposalMemory(
-                        item_names=merged_items[-_PENDING_PROPOSAL_HISTORY_LIMIT:],
+                        item_names=item_names,
                         item_continuity_ttl=_CLEAN_TURN_ITEM_CONTINUITY_TURNS,
                     )
+                    continuity_refreshed_this_turn = True
                 elif existing.item_names:
                     # Nothing recognized this turn, but a still-live decaying
-                    # memory (already ticked down above) survives untouched
-                    # rather than being wiped early.
+                    # memory survives untouched -- the decay step below (which
+                    # runs for every intent) ticks it down.
                     session.pending_proposal = existing
                 else:
                     session.pending_proposal = None
@@ -1263,6 +1260,29 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 )
 
         # general_chat / cooking_help (without brainstorm) don't change mode
+
+        # #370: tick the clean-turn item-continuity TTL down on every turn
+        # that didn't just refresh it -- including non-PANTRY_UPDATE
+        # intents, which never touch session.pending_proposal above but
+        # still count as a turn for decay purposes. Without this running
+        # unconditionally here, the TTL only ever moved on a PANTRY_UPDATE
+        # turn, and that branch immediately resets it back to
+        # _CLEAN_TURN_ITEM_CONTINUITY_TURNS whenever it has items to write
+        # -- the retention window never actually elapsed (orchestrator
+        # review on PR #600). A real "still pending" memory from the
+        # #307-followup mechanism always has item_continuity_ttl=None and
+        # is untouched by this step.
+        if not continuity_refreshed_this_turn and session.pending_proposal is not None:
+            ttl = session.pending_proposal.item_continuity_ttl
+            if ttl is not None:
+                if ttl <= 1:
+                    session.pending_proposal = session.pending_proposal.model_copy(
+                        update={"item_names": [], "item_continuity_ttl": None}
+                    )
+                else:
+                    session.pending_proposal = session.pending_proposal.model_copy(
+                        update={"item_continuity_ttl": ttl - 1}
+                    )
 
         new_mode = session.active_mode.value
         if new_mode != old_mode:
