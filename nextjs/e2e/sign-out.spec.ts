@@ -101,6 +101,16 @@ unauthenticatedTest.describe('sign-out / AC2: protected routes start a guest ses
         const cookies = await page.context().cookies();
         const authCookie = cookies.find((cookie) => /^sb-.*-auth-token/.test(cookie.name));
         expect(authCookie).toBeDefined();
+
+        // ...and that session is a *guest* one, not some leftover real login:
+        // SaveAccountBanner renders only when the current user is anonymous
+        // (isGuestUser), and /profile mounts it persistently. Same context, so
+        // this is the session the visit to `route` just started.
+        if (route !== '/profile') {
+          await page.goto('/profile');
+          await page.waitForLoadState('networkidle');
+        }
+        await expect(page.getByText('Save your account')).toBeVisible({ timeout: 10_000 });
       }
     );
   }
