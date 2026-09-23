@@ -77,7 +77,25 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
         ) : (
           <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-code:bg-[var(--color-bg)] prose-code:text-[var(--color-primary-dark)] prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-[var(--color-bg)] prose-pre:border prose-pre:border-[var(--color-border)] prose-pre:rounded-xl prose-a:text-[var(--color-primary-dark)] prose-a:underline prose-headings:text-[var(--color-text)] prose-strong:text-[var(--color-text)]">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                // The `prose-ol:`/`prose-ul:` utilities above only take effect
+                // with the `@tailwindcss/typography` plugin loaded, which this
+                // project deliberately doesn't add as a dependency — without
+                // it, `.prose` supplies no base styling at all, so Tailwind's
+                // preflight (which zeroes out list markers) went unopposed and
+                // every numbered/bulleted list in chat rendered with no
+                // markers (issue #566). Style list elements directly instead.
+                ol: ({ children }) => (
+                  <ol className="list-decimal list-outside pl-5 my-1 space-y-0.5">{children}</ol>
+                ),
+                ul: ({ children }) => (
+                  <ul className="list-disc list-outside pl-5 my-1 space-y-0.5">{children}</ul>
+                ),
+                li: ({ children }) => <li className="pl-0.5">{children}</li>,
+              }}
+            >
               {message.content}
             </ReactMarkdown>
           </div>
