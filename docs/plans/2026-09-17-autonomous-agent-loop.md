@@ -1,7 +1,9 @@
 # Autonomous agent loop — plan
 
 **Date:** 2026-09-17
-**Status:** Agreed (design grilled to an empty frontier with Ayush); not yet started
+**Status:** Built and piloting in shadow mode as of 2026-09-22 — steps 1–8 landed; the
+loop opens PRs but never merges, and 1 of the 5 clean shadow PRs is banked. Current
+state, guard rails and open work: `docs/plans/2026-09-22-agent-loop-status-handoff.md`
 **Supersedes:** the merge-only-by-human policy in `WORKFLOW.md` §6 and the local
 review-gate design in §7, once step 3 lands
 

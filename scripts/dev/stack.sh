@@ -124,10 +124,19 @@ cmd_status() {
 # on the port it was recorded against (a PID the OS has since reused for something
 # else is left alone). It never kills "whatever is on the port": that is how an
 # earlier version would have stopped a human's own dev servers.
+#
+# On Linux the kernel's own socket table is read instead of asking lsof. Next.js
+# sets its process title to "next-server (v16.2.2)", which /proc truncates to the
+# 15-character "next-server (v1" — an unbalanced parenthesis that lsof 4.95 cannot
+# parse, so it silently drops the whole process and `lsof -i` never listed the
+# frontend at all. Nothing got recorded, `down` never tried, and the leftover
+# server was then reported as somebody else's (issue #477).
 listening_pids() {
   local port=$1
   if command -v taskkill >/dev/null 2>&1; then
     netstat -ano 2>/dev/null | awk -v p=":$port" '$2 ~ p"$" && $4=="LISTENING" {print $5}' | sort -u
+  elif [ -r /proc/net/tcp ]; then
+    proc_listening_pids "$port"
   elif command -v lsof >/dev/null 2>&1; then
     lsof -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u
   elif command -v ss >/dev/null 2>&1; then
@@ -135,9 +144,31 @@ listening_pids() {
   fi
 }
 
+# Linux only. /proc/net/tcp{,6} list every socket with its state (0A = LISTEN)
+# and inode; /proc/<pid>/fd/* links back to "socket:[inode]". Only processes
+# whose fd table we may read are found — our own, which is all `down` needs.
+# `find` exits non-zero whenever some other process's fd table is unreadable, and
+# under `pipefail` that status would leak out and make `down`'s `| grep -qx` read
+# as "not found", so it is swallowed here: the output is what matters.
+proc_listening_pids() {
+  local hex inodes
+  hex=$(printf '%04X' "$1")
+  inodes=$(cat /proc/net/tcp /proc/net/tcp6 2>/dev/null \
+    | awk -v p=":$hex" '$4=="0A" && $2 ~ p"$" {print $10}' | tr '\n' ' ')
+  [ -n "${inodes// /}" ] || return 0
+  { find /proc/[0-9]*/fd -maxdepth 1 -lname 'socket:\[*' -printf '%h %l\n' 2>/dev/null || true; } \
+    | awk -v want="$inodes" '
+        BEGIN { n = split(want, a, " "); for (i = 1; i <= n; i++) w["socket:[" a[i] "]"] = 1 }
+        ($2 in w) { split($1, p, "/"); print p[3] }' \
+    | sort -u
+}
+
 record_listener() {
-  local port=$1 pid
-  for pid in $(listening_pids "$port"); do echo "$port $pid" >>"$LISTENERS"; done
+  local port=$1 pid found=
+  for pid in $(listening_pids "$port"); do echo "$port $pid" >>"$LISTENERS"; found=1; done
+  if [ -z "$found" ]; then
+    echo "  warning: could not identify the process listening on $port — '$0 down' will not be able to stop it" >&2
+  fi
 }
 
 stop_pid() {
@@ -165,7 +196,12 @@ cmd_down() {
     fi
   done <"$LISTENERS"
   rm -f "$LISTENERS"
-  sleep 1
+  # Next.js handles SIGTERM by closing the server gracefully, so give the ports a
+  # few seconds to free up before deciding something else must own them.
+  for _ in 1 2 3 4 5; do
+    port_busy "$PORT" || port_busy "$AI_PORT" || break
+    sleep 1
+  done
   if port_busy "$PORT" || port_busy "$AI_PORT"; then
     echo "Something is still listening on $PORT or $AI_PORT that stack.sh did not start — check it by hand." >&2
     return 1
