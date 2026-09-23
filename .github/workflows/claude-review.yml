@@ -90,7 +90,13 @@ jobs:
             change and have not seen the session that did. Review it as someone who
             has to decide whether it can merge without a human reading the diff.
 
-            Read CLAUDE.md and WORKFLOW.md first. They are this repo's standards.
+            Read CLAUDE.md first. It holds this repo's standards. Consult WORKFLOW.md
+            only if you need a specific rule.
+
+            BUDGET: you have a limited number of turns, and running out means NO review
+            is posted at all. Work from `gh pr diff`, and use Grep or a targeted Read
+            (with line ranges) only to check a specific suspicion. Don't read whole large
+            files or wander the codebase. Post the summary comment well before you run low.
 
             Then:
             1. Read the PR body and any issue it closes (`gh issue view`). The PR
@@ -134,7 +140,7 @@ jobs:
             Keep it short enough to read on a phone.
           claude_args: |
             --model claude-opus-5
-            --max-turns 40
+            --max-turns 60
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh issue view:*),Read,Grep,Glob"
 
   # The merge gate. `if: always()` and nothing else: a SKIPPED required check counts as
