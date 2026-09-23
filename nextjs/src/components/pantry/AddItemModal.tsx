@@ -6,7 +6,6 @@ import SpringButton from '@/components/ui/SpringButton'
 import FoodAutocomplete from '@/components/pantry/FoodAutocomplete'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 import { updatePantryItem, deletePantryItem } from '@/lib/api/pantry'
-import { DEFAULT_LOCATION, LOCATIONS } from '@/lib/pantry-vocab'
 import type { FoodCatalogEntry } from '@/lib/api/foods'
 import type { PantryItem } from '@/types/pantry'
 
@@ -21,6 +20,10 @@ import type { PantryItem } from '@/types/pantry'
  * was unreachable and has been removed (issue #478). It is also the only
  * place in the app that updates or plainly deletes a single item, which is
  * why it survives at all.
+ *
+ * There is no kitchen-location control here (issue #397): the field only fed
+ * the on-hold kitchen scene (PR #124). The item's stored location is left as
+ * it is — the update omits the key rather than rewriting it.
  */
 
 interface EditItemModalProps {
@@ -52,7 +55,6 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
   const [quantity, setQuantity] = useState(1)
   const [unit, setUnit] = useState('item')
   const [category, setCategory] = useState('other')
-  const [location, setLocation] = useState<string>(DEFAULT_LOCATION)
   const [expiryDate, setExpiryDate] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -68,7 +70,6 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
       setQuantity(editItem.quantity)
       setUnit(editItem.unit)
       setCategory(editItem.category || 'other')
-      setLocation(editItem.location || DEFAULT_LOCATION)
       setExpiryDate(editItem.expiry_date ?? '')
     }
     setConfirmDelete(false)
@@ -85,14 +86,14 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
 
   // Picking a catalog suggestion (the response-shape fix for #478 — the old
   // hand-rolled typeahead read `data.items` from a route that returns
-  // `data.results`, so it never showed anything) fills in name, category and
-  // location. Quantity, unit and expiry are left alone: this is an existing
-  // item being corrected, not a fresh one, so what the user already recorded
-  // is more trustworthy than a catalog default.
+  // `data.results`, so it never showed anything) fills in name and category.
+  // Quantity, unit and expiry are left alone: this is an existing item being
+  // corrected, not a fresh one, so what the user already recorded is more
+  // trustworthy than a catalog default. The catalog's `default_location` is
+  // ignored — there is no location field to fill (#397).
   const handleCatalogSelect = (entry: FoodCatalogEntry) => {
     setName(entry.canonical)
     if (entry.category) setCategory(entry.category)
-    if (entry.default_location) setLocation(entry.default_location)
   }
 
   // Every write path below keeps the modal open on failure. It used to close
@@ -108,7 +109,6 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
         quantity,
         unit,
         category,
-        location,
         expiry_date: expiryDate || null,
       })
       onClose()
@@ -230,28 +230,6 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
                     <option key={c.value} value={c.value}>{c.label}</option>
                   ))}
                 </select>
-              </div>
-
-              {/* Location */}
-              <div className="mb-3">
-                <label className="text-xs font-semibold text-[var(--color-muted)] mb-1 block">Storage Location</label>
-                <div className="flex gap-2" role="group" aria-label="Storage location">
-                  {LOCATIONS.map((loc) => (
-                    <button
-                      key={loc.value}
-                      type="button"
-                      aria-pressed={location === loc.value}
-                      onClick={() => setLocation(loc.value)}
-                      className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-colors ${
-                        location === loc.value
-                          ? 'bg-[var(--color-primary)] text-white'
-                          : 'bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border)]'
-                      }`}
-                    >
-                      {loc.label}
-                    </button>
-                  ))}
-                </div>
               </div>
 
               {/* Expiry Date */}

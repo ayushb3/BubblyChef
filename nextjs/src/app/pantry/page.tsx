@@ -28,7 +28,6 @@ import {
 } from '@/lib/pantry-helpers'
 import type { PantryFacetSelection } from '@/lib/pantry-helpers'
 import FacetDropdown from '@/components/ui/FacetDropdown'
-import { LOCATIONS } from '@/lib/pantry-vocab'
 
 // Category card tints — dedicated --color-cat-* tokens (globals.css). These must
 // never reference expiry/status tokens (fresh/expiring/expired): status signals
@@ -60,13 +59,10 @@ const CATEGORY_EMOJI: Record<string, string> = {
   other: '📦',
 }
 
-// Location facet options: reuses the shared `LOCATIONS` vocabulary (the same
-// list the edit modal, add row and scan card render — #228, #478) rather than
-// carrying a parallel one. "All Items" isn't an option anymore —
-// an empty selection means "no location constraint", handled by
-// `itemMatchesFacets`.
-// (Spread: the shared list is `as const`, FacetDropdown takes a mutable array.)
-const LOCATION_OPTIONS = [...LOCATIONS]
+// There is no location facet any more (issue #397): the kitchen-location
+// concept (Fridge/Freezer/Pantry/Counter) only existed to feed the gamified
+// kitchen scene, which is on hold (PR #124). Two facets remain — category and
+// expiry. An empty selection still means "no constraint" (`itemMatchesFacets`).
 
 // Category facet options: reuses the exact same emoji/label source the display
 // grouping below uses for its section headers (`CATEGORY_EMOJI`), so the facet
@@ -148,7 +144,6 @@ function PantryPageInner() {
   const hasItems = !isLoading && allItems.length > 0
 
   const [search, setSearch] = useState('')
-  const [locationFacet, setLocationFacet] = useState<string[]>([])
   const [categoryFacet, setCategoryFacet] = useState<string[]>([])
   const [expiryFacet, setExpiryFacet] = useState<string[]>([])
 
@@ -178,11 +173,10 @@ function PantryPageInner() {
   // `itemMatchesFacets` (lib/pantry-helpers) encodes OR-within/AND-across-facet
   // semantics — an empty facet selection imposes no constraint (#228).
   const facets: PantryFacetSelection = {
-    locations: locationFacet,
     categories: categoryFacet,
     expiryStatuses: expiryFacet as PantryFacetSelection['expiryStatuses'],
   }
-  const hasActiveFacets = locationFacet.length > 0 || categoryFacet.length > 0 || expiryFacet.length > 0
+  const hasActiveFacets = categoryFacet.length > 0 || expiryFacet.length > 0
   const filteredItems = allItems.filter((item) => {
     if (search && !item.name.toLowerCase().includes(search.toLowerCase())) return false
     const days = daysUntilExpiry(item.expiry_date)
@@ -260,19 +254,12 @@ function PantryPageInner() {
         />
       </div>
 
-      {/* Filter facets — location (compact icon), category, expiry status.
-          Each is independently multi-select; see `itemMatchesFacets` for the
-          OR-within/AND-across-facet combination semantics (#228). */}
+      {/* Filter facets — category, expiry status. Each is independently
+          multi-select; see `itemMatchesFacets` for the OR-within/AND-across-
+          facet combination semantics (#228). The location facet was dropped
+          with the kitchen-location field (#397). */}
       {hasItems && (
         <div className="px-6 mb-4 flex gap-2 overflow-x-auto">
-          <FacetDropdown
-            iconOnly
-            triggerEmoji="📍"
-            ariaLabel={`Filter by location${locationFacet.length > 0 ? `, ${locationFacet.length} selected` : ''}`}
-            options={LOCATION_OPTIONS}
-            selected={locationFacet}
-            onChange={setLocationFacet}
-          />
           <FacetDropdown
             triggerEmoji="🗂️"
             triggerLabel="Category"

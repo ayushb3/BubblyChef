@@ -15,6 +15,12 @@ export interface PantryItem {
   id: string
   name: string
   category: string
+  /**
+   * Kitchen location (`fridge` / `freezer` / `pantry` / `counter`). The row
+   * still carries it and the list route still returns it, but nothing in the
+   * UI shows, filters by or edits it any more (issue #397) — it only existed
+   * for the on-hold kitchen scene (PR #124).
+   */
   location: string
   quantity: number
   unit: string

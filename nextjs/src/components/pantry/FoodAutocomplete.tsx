@@ -28,7 +28,7 @@ const DEBOUNCE_MS = 250
  * (issue #398). Wraps a plain text input in a combobox: as the user types,
  * matching entries from the food catalog (`GET /api/foods/search`) show in a
  * keyboard-navigable dropdown. Selecting one hands the full catalog entry
- * back to the caller, which fills in unit/category/location/expiry.
+ * back to the caller, which fills in unit/category/expiry.
  *
  * Deliberately just a text input underneath — existing tests locate this row
  * by placeholder/display value (see `pantry-add-sheet-tab-persistence.test.tsx`),

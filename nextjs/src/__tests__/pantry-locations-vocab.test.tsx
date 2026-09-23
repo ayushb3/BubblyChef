@@ -1,111 +1,171 @@
 /**
- * Issue #478 — one storage-location vocabulary.
+ * Issue #397 — the kitchen-location field is gone from the UI.
  *
- * `LOCATIONS` used to be hand-typed in three components (edit modal, manual
- * add row, scan review card) in two different shapes. This pins that every
- * surface which offers a location now renders exactly the shared list from
- * `lib/pantry-vocab.ts`, and that no component or page declares its own copy
- * again.
+ * This file was written for #478 (one shared `LOCATIONS` vocabulary). #397
+ * removes that vocabulary outright: the Fridge/Freezer/Pantry/Counter field
+ * only fed the gamified kitchen scene, which is on hold (PR #124). The
+ * `pantry_items.location` column stays (it has a DEFAULT, so no migration),
+ * and the scan path still forwards the AI service's category-derived value
+ * because the server's expiry heuristic scales by it — but no surface shows,
+ * offers or edits a location any more.
+ *
+ * Four `it(...)` names here were rewritten to say what each test now asserts.
+ * That trips `scripts/agent-gates/test-count-guard.sh`, which matches test
+ * names textually and reads a rename as a deletion — so this PR carries the
+ * `test-removal-approved` label. Keeping the old names would have left a test
+ * called "renders one toggle per shared location" asserting that no toggle
+ * exists: a passing test that lies to the next person who greps for the
+ * behaviour, which is worse than tripping the guard.
  */
 import fs from 'fs'
 import path from 'path'
 import React from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { LOCATIONS, LOCATION_VALUES, DEFAULT_LOCATION } from '@/lib/pantry-vocab'
 import EditItemModal from '@/components/pantry/AddItemModal'
 import AddItemRow, { type ManualRow } from '@/components/pantry/AddItemRow'
 import ScannedItemCard from '@/components/scan/ScannedItemCard'
+import { scannedToBulkAddItem } from '@/lib/scan-helpers'
+import * as pantryApi from '@/lib/api/pantry'
 import type { PantryItem } from '@/types/pantry'
 import type { ScannedItem } from '@/types/scan'
 
 jest.mock('@/lib/api/foods')
+jest.mock('@/lib/api/pantry')
 
-const EXPECTED_VALUES = ['fridge', 'freezer', 'pantry', 'counter']
+const mockUpdatePantryItem = pantryApi.updatePantryItem as jest.MockedFunction<
+  typeof pantryApi.updatePantryItem
+>
+
+/** The four strings the column has always stored, in the order #478 pinned. */
+const STORED_VALUES = ['fridge', 'freezer', 'pantry', 'counter']
 
 function withQuery(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
-describe('shared LOCATIONS vocabulary (#478)', () => {
-  it('keeps the four stored values, in order, and derives the bare list from them', () => {
-    expect(LOCATIONS.map((l) => l.value)).toEqual(EXPECTED_VALUES)
-    expect(LOCATION_VALUES).toEqual(EXPECTED_VALUES)
-    expect(EXPECTED_VALUES).toContain(DEFAULT_LOCATION)
-    for (const l of LOCATIONS) expect(l.label.toLowerCase()).toBe(l.value)
+function scanned(location: string | undefined): ScannedItem {
+  return {
+    name: 'Bananas',
+    original_name: 'bananas',
+    source_line: 'BANANAS 1.29',
+    price: 1.29,
+    quantity: 1,
+    unit: 'bunch',
+    category: 'produce',
+    location: location as string,
+    confidence: 0.9,
+  }
+}
+
+beforeEach(() => {
+  jest.clearAllMocks()
+})
+
+describe('no kitchen-location surface anywhere (#397)', () => {
+  // Now checks: the scan write path forwards whichever of the four stored
+  // values the AI service derived, unchanged and in order, and falls back to
+  // the column's own default when the parse has none. The UI never remaps
+  // these strings — the column is untouched by #397.
+  it('scan path still forwards the AI-derived location unchanged, defaulting to pantry', () => {
+    const forwarded = STORED_VALUES.map((v) => scannedToBulkAddItem(scanned(v)).storage_location)
+    expect(forwarded).toEqual(STORED_VALUES)
+    expect(scannedToBulkAddItem(scanned(undefined)).storage_location).toBe('pantry')
   })
 
-  it('EditItemModal renders one toggle per shared location', () => {
-    const item: PantryItem = {
-      id: 'i1',
-      name: 'milk',
-      category: 'dairy',
-      location: 'fridge',
-      quantity: 1,
-      unit: 'gallon',
-      expiry_date: null,
-    }
-    withQuery(<EditItemModal isOpen onClose={() => {}} editItem={item} />)
-    const group = screen.getByRole('group', { name: /storage location/i })
-    const buttons = within(group).getAllByRole('button')
-    expect(buttons.map((b) => b.textContent)).toEqual(LOCATIONS.map((l) => l.label))
-    expect(within(group).getByRole('button', { name: 'Fridge' })).toHaveAttribute('aria-pressed', 'true')
+  // Now checks: the edit modal renders no storage-location control at all,
+  // and saving omits `location` from the update so the stored value is
+  // preserved rather than rewritten.
+  it('EditItemModal shows no storage-location control and omits location when saving', async () => {
+      mockUpdatePantryItem.mockResolvedValue({} as PantryItem)
+      const item: PantryItem = {
+        id: 'i1',
+        name: 'milk',
+        category: 'dairy',
+        location: 'fridge',
+        quantity: 1,
+        unit: 'gallon',
+        expiry_date: null,
+      }
+      const onClose = jest.fn()
+      withQuery(<EditItemModal isOpen onClose={onClose} editItem={item} />)
+
+      expect(screen.queryByRole('group', { name: /storage location/i })).not.toBeInTheDocument()
+      expect(screen.queryByText(/storage location/i)).not.toBeInTheDocument()
+      for (const label of ['Fridge', 'Freezer', 'Pantry', 'Counter']) {
+        expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
+      }
+
+      fireEvent.click(screen.getByRole('button', { name: /save changes/i }))
+      await waitFor(() => expect(mockUpdatePantryItem).toHaveBeenCalledTimes(1))
+      const [id, updates] = mockUpdatePantryItem.mock.calls[0]
+      expect(id).toBe('i1')
+      expect(updates).not.toHaveProperty('location')
+      expect(updates).not.toHaveProperty('storage_location')
+      expect(updates).toMatchObject({ name: 'milk', category: 'dairy' })
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
   })
 
-  it('AddItemRow offers exactly the shared locations in its select', () => {
+  // Now checks: the manual add row has no storage-location select; its only
+  // selects are Unit and Category.
+  it('AddItemRow shows no storage-location select', () => {
     const row: ManualRow = {
       id: 'r1',
       name: '',
       quantity: 1,
       unit: 'item',
       category: 'other',
-      storage_location: 'pantry',
       expiry_date: '',
       estimated_expiry: false,
     }
     withQuery(<AddItemRow row={row} onChange={() => {}} onRemove={() => {}} index={0} />)
-    const select = screen.getByRole('combobox', { name: /storage location/i }) as HTMLSelectElement
-    const options = Array.from(select.options)
-    expect(options.map((o) => o.value)).toEqual(LOCATIONS.map((l) => l.value))
-    expect(options.map((o) => o.textContent)).toEqual(LOCATIONS.map((l) => l.label))
+    expect(screen.queryByRole('combobox', { name: /storage location/i })).not.toBeInTheDocument()
+    const selects = screen.getAllByRole('combobox').filter((el) => el.tagName === 'SELECT')
+    expect(selects.map((s) => s.getAttribute('aria-label'))).toEqual(['Unit', 'Category'])
   })
 
-  it('ScannedItemCard offers exactly the shared locations in its select', () => {
-    const item: ScannedItem = {
-      name: 'Bananas',
-      original_name: 'bananas',
-      source_line: 'BANANAS 1.29',
-      price: 1.29,
-      quantity: 1,
-      unit: 'bunch',
-      category: 'produce',
-      location: 'counter',
-      confidence: 0.9,
-    }
+  // Now checks: the scan review card has no Location select, only Category,
+  // and the card never edits `item.location` (the backend-derived value
+  // rides through untouched).
+  it('ScannedItemCard shows no storage-location select', () => {
+    const onChange = jest.fn()
     render(
       <ScannedItemCard
-        item={item}
+        item={scanned('counter')}
         checked
-        onChange={() => {}}
+        onChange={onChange}
         onDismiss={() => {}}
         onCheckedChange={() => {}}
       />,
     )
-    const select = screen.getByRole('combobox', { name: /^location$/i }) as HTMLSelectElement
-    expect(Array.from(select.options).map((o) => o.value)).toEqual([...LOCATION_VALUES])
+    expect(screen.queryByRole('combobox', { name: /^location$/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/^location$/i)).not.toBeInTheDocument()
+    const selects = screen.getAllByRole('combobox').filter((el) => el.tagName === 'SELECT')
+    expect(selects.map((s) => s.getAttribute('aria-label'))).toEqual(['Category'])
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Category' }), {
+      target: { value: 'dairy' },
+    })
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ category: 'dairy', location: 'counter' }))
   })
 
+  // Now checks: the shared vocabulary module is gone and nothing under
+  // components/, app/ or lib/ declares or imports a location list.
   it('no component or page declares its own LOCATIONS list any more', () => {
-    const roots = ['components', 'app'].map((d) => path.join(__dirname, '..', d))
+    const src = path.join(__dirname, '..')
+    expect(fs.existsSync(path.join(src, 'lib', 'pantry-vocab.ts'))).toBe(false)
+
+    const roots = ['components', 'app', 'lib'].map((d) => path.join(src, d))
     const offenders: string[] = []
     const walk = (dir: string) => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name)
         if (entry.isDirectory()) walk(full)
         else if (/\.tsx?$/.test(entry.name)) {
-          const src = fs.readFileSync(full, 'utf8')
-          if (/^\s*(export\s+)?const\s+LOCATIONS\s*[=:]/m.test(src)) offenders.push(full)
+          const text = fs.readFileSync(full, 'utf8')
+          if (/^\s*(export\s+)?const\s+LOCATIONS?\s*[=:]/m.test(text)) offenders.push(full)
+          if (/\bLOCATION_VALUES\b|\bDEFAULT_LOCATION\b|pantry-vocab/.test(text)) offenders.push(full)
         }
       }
     }
