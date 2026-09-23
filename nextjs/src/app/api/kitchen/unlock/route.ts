@@ -58,12 +58,15 @@ export async function POST(request: Request) {
     return errorResponse(`Unknown milestone_key: ${milestoneKey}`, 400)
   }
 
-  const [{ data: balanceRow }, { data: decorations, error: decorationsError }] =
-    await Promise.all([
-      supabase.from('bubble_balances').select('balance').eq('user_id', user.id).maybeSingle(),
-      supabase.from('decorations').select('name, decoration_type, milestone').eq('user_id', user.id),
-    ])
+  const [
+    { data: balanceRow, error: balanceError },
+    { data: decorations, error: decorationsError },
+  ] = await Promise.all([
+    supabase.from('bubble_balances').select('balance').eq('user_id', user.id).maybeSingle(),
+    supabase.from('decorations').select('name, decoration_type, milestone').eq('user_id', user.id),
+  ])
 
+  if (balanceError) return errorResponse(balanceError.message)
   if (decorationsError) return errorResponse(decorationsError.message)
 
   const balance = balanceRow?.balance ?? 0

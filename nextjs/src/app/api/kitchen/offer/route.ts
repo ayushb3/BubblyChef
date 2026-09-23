@@ -20,12 +20,15 @@ export async function GET() {
   if (result instanceof NextResponse) return result
   const [supabase, user] = result
 
-  const [{ data: balanceRow }, { data: decorations, error: decorationsError }] =
-    await Promise.all([
-      supabase.from('bubble_balances').select('balance').eq('user_id', user.id).maybeSingle(),
-      supabase.from('decorations').select('name, decoration_type, milestone').eq('user_id', user.id),
-    ])
+  const [
+    { data: balanceRow, error: balanceError },
+    { data: decorations, error: decorationsError },
+  ] = await Promise.all([
+    supabase.from('bubble_balances').select('balance').eq('user_id', user.id).maybeSingle(),
+    supabase.from('decorations').select('name, decoration_type, milestone').eq('user_id', user.id),
+  ])
 
+  if (balanceError) return errorResponse(balanceError.message)
   if (decorationsError) return errorResponse(decorationsError.message)
 
   const balance = balanceRow?.balance ?? 0

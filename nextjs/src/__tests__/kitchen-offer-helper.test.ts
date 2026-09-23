@@ -64,23 +64,28 @@ describe('offerFor', () => {
 
   it('leaves a same-slot sibling eligible for a future offer', () => {
     // Whichever of a1/a2 doesn't win this offer must still be selectable
-    // once the winner is unlocked and its own offer is recomputed for a
-    // fresh milestone key — it must not have been silently retired.
+    // in some other offer while the slot is still unclaimed — i.e. it was
+    // out-competed for *this* milestone key, not permanently excluded.
     const options = offerFor('user-1', 'm25', CATALOG, [])
     const chosenInA = options.find((d) => d.slot === 'slot_a')
     expect(chosenInA).toBeDefined()
     const sibling = CATALOG.find((d) => d.slot === 'slot_a' && d.id !== chosenInA!.id)!
 
-    // The sibling was never unlocked, so it must still be eligible under a
-    // different milestone key (a fresh offer would recompute from scratch).
-    const laterOptions = offerFor('user-1', 'm60', CATALOG, [chosenInA!.id])
-    expect(laterOptions.some((d) => d.id === sibling.id)).toBe(false) // slot now occupied by chosenInA
+    // Confirm the sibling itself, not just "some slot_a entry", wins at
+    // least one differently-keyed offer while both remain unlocked. If the
+    // same-slot exclusion were reverted (both a1 and a2 offered together,
+    // one permanently losing on every key), this would never find the
+    // sibling winning any of them.
+    const siblingWinsSomeOffer = ['m60', 'm120', 'm200', 'm300', 'm25-b', 'm25-c'].some(
+      (key) => offerFor('user-1', key, CATALOG, []).find((d) => d.slot === 'slot_a')?.id ===
+        sibling.id,
+    )
+    expect(siblingWinsSomeOffer).toBe(true)
 
-    // But before chosenInA is unlocked, the sibling remains a candidate in
-    // some offer (i.e. it was never excluded outright, only out-competed).
-    const beforeUnlock = offerFor('user-1', 'm60', CATALOG, [])
-    const slotAInBeforeUnlock = beforeUnlock.find((d) => d.slot === 'slot_a')
-    expect(slotAInBeforeUnlock).toBeDefined()
+    // Once the winner is actually unlocked, the slot is occupied and the
+    // sibling is excluded outright, regardless of milestone key.
+    const laterOptions = offerFor('user-1', 'm60', CATALOG, [chosenInA!.id])
+    expect(laterOptions.some((d) => d.id === sibling.id)).toBe(false)
   })
 
   it('caps at 3 options when more are eligible', () => {
