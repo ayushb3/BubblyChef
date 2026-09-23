@@ -11,6 +11,15 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 const IDENTITY_ALREADY_EXISTS_MESSAGE =
   "That Google account already belongs to a different BubblyChef account. You can sign in to it instead, but your guest pantry won't move over."
 
+// Both codes mean "this Google account maps to another BubblyChef user":
+// identity_already_exists = the Google identity is linked elsewhere;
+// email_exists = its email matches an existing (e.g. email/password) user.
+const COLLISION_CODES = new Set(['identity_already_exists', 'email_exists'])
+
+// Shown while a collision auto-switches to a plain Google sign-in.
+const COLLISION_SWITCHING_MESSAGE =
+  "You already have a BubblyChef account with that Google login — signing you in. Your guest pantry stays behind."
+
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -22,6 +31,8 @@ export default function LoginPage() {
   // True only for the identity_already_exists collision — shows the
   // "sign in to that account instead" fallback button alongside the error.
   const [showSignInInstead, setShowSignInInstead] = useState(false)
+  // Set while a collision is auto-switching to the existing account.
+  const [switchingAccount, setSwitchingAccount] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -35,17 +46,16 @@ export default function LoginPage() {
   // A guest's linkIdentity collision (issue #389) mostly arrives this way
   // rather than as a synchronous error: Supabase only discovers the Google
   // account is already linked elsewhere after Google redirects back, so it
-  // shows up as ?error=...&error_code=identity_already_exists. Detect that
-  // code and swap in the friendly message + fallback action instead of the
-  // raw error text.
+  // shows up as ?error=...&error_code=identity_already_exists (or
+  // email_exists). Detect those codes and switch straight to the existing
+  // account instead of showing the raw error text.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const oauthError = params.get('error')
     const oauthErrorCode = params.get('error_code')
     if (oauthError) {
-      if (oauthErrorCode === 'identity_already_exists') {
-        setError(IDENTITY_ALREADY_EXISTS_MESSAGE)
-        setShowSignInInstead(true)
+      if (oauthErrorCode && COLLISION_CODES.has(oauthErrorCode)) {
+        void switchToExistingAccount()
       } else {
         setError(oauthError)
       }
@@ -54,6 +64,8 @@ export default function LoginPage() {
       url.searchParams.delete('error_code')
       window.history.replaceState({}, '', url.toString())
     }
+    // Mount-only: read the redirect's error params once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Plain Google sign-in, bypassing any guest check — used both for a
@@ -69,6 +81,26 @@ export default function LoginPage() {
       },
     })
     if (error) throw error
+  }
+
+  // Collision (the Google account already belongs to another BubblyChef
+  // user): someone clicking Google wants into their account, so sign in to
+  // it directly rather than asking for a second click. The guest's data
+  // stays behind under the anonymous UID. If the redirect can't start, fall
+  // back to the explicit "sign in to that account instead" button.
+  const switchToExistingAccount = async () => {
+    setError(null)
+    setShowSignInInstead(false)
+    setSwitchingAccount(true)
+    setGoogleLoading(true)
+    try {
+      await signInWithGoogle()
+    } catch {
+      setSwitchingAccount(false)
+      setError(IDENTITY_ALREADY_EXISTS_MESSAGE)
+      setShowSignInInstead(true)
+      setGoogleLoading(false)
+    }
   }
 
   const handleGoogleSignIn = async () => {
@@ -105,10 +137,8 @@ export default function LoginPage() {
         if (error) {
           // Synchronous collision path — the async/redirect path is handled
           // by the ?error_code=identity_already_exists branch above.
-          if (error.code === 'identity_already_exists') {
-            setError(IDENTITY_ALREADY_EXISTS_MESSAGE)
-            setShowSignInInstead(true)
-            setGoogleLoading(false)
+          if (error.code && COLLISION_CODES.has(error.code)) {
+            await switchToExistingAccount()
             return
           }
           throw error
@@ -230,6 +260,12 @@ export default function LoginPage() {
             {checkEmail && (
               <p className="text-sm text-[var(--color-text)] bg-[var(--color-accent)]/10 px-4 py-2 rounded-2xl">
                 Almost there! Check your inbox for a confirmation link, then sign in.
+              </p>
+            )}
+
+            {switchingAccount && (
+              <p className="text-sm text-[var(--color-text)] bg-[var(--color-accent)]/10 px-4 py-2 rounded-2xl">
+                {COLLISION_SWITCHING_MESSAGE}
               </p>
             )}
 
