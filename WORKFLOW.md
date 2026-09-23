@@ -55,7 +55,9 @@ Four entry points depending on how shaped the work already is:
 3. **Spec exists** → `/to-tickets`. Slices the spec into vertical, agent-sized child
    issues — each one small enough for a single agent session to close.
 4. **Any ticket, any time** → `/triage`. Moves it through the label state machine
-   above.
+   above. When `needs-triage` has piled up, `/backlog-triage` does the whole pile in
+   one pass: it puts a card per issue on a board for Ayush to sign off, and applies
+   only what he approves.
 
 Only `ready-for-agent` tickets are picked up for implementation. If a ticket sits in
 `needs-triage` or `needs-info`, it isn't ready — the agent team should not start work
@@ -363,6 +365,7 @@ for why this changed.
 | Build | `tdd`, `domain-modeling`, `prototype` | ✅ vendored |
 | Verify (project) | `verify` — run a production build on this worktree's ports and walk the flow, with screenshots | 🏠 project-local |
 | Build (project) | `implement-issue` | 🏠 project-local |
+| Triage (project) | `backlog-triage` — batch pass over `needs-triage`, sign-off board artifact, apply | 🏠 project-local |
 | Review | `code-review`, `thermo-nuclear-review` | ✅ vendored |
 | Investigation | `diagnosing-bugs`, `research`, `resolving-merge-conflicts` | ✅ vendored |
 | Design interviews | `grilling`, `grill-with-docs` | ✅ vendored |
@@ -371,7 +374,7 @@ for why this changed.
 | Media | `prune-media` | 🏠 project-local |
 | House rules | see §8 | folded into prose, not skills |
 
-**21 skills loaded.** `skills-lock.json` records the upstream commit per source plus
+**22 skills loaded.** `skills-lock.json` records the upstream commit per source plus
 a per-skill hash, so drift stays detectable against both.
 
 ### 9.1 Why vendoring, and what's still broken
