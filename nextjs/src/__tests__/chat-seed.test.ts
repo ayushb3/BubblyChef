@@ -16,6 +16,7 @@ import {
   tipSeedMessage,
   ingredientSeedMessage,
 } from '@/lib/chat-seed'
+import * as pantryHelpers from '@/lib/pantry-helpers'
 
 /** Parse a `/chat?...` href back into something `deriveChatSeed` can read. */
 function paramsOf(href: string): URLSearchParams {
@@ -129,5 +130,69 @@ describe('expiryPhrase', () => {
     expect(expiryPhrase(null, now)).toBeNull()
     expect(expiryPhrase(undefined, now)).toBeNull()
     expect(expiryPhrase('not-a-date', now)).toBeNull()
+  })
+})
+
+/**
+ * Regression guards for #438 that don't depend on the test process's real
+ * timezone at all.
+ *
+ * A behavioural repro (build a west- or east-of-UTC `now`/expiry pair and
+ * check the label) sounds TZ-independent because `expiryPhrase` takes an
+ * injectable `now`, but it isn't: `Date`'s *local* parsing always resolves
+ * against the process's actual timezone, and reassigning `process.env.TZ`
+ * mid-test does not reliably repoint it — V8 caches the resolved default
+ * timezone the first time any `Date`/`Intl` call runs, which in a Jest
+ * worker happens during harness startup, before any test body executes
+ * (confirmed empirically: reassigning `process.env.TZ` as the very first
+ * line of a test file here still left `Intl.DateTimeFormat().resolvedOptions().timeZone`
+ * reading the worker's original zone). Under a UTC CI runner specifically,
+ * even a *working* reassignment wouldn't help, because UTC-parse and
+ * local-parse are definitionally the same value when local time is UTC —
+ * there is no wall-clock input that makes them disagree.
+ *
+ * So these guards assert against `parseLocalDate` (`@/lib/pantry-helpers`)
+ * directly — the one thing that actually distinguishes the fixed
+ * implementation from a reverted one, regardless of what zone the test
+ * happens to run in.
+ */
+describe('expiryPhrase — regression guards (#438)', () => {
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  it('parses the expiry string via parseLocalDate, not the bare Date constructor', () => {
+    // Reverting to `new Date(expiryDate)` (issue #438's original bug, and the
+    // out-of-scope east-of-UTC bug it shared the fix with) makes this call
+    // vanish — the bare constructor never touches `parseLocalDate`.
+    const spy = jest.spyOn(pantryHelpers, 'parseLocalDate')
+    expiryPhrase('2026-07-29', new Date(2026, 6, 28, 9, 0, 0))
+    expect(spy).toHaveBeenCalledWith('2026-07-29')
+  })
+
+  it('rounds the day gap rather than always rounding up (DST parity with pantry-helpers)', () => {
+    // A DST transition day is 23h or 25h between local midnights, not 24 —
+    // fabricated here via a mocked `parseLocalDate` return so the assertion
+    // doesn't depend on the test runner's real timezone observing DST at
+    // all. `pantry-helpers.daysUntilExpiry` uses `Math.round`; reverting
+    // this function to `Math.ceil` turns the fall-back day's +25h gap into
+    // "expires in 2 days" instead of "expires tomorrow".
+    const now = new Date(2026, 0, 1, 10, 0, 0)
+    const today = new Date(now)
+    today.setHours(0, 0, 0, 0)
+    const twentyFiveHoursOut = new Date(today.getTime() + 25 * 60 * 60 * 1000)
+    jest.spyOn(pantryHelpers, 'parseLocalDate').mockReturnValue(twentyFiveHoursOut)
+
+    expect(expiryPhrase('irrelevant-with-the-mock-above', now)).toBe('expires tomorrow')
+  })
+
+  it('rounds a −23h gap to "already expired", not "expires today" (spring-forward parity)', () => {
+    const now = new Date(2026, 0, 2, 10, 0, 0)
+    const today = new Date(now)
+    today.setHours(0, 0, 0, 0)
+    const twentyThreeHoursAgo = new Date(today.getTime() - 23 * 60 * 60 * 1000)
+    jest.spyOn(pantryHelpers, 'parseLocalDate').mockReturnValue(twentyThreeHoursAgo)
+
+    expect(expiryPhrase('irrelevant-with-the-mock-above', now)).toBe('already expired')
   })
 })

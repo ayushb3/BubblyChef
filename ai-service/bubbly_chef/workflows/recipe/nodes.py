@@ -947,8 +947,14 @@ def _get_mode_prefix(state: WorkflowState, *, pantry_grounded: bool = True) -> s
     return prefix
 
 
-def _format_history_context(state: WorkflowState, max_turns: int = 10) -> str:
-    """Format recent conversation history for injection into LLM prompts."""
+def _format_history_context(state: WorkflowState, max_turns: int = 40) -> str:
+    """Format recent conversation history for injection into LLM prompts.
+
+    #384: raised from 10 (~5 exchanges) to 40 (~20 exchanges) — matches
+    chat/nodes.py::format_history_context and SupabaseRepository.get_history's
+    default fetch window, so recipe-mode conversations get the same context
+    budget as plain chat.
+    """
     history: list[dict[str, str]] = state.get("conversation_history") or []
     if not history:
         return ""

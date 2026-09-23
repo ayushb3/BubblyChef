@@ -29,6 +29,12 @@ logger = logging.getLogger(__name__)
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
+# #384: how many recent conversation_history messages get_history() returns
+# by default. 40 messages is ~20 user/assistant exchanges — enough for a
+# real multi-step cooking conversation without summarization, which is a
+# separate, later piece of work.
+_HISTORY_DEFAULT_LIMIT = 40
+
 # Filler words that carry no dish-identifying signal in a natural-language
 # lookup request ("show me my saved butter chicken", "do you have a recipe
 # for pasta"). Left in, these spuriously overlap with unrelated recipes'
@@ -741,18 +747,37 @@ class SupabaseRepository:
         ).execute()
 
     async def get_history(
-        self, user_id: str, conversation_id: str, limit: int = 20
+        self, user_id: str, conversation_id: str, limit: int = _HISTORY_DEFAULT_LIMIT
     ) -> list[dict[str, Any]]:
+        """Return the most recent `limit` messages, oldest-first.
+
+        #384: the query used to order ascending and apply `.limit()` in the
+        same call. PostgREST applies `.limit()` after `.order()`, so that
+        always returned the *oldest* `limit` rows, not the most recent ones
+        -- for any conversation longer than `limit`, callers could never see
+        anything newer than the very start of the conversation. Ordering
+        descending and limiting at the DB fetches exactly the most recent
+        `limit` rows regardless of how long the conversation is (no
+        over-fetch); reversing in Python restores the ascending order every
+        caller expects.
+
+        `limit` must be positive -- a non-positive value returns `[]` rather
+        than inverting into "return everything" or a negative slice.
+        """
+        if limit < 1:
+            return []
         result = (
             self.client.table("conversation_history")
             .select("*")
             .eq("user_id", user_id)
             .eq("conversation_id", conversation_id)
-            .order("created_at")
+            .order("created_at", desc=True)
             .limit(limit)
             .execute()
         )
-        return _as_rows(result.data)
+        rows = _as_rows(result.data)
+        rows.reverse()
+        return rows
 
     # =========================================================================
     # Session operations

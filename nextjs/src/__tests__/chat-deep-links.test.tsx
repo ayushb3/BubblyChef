@@ -13,6 +13,7 @@ import React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/components/ThemeProvider'
+import { addDaysToDateString, localDateString } from '@/lib/date'
 
 // react-markdown / remark-gfm ship ESM only and jest runs this suite as CJS.
 // Stubbing them keeps the transform out of the picture — this suite never
@@ -156,7 +157,12 @@ describe('/chat?use= — expiring item handoff (#138)', () => {
   })
 
   it('visibly reflects the ingredient and its expiry', async () => {
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    // Built from the client's own local calendar date, not `toISOString`
+    // (UTC) — see `expiryPhrase`'s `parseLocalDate` comment and issue #438.
+    // A UTC-sliced "tomorrow" can land on the wrong local calendar day
+    // depending on timezone and time of day, which is exactly what made
+    // this test flaky.
+    const tomorrow = addDaysToDateString(localDateString(), 1)
     withParams(new URLSearchParams({ use: 'eggs', expires: tomorrow }).toString())
     renderChat()
 

@@ -237,7 +237,7 @@ async def format_dietary_context(state: WorkflowState) -> str:
     )
 
 
-def format_history_context(state: WorkflowState, max_turns: int = 10) -> str:
+def format_history_context(state: WorkflowState, max_turns: int = 40) -> str:
     """Format recent conversation history for injection into LLM prompts.
 
     Returns a compact text block like:
@@ -246,6 +246,13 @@ def format_history_context(state: WorkflowState, max_turns: int = 10) -> str:
         Assistant: Got it! I've noted 1 gallon of milk.
         ...
     or an empty string if there is no history.
+
+    #384: max_turns was 10 (~5 exchanges) — too short for real multi-step
+    cooking, where details established early (marinade ratios, substitutions
+    already agreed on) routinely need to survive past turn 10. Raised to 40
+    (~20 exchanges) to match the repository's fetch window
+    (SupabaseRepository.get_history's _HISTORY_DEFAULT_LIMIT); summarizing
+    older turns instead of a flat cap is tracked separately, not done here.
     """
     history: list[dict[str, str]] = state.get("conversation_history") or []
     if not history:
