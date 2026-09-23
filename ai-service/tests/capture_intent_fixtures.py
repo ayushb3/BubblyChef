@@ -53,18 +53,18 @@ CASES: list[dict[str, Any]] = [
     {"input": "picked up some eggs and bread today", "expected": "pantry_update"},
     {"input": "threw away the old yogurt", "expected": "pantry_update"},
     # receipt_ingest
-    {"input": "I scanned a receipt", "expected": "receipt_ingest"},
-    {"input": "here's my receipt from Costco", "expected": "receipt_ingest"},
+    {"input": "I scanned a receipt", "expected": "receipt_ingest_request"},
+    {"input": "here's my receipt from Costco", "expected": "receipt_ingest_request"},
     # product_ingest
-    {"input": "scan this barcode", "expected": "product_ingest"},
-    {"input": "look up this product", "expected": "product_ingest"},
+    {"input": "scan this barcode", "expected": "product_ingest_request"},
+    {"input": "look up this product", "expected": "product_ingest_request"},
     # recipe_ingest (URL shortcut — LLM not called, captured as-is)
     {
         "input": "save this recipe https://allrecipes.com/123",
-        "expected": "recipe_ingest",
+        "expected": "recipe_ingest_request",
     },
     # recipe_ingest (no URL, LLM path)
-    {"input": "import this recipe for me", "expected": "recipe_ingest"},
+    {"input": "import this recipe for me", "expected": "recipe_ingest_request"},
     # recipe_brainstorm
     {"input": "what can I make tonight?", "expected": "recipe_brainstorm"},
     {"input": "what should I cook with what I have?", "expected": "recipe_brainstorm"},
@@ -85,6 +85,11 @@ CASES: list[dict[str, Any]] = [
     {"input": "how long does chicken last in the fridge?", "expected": "cooking_help"},
     {"input": "substitute for butter in baking?", "expected": "cooking_help"},
     {"input": "can I freeze cooked pasta?", "expected": "cooking_help"},
+    # cooking_help — stock questions (issue #540): asking whether an item is
+    # on hand, not telling the assistant about a pantry change.
+    {"input": "do I have spinach?", "expected": "cooking_help"},
+    {"input": "is there any milk left?", "expected": "cooking_help"},
+    {"input": "what cheese do I have?", "expected": "cooking_help"},
     # saved_recipe_lookup
     {"input": "show me my saved butter chicken", "expected": "saved_recipe_lookup"},
     {"input": "make that pasta I saved last week", "expected": "saved_recipe_lookup"},

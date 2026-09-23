@@ -6,16 +6,42 @@ classification isn't deterministically testable without hitting the live
 model, so the disambiguation itself is checked by asserting the classifier
 system prompt carries explicit stock-question examples (cooking_help) next to
 contrasting pantry-mutation examples (pantry_update) — the boundary the LLM
-is currently missing, per the issue.
-
-This file currently only reproduces the bug: the prompt has no dedicated
-"distinguish cooking_help from pantry_update" block and no stock-question
-examples, so every assertion below fails on unfixed code.
+is currently missing, per the issue — plus a table-driven mock of
+`ai_manager.complete` covering both sides of the boundary.
 """
 
 from __future__ import annotations
 
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from bubbly_chef.models.base import Intent
 from bubbly_chef.prompts.router import INTENT_CLASSIFICATION_SYSTEM_PROMPT
+from bubbly_chef.workflows.router import classify_intent
+from bubbly_chef.workflows.state import LLMIntentResult
+
+
+def _state(**kwargs: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "input_text": "",
+        "errors": [],
+        "warnings": [],
+        "session_mode": None,
+        "session": None,
+        "conversation_history": [],
+        "selected_recipe_name": None,
+    }
+    base.update(kwargs)
+    return base
+
+
+def _mock_ai(intent: str, confidence: float = 0.9) -> Any:
+    llm_result = LLMIntentResult(intent=intent, confidence=confidence, reasoning="t", entities=[])
+    ai = MagicMock()
+    ai.complete = AsyncMock(return_value=llm_result)
+    return patch("bubbly_chef.workflows.router.get_ai_manager", MagicMock(return_value=ai))
 
 
 class TestStockQuestionDisambiguationInPrompt:
@@ -44,3 +70,40 @@ class TestStockQuestionDisambiguationInPrompt:
             "used up the last of the milk",
         ):
             assert phrase in INTENT_CLASSIFICATION_SYSTEM_PROMPT, phrase
+
+
+# ---------------------------------------------------------------------------
+# Classifier routing — table-driven, mocked LLM
+# ---------------------------------------------------------------------------
+
+STOCK_QUESTION_PHRASINGS = [
+    "do I have spinach?",
+    "is there any milk left?",
+    "what cheese do I have?",
+    "do we have any eggs?",
+    "is there butter in the fridge?",
+]
+
+PANTRY_UPDATE_PHRASINGS = [
+    "I bought spinach",
+    "add 2 eggs",
+    "I got some milk today",
+    "used up the last of the butter",
+    "threw away the old yogurt",
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", STOCK_QUESTION_PHRASINGS)
+async def test_stock_questions_route_to_cooking_help(text: str) -> None:
+    with _mock_ai("cooking_help"):
+        result = await classify_intent(_state(input_text=text))
+    assert result["intent"] == Intent.COOKING_HELP.value
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", PANTRY_UPDATE_PHRASINGS)
+async def test_pantry_mutations_still_route_to_pantry_update(text: str) -> None:
+    with _mock_ai("pantry_update"):
+        result = await classify_intent(_state(input_text=text))
+    assert result["intent"] == Intent.PANTRY_UPDATE.value

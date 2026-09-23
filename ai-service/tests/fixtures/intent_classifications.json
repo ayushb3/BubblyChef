@@ -1,13 +1,13 @@
 {
   "_meta": {
-    "prompt_hash": "ae730f75d8895602bb987dfe830e19d8743b1dd3938a89bd3cad356bc285ca41",
-    "captured_at": "2026-09-23T03:54:03.673030+00:00",
+    "prompt_hash": "6882b38e3f9cb81fe37ff0e39db8561c1456e51700937fadbe858219d5ddf38a",
+    "captured_at": "2026-09-23T11:59:52.921710+00:00",
     "model": "gemini-3.1-flash-lite"
   },
   "I bought milk": {
     "intent": "pantry_update",
     "confidence": 1.0,
-    "reasoning": "The user explicitly stated they 'bought' an item, which falls under the pantry_update category for managing inventory.",
+    "reasoning": "The user explicitly states they 'bought' an item, which falls under the pantry_update category for tracking inventory changes.",
     "entities": [
       "milk"
     ],
@@ -16,7 +16,7 @@
   "picked up some eggs and bread today": {
     "intent": "pantry_update",
     "confidence": 1.0,
-    "reasoning": "The user is reporting items they have acquired ('picked up'), which falls under the pantry_update category for managing inventory.",
+    "reasoning": "The user is stating they 'picked up' (purchased) items, which indicates an update to their pantry inventory.",
     "entities": [
       "eggs",
       "bread"
@@ -26,7 +26,7 @@
   "threw away the old yogurt": {
     "intent": "pantry_update",
     "confidence": 1.0,
-    "reasoning": "The user is explicitly stating they removed an item (yogurt) from their inventory, which matches the pantry_update intent criteria.",
+    "reasoning": "The user is reporting that they have consumed or removed an item from their pantry, which matches the definition for pantry_update.",
     "entities": [
       "yogurt"
     ],
@@ -35,7 +35,7 @@
   "I scanned a receipt": {
     "intent": "receipt_ingest_request",
     "confidence": 1.0,
-    "reasoning": "The user explicitly stated they scanned a receipt, which matches the definition for receipt_ingest_request.",
+    "reasoning": "The user explicitly stated they scanned a receipt, which matches the receipt_ingest_request intent definition.",
     "entities": [
       "receipt"
     ],
@@ -44,9 +44,8 @@
   "here's my receipt from Costco": {
     "intent": "receipt_ingest_request",
     "confidence": 1.0,
-    "reasoning": "The user explicitly mentions providing a receipt from a specific store, which matches the receipt_ingest_request intent criteria.",
+    "reasoning": "The user explicitly mentions providing a receipt from a specific store, which maps directly to the receipt_ingest_request intent.",
     "entities": [
-      "receipt",
       "Costco"
     ],
     "expected": "receipt_ingest_request"
@@ -54,7 +53,7 @@
   "scan this barcode": {
     "intent": "product_ingest_request",
     "confidence": 1.0,
-    "reasoning": "The user explicitly used the phrase 'scan this barcode', which matches the criteria for product_ingest_request.",
+    "reasoning": "The user explicitly mentions 'scan' and 'barcode', which directly maps to the product_ingest_request intent.",
     "entities": [
       "barcode"
     ],
@@ -63,53 +62,49 @@
   "look up this product": {
     "intent": "product_ingest_request",
     "confidence": 1.0,
-    "reasoning": "The user explicitly used the phrase 'look up this', which is a key indicator for product_ingest_request as defined in the instructions.",
-    "entities": [
-      "product"
-    ],
+    "reasoning": "The user explicitly used the phrase 'look up this', which is a direct indicator for product_ingest_request as defined in the instructions.",
+    "entities": [],
     "expected": "product_ingest_request"
   },
   "save this recipe https://allrecipes.com/123": {
     "intent": "recipe_ingest_request",
     "confidence": 0.95,
-    "reasoning": "URL detected — recipe ingest shortcut",
+    "reasoning": "URL detected \u2014 recipe ingest shortcut",
     "entities": [],
     "expected": "recipe_ingest_request"
   },
   "import this recipe for me": {
     "intent": "recipe_ingest_request",
     "confidence": 1.0,
-    "reasoning": "The user explicitly uses the word 'import' in relation to a recipe, which matches the criteria for saving or storing a recipe.",
-    "entities": [
-      "recipe"
-    ],
+    "reasoning": "The user explicitly used the word 'import' in the context of a recipe, which maps directly to the recipe_ingest_request intent.",
+    "entities": [],
     "expected": "recipe_ingest_request"
   },
   "what can I make tonight?": {
     "intent": "recipe_brainstorm",
     "confidence": 1.0,
-    "reasoning": "The user is asking an open-ended question about what they can make, which matches the definition for recipe_brainstorm.",
+    "reasoning": "The user is asking an open-ended question about what they can cook, which fits the definition of a recipe_brainstorm intent.",
     "entities": [],
     "expected": "recipe_brainstorm"
   },
   "what should I cook with what I have?": {
     "intent": "recipe_brainstorm",
     "confidence": 1.0,
-    "reasoning": "The user is asking for open-ended suggestions based on their current inventory, which matches the definition of recipe_brainstorm.",
+    "reasoning": "The user is asking for open-ended suggestions based on their current pantry inventory, which matches the definition of recipe_brainstorm.",
     "entities": [],
     "expected": "recipe_brainstorm"
   },
   "recipe ideas please": {
     "intent": "recipe_brainstorm",
     "confidence": 1.0,
-    "reasoning": "The user is asking for open-ended recipe ideas, which aligns with the definition of recipe_brainstorm.",
+    "reasoning": "The user is asking for 'recipe ideas', which is a classic open-ended request for suggestions rather than a request for a specific recipe or a modification to an existing one.",
     "entities": [],
     "expected": "recipe_brainstorm"
   },
   "give me a pasta recipe": {
     "intent": "recipe_generation",
     "confidence": 1.0,
-    "reasoning": "The user is explicitly asking for a specific type of recipe ('pasta recipe'), which falls under the recipe_generation category rather than a general brainstorm or a lookup of a previously saved item.",
+    "reasoning": "The user explicitly requested a recipe for a specific dish ('pasta'), which falls under the recipe_generation category as per the provided instructions.",
     "entities": [
       "pasta"
     ],
@@ -118,7 +113,7 @@
   "dinner ideas for tonight": {
     "intent": "recipe_brainstorm",
     "confidence": 1.0,
-    "reasoning": "The user is asking for open-ended dinner suggestions, which aligns with the definition of recipe_brainstorm rather than a specific recipe request.",
+    "reasoning": "The user is asking for open-ended dinner suggestions, which falls under the recipe_brainstorm category as defined in the instructions.",
     "entities": [
       "dinner"
     ],
@@ -127,16 +122,16 @@
   "make me something with chicken": {
     "intent": "recipe_generation",
     "confidence": 0.95,
-    "reasoning": "The user is asking for a specific meal to be created using a specific ingredient (chicken), which falls under the recipe_generation category rather than a general brainstorm.",
+    "reasoning": "The user is asking for a specific meal suggestion based on a primary ingredient ('chicken'), which falls under the recipe_generation category.",
     "entities": [
       "chicken"
     ],
     "expected": "recipe_generation"
   },
   "I'm craving something spicy": {
-    "intent": "recipe_brainstorm",
+    "intent": "recipe_generation",
     "confidence": 0.9,
-    "reasoning": "The user is expressing a preference for a flavor profile ('spicy') to guide meal suggestions, which aligns with an open-ended request for recipe ideas rather than a specific recipe request.",
+    "reasoning": "The user is expressing a desire for a specific type of meal ('spicy'), which functions as a request for a recipe suggestion based on a preference.",
     "entities": [
       "spicy"
     ],
@@ -148,7 +143,7 @@
   "quick easy meal under 30 minutes": {
     "intent": "recipe_generation",
     "confidence": 0.95,
-    "reasoning": "The user is asking for a specific type of meal suggestion ('quick easy meal') with defined constraints ('under 30 minutes'), which aligns with requesting a recipe generation rather than an open-ended brainstorm.",
+    "reasoning": "The user is asking for a specific type of meal (quick, easy, under 30 minutes), which functions as a request for a recipe generation based on constraints rather than an open-ended brainstorm.",
     "entities": [
       "quick",
       "easy",
@@ -159,16 +154,16 @@
   "how do I caramelise onions?": {
     "intent": "cooking_help",
     "confidence": 1.0,
-    "reasoning": "The user is asking for a technique ('how do I') rather than a recipe or a list of ingredients.",
+    "reasoning": "The user is asking for a cooking technique ('how do I...'), which falls under the cooking_help category as defined in the instructions.",
     "entities": [
-      "caramelise onions"
+      "onions"
     ],
     "expected": "cooking_help"
   },
   "how long does chicken last in the fridge?": {
     "intent": "cooking_help",
     "confidence": 1.0,
-    "reasoning": "The user is asking a specific question about food storage and shelf life, which falls under the cooking_help category as defined in the instructions.",
+    "reasoning": "The user is asking a specific 'how-to' question regarding food storage and safety (shelf life), which falls under the cooking_help category.",
     "entities": [
       "chicken",
       "fridge"
@@ -178,27 +173,52 @@
   "substitute for butter in baking?": {
     "intent": "cooking_help",
     "confidence": 1.0,
-    "reasoning": "The user is asking for a culinary substitution, which falls under the 'how-to' and 'cooking techniques' category defined for cooking_help.",
+    "reasoning": "The user is asking for a cooking substitution, which falls under the 'cooking_help' category as defined in the instructions.",
     "entities": [
-      "butter",
-      "baking"
+      "butter"
     ],
     "expected": "cooking_help"
   },
   "can I freeze cooked pasta?": {
     "intent": "cooking_help",
     "confidence": 1.0,
-    "reasoning": "The user is asking a specific 'how-to' question regarding food storage and technique (freezing cooked food), which falls under the cooking_help category.",
+    "reasoning": "The user is asking a 'how-to' style question regarding food storage/techniques (freezing), which falls under cooking_help.",
     "entities": [
-      "cooked pasta",
-      "freeze"
+      "cooked pasta"
+    ],
+    "expected": "cooking_help"
+  },
+  "do I have spinach?": {
+    "intent": "cooking_help",
+    "confidence": 1.0,
+    "reasoning": "The user is asking a stock question to check if an item is currently in their inventory, which is explicitly categorized under cooking_help per the instructions.",
+    "entities": [
+      "spinach"
+    ],
+    "expected": "cooking_help"
+  },
+  "is there any milk left?": {
+    "intent": "cooking_help",
+    "confidence": 1.0,
+    "reasoning": "The user is asking a stock question to check the availability of an item in their pantry, which is explicitly categorized under cooking_help per the instructions.",
+    "entities": [
+      "milk"
+    ],
+    "expected": "cooking_help"
+  },
+  "what cheese do I have?": {
+    "intent": "cooking_help",
+    "confidence": 1.0,
+    "reasoning": "The user is asking a stock question to check the current inventory of an item, which is explicitly categorized under cooking_help in the instructions.",
+    "entities": [
+      "cheese"
     ],
     "expected": "cooking_help"
   },
   "show me my saved butter chicken": {
     "intent": "saved_recipe_lookup",
     "confidence": 1.0,
-    "reasoning": "The user explicitly asks to see a recipe they have previously saved, matching the criteria for referencing existing history.",
+    "reasoning": "The user is explicitly asking to view a recipe they have previously saved, which matches the criteria for saved_recipe_lookup.",
     "entities": [
       "butter chicken"
     ],
@@ -207,17 +227,16 @@
   "make that pasta I saved last week": {
     "intent": "saved_recipe_lookup",
     "confidence": 1.0,
-    "reasoning": "The user is explicitly referencing a recipe they previously saved ('that pasta I saved last week'), which matches the criteria for retrieving an existing saved recipe rather than generating a new one.",
+    "reasoning": "The user is explicitly referencing a recipe they saved previously ('that pasta I saved last week'), which falls under the saved_recipe_lookup category.",
     "entities": [
-      "pasta",
-      "last week"
+      "pasta"
     ],
     "expected": "saved_recipe_lookup"
   },
   "the chicken curry I made last week": {
     "intent": "saved_recipe_lookup",
     "confidence": 1.0,
-    "reasoning": "The user is referencing a specific recipe they made in the past, which falls under the category of looking up a previously saved or recorded recipe.",
+    "reasoning": "The user is referencing a specific recipe they made in the past, which falls under the category of looking up a previously saved or history-based recipe.",
     "entities": [
       "chicken curry"
     ],
@@ -226,7 +245,7 @@
   "do you remember that curry recipe?": {
     "intent": "saved_recipe_lookup",
     "confidence": 1.0,
-    "reasoning": "The user is explicitly asking the system to recall a specific recipe from past history/memory, which matches the criteria for saved_recipe_lookup.",
+    "reasoning": "The user is explicitly asking the system to recall a previously saved recipe ('do you remember'), which matches the criteria for saved_recipe_lookup.",
     "entities": [
       "curry"
     ],
@@ -235,7 +254,7 @@
   "search your memory for the soup we made": {
     "intent": "saved_recipe_lookup",
     "confidence": 1.0,
-    "reasoning": "The user is explicitly asking the system to search its memory/history for a specific recipe ('the soup we made') that was previously prepared or saved.",
+    "reasoning": "The user is explicitly asking the system to search its memory for a previously made recipe, which matches the criteria for saved_recipe_lookup.",
     "entities": [
       "soup"
     ],
@@ -244,7 +263,7 @@
   "look in my history for that pasta": {
     "intent": "saved_recipe_lookup",
     "confidence": 1.0,
-    "reasoning": "The user explicitly asks to search their history for a specific type of recipe ('pasta'), which matches the criteria for referencing an existing saved recipe.",
+    "reasoning": "The user is explicitly asking to search their history for a previously referenced recipe, which matches the criteria for saved_recipe_lookup.",
     "entities": [
       "pasta"
     ],
@@ -255,8 +274,7 @@
     "confidence": 1.0,
     "reasoning": "The user is explicitly asking to retrieve a recipe from their past history/memory, which matches the criteria for saved_recipe_lookup.",
     "entities": [
-      "recipe",
-      "last time"
+      "recipe"
     ],
     "expected": "saved_recipe_lookup"
   },
@@ -269,8 +287,8 @@
   },
   "make me a butter chicken": {
     "intent": "recipe_generation",
-    "confidence": 0.95,
-    "reasoning": "The user is explicitly asking for a recipe for a specific dish ('butter chicken'), which falls under recipe_generation rather than saved_recipe_lookup because it does not reference a previously saved or historical recipe.",
+    "confidence": 1.0,
+    "reasoning": "The user is explicitly asking for a recipe for a specific dish ('butter chicken'), which falls under the recipe_generation category as per the provided instructions.",
     "entities": [
       "butter chicken"
     ],
@@ -279,21 +297,21 @@
   "hello, how are you?": {
     "intent": "general_chat",
     "confidence": 1.0,
-    "reasoning": "The user is engaging in a standard social greeting which is unrelated to pantry management, recipe requests, or cooking help.",
+    "reasoning": "The user is initiating a standard social greeting which is unrelated to pantry management, recipe requests, or cooking help.",
     "entities": [],
     "expected": "general_chat"
   },
   "what does this app do?": {
     "intent": "general_chat",
     "confidence": 1.0,
-    "reasoning": "The user is asking a meta-question about the app's functionality, which is unrelated to specific food, cooking, or pantry management tasks.",
+    "reasoning": "The user is asking a meta-question about the app's functionality, which falls under general inquiries rather than food or pantry management.",
     "entities": [],
     "expected": "general_chat"
   },
   "no cheese on that": {
     "intent": "recipe_card",
-    "confidence": 0.95,
-    "reasoning": "The user is refining a recipe by requesting the removal of an ingredient ('no cheese'), which fits the definition of selecting or refining a specific recipe from a prior interaction.",
+    "confidence": 1.0,
+    "reasoning": "The user is providing a refinement or constraint ('no cheese') to a recipe currently being discussed or selected.",
     "entities": [
       "cheese"
     ],
@@ -301,8 +319,8 @@
   },
   "make it more spicy": {
     "intent": "recipe_card",
-    "confidence": 0.95,
-    "reasoning": "The user is providing a refinement instruction ('make it more spicy') to modify a recipe currently being discussed or generated.",
+    "confidence": 1.0,
+    "reasoning": "The user is providing a refinement instruction ('make it more spicy') to a recipe currently being discussed or generated.",
     "entities": [
       "spicy"
     ],
@@ -310,10 +328,10 @@
   },
   "the second one": {
     "intent": "recipe_card",
-    "confidence": 0.9,
-    "reasoning": "The user is selecting a specific option from a list of previously presented choices, which is characteristic of refining or selecting a recipe card.",
+    "confidence": 0.95,
+    "reasoning": "The user is selecting a specific option from a list of previously presented recipe suggestions, which falls under the recipe_card intent.",
     "entities": [
-      "second one"
+      "the second one"
     ],
     "expected": "recipe_card"
   }
