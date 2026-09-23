@@ -4,26 +4,29 @@
  * `POST /api/ai/recipes/cook/confirm` \u2014 regression tests for review findings
  * on the #524 rescue-bonus PR, amended by issue #550:
  *
- * 1. The `cook_confirm` award predates #524 and must stay unconditional on
- *    `recipe_id` \u2014 a client running stale JS that never sends `date`/
- *    `tz_offset_minutes` at all must still get it, falling back to the
- *    server's UTC date (only the `rescue` bonus is allowed to depend on a
- *    usable client-local date and is skipped, not fallback-keyed, without
- *    one).
- * 2. Issue #550 tightened `validateClientDate` from tolerating \u00b11 day of
+ * 1. Issue #550 tightened `validateClientDate` from tolerating \u00b11 day of
  *    clock skew (its #520/#524/#570 form) to requiring an EXACT match
  *    against the offset-derived local date. Both `cook_confirm` and
- *    `rescue` now key on that single accepted local date (`validDate`) when
- *    one is present, instead of unconditionally on the server's UTC date \u2014
- *    this is what actually fixes the UTC-midnight double pay this issue was
- *    filed for (two confirms of one recipe at 23:50 and 00:10 UTC, same
- *    local day, now share one `validDate` and pay once). The old "send
- *    yesterday's date on one confirm, today's on the next" double-pay this
- *    suite is still guarding against is now closed a different way: an
- *    invalid date is flatly refused (`validDate` is `null`) rather than
- *    tolerated and collapsed onto the server's date, so two confirms that
- *    both send the SAME accepted local date are what has to map to one key
- *    \u2014 see the last test below.
+ *    `rescue` key on that single accepted local date (`validDate`) \u2014 this is
+ *    what actually fixes the UTC-midnight double pay this issue was filed
+ *    for (two confirms of one recipe at 23:50 and 00:10 UTC, same local day,
+ *    now share one `validDate` and pay once).
+ * 2. Issue #550 review: `cook_confirm` was going to fall back to the
+ *    server's UTC date when the client sent no usable date, same as its
+ *    pre-#524 form \u2014 but that fallback reopens a double pay of its own: one
+ *    confirm with a valid local date pays `<recipe>:<localDate>`, and a
+ *    SECOND confirm of the same cook with a missing/invalid date pays the
+ *    fallback `<recipe>:<utcDate>` \u2014 two awards for one cook whenever the
+ *    client's local day and the server's UTC day disagree (every evening in
+ *    the Americas). The app always sends a date, so `cook_confirm` now SKIPS
+ *    the award entirely without a usable `validDate`, exactly like `rescue`
+ *    already did \u2014 no server-UTC fallback for either award. The cook
+ *    DEDUCTION itself is never gated on the date either way.
+ * 3. The old "send yesterday's date on one confirm, today's on the next"
+ *    double-pay this suite originally guarded against is now closed by
+ *    `validateClientDate` itself: an invalid date is flatly refused
+ *    (`validDate` is `null`, so the award is skipped) rather than tolerated
+ *    and collapsed onto the server's date.
  */
 
 const mockUser = { id: 'user-1' }
@@ -80,17 +83,39 @@ describe('cook/confirm cook_confirm award (#524 review)', () => {
     jest.useRealTimers()
   })
 
-  it('still awards cook_confirm, keyed on the server date, when the client sends no date at all', async () => {
+  it('still deducts (2xx) but SKIPS the cook_confirm award when the client sends no date at all (#550)', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-26T12:00:00.000Z'))
     mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])
 
     const res = await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [] }))
 
     expect(res.status).toBe(200)
-    expect(awardBubblesMock).toHaveBeenCalledWith(mockUser.id, 'cook_confirm', 'recipe-1:2026-08-26')
+    expect(awardBubblesMock).not.toHaveBeenCalledWith(
+      mockUser.id,
+      'cook_confirm',
+      expect.anything(),
+    )
   })
 
-  it('keys two confirms of the same recipe (client dates yesterday, then today) to the same server-dated ref_key', async () => {
+  it("awards cook_confirm exactly once when a valid-date confirm is followed by a no-date confirm of the same cook (#550: the fallback this replaces would have paid twice)", async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-26T12:00:00.000Z'))
+    mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])
+
+    await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [], date: '2026-08-26' }))
+    await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [] }))
+
+    const cookConfirmCalls = (awardBubblesMock.mock.calls as unknown as Array<[string, string, string]>).filter(
+      (call) => call[1] === 'cook_confirm',
+    )
+    expect(cookConfirmCalls).toHaveLength(1)
+    expect(cookConfirmCalls[0][2]).toBe('recipe-1:2026-08-26')
+  })
+
+  it("awards cook_confirm only once, on the second call, when the client sends yesterday's (refused) date, then today's, for the same cook", async () => {
+    // The old ±1 day tolerance is what let this scenario collapse onto one
+    // server-dated key; #550 refuses yesterday's date outright, so the
+    // first call is simply skipped (no award, no key at all) and only the
+    // second (valid) call awards.
     jest.useFakeTimers().setSystemTime(new Date('2026-08-26T12:00:00.000Z'))
     mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])
 
@@ -100,9 +125,8 @@ describe('cook/confirm cook_confirm award (#524 review)', () => {
     const cookConfirmCalls = (awardBubblesMock.mock.calls as unknown as Array<[string, string, string]>).filter(
       (call) => call[1] === 'cook_confirm',
     )
-    expect(cookConfirmCalls).toHaveLength(2)
+    expect(cookConfirmCalls).toHaveLength(1)
     expect(cookConfirmCalls[0][2]).toBe('recipe-1:2026-08-26')
-    expect(cookConfirmCalls[1][2]).toBe('recipe-1:2026-08-26')
   })
 
   it("judges rescue eligibility on the client's accepted local day and keys BOTH cook_confirm and rescue on it, not the server's UTC day (#550)", async () => {
@@ -165,27 +189,6 @@ describe('cook/confirm cook_confirm award (#524 review)', () => {
     expect(cookConfirmCalls).toHaveLength(2)
     expect(cookConfirmCalls[0][2]).toBe('recipe-1:2026-08-25')
     expect(cookConfirmCalls[1][2]).toBe('recipe-1:2026-08-25')
-  })
-
-  it("sending yesterday's date after today's for the same cook does not mint a second cook_confirm ref_key (#550 acceptance criterion)", async () => {
-    // Issue #550 replaces the old ±1 day tolerance (which is what made the
-    // #570 "replay with a different client date" attack possible in the
-    // first place) with an exact match: yesterday's date no longer collides
-    // with today's key by being tolerated — it's flatly refused, so
-    // `validDate` is `null` and cook_confirm falls back to the *same*
-    // server-UTC key both times.
-    jest.useFakeTimers().setSystemTime(new Date('2026-08-26T12:00:00.000Z'))
-    mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])
-
-    await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [], date: '2026-08-26' }))
-    await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [], date: '2026-08-25' }))
-
-    const cookConfirmCalls = (
-      awardBubblesMock.mock.calls as unknown as Array<[string, string, string]>
-    ).filter((call) => call[1] === 'cook_confirm')
-    expect(cookConfirmCalls).toHaveLength(2)
-    expect(cookConfirmCalls[0][2]).toBe('recipe-1:2026-08-26')
-    expect(cookConfirmCalls[1][2]).toBe('recipe-1:2026-08-26')
   })
 
   it('does not award rescue at all when the client date is invalid, rather than falling back to a server-dated key (#550)', async () => {

@@ -279,11 +279,18 @@ describe('bubbles award never blocks the underlying write', () => {
     )
   })
 
-  it('POST /api/ai/recipes/cook/confirm still deducts and still awards cook_confirm (server-dated) when the date field is missing (#524 review)', async () => {
-    // `cook_confirm` predates #524 and must stay unconditional on `recipe_id`
-    // — only the newer `rescue` bonus is allowed to depend on a usable
-    // client-local `date`. With no deductions there's nothing to rescue
-    // anyway, so this pins cook_confirm alone.
+  it('POST /api/ai/recipes/cook/confirm still deducts, but SKIPS the cook_confirm award, when the date field is missing (#550, supersedes the #524-review expectation of an unconditional server-dated award)', async () => {
+    // Was: "`cook_confirm` predates #524 and must stay unconditional on
+    // `recipe_id`... keyed on the server's UTC date when no usable client
+    // date is sent." Issue #550 review found that fallback reopens a double
+    // pay: confirming once with a valid local date and once with a
+    // missing/invalid date produces two DIFFERENT ref_keys
+    // (`<recipe>:<localDate>` and `<recipe>:<utcDate>`) for one cook
+    // whenever the client's local day and the server's UTC day disagree —
+    // every evening in the Americas. The app always sends a date, so
+    // `cook_confirm` now SKIPS the award (like `rescue` already did) rather
+    // than falling back to a server-dated key. The cook deduction itself
+    // (the 2xx response) is unaffected either way — never-block still holds.
     mockRequireAuth.mockResolvedValue([{}, mockUser])
 
     const { POST } = await import('@/app/api/ai/recipes/cook/confirm/route')
@@ -295,7 +302,37 @@ describe('bubbles award never blocks the underlying write', () => {
     )
 
     expect(res.status).toBe(200)
-    expect(upsertMock).toHaveBeenCalledWith(
+    expect(upsertMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'cook_confirm' }),
+      expect.anything(),
+    )
+  })
+
+  it('POST /api/ai/recipes/cook/confirm awards cook_confirm exactly once when a valid-date confirm is followed by a no-date confirm of the same cook (#550)', async () => {
+    // The scenario the fallback used to reopen: same recipe, one confirm
+    // with a valid local date, then a second confirm (e.g. a stale retry)
+    // with no date at all. Only the first should award; the second must be
+    // a no-op, not a second award under a different key.
+    mockRequireAuth.mockResolvedValue([{}, mockUser])
+    const today = new Date().toISOString().slice(0, 10)
+
+    const { POST } = await import('@/app/api/ai/recipes/cook/confirm/route')
+    await POST(
+      new Request('http://localhost/api/ai/recipes/cook/confirm', {
+        method: 'POST',
+        body: JSON.stringify({ recipe_id: 'recipe-1', deductions: [], date: today }),
+      }),
+    )
+    upsertMock.mockClear()
+    const res2 = await POST(
+      new Request('http://localhost/api/ai/recipes/cook/confirm', {
+        method: 'POST',
+        body: JSON.stringify({ recipe_id: 'recipe-1', deductions: [] }),
+      }),
+    )
+
+    expect(res2.status).toBe(200)
+    expect(upsertMock).not.toHaveBeenCalledWith(
       expect.objectContaining({ event_type: 'cook_confirm' }),
       expect.anything(),
     )

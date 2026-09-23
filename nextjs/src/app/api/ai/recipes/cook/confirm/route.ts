@@ -14,11 +14,19 @@ export async function POST(request: Request) {
 
   // Client's local date (#524), validated EXACTLY against the offset-derived
   // local date (#550 — see `validateClientDate`; no more ±1 day tolerance).
-  // Used to key the `cook_confirm`/`rescue` awards below; a missing or
-  // invalid date/offset must never block the cook deduction itself, matching
-  // the never-block contract every other award call site follows (see
-  // bubbles-award-call-sites.test.ts) — it only means `cook_confirm` falls
-  // back to the server's UTC date and `rescue` is skipped, below.
+  // Used to key both the `cook_confirm` and `rescue` awards below; a missing
+  // or invalid date/offset must never block the cook DEDUCTION itself,
+  // matching the never-block contract every other award call site follows
+  // (see bubbles-award-call-sites.test.ts) — it only means both awards are
+  // skipped for that call, below. (An earlier version of this fix fell back
+  // to the server's UTC date for `cook_confirm` instead of skipping it — that
+  // reopens the double pay this issue exists to close: one confirm with the
+  // valid local date pays `<recipe>:<localDate>`, and a second confirm of
+  // the SAME cook with a missing/invalid date pays the fallback
+  // `<recipe>:<utcDate>` — two awards for one cook whenever local and UTC
+  // dates disagree, i.e. every evening in the Americas. The app always sends
+  // a valid date, so skipping — like `rescue` already does — is the correct
+  // choice here.)
   const offsetMinutes = parseTzOffsetMinutes(body.tz_offset_minutes)
   const validDate = validateClientDate(body.date, offsetMinutes, 'date')
     ? null
@@ -48,28 +56,18 @@ export async function POST(request: Request) {
   const response = await aiProxyJson('/v1/recipes/cook/confirm', body)
 
   if (response.status >= 200 && response.status < 300) {
-    // Pre-existing award (predates #524) — unconditional on `recipe_id`, not
-    // on whether the client sent a usable `date`. A client with stale JS
-    // that never sends `date` at all must still get this.
-    //
-    // Keying (#550): the ref_key is `validDate` — the single client-local
-    // date the server just validated exactly against the offset — when one
-    // was supplied, so the same recipe cooked at 23:50 and 00:10 UTC on the
-    // same local day pays once, closing the UTC-midnight double pay this
-    // issue was filed for. When there's no usable `validDate` (missing or
-    // invalid date/offset), this falls back to the *server's* UTC date
-    // rather than skipping the award — cook_confirm must never be blocked
-    // by a bad/absent date, and a stale client's cook still needs to get
-    // paid somehow. This fallback key can't be gamed into a second award:
-    // `validateClientDate` now requires an EXACT match against the
-    // offset-derived local date (no more ±1 day tolerance from #520/#524),
-    // so a client can no longer mint a second `cook_confirm` by sending
-    // yesterday's date on one request and today's on the next — an invalid
-    // date just falls back to this same server-UTC key both times.
-    const serverToday = new Date().toISOString().slice(0, 10)
-    const cookConfirmKey = validDate ?? serverToday
-    if (body.recipe_id) {
-      await awardBubbles(user.id, 'cook_confirm', `${body.recipe_id}:${cookConfirmKey}`)
+    // cook_confirm (predates #524): keyed on `validDate` — the single
+    // client-local date the server just validated exactly against the
+    // offset — so the same recipe cooked at 23:50 and 00:10 UTC on the same
+    // local day pays once, closing the UTC-midnight double pay this issue
+    // was filed for. Issue #550 review: SKIPPED (not fallback-keyed to the
+    // server's UTC date) when there's no usable `validDate`, same as
+    // `rescue` below — a UTC fallback here would let one cook be paid twice
+    // by confirming once with a valid date and once with a missing/invalid
+    // one. The cook DEDUCTION above is unaffected either way; only this
+    // award is conditional on a usable date, and the app always sends one.
+    if (body.recipe_id && validDate) {
+      await awardBubbles(user.id, 'cook_confirm', `${body.recipe_id}:${validDate}`)
     }
 
     // Rescue bonus (#524): only after the microservice confirms the cook
