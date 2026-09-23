@@ -17,6 +17,7 @@ from httpx import ASGITransport, AsyncClient
 
 from bubbly_chef.api.auth import get_current_user_id
 from bubbly_chef.main import create_app
+from bubbly_chef.repository.supabase_repo import SupabaseRepository
 
 TEST_USER_ID = "test-user-123"
 TEST_CONV_ID = "550e8400-e29b-41d4-a716-446655440001"
@@ -210,6 +211,89 @@ async def test_chat_history_rejects_out_of_bounds_limit(
         )
 
     assert response.status_code == 422
+
+
+class _RealHistoryQuery:
+    """Fluent query stub that threads order()/limit() through like real
+    PostgREST -- unlike `_make_mock_repo`'s canned return_value, this backs
+    a REAL `SupabaseRepository.get_history` call, so the route test below
+    exercises the actual ordering/slicing logic, not just a mocked repo
+    method."""
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+        self._desc = False
+        self._limit: int | None = None
+
+    def select(self, *_args: Any, **_kwargs: Any) -> "_RealHistoryQuery":
+        return self
+
+    def eq(self, *_args: Any, **_kwargs: Any) -> "_RealHistoryQuery":
+        return self
+
+    def order(self, _column: str, desc: bool = False) -> "_RealHistoryQuery":
+        self._desc = desc
+        return self
+
+    def limit(self, n: int) -> "_RealHistoryQuery":
+        self._limit = n
+        return self
+
+    def execute(self) -> Any:
+        rows = list(reversed(self._rows)) if self._desc else list(self._rows)
+        if self._limit is not None:
+            rows = rows[: self._limit]
+        return type("Result", (), {"data": rows})()
+
+
+class _RealHistoryClient:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+
+    def table(self, _name: str) -> _RealHistoryQuery:
+        return _RealHistoryQuery(self._rows)
+
+
+def _real_repo_with_messages(count: int) -> SupabaseRepository:
+    """A real SupabaseRepository backed by a fake client holding `count`
+    messages, oldest-first, content "message 0" .. "message {count-1}"."""
+    rows = [
+        {
+            "id": f"msg-{i}",
+            "role": "user" if i % 2 == 0 else "assistant",
+            "content": f"message {i}",
+            "created_at": f"2026-01-01T{i:02d}:00:00Z",
+        }
+        for i in range(count)
+    ]
+    repo = SupabaseRepository.__new__(SupabaseRepository)
+    repo.client = _RealHistoryClient(rows)  # type: ignore[assignment]
+    return repo
+
+
+@pytest.mark.asyncio
+async def test_chat_history_endpoint_restores_most_recent_messages_not_oldest(
+    client: AsyncClient,
+) -> None:
+    """#384 (per orchestrator's re-review of PR #596, finding 1): the
+    docstring in test_issue_384_chat_history_window.py claims this exact
+    coverage exists -- this is that test. A conversation with 30 stored
+    messages (over the route's default limit=20) must, on
+    GET /v1/chat/history/{id} with no explicit limit, come back as the most
+    recent 20 messages in chronological (oldest-first) order -- not the
+    first 20, which is what the pre-#384 code returned."""
+    real_repo = _real_repo_with_messages(30)
+
+    with patch(
+        "bubbly_chef.api.routes.chat.get_repository",
+        new_callable=AsyncMock,
+        return_value=real_repo,
+    ):
+        response = await client.get(f"/v1/chat/history/{TEST_CONV_ID}")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert [row["content"] for row in data] == [f"message {i}" for i in range(10, 30)]
 
 
 @pytest.mark.asyncio

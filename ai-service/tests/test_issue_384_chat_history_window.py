@@ -20,10 +20,18 @@ conversation longer than `limit`: reopening a long chat now restores its
 *most recent* messages instead of its *first* `limit` messages. That's an
 intentional, reviewed behaviour change (a restored chat should show its
 latest messages), not a side effect — see
-``TestGetHistoryRecency::test_endpoint_default_limit_restores_recent_messages_not_oldest``.
+``test_chat_routes.py::test_chat_history_endpoint_restores_most_recent_messages_not_oldest``
+(the route-level test; the tests in this file exercise the repository and
+the formatters directly).
 
-Tests below reproduce their bug directly (fail before the fix, pass after)
-rather than asserting on the new constant.
+No token budget gates the 40-message default -- that is Ayush's own triage
+call on #384 ("raise the cap now, summarize older turns later"), not an
+oversight. Rough sizing, so the tradeoff is visible: a typical chat message
+runs on the order of 50-200 characters (roughly 15-60 tokens); 40 messages
+is therefore on the order of a couple thousand tokens added to the
+cooking-help prompt on a long conversation, up from a few hundred at the
+old 10-message cap. Summarizing older turns instead of a flat cap is
+deferred to later work, as the triage decision states.
 """
 
 from __future__ import annotations
