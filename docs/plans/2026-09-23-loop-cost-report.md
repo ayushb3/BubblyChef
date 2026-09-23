@@ -63,9 +63,10 @@ about 23:56 PT, and the orchestrator paused everything for the night.
 | Haiku 4.5 | $1.00 | $1.25 | $0.10 | $5.00 | same |
 
 Every cache write in these transcripts is the 5-minute kind (checked: `ephemeral_1h_input_tokens` = 0).
-Each API message is counted once, using its last reported usage, per `loop_cost.py`. I extended that
-script with pricing and stage buckets in `scratchpad/cost2.py`, and wrote the raw output to
-`scratchpad/cost.json`.
+Each API message is counted once, using its last reported usage, per
+[`loop_cost.py`](2026-09-23-loop-cost-report/loop_cost.py). I extended that script with pricing and
+stage buckets in [`cost2.py`](2026-09-23-loop-cost-report/cost2.py), and wrote the raw output to
+`cost.json` (not preserved — see Gaps and caveats).
 
 ## 1. Per-run table
 
@@ -137,7 +138,7 @@ Plan and Decide are about 12%. Decide is cheap per agent (about $0.17) but it ru
 
 | Component | $ | How it was measured |
 |---|---|---|
-| Workflow agents (9 runs) | 63.04 | transcripts, exact |
+| Workflow agents (9 runs) | 62.59 | transcripts, exact |
 | Loop A + Loop B session main threads (launch, monitor, resume, relay) | 23.41 | transcripts, exact (Opus 5.5) |
 | Orchestrator main thread, loop-related turns | ≈ 30 | heuristic: turns that mention loop issue/PR numbers ($27.6), plus half of mixed turns |
 | Drafts session fixing loop PRs after the loop ended (PR #536, PR #552) | 7.53 | time slices of the Drafts transcript |
@@ -299,6 +300,12 @@ it are run, and that is where most of tonight's money went.
 
 ## Gaps and caveats
 
+- **`cost.json` (the raw per-agent output of `cost2.py`) was not preserved.** It lived in a session
+  scratchpad, not the repo, and has since been cleaned up. The derivation scripts,
+  [`loop_cost.py`](2026-09-23-loop-cost-report/loop_cost.py) and
+  [`cost2.py`](2026-09-23-loop-cost-report/cost2.py), were recovered from a Claude Code temp directory
+  and committed alongside this report; re-running them against the original workflow run directories
+  (also not preserved) would reproduce `cost.json`.
 - **Dollars are API-equivalent.** Ayush is on Pro, where the constraint is usage windows (weekly
   all-models at 80%, limit hit twice tonight).
 - **GitHub Action reviews are unmeasured.** They run Opus 5 with up to 40 turns on
@@ -332,14 +339,51 @@ backend, ui-ux) straight from the ready queue, about two at a time, with no agen
 daily cap had been hit, 16 loop PRs in 24h against 15. Merging went through a "guarded merge" script:
 CI green AND the latest claude[bot] review says "looks mergeable".
 
-**Output, about 17:45Z to 18:50Z autonomous (plus the morning's supervised merges).**
-- 14 PRs opened: #594–#607.
-- Merged: #594/#598 (kitchen themes, #523), #599 (#549), #601 (#465), #602 (#515), #603 (#566) and
-  #604 (#541). That's 6 issues.
-- Still open after review rounds: #596, #600, #605 and #606.
-- Held for Ayush's design call: #595 (#550) and #607 (#444). Draft #597 is the home layout prototypes.
+**Output, about 17:45Z to 18:50Z autonomous (plus the morning's supervised merges).** 14 PRs were opened
+(PR #594 through PR #607). The table below covers every PR and issue cited in this section.
+
+| Ref | Type | State | Title | What it is |
+|---|---|---|---|---|
+| PR #594 | PR | Merged | Kitchen themes: big bubbles milestones unlock a theme that swaps the scene's background | Dev-agent PR closing issue #523 |
+| PR #598 | PR | Merged | fix(kitchen): theme unlock moment, no-flash first paint, hook tests (#594 review) | Follow-up fix round on PR #594's review findings |
+| Issue #523 | Issue | Closed | Kitchen themes: big 🫧 milestones unlock a theme that swaps the scene's background and palette | The feature request PR #594 + PR #598 shipped |
+| PR #599 | PR | Merged | fix(home): drop stray comma after late-night greeting | Closes issue #549 |
+| Issue #549 | Issue | Closed | Home greeting reads "Late night snack?, Bubbly" (stray comma after the question) | Cosmetic copy bug fixed by PR #599 |
+| PR #601 | PR | Merged | fix(pantry): stale filter no longer masks the empty-pantry state | Closes issue #465 |
+| Issue #465 | Issue | Closed | Pantry: stale facet filters on a pantry that just became empty show "No items match your filters" | Filter-state bug fixed by PR #601 |
+| PR #602 | PR | Merged | fix(ai): stop sending the Gemini API key in the request URL | Closes issue #515 |
+| Issue #515 | Issue | Closed | Security: the Gemini API key is logged in plaintext on every AI call | Credential-leak bug fixed by PR #602 |
+| PR #603 | PR | Merged | fix(chat): numbered and bulleted lists now show markers | Closes issue #566 |
+| Issue #566 | Issue | Closed | Chat: numbered and bulleted lists render without markers | Rendering bug fixed by PR #603 |
+| PR #604 | PR | Merged | fix(workflows): populate ApplyResponse.affected_item_ids on pantry apply | Closes issue #541 |
+| Issue #541 | Issue | Closed | POST /v1/workflows/apply never populates ApplyResponse.affected_item_ids | API bug fixed by PR #604 |
+| PR #596 | PR | Open | fix(chat): widen cooking-help conversation history window past 10 messages | Still open after review rounds at the time of writing |
+| PR #600 | PR | Open | fix(chat): keep pantry item continuity across a cleanly-resolved turn | Still open after review rounds at the time of writing |
+| PR #605 | PR | Open | fix(chat): exact saved-recipe title match returns that recipe alone | Still open after review rounds at the time of writing |
+| PR #606 | PR | Open | fix(chat): parse expiry dates as local calendar dates in expiryPhrase | Still open after review rounds at the time of writing |
+| PR #595 | PR | Open | fix(bubbles): key daily_visit/cook_confirm/rescue on one exact local date | Addresses issue #550; held for Ayush's design call |
+| Issue #550 | Issue | Open | Bubbles ledger: date keys let daily_visit be claimed ahead and cook_confirm pay twice across UTC midnight | The bug PR #595 attempts to fix; design not yet settled |
+| PR #607 | PR | Open | fix(chat): restore pending pantry proposal on navigate-away-and-back | Addresses issue #444; held for Ayush's design call |
+| Issue #444 | Issue | Open | Chat: a pending pantry proposal is lost on navigating away and back | The bug PR #607 attempts to fix; design not yet settled |
+| PR #597 | PR | Open (draft) | PROTOTYPE (do not merge): home layout options around the kitchen scene | Not-for-merge home layout exploration |
+
+- Merged: PR #594/PR #598 (issue #523), PR #599 (issue #549), PR #601 (issue #465), PR #602
+  (issue #515), PR #603 (issue #566) and PR #604 (issue #541). That's 6 issues closed.
+- Still open after review rounds: PR #596, PR #600, PR #605 and PR #606.
+- Held for Ayush's design call: PR #595 (issue #550) and PR #607 (issue #444). Draft PR #597 is the
+  home layout prototypes.
 - Earlier the same day, the orchestrator merged the overnight loop's PRs once Ayush approved them:
-  #569, #552, #583, #577, #575, #574, #570 and #591.
+
+| Ref | Type | State | Title | What it is |
+|---|---|---|---|---|
+| PR #569 | PR | Merged | feat(#522): pick 1 of 3 decorations at each bubbles milestone | Overnight loop PR for issue #522 |
+| PR #552 | PR | Merged | test(e2e): guest walkthrough spec proving core flows work for a fresh anonymous session | Overnight loop PR for issue #518 |
+| PR #583 | PR | Merged | fix(e2e): rewrite sign-out AC2 for guest-mode redirect behavior | Overnight loop follow-up fix |
+| PR #577 | PR | Merged | fix(chat): distinguish stock questions from pantry updates in intent classification | Overnight loop PR |
+| PR #575 | PR | Merged | fix(ai): carry the Gemini failure kind (quota, auth, model, overload, timeout) to chat and /health/ai | Overnight loop PR |
+| PR #574 | PR | Merged | feat(mascot): Bubbles reacts — celebrate, worried, thinking states (#525) | Overnight loop PR for issue #525 |
+| PR #570 | PR | Merged | feat(#524): rescue bonus bubbles + weekly nothing-wasted streak | Overnight loop PR for issue #524 |
+| PR #591 | PR | Merged | test(bubbles): pin the same-day settlement lock (#524 follow-up) | Overnight loop follow-up test for issue #524 |
 
 **Usage (Pro plan).** The 5-hour window went from 38% to about 85% during the autonomous stretch. The
 weekly all-models window ended the day at 16%. The orchestrator's own context reached about 485k
@@ -355,10 +399,13 @@ identified above, now concentrated in one session instead of three.
    (Opus, about $0.30, catching real problems in 7 of 9 overnight runs) was dropped along with the
    rest of the ceremony. The GitHub review became the *first* reviewer, and nearly every PR needed
    1–3 rounds, each costing an agent pass plus a review wait.
-3. **The orchestrator's briefs caused some of the rework.** One brief contradicted the triage (#542:
-   "keep fuzzy matching"). The #550 design trusted the client's timezone offset, and its 20h-cooldown
-   redesign broke #570's judge-once streak lock. #594 was queued before its review had posted and
-   merged over "needs changes".
+3. **The orchestrator's briefs caused some of the rework.** One brief contradicted the triage on issue
+   #542 (*Saved-recipe lookup: an exact title match still shows a padded 5-item "which one?" list* —
+   open; the triage said "keep fuzzy matching"). The design behind PR #595 (fixing issue #550, the
+   ledger date-key bug) trusted the client's timezone offset, and its 20h-cooldown redesign broke the
+   judge-once streak lock that PR #570 (issue #524's rescue-bonus feature) had shipped. PR #594
+   (issue #523's kitchen themes) was queued before its review had posted and merged over "needs
+   changes".
 4. **Agents lacked standing rules** that the loop encodes: rebase before pushing (stale bases caused
    most of the "Test suite did not shrink" failures), never self-apply `test-removal-approved`, claim
    in the PR body only what the tests prove, and cover every code path, not just the easy one.
