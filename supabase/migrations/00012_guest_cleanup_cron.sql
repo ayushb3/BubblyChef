@@ -7,7 +7,13 @@
 --
 --   stale_guest_candidates(days)   read-only: who WOULD be deleted (dry run)
 --   delete_stale_guests(days, max) deletes them, returns how many
---   cron job 'delete-stale-guests' runs the delete hourly at :17
+--
+-- It does NOT schedule anything. Applying this file deletes no one. The
+-- hourly pg_cron job lives in supabase/manual/schedule_guest_cleanup.sql and
+-- is run by hand only after the dry run has been checked on the live
+-- project. It is kept out of migrations/ because `supabase db push` applies
+-- every pending migration at once, which would schedule the delete in the
+-- same step as creating the dry-run function.
 --
 -- Working default from #519 (Ayush can override): the 30 days count from the
 -- guest's LAST visit, not their first, so an active guest never loses their
@@ -61,15 +67,7 @@
 -- minting guests, while a bug in the activity logic can't wipe every guest
 -- in one go.
 --
--- pg_cron: CREATE EXTENSION below enables it if the role applying this is
--- allowed to. If it errors with a permission message, enable it in the
--- dashboard (Database -> Extensions -> search "pg_cron" -> enable) and run
--- this file again. The file is idempotent: CREATE OR REPLACE for the
--- functions, and cron.schedule() with a job name updates the existing job
--- instead of adding a second one.
 -- ---------------------------------------------------------------------------
-
-CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 -- ============================================================================
 -- stale_guest_candidates: dry run, read-only
@@ -157,7 +155,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.delete_stale_guests(INTEGER, INTEGER) IS
-  'Deletes never-linked anonymous users idle for max(p_inactive_days, 30) days, at most p_max_rows per call; their data cascades (#519). Run hourly by pg_cron job delete-stale-guests.';
+  'Deletes never-linked anonymous users idle for max(p_inactive_days, 30) days, at most p_max_rows per call; their data cascades (#519). Scheduled by hand via supabase/manual/schedule_guest_cleanup.sql.';
 
 -- Both functions are SECURITY DEFINER in the public schema, which PostgREST
 -- exposes as /rest/v1/rpc/<name>. Supabase grants EXECUTE on new public
@@ -167,13 +165,3 @@ COMMENT ON FUNCTION public.delete_stale_guests(INTEGER, INTEGER) IS
 -- service role keep EXECUTE.
 REVOKE EXECUTE ON FUNCTION public.stale_guest_candidates(INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.delete_stale_guests(INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
-
--- ============================================================================
--- Schedule: hourly at minute 17
--- ============================================================================
--- Named job: re-running this file updates the job rather than duplicating it.
-SELECT cron.schedule(
-  'delete-stale-guests',
-  '17 * * * *',
-  $$SELECT public.delete_stale_guests()$$
-);

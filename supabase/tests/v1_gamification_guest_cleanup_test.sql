@@ -11,6 +11,9 @@
 --   psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
 --        -v ON_ERROR_STOP=1 -f supabase/tests/v1_gamification_guest_cleanup_test.sql
 --
+-- Run it from the repo root: it \i-includes supabase/manual/schedule_guest_cleanup.sql
+-- (inside the rolled-back transaction) to check the schedule.
+--
 -- Every check is an ASSERT; the first failure aborts with its message. A
 -- clean run ends with NOTICE "ALL CHECKS PASSED".
 
@@ -236,8 +239,23 @@ BEGIN
 END $$;
 
 -- ----------------------------------------------------------------------------
--- The cron job is scheduled exactly once
+-- Applying the migrations schedules nothing; the manual file schedules once
 -- ----------------------------------------------------------------------------
+DO $$
+DECLARE v_n INTEGER := 0;
+BEGIN
+  -- Dynamic SQL: cron.job doesn't exist until pg_cron is enabled.
+  IF to_regclass('cron.job') IS NOT NULL THEN
+    EXECUTE 'SELECT count(*) FROM cron.job WHERE jobname = $1'
+      INTO v_n USING 'delete-stale-guests';
+  END IF;
+  ASSERT v_n = 0, 'migrations alone must not schedule delete-stale-guests';
+  RAISE NOTICE 'PASS no schedule from migrations alone';
+END $$;
+
+\i supabase/manual/schedule_guest_cleanup.sql
+\i supabase/manual/schedule_guest_cleanup.sql
+
 DO $$
 BEGIN
   ASSERT (SELECT count(*) FROM cron.job WHERE jobname = 'delete-stale-guests') = 1,
