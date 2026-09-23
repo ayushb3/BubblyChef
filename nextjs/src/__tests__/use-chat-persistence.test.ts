@@ -9,16 +9,18 @@ import { createElement, type ReactNode } from 'react'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useChat } from '@/hooks/useChat'
-import { fetchChatHistory, streamChatMessage } from '@/lib/api/chat'
-import type { ConversationHistoryTurn, ChatRecipeData } from '@/types/chat'
+import { fetchChatHistory, streamChatMessage, applyPantryProposal } from '@/lib/api/chat'
+import type { ConversationHistoryTurn, ChatRecipeData, PantryProposalAction } from '@/types/chat'
 
 jest.mock('@/lib/api/chat', () => ({
   fetchChatHistory: jest.fn(),
   streamChatMessage: jest.fn(),
+  applyPantryProposal: jest.fn(),
 }))
 
 const mockFetchChatHistory = fetchChatHistory as jest.MockedFunction<typeof fetchChatHistory>
 const mockStreamChatMessage = streamChatMessage as jest.MockedFunction<typeof streamChatMessage>
+const mockApplyPantryProposal = applyPantryProposal as jest.MockedFunction<typeof applyPantryProposal>
 
 const STORAGE_KEY = 'bubblychef:chat:conversationId'
 
@@ -377,5 +379,137 @@ describe('useChat — conversation persistence (#265)', () => {
     expect(assistant.intent).toBe('recipe_card')
     expect(assistant.response?.proposal).toBeTruthy()
     expect((assistant.response?.proposal as { proposal_type?: string })?.proposal_type).toBe('recipe_card')
+  })
+
+  // Issue #444 — a pending (unapproved) pantry proposal must survive
+  // navigating away from /chat and back, and must still be approvable
+  // afterwards. Previously the restore mapper excluded pantry_update turns
+  // entirely, so the card vanished on remount.
+  describe('pantry proposal restore (#444)', () => {
+    const pantryActions: PantryProposalAction[] = [
+      {
+        action_type: 'add',
+        item: { name: 'lemon', quantity: 2, unit: 'whole' },
+        confidence: 0.9,
+      },
+    ]
+
+    function pantryTurn(content: string): ConversationHistoryTurn {
+      return {
+        role: 'assistant',
+        content,
+        intent: 'pantry_update',
+        proposal: { actions: pantryActions },
+        created_at: new Date().toISOString(),
+      }
+    }
+
+    beforeEach(() => {
+      mockApplyPantryProposal.mockReset()
+    })
+
+    it('an unapproved pantry proposal restores with its card data and is still approvable', async () => {
+      window.localStorage.setItem(STORAGE_KEY, 'conv-pantry-restore-1')
+      mockFetchChatHistory.mockResolvedValueOnce([
+        turn('user', 'I bought 2 lemons'),
+        pantryTurn("Got it! I'll add 2 lemons."),
+      ])
+
+      const { result } = renderHook(() => useChat(), { wrapper })
+
+      await waitFor(() => {
+        expect(result.current.messages).toHaveLength(2)
+      })
+
+      const assistant = result.current.messages.find((m) => m.role === 'assistant')!
+      expect(assistant.intent).toBe('pantry_update')
+      const proposal = assistant.response?.proposal as { actions: PantryProposalAction[] } | undefined
+      expect(proposal?.actions).toHaveLength(1)
+      expect(proposal?.actions[0].item.name).toBe('lemon')
+
+      // Still approvable: approveProposal must actually call through, not no-op.
+      mockApplyPantryProposal.mockResolvedValueOnce({
+        success: true,
+        appliedCount: 1,
+        failedCount: 0,
+        errors: [],
+      })
+
+      await act(async () => {
+        await result.current.approveProposal(assistant.id)
+      })
+
+      expect(mockApplyPantryProposal).toHaveBeenCalledTimes(1)
+      expect(result.current.proposalStates[assistant.id]).toBe('approved')
+    })
+
+    it('a proposal approved before navigating away does not come back as a pending card', async () => {
+      window.localStorage.setItem(STORAGE_KEY, 'conv-pantry-restore-2')
+      const content = "Got it! I'll add 2 lemons."
+      mockFetchChatHistory.mockResolvedValueOnce([
+        turn('user', 'I bought 2 lemons'),
+        pantryTurn(content),
+      ])
+
+      const { result, unmount } = renderHook(() => useChat(), { wrapper })
+      await waitFor(() => expect(result.current.messages).toHaveLength(2))
+
+      const assistant = result.current.messages.find((m) => m.role === 'assistant')!
+      mockApplyPantryProposal.mockResolvedValueOnce({
+        success: true,
+        appliedCount: 1,
+        failedCount: 0,
+        errors: [],
+      })
+      await act(async () => {
+        await result.current.approveProposal(assistant.id)
+      })
+      expect(result.current.proposalStates[assistant.id]).toBe('approved')
+
+      // Navigate away and back — same conversation, same history payload
+      // (the server never updates the persisted turn on approve).
+      unmount()
+      mockFetchChatHistory.mockResolvedValueOnce([
+        turn('user', 'I bought 2 lemons'),
+        pantryTurn(content),
+      ])
+
+      const { result: resumed } = renderHook(() => useChat(), { wrapper })
+      await waitFor(() => expect(resumed.current.messages).toHaveLength(2))
+
+      const resumedAssistant = resumed.current.messages.find((m) => m.role === 'assistant')!
+      // Handled proposals restore with no card — proposal is nulled out.
+      expect(resumedAssistant.response?.proposal).toBeNull()
+    })
+
+    it('a proposal rejected before navigating away does not come back as a pending card', async () => {
+      window.localStorage.setItem(STORAGE_KEY, 'conv-pantry-restore-3')
+      const content = "Got it! I'll add 2 lemons."
+      mockFetchChatHistory.mockResolvedValueOnce([
+        turn('user', 'I bought 2 lemons'),
+        pantryTurn(content),
+      ])
+
+      const { result, unmount } = renderHook(() => useChat(), { wrapper })
+      await waitFor(() => expect(result.current.messages).toHaveLength(2))
+
+      const assistant = result.current.messages.find((m) => m.role === 'assistant')!
+      act(() => {
+        result.current.rejectProposal(assistant.id)
+      })
+      expect(result.current.proposalStates[assistant.id]).toBe('rejected')
+
+      unmount()
+      mockFetchChatHistory.mockResolvedValueOnce([
+        turn('user', 'I bought 2 lemons'),
+        pantryTurn(content),
+      ])
+
+      const { result: resumed } = renderHook(() => useChat(), { wrapper })
+      await waitFor(() => expect(resumed.current.messages).toHaveLength(2))
+
+      const resumedAssistant = resumed.current.messages.find((m) => m.role === 'assistant')!
+      expect(resumedAssistant.response?.proposal).toBeNull()
+    })
   })
 })
