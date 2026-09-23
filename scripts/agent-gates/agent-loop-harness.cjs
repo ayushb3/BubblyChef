@@ -53,11 +53,14 @@ function harness(respond) {
 }
 
 const FACTS = {
-  agentsEnabled: 'true', runsLast24h: 0, issueState: 'OPEN', issueLabels: ['ready-for-agent'],
+  agentsEnabled: 'true', agentsEnabledRead: true, agentsEnabledError: '', runsLast24h: 0, issueState: 'OPEN', issueLabels: ['ready-for-agent'],
   openPrsForIssue: [], title: 'T', kind: 'feature', devRole: 'frontend', slug: 's', summary: 'x',
 }
 const SETUP_OK = { ok: true, branchCreated: true, path: '/wt', branch: 'feat/x', originalBranch: 'main', problem: '' }
+// The environment probe every other test needs to pass before it reaches its own subject.
+const CAPABILITY_OK = { ghPresent: true, botLogin: 'bubblychef-bot', probe: 'bubblychef-bot' }
 const HAPPY = (label, extra = {}) => {
+  if (label === 'capability') return extra.capability || CAPABILITY_OK
   if (label === 'preflight') return extra.facts || FACTS
   if (label === 'setup') return extra.setup || SETUP_OK
   if (label === 'plan') return { plan: 'p', filesToChange: ['a.ts'], protectedPaths: [], userVisible: true, questions: [] }
@@ -78,7 +81,12 @@ function check(name, cond, detail) {
 async function main() {
   // ── Preflight: every stop is decided by the script, and nothing else runs ──
   const stops = [
-    ['kill switch off', { agentsEnabled: 'false' }, /kill switch/],
+    ['kill switch off', { agentsEnabled: 'false' }, /kill switch: AGENTS_ENABLED is "false"/],
+    // The bug #474 was filed about: a FAILED READ was reported as the switch's VALUE,
+    // so "gh: unknown command" read as "Ayush turned the loop off". Still reachable on a
+    // laptop whose gh predates `gh variable get`, where the identity gate passes first.
+    ['kill switch unreadable', { agentsEnabledRead: false, agentsEnabled: '', agentsEnabledError: 'unknown command "get" for "gh variable"' }, /could not read the kill switch/],
+    ['an unreadable switch is never reported as a set one', { agentsEnabledRead: false, agentsEnabled: 'ERROR: gh not found', agentsEnabledError: 'command not found' }, /could not read the kill switch/],
     ['kill switch empty', { agentsEnabled: '' }, /kill switch/],
     ['daily cap reached', { runsLast24h: 15 }, /daily cap/],
     ['issue closed', { issueState: 'CLOSED' }, /CLOSED/],
@@ -88,13 +96,64 @@ async function main() {
   for (const [name, override, reason] of stops) {
     const h = harness(label => HAPPY(label, { facts: { ...FACTS, ...override } }))
     const r = await h.run({ issue: 405 })
-    check(`preflight stops: ${name}`, r.status === 'skipped' && reason.test(r.reason) && h.calls.join() === 'preflight',
+    check(`preflight stops: ${name}`, r.status === 'skipped' && reason.test(r.reason) && h.calls.join() === 'capability,preflight',
       `got ${r.status} "${r.reason}", agents: ${h.calls.join()}`)
   }
   {
     const h = harness(label => HAPPY(label, { facts: { ...FACTS, runsLast24h: 14 } }))
     const r = await h.run({ issue: 405, dryRun: true })
     check('preflight allows 14 runs in 24h (under cap)', r.status === 'dry-run', `got ${r.status}`)
+  }
+
+  // ── The bot-identity gate: nothing at all runs in an environment that would
+  // write as the wrong account. This is the loop's central safety property —
+  // GitHub skips code-owner review when the PR author is the only code owner, so
+  // a run that falls back to Ayush's identity bypasses the protected-path gate
+  // while looking clean. It is checked before the issue is even read, so these
+  // stops must fire with ONLY the probe having run.
+  const envStops = [
+    ['no gh binary', { ghPresent: false, botLogin: '', probe: 'command not found' }, /gh CLI is not installed/],
+    ['identity resolves to a human', { ghPresent: true, botLogin: 'ayushb3', probe: 'ayushb3' }, /attributed to "ayushb3", not bubblychef-bot/],
+    ['identity cannot be resolved', { ghPresent: true, botLogin: '', probe: 'exit 4' }, /an unresolved identity/],
+    ['identity is some other bot', { ghPresent: true, botLogin: 'other-bot', probe: 'other-bot' }, /attributed to "other-bot"/],
+    // Exact match only — not a prefix, suffix, case-fold or a stray trailing space.
+    ['lookalike: suffixed', { ghPresent: true, botLogin: 'bubblychef-bot2', probe: 'x' }, /attributed to "bubblychef-bot2"/],
+    ['lookalike: prefixed', { ghPresent: true, botLogin: 'not-bubblychef-bot', probe: 'x' }, /attributed to "not-bubblychef-bot"/],
+    ['lookalike: different case', { ghPresent: true, botLogin: 'Bubblychef-Bot', probe: 'x' }, /attributed to "Bubblychef-Bot"/],
+    ['lookalike: trailing space', { ghPresent: true, botLogin: 'bubblychef-bot ', probe: 'x' }, /attributed to "bubblychef-bot "/],
+  ]
+  for (const [name, capability, reason] of envStops) {
+    const h = harness(label => HAPPY(label, { capability }))
+    const r = await h.run({ issue: 405 })
+    check(`environment stops: ${name}`, r.status === 'skipped' && reason.test(r.reason) && h.calls.join() === 'capability',
+      `got ${r.status} "${r.reason}", agents: ${h.calls.join()}`)
+  }
+  {
+    // ...and the probe itself must never be told to fix what it finds: an agent
+    // that installs gh or authenticates something would defeat the whole check.
+    const h = harness(label => HAPPY(label, { capability: CAPABILITY_OK }))
+    await h.run({ issue: 405, dryRun: true })
+    const p = h.prompts.capability || ''
+    check('the capability probe is read-only and cannot self-heal',
+      /Read-only/.test(p) && /do not try to fix or install anything/.test(p) && /authenticate nothing/.test(p),
+      'capability prompt')
+    check('the capability probe clears ambient tokens before resolving the identity',
+      /GH_TOKEN= GITHUB_TOKEN= GH_CONFIG_DIR=/.test(p), 'capability prompt')
+  }
+  {
+    // Every bot write clears the ambient token: gh reads GH_TOKEN/GITHUB_TOKEN
+    // ahead of GH_CONFIG_DIR, so without this the write lands as that token's owner.
+    // A full run, NOT dryRun: dryRun returns after Decide, so no AS_BOT-derived prompt
+    // (ship, respond-fix, blocked-path, finish, escalate) is ever emitted and the check
+    // passes vacuously against the capability probe alone. botPrompts.length > 1 pins
+    // that: with dryRun the count is 1 and this fails.
+    const h = harness(label => HAPPY(label))
+    await h.run({ issue: 405 })
+    const botPrompts = Object.entries(h.prompts).filter(([, v]) => /GH_CONFIG_DIR="\$HOME\/\.config\/gh-bubblychef-bot"/.test(v))
+    const bad = botPrompts.filter(([, v]) =>
+      /(?<!GH_TOKEN= GITHUB_TOKEN= )GH_CONFIG_DIR="\$HOME\/\.config\/gh-bubblychef-bot" gh /.test(v))
+    check('every bot gh command clears GH_TOKEN/GITHUB_TOKEN first', bad.length === 0 && botPrompts.length > 1,
+      `unguarded in: ${bad.map(([k]) => k).join(', ') || 'none'}; bot prompts inspected: ${botPrompts.length}`)
   }
 
   // ── Setup: a half-finished setup drops its branch; one that failed before creating it doesn't ──
