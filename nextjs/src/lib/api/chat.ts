@@ -164,6 +164,12 @@ export async function streamChatMessage(
             // be false, e.g. a throwing onToken) so the `finally` block's
             // fallback onError does not fire a second terminal callback on
             // top of this one.
+            //
+            // Bypassing `settle()` means "exactly one terminal callback"
+            // (#241) now also relies on the backend sending nothing after the
+            // envelope: every envelope yield in ai-service's workflows/router.py
+            // is followed by `return`. If that ever changes, a callback throwing
+            // on a later line would overwrite a reply that already rendered.
             console.error(
               '[streamChatMessage] Callback threw while handling SSE line:',
               err,
