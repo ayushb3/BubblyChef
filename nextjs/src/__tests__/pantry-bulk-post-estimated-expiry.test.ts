@@ -130,4 +130,19 @@ describe('POST /api/pantry/bulk estimated_expiry flagging (#398)', () => {
     expect(storedRows.current[0].estimated_expiry).toBe(false)
     expect(estimateExpiry).not.toHaveBeenCalled()
   })
+
+  it('#363/#439: a server-guessed date is still flagged estimated even when the client sends estimated_expiry: false with no date (Type tab blank-date row)', async () => {
+    const storedRows = { current: [] as Record<string, unknown>[] }
+    ;(requireAuth as jest.Mock).mockResolvedValue([makeSupabaseMock(storedRows), mockUser])
+    ;(estimateExpiry as jest.Mock).mockResolvedValue('2026-11-01')
+
+    await POST(
+      makeRequest({
+        items: [{ name: 'Bread', expiry_date: null, estimated_expiry: false }],
+      }),
+    )
+
+    expect(storedRows.current[0].expiry_date).toBe('2026-11-01')
+    expect(storedRows.current[0].estimated_expiry).toBe(true)
+  })
 })

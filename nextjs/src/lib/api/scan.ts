@@ -78,7 +78,7 @@ async function compressImage(file: File): Promise<File> {
  */
 export async function uploadReceipt(
   file: File,
-  options?: { preprocess?: boolean; preprocess_mode?: string },
+  options?: { preprocess?: boolean; preprocess_mode?: string; signal?: AbortSignal },
 ): Promise<ScanResult> {
   const formData = new FormData()
   formData.append('file', await compressImage(file))
@@ -91,21 +91,17 @@ export async function uploadReceipt(
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS)
+  // Lets a caller (ScanTab, on unmount/abandonment — issue #439) tear down
+  // the request early too, not just the SCAN_TIMEOUT_MS deadline.
+  const onExternalAbort = () => controller.abort()
+  options?.signal?.addEventListener('abort', onExternalAbort)
 
   try {
-    let res: Response
-    try {
-      res = await fetch('/api/ai/scan', {
-        method: 'POST',
-        body: formData,
-        signal: controller.signal,
-      })
-    } catch (err) {
-      if ((err as DOMException)?.name === 'AbortError') {
-        throw new ScanError('Scan timed out', SCAN_CLIENT_TIMEOUT_CODE)
-      }
-      throw err
-    }
+    const res = await fetch('/api/ai/scan', {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    })
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Scan failed' }))
@@ -115,8 +111,20 @@ export async function uploadReceipt(
     }
 
     return await res.json()
+  } catch (err) {
+    // Covers an abort firing at any point in the request — while `fetch`
+    // itself is still in flight, or while the response body is still being
+    // read by `res.json()` (issue #439: the previous code only wrapped the
+    // `fetch` call, so a slow body read that got aborted mid-parse leaked a
+    // raw `AbortError` instead of this friendly, code-bearing `ScanError`).
+    if (err instanceof ScanError) throw err
+    if ((err as DOMException)?.name === 'AbortError') {
+      throw new ScanError('Scan timed out', SCAN_CLIENT_TIMEOUT_CODE)
+    }
+    throw err
   } finally {
     clearTimeout(timer)
+    options?.signal?.removeEventListener('abort', onExternalAbort)
   }
 }
 

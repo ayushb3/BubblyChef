@@ -29,11 +29,21 @@ export interface ManualRow {
   emoji?: string | null
 }
 
-/** `YYYY-MM-DD` for `today + days`, matching the `<input type="date">` format. */
+/**
+ * `YYYY-MM-DD` for `today + days`, matching the `<input type="date">` format.
+ *
+ * Uses local date components, not `toISOString()` — `toISOString()` reports
+ * the date in UTC, which is a calendar day behind local time for anyone west
+ * of UTC in the evening (issue #439), silently shortening the catalog's
+ * auto-filled expiry by a day.
+ */
 function expiryDateFromDays(days: number): string {
   const d = new Date()
   d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 const UNITS = ['item', 'g', 'kg', 'ml', 'L', 'lb', 'oz', 'dozen', 'bunch', 'bag', 'can', 'bottle']
