@@ -10,6 +10,7 @@ export type ChatIntent =
   | 'cooking_help'
   | 'general_chat'
   | 'recipe_brainstorm'
+  | 'saved_recipe_lookup'
 
 export type ChatNextAction =
   | 'none'
