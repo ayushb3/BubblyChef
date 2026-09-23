@@ -65,10 +65,45 @@
  * a stale ended record); arming the resumable step record is a separate,
  * explicit call (`startGuidedCookSession`) made only where the guided flow
  * itself begins (`RecipeBook.handleOpenGuidedCook`).
+ *
+ * --- "Resume cooking?" banner instead of silent auto-resume -----------------
+ *
+ * Before this change, `RecipeBook` auto-*opened* the guided flow on every
+ * mount whenever `getActiveCookSession()` found a record — including a
+ * genuinely fresh visit to /recipes days later, forever, until the cook was
+ * finished or explicitly exited. That's surprising on a fresh visit: the
+ * user gets dropped straight into a full-screen cooking flow they didn't ask
+ * to re-enter. A reload *in the middle* of a guided cook is different — the
+ * user was already looking at the flow, so restoring it directly (no extra
+ * tap) is the right call and is issue #441's original behaviour.
+ *
+ * `markGuidedFlowOpen` / `clearGuidedFlowOpen` / `wasGuidedFlowOpen` below
+ * distinguish the two using `sessionStorage`, which is scoped to a single tab
+ * and — critically — survives a reload of that tab but is not written back
+ * once a component cleanly unmounts:
+ *
+ *   - `RecipeBook` calls `markGuidedFlowOpen(recipeId)` the instant the
+ *     guided flow actually mounts (fresh start, resume-from-banner, or an
+ *     already-armed direct resume), and relies on a `useEffect` cleanup to
+ *     call `clearGuidedFlowOpen` the instant it unmounts for any reason that
+ *     runs React's cleanup: Exit, Finish, Dismiss, or the user client-side
+ *     navigating away to another route.
+ *   - A full page reload (F5, a restored tab, a backgrounded mobile tab
+ *     getting reclaimed) does **not** run that cleanup — the JS context is
+ *     torn down mid-flight — so the flag written by `markGuidedFlowOpen`
+ *     is still sitting in `sessionStorage` on the next mount. Finding it
+ *     there (for the *same* recipe) is the signal "this is the same flow,
+ *     reloaded, not a fresh visit" — safe to reopen directly.
+ *   - Finding no flag (or one for a different recipe) means whatever
+ *     mounted this page did so via a fresh navigation — a new tab, a
+ *     bookmark, browser back/forward from elsewhere, or simply returning to
+ *     /recipes later — so a saved session there should surface as a
+ *     dismissible "Resume cooking?" banner instead of silently reopening.
  */
 
 const ENDED_KEY = 'bubblychef:cook:endedRecipeId'
 const SESSION_KEY = 'bubblychef:cook:activeSession'
+const FLOW_OPEN_KEY = 'bubblychef:cook:guidedFlowOpen'
 
 /**
  * Cap on how many "ended" recipe ids are retained. This is a `localStorage`
@@ -289,5 +324,54 @@ export function clearActiveCookSession(recipeId: string): void {
   const active = readActiveSession()
   if (active && active.recipeId === recipeId) {
     writeActiveSession(null)
+  }
+}
+
+/**
+ * Records that the guided flow for `recipeId` is currently mounted, in
+ * `sessionStorage` (tab-scoped, survives a reload of this tab). Call this the
+ * instant the guided flow mounts. See the module-level "Resume cooking?"
+ * banner note above for why this lives in `sessionStorage` rather than the
+ * `localStorage` used everywhere else in this module.
+ */
+export function markGuidedFlowOpen(recipeId: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(FLOW_OPEN_KEY, recipeId)
+  } catch {
+    // Best effort — worst case a reload mid-cook shows the banner instead of
+    // auto-resuming, which is a downgrade, not a new failure mode.
+  }
+}
+
+/**
+ * Clears the "guided flow is open" record. Pass `recipeId` to only clear it
+ * when it still names that recipe (a no-op guard against a stale call
+ * racing a newer flow for a different recipe); call with no argument to
+ * clear unconditionally.
+ */
+export function clearGuidedFlowOpen(recipeId?: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    if (recipeId !== undefined && window.sessionStorage.getItem(FLOW_OPEN_KEY) !== recipeId) {
+      return
+    }
+    window.sessionStorage.removeItem(FLOW_OPEN_KEY)
+  } catch {
+    // Best effort — see markGuidedFlowOpen.
+  }
+}
+
+/**
+ * True when the guided flow for `recipeId` was left marked "open" without a
+ * matching clean unmount — i.e. this looks like the same flow surviving a
+ * page reload, not a fresh visit. See the module-level note above.
+ */
+export function wasGuidedFlowOpen(recipeId: string): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.sessionStorage.getItem(FLOW_OPEN_KEY) === recipeId
+  } catch {
+    return false
   }
 }
