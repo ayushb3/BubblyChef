@@ -284,7 +284,7 @@ describe('useChat — conversation persistence (#265)', () => {
       },
     )
 
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     await act(async () => {
       result.current.sendMessage('recipe for spaghetti creamy and garlicky')
@@ -366,7 +366,7 @@ describe('useChat — conversation persistence (#265)', () => {
     ]
     mockFetchChatHistory.mockResolvedValueOnce(historyTurns)
 
-    const { result } = renderHook(() => useChat())
+    const { result } = renderHook(() => useChat(), { wrapper })
 
     await waitFor(() => {
       expect(mockFetchChatHistory).toHaveBeenCalledWith('conv-recipe-restore-1')
