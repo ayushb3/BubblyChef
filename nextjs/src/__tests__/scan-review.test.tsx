@@ -18,11 +18,13 @@ import React from 'react'
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
 import ReviewSurface from '@/components/scan/ReviewSurface'
 import ScannedItemCard from '@/components/scan/ScannedItemCard'
-import type { ScannedItem, ScanResult } from '@/types/scan'
+import type { ScannedItemWithId } from '@/lib/scan-helpers'
+import type { ScanResult } from '@/types/scan'
 
 // ─── Test stub matching the pinned contract ───────────────────────────────────
 
-const READY_ITEM: ScannedItem = {
+const READY_ITEM: ScannedItemWithId = {
+  _id: 'ready-1',
   name: 'Italian Bomba Hot Pepper Spread',
   original_name: 'italian bomba hot pepper',
   source_line: 'ITALIAN BOMBA HOT PEPPER',
@@ -34,7 +36,8 @@ const READY_ITEM: ScannedItem = {
   confidence: 0.92,
 }
 
-const REVIEW_ITEM: ScannedItem = {
+const REVIEW_ITEM: ScannedItemWithId = {
+  _id: 'review-1',
   name: 'Organic Cane Sugar',
   original_name: 'org cane sugar',
   source_line: 'ORG CANE SUGAR',
@@ -46,7 +49,8 @@ const REVIEW_ITEM: ScannedItem = {
   confidence: 0.65,
 }
 
-const SKIPPED_ITEM: ScannedItem = {
+const SKIPPED_ITEM: ScannedItemWithId = {
+  _id: 'skipped-1',
   name: 'T Premium Filler Assortment',
   original_name: 't premium filler asst',
   source_line: 'T PREMIUM FILLER ASST.',
@@ -72,19 +76,19 @@ const STUB_RESULT: ScanResult = {
 function noop() {}
 
 function renderResults(overrides: Partial<{
-  readyToAdd: ScannedItem[]
-  needsReview: ScannedItem[]
-  skipped: ScannedItem[]
+  readyToAdd: ScannedItemWithId[]
+  needsReview: ScannedItemWithId[]
+  skipped: ScannedItemWithId[]
   warnings: string[]
   hideConfirmButton: boolean
   isSubmitting: boolean
-  onConfirm: (items: ScannedItem[]) => void
-  onCheckedItemsChange: (items: ScannedItem[]) => void
+  onConfirm: (items: ScannedItemWithId[]) => void
+  onCheckedItemsChange: (items: ScannedItemWithId[]) => void
 }> = {}) {
   const props = {
-    readyToAdd: STUB_RESULT.ready_to_add,
-    needsReview: STUB_RESULT.needs_review,
-    skipped: STUB_RESULT.skipped,
+    readyToAdd: [READY_ITEM],
+    needsReview: [REVIEW_ITEM],
+    skipped: [SKIPPED_ITEM],
     warnings: STUB_RESULT.warnings,
     onReadyChange: noop,
     onReviewChange: noop,
@@ -169,7 +173,7 @@ it('onConfirm is called with only the checked items', () => {
   // Only ready item is pre-checked; click confirm
   fireEvent.click(screen.getByRole('button', { name: /Add 1 Item to Pantry/i }))
   expect(onConfirm).toHaveBeenCalledTimes(1)
-  const called: ScannedItem[] = onConfirm.mock.calls[0][0]
+  const called: ScannedItemWithId[] = onConfirm.mock.calls[0][0]
   expect(called).toHaveLength(1)
   expect(called[0].name).toBe(READY_ITEM.name)
 })
@@ -330,7 +334,7 @@ it('does not render warnings banner when warnings array is empty', () => {
 // mostly, but we double-check the shape at runtime here too).
 
 it('ScannedItem has all pinned contract fields', () => {
-  const item: ScannedItem = READY_ITEM
+  const item: ScannedItemWithId = READY_ITEM
   expect(typeof item.name).toBe('string')
   expect(typeof item.original_name).toBe('string')
   expect(typeof item.source_line).toBe('string')
@@ -403,7 +407,8 @@ it('editing the category select is the only way to change it — no separate pil
 // silently drops out of both the visible checkbox state and the confirm
 // payload.
 
-const NO_LINE_READY_ITEM: ScannedItem = {
+const NO_LINE_READY_ITEM: ScannedItemWithId = {
+  _id: 'no-line-ready-1',
   name: 'Canned Tomatoes',
   original_name: 'canned tomatoes',
   source_line: '',
@@ -415,7 +420,8 @@ const NO_LINE_READY_ITEM: ScannedItem = {
   confidence: 0.9,
 }
 
-const NO_LINE_REVIEW_ITEM: ScannedItem = {
+const NO_LINE_REVIEW_ITEM: ScannedItemWithId = {
+  _id: 'no-line-review-1',
   name: 'Basmati Rice',
   original_name: 'basmati rice',
   source_line: '',
@@ -436,9 +442,9 @@ function StatefulReviewSurface({
   initialReview,
   onCheckedItemsChange,
 }: {
-  initialReady: ScannedItem[]
-  initialReview: ScannedItem[]
-  onCheckedItemsChange: (items: ScannedItem[]) => void
+  initialReady: ScannedItemWithId[]
+  initialReview: ScannedItemWithId[]
+  onCheckedItemsChange: (items: ScannedItemWithId[]) => void
 }) {
   const [ready, setReady] = React.useState(initialReady)
   const [review, setReview] = React.useState(initialReview)

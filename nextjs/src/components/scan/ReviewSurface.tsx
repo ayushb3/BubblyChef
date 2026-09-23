@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import type { ScannedItem } from '@/types/scan'
+import type { ScannedItemWithId } from '@/lib/scan-helpers'
 import ScannedItemCard from './ScannedItemCard'
 import Chip from '@/components/ui/Chip'
 import type { ChipTone } from '@/components/ui/Chip'
@@ -19,15 +19,15 @@ import type { ChipTone } from '@/components/ui/Chip'
  * and decide what "confirm" actually does (issue #259).
  */
 export interface ReviewSurfaceProps {
-  readyToAdd: ScannedItem[]
-  needsReview: ScannedItem[]
-  skipped: ScannedItem[]
+  readyToAdd: ScannedItemWithId[]
+  needsReview: ScannedItemWithId[]
+  skipped: ScannedItemWithId[]
   warnings?: string[]
-  onReadyChange: (items: ScannedItem[]) => void
-  onReviewChange: (items: ScannedItem[]) => void
-  onSkippedChange: (items: ScannedItem[]) => void
+  onReadyChange: (items: ScannedItemWithId[]) => void
+  onReviewChange: (items: ScannedItemWithId[]) => void
+  onSkippedChange: (items: ScannedItemWithId[]) => void
   /** Fires only on explicit user confirm — nothing here writes to the DB itself. */
-  onConfirm: (checkedItems: ScannedItem[]) => void
+  onConfirm: (checkedItems: ScannedItemWithId[]) => void
   isSubmitting: boolean
   /** When true, hides the built-in confirm button (used when embedded in PantryAddSheet) */
   hideConfirmButton?: boolean
@@ -38,13 +38,7 @@ export interface ReviewSurfaceProps {
    * checked-only count and payload without duplicating checkbox state
    * (issue #406).
    */
-  onCheckedItemsChange?: (items: ScannedItem[]) => void
-}
-
-// ─── Stable item key ──────────────────────────────────────────────────────────
-// source_line is unique per receipt OCR row; fall back to name+index.
-function itemKey(item: ScannedItem, index: number): string {
-  return item.source_line || `${item.name}-${index}`
+  onCheckedItemsChange?: (items: ScannedItemWithId[]) => void
 }
 
 // ─── Tier header pill ─────────────────────────────────────────────────────────
@@ -86,13 +80,12 @@ interface TierSectionProps {
   label: string
   emoji: string
   tone: ChipTone
-  items: ScannedItem[]
+  items: ScannedItemWithId[]
   checkedKeys: Set<string>
   defaultOpen?: boolean
-  globalOffset: number
-  onItemChange: (index: number, updated: ScannedItem) => void
+  onItemChange: (index: number, updated: ScannedItemWithId) => void
   onItemDismiss: (index: number) => void
-  onCheckedChange: (key: string, checked: boolean) => void
+  onCheckedChange: (id: string, checked: boolean) => void
 }
 
 function TierSection({
@@ -102,7 +95,6 @@ function TierSection({
   items,
   checkedKeys,
   defaultOpen = true,
-  globalOffset,
   onItemChange,
   onItemDismiss,
   onCheckedChange,
@@ -131,20 +123,17 @@ function TierSection({
             style={{ overflow: 'hidden' }}
           >
             <div className="mt-2 space-y-2">
-              {items.map((item, i) => {
-                const key = itemKey(item, globalOffset + i)
-                return (
-                  <ScannedItemCard
-                    key={key}
-                    item={item}
-                    index={i}
-                    checked={checkedKeys.has(key)}
-                    onChange={(updated) => onItemChange(i, updated)}
-                    onDismiss={() => onItemDismiss(i)}
-                    onCheckedChange={(c) => onCheckedChange(key, c)}
-                  />
-                )
-              })}
+              {items.map((item, i) => (
+                <ScannedItemCard
+                  key={item._id}
+                  item={item}
+                  index={i}
+                  checked={checkedKeys.has(item._id)}
+                  onChange={(updated) => onItemChange(i, updated)}
+                  onDismiss={() => onItemDismiss(i)}
+                  onCheckedChange={(c) => onCheckedChange(item._id, c)}
+                />
+              ))}
             </div>
           </motion.div>
         )}
@@ -175,54 +164,45 @@ export default function ReviewSurface({
 }: ReviewSurfaceProps) {
   // Seed: ready_to_add items start checked; needs_review and skipped start unchecked.
   const initialCheckedKeys = useMemo(() => {
-    const keys = new Set<string>()
-    readyToAdd.forEach((item, i) => keys.add(itemKey(item, i)))
-    return keys
+    return new Set<string>(readyToAdd.map((item) => item._id))
     // We only want the seed once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const [checkedKeys, setCheckedKeys] = useState<Set<string>>(initialCheckedKeys)
 
-  function toggleKey(key: string, checked: boolean) {
+  function toggleKey(id: string, checked: boolean) {
     setCheckedKeys((prev) => {
       const next = new Set(prev)
-      if (checked) next.add(key)
-      else next.delete(key)
+      if (checked) next.add(id)
+      else next.delete(id)
       return next
     })
   }
 
-  // Remove a key from the checked set when its item is dismissed.
-  function dismissKey(key: string) {
+  // Remove an id from the checked set when its item is dismissed.
+  function dismissKey(id: string) {
     setCheckedKeys((prev) => {
       const next = new Set(prev)
-      next.delete(key)
+      next.delete(id)
       return next
     })
   }
 
-  function removeAt(list: ScannedItem[], i: number): ScannedItem[] {
+  function removeAt(list: ScannedItemWithId[], i: number): ScannedItemWithId[] {
     return list.filter((_, idx) => idx !== i)
   }
-  function replaceAt(list: ScannedItem[], i: number, item: ScannedItem): ScannedItem[] {
+  function replaceAt(
+    list: ScannedItemWithId[],
+    i: number,
+    item: ScannedItemWithId,
+  ): ScannedItemWithId[] {
     return list.map((el, idx) => (idx === i ? item : el))
   }
 
   // Collect all currently-visible checked items in tier order for the confirm handler.
   const checkedItems = useMemo(() => {
-    const allWithKeys: Array<{ key: string; item: ScannedItem }> = [
-      ...readyToAdd.map((item, i) => ({ key: itemKey(item, i), item })),
-      ...needsReview.map((item, i) => ({
-        key: itemKey(item, readyToAdd.length + i),
-        item,
-      })),
-      ...skipped.map((item, i) => ({
-        key: itemKey(item, readyToAdd.length + needsReview.length + i),
-        item,
-      })),
-    ]
-    return allWithKeys.filter(({ key }) => checkedKeys.has(key)).map(({ item }) => item)
+    return [...readyToAdd, ...needsReview, ...skipped].filter((item) => checkedKeys.has(item._id))
   }, [readyToAdd, needsReview, skipped, checkedKeys])
 
   const checkedCount = checkedItems.length
@@ -253,11 +233,9 @@ export default function ReviewSurface({
           items={readyToAdd}
           checkedKeys={checkedKeys}
           defaultOpen={true}
-          globalOffset={0}
           onItemChange={(i, updated) => onReadyChange(replaceAt(readyToAdd, i, updated))}
           onItemDismiss={(i) => {
-            const key = itemKey(readyToAdd[i], i)
-            dismissKey(key)
+            dismissKey(readyToAdd[i]._id)
             onReadyChange(removeAt(readyToAdd, i))
           }}
           onCheckedChange={toggleKey}
@@ -272,11 +250,9 @@ export default function ReviewSurface({
           items={needsReview}
           checkedKeys={checkedKeys}
           defaultOpen={true}
-          globalOffset={readyToAdd.length}
           onItemChange={(i, updated) => onReviewChange(replaceAt(needsReview, i, updated))}
           onItemDismiss={(i) => {
-            const key = itemKey(needsReview[i], readyToAdd.length + i)
-            dismissKey(key)
+            dismissKey(needsReview[i]._id)
             onReviewChange(removeAt(needsReview, i))
           }}
           onCheckedChange={toggleKey}
@@ -291,11 +267,9 @@ export default function ReviewSurface({
           items={skipped}
           checkedKeys={checkedKeys}
           defaultOpen={false}
-          globalOffset={readyToAdd.length + needsReview.length}
           onItemChange={(i, updated) => onSkippedChange(replaceAt(skipped, i, updated))}
           onItemDismiss={(i) => {
-            const key = itemKey(skipped[i], readyToAdd.length + needsReview.length + i)
-            dismissKey(key)
+            dismissKey(skipped[i]._id)
             onSkippedChange(removeAt(skipped, i))
           }}
           onCheckedChange={toggleKey}
