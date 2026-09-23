@@ -13,6 +13,16 @@ BASE_SHA="${1:?usage: exemption-check.sh <base-sha> <head-sha> <labels-json>}"
 HEAD_SHA="${2:?}"
 LABELS="${3:-[]}"
 
+# Judge the PR against its merge base, not the base branch's current tip. CI passes
+# pull_request.base.sha (main *now*); a two-dot diff from there attributes files that
+# landed on main after the branch point to this PR. See test-count-guard.sh (#609).
+if MB=$(git merge-base "$BASE_SHA" "$HEAD_SHA" 2>/dev/null) && [ -n "$MB" ]; then
+  if [ "$MB" != "$(git rev-parse "$BASE_SHA")" ]; then
+    echo "Base $BASE_SHA is ahead of the branch point; comparing against merge base $MB."
+  fi
+  BASE_SHA="$MB"
+fi
+
 if ! printf '%s' "$LABELS" | grep -q '"no-f2p"'; then
   echo "no-f2p label absent — nothing to check."
   exit 0

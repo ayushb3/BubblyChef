@@ -121,3 +121,34 @@ export function resolveKitchenTheme(
   }
   return getDefaultKitchenTheme()
 }
+
+/**
+ * Resolve the theme to render on first paint, before the balance is known
+ * (#523 review, finding 2): `balance` is `null` until `/api/bubbles`
+ * resolves client-side, and the plain `resolveKitchenTheme(storedKey, 0)`
+ * treats that as "no bubbles yet", flashing every non-default stored theme
+ * to `pastel` for a beat before crossfading to the real pick.
+ *
+ * `selectTheme` (in `useKitchenTheme`) only ever persists a key that was
+ * unlocked *at the moment it was written* — the balance is a lifetime total
+ * (#520) that only grows, so a previously-valid pick can't become invalid
+ * later. That means the stored key can be trusted immediately, with no
+ * balance to check against yet: a known key renders as itself while
+ * `balance` is still `null`, an unknown one falls back to `pastel`. Once the
+ * balance actually resolves, callers should switch to `resolveKitchenTheme`
+ * for the fully-validated result (belt-and-braces against a stale key from
+ * a catalog change, not because the balance is expected to disagree).
+ */
+export function resolveKitchenThemeOptimistic(
+  storedKey: string | null | undefined,
+  balance: number | null,
+): KitchenTheme {
+  if (storedKey) {
+    const theme = THEME_BY_KEY.get(storedKey)
+    if (theme) {
+      if (balance === null) return theme
+      if (isThemeUnlocked(theme.key, balance)) return theme
+    }
+  }
+  return getDefaultKitchenTheme()
+}
