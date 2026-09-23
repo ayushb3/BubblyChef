@@ -13,6 +13,14 @@ import RecipeDeleteConfirm from './RecipeDeleteConfirm'
 import RecipeImportModal from './RecipeImportModal'
 import CookModal from './CookModal'
 import GuidedCookFlow from './GuidedCookFlow'
+import {
+  startGuidedCookSession,
+  getActiveCookSession,
+  clearActiveCookSession,
+  markGuidedFlowOpen,
+  clearGuidedFlowOpen,
+  wasGuidedFlowOpen,
+} from '@/lib/cook-session'
 import { springs, heartPopVariants } from '@/lib/motion'
 import Chip from '@/components/ui/Chip'
 import { tagToTone } from '@/lib/tag-tone'
@@ -76,6 +84,18 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const [importOpen, setImportOpen] = useState(false)
   const [cookOpen, setCookOpen] = useState(false)
   const [guidedCookOpen, setGuidedCookOpen] = useState(false)
+  const [resumeStep, setResumeStep] = useState<number | null>(null)
+  const resumeCheckedRef = useRef(false)
+  // "Resume cooking?" banner (PR #475) — set on a fresh visit that finds a
+  // saved session that was NOT left open in this tab (see the fresh-visit
+  // vs. reload rule on the resume-check effect below). Null when there is
+  // nothing to offer resuming.
+  const [resumeBanner, setResumeBanner] = useState<{
+    recipeId: string
+    title: string
+    step: number
+    totalSteps: number
+  } | null>(null)
   const [importDraft, setImportDraft] = useState<Partial<Recipe> | null>(null)
   const [mutating, setMutating] = useState(false)
   // Local optimistic overrides for favorite state — avoids full re-fetch on toggle
@@ -130,6 +150,81 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
 
   const selectedRecipe = recipesWithOverrides.find((r) => r.id === selectedId) ?? recipesWithOverrides[0] ?? null
 
+  // Issue #441 / PR #475 — resume an in-progress guided cook after a full
+  // page reload, but only *directly* re-open the flow when this looks like
+  // that same reload rather than a fresh visit to /recipes.
+  //
+  // Fresh-visit-vs-reload rule: `wasGuidedFlowOpen` checks a sessionStorage
+  // flag that `markGuidedFlowOpen` writes the instant the guided flow mounts
+  // and that a cleanup effect below clears the instant it cleanly unmounts —
+  // Exit, Finish, Dismiss, or a client-side navigation away from /recipes.
+  // An abrupt full-page reload skips that cleanup (the JS context is torn
+  // down mid-flight), so the flag is still there on the next mount only if
+  // the flow was actually open when the page went away. That's exactly
+  // "reload without leaving /recipes" — anything else (a new tab, browser
+  // back/forward, returning to /recipes later) finds no flag and is treated
+  // as a fresh visit.
+  //
+  // Runs once, as soon as the recipe list is available (the loader only
+  // mounts this component once `recipes` has already been fetched). Looks up
+  // the persisted { recipeId, step } record. `getActiveCookSession` refuses
+  // to return a record for a recipe whose deduction was confirmed (#440), so
+  // this can't resurrect an ended session — but that alone isn't enough to
+  // avoid auto-opening the guided flow for a cook the user never guided:
+  // only `startGuidedCookSession` (called from `handleOpenGuidedCook` below)
+  // ever arms this record, so a chat-started cook (which only calls
+  // `startCookSession`) never has one to find here (PR #475 code review).
+  useEffect(() => {
+    if (resumeCheckedRef.current) return
+    if (recipes.length === 0) return
+    resumeCheckedRef.current = true
+    const active = getActiveCookSession()
+    if (!active) return
+    const match = recipes.find((r) => r.id === active.recipeId)
+    if (!match) return
+    if (wasGuidedFlowOpen(active.recipeId)) {
+      // Same tab, reloaded mid-cook — restore directly, exactly as before.
+      setSelectedId(match.id)
+      setResumeStep(active.step)
+      setGuidedCookOpen(true)
+    } else {
+      // A fresh visit — ask first instead of forcing the flow back open.
+      setResumeBanner({
+        recipeId: match.id,
+        title: match.title,
+        step: active.step,
+        totalSteps: match.instructions.length,
+      })
+    }
+  }, [recipes])
+
+  // Keeps the `markGuidedFlowOpen` sessionStorage flag in sync with whether
+  // the guided flow is actually mounted, for the fresh-visit-vs-reload rule
+  // above. The cleanup fires on every clean unmount (Exit/Finish/Dismiss, or
+  // this whole page unmounting via client-side navigation) but NOT on an
+  // abrupt full-page reload — which is exactly the distinction that effect
+  // relies on.
+  useEffect(() => {
+    if (!guidedCookOpen || !selectedRecipe) return
+    const recipeId = selectedRecipe.id
+    markGuidedFlowOpen(recipeId)
+    return () => clearGuidedFlowOpen(recipeId)
+  }, [guidedCookOpen, selectedRecipe])
+
+  const handleResumeBanner = () => {
+    if (!resumeBanner) return
+    setSelectedId(resumeBanner.recipeId)
+    setResumeStep(resumeBanner.step)
+    setGuidedCookOpen(true)
+    setResumeBanner(null)
+  }
+
+  const handleDismissResumeBanner = () => {
+    if (!resumeBanner) return
+    clearActiveCookSession(resumeBanner.recipeId)
+    setResumeBanner(null)
+  }
+
   // Reset hero image error state whenever the selected recipe changes
   useEffect(() => { setThumbError(false) }, [selectedId])
 
@@ -171,6 +266,25 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     setDirection(newIndex > currentIndex ? 1 : -1)
     setSelectedId(id)
     setSidebarOpen(false)
+  }
+
+  /**
+   * Opens the guided step-by-step cook flow. This is the "start cooking"
+   * moment for the library's cook path — unlike the chat card's cook flow,
+   * there is no separate preview step first, so a fresh session (#440) is
+   * armed right here via `startGuidedCookSession`: clears any stale "ended"
+   * record left by a previous confirmed cook of this same recipe, so this
+   * legitimate new attempt isn't mistaken for a stale re-entry into an
+   * already-finished one, and arms the #441 resumable step record — the
+   * thing that makes `getActiveCookSession()` findable by the reload-resume
+   * effect above. This is the *only* place that record gets armed, so only a
+   * cook genuinely started here is ever auto-resumed (PR #475 code review).
+   */
+  const handleOpenGuidedCook = () => {
+    if (!selectedRecipe) return
+    startGuidedCookSession(selectedRecipe.id)
+    setResumeStep(null)
+    setGuidedCookOpen(true)
   }
 
   const handleFavorite = async () => {
@@ -300,6 +414,63 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
 
   return (
     <div className="w-full max-w-md mx-auto px-2 flex flex-col gap-3">
+      {/* "Resume cooking?" banner (PR #475) — shown instead of silently
+          reopening the guided flow on a fresh visit. See the resume-check
+          effect above for the fresh-visit-vs-reload rule. */}
+      {resumeBanner && (
+        <div
+          data-testid="resume-cook-banner"
+          className="rounded-2xl px-4 py-3 flex items-start gap-3"
+          style={{
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            boxShadow: 'var(--shadow-soft)',
+          }}
+        >
+          <span aria-hidden="true" className="text-lg leading-none mt-0.5">
+            🍳
+          </span>
+          <div className="flex-1 min-w-0">
+            <p
+              className="text-sm font-semibold leading-snug"
+              style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+            >
+              You were cooking <span className="font-extrabold">{resumeBanner.title}</span>
+              {resumeBanner.totalSteps > 0 && (
+                <>
+                  {' '}
+                  — step {Math.min(Math.max(resumeBanner.step + 1, 1), resumeBanner.totalSteps)} of{' '}
+                  {resumeBanner.totalSteps}
+                </>
+              )}
+            </p>
+            <div className="flex gap-2 mt-2">
+              <button
+                type="button"
+                onClick={handleResumeBanner}
+                className="rounded-full px-4 py-1.5 text-xs font-bold active:scale-95 transition-transform"
+                style={{ background: 'var(--color-primary)', color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+              >
+                Resume
+              </button>
+              <button
+                type="button"
+                onClick={handleDismissResumeBanner}
+                className="rounded-full px-4 py-1.5 text-xs font-bold active:scale-95 transition-transform"
+                style={{
+                  background: 'var(--color-surface)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-muted)',
+                  fontFamily: 'Nunito, sans-serif',
+                }}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Search + Import */}
       <div className="flex gap-2 items-center">
         <div className="flex-1">
@@ -493,7 +664,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   <div className="flex items-center justify-between">
                     {/* Cook it — opens guided step-by-step cooking flow (#263) */}
                     <button
-                      onClick={() => setGuidedCookOpen(true)}
+                      onClick={handleOpenGuidedCook}
                       disabled={mutating}
                       className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                       style={{ background: 'color-mix(in srgb, var(--color-primary) 18%, var(--color-bg))', border: '1.5px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border))' }}
@@ -621,7 +792,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   <div className="flex items-center justify-between w-full">
                     {/* Cook it — opens guided step-by-step cooking flow (#263) */}
                     <button
-                      onClick={() => setGuidedCookOpen(true)}
+                      onClick={handleOpenGuidedCook}
                       disabled={mutating}
                       className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
                       style={{ background: 'color-mix(in srgb, var(--color-primary) 18%, var(--color-bg))', border: '1.5px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border))' }}
@@ -860,8 +1031,18 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         <GuidedCookFlow
           key={selectedRecipe.id}
           recipe={selectedRecipe}
-          onExit={() => setGuidedCookOpen(false)}
+          initialStep={resumeStep ?? undefined}
+          onExit={() => {
+            // Deliberate exit back to the plain recipe view — nothing left
+            // to resume (#441). Not the same as `endCookSession`: a later
+            // re-open of guided cook for this recipe should still work.
+            clearActiveCookSession(selectedRecipe.id)
+            setResumeStep(null)
+            setGuidedCookOpen(false)
+          }}
           onFinish={() => {
+            clearActiveCookSession(selectedRecipe.id)
+            setResumeStep(null)
             setGuidedCookOpen(false)
             setCookOpen(true)
           }}

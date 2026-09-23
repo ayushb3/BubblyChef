@@ -20,6 +20,14 @@ export interface BulkAddItem {
    * per-item `pantry_add` award every item earns regardless of source.
    */
   source?: 'scan' | 'manual'
+  /**
+   * Explicit override for whether `expiry_date` is an estimate rather than
+   * a date the user actually chose (issue #398, mirrors #363's precedence
+   * on the server: an explicit flag from the client always wins). Omit for
+   * a genuinely user-typed date; the server's own heuristic-derived flag is
+   * used as a fallback only when this is absent.
+   */
+  estimated_expiry?: boolean
 }
 
 export interface BulkAddResult {

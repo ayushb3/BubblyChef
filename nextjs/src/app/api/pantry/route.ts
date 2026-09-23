@@ -79,6 +79,13 @@ export async function POST(request: Request) {
       quantity: qty,
       unit,
       expiry_date: expiry || null,
+      // #363/#398/#439: when the client didn't supply a date, this route
+      // guessed one itself, so the flag is always true regardless of what
+      // the client sent (a blank-date row defaults its flag to `false`,
+      // which must not override a real guess). The client's flag is only
+      // honoured when the client actually supplied a date: true means
+      // catalog auto-fill (#398), false means the user typed it themselves.
+      estimated_expiry: body.expiry_date ? Boolean(body.estimated_expiry) : Boolean(expiry),
       slot_index: body.slot_index ?? null,
       quantity_base: quantity_base ?? null,
       unit_base: unit_base ?? null,

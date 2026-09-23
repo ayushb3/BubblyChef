@@ -25,6 +25,7 @@ import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
 import { fetchRecipe, promoteRecipeDraft } from '@/lib/api/recipes'
 import { cookingContextForId, deriveChatSeed } from '@/lib/chat-seed'
+import { startCookSession, isCookSessionEnded } from '@/lib/cook-session'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import type {
   ChatMessage,
@@ -156,6 +157,21 @@ function ChatSurface() {
       .catch(() => setAiAvailable(false))
   }, [])
 
+  // Two-tab double deduction guard (PR #475), part 1: `cookingRecipe` below
+  // reads `isCookSessionEnded` at render, which goes stale the instant a
+  // *different* tab confirms this same recipe's deduction — `storage` events
+  // only fire in tabs other than the one that wrote the change, which is
+  // exactly the case this needs to catch live. `cookTick` has no meaning of
+  // its own; bumping it just forces this tab to recompute `cookingRecipe`
+  // (and therefore hide the stale COOKING banner) the moment that happens,
+  // rather than waiting for some unrelated re-render to notice.
+  const [, setCookTick] = useState(0)
+  useEffect(() => {
+    const handleStorage = () => setCookTick((n) => n + 1)
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
+
   // Load the recipe named by ?cooking=
   useEffect(() => {
     if (!cookingRecipeId) return
@@ -177,12 +193,30 @@ function ChatSurface() {
   // Derived, not stored: the card shows only while the loaded recipe still
   // matches the URL param and hasn't been dismissed. Keeps a stale recipe from
   // flashing between navigations without clearing state inside an effect.
+  //
+  // #440 — also gated on the persisted cook-session record, not just local
+  // `dismissedRecipeId` state. A confirmed deduction from a route other than
+  // /chat (e.g. the recipe library's guided cook flow) redirects here with a
+  // *fresh* mount of this page, so `dismissedRecipeId` was never set for this
+  // recipe — only `isCookSessionEnded` (backed by localStorage) survives that
+  // navigation and can still recognise the session is already over.
   const cookingRecipe =
     cookingRecipeId &&
     cookingRecipeId !== dismissedRecipeId &&
+    !isCookSessionEnded(cookingRecipeId) &&
     loadedRecipe?.id === cookingRecipeId
       ? loadedRecipe
       : null
+
+  // Strip a `?cooking=` param that names an already-ended session — e.g. the
+  // redirect CookModal performs right after a confirmed deduction, or the
+  // back button returning to a stale URL. Without this the param lingers
+  // indefinitely even though the banner itself is correctly hidden above.
+  useEffect(() => {
+    if (cookingRecipeId && isCookSessionEnded(cookingRecipeId)) {
+      router.replace('/chat', { scroll: false })
+    }
+  }, [cookingRecipeId, router])
 
   /**
    * Attach the cook context to the first message of the conversation only.
@@ -432,6 +466,15 @@ function ChatSurface() {
               onDismiss={dismissCookingCard}
               onFinishCooking={() => {
                 if (!cookingRecipeId) return
+                // Two-tab double deduction guard (PR #475), checkpoint 1:
+                // `cookingRecipe` above is only recomputed on render, so a
+                // confirm from a *different* tab in between could leave this
+                // tab's stale banner tappable. Re-check right here, at the
+                // moment of the tap, before ever opening the confirm sheet.
+                if (isCookSessionEnded(cookingRecipeId)) {
+                  endCookingSession(cookingRecipeId)
+                  return
+                }
                 const isDraft = draftRecipeIds.has(msgIdForRecipeId(cookingRecipeId) ?? '')
                 setCookTarget({
                   recipeId: cookingRecipeId,
@@ -625,6 +668,10 @@ function ChatSurface() {
             // begins. Nothing was deducted by the preview.
             const { recipeId, msgId } = cookTarget
             if (msgId) setCookStartedIds((prev) => new Set(prev).add(msgId))
+            // #440 — a fresh session starts now. Clear any stale "ended" record
+            // from a previous cook of this same recipe so this legitimate new
+            // session isn't mistaken for a stale re-entry and hidden.
+            startCookSession(recipeId)
             setCookTarget(null)
             router.replace(`/chat?cooking=${encodeURIComponent(recipeId)}`, { scroll: false })
           }}
