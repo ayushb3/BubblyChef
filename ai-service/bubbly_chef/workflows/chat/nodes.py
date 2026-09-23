@@ -27,7 +27,7 @@ from bubbly_chef.prompts.chat import (
 from bubbly_chef.prompts.chat import GENERAL_CHAT_SYSTEM_PROMPT as GENERAL_CHAT_SYSTEM_PROMPT
 from bubbly_chef.prompts.chat import GENERAL_CHAT_USER_PROMPT as GENERAL_CHAT_USER_PROMPT
 from bubbly_chef.prompts.chat import MODE_SYSTEM_PROMPTS as MODE_SYSTEM_PROMPTS
-from bubbly_chef.repository.supabase_repo import get_repository
+from bubbly_chef.repository.supabase_repo import get_repository, lookup_query_terms
 from bubbly_chef.services.dietary_preferences import get_stored_dietary_preferences
 from bubbly_chef.tools.registry import get_tool, get_tool_schemas
 from bubbly_chef.workflows.state import WorkflowState
@@ -317,6 +317,98 @@ async def general_chat_response(state: WorkflowState) -> WorkflowState:
             "errors": state.get("errors", []) + [f"Chat response error: {e}"],
             "workflow_status": WorkflowStatus.COMPLETED.value,
         }
+
+
+async def saved_recipe_lookup_response(state: WorkflowState) -> WorkflowState:
+    """
+    Node: Look up a recipe the user already saved.
+    Routes here when intent == SAVED_RECIPE_LOOKUP.
+
+    Deterministic — no LLM call. Searches only this user's own saved recipes
+    (`SupabaseRepository.search_saved_recipes` is scoped by user_id) and
+    replies with a ranked text summary. Never generates a new recipe; a
+    0-match reply invites the user to ask for generation explicitly instead,
+    which a follow-up already routes to recipe_generation.
+    """
+    user_id = state.get("user_id") or ""
+    input_text = state.get("input_text", "")
+    # No dish named ("show me my saved recipes") means browse, not search:
+    # list the most recent saves instead of reporting zero matches.
+    browsing = not lookup_query_terms(input_text)
+
+    rows: list[dict[str, Any]] = []
+    try:
+        repo = await get_repository()
+        if browsing:
+            rows = await repo.get_user_recipes(user_id, limit=5)
+        else:
+            rows = await repo.search_saved_recipes(user_id, input_text, limit=5)
+    except Exception as e:
+        # A failed lookup must not read as "you have no such recipe" — that
+        # reply offers to generate a duplicate of something the user saved.
+        logger.warning(f"saved_recipe_lookup_response: search failed: {e}")
+        return {
+            **state,
+            "intent": Intent.SAVED_RECIPE_LOOKUP.value,
+            "assistant_message": (
+                "Oops — I couldn't reach your saved recipes just now."
+                " Please try again in a moment."
+            ),
+            "next_action": NextAction.NONE.value,
+            "proposal": None,
+            "requires_review": False,
+            "confidence": 0.5,
+            "errors": state.get("errors", []) + [f"Saved recipe lookup error: {e}"],
+            "workflow_status": WorkflowStatus.COMPLETED.value,
+            "saved_recipe_matches": [],
+        }
+
+    # Only the fields the issue's metadata contract names leave this node;
+    # full rows (user_id, ingredients, instructions) never go over the wire.
+    matches = [
+        {key: row.get(key) for key in ("id", "title", "description", "cuisine")}
+        for row in rows
+    ]
+
+    if not matches and browsing:
+        message = (
+            "You haven't saved any recipes yet — ask me for one"
+            " and you can save it from there!"
+        )
+    elif not matches:
+        message = (
+            "I couldn't find a saved recipe matching that."
+            " Want me to generate a new one instead?"
+        )
+    elif browsing:
+        lines = [f"{i + 1}. {m.get('title') or 'Untitled'}" for i, m in enumerate(matches)]
+        message = (
+            "Here are your most recent saved recipes:\n"
+            + "\n".join(lines)
+            + "\nWhich one would you like?"
+        )
+    elif len(matches) == 1:
+        title = str(matches[0].get("title") or "that recipe")
+        message = f"Found it — your saved {title}!"
+    else:
+        lines = [f"{i + 1}. {m.get('title') or 'Untitled'}" for i, m in enumerate(matches)]
+        message = (
+            "I found a few saved recipes that might match:\n"
+            + "\n".join(lines)
+            + "\nWhich one did you mean?"
+        )
+
+    return {
+        **state,
+        "intent": Intent.SAVED_RECIPE_LOOKUP.value,
+        "assistant_message": message,
+        "next_action": NextAction.NONE.value,
+        "proposal": None,
+        "requires_review": False,
+        "confidence": 1.0,
+        "workflow_status": WorkflowStatus.COMPLETED.value,
+        "saved_recipe_matches": matches,
+    }
 
 
 async def cooking_help_response(state: WorkflowState) -> WorkflowState:
