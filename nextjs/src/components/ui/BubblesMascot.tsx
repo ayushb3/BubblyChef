@@ -18,11 +18,10 @@ const STATE_SRC: Record<BubblesState, string> = {
   happy: '/mascot/bubbles-happy.png',
   surprised: '/mascot/bubbles-surprised.png',
   thinking: '/mascot/bubbles-thinking.png',
-  // placeholder until art: #401 — no dedicated "worried" art yet, so the
-  // thinking pose is reused; the 💧 badge below is what actually reads as
-  // "worried" until real art lands.
-  worried: '/mascot/bubbles-thinking.png',
-  celebrate: '/mascot/bubbles-happy.png',
+  // Final art (issue #527): dedicated "sad" expression, no longer the
+  // thinking pose + droplet badge placeholder.
+  worried: '/mascot/bubbles-sad.png',
+  celebrate: '/mascot/bubbles-celebrate.png',
 }
 
 /** Sparkle burst positions fired outward from the mascot on `celebrate` (issue #525). */
@@ -118,17 +117,6 @@ export default function BubblesMascot({
           }}
         />
       </motion.div>
-
-      {state === 'worried' && (
-        <span
-          className="absolute -top-1 -right-1 text-base leading-none"
-          style={{ fontSize: Math.max(14, size * 0.22) }}
-          aria-hidden="true"
-          data-testid="bubbles-worried-badge"
-        >
-          💧
-        </span>
-      )}
 
       <AnimatePresence>
         {isCelebrating && motionEnabled && (
