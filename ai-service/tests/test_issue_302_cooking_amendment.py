@@ -21,7 +21,12 @@ import pytest
 
 from bubbly_chef.ai.provider import ToolCallResponse
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
-from bubbly_chef.models.proposals import RecipeAmendmentDetection, RecipeIngredientAmendment
+from bubbly_chef.models.proposals import (
+    AnyProposalAdapter,
+    RecipeAmendmentDetection,
+    RecipeAmendmentProposal,
+    RecipeIngredientAmendment,
+)
 from bubbly_chef.workflows.chat.nodes import (
     _detect_amendment,
     cooking_help_response,
@@ -192,9 +197,13 @@ class TestCookingHelpAmendmentSingleShot:
         assert result["workflow_status"] == WorkflowStatus.AWAITING_REVIEW.value
         assert result["proposal"] is not None
         proposal = result["proposal"]
-        assert proposal["is_amendment"] is True
-        assert proposal["amended_ingredients"] is not None
-        assert len(proposal["amended_ingredients"]) == 3
+        assert isinstance(proposal, RecipeAmendmentProposal)
+        assert proposal.proposal_type == "recipe_amendment"
+        assert proposal.is_amendment is True
+        assert len(proposal.amended_ingredients) == 3
+        # Pinned recipe identity travels with the proposal.
+        assert proposal.recipe_id == "recipe-abc"
+        assert proposal.recipe_title == "Creamy Pasta"
         # Prose reply is preserved in assistant_message
         assert "milk" in result["assistant_message"]
 
@@ -311,7 +320,8 @@ class TestCookingHelpAmendmentReact:
         assert result["next_action"] == NextAction.REVIEW_PROPOSAL.value
         assert result["workflow_status"] == WorkflowStatus.AWAITING_REVIEW.value
         assert result["proposal"] is not None
-        assert result["proposal"]["is_amendment"] is True
+        assert isinstance(result["proposal"], RecipeAmendmentProposal)
+        assert result["proposal"].is_amendment is True
 
     @pytest.mark.asyncio
     async def test_non_amending_turn_returns_no_proposal_react(self):
@@ -347,3 +357,38 @@ class TestCookingHelpAmendmentReact:
         assert result["workflow_status"] == WorkflowStatus.COMPLETED.value
         assert result["proposal"] is None
         assert result["requires_review"] is False
+
+
+# ---------------------------------------------------------------------------
+# Issue #487: the emitted amendment is a discriminated union member
+# ---------------------------------------------------------------------------
+
+
+class TestAmendmentProposalIsUnionMember:
+    @pytest.mark.asyncio
+    async def test_emitted_amendment_round_trips_through_union(self):
+        """What cooking_help_response emits survives model_dump -> AnyProposalAdapter."""
+        manager = _make_manager(supports_tool_calling=False)
+        manager.complete = AsyncMock(
+            side_effect=[
+                "Sure, milk works fine as a substitute for heavy cream.",
+                _AMENDMENT_DETECTION_RESULT,
+            ]
+        )
+
+        with (
+            patch("bubbly_chef.workflows.chat.nodes.get_ai_manager", return_value=manager),
+            patch(
+                "bubbly_chef.workflows.chat.nodes.get_repository",
+                new_callable=AsyncMock,
+                return_value=MagicMock(get_all_pantry_items=AsyncMock(return_value=[])),
+            ),
+        ):
+            result = await cooking_help_response(_state())
+
+        emitted = result["proposal"]
+        dumped = emitted.model_dump(mode="json")
+        assert dumped["proposal_type"] == "recipe_amendment"
+        reloaded = AnyProposalAdapter.validate_python(dumped)
+        assert isinstance(reloaded, RecipeAmendmentProposal)
+        assert reloaded == emitted
