@@ -50,21 +50,28 @@ export async function POST(request: Request) {
     // second `cook_confirm` for one cook by sending yesterday's date on one
     // request and today's on the next — only the new rescue bonus below is
     // allowed to depend on `validDate`.
+    const today = new Date().toISOString().slice(0, 10)
     if (body.recipe_id) {
-      const today = new Date().toISOString().slice(0, 10)
       await awardBubbles(user.id, 'cook_confirm', `${body.recipe_id}:${today}`)
     }
 
     // Rescue bonus (#524): only after the microservice confirms the cook
     // (2xx), one per expiring-soon deducted item, deduplicated and capped.
-    // Unlike `cook_confirm` above, this one genuinely needs a client-local
-    // date to key on, so it's skipped (not server-date-keyed) when absent.
+    // The *judgement* (was this item expiring soon at cook time) uses the
+    // client's local date — that's the whole point of validDate, a user
+    // near local midnight must not get misclassified by the server's UTC
+    // clock. But the ref_key that makes the award idempotent uses the
+    // *server's* date, same as cook_confirm above (#570 review): validDate
+    // is client-supplied and validateClientDate tolerates ±1 day of skew,
+    // so a client resending the same cook confirm with yesterday's date on
+    // one call and today's on the next would otherwise mint two rescue
+    // awards for what's really one deduction of the same item.
     if (validDate) {
       const expiringSoonItemIds = Array.from(new Set(pantryItemIds)).filter((id) =>
         isExpiringSoon(daysUntilExpiryOn(expiryByItemId.get(id) ?? null, validDate)),
       )
       for (const pantryItemId of expiringSoonItemIds.slice(0, RESCUE_CAP_PER_COOK)) {
-        await awardBubbles(user.id, 'rescue', `${pantryItemId}:${validDate}`)
+        await awardBubbles(user.id, 'rescue', `${pantryItemId}:${today}`)
       }
     }
   }

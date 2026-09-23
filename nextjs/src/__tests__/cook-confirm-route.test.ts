@@ -93,10 +93,13 @@ describe('cook/confirm cook_confirm award (#524 review)', () => {
     expect(cookConfirmCalls[1][2]).toBe('recipe-1:2026-08-26')
   })
 
-  it("judges rescue eligibility on the client's local day, not the server's UTC day", async () => {
+  it("judges rescue eligibility on the client's local day, not the server's UTC day — but keys the award on the server day", async () => {
     // 18:00 at UTC-7 on 2026-09-23 is already 2026-09-24 01:00 UTC. The item
     // expires 2026-09-23: on the user's day it's the last day (0 left, a
     // rescue); on the server's day it would already be expired (no rescue).
+    // The eligibility judgement uses the client's date (2026-09-23), so the
+    // rescue still fires — but the ref_key uses the server's date
+    // (2026-09-24), same as cook_confirm, not the client's.
     jest.useFakeTimers().setSystemTime(new Date('2026-09-24T01:00:00.000Z'))
     mockRequireAuth.mockResolvedValue([
       makeSupabase([{ id: 'item-1', expiry_date: '2026-09-23' }]),
@@ -111,6 +114,40 @@ describe('cook/confirm cook_confirm award (#524 review)', () => {
       }),
     )
 
-    expect(awardBubblesMock).toHaveBeenCalledWith(mockUser.id, 'rescue', 'item-1:2026-09-23')
+    expect(awardBubblesMock).toHaveBeenCalledWith(mockUser.id, 'rescue', 'item-1:2026-09-24')
+  })
+
+  it('cannot mint two rescue awards for one deduction by replaying the confirm with a different client date (#570 review)', async () => {
+    // validateClientDate tolerates ±1 day of skew, so a naive client-keyed
+    // ref_key would let a retried/duplicated confirm of the *same* cook —
+    // same recipe, same deducted item — mint a second rescue by sending
+    // yesterday's date on one call and today's on the next.
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-26T12:00:00.000Z'))
+    mockRequireAuth.mockResolvedValue([
+      makeSupabase([{ id: 'item-1', expiry_date: '2026-08-27' }]),
+      mockUser,
+    ])
+
+    await POST(
+      makeRequest({
+        recipe_id: 'recipe-1',
+        deductions: [{ pantry_item_id: 'item-1', deduct_qty: 1 }],
+        date: '2026-08-25',
+      }),
+    )
+    await POST(
+      makeRequest({
+        recipe_id: 'recipe-1',
+        deductions: [{ pantry_item_id: 'item-1', deduct_qty: 1 }],
+        date: '2026-08-26',
+      }),
+    )
+
+    const rescueCalls = (awardBubblesMock.mock.calls as unknown as Array<[string, string, string]>).filter(
+      (call) => call[1] === 'rescue',
+    )
+    expect(rescueCalls).toHaveLength(2)
+    expect(rescueCalls[0][2]).toBe('item-1:2026-08-26')
+    expect(rescueCalls[1][2]).toBe('item-1:2026-08-26')
   })
 })
