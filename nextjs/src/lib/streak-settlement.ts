@@ -101,7 +101,6 @@ export async function settleWeeklyStreak(
       activeWeekKeys.add(isoWeekKey(localDate))
       if (
         row.event_type === 'daily_visit' &&
-        localDate < today &&
         (previousVisitDate === null || localDate > previousVisitDate)
       ) {
         previousVisitDate = localDate
