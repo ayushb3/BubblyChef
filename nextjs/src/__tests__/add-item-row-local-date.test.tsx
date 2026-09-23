@@ -53,7 +53,6 @@ function renderRow(onUpdate: (row: ManualRow) => void) {
   )
 }
 
-const realTZ = process.env.TZ
 const RealDate = global.Date
 
 // 11pm Eastern on Jan 15 is 4am UTC on Jan 16 — a naive toISOString()-based
@@ -78,7 +77,6 @@ class FixedNowDate extends RealDate {
 }
 
 beforeEach(() => {
-  process.env.TZ = 'America/New_York'
   global.Date = FixedNowDate as unknown as DateConstructor
   mockSearchFoods.mockResolvedValue([
     {
@@ -94,7 +92,6 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  process.env.TZ = realTZ
   global.Date = RealDate
 })
 
@@ -114,5 +111,18 @@ it('auto-fills the catalog expiry using the local calendar day, not the UTC day'
 
   await waitFor(() => expect(onChange).toHaveBeenCalled())
   const updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as ManualRow
-  expect(updated.expiry_date).toBe('2026-01-15')
+  // The expected value is the runner's own LOCAL calendar day for the faked
+  // instant. That is correct in any timezone. (Setting process.env.TZ inside a
+  // Jest test file doesn't change the timezone, because Jest sandboxes
+  // process.env; CI runs in UTC.)
+  const now = new RealDate('2026-01-16T04:00:00.000Z')
+  const localDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  expect(updated.expiry_date).toBe(localDay)
+  // The regression this guards: west of UTC (e.g. any US timezone) this instant is
+  // still Jan 15 locally, while toISOString() would say the 16th. In a UTC runner
+  // the two agree, so this branch only bites where the bug can actually occur.
+  if (now.getTimezoneOffset() > 0) {
+    expect(updated.expiry_date).toBe('2026-01-15')
+    expect(updated.expiry_date).not.toBe(now.toISOString().slice(0, 10))
+  }
 })
