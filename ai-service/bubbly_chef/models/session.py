@@ -52,6 +52,41 @@ class PendingProposalMemory(BaseModel):
         default_factory=dict,
         description="term.lower() -> concrete suggestion list",
     )
+    continuity_item_names: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Items from the most recently cleanly-resolved pantry turn, "
+            "kept only as short-lived context (#370) so a vague follow-up "
+            "like 'some dairy' can be told what was proposed earlier. "
+            "Deliberately a SEPARATE list from `item_names`: `item_names` "
+            "tracks genuinely still-unresolved review items (the "
+            "#307-followup mechanism, never expires on its own), while "
+            "this list holds items a clean turn merely PROPOSED -- the "
+            "pantry graph ends at review_gate -> suggest_specifics -> "
+            "finalize_pantry -> update_session with no apply node, and the "
+            "frontend still requires an explicit Approve tap even for a "
+            "high-confidence proposal, so these items may not actually be "
+            "in the pantry yet (orchestrator third-round review on PR "
+            "#600, inline comment on nodes.py:628). This field exists "
+            "purely to be silently read by review_gate's context note "
+            "(workflows/pantry/nodes.py) and to decay via "
+            "`item_continuity_ttl`. Conflating the two (a first version of "
+            "the #370 fix merged continuity names straight into "
+            "`item_names`) made a later review turn drop the ttl marker "
+            "while the names survived the merge, so an ordinary add one "
+            "turn after that review turn would wrongly reprint 'still "
+            "with ...' about items that were merely proposed (orchestrator "
+            "re-review on PR #600, inline comment on nodes.py:609)."
+        ),
+    )
+    item_continuity_ttl: int | None = Field(
+        default=None,
+        description=(
+            "Turns remaining before continuity_item_names from a "
+            "cleanly-resolved pantry turn decays away (#370). None means "
+            "there is nothing to decay -- continuity_item_names is empty."
+        ),
+    )
 
 
 class SessionContext(BaseModel):
