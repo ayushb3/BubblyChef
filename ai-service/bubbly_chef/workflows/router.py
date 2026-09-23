@@ -578,7 +578,7 @@ async def _resolve_cook_context(
             f"{user_id!r}; leaving session un-pinned"
         )
         return None
-    return dict(resolved)
+    return resolved
 
 
 async def update_session_node(state: WorkflowState) -> WorkflowState:
