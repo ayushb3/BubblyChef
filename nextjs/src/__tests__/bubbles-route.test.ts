@@ -140,14 +140,116 @@ describe('GET /api/bubbles', () => {
     expect(data.recent).toEqual(recentEvents)
   })
 
-  it('rejects a date far outside the server clock skew window and does not award', async () => {
+  it('rejects a malformed date (not a date at all) and does not award', async () => {
     mockRequireAuth.mockResolvedValue([{}, mockUser])
 
     const { GET } = await import('@/app/api/bubbles/route')
-    const res = await GET(new Request('http://localhost/api/bubbles?date=2020-01-01'))
+    const res = await GET(new Request('http://localhost/api/bubbles?date=not-a-date'))
 
     expect(res.status).toBe(400)
     expect(upsertMock).not.toHaveBeenCalled()
+  })
+
+  describe('date validation (issue #550/#595 review: date/offset are unverified client input, not a security boundary — see "rate limiting" below for the actual anti-abuse mechanism)', () => {
+    // #595 review finding 1: an earlier revision required `date` to exactly
+    // match `tz_offset_minutes`-shifted server time and 400'd otherwise —
+    // but `tz_offset_minutes` is client-supplied, so that "exact match" was
+    // exact only relative to a number the caller chose (a fabricated offset
+    // makes ANY date "the" accepted one). This is also a READ endpoint (the
+    // award is a side effect of fetching the balance), so per the #595
+    // review it must degrade, not 400, when the client's date doesn't match
+    // the server's own idea of "today". A well-formed date is now accepted
+    // regardless of whether it matches; the 20h cooldown below is what
+    // actually bounds how often `daily_visit` can be awarded.
+
+    it('accepts a well-formed date a day ahead of the server date and returns 200 (no longer 400s)', async () => {
+      const tomorrow = addDaysToDateString(today, 1)
+      const supabase = makeSupabase()
+      mockRequireAuth.mockResolvedValue([supabase, mockUser])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request(`http://localhost/api/bubbles?date=${tomorrow}`))
+
+      expect(res.status).toBe(200)
+      expect(upsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'daily_visit', ref_key: tomorrow }),
+        expect.anything(),
+      )
+    })
+
+    it("accepts a well-formed date far in the past and returns 200 (no longer 400s) — the client's date is not a security boundary", async () => {
+      const supabase = makeSupabase()
+      mockRequireAuth.mockResolvedValue([supabase, mockUser])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request('http://localhost/api/bubbles?date=2020-01-01'))
+
+      expect(res.status).toBe(200)
+      expect(upsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'daily_visit', ref_key: '2020-01-01' }),
+        expect.anything(),
+      )
+    })
+
+    it('accepts the offset-derived local date for a UTC-7 client crossing UTC midnight (still works as a sensible ref_key even though it is not enforced)', async () => {
+      jest.useFakeTimers().setSystemTime(new Date(`${today}T00:30:00.000Z`))
+      const localDate = addDaysToDateString(today, -1)
+      const supabase = makeSupabase()
+      mockRequireAuth.mockResolvedValue([supabase, mockUser])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(
+        new Request(`http://localhost/api/bubbles?date=${localDate}&tz_offset_minutes=-420`),
+      )
+
+      expect(res.status).toBe(200)
+      expect(upsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'daily_visit', ref_key: localDate }),
+        expect.anything(),
+      )
+      jest.useRealTimers()
+    })
+  })
+
+  describe('daily_visit rate limiting (issue #550/#595 review: a 20h cooldown on created_at, not the date, is the actual anti-abuse boundary)', () => {
+    it('skips the daily_visit award when the most recent one was created less than 20h ago, even though the requested date is a NEW ref_key', async () => {
+      // A shifted offset makes tomorrow "the" local date, but the cooldown
+      // blocks the award regardless of what ref_key that date would use.
+      const tomorrow = addDaysToDateString(today, 1)
+      const recentlyCreated = new Date(Date.now() - 60 * 60 * 1000).toISOString() // 1h ago
+      const supabase = makeSupabase({
+        bubble_events: [{ event_type: 'daily_visit', ref_key: today, created_at: recentlyCreated }],
+      })
+      mockRequireAuth.mockResolvedValue([supabase, mockUser])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request(`http://localhost/api/bubbles?date=${tomorrow}`))
+
+      expect(res.status).toBe(200)
+      expect(upsertMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'daily_visit' }),
+        expect.anything(),
+      )
+    })
+
+    it('awards daily_visit again once the most recent one is more than 20h old', async () => {
+      const staleCreated = new Date(Date.now() - 21 * 60 * 60 * 1000).toISOString() // 21h ago
+      const supabase = makeSupabase({
+        bubble_events: [
+          { event_type: 'daily_visit', ref_key: addDaysToDateString(today, -1), created_at: staleCreated },
+        ],
+      })
+      mockRequireAuth.mockResolvedValue([supabase, mockUser])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request(`http://localhost/api/bubbles?date=${today}`))
+
+      expect(res.status).toBe(200)
+      expect(upsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'daily_visit', ref_key: today }),
+        expect.anything(),
+      )
+    })
   })
 
   it('awards the daily_visit event keyed on the date for a valid date', async () => {

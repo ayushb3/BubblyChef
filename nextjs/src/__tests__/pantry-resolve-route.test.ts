@@ -9,6 +9,12 @@
  * the Vercel server the bug was about, regardless of the host machine's own
  * timezone \u2014 the client's local date is passed explicitly as a YYYY-MM-DD
  * string either way and never depends on either clock.
+ *
+ * Issue #550 tightened `validateClientDate` to an exact match against the
+ * offset-derived local date (no more \u00b11 day tolerance), so these requests
+ * now also send the `tz_offset_minutes` that actually justifies the
+ * UTC-7 client scenario the tests describe \u2014 without it, a date one day
+ * behind the server's own UTC date is simply refused.
  */
 
 process.env.TZ = 'UTC'
@@ -84,7 +90,7 @@ describe('resolve rescue eligibility uses the client-local day (#524 review)', (
     const item = { id: 'item-1', name: 'Milk', quantity: 1, unit: 'carton', expiry_date: '2026-08-25' }
     mockRequireAuth.mockResolvedValue([makeSupabase(item, insertMock), mockUser])
 
-    const res = await POST(makeRequest({ outcome: 'used', date: '2026-08-25' }), {
+    const res = await POST(makeRequest({ outcome: 'used', date: '2026-08-25', tz_offset_minutes: -420 }), {
       params: Promise.resolve({ id: 'item-1' }),
     })
 
@@ -105,7 +111,7 @@ describe('resolve rescue eligibility uses the client-local day (#524 review)', (
     const item = { id: 'item-2', name: 'Yogurt', quantity: 1, unit: 'cup', expiry_date: '2026-08-29' }
     mockRequireAuth.mockResolvedValue([makeSupabase(item, insertMock), mockUser])
 
-    const res = await POST(makeRequest({ outcome: 'used', date: '2026-08-25' }), {
+    const res = await POST(makeRequest({ outcome: 'used', date: '2026-08-25', tz_offset_minutes: -420 }), {
       params: Promise.resolve({ id: 'item-2' }),
     })
 

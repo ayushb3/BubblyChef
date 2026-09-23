@@ -14,6 +14,7 @@ import type {
   DeductionItem,
 } from '@/types/recipes'
 import { localDateString } from '@/lib/date'
+import { tzOffsetMinutes } from '@/lib/api/dashboard'
 
 /**
  * Fetch a single saved recipe by id (Next.js CRUD route, not the AI service).
@@ -110,9 +111,16 @@ export async function confirmCook(
   const res = await fetch('/api/ai/recipes/cook/confirm', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    // The client's own local date, used server-side to key `rescue` bubbles
-    // awards for expiring-soon deducted items (#524).
-    body: JSON.stringify({ recipe_id: recipeId, deductions, date: localDateString() }),
+    // The client's own local date + UTC offset, used server-side to key
+    // `cook_confirm` and `rescue` bubbles awards, validated exactly against
+    // the offset so the same cook can't be paid twice across UTC midnight
+    // (#524, tightened by #550).
+    body: JSON.stringify({
+      recipe_id: recipeId,
+      deductions,
+      date: localDateString(),
+      tz_offset_minutes: tzOffsetMinutes(),
+    }),
   })
 
   if (!res.ok) {

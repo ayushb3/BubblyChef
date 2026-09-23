@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { aiProxyJson } from '@/lib/api/ai-proxy'
 import { requireAuth } from '@/lib/response-helpers'
-import { awardBubbles, RESCUE_CAP_PER_COOK } from '@/lib/bubbles'
-import { validateClientDate } from '@/lib/date'
+import { awardBubbles, RESCUE_CAP_PER_COOK, mostRecentEventCreatedAt, isRateLimited } from '@/lib/bubbles'
+import { validateClientDate, parseTzOffsetMinutes } from '@/lib/date'
 import { isExpiringSoon, daysUntilExpiryOn } from '@/lib/pantry-helpers'
 
 export async function POST(request: Request) {
@@ -12,12 +12,21 @@ export async function POST(request: Request) {
 
   const body = await request.json()
 
-  // Client's local date (#524) — same clock-skew tolerance as GET /api/bubbles.
-  // Only used to key the `cook_confirm`/`rescue` awards; a missing or
-  // out-of-range date must never block the cook deduction itself, matching
-  // the never-block contract every other award call site follows (see
-  // bubbles-award-call-sites.test.ts).
-  const validDate = validateClientDate(body.date, 'date') ? null : (body.date as string)
+  // Client's local date (#524), validated EXACTLY against the offset-derived
+  // local date (see `validateClientDate`; no ±1 day tolerance) — but
+  // `tz_offset_minutes` is client-supplied, so that match is exact only
+  // relative to a number the caller chose (#550/#595 review). `validDate` is
+  // therefore used for JUDGEMENT (was this item expiring soon "today") and
+  // to pick a sensible ref_key, never as the reason a second award is
+  // refused — that's the 20h cooldown below, keyed on the server's own
+  // `created_at`. A missing or invalid date/offset must never block the cook
+  // DEDUCTION itself, matching the never-block contract every other award
+  // call site follows (see bubbles-award-call-sites.test.ts) — it only means
+  // both awards below are skipped for that call.
+  const offsetMinutes = parseTzOffsetMinutes(body.tz_offset_minutes)
+  const validDate = validateClientDate(body.date, offsetMinutes, 'date')
+    ? null
+    : (body.date as string)
 
   const deductions = Array.isArray(body.deductions) ? body.deductions : []
   const pantryItemIds: string[] = deductions
@@ -43,35 +52,47 @@ export async function POST(request: Request) {
   const response = await aiProxyJson('/v1/recipes/cook/confirm', body)
 
   if (response.status >= 200 && response.status < 300) {
-    // Pre-existing award (predates #524) — unconditional on `recipe_id`, not
-    // on whether the client sent a usable `date`. A client with stale JS
-    // that never sends `date` at all must still get this. Keyed by the
-    // *server's* UTC date, same as before #524, so a client can't mint a
-    // second `cook_confirm` for one cook by sending yesterday's date on one
-    // request and today's on the next — only the new rescue bonus below is
-    // allowed to depend on `validDate`.
-    const today = new Date().toISOString().slice(0, 10)
-    if (body.recipe_id) {
-      await awardBubbles(user.id, 'cook_confirm', `${body.recipe_id}:${today}`)
+    // cook_confirm (predates #524): keyed on `validDate` when there is one —
+    // the same recipe cooked at 23:50 and 00:10 UTC on the same local day
+    // shares one key. SKIPPED (never a server-UTC fallback) without a usable
+    // `validDate`, same as `rescue` below — the cook DEDUCTION above is
+    // unaffected either way.
+    //
+    // #550/#595 review: keying alone can't close the double pay, because
+    // `validDate` depends on client-supplied `tz_offset_minutes` — a second
+    // confirm of the SAME cook that simply omits the date (or sends a
+    // different offset) produces a DIFFERENT key from the first, valid-dated
+    // confirm, and would pay again. The actual boundary is this 20h cooldown
+    // on the server's own `created_at` for THIS recipe's `cook_confirm`
+    // awards, independent of what ref_key any individual call would use —
+    // at most one `cook_confirm` per recipe per ~20h, whatever the date says.
+    if (body.recipe_id && validDate) {
+      const lastCookConfirmCreatedAt = await mostRecentEventCreatedAt(
+        supabase,
+        user.id,
+        'cook_confirm',
+        `${body.recipe_id}:`,
+      )
+      if (!isRateLimited(lastCookConfirmCreatedAt)) {
+        await awardBubbles(user.id, 'cook_confirm', `${body.recipe_id}:${validDate}`)
+      }
     }
 
     // Rescue bonus (#524): only after the microservice confirms the cook
     // (2xx), one per expiring-soon deducted item, deduplicated and capped.
-    // The *judgement* (was this item expiring soon at cook time) uses the
-    // client's local date — that's the whole point of validDate, a user
-    // near local midnight must not get misclassified by the server's UTC
-    // clock. But the ref_key that makes the award idempotent uses the
-    // *server's* date, same as cook_confirm above (#570 review): validDate
-    // is client-supplied and validateClientDate tolerates ±1 day of skew,
-    // so a client resending the same cook confirm with yesterday's date on
-    // one call and today's on the next would otherwise mint two rescue
-    // awards for what's really one deduction of the same item.
+    // Both the *judgement* (was this item expiring soon at cook time) and
+    // the ref_key (#550: agree with `cook_confirm` above, and with
+    // `daily_visit`'s key on `GET /api/bubbles`) use `validDate` — the
+    // client's exactly-validated local date. Skipped entirely (not
+    // server-UTC-keyed, unlike cook_confirm) when there's no usable
+    // `validDate`, since a wrongly-classified rescue is worse than a missed
+    // one and the eligibility judgement itself needs a real local date.
     if (validDate) {
       const expiringSoonItemIds = Array.from(new Set(pantryItemIds)).filter((id) =>
         isExpiringSoon(daysUntilExpiryOn(expiryByItemId.get(id) ?? null, validDate)),
       )
       for (const pantryItemId of expiringSoonItemIds.slice(0, RESCUE_CAP_PER_COOK)) {
-        await awardBubbles(user.id, 'rescue', `${pantryItemId}:${today}`)
+        await awardBubbles(user.id, 'rescue', `${pantryItemId}:${validDate}`)
       }
     }
   }
