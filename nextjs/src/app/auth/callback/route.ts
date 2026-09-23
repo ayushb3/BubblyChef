@@ -27,8 +27,11 @@ export async function GET(request: Request) {
   const errorCode = searchParams.get('error_code')
   const next = searchParams.get('next') ?? '/'
 
-  if (errorDescription) {
-    const params = new URLSearchParams({ error: errorDescription })
+  // Any provider error, even one without a description, goes back to
+  // /login with its code so a collision (#389) is still recognised.
+  const providerError = errorDescription ?? searchParams.get('error')
+  if (providerError || errorCode) {
+    const params = new URLSearchParams({ error: providerError ?? 'Sign-in failed' })
     if (errorCode) params.set('error_code', errorCode)
     return NextResponse.redirect(`${origin}/login?${params.toString()}`)
   }

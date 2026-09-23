@@ -74,6 +74,19 @@ describe('GET /auth/callback (#383)', () => {
     expect(location.searchParams.get('error_code')).toBe('identity_already_exists')
   })
 
+  it('forwards error_code even when the redirect has no error_description (#389 review)', async () => {
+    const request = new Request(
+      'http://localhost/auth/callback?error=server_error&error_code=email_exists'
+    )
+    const res = await GET(request)
+
+    expect(mockExchangeCodeForSession).not.toHaveBeenCalled()
+    const location = new URL(res.headers.get('location')!)
+    expect(location.pathname).toBe('/login')
+    expect(location.searchParams.get('error')).toBe('server_error')
+    expect(location.searchParams.get('error_code')).toBe('email_exists')
+  })
+
   it('forwards error_code when the collision surfaces at the code exchange instead (#389)', async () => {
     mockExchangeCodeForSession.mockResolvedValue({
       error: { message: 'Identity is already linked', code: 'identity_already_exists' },

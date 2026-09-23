@@ -16,6 +16,27 @@ const IDENTITY_ALREADY_EXISTS_MESSAGE =
 // email_exists = its email matches an existing (e.g. email/password) user.
 const COLLISION_CODES = new Set(['identity_already_exists', 'email_exists'])
 
+// Shown when a collision can't be solved by switching accounts: the visitor
+// isn't a guest (so the plain sign-in itself collided), or a switch was
+// already tried once and came back with the same error.
+const EXISTING_EMAIL_MESSAGE =
+  'That email already has a BubblyChef account. Sign in with your email and password instead.'
+
+// One-shot guard so an auto-switch that collides again can't loop.
+const SWITCH_TRIED_KEY = 'bubblychef:collision-switch-tried'
+
+function readSwitchTried(): boolean {
+  try { return window.sessionStorage.getItem(SWITCH_TRIED_KEY) === '1' } catch { return false }
+}
+function writeSwitchTried(tried: boolean): void {
+  try {
+    if (tried) window.sessionStorage.setItem(SWITCH_TRIED_KEY, '1')
+    else window.sessionStorage.removeItem(SWITCH_TRIED_KEY)
+  } catch {
+    // ignore: without storage the worst case is the manual button below
+  }
+}
+
 // Shown while a collision auto-switches to a plain Google sign-in.
 const COLLISION_SWITCHING_MESSAGE =
   "You already have a BubblyChef account with that Google login — signing you in. Your guest pantry stays behind."
@@ -55,14 +76,17 @@ export default function LoginPage() {
     const oauthErrorCode = params.get('error_code')
     if (oauthError) {
       if (oauthErrorCode && COLLISION_CODES.has(oauthErrorCode)) {
-        void switchToExistingAccount()
+        void handleCollision()
       } else {
+        writeSwitchTried(false)
         setError(oauthError)
       }
       const url = new URL(window.location.href)
       url.searchParams.delete('error')
       url.searchParams.delete('error_code')
       window.history.replaceState({}, '', url.toString())
+    } else {
+      writeSwitchTried(false)
     }
     // Mount-only: read the redirect's error params once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -103,6 +127,24 @@ export default function LoginPage() {
     }
   }
 
+  // Only a guest whose link collided is switched, and only once per attempt.
+  // A non-guest got here from a plain sign-in, so switching would just repeat
+  // it; a second collision after a switch means the same thing. Both get the
+  // email/password hint instead, with no mention of a guest pantry.
+  const handleCollision = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!isGuestUser(user) || readSwitchTried()) {
+      writeSwitchTried(false)
+      setSwitchingAccount(false)
+      setShowSignInInstead(false)
+      setGoogleLoading(false)
+      setError(EXISTING_EMAIL_MESSAGE)
+      return
+    }
+    writeSwitchTried(true)
+    await switchToExistingAccount()
+  }
+
   const handleGoogleSignIn = async () => {
     setError(null)
     setCheckEmail(false)
@@ -138,7 +180,7 @@ export default function LoginPage() {
           // Synchronous collision path — the async/redirect path is handled
           // by the ?error_code=identity_already_exists branch above.
           if (error.code && COLLISION_CODES.has(error.code)) {
-            await switchToExistingAccount()
+            await handleCollision()
             return
           }
           throw error

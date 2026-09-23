@@ -40,6 +40,8 @@ function setUrl(search: string) {
 
 afterEach(() => {
   window.history.pushState({}, '', '/login')
+  window.sessionStorage.clear()
+  mockGetUser.mockResolvedValue({ data: { user: null } })
 })
 
 describe('login page reads the OAuth callback error (#383)', () => {
@@ -183,6 +185,7 @@ describe('guest Google sign-in should link identity, not fork a new account (#38
   it.each(['identity_already_exists', 'email_exists'])(
     'auto-signs in when the redirect back from Google carries error_code=%s',
     async (code) => {
+      mockGetUser.mockResolvedValue({ data: { user: { id: 'guest-1', is_anonymous: true } } })
       mockSignInWithOAuth.mockClear()
       setUrl(
         '?error=' +
@@ -205,6 +208,7 @@ describe('guest Google sign-in should link identity, not fork a new account (#38
   )
 
   it('falls back to the friendly message and manual button when the auto sign-in cannot start', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'guest-1', is_anonymous: true } } })
     mockSignInWithOAuth.mockResolvedValueOnce({ error: new Error('popup blocked') })
     setUrl('?error=x&error_code=email_exists')
     render(<LoginPage />)
@@ -221,5 +225,35 @@ describe('guest Google sign-in should link identity, not fork a new account (#38
         expect.objectContaining({ provider: 'google' })
       )
     })
+  })
+  const EXISTING_EMAIL =
+    'That email already has a BubblyChef account. Sign in with your email and password instead.'
+
+  it('does not auto-switch a signed-out visitor, and says nothing about a guest pantry', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } })
+    mockSignInWithOAuth.mockClear()
+    setUrl('?error=x&error_code=email_exists')
+    render(<LoginPage />)
+
+    expect(await screen.findByText(EXISTING_EMAIL)).toBeInTheDocument()
+    expect(mockSignInWithOAuth).not.toHaveBeenCalled()
+    expect(screen.queryByText(/guest pantry/)).not.toBeInTheDocument()
+  })
+
+  it('does not loop: a second collision after an auto-switch stops with the email hint', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'guest-1', is_anonymous: true } } })
+    mockSignInWithOAuth.mockClear()
+
+    setUrl('?error=x&error_code=email_exists')
+    const first = render(<LoginPage />)
+    await waitFor(() => expect(mockSignInWithOAuth).toHaveBeenCalledTimes(1))
+    first.unmount()
+
+    // The switch came back with the same collision.
+    setUrl('?error=x&error_code=email_exists')
+    render(<LoginPage />)
+
+    expect(await screen.findByText(EXISTING_EMAIL)).toBeInTheDocument()
+    expect(mockSignInWithOAuth).toHaveBeenCalledTimes(1)
   })
 })
