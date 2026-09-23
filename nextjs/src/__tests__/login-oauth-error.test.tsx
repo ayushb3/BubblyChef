@@ -86,4 +86,96 @@ describe('guest Google sign-in should link identity, not fork a new account (#38
     })
     expect(mockSignInWithOAuth).not.toHaveBeenCalled()
   })
+
+  it('calls signInWithOAuth (not linkIdentity) when there is no active session', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } })
+    render(<LoginPage />)
+
+    screen.getByText('Continue with Google').click()
+
+    await waitFor(() => expect(mockGetUser).toHaveBeenCalled())
+
+    await waitFor(() => {
+      expect(mockSignInWithOAuth).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'google' })
+      )
+    })
+    expect(mockLinkIdentity).not.toHaveBeenCalled()
+  })
+
+  it('calls signInWithOAuth (not linkIdentity) when the active session is a real (non-guest) user', async () => {
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: 'real-1', is_anonymous: false } },
+    })
+    render(<LoginPage />)
+
+    screen.getByText('Continue with Google').click()
+
+    await waitFor(() => expect(mockGetUser).toHaveBeenCalled())
+
+    await waitFor(() => {
+      expect(mockSignInWithOAuth).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'google' })
+      )
+    })
+    expect(mockLinkIdentity).not.toHaveBeenCalled()
+  })
+
+  it('shows a friendly message and fallback button on a synchronous identity_already_exists error from linkIdentity', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'guest-1', is_anonymous: true } } })
+    mockLinkIdentity.mockResolvedValue({
+      error: { code: 'identity_already_exists', message: 'Identity is already linked to another user' },
+    })
+    render(<LoginPage />)
+
+    screen.getByText('Continue with Google').click()
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "That Google account already belongs to a different BubblyChef account. You can sign in to it instead, but your guest pantry won't move over."
+        )
+      ).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Identity is already linked to another user')).not.toBeInTheDocument()
+    expect(screen.getByText('Sign in to that account instead')).toBeInTheDocument()
+  })
+
+  it('the "sign in to that account instead" fallback calls signInWithOAuth directly', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'guest-1', is_anonymous: true } } })
+    mockLinkIdentity.mockResolvedValue({
+      error: { code: 'identity_already_exists', message: 'Identity is already linked to another user' },
+    })
+    render(<LoginPage />)
+
+    screen.getByText('Continue with Google').click()
+    await waitFor(() => screen.getByText('Sign in to that account instead'))
+
+    mockSignInWithOAuth.mockClear()
+    screen.getByText('Sign in to that account instead').click()
+
+    await waitFor(() => {
+      expect(mockSignInWithOAuth).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'google' })
+      )
+    })
+  })
+
+  it('shows the friendly message and fallback button when the redirect back from Google carries error_code=identity_already_exists', () => {
+    setUrl(
+      '?error=' +
+        encodeURIComponent('Identity is already linked to another user') +
+        '&error_code=identity_already_exists'
+    )
+    render(<LoginPage />)
+
+    expect(
+      screen.getByText(
+        "That Google account already belongs to a different BubblyChef account. You can sign in to it instead, but your guest pantry won't move over."
+      )
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Identity is already linked to another user')).not.toBeInTheDocument()
+    expect(screen.getByText('Sign in to that account instead')).toBeInTheDocument()
+    expect(window.location.search).toBe('')
+  })
 })
