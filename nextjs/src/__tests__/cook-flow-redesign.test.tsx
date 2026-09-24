@@ -774,6 +774,55 @@ describe('summariseDeductions — compound substitution components (#284)', () =
   // showed just one field. The merge must be idempotent per
   // (ingredient_name, pantry_item_id) across the WHOLE suggestions list, not
   // just within one suggestion's component_items.
+  // Regression for the claude[bot] round-5 review comment on PR #616
+  // (CookModal.tsx:302): a component whose base_unit couldn't be derived
+  // (_component_base_unit() returned None) still had its typed override
+  // folded into deductions and compoundDeductions here, even though
+  // repo.deduct_pantry_item refuses any row with no derivable base unit and
+  // the write silently never applies. summariseDeductions must treat a
+  // null-base_unit component as never-deductible, regardless of what the
+  // override map holds for its key.
+  it('excludes a component with a null base_unit from deductions and compoundDeductions even when an override is set', () => {
+    const noUnit: CompoundSuggestion = {
+      ingredient_name: 'heavy cream',
+      components: ['mystery paste'],
+      note: 'Whisk in the paste',
+      component_items: [{ pantry_item_id: 'mystery-1', name: 'mystery paste', base_unit: null }],
+    }
+    const p = proposalOf([])
+    const withNoUnit = { ...p, missing: ['heavy cream'], compound_suggestions: [noUnit] } as CookProposal
+    const key = compoundOverrideKey('heavy cream', 'mystery-1')
+    const { deductions, compoundDeductions } = summariseDeductions(withNoUnit, { [key]: '2' })
+
+    expect(deductions).toHaveLength(0)
+    expect(compoundDeductions).toHaveLength(0)
+  })
+
+  it('deducts the other components in a suggestion normally when one has a null base_unit', () => {
+    const mixed: CompoundSuggestion = {
+      ingredient_name: 'heavy cream',
+      components: ['butter', 'mystery paste'],
+      note: 'Melt butter, whisk in the paste',
+      component_items: [
+        { pantry_item_id: 'butter-1', name: 'butter', base_unit: 'g' },
+        { pantry_item_id: 'mystery-1', name: 'mystery paste', base_unit: null },
+      ],
+    }
+    const p = proposalOf([])
+    const withMixed = { ...p, missing: ['heavy cream'], compound_suggestions: [mixed] } as CookProposal
+    const butterKey = compoundOverrideKey('heavy cream', 'butter-1')
+    const noUnitKey = compoundOverrideKey('heavy cream', 'mystery-1')
+    const { deductions, compoundDeductions } = summariseDeductions(withMixed, {
+      [butterKey]: '50',
+      [noUnitKey]: '2',
+    })
+
+    expect(deductions).toEqual([{ pantry_item_id: 'butter-1', deduct_qty: 50, base_unit: 'g' }])
+    expect(compoundDeductions).toEqual([
+      { ingredientName: 'heavy cream', componentName: 'butter', deductQty: 50 },
+    ])
+  })
+
   it('deducts a typed quantity once, not twice, when two suggestions share an ingredient_name', () => {
     const first: CompoundSuggestion = {
       ingredient_name: 'heavy cream',
@@ -866,6 +915,62 @@ describe('MissingItemsList — compound component quantity inputs (#284)', () =>
     const input = screen.getByLabelText(/deduct quantity for butter \(heavy cream substitution\)/i)
     fireEvent.change(input, { target: { value: '50' } })
     expect(onOverrideChange).toHaveBeenCalledWith(compoundOverrideKey('heavy cream', 'butter-1'), '50')
+  })
+
+  // Regression for the claude[bot] round-5 review comment on PR #616
+  // (CookModal.tsx:302): before this fix, a component with base_unit: null
+  // still rendered a typeable quantity input (with no unit label — the only
+  // thing that changed for it), so the user could type a number that could
+  // never actually be deducted (repo.deduct_pantry_item refuses a row with
+  // no derivable base unit). No input should render for it at all, and a
+  // short note should explain why instead.
+  it('renders no input for a component with a null base_unit, and a note instead', () => {
+    const noUnit: CompoundSuggestion = {
+      ingredient_name: 'heavy cream',
+      components: ['mystery paste'],
+      note: 'Whisk in the paste',
+      component_items: [{ pantry_item_id: 'mystery-1', name: 'mystery paste', base_unit: null }],
+    }
+    render(
+      <MissingItemsList
+        missing={['heavy cream']}
+        compoundSuggestions={[noUnit]}
+        overrides={{}}
+        onOverrideChange={jest.fn()}
+      />,
+    )
+    expect(
+      screen.queryByLabelText(/deduct quantity for mystery paste \(heavy cream substitution\)/i),
+    ).not.toBeInTheDocument()
+    expect(screen.getAllByText(/mystery paste/i).length).toBeGreaterThan(0)
+    expect(screen.getByText(/can.t deduct mystery paste automatically/i)).toBeInTheDocument()
+  })
+
+  it('renders an input for components with a base_unit and a note for the one without, in the same suggestion', () => {
+    const mixed: CompoundSuggestion = {
+      ingredient_name: 'heavy cream',
+      components: ['butter', 'mystery paste'],
+      note: 'Melt butter, whisk in the paste',
+      component_items: [
+        { pantry_item_id: 'butter-1', name: 'butter', base_unit: 'g' },
+        { pantry_item_id: 'mystery-1', name: 'mystery paste', base_unit: null },
+      ],
+    }
+    render(
+      <MissingItemsList
+        missing={['heavy cream']}
+        compoundSuggestions={[mixed]}
+        overrides={{}}
+        onOverrideChange={jest.fn()}
+      />,
+    )
+    expect(
+      screen.getByLabelText(/deduct quantity for butter \(heavy cream substitution\)/i),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByLabelText(/deduct quantity for mystery paste \(heavy cream substitution\)/i),
+    ).not.toBeInTheDocument()
+    expect(screen.getByText(/can.t deduct mystery paste automatically/i)).toBeInTheDocument()
   })
 })
 

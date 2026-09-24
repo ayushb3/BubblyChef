@@ -280,6 +280,26 @@ export function MissingItemsList({
                     </span>
                     {componentItems.map((component) => {
                       const key = compoundOverrideKey(suggestion.ingredient_name, component.pantry_item_id)
+                      // A component with no derivable base_unit can never
+                      // actually be deducted — repo.deduct_pantry_item
+                      // refuses a row with no recorded or derivable base
+                      // unit — so there is no unit the typed number could be
+                      // interpreted in. Render no input for it at all rather
+                      // than one whose value silently goes nowhere (claude[bot]
+                      // round-5 review on PR #616, CookModal.tsx:302).
+                      if (!component.base_unit) {
+                        return (
+                          <div key={key} className="flex items-center gap-1.5">
+                            <span className="flex-1 not-italic text-[var(--color-text)] font-semibold">
+                              {component.name}
+                            </span>
+                            <span className="italic text-[var(--color-muted)] text-right">
+                              can&apos;t deduct {component.name} automatically (no unit on that
+                              pantry item)
+                            </span>
+                          </div>
+                        )
+                      }
                       return (
                         <div key={key} className="flex items-center gap-1.5">
                           <span className="flex-1 not-italic text-[var(--color-text)] font-semibold">
@@ -297,9 +317,7 @@ export function MissingItemsList({
                             placeholder="qty"
                             aria-label={`Deduct quantity for ${component.name} (${name} substitution)`}
                           />
-                          {component.base_unit && (
-                            <span className="not-italic w-8">{component.base_unit}</span>
-                          )}
+                          <span className="not-italic w-8">{component.base_unit}</span>
                         </div>
                       )
                     })}
@@ -438,6 +456,14 @@ export function summariseDeductions(
     // that somehow still carries two component_items for the same pantry
     // row, which would otherwise merge (and double-deduct) twice here.
     for (const component of dedupeByPantryItemId(suggestion.component_items ?? [])) {
+      // No input is ever rendered for a null-base_unit component (see
+      // MissingItemsList above), so no override should exist for its key in
+      // practice — but this guards defensively against a stale overrides
+      // entry (e.g. a suggestion re-resolving to a different component
+      // shape between renders) still reaching repo.deduct_pantry_item, which
+      // refuses the row and silently drops the write anyway.
+      if (!component.base_unit) continue
+
       const key = compoundOverrideKey(suggestion.ingredient_name, component.pantry_item_id)
       if (appliedCompoundKeys.has(key)) continue
       appliedCompoundKeys.add(key)
