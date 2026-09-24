@@ -734,6 +734,34 @@ describe('summariseDeductions — compound substitution components (#284)', () =
     expect(deductions).toHaveLength(1) // only the matched pasta row
     expect(compoundDeductions).toHaveLength(0)
   })
+
+  // Regression for the claude[bot] review on PR #616 (inline comment on
+  // CookModal.tsx:402): two model-supplied component names that normalize
+  // onto the same pantry row (e.g. "milk" and "whole milk") used to come
+  // back as two component_items sharing one pantry_item_id. They also share
+  // one compoundOverrideKey, so both inputs mirror the same override value —
+  // but before this fix each still ran through mergeDeduction separately,
+  // adding the typed quantity twice. Defensive dedupe here guards against
+  // any proposal shape (old cache, future regression) that still carries
+  // the duplicate, even though the backend itself now dedupes.
+  it('deducts a typed quantity once, not twice, when two component_items share a pantry_item_id', () => {
+    const duplicated: CompoundSuggestion = {
+      ingredient_name: 'custard base',
+      components: ['milk', 'milk'],
+      note: 'Warm the milk',
+      component_items: [
+        { pantry_item_id: 'milk-1', name: 'milk', base_unit: 'ml' },
+        { pantry_item_id: 'milk-1', name: 'milk', base_unit: 'ml' },
+      ],
+    }
+    const p = proposalOf([])
+    const withDuplicate = { ...p, missing: ['custard base'], compound_suggestions: [duplicated] } as CookProposal
+    const key = compoundOverrideKey('custard base', 'milk-1')
+    const { deductions, compoundDeductions } = summariseDeductions(withDuplicate, { [key]: '100' })
+
+    expect(deductions).toEqual([{ pantry_item_id: 'milk-1', deduct_qty: 100, base_unit: 'ml' }])
+    expect(compoundDeductions).toHaveLength(1)
+  })
 })
 
 describe('MissingItemsList — compound component quantity inputs (#284)', () => {
@@ -763,6 +791,27 @@ describe('MissingItemsList — compound component quantity inputs (#284)', () =>
     expect(screen.queryByLabelText(/deduct quantity for/i)).not.toBeInTheDocument()
     // The suggestion text itself is unaffected.
     expect(screen.getByLabelText(/compound substitution suggestion for heavy cream/i)).toBeInTheDocument()
+  })
+
+  it('renders a single input, not two, when two component_items share a pantry_item_id', () => {
+    const duplicated: CompoundSuggestion = {
+      ingredient_name: 'custard base',
+      components: ['milk', 'milk'],
+      note: 'Warm the milk',
+      component_items: [
+        { pantry_item_id: 'milk-1', name: 'milk', base_unit: 'ml' },
+        { pantry_item_id: 'milk-1', name: 'milk', base_unit: 'ml' },
+      ],
+    }
+    render(
+      <MissingItemsList
+        missing={['custard base']}
+        compoundSuggestions={[duplicated]}
+        overrides={{}}
+        onOverrideChange={jest.fn()}
+      />,
+    )
+    expect(screen.getAllByLabelText(/deduct quantity for milk \(custard base substitution\)/i)).toHaveLength(1)
   })
 
   it('calls onOverrideChange with the compound override key when a quantity is typed', () => {

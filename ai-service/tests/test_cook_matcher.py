@@ -1671,6 +1671,42 @@ class TestCompoundComponentItems:
 
         assert not any(m.pantry_item_id in {butter.id, milk.id} for m in proposal.matches)
 
+    @pytest.mark.asyncio
+    async def test_component_items_dedupe_by_pantry_item_id(self) -> None:
+        """Two model-supplied names that normalize onto one pantry row must
+        produce a single component_item, not two mirrored entries that would
+        double-deduct whatever quantity the user types (issue #284 follow-up)."""
+        milk = _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml")
+        pantry = [milk]
+        ingredients = [{"name": "custard base", "quantity": 200.0, "unit": "ml"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="custard base",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["milk", "whole milk"],
+                        compound_note="Warm the milk",
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert len(proposal.compound_suggestions) == 1
+        sug = proposal.compound_suggestions[0]
+        assert [c.pantry_item_id for c in sug.component_items] == [milk.id]
+        assert len(sug.component_items) == 1
+        # The prose listing may still echo the model's two names verbatim —
+        # only the structured, deducted-against list must be deduped.
+        assert sug.components == ["milk", "milk"]
+
 
 class TestUnitConflictFallback:
     """Issue #209 — soft fallback replaces blocking unit_conflict for unresolvable units.

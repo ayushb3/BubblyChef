@@ -6,7 +6,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
-import type { CookProposal, CompoundSuggestion, IngredientMatch, DeductionItem, ExpiredMatchedItem } from '@/types/recipes'
+import type { CookProposal, CompoundSuggestion, CompoundComponent, IngredientMatch, DeductionItem, ExpiredMatchedItem } from '@/types/recipes'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 import { endCookSession, isCookSessionEnded } from '@/lib/cook-session'
 
@@ -180,6 +180,27 @@ export function compoundOverrideKey(ingredientName: string, pantryItemId: string
 }
 
 /**
+ * Defensive dedupe by `pantry_item_id`, keeping the first occurrence.
+ *
+ * The backend already dedupes `resolved_component_items` before it ever
+ * reaches the wire (issue #284 follow-up), but two component_items sharing a
+ * pantry_item_id would otherwise render mirrored inputs with the same React
+ * key and the same override key, and double-deduct whatever quantity the
+ * user types. Applied everywhere component_items is consumed, not just where
+ * it renders.
+ */
+export function dedupeByPantryItemId(items: CompoundComponent[]): CompoundComponent[] {
+  const seen = new Set<string>()
+  const deduped: CompoundComponent[] = []
+  for (const item of items) {
+    if (seen.has(item.pantry_item_id)) continue
+    seen.add(item.pantry_item_id)
+    deduped.push(item)
+  }
+  return deduped
+}
+
+/**
  * "Not in pantry" list — exported for unit testing.
  *
  * Items with a note render as a small vertical block (name + muted note below).
@@ -216,7 +237,13 @@ export function MissingItemsList({
         const suggestion = compoundSuggestions.find(
           (s: CompoundSuggestion) => s.ingredient_name.toLowerCase() === name.toLowerCase(),
         )
-        const componentItems = suggestion?.component_items ?? []
+        // Defensive dedupe: the backend keys resolved_component_items by
+        // pantry_item_id (issue #284 follow-up), but an older cached proposal
+        // or a future regression could still hand us two component_items for
+        // the same row. Rendering both would give two inputs sharing one
+        // React key and one override key, silently mirroring whatever the
+        // user types into either — so collapse to the first here too.
+        const componentItems = dedupeByPantryItemId(suggestion?.component_items ?? [])
         return (
           <div key={name} className="flex flex-col gap-0.5">
             {note ? (
@@ -399,7 +426,10 @@ export function summariseDeductions(
   // pantry_item_id rather than always appending a fresh entry.
   const compoundDeductions: Array<{ ingredientName: string; componentName: string; deductQty: number }> = []
   for (const suggestion of proposal.compound_suggestions ?? []) {
-    for (const component of suggestion.component_items ?? []) {
+    // Defensive dedupe (see dedupeByPantryItemId): guards against a proposal
+    // that somehow still carries two component_items for the same pantry
+    // row, which would otherwise merge (and double-deduct) twice here.
+    for (const component of dedupeByPantryItemId(suggestion.component_items ?? [])) {
       const key = compoundOverrideKey(suggestion.ingredient_name, component.pantry_item_id)
       const deductQty = parseFloat(overrides[key] ?? '0') || 0
       if (deductQty <= 0) continue

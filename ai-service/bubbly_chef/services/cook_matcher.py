@@ -13,6 +13,7 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -829,6 +830,7 @@ async def resolve_aliases_with_llm(
                 all_present = True
                 resolved_components: list[str] = []
                 resolved_component_items: list[CompoundComponent] = []
+                seen_pantry_item_ids: set[UUID] = set()
                 for component_name in entry.compound_components:
                     comp_norm = _normalize_ingredient_name(component_name)
                     if comp_norm not in pantry_by_norm:
@@ -841,6 +843,14 @@ async def resolve_aliases_with_llm(
                     # Use the pantry's display name so the UI can show something consistent.
                     component_item = pantry_by_norm[comp_norm]
                     resolved_components.append(component_item.name)
+                    # Two model-supplied names (e.g. "milk" and "whole milk") can
+                    # normalize onto the same pantry row. Keep the prose list
+                    # (resolved_components) echoing the model verbatim, but dedupe
+                    # the structured items by pantry_item_id, first one wins — a
+                    # duplicate here would double-deduct what the user types.
+                    if component_item.id in seen_pantry_item_ids:
+                        continue
+                    seen_pantry_item_ids.add(component_item.id)
                     resolved_component_items.append(
                         CompoundComponent(
                             pantry_item_id=component_item.id,
