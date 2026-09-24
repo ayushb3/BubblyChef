@@ -203,34 +203,21 @@ describe('deriveInboxEntries', () => {
     expect(result.entries[0].href).toBeNull()
   })
 
-  // #496's acceptance criteria ask, verbatim: "With Spec B.3 merged, a
-  // completed timer appears as an entry until dismissed. (If B.3 is not
-  // merged yet, the hook's timer source is a no-op and the test for it is
-  // skipped with a reason.)" B.3 hasn't merged — there is no real timer
-  // store to drive `useInboxEntries`' `timers` input end to end, only the
-  // synthetic feed the test above exercises against the pure derivation.
-  // Skipped per that explicit instruction, not left out.
-  it.skip('shows a completed timer surfaced by the real Spec B.3 store (skipped: Spec B.3 is not merged — no timer store exists yet to drive this end to end)', () => {
-    // Placeholder for the real end-to-end wiring: once issue #495/PR #619
-    // (Spec B.3 cooking timers) merges and `useInboxEntries` reads the real
-    // timer store instead of leaving `timers` undefined, a completed timer
-    // must still show up as a dismiss-only entry (`href: null`) alongside
-    // the rest of the inbox, ordered after low-stock and before the cook
-    // nudge (sortKey 3000, between low_stock's 2000 and cook_nudge's 4000).
-    // Exercised here against the pure derivation as a stand-in for the real
-    // store's feed — the orchestrator will swap this for a real integration
-    // test against the timer store once it exists, per the PR sequencing
-    // note, and un-skip it then.
+  it('orders a completed timer after low-stock and before the cook nudge', () => {
+    // Real end-to-end coverage of this now lives in `notification-bell.test.tsx`
+    // (#619: `useInboxEntries` reads the real `useCookingTimers` store).
+    // This still pins the pure-derivation ordering: timer (sortKey 3000)
+    // sorts after low-stock (2000) and before the cook nudge (4000).
     const result = deriveInboxEntries(
       {
         pantryItems: [pantryItem({ id: 'out', name: 'Eggs', quantity: 0 })],
-        recipes: [{ last_cooked_at: NOW.toISOString() }],
+        recipes: [{ last_cooked_at: '2026-09-01T00:00:00Z' }],
         timers: [{ id: 't1', label: 'Pasta' }],
       },
       NOW,
     )
 
-    expect(result.entries.map((e) => e.kind)).toEqual(['low_stock', 'timer'])
+    expect(result.entries.map((e) => e.kind)).toEqual(['low_stock', 'timer', 'cook_nudge'])
     expect(result.entries[1].href).toBeNull()
     expect(result.entries[1].copy).toBe('Pasta timer finished')
   })
