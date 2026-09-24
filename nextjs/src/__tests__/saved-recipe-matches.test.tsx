@@ -6,8 +6,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import SavedRecipeMatches from '@/components/chat/SavedRecipeMatches'
 import type { SavedRecipeMatch } from '@/types/chat'
-// Real (unmocked) cook-session module — localStorage-backed, jsdom provides it.
-import { endCookSession, isCookSessionEnded } from '@/lib/cook-session'
 
 const ONE: SavedRecipeMatch[] = [
   { id: 'r1', title: 'Butter Chicken', description: 'Creamy tomato curry.', cuisine: 'Indian' },
@@ -20,10 +18,6 @@ const MANY: SavedRecipeMatch[] = [
 ]
 
 describe('SavedRecipeMatches', () => {
-  afterEach(() => {
-    window.localStorage.clear()
-  })
-
   // ── Zero ───────────────────────────────────────────────────────────────
   it('renders nothing when there are no matches', () => {
     const { container } = render(
@@ -33,13 +27,15 @@ describe('SavedRecipeMatches', () => {
   })
 
   // ── One ────────────────────────────────────────────────────────────────
-  it('renders a single card with Open recipe and Cook this actions', () => {
+  it('renders a single card with an Open recipe link and a Cook this button', () => {
     render(<SavedRecipeMatches matches={ONE} onSelect={jest.fn()} />)
     expect(screen.getByText('Butter Chicken')).toBeInTheDocument()
     const openLink = screen.getByRole('link', { name: 'Open recipe' })
     expect(openLink).toHaveAttribute('href', '/recipes/r1')
-    const cookLink = screen.getByRole('link', { name: 'Cook this' })
-    expect(cookLink).toHaveAttribute('href', '/chat?cooking=r1')
+    // Cook this is a <button>, not a <Link> — see the PR #614 round-4 note
+    // below: it defers entirely to the shared onSelect handler instead of
+    // owning its own navigation/cook-session logic.
+    expect(screen.getByRole('button', { name: 'Cook this' })).toBeInTheDocument()
   })
 
   it('does not render a picker list for a single match', () => {
@@ -52,29 +48,30 @@ describe('SavedRecipeMatches', () => {
     const openLink = screen.getByRole('link', { name: 'Open recipe' })
     expect(openLink).toHaveAttribute('aria-disabled', 'true')
     expect(openLink.className).toContain('pointer-events-none')
+    expect(screen.getByRole('button', { name: 'Cook this' })).toBeDisabled()
   })
 
-  it('clears a stale ended-cook record when Cook this is tapped', () => {
-    // Regression for PR #614 re-review finding 1: the single-match card's
-    // Cook this link is a plain <Link href="/chat?cooking=<id>">, so unless
-    // its onClick clears the ended record first, a previously-cooked recipe
-    // (isCookSessionEnded, localStorage-backed) has its ?cooking= param
-    // stripped straight back out on landing — the tap becomes a silent
-    // no-op for exactly the recipes users look up most.
-    endCookSession('r1')
-    expect(isCookSessionEnded('r1')).toBe(true)
-
-    render(<SavedRecipeMatches matches={ONE} onSelect={jest.fn()} />)
-    fireEvent.click(screen.getByRole('link', { name: 'Cook this' }))
-
-    expect(isCookSessionEnded('r1')).toBe(false)
+  it('calls onSelect with the match when Cook this is tapped (single match)', () => {
+    // PR #614 round 4: the single-match card's Cook this button must route
+    // through the exact same onSelect callback the many-match tap uses —
+    // one function (handlePickSavedRecipe in app/chat/page.tsx) owns
+    // starting the cook session, clearing a stale dismissal, and pinning
+    // via router.replace, so the two entry points cannot drift out of sync
+    // again the way they did across rounds 2 and 3 (each fix landed in only
+    // one of the two paths).
+    const onSelect = jest.fn()
+    render(<SavedRecipeMatches matches={ONE} onSelect={onSelect} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Cook this' }))
+    expect(onSelect).toHaveBeenCalledWith(ONE[0])
   })
 
-  it('does not clear the ended-cook record when the disabled Cook this link is tapped', () => {
-    endCookSession('r1')
-    render(<SavedRecipeMatches matches={ONE} onSelect={jest.fn()} disabled />)
-    fireEvent.click(screen.getByRole('link', { name: 'Cook this' }))
-    expect(isCookSessionEnded('r1')).toBe(true)
+  it('does not call onSelect when the disabled Cook this button is tapped', () => {
+    const onSelect = jest.fn()
+    render(<SavedRecipeMatches matches={ONE} onSelect={onSelect} disabled />)
+    const button = screen.getByRole('button', { name: 'Cook this' })
+    expect(button).toBeDisabled()
+    fireEvent.click(button)
+    expect(onSelect).not.toHaveBeenCalled()
   })
 
   // ── Many ───────────────────────────────────────────────────────────────

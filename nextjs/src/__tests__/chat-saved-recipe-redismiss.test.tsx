@@ -81,7 +81,7 @@ const RECIPE: Recipe = {
   instructions: ['Marinate.', 'Grill.', 'Simmer in sauce.'],
 }
 
-const SAVED_RECIPE_RESPONSE: ChatResponse = {
+const MANY_MATCH_RESPONSE: ChatResponse = {
   request_id: 'req-saved-1',
   workflow_id: 'wf-saved-1',
   conversation_id: 'conv-1',
@@ -99,14 +99,33 @@ const SAVED_RECIPE_RESPONSE: ChatResponse = {
   },
 }
 
-const SAVED_RECIPE_MESSAGE: ChatMessage = {
-  id: 'assistant-1',
-  role: 'assistant',
-  content: SAVED_RECIPE_RESPONSE.assistant_message,
-  intent: 'saved_recipe_lookup',
-  response: SAVED_RECIPE_RESPONSE,
-  timestamp: new Date(),
+// A single match — exercises SingleMatchCard's Cook this button rather than
+// the many-match listitem, so the two entry points are each proven to route
+// through the same handler (PR #614 round 4).
+const SINGLE_MATCH_RESPONSE: ChatResponse = {
+  ...MANY_MATCH_RESPONSE,
+  request_id: 'req-saved-2',
+  metadata: {
+    saved_recipe_matches: [
+      { id: RECIPE_ID, title: 'Chicken Tikka Masala', description: 'Smoky and rich.', cuisine: 'Indian' },
+    ],
+  },
 }
+
+function messageWith(response: ChatResponse): ChatMessage {
+  return {
+    id: 'assistant-1',
+    role: 'assistant',
+    content: response.assistant_message,
+    intent: 'saved_recipe_lookup',
+    response,
+    timestamp: new Date(),
+  }
+}
+
+// Mutable so each describe block below can pick which fixture useChat
+// returns without a fresh jest.mock per test file.
+let currentMessage: ChatMessage = messageWith(MANY_MATCH_RESPONSE)
 
 const sendMessage = jest.fn()
 const sendChipMessage = jest.fn()
@@ -114,7 +133,7 @@ const sendConfirmChoice = jest.fn()
 
 jest.mock('@/hooks/useChat', () => ({
   useChat: () => ({
-    messages: [SAVED_RECIPE_MESSAGE],
+    messages: [currentMessage],
     isStreaming: false,
     isResuming: false,
     proposalStates: {},
@@ -173,7 +192,11 @@ beforeEach(() => {
 })
 
 describe('re-tapping a saved-recipe card after dismissing its banner (PR #614 round 3)', () => {
-  it('re-shows the Cooking now banner on a second tap of the same card', async () => {
+  beforeEach(() => {
+    currentMessage = messageWith(MANY_MATCH_RESPONSE)
+  })
+
+  it('re-shows the Cooking now banner on a second tap of the same card (many-match)', async () => {
     renderChat()
 
     // First tap — pins the recipe, banner appears.
@@ -192,6 +215,41 @@ describe('re-tapping a saved-recipe card after dismissing its banner (PR #614 ro
     // dismissedRecipeId, the banner would stay hidden even though the
     // ?cooking= param is set again.
     fireEvent.click(card)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Dismiss cooking context' })).toBeInTheDocument()
+    })
+  })
+})
+
+describe('re-tapping the single-match "Cook this" button after dismissing (PR #614 round 4)', () => {
+  // Round 3's dismiss fix landed only in handlePickSavedRecipe, which the
+  // many-match tap calls. The single-match card's "Cook this" was still a
+  // <Link> with its own, separate startCookSession call and no knowledge of
+  // dismissedRecipeId — so this exact same regression survived round 3 for
+  // the single-match path. This test targets that button specifically, not
+  // the many-match listitem, so the two entry points are each proven to
+  // route through the same handler rather than one being fixed and the
+  // other quietly left behind again.
+  beforeEach(() => {
+    currentMessage = messageWith(SINGLE_MATCH_RESPONSE)
+  })
+
+  it('re-shows the Cooking now banner on a second tap of Cook this (single match)', async () => {
+    renderChat()
+
+    const cookButton = await screen.findByRole('button', { name: 'Cook this' })
+    fireEvent.click(cookButton)
+    expect(await screen.findByText('Chicken Tikka Masala', { selector: 'p' })).toBeInTheDocument()
+
+    const dismissButton = screen.getByRole('button', { name: 'Dismiss cooking context' })
+    fireEvent.click(dismissButton)
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Dismiss cooking context' })).not.toBeInTheDocument()
+    })
+
+    // Re-tap the same Cook this button.
+    fireEvent.click(screen.getByRole('button', { name: 'Cook this' }))
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Dismiss cooking context' })).toBeInTheDocument()

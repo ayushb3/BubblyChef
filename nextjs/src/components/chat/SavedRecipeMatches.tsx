@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { springs } from '@/lib/motion'
-import { startCookSession } from '@/lib/cook-session'
 import type { SavedRecipeMatch } from '@/types/chat'
 
 export interface SavedRecipeMatchesProps {
@@ -25,13 +24,18 @@ export interface SavedRecipeMatchesProps {
  *
  * - **Zero** matches → renders nothing; the assistant's prose ("none found —
  *   want me to make one?") stands alone with the existing chips.
- * - **One** match → a single card with Open recipe (library entry) and Cook
- *   this (`/chat?cooking=<id>`) actions.
+ * - **One** match → a single card with an Open recipe link (library entry)
+ *   and a Cook this button. Both the single card's Cook this button and
+ *   every many-match tap call the *same* `onSelect` callback — there is
+ *   exactly one place (`handlePickSavedRecipe` in `app/chat/page.tsx`) that
+ *   decides what picking a saved recipe does (start the cook session, clear
+ *   a stale dismissal, pin via `?cooking=<id>`), so the two entry points
+ *   cannot drift out of sync the way they did across PR #614's review
+ *   rounds — round 2 fixed the ended-cook-record gap in only one of the two
+ *   paths, and round 3's dismiss fix repeated the same split-brain mistake.
  * - **Many** matches → a ranked list of tappable mini cards, shaped like
  *   BrainstormOptions. Tapping one calls `onSelect` with the match; the
- *   caller acts on it by id (the same `/chat?cooking=<id>` contract the
- *   single-match card's Cook action uses), not by re-sending the title as
- *   chat text — see `handlePickSavedRecipe` in `app/chat/page.tsx`.
+ *   caller acts on it by id, not by re-sending the title as chat text.
  */
 export default function SavedRecipeMatches({
   matches,
@@ -41,7 +45,7 @@ export default function SavedRecipeMatches({
   if (matches.length === 0) return null
 
   if (matches.length === 1) {
-    return <SingleMatchCard match={matches[0]} disabled={disabled} />
+    return <SingleMatchCard match={matches[0]} onSelect={onSelect} disabled={disabled} />
   }
 
   return (
@@ -105,9 +109,11 @@ export default function SavedRecipeMatches({
 
 function SingleMatchCard({
   match,
+  onSelect,
   disabled,
 }: {
   match: SavedRecipeMatch
+  onSelect: (match: SavedRecipeMatch) => void
   disabled: boolean
 }) {
   const linkClass = (variant: 'primary' | 'secondary') =>
@@ -117,6 +123,14 @@ function SingleMatchCard({
         ? 'bg-[var(--color-primary)] text-white'
         : 'border border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-bg)]',
       disabled ? 'pointer-events-none opacity-60' : 'cursor-pointer',
+    ].join(' ')
+  const buttonClass = (variant: 'primary' | 'secondary') =>
+    [
+      'flex-1 text-center py-2.5 px-3 rounded-full text-sm font-semibold transition-colors',
+      variant === 'primary'
+        ? 'bg-[var(--color-primary)] text-white'
+        : 'border border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-bg)]',
+      disabled ? 'cursor-default opacity-60' : 'cursor-pointer',
     ].join(' ')
 
   return (
@@ -150,32 +164,24 @@ function SingleMatchCard({
           >
             Open recipe
           </Link>
-          <Link
-            href={`/chat?cooking=${encodeURIComponent(match.id)}`}
-            // Consistent with every other ?cooking= pin (the many-match tap's
-            // router.replace and the recipe-library "Start cooking" handoff),
-            // so the back button doesn't land on the un-pinned screen (PR #614
-            // round-3 review).
-            replace
-            aria-disabled={disabled}
-            tabIndex={disabled ? -1 : undefined}
-            onClick={(e) => {
-              if (disabled) {
-                e.preventDefault()
-                return
-              }
-              // Clears a stale "ended" record from a previous cook of this
-              // same recipe before navigating — otherwise the ?cooking=
-              // param the Link is about to set gets stripped straight back
-              // out by the isCookSessionEnded effect in app/chat/page.tsx,
-              // making this a silent no-op for any recipe already cooked
-              // once (PR #614 re-review, same fix as the many-match tap).
-              startCookSession(match.id)
-            }}
-            className={linkClass('primary')}
+          <button
+            type="button"
+            disabled={disabled}
+            // A plain <button> that defers entirely to the shared onSelect
+            // handler (`handlePickSavedRecipe` in app/chat/page.tsx), the
+            // same one the many-match tap uses — not a <Link>, so there is
+            // no second, independent place that decides what "cook this
+            // saved recipe" means. Round 2 fixed the ended-cook-record gap
+            // only in the many-match path and had to fix this Link
+            // separately; round 3 fixed the dismissed-banner gap only in
+            // handlePickSavedRecipe and missed this Link entirely. Routing
+            // both through one function removes the seam that kept letting
+            // the two drift out of sync (PR #614 round 4).
+            onClick={() => !disabled && onSelect(match)}
+            className={buttonClass('primary')}
           >
             Cook this
-          </Link>
+          </button>
         </div>
       </div>
     </motion.div>
