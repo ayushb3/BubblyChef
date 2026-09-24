@@ -171,6 +171,15 @@ export function ExpiredIngredientsBanner({
 }
 
 /**
+ * Stable key for a compound-substitution component's override input, distinct
+ * from the numeric row-index keys unit_conflict rows use in the same
+ * `overrides` map (#284).
+ */
+export function compoundOverrideKey(ingredientName: string, pantryItemId: string): string {
+  return `compound:${ingredientName}:${pantryItemId}`
+}
+
+/**
  * "Not in pantry" list — exported for unit testing.
  *
  * Items with a note render as a small vertical block (name + muted note below).
@@ -179,15 +188,25 @@ export function ExpiredIngredientsBanner({
  * complementary: the note explains why no single item works; the suggestion
  * shows what to combine instead. Both are shown when present.
  * Items without either render as plain chips, identical to the previous design.
+ *
+ * When a compound suggestion carries `component_items` (#284), each component
+ * gets its own editable quantity input — the same always-unresolved pattern
+ * as a unit_conflict row: nothing deducts until the user types an amount.
+ * Suggestions without component_items (e.g. older cached proposals) render
+ * exactly as before, with no inputs.
  */
 export function MissingItemsList({
   missing,
   missingNotes = {},
   compoundSuggestions = [],
+  overrides = {},
+  onOverrideChange,
 }: {
   missing: string[]
   missingNotes?: Record<string, string>
   compoundSuggestions?: CompoundSuggestion[]
+  overrides?: Record<string, string>
+  onOverrideChange?: (key: string, value: string) => void
 }) {
   if (missing.length === 0) return null
   return (
@@ -197,6 +216,7 @@ export function MissingItemsList({
         const suggestion = compoundSuggestions.find(
           (s: CompoundSuggestion) => s.ingredient_name.toLowerCase() === name.toLowerCase(),
         )
+        const componentItems = suggestion?.component_items ?? []
         return (
           <div key={name} className="flex flex-col gap-0.5">
             {note ? (
@@ -226,6 +246,38 @@ export function MissingItemsList({
                 <span className="font-semibold">Try combining: </span>
                 {suggestion.components.join(' + ')}
                 <span className="block italic mt-0.5">{suggestion.note}</span>
+                {componentItems.length > 0 && (
+                  <div className="flex flex-col gap-1 mt-1.5" aria-label={`Use how much of each for ${name}`}>
+                    <span className="not-italic text-[9px] text-[var(--color-muted)]">
+                      Using this? Type how much of each you&apos;ll use to deduct it:
+                    </span>
+                    {componentItems.map((component) => {
+                      const key = compoundOverrideKey(name, component.pantry_item_id)
+                      return (
+                        <div key={key} className="flex items-center gap-1.5">
+                          <span className="flex-1 not-italic text-[var(--color-text)] font-semibold">
+                            {component.name}
+                          </span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={overrides[key] ?? ''}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                              onOverrideChange?.(key, e.target.value)
+                            }
+                            className="w-14 text-right border border-[var(--color-border)] rounded px-1 py-0.5 text-xs not-italic"
+                            placeholder="qty"
+                            aria-label={`Deduct quantity for ${component.name} (${name} substitution)`}
+                          />
+                          {component.base_unit && (
+                            <span className="not-italic w-8">{component.base_unit}</span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -236,6 +288,32 @@ export function MissingItemsList({
 }
 
 /**
+ * Adds `deductQty` to `map`'s entry for `pantryItemId`, creating it with
+ * `fallbackUnit` if this is the first deduction to touch that row. Shared by
+ * both the matched-ingredient pass and the compound-component pass in
+ * `summariseDeductions` — several recipe lines, or a recipe line and an
+ * opted-in compound component, can all resolve to the same pantry row, and
+ * each must land as one summed entry rather than two competing writes.
+ */
+function mergeDeduction(
+  map: Map<string, DeductionItem>,
+  pantryItemId: string,
+  deductQty: number,
+  fallbackUnit: string | null,
+): void {
+  const existing = map.get(pantryItemId)
+  if (existing) {
+    existing.deduct_qty += deductQty
+  } else {
+    map.set(pantryItemId, {
+      pantry_item_id: pantryItemId,
+      deduct_qty: deductQty,
+      base_unit: fallbackUnit ?? 'item',
+    })
+  }
+}
+
+/**
  * Splits the proposal into what will actually be deducted and what will not.
  *
  * The two are derived together on purpose: the confirm payload and the summary
@@ -243,6 +321,15 @@ export function MissingItemsList({
  * inline at confirm time and rows that fell out (`deductQty <= 0`) simply
  * vanished, so the user was told nothing about ingredients their pantry never
  * gave up (#245).
+ *
+ * Compound-substitution components (#284) are folded into the same deductions
+ * list, keyed the same way `overrides` keys them (`compoundOverrideKey`).
+ * They are deliberately excluded from `matchedCount`/`skipped` — those track
+ * recipe ingredient lines from `proposal.matches`, and a compound component is
+ * neither: it is an always-unresolved opt-in the user reaches through the
+ * "Not in pantry" section, not a recipe line the model already matched.
+ * `compoundDeductions` reports just the compound half so the UI can describe
+ * it separately from the ingredient-line summary.
  */
 export function summariseDeductions(
   proposal: CookProposal,
@@ -253,6 +340,10 @@ export function summariseDeductions(
   skipped: Array<{ name: string; reason: 'needs_quantity' | 'imprecise' | 'no_quantity' }>
   /** Count of matched (non-missing) rows considered. */
   matchedCount: number
+  /** Compound-substitution component deductions the user opted into, with display names. */
+  compoundDeductions: Array<{ ingredientName: string; componentName: string; deductQty: number }>
+  /** Distinct pantry rows deducted by matched ingredients alone (excludes compound components). */
+  matchesDeductionCount: number
 } {
   const byPantryItem = new Map<string, DeductionItem>()
   const skipped: Array<{ name: string; reason: 'needs_quantity' | 'imprecise' | 'no_quantity' }> =
@@ -292,20 +383,44 @@ export function summariseDeductions(
     // two deductions for one row, and the server applies each as a
     // read-modify-write. The backend sums defensively too; doing it here keeps
     // the payload honest about what is actually being deducted.
-    const id = m.pantry_item_id
-    const existing = byPantryItem.get(id)
-    if (existing) {
-      existing.deduct_qty += deductQty
-    } else {
-      byPantryItem.set(id, {
-        pantry_item_id: id,
-        deduct_qty: deductQty,
-        base_unit: m.base_unit ?? 'item',
-      })
-    }
+    mergeDeduction(byPantryItem, m.pantry_item_id, deductQty, m.base_unit)
   })
 
-  return { deductions: Array.from(byPantryItem.values()), skipped, matchedCount }
+  // Captured before compound components are folded in, so the primary
+  // "X of Y ingredients" sentence stays about recipe lines even when a
+  // compound component happens to land on a pantry row no matched
+  // ingredient touched (#284) — otherwise X could exceed Y.
+  const matchesDeductionCount = byPantryItem.size
+
+  // Compound substitution components (#284) — always-unresolved: only an
+  // explicit, positive typed quantity turns a suggested component into a
+  // real deduction. A component can share a pantry row with a matched
+  // ingredient (or another component), so it merges into the same map by
+  // pantry_item_id rather than always appending a fresh entry.
+  const compoundDeductions: Array<{ ingredientName: string; componentName: string; deductQty: number }> = []
+  for (const suggestion of proposal.compound_suggestions ?? []) {
+    for (const component of suggestion.component_items ?? []) {
+      const key = compoundOverrideKey(suggestion.ingredient_name, component.pantry_item_id)
+      const deductQty = parseFloat(overrides[key] ?? '0') || 0
+      if (deductQty <= 0) continue
+
+      compoundDeductions.push({
+        ingredientName: suggestion.ingredient_name,
+        componentName: component.name,
+        deductQty,
+      })
+
+      mergeDeduction(byPantryItem, component.pantry_item_id, deductQty, component.base_unit)
+    }
+  }
+
+  return {
+    deductions: Array.from(byPantryItem.values()),
+    skipped,
+    matchedCount,
+    compoundDeductions,
+    matchesDeductionCount,
+  }
 }
 
 export default function CookModal({
@@ -687,6 +802,10 @@ export default function CookModal({
                       missing={proposal.missing}
                       missingNotes={proposal.missing_notes}
                       compoundSuggestions={proposal.compound_suggestions}
+                      overrides={overrides}
+                      onOverrideChange={(key, value) =>
+                        setOverrides((prev: Record<string, string>) => ({ ...prev, [key]: value }))
+                      }
                     />
                   </div>
                 )}
@@ -703,26 +822,28 @@ export default function CookModal({
               {/* What will actually happen, stated before the button that does it.
                   In confirm mode a partial deduction is a warning; in preview
                   nothing is being written, so the same numbers are just a plan. */}
-              {summary && summary.matchedCount > 0 && (
+              {summary && (summary.matchedCount > 0 || summary.compoundDeductions.length > 0) && (
                 <div
                   className="text-xs leading-snug"
                   style={{ fontFamily: 'Nunito, sans-serif' }}
                 >
-                  <p
-                    className={
-                      notDeducted.length > 0 && mode === 'confirm'
-                        ? 'font-bold text-[var(--color-text)]'
-                        : 'text-[var(--color-muted)]'
-                    }
-                  >
-                    {notDeducted.length > 0 && mode === 'confirm' && '⚠️ '}
-                    {summary.deductions.length} of {summary.matchedCount} ingredient
-                    {summary.matchedCount === 1 ? '' : 's'}{' '}
-                    {mode === 'preview' ? 'will come from your pantry' : 'will be deducted'}
-                    {needsQuantity.length > 0 && ` — ${needsQuantity.length} need${
-                      needsQuantity.length === 1 ? 's' : ''
-                    } a quantity`}
-                  </p>
+                  {summary.matchedCount > 0 && (
+                    <p
+                      className={
+                        notDeducted.length > 0 && mode === 'confirm'
+                          ? 'font-bold text-[var(--color-text)]'
+                          : 'text-[var(--color-muted)]'
+                      }
+                    >
+                      {notDeducted.length > 0 && mode === 'confirm' && '⚠️ '}
+                      {summary.matchesDeductionCount} of {summary.matchedCount} ingredient
+                      {summary.matchedCount === 1 ? '' : 's'}{' '}
+                      {mode === 'preview' ? 'will come from your pantry' : 'will be deducted'}
+                      {needsQuantity.length > 0 && ` — ${needsQuantity.length} need${
+                        needsQuantity.length === 1 ? 's' : ''
+                      } a quantity`}
+                    </p>
+                  )}
                   {notDeducted.length > 0 && (
                     <p className="text-[var(--color-muted)] mt-0.5">
                       Not {mode === 'preview' ? 'counted' : 'deducted'}:{' '}
@@ -733,6 +854,12 @@ export default function CookModal({
                     <p className="text-[var(--color-muted)] mt-0.5">
                       You have {imprecise.map((s) => s.name).join(', ')} — we can&apos;t tell how
                       much of a pack the recipe uses, so the quantity is left as it is.
+                    </p>
+                  )}
+                  {summary.compoundDeductions.length > 0 && (
+                    <p className="text-[var(--color-muted)] mt-0.5">
+                      Also {mode === 'preview' ? 'using' : 'deducting'} from your substitution:{' '}
+                      {summary.compoundDeductions.map((d) => d.componentName).join(', ')}
                     </p>
                   )}
                 </div>

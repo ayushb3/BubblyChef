@@ -25,7 +25,12 @@ from bubbly_chef.domain.normalizer import (
 )
 from bubbly_chef.domain.normalizer import SIZE_ADJECTIVE_UNITS  # noqa: F401  re-export: single source of truth
 from bubbly_chef.domain.staples import is_staple
-from bubbly_chef.models.cook import CompoundSuggestion, CookProposal, IngredientMatch
+from bubbly_chef.models.cook import (
+    CompoundComponent,
+    CompoundSuggestion,
+    CookProposal,
+    IngredientMatch,
+)
 from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.prompts.cook import _SUBSTITUTION_PROMPT
 
@@ -288,6 +293,26 @@ def _normalize_ingredient_name(name: str) -> str:
     Synonym normalization in normalize_food_name() is sufficient for pantry matching.
     """
     return normalize_food_name(name).lower().strip()
+
+
+def _component_base_unit(item: PantryItem) -> str | None:
+    """Base unit for a compound-substitution component's typed quantity.
+
+    Mirrors the fallback match_ingredients() uses for the pantry side of a
+    normal match: prefer the row's own unit_base, and derive one from the
+    registry when the row predates base-unit tracking. Returning the wrong
+    unit here would have the deduction misinterpret whatever the user types,
+    so this stays a pure lookup — never a guess beyond what normalize_to_base_unit
+    already does elsewhere in this module.
+    """
+    if item.unit_base is not None:
+        return item.unit_base
+    _, base_unit = normalize_to_base_unit(
+        name=_normalize_ingredient_name(item.name),
+        quantity=item.quantity,
+        unit=item.unit,
+    )
+    return base_unit
 
 
 def match_ingredients(
@@ -803,6 +828,7 @@ async def resolve_aliases_with_llm(
                 # suggestion if any is absent — we must not invent stock.
                 all_present = True
                 resolved_components: list[str] = []
+                resolved_component_items: list[CompoundComponent] = []
                 for component_name in entry.compound_components:
                     comp_norm = _normalize_ingredient_name(component_name)
                     if comp_norm not in pantry_by_norm:
@@ -813,7 +839,15 @@ async def resolve_aliases_with_llm(
                         all_present = False
                         break
                     # Use the pantry's display name so the UI can show something consistent.
-                    resolved_components.append(pantry_by_norm[comp_norm].name)
+                    component_item = pantry_by_norm[comp_norm]
+                    resolved_components.append(component_item.name)
+                    resolved_component_items.append(
+                        CompoundComponent(
+                            pantry_item_id=component_item.id,
+                            name=component_item.name,
+                            base_unit=_component_base_unit(component_item),
+                        )
+                    )
 
                 if all_present and resolved_components:
                     compound_suggestions.append(
@@ -821,6 +855,7 @@ async def resolve_aliases_with_llm(
                             ingredient_name=entry.ingredient_name,
                             components=resolved_components,
                             note=entry.compound_note,
+                            component_items=resolved_component_items,
                         )
                     )
                     # When a compound suggestion was accepted, do NOT also record a

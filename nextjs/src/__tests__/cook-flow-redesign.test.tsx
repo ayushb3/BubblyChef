@@ -24,14 +24,27 @@ function renderWithQuery(ui: React.ReactElement) {
 
 // ─── ChatRecipeCard ───────────────────────────────────────────────────────────
 
-jest.mock('framer-motion', () => ({
-  motion: {
-    div: ({ children, ...rest }: React.HTMLAttributes<HTMLDivElement>) => <div {...rest}>{children}</div>,
-    button: ({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...rest}>{children}</button>,
-  },
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  useReducedMotion: () => false,
-}))
+// Proxy-based passthrough so any `motion.<tag>` resolves to a real DOM element
+// (not just the div/button the original mock covered) — needed once the
+// compound-deduction tests below reach CookModal's success state, which
+// mounts BubblesMascot, and BubblesMascot renders `motion.span` for its
+// celebrate sparkle burst. Same pattern already used in
+// chat-cook-two-tab-guard.test.tsx.
+jest.mock('framer-motion', () => {
+  function passthrough(Tag: string) {
+    function MotionStub({ children, ...rest }: React.HTMLAttributes<HTMLElement>) {
+      return React.createElement(Tag, rest, children)
+    }
+    MotionStub.displayName = `motion.${Tag}`
+    return MotionStub
+  }
+  const motion = new Proxy({}, { get: (_t, tag: string) => passthrough(tag) })
+  return {
+    motion,
+    AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    useReducedMotion: () => false,
+  }
+})
 
 jest.mock('@/lib/format', () => ({ titleCase: (s: string) => s }))
 
@@ -639,5 +652,187 @@ describe('CookModal — none-match note rendered instead of bare chip (#425)', (
     expect(screen.getByText(/truffle oil/i)).toBeInTheDocument()
     // No note text beyond the name.
     expect(screen.queryByText(/no good stand-in/i)).not.toBeInTheDocument()
+  })
+})
+
+// ─── Compound substitution deduction (#284) ───────────────────────────────
+//
+// The suggestion half (#281/#424) already shipped — nothing deducted. #284
+// lets the user opt in: type a quantity per component, reusing the same
+// always-unresolved pattern as a unit_conflict row.
+
+import type { CompoundComponent } from '@/types/recipes'
+import { compoundOverrideKey } from '@/components/recipes/CookModal'
+
+const compoundComponents: CompoundComponent[] = [
+  { pantry_item_id: 'butter-1', name: 'butter', base_unit: 'g' },
+  { pantry_item_id: 'milk-1', name: 'milk', base_unit: 'ml' },
+  { pantry_item_id: 'flour-1', name: 'flour', base_unit: 'g' },
+]
+
+const suggestionWithComponents = (
+  overrides: Partial<CompoundSuggestion> = {},
+): CompoundSuggestion => ({
+  ingredient_name: 'heavy cream',
+  components: ['butter', 'milk', 'flour'],
+  note: 'Melt butter, whisk in flour, add milk',
+  component_items: compoundComponents,
+  ...overrides,
+})
+
+describe('summariseDeductions — compound substitution components (#284)', () => {
+  it('produces no deduction when no override is typed (always-unresolved)', () => {
+    const p = proposalOf([])
+    const withCompound = { ...p, missing: ['heavy cream'], compound_suggestions: [suggestionWithComponents()] } as CookProposal
+    const { deductions, compoundDeductions } = summariseDeductions(withCompound, {})
+    expect(deductions).toHaveLength(0)
+    expect(compoundDeductions).toHaveLength(0)
+  })
+
+  it('deducts a component once the user types a positive quantity', () => {
+    const p = proposalOf([])
+    const withCompound = { ...p, missing: ['heavy cream'], compound_suggestions: [suggestionWithComponents()] } as CookProposal
+    const key = compoundOverrideKey('heavy cream', 'butter-1')
+    const { deductions, compoundDeductions } = summariseDeductions(withCompound, { [key]: '50' })
+    expect(deductions).toEqual([{ pantry_item_id: 'butter-1', deduct_qty: 50, base_unit: 'g' }])
+    expect(compoundDeductions).toEqual([
+      { ingredientName: 'heavy cream', componentName: 'butter', deductQty: 50 },
+    ])
+  })
+
+  it('treats a blank or zero override the same as not typed', () => {
+    const p = proposalOf([])
+    const withCompound = { ...p, missing: ['heavy cream'], compound_suggestions: [suggestionWithComponents()] } as CookProposal
+    const key = compoundOverrideKey('heavy cream', 'butter-1')
+    expect(summariseDeductions(withCompound, { [key]: '' }).deductions).toHaveLength(0)
+    expect(summariseDeductions(withCompound, { [key]: '0' }).deductions).toHaveLength(0)
+  })
+
+  it('merges a component deduction into an existing matched-ingredient deduction on the same pantry row', () => {
+    const p = proposalOf([match({ ingredient_name: 'butter', pantry_item_id: 'butter-1', deduct_qty: 20 })])
+    const withCompound = { ...p, missing: ['heavy cream'], compound_suggestions: [suggestionWithComponents()] } as CookProposal
+    const key = compoundOverrideKey('heavy cream', 'butter-1')
+    const { deductions, matchesDeductionCount } = summariseDeductions(withCompound, { [key]: '15' })
+    expect(deductions).toEqual([{ pantry_item_id: 'butter-1', deduct_qty: 35, base_unit: 'g' }])
+    // matchesDeductionCount stays the pre-compound distinct-row count — the
+    // primary "X of Y ingredients" sentence must not count the compound half.
+    expect(matchesDeductionCount).toBe(1)
+  })
+
+  it('does not affect matchedCount or skipped — compound components are not recipe lines', () => {
+    const p = proposalOf([match({ ingredient_name: 'pasta', pantry_item_id: 'p1' })])
+    const withCompound = { ...p, missing: ['heavy cream'], compound_suggestions: [suggestionWithComponents()] } as CookProposal
+    const key = compoundOverrideKey('heavy cream', 'butter-1')
+    const { matchedCount, skipped } = summariseDeductions(withCompound, { [key]: '50' })
+    expect(matchedCount).toBe(1)
+    expect(skipped).toHaveLength(0)
+  })
+
+  it('is a no-op when compound_suggestions is absent entirely', () => {
+    const p = proposalOf([match({ ingredient_name: 'pasta', pantry_item_id: 'p1' })])
+    const { deductions, compoundDeductions } = summariseDeductions(p, { 'compound:x:y': '5' })
+    expect(deductions).toHaveLength(1) // only the matched pasta row
+    expect(compoundDeductions).toHaveLength(0)
+  })
+})
+
+describe('MissingItemsList — compound component quantity inputs (#284)', () => {
+  it('renders one editable quantity input per component when component_items is present', () => {
+    render(
+      <MissingItemsList
+        missing={['heavy cream']}
+        compoundSuggestions={[suggestionWithComponents()]}
+        overrides={{}}
+        onOverrideChange={jest.fn()}
+      />,
+    )
+    expect(screen.getByLabelText(/deduct quantity for butter \(heavy cream substitution\)/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/deduct quantity for milk \(heavy cream substitution\)/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/deduct quantity for flour \(heavy cream substitution\)/i)).toBeInTheDocument()
+  })
+
+  it('renders no inputs when component_items is absent (older/cached proposal shape)', () => {
+    render(
+      <MissingItemsList
+        missing={['heavy cream']}
+        compoundSuggestions={[
+          { ingredient_name: 'heavy cream', components: ['butter', 'milk', 'flour'], note: 'Melt butter' },
+        ]}
+      />,
+    )
+    expect(screen.queryByLabelText(/deduct quantity for/i)).not.toBeInTheDocument()
+    // The suggestion text itself is unaffected.
+    expect(screen.getByLabelText(/compound substitution suggestion for heavy cream/i)).toBeInTheDocument()
+  })
+
+  it('calls onOverrideChange with the compound override key when a quantity is typed', () => {
+    const onOverrideChange = jest.fn()
+    render(
+      <MissingItemsList
+        missing={['heavy cream']}
+        compoundSuggestions={[suggestionWithComponents()]}
+        overrides={{}}
+        onOverrideChange={onOverrideChange}
+      />,
+    )
+    const input = screen.getByLabelText(/deduct quantity for butter \(heavy cream substitution\)/i)
+    fireEvent.change(input, { target: { value: '50' } })
+    expect(onOverrideChange).toHaveBeenCalledWith(compoundOverrideKey('heavy cream', 'butter-1'), '50')
+  })
+})
+
+describe('CookModal — compound component deduction end to end (#284)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    // endCookSession('r1') persists to localStorage on a successful confirm
+    // (#440, two-tab double-deduction guard) and would otherwise leak into
+    // the next test using the same recipe id, short-circuiting its confirm
+    // before confirmCook is even called.
+    window.localStorage.clear()
+  })
+
+  it('includes a typed compound component quantity in the confirm payload', async () => {
+    const { confirmCook: mockConfirmCook } = jest.requireMock('@/lib/api/recipes') as {
+      confirmCook: jest.Mock
+    }
+    mockConfirmCook.mockResolvedValue({ applied: 1, skipped: [] })
+    mockCookRecipe.mockResolvedValue(
+      compoundProposal([suggestionWithComponents()]),
+    )
+
+    renderWithQuery(
+      <CookModal recipeId="r1" recipeTitle="Cream Sauce" onClose={jest.fn()} onCooked={jest.fn()} />,
+    )
+
+    const input = await screen.findByLabelText(/deduct quantity for butter \(heavy cream substitution\)/i)
+    fireEvent.change(input, { target: { value: '50' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /yes, i cooked this/i }))
+
+    await screen.findByText(/pantry updated/i)
+    expect(mockConfirmCook).toHaveBeenCalledWith(
+      'r1',
+      expect.arrayContaining([{ pantry_item_id: 'butter-1', deduct_qty: 50, base_unit: 'g' }]),
+    )
+  })
+
+  it('confirms with no compound deduction when the user leaves the quantity blank', async () => {
+    const { confirmCook: mockConfirmCook } = jest.requireMock('@/lib/api/recipes') as {
+      confirmCook: jest.Mock
+    }
+    mockConfirmCook.mockResolvedValue({ applied: 0, skipped: [] })
+    mockCookRecipe.mockResolvedValue(
+      compoundProposal([suggestionWithComponents()]),
+    )
+
+    renderWithQuery(
+      <CookModal recipeId="r1" recipeTitle="Cream Sauce" onClose={jest.fn()} onCooked={jest.fn()} />,
+    )
+
+    await screen.findByLabelText(/deduct quantity for butter \(heavy cream substitution\)/i)
+    fireEvent.click(screen.getByRole('button', { name: /yes, i cooked this/i }))
+
+    await screen.findByText(/pantry updated/i)
+    expect(mockConfirmCook).toHaveBeenCalledWith('r1', [])
   })
 })

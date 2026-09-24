@@ -54,12 +54,32 @@ class IngredientMatch(BaseModel):
     )
 
 
+class CompoundComponent(BaseModel):
+    """One pantry item backing a compound substitution, ready to deduct.
+
+    Quantities are deliberately absent here (#284): the model is not asked to
+    apportion how much of a missing ingredient each component stands in for
+    — that is always-unresolved, the same as an existing unit_conflict row.
+    The user types an amount per component in the cook modal; this model
+    only carries what the deduction needs to target the right pantry row.
+    """
+
+    pantry_item_id: UUID = Field(description="Pantry item this component would deduct from")
+    name: str = Field(description="Pantry item display name, matching the entry in `components`")
+    base_unit: str | None = Field(
+        default=None,
+        description="Base unit the user's typed quantity is interpreted in (count | ml | g)",
+    )
+
+
 class CompoundSuggestion(BaseModel):
     """A multi-item substitution the model proposes for a missing ingredient.
 
-    This is advisory only — nothing is deducted, and the ingredient stays in
-    CookProposal.missing. Deduction from compound substitutions is a deliberate
-    follow-up tracked separately.
+    The suggestion itself is advisory — the ingredient stays in
+    CookProposal.missing. Deduction is opt-in and always-unresolved (#284):
+    component_items carries enough to target a deduction, but nothing is
+    deducted until the user types a quantity for a component in the cook
+    modal and confirms, reusing the same editable-qty path as unit_conflict.
     """
 
     ingredient_name: str = Field(description="The missing ingredient this suggestion covers")
@@ -68,6 +88,15 @@ class CompoundSuggestion(BaseModel):
     )
     note: str = Field(
         description="Short instruction for the cook, e.g. 'Melt butter, whisk in flour, add milk'"
+    )
+    component_items: list[CompoundComponent] = Field(
+        default_factory=list,
+        description=(
+            "Same items as `components`, resolved to pantry rows so the modal can "
+            "let the user type a per-component quantity and deduct it on confirm. "
+            "Empty only if resolution somehow fails after `components` was already "
+            "validated against the pantry — treated as always-unresolved in that case."
+        ),
     )
 
 

@@ -1562,6 +1562,116 @@ class TestCompoundSuggestionTableDriven:
                 )
         else:
             assert proposal.compound_suggestions == []
+
+
+class TestCompoundComponentItems:
+    """Issue #284 — component_items resolves each compound component to a pantry row.
+
+    component_items is what the cook modal deducts from once the user types a
+    quantity; it must carry the real pantry_item_id and base_unit for every
+    name in `components`, in the same order, and must never itself trigger a
+    deduction (that stays always-unresolved — quantities come from the user).
+    """
+
+    @pytest.mark.asyncio
+    async def test_component_items_resolve_id_and_base_unit(self) -> None:
+        butter = _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g")
+        milk = _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml")
+        flour = _make_item("flour", 1.0, "kg", qty_base=1000.0, unit_base="g")
+        pantry = [butter, milk, flour]
+        ingredients = [{"name": "heavy cream", "quantity": 200.0, "unit": "ml"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["butter", "milk", "flour"],
+                        compound_note="Melt butter, whisk in flour, stir in milk",
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert len(proposal.compound_suggestions) == 1
+        sug = proposal.compound_suggestions[0]
+        assert [c.name for c in sug.component_items] == ["butter", "milk", "flour"]
+        by_name = {c.name: c for c in sug.component_items}
+        assert by_name["butter"].pantry_item_id == butter.id
+        assert by_name["butter"].base_unit == "g"
+        assert by_name["milk"].pantry_item_id == milk.id
+        assert by_name["milk"].base_unit == "ml"
+        assert by_name["flour"].pantry_item_id == flour.id
+        assert by_name["flour"].base_unit == "g"
+
+    @pytest.mark.asyncio
+    async def test_component_items_derives_base_unit_when_row_lacks_one(self) -> None:
+        """A pantry row predating base-unit tracking still resolves a usable unit."""
+        eggs = _make_item("eggs", 6.0, "count", qty_base=None, unit_base=None)
+        pantry = [eggs]
+        ingredients = [{"name": "custard", "quantity": 1.0, "unit": "cup"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="custard",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["eggs"],
+                        compound_note="Whisk eggs with sugar and milk",
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert len(proposal.compound_suggestions) == 1
+        component = proposal.compound_suggestions[0].component_items[0]
+        assert component.pantry_item_id == eggs.id
+        assert component.base_unit == "count"
+
+    @pytest.mark.asyncio
+    async def test_component_items_never_appear_as_a_deduction(self) -> None:
+        """component_items is advisory routing only — it must not deduct on its own."""
+        butter = _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g")
+        milk = _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml")
+        pantry = [butter, milk]
+        ingredients = [{"name": "heavy cream", "quantity": 200.0, "unit": "ml"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["butter", "milk"],
+                        compound_note="Melt butter, stir in milk",
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert not any(m.pantry_item_id in {butter.id, milk.id} for m in proposal.matches)
+
+
 class TestUnitConflictFallback:
     """Issue #209 — soft fallback replaces blocking unit_conflict for unresolvable units.
 

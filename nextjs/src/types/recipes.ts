@@ -113,8 +113,26 @@ export interface IngredientMatch {
 }
 
 /**
- * Advisory multi-item substitution for a missing ingredient.
- * Nothing is deducted — the ingredient stays in CookProposal.missing.
+ * One pantry item backing a compound substitution, ready to deduct.
+ *
+ * Quantities are deliberately absent — the model is not asked to apportion
+ * how much of the missing ingredient each component stands in for (#284).
+ * The user types an amount per component in the cook modal, the same
+ * always-unresolved pattern as a unit_conflict row.
+ */
+export interface CompoundComponent {
+  pantry_item_id: string
+  /** Matches the corresponding entry in CompoundSuggestion.components. */
+  name: string
+  /** Base unit the user's typed quantity is interpreted in (count | ml | g). */
+  base_unit: string | null
+}
+
+/**
+ * A multi-item substitution the model proposes for a missing ingredient.
+ * The suggestion is advisory — the ingredient stays in CookProposal.missing —
+ * but component_items lets the user opt into deducting the components once
+ * they type a quantity for each and confirm (#284).
  */
 export interface CompoundSuggestion {
   ingredient_name: string
@@ -122,6 +140,8 @@ export interface CompoundSuggestion {
   components: string[]
   /** Short instruction for the cook, e.g. "Melt butter, whisk in flour, add milk" */
   note: string
+  /** Same items as `components`, resolved to pantry rows for deduction. May be empty. */
+  component_items?: CompoundComponent[]
 }
 
 /**
