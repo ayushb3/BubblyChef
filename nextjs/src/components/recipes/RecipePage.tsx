@@ -2,6 +2,8 @@
 
 import { motion } from 'framer-motion'
 import { ingredientLabel } from '@/lib/recipe-helpers'
+import HeaderQuickSetTimers from '@/components/timers/HeaderQuickSetTimers'
+import StepTimerChips from '@/components/timers/StepTimerChip'
 import type { RecipeIngredient } from '@/types/recipes'
 
 /**
@@ -59,6 +61,16 @@ export default function RecipeDetail({ recipe }: RecipeDetailProps) {
         paddingTop: `${FIRST_LINE_OFFSET}px`,
       }}
     >
+      {/* Header quick-set (issue #495) — Prep/Cook/Total timer buttons,
+          only rendered for the fields the recipe actually has. */}
+      <div style={{ lineHeight: `${LINE_HEIGHT}px` }} className="mb-1">
+        <HeaderQuickSetTimers
+          prepTimeMinutes={recipe.prep_time_minutes}
+          cookTimeMinutes={recipe.cook_time_minutes}
+          totalTimeMinutes={recipe.total_time_minutes}
+        />
+      </div>
+
       {/* Ingredients */}
       {recipe.ingredients.length > 0 && (
         <div className="mb-6">
@@ -143,7 +155,12 @@ export default function RecipeDetail({ recipe }: RecipeDetailProps) {
                   >
                     {i + 1}
                   </span>
-                  <span>{text}</span>
+                  <span className="flex-1">
+                    {text}
+                    {/* Step ⏱ chip (issue #495) — renders only when this
+                        step's text has a parseable duration. */}
+                    <StepTimerChips stepText={text} className="ml-2 align-middle" />
+                  </span>
                 </motion.li>
               )
             })}

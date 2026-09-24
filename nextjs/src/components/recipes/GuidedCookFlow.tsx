@@ -14,7 +14,8 @@
  *  - "You'll need" per-step ingredient list; pantry note only when notable.
  *  - Persistent "💬 Ask Bubbles about this step" → chat overlay returns to same step.
  *  - Dedicated done-state exits the flow cleanly.
- *  - Timer affordance placeholder (non-functional — real timers = issue #45 / Spec B).
+ *  - Step ⏱ chips (issue #495 / Spec B.3) — real, functional timers replacing
+ *    the old non-functional placeholder.
  *
  * Wiring to Spec 0 session state (issue #410):
  *  The Ask-Bubbles overlay currently sends a pre-canned context message over the
@@ -29,6 +30,7 @@ import { ingredientLabel } from '@/lib/recipe-helpers'
 import { useMotionConfig } from '@/lib/motion'
 import { streamChatMessage } from '@/lib/api/chat'
 import { saveCookProgress } from '@/lib/cook-session'
+import StepTimerChips from '@/components/timers/StepTimerChip'
 import type { Recipe } from './RecipePage'
 
 // ---------------------------------------------------------------------------
@@ -100,26 +102,6 @@ function buildSteps(recipe: Recipe): CookStep[] {
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
-
-/** Placeholder timer chip — visual affordance only. Real timers = issue #45. */
-function TimerChip({ min }: { min?: number }) {
-  if (!min) return null
-  return (
-    <span
-      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold"
-      style={{
-        background: 'var(--color-bg)',
-        color: 'var(--color-muted)',
-        border: '1px dashed var(--color-border)',
-        fontFamily: 'Nunito, sans-serif',
-      }}
-      title="Timer feature coming in a future update"
-    >
-      {/* Timer placeholder: issue #45 / Spec B owns real timers */}
-      ⏱️ {min}m
-    </span>
-  )
-}
 
 /** Ingredients list shown on the mise-en-place prep screen. */
 function PrepIngredientList({ recipe }: { recipe: Recipe }) {
@@ -658,9 +640,10 @@ export default function GuidedCookFlow({ recipe, onExit, onFinish, initialStep }
                   >
                     Step {step.n} of {steps.length}
                   </span>
-                  {/* Timer placeholder — non-functional, issue #45 */}
+                  {/* Step ⏱ chips — renders only when the step text has a
+                      parseable duration (issue #495). */}
                   <span className="ml-auto">
-                    <TimerChip />
+                    <StepTimerChips stepText={step.text} />
                   </span>
                 </div>
 
