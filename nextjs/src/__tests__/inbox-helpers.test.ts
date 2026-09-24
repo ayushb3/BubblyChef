@@ -3,7 +3,7 @@
  * Covers the acceptance criteria directly: tiering, ordering, the cap, and
  * the empty case.
  */
-import { deriveInboxEntries, INBOX_CAP } from '@/lib/inbox-helpers'
+import { deriveInboxEntries, INBOX_CAP, EXPIRY_WINDOW_DAYS } from '@/lib/inbox-helpers'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
 
 const NOW = new Date('2026-09-23T12:00:00')
@@ -203,23 +203,71 @@ describe('deriveInboxEntries', () => {
     expect(result.entries[0].href).toBeNull()
   })
 
-  it('orders a completed timer after low-stock and before the cook nudge', () => {
+  it('orders a completed timer first, ahead of expired/low-stock/cook-nudge', () => {
     // Real end-to-end coverage of this now lives in `notification-bell.test.tsx`
     // (#619: `useInboxEntries` reads the real `useCookingTimers` store).
-    // This still pins the pure-derivation ordering: timer (sortKey 3000)
-    // sorts after low-stock (2000) and before the cook nudge (4000).
+    // This pins the pure-derivation ordering: a completed timer is
+    // time-critical (food is on the heat) and ranks ahead of everything
+    // else, including an already-expired pantry row (#496 review — see
+    // `SORT_BUCKET` in `inbox-helpers.ts`).
     const result = deriveInboxEntries(
       {
-        pantryItems: [pantryItem({ id: 'out', name: 'Eggs', quantity: 0 })],
+        pantryItems: [
+          pantryItem({ id: 'out', name: 'Eggs', quantity: 0 }),
+          pantryItem({
+            id: 'expired-1',
+            name: 'Old Milk',
+            expiry_date: '2026-09-20',
+            days_until_expiry: -3,
+            is_expired: true,
+          }),
+        ],
         recipes: [{ last_cooked_at: '2026-09-01T00:00:00Z' }],
         timers: [{ id: 't1', label: 'Pasta' }],
       },
       NOW,
     )
 
-    expect(result.entries.map((e) => e.kind)).toEqual(['low_stock', 'timer', 'cook_nudge'])
-    expect(result.entries[1].href).toBeNull()
-    expect(result.entries[1].copy).toBe('Pasta timer finished')
+    expect(result.entries.map((e) => e.kind)).toEqual([
+      'timer',
+      'expired',
+      'low_stock',
+      'cook_nudge',
+    ])
+    expect(result.entries[0].href).toBeNull()
+    expect(result.entries[0].copy).toBe('Pasta timer finished')
+  })
+
+  it('never lets a completed timer be starved past the cap by expiring rows', () => {
+    // #496 review: the sort was global-by-sortKey-then-cap, so any account
+    // with >= INBOX_CAP rows in the expiry window pushed a completed timer
+    // (and the cook nudge, and the grocery pointer) entirely past the cap —
+    // a timer could complete, the badge could tick up, and the dropdown
+    // would never actually show it. Timers rank first (see `SORT_BUCKET`),
+    // so this must hold regardless of how many expiring rows exist.
+    const expiringRows = Array.from({ length: 12 }, (_, i) =>
+      pantryItem({
+        id: `expiring-${i}`,
+        name: `Item ${i}`,
+        expiry_date: '2026-09-25',
+        days_until_expiry: i % (EXPIRY_WINDOW_DAYS + 1), // 0..3, all within the window
+      }),
+    )
+
+    const result = deriveInboxEntries(
+      {
+        pantryItems: expiringRows,
+        recipes: [{ last_cooked_at: NOW.toISOString() }],
+        timers: [{ id: 't1', label: 'Soup' }],
+      },
+      NOW,
+    )
+
+    expect(result.totalCount).toBe(13)
+    expect(result.entries).toHaveLength(INBOX_CAP)
+    expect(result.entries.map((e) => e.kind)).toContain('timer')
+    expect(result.entries[0].kind).toBe('timer')
+    expect(result.overflowCount).toBe(3)
   })
 
   it('includes a grocery pointer when the B.5 count is present and positive', () => {

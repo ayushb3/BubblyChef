@@ -90,6 +90,7 @@ export default function NotificationBell() {
         // deliberately doesn't have (#496: "No persistence, no read/unread").
         aria-label={count > 0 ? `Notifications, ${count} item${count === 1 ? '' : 's'}` : 'Notifications'}
         aria-expanded={open}
+        aria-controls="notification-bell-dropdown"
         data-testid="notification-bell"
         className="relative w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform"
         style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
@@ -114,6 +115,7 @@ export default function NotificationBell() {
       <AnimatePresence>
         {open && (
           <motion.div
+            id="notification-bell-dropdown"
             initial={{ opacity: 0, scale: 0.9, y: -4 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: -4 }}
@@ -127,6 +129,14 @@ export default function NotificationBell() {
               width: '300px',
               maxWidth: 'calc(100vw - 2rem)',
             }}
+            // Plain list semantics, not an ARIA menu (#496 round 2). A
+            // role is still required for `aria-labelledby` to attach —
+            // without one, a bare <div> isn't a labellable element and
+            // assistive tech announces the popover as anonymous content
+            // (#496 round 3). `role="region"` fits: a labelled section of
+            // the page, not a modal/menu widget with its own focus/keyboard
+            // contract.
+            role="region"
             aria-labelledby="notification-bell-heading"
           >
             <div className="px-4 py-3 border-b border-[var(--color-border)]">

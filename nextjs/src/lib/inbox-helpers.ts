@@ -88,6 +88,32 @@ function pluralDays(n: number): string {
   return `${n} day${n === 1 ? '' : 's'}`
 }
 
+/**
+ * Per-kind sort buckets, each wide enough that no in-category offset (e.g. an
+ * expired item hundreds of days overdue) can ever spill into a neighbouring
+ * bucket. This is what actually enforces the priority order below — a flat
+ * "add a small offset to a round number" scheme (the previous approach)
+ * only holds by coincidence once any bucket's offset can grow large, which
+ * is exactly how a completed timer (a flat 3000) ended up sorting *after*
+ * every expiring row (1000-1003) but *before* nothing large enough to matter
+ * — except there were more than `INBOX_CAP` expiring rows, so the cap sliced
+ * the list before the timer's bucket was ever reached (#496 review).
+ */
+const SORT_BUCKET = {
+  // Timers rank first, ahead of expiry: a completed timer is time-critical
+  // (food is actively on the heat) in a way an already-expired pantry row
+  // is not — and it must never be starved out by however many expiry rows
+  // an account happens to have. The issue doesn't specify a priority
+  // between timers and expiry, so this is a judgement call — see
+  // "Decisions for Ayush" in the PR.
+  timer: 0,
+  expired: 100_000,
+  expiring: 200_000,
+  low_stock: 300_000,
+  cook_nudge: 400_000,
+  grocery: 500_000,
+} as const
+
 function expiredEntry(item: EnrichedPantryItem, daysUntil: number): InboxEntry {
   const daysAgo = Math.abs(daysUntil)
   return {
@@ -98,7 +124,7 @@ function expiredEntry(item: EnrichedPantryItem, daysUntil: number): InboxEntry {
     copy: `${item.name} expired ${pluralDays(daysAgo)} ago`,
     href: cookThisHref(item.name, item.expiry_date),
     // Most-overdue first: more negative daysUntil sorts first within this tier.
-    sortKey: 0 + daysUntil,
+    sortKey: SORT_BUCKET.expired + daysUntil,
   }
 }
 
@@ -114,7 +140,7 @@ function expiringEntry(item: EnrichedPantryItem, daysUntil: number): InboxEntry 
     emoji: daysUntil === 0 ? '⚠️' : '🕒',
     copy,
     href: cookThisHref(item.name, item.expiry_date),
-    sortKey: 1000 + daysUntil,
+    sortKey: SORT_BUCKET.expiring + daysUntil,
   }
 }
 
@@ -129,7 +155,7 @@ function lowStockEntry(item: EnrichedPantryItem): InboxEntry {
     // unlike the expiring entries above, there's no single ingredient to seed
     // the conversation with here.
     href: '/chat',
-    sortKey: 2000,
+    sortKey: SORT_BUCKET.low_stock,
   }
 }
 
@@ -142,7 +168,7 @@ function timerEntry(timer: InboxTimerSource): InboxEntry {
     copy: `${timer.label} timer finished`,
     // Dismiss-only — Spec B.3 owns what "dismiss" does; this hub just lists it.
     href: null,
-    sortKey: 3000,
+    sortKey: SORT_BUCKET.timer,
   }
 }
 
@@ -154,7 +180,7 @@ function cookNudgeEntry(): InboxEntry {
     emoji: '🍳',
     copy: "You haven't cooked in a while — want a suggestion?",
     href: '/chat',
-    sortKey: 4000,
+    sortKey: SORT_BUCKET.cook_nudge,
   }
 }
 
@@ -166,7 +192,7 @@ function groceryEntry(count: number): InboxEntry {
     emoji: '🛒',
     copy: `${count} item${count === 1 ? '' : 's'} on your grocery list`,
     href: '/grocery',
-    sortKey: 5000,
+    sortKey: SORT_BUCKET.grocery,
   }
 }
 
@@ -188,9 +214,15 @@ function latestCookedAt(recipes: InboxRecipeSource[]): Date | null {
 /**
  * Derive the capped, ordered inbox from already-fetched data.
  *
- * Ordering: expired (most overdue first) → expiring soon (today, then
- * further out) → timers → low stock → cook nudge → grocery pointer. Capped
- * at `INBOX_CAP`; anything beyond that only contributes to `overflowCount`.
+ * Ordering: completed timers (time-critical — food is on the heat) →
+ * expired (most overdue first) → expiring soon (today, then further out) →
+ * low stock → cook nudge → grocery pointer. See `SORT_BUCKET` above — each
+ * kind sorts within its own reserved bucket, so no kind can ever spill into
+ * a neighbouring one's position. Capped at `INBOX_CAP` *after* sorting, so
+ * ranking timers first also guarantees they can never be starved out of the
+ * visible list by however many expiry rows an account happens to have (see
+ * "Decisions for Ayush" in the PR); anything beyond the cap only
+ * contributes to `overflowCount`.
  */
 export function deriveInboxEntries(data: InboxSourceData, now: Date = new Date()): InboxDerivation {
   const today = new Date(now)
