@@ -7,6 +7,7 @@
 
 import { localDateString } from '@/lib/date'
 import type { PantryItem } from '@/types/pantry'
+import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
 
 /** Item shape accepted by `POST /api/pantry/bulk`. */
 export interface BulkAddItem {
@@ -171,4 +172,23 @@ export async function deletePantryItem(itemId: string): Promise<void> {
   if (!res.ok) {
     throw new Error("Couldn't delete that item. Please try again.")
   }
+}
+
+/**
+ * Every pantry row, enriched with expiry fields (`GET /api/pantry` via
+ * `buildPantryListResponse`/`enrichPantryItem`). Used by the notification
+ * center (#496) to derive expiring/expired/low-stock entries — deliberately
+ * the full list rather than `/api/pantry/expiring`, since that endpoint
+ * excludes already-expired rows (#239) and the inbox needs those too.
+ * Returns `[]` on failure so a broken fetch degrades to an empty inbox
+ * rather than throwing — including when `fetch` itself isn't defined (a
+ * component test that renders a page around `BubblesHeader`/`NotificationBell`
+ * without polyfilling `fetch`, since jsdom doesn't ship one).
+ */
+export async function fetchPantryItems(): Promise<EnrichedPantryItem[]> {
+  if (typeof fetch === 'undefined') return []
+  const res = await fetch('/api/pantry')
+  if (!res.ok) return []
+  const data = await res.json().catch(() => ({ items: [] }))
+  return data.items ?? []
 }

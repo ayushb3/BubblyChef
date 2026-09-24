@@ -120,3 +120,26 @@ export async function confirmCook(
     throw new Error(err.error ?? `Cook confirmation failed: ${res.status}`)
   }
 }
+
+/**
+ * `last_cooked_at` for every saved recipe — feeds the notification center's
+ * "haven't cooked in a while" nudge (#496). Deliberately the minimal shape,
+ * not the full `Recipe`, since that's all the derivation needs.
+ *
+ * `limit=100`: `GET /api/recipes` orders by `created_at desc`, not
+ * `last_cooked_at`, so a user with more than 100 saved recipes could have a
+ * more-recent cook outside this window and the nudge could fire a few days
+ * early for them. Accepted for this "lite" ticket — see the PR's "Not
+ * covered" section.
+ *
+ * Returns `[]` on failure so a broken fetch degrades to treating the user as
+ * "hasn't cooked" rather than throwing — including when `fetch` itself isn't
+ * defined (see `fetchPantryItems`'s docstring in `lib/api/pantry.ts`).
+ */
+export async function fetchRecipeCookMeta(): Promise<{ last_cooked_at: string | null }[]> {
+  if (typeof fetch === 'undefined') return []
+  const res = await fetch('/api/recipes?limit=100')
+  if (!res.ok) return []
+  const data = await res.json().catch(() => ({ recipes: [] }))
+  return data.recipes ?? []
+}
