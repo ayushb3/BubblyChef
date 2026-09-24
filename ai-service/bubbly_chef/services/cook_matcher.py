@@ -12,8 +12,7 @@ import re
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Literal
-from uuid import UUID
+from typing import Any, Callable, Literal, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -98,6 +97,29 @@ def _copy_alias_result(result: _AliasResult) -> _AliasResult:
     return (dict(aliases), dict(notes), [s.model_copy() for s in suggestions])
 
 
+_T = TypeVar("_T")
+
+
+def _dedupe_keep_first(items: list[_T], key_fn: Callable[[_T], Any]) -> list[_T]:
+    """Keep the first occurrence of each `key_fn(item)`, drop later ones.
+
+    Shared by every "collapse duplicates from an untrusted LLM/cache response"
+    site in this module (compound components by `pantry_item_id`, compound
+    suggestions by normalized `ingredient_name`) so the same seen-set loop
+    isn't hand-rolled at each call site — a review round found three near-
+    identical copies of this shape before this helper existed (PR #616).
+    """
+    seen: set[Any] = set()
+    result: list[_T] = []
+    for item in items:
+        key = key_fn(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
 def _strip_component_items(
     suggestions: list[CompoundSuggestion],
 ) -> list[CompoundSuggestion]:
@@ -124,15 +146,11 @@ def _resolve_component_items(
     dedup applied when a suggestion is first built from the LLM's response.
     """
     resolved: list[CompoundComponent] = []
-    seen_pantry_item_ids: set[UUID] = set()
     for component_name in component_names:
         comp_norm = _normalize_ingredient_name(component_name)
         pantry_item = pantry_by_norm.get(comp_norm)
         if pantry_item is None:
             return None
-        if pantry_item.id in seen_pantry_item_ids:
-            continue
-        seen_pantry_item_ids.add(pantry_item.id)
         resolved.append(
             CompoundComponent(
                 pantry_item_id=pantry_item.id,
@@ -140,7 +158,7 @@ def _resolve_component_items(
                 base_unit=_component_base_unit(pantry_item),
             )
         )
-    return resolved
+    return _dedupe_keep_first(resolved, lambda c: c.pantry_item_id)
 
 
 def _resolve_compound_suggestions_for_request(
@@ -921,7 +939,6 @@ async def resolve_aliases_with_llm(
                 all_present = True
                 resolved_components: list[str] = []
                 resolved_component_items: list[CompoundComponent] = []
-                seen_pantry_item_ids: set[UUID] = set()
                 for component_name in entry.compound_components:
                     comp_norm = _normalize_ingredient_name(component_name)
                     if comp_norm not in pantry_by_norm:
@@ -934,14 +951,6 @@ async def resolve_aliases_with_llm(
                     # Use the pantry's display name so the UI can show something consistent.
                     component_item = pantry_by_norm[comp_norm]
                     resolved_components.append(component_item.name)
-                    # Two model-supplied names (e.g. "milk" and "whole milk") can
-                    # normalize onto the same pantry row. Keep the prose list
-                    # (resolved_components) echoing the model verbatim, but dedupe
-                    # the structured items by pantry_item_id, first one wins — a
-                    # duplicate here would double-deduct what the user types.
-                    if component_item.id in seen_pantry_item_ids:
-                        continue
-                    seen_pantry_item_ids.add(component_item.id)
                     resolved_component_items.append(
                         CompoundComponent(
                             pantry_item_id=component_item.id,
@@ -949,6 +958,14 @@ async def resolve_aliases_with_llm(
                             base_unit=_component_base_unit(component_item),
                         )
                     )
+                # Two model-supplied names (e.g. "milk" and "whole milk") can
+                # normalize onto the same pantry row. Keep the prose list
+                # (resolved_components) echoing the model verbatim, but dedupe
+                # the structured items by pantry_item_id, first one wins — a
+                # duplicate here would double-deduct what the user types.
+                resolved_component_items = _dedupe_keep_first(
+                    resolved_component_items, lambda c: c.pantry_item_id
+                )
 
                 if all_present and resolved_components:
                     compound_suggestions.append(
@@ -981,16 +998,9 @@ async def resolve_aliases_with_llm(
     # list — so an undeduped second suggestion here would double-deduct
     # whatever quantity the user types, even though they only ever see one
     # input (round-4 review on PR #616).
-    if len(compound_suggestions) > 1:
-        seen_names: set[str] = set()
-        deduped: list[CompoundSuggestion] = []
-        for suggestion in compound_suggestions:
-            norm_name = _normalize_ingredient_name(suggestion.ingredient_name)
-            if norm_name in seen_names:
-                continue
-            seen_names.add(norm_name)
-            deduped.append(suggestion)
-        compound_suggestions = deduped
+    compound_suggestions = _dedupe_keep_first(
+        compound_suggestions, lambda s: _normalize_ingredient_name(s.ingredient_name)
+    )
 
     _alias_cache_put(cache_key, (aliases, notes, compound_suggestions), now)
     return aliases, notes, compound_suggestions
