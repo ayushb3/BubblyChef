@@ -1,6 +1,7 @@
 'use client'
 
 import BubblesMascot from '@/components/ui/BubblesMascot'
+import NotificationBell from '@/components/layout/NotificationBell'
 
 interface BubblesHeaderProps {
   showSubtitle?: boolean
@@ -26,7 +27,17 @@ export default function BubblesHeader({
           <p className="text-xs text-[var(--color-muted)]">Your AI kitchen assistant</p>
         )}
       </div>
-      {rightSlot && <div className="flex-shrink-0">{rightSlot}</div>}
+      <div className="flex-shrink-0 flex items-center gap-2">
+        {/*
+          Notification bell (#496) lives here, in the header itself, rather
+          than being threaded through every page's `rightSlot` prop — this
+          is "the existing rightSlot of BubblesHeader.tsx" the issue points
+          at, and every caller that passes a `rightSlot` (usually
+          `ProfileHeaderButton`) gets the bell next to it for free.
+        */}
+        <NotificationBell />
+        {rightSlot}
+      </div>
     </div>
   )
 }

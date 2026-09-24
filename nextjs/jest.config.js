@@ -11,7 +11,7 @@ const config = {
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: { moduleResolution: 'node' } }],
   },
-  setupFilesAfterEnv: ['@testing-library/jest-dom'],
+  setupFilesAfterEnv: ['@testing-library/jest-dom', '<rootDir>/jest.setup.ts'],
 }
 
 module.exports = config
