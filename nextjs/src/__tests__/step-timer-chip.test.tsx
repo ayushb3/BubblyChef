@@ -61,4 +61,18 @@ describe('StepTimerChips', () => {
     fireEvent.click(screen.getByTestId('step-timer-chip'))
     expect(screen.getByText(/Simmer sauce/)).toBeInTheDocument()
   })
+
+  it('a range chip carries the "low end of" note into the started timer, not just the chip', () => {
+    renderWithProvider(
+      <>
+        <StepTimerChips stepText="Marinate for 1-2 hours in the fridge." />
+        <TimerList />
+      </>,
+    )
+    fireEvent.click(screen.getByTestId('step-timer-chip'))
+    const timerListItems = screen.getAllByText(/of 1–2 hr/)
+    // Both the chip's own label and the started timer's name carry the note.
+    expect(timerListItems.length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByRole('listitem')).toHaveTextContent('of 1–2 hr')
+  })
 })

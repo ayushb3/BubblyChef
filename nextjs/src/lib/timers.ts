@@ -17,6 +17,13 @@ export interface ParsedDuration {
   label: string
   /** Duration in whole seconds. For a range, the lower bound. */
   seconds: number
+  /**
+   * Set only for a range match ("15–20 minutes"): a short note naming the
+   * full range, e.g. "of 15–20 min". Threaded into the *started timer's*
+   * own name (not just the chip that started it) so "used the lower bound"
+   * stays visible in the dock too, per the spec's "say so in the label".
+   */
+  rangeNote?: string
 }
 
 type Unit = 'second' | 'minute' | 'hour'
@@ -79,11 +86,12 @@ export function parseDurations(stepText: string): ParsedDuration[] {
 
     const abbrev = UNIT_ABBREV[unit]
     const loText = formatAmount(lo)
-    const label = hiRaw
-      ? `${loText} ${abbrev} (low end of ${loText}–${formatAmount(parseFloat(hiRaw))} ${abbrev})`
+    const rangeNote = hiRaw ? `of ${loText}–${formatAmount(parseFloat(hiRaw))} ${abbrev}` : undefined
+    const label = rangeNote
+      ? `${loText} ${abbrev} (low end ${rangeNote})`
       : `${loText} ${abbrev}`
 
-    results.push({ label, seconds })
+    results.push(rangeNote ? { label, seconds, rangeNote } : { label, seconds })
   }
 
   return results

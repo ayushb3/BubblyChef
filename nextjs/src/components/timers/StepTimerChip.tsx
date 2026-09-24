@@ -32,7 +32,12 @@ export default function StepTimerChips({ stepText, className }: StepTimerChipsPr
         <button
           key={`${d.seconds}-${i}`}
           type="button"
-          onClick={() => start(`${stepLabel} · ${formatDuration(d.seconds)}`, d.seconds)}
+          onClick={() =>
+            start(
+              `${stepLabel} · ${formatDuration(d.seconds)}${d.rangeNote ? ` (${d.rangeNote})` : ''}`,
+              d.seconds,
+            )
+          }
           className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold active:scale-95 transition-transform"
           style={{
             background: 'var(--color-bg)',
