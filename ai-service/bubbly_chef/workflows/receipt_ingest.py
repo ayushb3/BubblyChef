@@ -91,6 +91,7 @@ async def parse_receipt_llm(state: WorkflowState) -> WorkflowState:
                 **state,
                 "parsed_items": [],
                 "parse_error": "LLM returned non-structured response",
+                "warnings": state.get("warnings", []) + [PARSE_FAILED_WARNING],
                 "errors": state.get("errors", []) + ["LLM returned non-structured response"],
                 "confidence": 0.0,
                 "requires_review": True,
@@ -129,6 +130,7 @@ async def parse_receipt_llm(state: WorkflowState) -> WorkflowState:
             **state,
             "parsed_items": [],
             "parse_error": str(e),
+            "warnings": state.get("warnings", []) + [PARSE_FAILED_WARNING],
             "errors": state.get("errors", []) + [f"LLM error: {e}"],
             "confidence": 0.0,
             "requires_review": True,
@@ -141,6 +143,16 @@ async def parse_receipt_llm(state: WorkflowState) -> WorkflowState:
 PARSE_TIMEOUT_WARNING = (
     "Reading the receipt took too long and item extraction was cut short. "
     "Please try again."
+)
+
+# User-safe copy for any other parse-leg failure — a provider error, a rate
+# limit, or a structured-output response the parser couldn't use (issue
+# #510). Same #396 constraint as PARSE_TIMEOUT_WARNING: no provider name,
+# model id or exception text. Deliberately distinct wording from the timeout
+# warning so the two failure shapes stay distinguishable if a caller wants to
+# branch on the message; today the client only checks presence.
+PARSE_FAILED_WARNING = (
+    "We couldn't read the items on this receipt. Please try again or add them manually."
 )
 
 
