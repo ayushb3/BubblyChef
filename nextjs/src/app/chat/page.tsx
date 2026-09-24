@@ -421,10 +421,15 @@ function ChatSurface() {
     sendMessage(idea)
   }
 
-  // Same mechanism a brainstorm pick uses: send the title as the next
-  // message so the backend's exact-title match (PR #605) pins it.
+  // Acts on the match by id — the same contract the single-match card's
+  // "Cook this" action uses (`/chat?cooking=<id>`, read reactively via
+  // `useSearchParams` above). Deliberately NOT sendMessage(match.title):
+  // re-sending the bare title falls through to the LLM intent classifier,
+  // which has no saved-recipe re-pick shortcut and can generate a
+  // near-duplicate recipe instead of pinning the existing one (PR #614
+  // review, finding 1).
   const handlePickSavedRecipe = (match: SavedRecipeMatch) => {
-    sendMessage(match.title)
+    router.push(`/chat?cooking=${encodeURIComponent(match.id)}`, { scroll: false })
   }
 
   const handleConfirmChoice = (
@@ -868,7 +873,10 @@ function MessageRenderer({
   // cards. Zero matches falls through to the plain markdown reply (the
   // assistant's "none found" text stands alone with the existing chips);
   // metadata absence falls through the same way (backward compat, matching
-  // the brainstorm branch above).
+  // the brainstorm branch above). Follow-up chips (My saved recipes /
+  // Generate a new one) still render below the cards — they're the escape
+  // hatch when the matches are wrong, and dropping them here was a
+  // regression the issue didn't ask for (PR #614 review, finding 2).
   if (intent === 'saved_recipe_lookup') {
     const matches = getSavedRecipeMatches(message.response)
     if (matches.length > 0) {
@@ -889,6 +897,12 @@ function MessageRenderer({
               />
             </div>
           </div>
+          {isLastSettledAssistant && !isFollowUpsPending(message.response) && (
+            <PostMessageChips
+              chips={resolveChips(intent, getFollowUpSuggestions(message.response))}
+              onChipTap={onChipTap}
+            />
+          )}
         </motion.div>
       )
     }

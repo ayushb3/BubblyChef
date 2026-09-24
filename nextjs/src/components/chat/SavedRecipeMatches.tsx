@@ -27,9 +27,10 @@ export interface SavedRecipeMatchesProps {
  * - **One** match → a single card with Open recipe (library entry) and Cook
  *   this (`/chat?cooking=<id>`) actions.
  * - **Many** matches → a ranked list of tappable mini cards, shaped like
- *   BrainstormOptions. Tapping one sends its title as the next chat message,
- *   the same mechanism a brainstorm pick uses, so the backend's exact-title
- *   match pins it (see PR #605).
+ *   BrainstormOptions. Tapping one calls `onSelect` with the match; the
+ *   caller acts on it by id (the same `/chat?cooking=<id>` contract the
+ *   single-match card's Cook action uses), not by re-sending the title as
+ *   chat text — see `handlePickSavedRecipe` in `app/chat/page.tsx`.
  */
 export default function SavedRecipeMatches({
   matches,

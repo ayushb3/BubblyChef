@@ -66,9 +66,16 @@ describe('SavedRecipeMatches', () => {
   })
 
   it('does not fire onSelect when disabled', () => {
+    // A native <button disabled> swallows the click before onClick ever
+    // runs, so fireEvent.click alone would pass regardless of whether the
+    // `!disabled && onSelect(match)` guard exists (PR #614 review, finding
+    // 3). Assert the disabled attribute directly — the guard this covers —
+    // in addition to the click having no effect.
     const onSelect = jest.fn()
     render(<SavedRecipeMatches matches={MANY} onSelect={onSelect} disabled />)
-    fireEvent.click(screen.getByRole('listitem', { name: `Pick ${MANY[0].title}` }))
+    const item = screen.getByRole('listitem', { name: `Pick ${MANY[0].title}` })
+    expect(item).toBeDisabled()
+    fireEvent.click(item)
     expect(onSelect).not.toHaveBeenCalled()
   })
 
