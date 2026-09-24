@@ -16,9 +16,14 @@
  * finished timer.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useCookingTimers, type CookingTimer } from '@/lib/useCookingTimers'
+import {
+  useCookingTimers,
+  TIMER_STARTED_EVENT,
+  TIMER_COMPLETED_EVENT,
+  type CookingTimer,
+} from '@/lib/useCookingTimers'
 import { formatDuration } from '@/lib/timers'
 import { useMotionConfig } from '@/lib/motion'
 
@@ -87,7 +92,14 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
         border: `1.5px solid ${isCompleted ? 'var(--color-coral)' : 'var(--color-border)'}`,
         boxShadow: 'var(--shadow-soft)',
       }}
-      role="status"
+      // Not `role="status"` / a live region: the countdown text inside
+      // changes every second, and a live region announces every change —
+      // one polite screen-reader interruption per timer per second, on
+      // every route. Meaningful events (a timer starting, a timer
+      // finishing) are announced instead through the dedicated live region
+      // below, driven by `TIMER_STARTED_EVENT` / `TIMER_COMPLETED_EVENT`
+      // rather than the ticking render.
+      role="group"
       aria-label={
         isCompleted
           ? `${timer.label} timer finished`
@@ -139,57 +151,104 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
   )
 }
 
+/** Minimum time (ms) the live region sits cleared before the real message
+ * lands. PR #620 review finding: setting the *same* announcement text twice
+ * in a row (e.g. two "Prep timer started", since the quick-set's labels are
+ * fixed) is a React no-op — the DOM node's text never actually changes, so a
+ * screen reader has nothing to notice. Clearing first, then setting the real
+ * text on a following tick, forces a real mutation every time regardless of
+ * whether the new message happens to match the last one. */
+const ANNOUNCE_RESET_DELAY_MS = 50
+
 export default function TimerDock() {
   const { timers } = useCookingTimers()
   const [expanded, setExpanded] = useState(false)
-  const announcedRef = useRef<Set<string>>(new Set())
+  // What the visually-hidden live region below currently says. Only ever
+  // set from `announce()` below (via the `TIMER_STARTED_EVENT` /
+  // `TIMER_COMPLETED_EVENT` listeners) — never from the per-tick `timers`
+  // update — so a screen reader hears "X timer started" and "X timer
+  // finished" and nothing in between.
+  const [announcement, setAnnouncement] = useState('')
 
-  // Best-effort completion feedback — fires once per timer, driven by the
-  // dock's own view of `timers` rather than the store (keeps the store free
-  // of side effects and easy to unit test in isolation).
+  // Completion feedback (chime, vibration, the live-region announcement) is
+  // driven by the store's own `TIMER_COMPLETED_EVENT` rather than by
+  // watching `timers` for a `status === 'completed'` transition. The event
+  // is the store's single source of truth for "this timer just completed,
+  // exactly once, ever" (including across a reload); re-deriving that here
+  // from `timers` would need its own persisted fired-flag to avoid the same
+  // replay-on-reload bug the store itself had to fix.
   useEffect(() => {
-    for (const t of timers) {
-      if (t.status === 'completed' && !announcedRef.current.has(t.id)) {
-        announcedRef.current.add(t.id)
-        playCompletionChime()
-        vibrateOnComplete()
-      }
-    }
-  }, [timers])
+    let resetTimeout: ReturnType<typeof setTimeout> | null = null
 
-  if (timers.length === 0) return null
+    function announce(text: string) {
+      if (resetTimeout !== null) clearTimeout(resetTimeout)
+      setAnnouncement('')
+      resetTimeout = setTimeout(() => setAnnouncement(text), ANNOUNCE_RESET_DELAY_MS)
+    }
+    function handleStarted(event: Event) {
+      const { label } = (event as CustomEvent<{ id: string; label: string }>).detail
+      announce(`${label} timer started`)
+    }
+    function handleCompleted(event: Event) {
+      const { label } = (event as CustomEvent<{ id: string; label: string }>).detail
+      announce(`${label} timer finished`)
+      playCompletionChime()
+      vibrateOnComplete()
+    }
+    window.addEventListener(TIMER_STARTED_EVENT, handleStarted)
+    window.addEventListener(TIMER_COMPLETED_EVENT, handleCompleted)
+    return () => {
+      window.removeEventListener(TIMER_STARTED_EVENT, handleStarted)
+      window.removeEventListener(TIMER_COMPLETED_EVENT, handleCompleted)
+      if (resetTimeout !== null) clearTimeout(resetTimeout)
+    }
+  }, [])
 
   return (
-    <div
-      className="fixed left-0 right-0 z-40 flex justify-center px-3 pointer-events-none"
-      style={{ bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
-      data-testid="timer-dock"
-    >
-      <motion.div
-        layout
-        className="pointer-events-auto flex items-center gap-2 rounded-full px-2 py-2 max-w-full overflow-x-auto"
-        style={{
-          background: 'color-mix(in srgb, var(--color-surface) 92%, transparent)',
-          backdropFilter: 'blur(6px)',
-          border: '1px solid var(--color-border)',
-          boxShadow: 'var(--shadow-pop)',
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          aria-expanded={expanded}
-          aria-label={expanded ? 'Collapse timers' : 'Expand timers'}
-          className="flex-shrink-0 text-sm active:scale-95 transition-transform"
+    <>
+      {/* The only live region in the dock — announces starts and
+          completions, never the ticking countdown. Visually hidden;
+          screen-reader-only. Rendered unconditionally, including while the
+          dock has no timers: a live region must already exist, empty and
+          idle, in the DOM *before* its first real message — inserting it
+          already populated (e.g. only once `timers.length > 0`) means a
+          screen reader never sees the "mutation" that makes it announce. */}
+      <div aria-live="polite" role="status" data-testid="timer-live-region" className="sr-only">
+        {announcement}
+      </div>
+      {timers.length > 0 && (
+        <div
+          className="fixed left-0 right-0 z-40 flex justify-center px-3 pointer-events-none"
+          style={{ bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
+          data-testid="timer-dock"
         >
-          {expanded ? '▾' : '▸'}
-        </button>
-        <AnimatePresence initial={false}>
-          {timers.map((t) => (
-            <TimerBadge key={t.id} timer={t} expanded={expanded} />
-          ))}
-        </AnimatePresence>
-      </motion.div>
-    </div>
+          <motion.div
+            layout
+            className="pointer-events-auto flex items-center gap-2 rounded-full px-2 py-2 max-w-full overflow-x-auto"
+            style={{
+              background: 'color-mix(in srgb, var(--color-surface) 92%, transparent)',
+              backdropFilter: 'blur(6px)',
+              border: '1px solid var(--color-border)',
+              boxShadow: 'var(--shadow-pop)',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setExpanded((e) => !e)}
+              aria-expanded={expanded}
+              aria-label={expanded ? 'Collapse timers' : 'Expand timers'}
+              className="flex-shrink-0 text-sm active:scale-95 transition-transform"
+            >
+              {expanded ? '▾' : '▸'}
+            </button>
+            <AnimatePresence initial={false}>
+              {timers.map((t) => (
+                <TimerBadge key={t.id} timer={t} expanded={expanded} />
+              ))}
+            </AnimatePresence>
+          </motion.div>
+        </div>
+      )}
+    </>
   )
 }
