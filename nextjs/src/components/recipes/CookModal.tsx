@@ -252,7 +252,7 @@ export function MissingItemsList({
                       Using this? Type how much of each you&apos;ll use to deduct it:
                     </span>
                     {componentItems.map((component) => {
-                      const key = compoundOverrideKey(name, component.pantry_item_id)
+                      const key = compoundOverrideKey(suggestion.ingredient_name, component.pantry_item_id)
                       return (
                         <div key={key} className="flex items-center gap-1.5">
                           <span className="flex-1 not-italic text-[var(--color-text)] font-semibold">

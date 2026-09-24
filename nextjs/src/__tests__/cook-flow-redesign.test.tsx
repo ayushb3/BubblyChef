@@ -835,4 +835,34 @@ describe('CookModal — compound component deduction end to end (#284)', () => {
     await screen.findByText(/pantry updated/i)
     expect(mockConfirmCook).toHaveBeenCalledWith('r1', [])
   })
+
+  // Regression for the claude[bot] review on PR #616: the override key was
+  // written from proposal.missing's spelling but read from
+  // suggestion.ingredient_name, and the two are only ever compared
+  // case-insensitively. A casing difference silently dropped the deduction.
+  it('deducts the component even when proposal.missing and suggestion.ingredient_name differ in case', async () => {
+    const { confirmCook: mockConfirmCook } = jest.requireMock('@/lib/api/recipes') as {
+      confirmCook: jest.Mock
+    }
+    mockConfirmCook.mockResolvedValue({ applied: 1, skipped: [] })
+    mockCookRecipe.mockResolvedValue({
+      ...compoundProposal([suggestionWithComponents({ ingredient_name: 'heavy cream' })]),
+      missing: ['Heavy Cream'],
+    } as CookProposal)
+
+    renderWithQuery(
+      <CookModal recipeId="r1" recipeTitle="Cream Sauce" onClose={jest.fn()} onCooked={jest.fn()} />,
+    )
+
+    const input = await screen.findByLabelText(/deduct quantity for butter \(heavy cream substitution\)/i)
+    fireEvent.change(input, { target: { value: '50' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /yes, i cooked this/i }))
+
+    await screen.findByText(/pantry updated/i)
+    expect(mockConfirmCook).toHaveBeenCalledWith(
+      'r1',
+      expect.arrayContaining([{ pantry_item_id: 'butter-1', deduct_qty: 50, base_unit: 'g' }]),
+    )
+  })
 })
