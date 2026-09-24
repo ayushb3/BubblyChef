@@ -23,6 +23,10 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { ThemeProvider } from '@/components/ThemeProvider'
 import type { ChatMessage, ChatResponse } from '@/types/chat'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+// Real (unmocked) cook-session module — it's just localStorage, which jsdom
+// provides, and the whole point of the regression test below is to prove
+// the real isCookSessionEnded/startCookSession interaction, not a stub of it.
+import { endCookSession, isCookSessionEnded } from '@/lib/cook-session'
 
 function QueryWrapper({ children }: { children: React.ReactNode }) {
   const [client] = React.useState(
@@ -137,18 +141,42 @@ beforeAll(() => {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  window.localStorage.clear()
 })
 
 describe('saved_recipe_lookup many-match tap acts by id (issue #494)', () => {
-  it('navigates to /chat?cooking=<id> and never sends the title as chat text', async () => {
+  it('navigates to /chat?cooking=<id> (via replace) and never sends the title as chat text', async () => {
     renderChat()
 
     const card = await screen.findByRole('listitem', { name: 'Pick Chicken Tikka Masala' })
     fireEvent.click(card)
 
-    expect(routerPush).toHaveBeenCalledWith('/chat?cooking=r2', { scroll: false })
+    // router.replace, not push — consistent with every other ?cooking= pin
+    // (the "Start cooking" handler in app/chat/page.tsx) so the back button
+    // doesn't land on the un-pinned screen (PR #614 re-review, finding 3).
+    expect(routerReplace).toHaveBeenCalledWith('/chat?cooking=r2', { scroll: false })
+    expect(routerPush).not.toHaveBeenCalled()
     expect(sendMessage).not.toHaveBeenCalled()
     expect(sendMessage).not.toHaveBeenCalledWith('Chicken Tikka Masala')
+  })
+
+  it('clears a stale ended-cook record before pinning a previously-cooked recipe', async () => {
+    // Regression for PR #614 re-review finding 1: without startCookSession(id)
+    // before the navigation, isCookSessionEnded(id) — localStorage-backed,
+    // survives across sessions — would make the ?cooking= param get stripped
+    // straight back out by the effect in app/chat/page.tsx that guards
+    // against resurrecting an already-finished cook, so the tap would be a
+    // silent no-op for exactly the recipes users look up most: the ones
+    // they've already cooked.
+    endCookSession('r2')
+    expect(isCookSessionEnded('r2')).toBe(true)
+
+    renderChat()
+    const card = await screen.findByRole('listitem', { name: 'Pick Chicken Tikka Masala' })
+    fireEvent.click(card)
+
+    expect(isCookSessionEnded('r2')).toBe(false)
+    expect(routerReplace).toHaveBeenCalledWith('/chat?cooking=r2', { scroll: false })
   })
 
   it('still renders the saved_recipe_lookup follow-up chips alongside the cards', async () => {

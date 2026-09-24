@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { springs } from '@/lib/motion'
+import { startCookSession } from '@/lib/cook-session'
 import type { SavedRecipeMatch } from '@/types/chat'
 
 export interface SavedRecipeMatchesProps {
@@ -153,7 +154,19 @@ function SingleMatchCard({
             href={`/chat?cooking=${encodeURIComponent(match.id)}`}
             aria-disabled={disabled}
             tabIndex={disabled ? -1 : undefined}
-            onClick={(e) => disabled && e.preventDefault()}
+            onClick={(e) => {
+              if (disabled) {
+                e.preventDefault()
+                return
+              }
+              // Clears a stale "ended" record from a previous cook of this
+              // same recipe before navigating — otherwise the ?cooking=
+              // param the Link is about to set gets stripped straight back
+              // out by the isCookSessionEnded effect in app/chat/page.tsx,
+              // making this a silent no-op for any recipe already cooked
+              // once (PR #614 re-review, same fix as the many-match tap).
+              startCookSession(match.id)
+            }}
             className={linkClass('primary')}
           >
             Cook this

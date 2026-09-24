@@ -6,6 +6,8 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import SavedRecipeMatches from '@/components/chat/SavedRecipeMatches'
 import type { SavedRecipeMatch } from '@/types/chat'
+// Real (unmocked) cook-session module — localStorage-backed, jsdom provides it.
+import { endCookSession, isCookSessionEnded } from '@/lib/cook-session'
 
 const ONE: SavedRecipeMatch[] = [
   { id: 'r1', title: 'Butter Chicken', description: 'Creamy tomato curry.', cuisine: 'Indian' },
@@ -18,6 +20,10 @@ const MANY: SavedRecipeMatch[] = [
 ]
 
 describe('SavedRecipeMatches', () => {
+  afterEach(() => {
+    window.localStorage.clear()
+  })
+
   // ── Zero ───────────────────────────────────────────────────────────────
   it('renders nothing when there are no matches', () => {
     const { container } = render(
@@ -46,6 +52,29 @@ describe('SavedRecipeMatches', () => {
     const openLink = screen.getByRole('link', { name: 'Open recipe' })
     expect(openLink).toHaveAttribute('aria-disabled', 'true')
     expect(openLink.className).toContain('pointer-events-none')
+  })
+
+  it('clears a stale ended-cook record when Cook this is tapped', () => {
+    // Regression for PR #614 re-review finding 1: the single-match card's
+    // Cook this link is a plain <Link href="/chat?cooking=<id>">, so unless
+    // its onClick clears the ended record first, a previously-cooked recipe
+    // (isCookSessionEnded, localStorage-backed) has its ?cooking= param
+    // stripped straight back out on landing — the tap becomes a silent
+    // no-op for exactly the recipes users look up most.
+    endCookSession('r1')
+    expect(isCookSessionEnded('r1')).toBe(true)
+
+    render(<SavedRecipeMatches matches={ONE} onSelect={jest.fn()} />)
+    fireEvent.click(screen.getByRole('link', { name: 'Cook this' }))
+
+    expect(isCookSessionEnded('r1')).toBe(false)
+  })
+
+  it('does not clear the ended-cook record when the disabled Cook this link is tapped', () => {
+    endCookSession('r1')
+    render(<SavedRecipeMatches matches={ONE} onSelect={jest.fn()} disabled />)
+    fireEvent.click(screen.getByRole('link', { name: 'Cook this' }))
+    expect(isCookSessionEnded('r1')).toBe(true)
   })
 
   // ── Many ───────────────────────────────────────────────────────────────

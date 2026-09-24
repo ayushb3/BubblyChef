@@ -428,8 +428,17 @@ function ChatSurface() {
   // which has no saved-recipe re-pick shortcut and can generate a
   // near-duplicate recipe instead of pinning the existing one (PR #614
   // review, finding 1).
+  //
+  // startCookSession(id) must run before the navigation, same as the
+  // existing pin path at the "Start cooking" handler below: `isCookSessionEnded`
+  // is localStorage-backed and survives across sessions, so for a recipe the
+  // user already finished cooking, the ?cooking= param would otherwise be
+  // stripped straight back out by the isCookSessionEnded effect above,
+  // making the tap a silent no-op for exactly the recipes people look up
+  // most (PR #614 re-review).
   const handlePickSavedRecipe = (match: SavedRecipeMatch) => {
-    router.push(`/chat?cooking=${encodeURIComponent(match.id)}`, { scroll: false })
+    startCookSession(match.id)
+    router.replace(`/chat?cooking=${encodeURIComponent(match.id)}`, { scroll: false })
   }
 
   const handleConfirmChoice = (
