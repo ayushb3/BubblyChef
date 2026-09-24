@@ -152,6 +152,11 @@ function SingleMatchCard({
           </Link>
           <Link
             href={`/chat?cooking=${encodeURIComponent(match.id)}`}
+            // Consistent with every other ?cooking= pin (the many-match tap's
+            // router.replace and the recipe-library "Start cooking" handoff),
+            // so the back button doesn't land on the un-pinned screen (PR #614
+            // round-3 review).
+            replace
             aria-disabled={disabled}
             tabIndex={disabled ? -1 : undefined}
             onClick={(e) => {

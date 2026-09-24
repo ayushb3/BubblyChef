@@ -436,8 +436,18 @@ function ChatSurface() {
   // stripped straight back out by the isCookSessionEnded effect above,
   // making the tap a silent no-op for exactly the recipes people look up
   // most (PR #614 re-review).
+  //
+  // Also clear a stale `dismissedRecipeId` for this same match. `cookingRecipe`
+  // is gated on `cookingRecipeId !== dismissedRecipeId`, and dismissing the
+  // banner sets `dismissedRecipeId` to the recipe's id without ever clearing
+  // it — so tap → dismiss the banner → tap the same card again would
+  // re-set the same ?cooking=<id> param but the banner stays hidden, since
+  // dismissedRecipeId still matches it. An explicit re-tap is a fresh
+  // decision to cook this recipe, so it overrides an earlier dismissal
+  // (PR #614 round-3 review).
   const handlePickSavedRecipe = (match: SavedRecipeMatch) => {
     startCookSession(match.id)
+    setDismissedRecipeId((prev) => (prev === match.id ? null : prev))
     router.replace(`/chat?cooking=${encodeURIComponent(match.id)}`, { scroll: false })
   }
 
