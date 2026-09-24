@@ -305,12 +305,21 @@ function writeEndedRecipeIds(ids: string[]): void {
  * the resumable record here used to cause `RecipeBook`'s reload-resume
  * effect to force-open the guided flow for cooks started from chat, which
  * never asked to be guided through (PR #475 code review).
+ *
+ * #490 code review: also clears a stale amendment left by a previous,
+ * abandoned cook of the same recipe. `endCookSession` / `clearActiveCookSession`
+ * clear it on a *clean* exit (confirmed deduction, or explicitly leaving the
+ * guided flow), but a cook that's simply abandoned — tab closed, navigated
+ * away mid-cook without either — leaves neither of those called, so without
+ * this a genuinely fresh cook of the same recipe would silently start from
+ * the old amendment instead of the original list.
  */
 export function startCookSession(recipeId: string): void {
   const ids = readEndedRecipeIds()
   if (ids.includes(recipeId)) {
     writeEndedRecipeIds(ids.filter((id) => id !== recipeId))
   }
+  clearAmendedIngredients(recipeId)
 }
 
 /**
@@ -459,6 +468,22 @@ export function clearAmendedIngredients(recipeId: string): void {
   if (record && record.recipeId === recipeId) {
     writeAmendedIngredients(null)
   }
+}
+
+/**
+ * Merges a persisted amendment (if any) over `ingredients` for `recipeId`,
+ * otherwise returns `ingredients` unchanged. Shared by every reload-resume
+ * point that renders a recipe's ingredient list — `ChatSurface`'s
+ * `cookingRecipe` banner and `RecipeBook`'s `recipesWithOverrides` both call
+ * this rather than each re-deriving the same `getAmendedIngredients(id) ??
+ * ingredients` fallback inline, so a future caller (issue #489's apply
+ * action, or any other resume point) gets the same merge for free.
+ */
+export function applyAmendedIngredients(
+  recipeId: string,
+  ingredients: (string | RecipeIngredient)[],
+): (string | RecipeIngredient)[] {
+  return getAmendedIngredients(recipeId) ?? ingredients
 }
 
 /**

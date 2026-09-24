@@ -26,7 +26,7 @@ import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
 import { fetchRecipe, promoteRecipeDraft } from '@/lib/api/recipes'
 import { cookingContextForId, deriveChatSeed } from '@/lib/chat-seed'
-import { startCookSession, isCookSessionEnded, getAmendedIngredients } from '@/lib/cook-session'
+import { startCookSession, isCookSessionEnded, applyAmendedIngredients } from '@/lib/cook-session'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import type {
   ChatMessage,
@@ -218,16 +218,10 @@ function ChatSurface() {
   // #490 — layer a persisted amendment (if any) over the freshly-fetched
   // recipe so a reload mid-cook doesn't silently revert the banner (and, via
   // this same object, "Finished cooking") to the original ingredient list.
-  // `getAmendedIngredients` reads straight from localStorage and returns
-  // `null` when nothing is on record for this recipe id, so an un-amended
-  // cook renders `loadedRecipe` completely unchanged.
-  const amendedIngredients = cookingRecipeVisible && cookingRecipeId
-    ? getAmendedIngredients(cookingRecipeId)
-    : null
-  const cookingRecipe = cookingRecipeVisible && loadedRecipe
-    ? amendedIngredients
-      ? { ...loadedRecipe, ingredients: amendedIngredients }
-      : loadedRecipe
+  // `applyAmendedIngredients` reads straight from localStorage and returns
+  // `ingredients` unchanged when nothing is on record for this recipe id.
+  const cookingRecipe = cookingRecipeVisible && cookingRecipeId && loadedRecipe
+    ? { ...loadedRecipe, ingredients: applyAmendedIngredients(cookingRecipeId, loadedRecipe.ingredients) }
     : null
 
   // Strip a `?cooking=` param that names an already-ended session — e.g. the

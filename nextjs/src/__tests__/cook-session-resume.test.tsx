@@ -32,6 +32,7 @@ import {
   saveAmendedIngredients,
   getAmendedIngredients,
   clearAmendedIngredients,
+  applyAmendedIngredients,
 } from '@/lib/cook-session'
 
 // ─── cook-session.ts — the persisted record itself ────────────────────────────
@@ -238,6 +239,26 @@ describe('cook-session amended ingredients (#490)', () => {
     expect(getAmendedIngredients('r1')).toBeNull()
   })
 
+  // ─── code review: an abandoned cook must not leak its amendment forward ───
+
+  it('startCookSession clears a stale amendment left by a previously abandoned cook (chat path)', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    startCookSession('r1')
+    expect(getAmendedIngredients('r1')).toBeNull()
+  })
+
+  it('startGuidedCookSession clears a stale amendment left by a previously abandoned cook (guided path)', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    startGuidedCookSession('r1')
+    expect(getAmendedIngredients('r1')).toBeNull()
+  })
+
+  it('starting a fresh cook for one recipe does not clear a different, still-relevant amendment', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    startCookSession('r2')
+    expect(getAmendedIngredients('r1')).toEqual(AMENDED)
+  })
+
   it('a corrupt persisted amendment record is treated as none rather than crashing', () => {
     window.localStorage.setItem('bubblychef:cook:amendedIngredients', 'not json')
     expect(() => getAmendedIngredients('r1')).not.toThrow()
@@ -259,22 +280,18 @@ describe('cook-session amended ingredients (#490)', () => {
     }
   })
 
-  // Mirrors RecipeBook's `recipesWithOverrides` merge — the guided-flow half
-  // of #490's acceptance criteria (chat's half is covered in
-  // cook-session-teardown.test.tsx). A reload that resumes the guided flow
-  // reads the recipe through this same merge, so it must show the amended
-  // list too, not just the chat banner.
-  it('mirrors RecipeBook.recipesWithOverrides: merges the amendment into the recipe used to resume the guided flow', () => {
-    const original = { id: 'r1', ingredients: [{ name: 'milk', quantity: 1, unit: 'cup' }] }
-    const mergeAmendment = (recipe: typeof original) => {
-      const amended = getAmendedIngredients(recipe.id)
-      return amended ? { ...recipe, ingredients: amended } : recipe
-    }
+  // Exercises the same function RecipeBook's `recipesWithOverrides` merge
+  // calls — the guided-flow half of #490's acceptance criteria (chat's half
+  // is covered in cook-session-teardown.test.tsx). A reload that resumes the
+  // guided flow reads the recipe through this same merge, so it must show
+  // the amended list too, not just the chat banner.
+  it('applyAmendedIngredients merges the amendment into the recipe used to resume the guided flow', () => {
+    const original = [{ name: 'milk', quantity: 1, unit: 'cup' }]
 
-    expect(mergeAmendment(original)).toBe(original)
+    expect(applyAmendedIngredients('r1', original)).toBe(original)
 
     saveAmendedIngredients('r1', AMENDED)
-    expect(mergeAmendment(original)).toEqual({ id: 'r1', ingredients: AMENDED })
+    expect(applyAmendedIngredients('r1', original)).toEqual(AMENDED)
   })
 })
 
