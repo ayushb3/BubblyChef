@@ -160,9 +160,7 @@ describe('NotificationBell', () => {
     // store (`lib/useCookingTimers.tsx`) — seed its own persisted shape
     // directly (a completed, undismissed timer) rather than racing a real
     // countdown, then confirm `useInboxEntries` picks it up through
-    // `useCookingTimers()` and the bell lists it. Dismissal itself is owned
-    // by the cooking-timer dock (#495/#619), not this hub, so it isn't
-    // exercised here — this only pins that an undismissed one stays listed.
+    // `useCookingTimers()` and the bell lists it.
     window.localStorage.setItem(
       TIMERS_STORAGE_KEY,
       JSON.stringify([
@@ -190,9 +188,99 @@ describe('NotificationBell', () => {
       expect(screen.getByText('Pasta timer finished')).toBeInTheDocument()
     })
 
-    // Dismiss-only: no tap target, per the existing timer-entry convention.
+    // No `<a>` — it's a dismiss button, not a navigation link.
     const items = screen.getAllByRole('listitem')
     expect(items).toHaveLength(1)
     expect(items[0].querySelector('a')).toBeNull()
+  })
+
+  it('dismisses a completed timer through the real store, removing it from the bell (#496 tap-target: "timer → dismiss")', async () => {
+    window.localStorage.setItem(
+      TIMERS_STORAGE_KEY,
+      JSON.stringify([
+        {
+          id: 'timer-1',
+          label: 'Pasta',
+          durationSeconds: 600,
+          endAt: null,
+          frozenRemaining: 0,
+          status: 'completed',
+        },
+      ]),
+    )
+    mockQuietFetch()
+
+    renderBellWithTimers()
+
+    fireEvent.click(await screen.findByTestId('notification-bell'))
+    const dismissButton = await screen.findByRole('button', { name: /dismiss.*pasta timer finished/i })
+
+    fireEvent.click(dismissButton)
+
+    // Removed from the DOM and the badge, not just visually hidden.
+    await waitFor(() => {
+      expect(screen.queryByText('Pasta timer finished')).not.toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('notification-badge')).not.toBeInTheDocument()
+
+    // The real store's own persisted record is gone too — this went through
+    // `useCookingTimers().dismiss()`, not just local component state, so the
+    // timer dock (`TimerDock.tsx`) sees the same removal.
+    const stored = JSON.parse(window.localStorage.getItem(TIMERS_STORAGE_KEY) ?? '[]')
+    expect(stored).toEqual([])
+  })
+
+  it('hides the numeric badge after a failed refresh, instead of asserting the stale pre-error count', async () => {
+    // #496 review round 4: React Query keeps the last successful `data`
+    // around through a failed refetch, so `entries`/`overflowCount` can
+    // still reflect the *old* state here. Showing that stale number would
+    // claim knowledge the app doesn't actually have any more.
+    const today = new Date()
+    let callCount = 0
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      callCount += 1
+      // First render's fetch pair succeeds (call 1: pantry, call 2: recipes);
+      // every fetch from the second refresh() onward fails.
+      const isFirstLoad = callCount <= 2
+      if (url.includes('/api/pantry')) {
+        if (!isFirstLoad) return { ok: false, status: 500, json: async () => ({}) } as Response
+        return jsonResponse({
+          items: [
+            {
+              id: 'expired-1',
+              name: 'Old Milk',
+              quantity: 1,
+              expiry_date: today.toISOString().slice(0, 10),
+              days_until_expiry: -1,
+              is_expired: true,
+              is_expiring_soon: false,
+            },
+          ],
+          total_count: 1,
+        })
+      }
+      if (url.includes('/api/recipes')) {
+        if (!isFirstLoad) return { ok: false, status: 500, json: async () => ({}) } as Response
+        return jsonResponse({ recipes: [{ last_cooked_at: today.toISOString() }] })
+      }
+      return jsonResponse({})
+    }) as unknown as typeof fetch
+
+    renderBell()
+
+    // Successful initial load: badge shows a real count.
+    await waitFor(() => {
+      expect(screen.getByTestId('notification-badge')).toHaveTextContent('1')
+    })
+
+    // Opening the dropdown calls refresh() -> refetch(), which now fails.
+    fireEvent.click(screen.getByTestId('notification-bell'))
+
+    await waitFor(() => {
+      expect(screen.getByText(/couldn.t check right now/i)).toBeInTheDocument()
+    })
+    // No numeric badge — hidden outright rather than showing the stale "1".
+    expect(screen.queryByTestId('notification-badge')).not.toBeInTheDocument()
   })
 })

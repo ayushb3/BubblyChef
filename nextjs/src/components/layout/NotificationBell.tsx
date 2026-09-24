@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Bell } from '@phosphor-icons/react/dist/ssr'
 import { useMotionConfig } from '@/lib/motion'
 import { useInboxEntries } from '@/hooks/useInboxEntries'
+import { useCookingTimers } from '@/lib/useCookingTimers'
 import type { InboxEntry, InboxTier } from '@/lib/inbox-helpers'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 
@@ -36,6 +37,10 @@ export default function NotificationBell() {
   const containerRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const { entries, overflowCount, loading, error, refresh } = useInboxEntries()
+  // Issue #496's tap-target table: "timer → dismiss". Dismissal goes through
+  // the real Spec B.3 store directly — dismissing here also clears the
+  // timer from the dock (`TimerDock.tsx`), since both read the same store.
+  const { dismiss: dismissTimer } = useCookingTimers()
   // Fixed-position top offset, measured from the bell button each time it
   // opens. The dropdown is anchored to the *viewport's* right edge (see the
   // `right-4` below), not to the bell button's own edge — the bell usually
@@ -78,7 +83,18 @@ export default function NotificationBell() {
     })
   }
 
+  // `error` intentionally overrides `count`, not just the badge's numeral:
+  // React Query keeps the *previous* successful `data` around while a
+  // refetch is in flight or has failed (so the dropdown doesn't flash empty
+  // between opens), which means `entries`/`overflowCount` can still be the
+  // stale pre-error values here. Asserting that stale number in the badge —
+  // or even just hiding the digits but keeping `count > 0`'s truthiness —
+  // would claim a state the app no longer knows to be true. A failed
+  // refresh must show a neutral "we don't know" badge, matching the
+  // dropdown's own "Couldn't check right now" panel, not a confident
+  // (and possibly wrong) leftover count (#496 review round 4).
   const count = entries.length + overflowCount
+  const showBadge = !error && count > 0
 
   return (
     <div className="relative" ref={containerRef}>
@@ -88,27 +104,42 @@ export default function NotificationBell() {
         onClick={toggleOpen}
         // "unread" would imply persisted read state, which this lite inbox
         // deliberately doesn't have (#496: "No persistence, no read/unread").
-        aria-label={count > 0 ? `Notifications, ${count} item${count === 1 ? '' : 's'}` : 'Notifications'}
+        aria-label={
+          error
+            ? 'Notifications, could not check for updates'
+            : count > 0
+              ? `Notifications, ${count} item${count === 1 ? '' : 's'}`
+              : 'Notifications'
+        }
         aria-expanded={open}
         aria-controls="notification-bell-dropdown"
         data-testid="notification-bell"
         className="relative w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform"
         style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
       >
-        <Bell size={22} className="text-[var(--color-primary)]" weight={count > 0 ? 'fill' : 'regular'} />
-        {count > 0 && (
+        <Bell size={22} className="text-[var(--color-primary)]" weight={showBadge ? 'fill' : 'regular'} />
+        {error ? (
           <span
             aria-hidden="true"
-            data-testid="notification-badge"
-            className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center"
-            style={{
-              background: 'var(--color-accent)',
-              color: 'var(--color-text)',
-              border: '1px solid var(--color-surface)',
-            }}
-          >
-            {count > 99 ? '99+' : count}
-          </span>
+            data-testid="notification-badge-error"
+            className="absolute -top-1 -right-1 w-[10px] h-[10px] rounded-full"
+            style={{ background: 'var(--color-muted)', border: '1px solid var(--color-surface)' }}
+          />
+        ) : (
+          showBadge && (
+            <span
+              aria-hidden="true"
+              data-testid="notification-badge"
+              className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center"
+              style={{
+                background: 'var(--color-accent)',
+                color: 'var(--color-text)',
+                border: '1px solid var(--color-surface)',
+              }}
+            >
+              {count > 99 ? '99+' : count}
+            </span>
+          )
         )}
       </button>
 
@@ -172,7 +203,12 @@ export default function NotificationBell() {
               ) : (
                 <ul>
                   {entries.map((entry) => (
-                    <InboxRow key={entry.id} entry={entry} onNavigate={() => setOpen(false)} />
+                    <InboxRow
+                      key={entry.id}
+                      entry={entry}
+                      onNavigate={() => setOpen(false)}
+                      onDismissTimer={dismissTimer}
+                    />
                   ))}
                 </ul>
               )}
@@ -190,31 +226,47 @@ export default function NotificationBell() {
   )
 }
 
-function InboxRow({ entry, onNavigate }: { entry: InboxEntry; onNavigate: () => void }) {
+function InboxRow({
+  entry,
+  onNavigate,
+  onDismissTimer,
+}: {
+  entry: InboxEntry
+  onNavigate: () => void
+  /** `useCookingTimers().dismiss` — only called for `kind: 'timer'` rows. */
+  onDismissTimer: (id: string) => void
+}) {
   const style = TIER_STYLE[entry.tier]
 
-  const content = (
-    <div className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-[var(--color-bg)] transition-colors">
-      <span
-        aria-hidden="true"
-        className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm"
-        style={{ background: style.bg, color: style.text }}
-      >
-        {entry.emoji}
-      </span>
-      <span className="flex-1 text-sm text-[var(--color-text)]">{entry.copy}</span>
-    </div>
+  const icon = (
+    <span
+      aria-hidden="true"
+      className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm"
+      style={{ background: style.bg, color: style.text }}
+    >
+      {entry.emoji}
+    </span>
   )
 
   if (!entry.href) {
-    // Timer entries are dismiss-only in this "lite" ticket (Spec B.3 owns
-    // dismissal); listing without a tap target is intentional, not a bug.
-    // Plain list semantics (#496 review) — no `role="menuitem"` on a
-    // non-focusable `<div>`, since there's no roving-focus menu behaviour
-    // here to justify the ARIA menu pattern.
+    // Issue #496's tap-target table: "timer → dismiss" — a real button, not
+    // a static row. `timerId` is only absent if a non-timer entry somehow
+    // ships with `href: null`, which nothing in `inbox-helpers.ts` does
+    // today; guarded rather than asserted so a future no-href, no-dismiss
+    // kind doesn't crash here.
     return (
       <li>
-        <div className="w-full">{content}</div>
+        <button
+          type="button"
+          onClick={() => entry.timerId && onDismissTimer(entry.timerId)}
+          disabled={!entry.timerId}
+          aria-label={`Dismiss: ${entry.copy}`}
+          className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-[var(--color-bg)] transition-colors min-h-[44px]"
+        >
+          {icon}
+          <span className="flex-1 text-sm text-[var(--color-text)]">{entry.copy}</span>
+          <span className="text-xs font-semibold text-[var(--color-muted)] flex-shrink-0">Dismiss</span>
+        </button>
       </li>
     )
   }
@@ -222,7 +274,10 @@ function InboxRow({ entry, onNavigate }: { entry: InboxEntry; onNavigate: () => 
   return (
     <li>
       <Link href={entry.href} onClick={onNavigate} className="block min-h-[44px]">
-        {content}
+        <div className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-[var(--color-bg)] transition-colors">
+          {icon}
+          <span className="flex-1 text-sm text-[var(--color-text)]">{entry.copy}</span>
+        </div>
       </Link>
     </li>
   )

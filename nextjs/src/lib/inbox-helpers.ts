@@ -49,6 +49,14 @@ export interface InboxEntry {
   href: string | null
   /** Sort key — lower sorts first (more urgent). Not rendered. */
   sortKey: number
+  /**
+   * The raw `useCookingTimers()` timer id, present only on `kind: 'timer'`
+   * entries — what the dismiss button (`NotificationBell.tsx`) passes to the
+   * real store's `dismiss()`. Absent on every other kind: nothing else in
+   * the hub is dismissable, per the issue's tap-target table ("timer →
+   * dismiss", everything else navigates).
+   */
+  timerId?: string
 }
 
 /** Minimal recipe shape the cook-nudge needs — avoids importing the full `Recipe` type. */
@@ -166,9 +174,13 @@ function timerEntry(timer: InboxTimerSource): InboxEntry {
     tier: 'info',
     emoji: '⏱️',
     copy: `${timer.label} timer finished`,
-    // Dismiss-only — Spec B.3 owns what "dismiss" does; this hub just lists it.
+    // Dismiss-only — no navigation target. The dismiss action itself goes
+    // through the real timer store's `dismiss()`, called by the caller with
+    // `timerId` below (`NotificationBell.tsx`) — this pure module has no
+    // access to that store.
     href: null,
     sortKey: SORT_BUCKET.timer,
+    timerId: timer.id,
   }
 }
 

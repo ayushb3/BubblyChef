@@ -201,6 +201,9 @@ describe('deriveInboxEntries', () => {
     expect(result.entries).toHaveLength(1)
     expect(result.entries[0].kind).toBe('timer')
     expect(result.entries[0].href).toBeNull()
+    // The raw store id, for the dismiss button (`NotificationBell.tsx`) to
+    // pass to `useCookingTimers().dismiss()` — #496 review round 4.
+    expect(result.entries[0].timerId).toBe('t1')
   })
 
   it('orders a completed timer first, ahead of expired/low-stock/cook-nudge', () => {
