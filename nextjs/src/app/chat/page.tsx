@@ -17,6 +17,7 @@ import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
 import ClarificationCard from '@/components/chat/ClarificationCard'
 import BrainstormOptions from '@/components/chat/BrainstormOptions'
+import SavedRecipeMatches from '@/components/chat/SavedRecipeMatches'
 import ConfirmBand from '@/components/chat/ConfirmBand'
 import CookModal from '@/components/recipes/CookModal'
 import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
@@ -36,12 +37,14 @@ import type {
 } from '@/types/chat'
 import {
   getBrainstormIdeas,
+  getSavedRecipeMatches,
   getClarificationSuggestions,
   getFollowUpSuggestions,
   isFollowUpsPending,
   buildClarificationText,
   getConfirmOptions,
 } from '@/types/chat'
+import type { SavedRecipeMatch } from '@/types/chat'
 import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
 
 // ---------------------------------------------------------------------------
@@ -418,6 +421,12 @@ function ChatSurface() {
     sendMessage(idea)
   }
 
+  // Same mechanism a brainstorm pick uses: send the title as the next
+  // message so the backend's exact-title match (PR #605) pins it.
+  const handlePickSavedRecipe = (match: SavedRecipeMatch) => {
+    sendMessage(match.title)
+  }
+
   const handleConfirmChoice = (
     forcedIntent: 'recipe_card' | 'recipe_brainstorm',
     label: string,
@@ -588,6 +597,7 @@ function ChatSurface() {
                 onTryAnother={handleChipTap.bind(null, 'Give me a different recipe')}
                 onChipTap={handleChipTap}
                 onPickIdea={handlePickIdea}
+                onPickSavedRecipe={handlePickSavedRecipe}
                 onConfirmChoice={handleConfirmChoice}
                 onStageText={handleStageText}
               />
@@ -746,6 +756,7 @@ interface MessageRendererProps {
   onTryAnother: () => void
   onChipTap: (message: string) => void
   onPickIdea: (idea: string) => void
+  onPickSavedRecipe: (match: SavedRecipeMatch) => void
   /** Called when the user taps a confirm-band button (#416 AC3). */
   onConfirmChoice: (
     forcedIntent: 'recipe_card' | 'recipe_brainstorm',
@@ -776,6 +787,7 @@ function MessageRenderer({
   onTryAnother,
   onChipTap,
   onPickIdea,
+  onPickSavedRecipe,
   onConfirmChoice,
   onStageText,
 }: MessageRendererProps) {
@@ -843,6 +855,36 @@ function MessageRenderer({
               <BrainstormOptions
                 ideas={ideas}
                 onSelect={onPickIdea}
+                disabled={!isLastSettledAssistant}
+              />
+            </div>
+          </div>
+        </motion.div>
+      )
+    }
+  }
+
+  // Saved-recipe lookup intent — render intro bubble + ranked/single match
+  // cards. Zero matches falls through to the plain markdown reply (the
+  // assistant's "none found" text stands alone with the existing chips);
+  // metadata absence falls through the same way (backward compat, matching
+  // the brainstorm branch above).
+  if (intent === 'saved_recipe_lookup') {
+    const matches = getSavedRecipeMatches(message.response)
+    if (matches.length > 0) {
+      return (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+        >
+          <div className="flex items-end gap-2">
+            <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+            <div className="flex flex-col gap-2 items-start">
+              {message.content && <MessageBubble message={message} />}
+              <SavedRecipeMatches
+                matches={matches}
+                onSelect={onPickSavedRecipe}
                 disabled={!isLastSettledAssistant}
               />
             </div>

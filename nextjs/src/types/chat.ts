@@ -231,6 +231,39 @@ export function getFollowUpSuggestions(response?: ChatResponse | null): string[]
   return raw.filter((item): item is string => typeof item === 'string')
 }
 
+// ─── Saved-recipe lookup helpers ───────────────────────────────────────────────
+
+/**
+ * One saved-recipe match, as `saved_recipe_lookup_response` puts it on
+ * `metadata.saved_recipe_matches` — only the fields named in the Spec B.1
+ * contract (`ai-service/bubbly_chef/workflows/chat/nodes.py`) leave the
+ * backend; full rows never do.
+ */
+export interface SavedRecipeMatch {
+  id: string
+  title: string
+  description?: string | null
+  cuisine?: string | null
+}
+
+/**
+ * Extract saved-recipe matches from a ChatResponse's metadata. Returns an
+ * empty array when the field is absent, null, or malformed — same contract
+ * as `getBrainstormIdeas` — so callers never need to guard against
+ * undefined. Robust to 0, 1, or many entries, whatever the backend returns
+ * (issue #494); a row missing `id` or `title` is dropped rather than
+ * rendered half-broken, since both are load-bearing for the card actions.
+ */
+export function getSavedRecipeMatches(response?: ChatResponse | null): SavedRecipeMatch[] {
+  const raw = response?.metadata?.saved_recipe_matches
+  if (!Array.isArray(raw)) return []
+  return raw.filter((item): item is SavedRecipeMatch => {
+    if (!item || typeof item !== 'object') return false
+    const m = item as Record<string, unknown>
+    return typeof m.id === 'string' && m.id.length > 0 && typeof m.title === 'string' && m.title.length > 0
+  })
+}
+
 // ─── Confirm-choice helpers ───────────────────────────────────────────────────
 
 export interface ConfirmOption {
