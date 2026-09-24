@@ -122,6 +122,30 @@ describe('deriveInboxEntries', () => {
     expect(result.entries[0].copy).toContain('Eggs')
   })
 
+  it('dedupes a row that is both expired and out of stock, keeping the more urgent tier', () => {
+    // Ordinary end state once the cook flow deducts the last of something
+    // that was already expired: the row qualifies for both `expired:` and
+    // `low_stock:`. It must collapse to a single entry — the more urgent
+    // one (`expired`, tier 'urgent' beats low-stock's 'warning') — not
+    // double-count in the badge or take two of the ten capped slots.
+    const expiredAndEmpty = pantryItem({
+      id: 'both-1',
+      name: 'Old Yogurt',
+      quantity: 0,
+      expiry_date: '2026-09-20',
+      days_until_expiry: -3,
+      is_expired: true,
+    })
+    const result = deriveInboxEntries(
+      { pantryItems: [expiredAndEmpty], recipes: [{ last_cooked_at: NOW.toISOString() }] },
+      NOW,
+    )
+    expect(result.entries).toHaveLength(1)
+    expect(result.entries[0].kind).toBe('expired')
+    expect(result.entries[0].id).toBe('expired:both-1')
+    expect(result.totalCount).toBe(1)
+  })
+
   it('does not add a low-stock entry for a positive quantity', () => {
     const inStock = pantryItem({ id: 'ok', quantity: 2 })
     const result = deriveInboxEntries(
@@ -187,7 +211,28 @@ describe('deriveInboxEntries', () => {
   // synthetic feed the test above exercises against the pure derivation.
   // Skipped per that explicit instruction, not left out.
   it.skip('shows a completed timer surfaced by the real Spec B.3 store (skipped: Spec B.3 is not merged — no timer store exists yet to drive this end to end)', () => {
-    // Intentionally empty — see skip reason above.
+    // Placeholder for the real end-to-end wiring: once issue #495/PR #619
+    // (Spec B.3 cooking timers) merges and `useInboxEntries` reads the real
+    // timer store instead of leaving `timers` undefined, a completed timer
+    // must still show up as a dismiss-only entry (`href: null`) alongside
+    // the rest of the inbox, ordered after low-stock and before the cook
+    // nudge (sortKey 3000, between low_stock's 2000 and cook_nudge's 4000).
+    // Exercised here against the pure derivation as a stand-in for the real
+    // store's feed — the orchestrator will swap this for a real integration
+    // test against the timer store once it exists, per the PR sequencing
+    // note, and un-skip it then.
+    const result = deriveInboxEntries(
+      {
+        pantryItems: [pantryItem({ id: 'out', name: 'Eggs', quantity: 0 })],
+        recipes: [{ last_cooked_at: NOW.toISOString() }],
+        timers: [{ id: 't1', label: 'Pasta' }],
+      },
+      NOW,
+    )
+
+    expect(result.entries.map((e) => e.kind)).toEqual(['low_stock', 'timer'])
+    expect(result.entries[1].href).toBeNull()
+    expect(result.entries[1].copy).toBe('Pasta timer finished')
   })
 
   it('includes a grocery pointer when the B.5 count is present and positive', () => {

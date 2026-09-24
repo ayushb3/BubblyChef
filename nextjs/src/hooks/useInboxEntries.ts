@@ -27,10 +27,10 @@ import { deriveInboxEntries, type InboxDerivation } from '@/lib/inbox-helpers'
 const EMPTY: InboxDerivation = { entries: [], totalCount: 0, overflowCount: 0 }
 
 /**
- * Both feed fetches already degrade to `[]` on their own failure (see their
- * docstrings in `lib/api/pantry.ts`/`lib/api/recipes.ts`), so this never
- * rejects — a broken fetch just derives an empty inbox rather than putting
- * the query into an error state.
+ * Both feed fetches now throw on a non-ok response (see their docstrings in
+ * `lib/api/pantry.ts`/`lib/api/recipes.ts`) instead of degrading to `[]`, so
+ * this rejects on a broken fetch — deliberately, so the query below lands in
+ * an error state rather than a false-confident empty inbox.
  */
 async function fetchInboxDerivation(): Promise<InboxDerivation> {
   const [pantryItems, recipes] = await Promise.all([fetchPantryItems(), fetchRecipeCookMeta()])
@@ -39,12 +39,14 @@ async function fetchInboxDerivation(): Promise<InboxDerivation> {
 
 export interface UseInboxEntriesResult extends InboxDerivation {
   loading: boolean
+  /** True when the last fetch failed — the caller shows a gentle error state, not an empty one. */
+  error: boolean
   /** Re-run the fetch + derivation — called when the dropdown opens. */
   refresh: () => void
 }
 
 export function useInboxEntries(): UseInboxEntriesResult {
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['inbox-entries'],
     queryFn: fetchInboxDerivation,
   })
@@ -52,6 +54,7 @@ export function useInboxEntries(): UseInboxEntriesResult {
   return {
     ...(data ?? EMPTY),
     loading: isLoading,
+    error: isError,
     refresh: () => {
       void refetch()
     },

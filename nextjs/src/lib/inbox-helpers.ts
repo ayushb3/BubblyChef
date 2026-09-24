@@ -198,20 +198,34 @@ export function deriveInboxEntries(data: InboxSourceData, now: Date = new Date()
 
   const all: InboxEntry[] = []
 
+  // One entry per pantry row. A row can independently qualify as
+  // expired/expiring (date-driven) *and* low-stock (quantity-driven) — an
+  // ordinary end state once the cook flow deducts the last of something
+  // that was already expiring. Collect every tier a row qualifies for and
+  // keep only the most urgent one, so a single row never produces two
+  // entries (and never burns two of the ten capped slots for itself).
+  const TIER_RANK: Record<InboxTier, number> = { urgent: 0, warning: 1, info: 2 }
   for (const item of data.pantryItems) {
-    if (!item.expiry_date) continue
-    const daysUntil = item.days_until_expiry
-    if (daysUntil === null) continue
+    const candidates: InboxEntry[] = []
 
-    if (daysUntil < 0) {
-      all.push(expiredEntry(item, daysUntil))
-    } else if (daysUntil <= EXPIRY_WINDOW_DAYS) {
-      all.push(expiringEntry(item, daysUntil))
+    if (item.expiry_date) {
+      const daysUntil = item.days_until_expiry
+      if (daysUntil !== null) {
+        if (daysUntil < 0) {
+          candidates.push(expiredEntry(item, daysUntil))
+        } else if (daysUntil <= EXPIRY_WINDOW_DAYS) {
+          candidates.push(expiringEntry(item, daysUntil))
+        }
+      }
     }
-  }
 
-  for (const item of data.pantryItems) {
-    if (item.quantity <= 0) all.push(lowStockEntry(item))
+    if (item.quantity <= 0) candidates.push(lowStockEntry(item))
+
+    if (candidates.length === 0) continue
+    const mostUrgent = candidates.reduce((best, cur) =>
+      TIER_RANK[cur.tier] < TIER_RANK[best.tier] ? cur : best,
+    )
+    all.push(mostUrgent)
   }
 
   for (const timer of data.timers ?? []) {

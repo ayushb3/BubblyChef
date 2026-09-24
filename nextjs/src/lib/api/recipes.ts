@@ -132,14 +132,14 @@ export async function confirmCook(
  * early for them. Accepted for this "lite" ticket — see the PR's "Not
  * covered" section.
  *
- * Returns `[]` on failure so a broken fetch degrades to treating the user as
- * "hasn't cooked" rather than throwing — including when `fetch` itself isn't
- * defined (see `fetchPantryItems`'s docstring in `lib/api/pantry.ts`).
+ * Throws on a non-ok response rather than degrading to `[]` (see
+ * `fetchPantryItems`'s docstring in `lib/api/pantry.ts` for why): a broken
+ * fetch here must not read as "hasn't cooked", it must surface as an error
+ * so the caller can show that instead of a false-confident nudge state.
  */
 export async function fetchRecipeCookMeta(): Promise<{ last_cooked_at: string | null }[]> {
-  if (typeof fetch === 'undefined') return []
   const res = await fetch('/api/recipes?limit=100')
-  if (!res.ok) return []
+  if (!res.ok) throw new Error(`Failed to fetch recipe cook meta: ${res.status}`)
   const data = await res.json().catch(() => ({ recipes: [] }))
   return data.recipes ?? []
 }

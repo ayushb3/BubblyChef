@@ -180,15 +180,16 @@ export async function deletePantryItem(itemId: string): Promise<void> {
  * center (#496) to derive expiring/expired/low-stock entries — deliberately
  * the full list rather than `/api/pantry/expiring`, since that endpoint
  * excludes already-expired rows (#239) and the inbox needs those too.
- * Returns `[]` on failure so a broken fetch degrades to an empty inbox
- * rather than throwing — including when `fetch` itself isn't defined (a
- * component test that renders a page around `BubblesHeader`/`NotificationBell`
- * without polyfilling `fetch`, since jsdom doesn't ship one).
+ *
+ * Throws on a non-ok response rather than degrading to `[]`: a 401 or 500
+ * read as "nothing to do right now" is a confident all-clear for a user who
+ * may have expired food. The caller (`useInboxEntries`) lets this reject so
+ * React Query marks the query errored and the bell can show a "couldn't
+ * check right now" state instead of a false-empty inbox.
  */
 export async function fetchPantryItems(): Promise<EnrichedPantryItem[]> {
-  if (typeof fetch === 'undefined') return []
   const res = await fetch('/api/pantry')
-  if (!res.ok) return []
+  if (!res.ok) throw new Error(`Failed to fetch pantry items: ${res.status}`)
   const data = await res.json().catch(() => ({ items: [] }))
   return data.items ?? []
 }

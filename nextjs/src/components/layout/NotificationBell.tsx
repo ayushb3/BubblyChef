@@ -35,7 +35,7 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
-  const { entries, overflowCount, loading, refresh } = useInboxEntries()
+  const { entries, overflowCount, loading, error, refresh } = useInboxEntries()
   // Fixed-position top offset, measured from the bell button each time it
   // opens. The dropdown is anchored to the *viewport's* right edge (see the
   // `right-4` below), not to the bell button's own edge — the bell usually
@@ -89,7 +89,6 @@ export default function NotificationBell() {
         // "unread" would imply persisted read state, which this lite inbox
         // deliberately doesn't have (#496: "No persistence, no read/unread").
         aria-label={count > 0 ? `Notifications, ${count} item${count === 1 ? '' : 's'}` : 'Notifications'}
-        aria-haspopup="true"
         aria-expanded={open}
         data-testid="notification-bell"
         className="relative w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform"
@@ -128,17 +127,27 @@ export default function NotificationBell() {
               width: '300px',
               maxWidth: 'calc(100vw - 2rem)',
             }}
-            role="menu"
-            aria-label="Notifications"
+            aria-labelledby="notification-bell-heading"
           >
             <div className="px-4 py-3 border-b border-[var(--color-border)]">
-              <p className="text-sm font-bold text-[var(--color-text)]">Notifications</p>
+              <p id="notification-bell-heading" className="text-sm font-bold text-[var(--color-text)]">
+                Notifications
+              </p>
             </div>
 
             <div className="max-h-[340px] overflow-y-auto">
               {loading ? (
                 <div className="px-4 py-6 text-center text-sm text-[var(--color-muted)]">
                   Loading…
+                </div>
+              ) : error ? (
+                <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+                  <p className="text-sm font-semibold text-[var(--color-text)]">
+                    Couldn&apos;t check right now
+                  </p>
+                  <p className="text-xs text-[var(--color-muted)]">
+                    Something went wrong loading your notifications. Try again in a moment.
+                  </p>
                 </div>
               ) : entries.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
@@ -190,15 +199,18 @@ function InboxRow({ entry, onNavigate }: { entry: InboxEntry; onNavigate: () => 
   if (!entry.href) {
     // Timer entries are dismiss-only in this "lite" ticket (Spec B.3 owns
     // dismissal); listing without a tap target is intentional, not a bug.
+    // Plain list semantics (#496 review) — no `role="menuitem"` on a
+    // non-focusable `<div>`, since there's no roving-focus menu behaviour
+    // here to justify the ARIA menu pattern.
     return (
-      <li role="menuitem">
+      <li>
         <div className="w-full">{content}</div>
       </li>
     )
   }
 
   return (
-    <li role="menuitem">
+    <li>
       <Link href={entry.href} onClick={onNavigate} className="block min-h-[44px]">
         {content}
       </Link>

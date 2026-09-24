@@ -100,8 +100,23 @@ describe('NotificationBell', () => {
       expect(screen.getByText(/Old Milk/)).toBeInTheDocument()
     })
 
-    const items = screen.getAllByRole('menuitem')
+    const items = screen.getAllByRole('listitem')
     expect(items[0]).toHaveTextContent('Old Milk')
     expect(items[1]).toHaveTextContent('Fresh Bread')
+  })
+
+  it('shows a gentle error state instead of "nothing to do" when the fetch fails', async () => {
+    // A 401/500 must not read as an all-clear (#496 review): `fetchPantryItems`
+    // now throws on a non-ok response instead of degrading to `[]`, so the
+    // dropdown should show an explicit error, not the empty-inbox mascot.
+    global.fetch = jest.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })) as unknown as typeof fetch
+
+    renderBell()
+    fireEvent.click(screen.getByTestId('notification-bell'))
+
+    await waitFor(() => {
+      expect(screen.getByText(/couldn.t check right now/i)).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/nothing to do right now/i)).not.toBeInTheDocument()
   })
 })
