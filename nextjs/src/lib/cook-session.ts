@@ -1,3 +1,5 @@
+import type { RecipeIngredient } from '@/types/recipes'
+
 /**
  * Issue #440 — cook-session lifecycle, tracked independently of any single
  * page's component state.
@@ -99,11 +101,42 @@
  *     bookmark, browser back/forward from elsewhere, or simply returning to
  *     /recipes later — so a saved session there should surface as a
  *     dismissible "Resume cooking?" banner instead of silently reopening.
+ *
+ * --- Issue #490 — an applied amendment must survive a reload mid-cook -------
+ *
+ * Issue #279/#302/#303 let a mid-cook chat turn amend the pinned recipe's
+ * ingredient list, but before this addition the amended list lived only in
+ * React state on whichever page applied it — a full page reload (refresh, a
+ * restored tab, a backgrounded mobile tab getting reclaimed) silently
+ * dropped it, and the COOKING banner / guided flow / deduction all fell back
+ * to the original, un-amended list with no indication anything was lost.
+ *
+ * `saveAmendedIngredients` / `getAmendedIngredients` / `clearAmendedIngredients`
+ * below give that amended list the same kind of persisted home
+ * `ActiveCookSession` already gives the step position, single-slot for the
+ * same reason: only one cook is ever in progress at a time, so there is
+ * never more than one amendment to remember. `getAmendedIngredients` is keyed
+ * by recipe id (not just "whatever is on record") so a stale amendment for a
+ * *different*, since-finished recipe is never mistaken for the current one.
+ *
+ * Issue #490 is scoped to *persistence surviving reload*, not to building the
+ * apply-and-review UI itself (issue #489, "Spec A.1" — the sibling that
+ * decides how a proposed amendment actually reaches this store and the
+ * deduction). The chat page's COOKING banner and `RecipeBook`'s recipe list
+ * both read through `getAmendedIngredients` so that whenever #489 wires a
+ * caller to `saveAmendedIngredients`, the result already survives a reload —
+ * but nothing in this module *calls* `saveAmendedIngredients` on its own.
+ *
+ * Cleared by `endCookSession` (a confirmed deduction is over — a later cook
+ * of the same recipe should start from the original list again) and by
+ * `clearActiveCookSession` (exiting the guided flow without finishing has
+ * nothing left to resume, amendment included).
  */
 
 const ENDED_KEY = 'bubblychef:cook:endedRecipeId'
 const SESSION_KEY = 'bubblychef:cook:activeSession'
 const FLOW_OPEN_KEY = 'bubblychef:cook:guidedFlowOpen'
+const AMENDED_INGREDIENTS_KEY = 'bubblychef:cook:amendedIngredients'
 
 /**
  * Cap on how many "ended" recipe ids are retained. This is a `localStorage`
@@ -160,6 +193,56 @@ function writeActiveSession(session: ActiveCookSession | null): void {
   } catch {
     // Best effort — worst case a reload loses the step position, which is
     // the pre-#441 behaviour, not a new failure mode.
+  }
+}
+
+/**
+ * A recipe's amended ingredient list, persisted single-slot the same way
+ * `ActiveCookSession` is — see the module-level #490 note above for why one
+ * slot is enough. `recipeId` guards against returning a stale amendment for
+ * a different recipe than the one currently being cooked.
+ */
+interface AmendedIngredientsRecord {
+  recipeId: string
+  ingredients: RecipeIngredient[]
+}
+
+function readAmendedIngredients(): AmendedIngredientsRecord | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(AMENDED_INGREDIENTS_KEY)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      typeof (parsed as Record<string, unknown>).recipeId === 'string' &&
+      Array.isArray((parsed as Record<string, unknown>).ingredients)
+    ) {
+      return parsed as AmendedIngredientsRecord
+    }
+    // Recognisable JSON but not a shape we understand — corrupt. Degrade to
+    // "no amendment on record" rather than throwing.
+    return null
+  } catch {
+    // Storage unavailable or corrupt — behave as if no amendment was ever
+    // persisted.
+    return null
+  }
+}
+
+function writeAmendedIngredients(record: AmendedIngredientsRecord | null): void {
+  if (typeof window === 'undefined') return
+  try {
+    if (record === null) {
+      window.localStorage.removeItem(AMENDED_INGREDIENTS_KEY)
+    } else {
+      window.localStorage.setItem(AMENDED_INGREDIENTS_KEY, JSON.stringify(record))
+    }
+  } catch {
+    // Best effort — worst case a reload loses the amendment and falls back
+    // to the original ingredient list, which is the pre-#490 behaviour, not
+    // a new failure mode.
   }
 }
 
@@ -222,12 +305,21 @@ function writeEndedRecipeIds(ids: string[]): void {
  * the resumable record here used to cause `RecipeBook`'s reload-resume
  * effect to force-open the guided flow for cooks started from chat, which
  * never asked to be guided through (PR #475 code review).
+ *
+ * #490 code review: also clears a stale amendment left by a previous,
+ * abandoned cook of the same recipe. `endCookSession` / `clearActiveCookSession`
+ * clear it on a *clean* exit (confirmed deduction, or explicitly leaving the
+ * guided flow), but a cook that's simply abandoned — tab closed, navigated
+ * away mid-cook without either — leaves neither of those called, so without
+ * this a genuinely fresh cook of the same recipe would silently start from
+ * the old amendment instead of the original list.
  */
 export function startCookSession(recipeId: string): void {
   const ids = readEndedRecipeIds()
   if (ids.includes(recipeId)) {
     writeEndedRecipeIds(ids.filter((id) => id !== recipeId))
   }
+  clearAmendedIngredients(recipeId)
 }
 
 /**
@@ -266,6 +358,11 @@ export function endCookSession(recipeId: string): void {
   if (active && active.recipeId === recipeId) {
     writeActiveSession(null)
   }
+
+  // #490 — a confirmed deduction is also the end of the road for any
+  // amendment applied during that cook; a later cook of the same recipe
+  // should start from the original list again, not the last one amended.
+  clearAmendedIngredients(recipeId)
 }
 
 /**
@@ -325,6 +422,68 @@ export function clearActiveCookSession(recipeId: string): void {
   if (active && active.recipeId === recipeId) {
     writeActiveSession(null)
   }
+
+  // #490 — exiting the guided flow without finishing has nothing left to
+  // resume, amendment included.
+  clearAmendedIngredients(recipeId)
+}
+
+/**
+ * Persists the amended ingredient list for `recipeId`, so a full page reload
+ * mid-cook (refresh, a restored tab, a backgrounded mobile tab getting
+ * reclaimed) can rehydrate it instead of silently falling back to the
+ * original recipe. See the module-level #490 note above — this module does
+ * not call this itself; it is the persistence half of applying an amendment,
+ * not the apply action.
+ */
+export function saveAmendedIngredients(recipeId: string, ingredients: RecipeIngredient[]): void {
+  writeAmendedIngredients({ recipeId, ingredients })
+}
+
+/**
+ * Returns the amended ingredient list for `recipeId`, or `null` if none is on
+ * record — no amendment was ever persisted, storage is unavailable, or the
+ * one on record belongs to a different recipe. Callers merge this over the
+ * recipe's original `ingredients` when present (see `ChatSurface`'s
+ * `cookingRecipe` and `RecipeBook`'s `recipesWithOverrides`) rather than
+ * replacing the recipe outright, so every other field still comes from the
+ * freshly-fetched original.
+ */
+export function getAmendedIngredients(recipeId: string): RecipeIngredient[] | null {
+  const record = readAmendedIngredients()
+  if (!record || record.recipeId !== recipeId) return null
+  return record.ingredients
+}
+
+/**
+ * Clears the amended-ingredients record for `recipeId` if it's the one on
+ * record (a no-op guard against a stale call racing a newer amendment for a
+ * different recipe). Called by `endCookSession` and `clearActiveCookSession`
+ * above; exported separately so a caller that discards an amendment without
+ * ending the whole cook session (e.g. "never mind, undo that change") can
+ * clear it on its own.
+ */
+export function clearAmendedIngredients(recipeId: string): void {
+  const record = readAmendedIngredients()
+  if (record && record.recipeId === recipeId) {
+    writeAmendedIngredients(null)
+  }
+}
+
+/**
+ * Merges a persisted amendment (if any) over `ingredients` for `recipeId`,
+ * otherwise returns `ingredients` unchanged. Shared by every reload-resume
+ * point that renders a recipe's ingredient list — `ChatSurface`'s
+ * `cookingRecipe` banner and `RecipeBook`'s `recipesWithOverrides` both call
+ * this rather than each re-deriving the same `getAmendedIngredients(id) ??
+ * ingredients` fallback inline, so a future caller (issue #489's apply
+ * action, or any other resume point) gets the same merge for free.
+ */
+export function applyAmendedIngredients(
+  recipeId: string,
+  ingredients: (string | RecipeIngredient)[],
+): (string | RecipeIngredient)[] {
+  return getAmendedIngredients(recipeId) ?? ingredients
 }
 
 /**

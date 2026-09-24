@@ -29,6 +29,10 @@ import {
   saveCookProgress,
   getActiveCookSession,
   clearActiveCookSession,
+  saveAmendedIngredients,
+  getAmendedIngredients,
+  clearAmendedIngredients,
+  applyAmendedIngredients,
 } from '@/lib/cook-session'
 
 // ─── cook-session.ts — the persisted record itself ────────────────────────────
@@ -163,6 +167,131 @@ describe('cook-session resume (#441)', () => {
     // r1's genuinely-guided session is still resumable and untouched.
     expect(getActiveCookSession('r1')).toEqual({ recipeId: 'r1', step: 1 })
     expect(getActiveCookSession('r2')).toBeNull()
+  })
+})
+
+// ─── Amended ingredients survive a reload (#490) ──────────────────────────────
+
+describe('cook-session amended ingredients (#490)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  const AMENDED = [{ name: 'oat milk', quantity: 1, unit: 'cup' }]
+
+  it('has no amendment on record before one is saved', () => {
+    expect(getAmendedIngredients('r1')).toBeNull()
+  })
+
+  it('round-trips an amended ingredient list for the recipe it was saved against', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    expect(getAmendedIngredients('r1')).toEqual(AMENDED)
+  })
+
+  it('a fresh read — the way a full page reload would see it — still finds the amendment', () => {
+    saveAmendedIngredients('recipe-42', AMENDED)
+    // getAmendedIngredients reads straight from localStorage every call, so
+    // there is nothing to "simulate" beyond calling it again.
+    expect(getAmendedIngredients('recipe-42')).toEqual(AMENDED)
+  })
+
+  it('does not leak an amendment saved for one recipe into a lookup for another', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    expect(getAmendedIngredients('r2')).toBeNull()
+  })
+
+  it('saving a new amendment for a different recipe replaces the single-slot record', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    const other = [{ name: 'soy milk', quantity: 2, unit: 'cup' }]
+    saveAmendedIngredients('r2', other)
+    expect(getAmendedIngredients('r1')).toBeNull()
+    expect(getAmendedIngredients('r2')).toEqual(other)
+  })
+
+  it('clearAmendedIngredients removes the record for that recipe', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    clearAmendedIngredients('r1')
+    expect(getAmendedIngredients('r1')).toBeNull()
+  })
+
+  it('clearAmendedIngredients is a no-op for a recipe that is not the one on record', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    clearAmendedIngredients('r2')
+    expect(getAmendedIngredients('r1')).toEqual(AMENDED)
+  })
+
+  it('endCookSession clears the amendment so a later cook of the same recipe starts fresh', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    endCookSession('r1')
+    expect(getAmendedIngredients('r1')).toBeNull()
+  })
+
+  it('endCookSession for a different recipe does not clear this one\'s amendment', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    endCookSession('r2')
+    expect(getAmendedIngredients('r1')).toEqual(AMENDED)
+  })
+
+  it('clearActiveCookSession also clears the amendment for that recipe', () => {
+    startGuidedCookSession('r1')
+    saveAmendedIngredients('r1', AMENDED)
+    clearActiveCookSession('r1')
+    expect(getAmendedIngredients('r1')).toBeNull()
+  })
+
+  // ─── code review: an abandoned cook must not leak its amendment forward ───
+
+  it('startCookSession clears a stale amendment left by a previously abandoned cook (chat path)', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    startCookSession('r1')
+    expect(getAmendedIngredients('r1')).toBeNull()
+  })
+
+  it('startGuidedCookSession clears a stale amendment left by a previously abandoned cook (guided path)', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    startGuidedCookSession('r1')
+    expect(getAmendedIngredients('r1')).toBeNull()
+  })
+
+  it('starting a fresh cook for one recipe does not clear a different, still-relevant amendment', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    startCookSession('r2')
+    expect(getAmendedIngredients('r1')).toEqual(AMENDED)
+  })
+
+  it('a corrupt persisted amendment record is treated as none rather than crashing', () => {
+    window.localStorage.setItem('bubblychef:cook:amendedIngredients', 'not json')
+    expect(() => getAmendedIngredients('r1')).not.toThrow()
+    expect(getAmendedIngredients('r1')).toBeNull()
+
+    window.localStorage.setItem('bubblychef:cook:amendedIngredients', '{"unexpected":"shape"}')
+    expect(() => getAmendedIngredients('r1')).not.toThrow()
+    expect(getAmendedIngredients('r1')).toBeNull()
+  })
+
+  it('storage being unavailable does not crash the amendment path', () => {
+    const spy = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('storage disabled')
+    })
+    try {
+      expect(() => saveAmendedIngredients('r1', AMENDED)).not.toThrow()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  // Exercises the same function RecipeBook's `recipesWithOverrides` merge
+  // calls — the guided-flow half of #490's acceptance criteria (chat's half
+  // is covered in cook-session-teardown.test.tsx). A reload that resumes the
+  // guided flow reads the recipe through this same merge, so it must show
+  // the amended list too, not just the chat banner.
+  it('applyAmendedIngredients merges the amendment into the recipe used to resume the guided flow', () => {
+    const original = [{ name: 'milk', quantity: 1, unit: 'cup' }]
+
+    expect(applyAmendedIngredients('r1', original)).toBe(original)
+
+    saveAmendedIngredients('r1', AMENDED)
+    expect(applyAmendedIngredients('r1', original)).toEqual(AMENDED)
   })
 })
 

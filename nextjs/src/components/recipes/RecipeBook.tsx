@@ -20,6 +20,7 @@ import {
   markGuidedFlowOpen,
   clearGuidedFlowOpen,
   wasGuidedFlowOpen,
+  applyAmendedIngredients,
 } from '@/lib/cook-session'
 import { springs, heartPopVariants } from '@/lib/motion'
 import Chip from '@/components/ui/Chip'
@@ -124,9 +125,24 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     return () => document.removeEventListener('mousedown', handleMouseDown)
   }, [menuOpen])
 
-  // Merge optimistic favorite overrides into the recipe list
+  // Merge optimistic favorite overrides into the recipe list, and (#490)
+  // layer a persisted mid-cook amendment over `ingredients` when one is on
+  // record for that recipe — so a reload that resumes the guided flow (or
+  // just reopens this recipe's detail view) shows the amended list instead
+  // of silently reverting to the original. `applyAmendedIngredients` returns
+  // `ingredients` unchanged for any recipe with no amendment on record, so
+  // this is a no-op for every recipe that was never amended (in practice, at
+  // most one — only one cook is ever active at a time).
   const recipesWithOverrides = useMemo(
-    () => recipes.map((r) => r.id in favoriteOverrides ? { ...r, is_favorite: favoriteOverrides[r.id] } : r),
+    () =>
+      recipes.map((r) => {
+        const withFavorite =
+          r.id in favoriteOverrides ? { ...r, is_favorite: favoriteOverrides[r.id] } : r
+        const ingredients = applyAmendedIngredients(r.id, withFavorite.ingredients)
+        return ingredients === withFavorite.ingredients
+          ? withFavorite
+          : { ...withFavorite, ingredients }
+      }),
     [recipes, favoriteOverrides],
   )
 

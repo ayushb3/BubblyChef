@@ -26,7 +26,7 @@ import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
 import { fetchRecipe, promoteRecipeDraft } from '@/lib/api/recipes'
 import { cookingContextForId, deriveChatSeed } from '@/lib/chat-seed'
-import { startCookSession, isCookSessionEnded } from '@/lib/cook-session'
+import { startCookSession, isCookSessionEnded, applyAmendedIngredients } from '@/lib/cook-session'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import type {
   ChatMessage,
@@ -209,13 +209,20 @@ function ChatSurface() {
   // *fresh* mount of this page, so `dismissedRecipeId` was never set for this
   // recipe — only `isCookSessionEnded` (backed by localStorage) survives that
   // navigation and can still recognise the session is already over.
-  const cookingRecipe =
+  const cookingRecipeVisible =
     cookingRecipeId &&
     cookingRecipeId !== dismissedRecipeId &&
     !isCookSessionEnded(cookingRecipeId) &&
     loadedRecipe?.id === cookingRecipeId
-      ? loadedRecipe
-      : null
+
+  // #490 — layer a persisted amendment (if any) over the freshly-fetched
+  // recipe so a reload mid-cook doesn't silently revert the banner (and, via
+  // this same object, "Finished cooking") to the original ingredient list.
+  // `applyAmendedIngredients` reads straight from localStorage and returns
+  // `ingredients` unchanged when nothing is on record for this recipe id.
+  const cookingRecipe = cookingRecipeVisible && cookingRecipeId && loadedRecipe
+    ? { ...loadedRecipe, ingredients: applyAmendedIngredients(cookingRecipeId, loadedRecipe.ingredients) }
+    : null
 
   // Strip a `?cooking=` param that names an already-ended session — e.g. the
   // redirect CookModal performs right after a confirmed deduction, or the
