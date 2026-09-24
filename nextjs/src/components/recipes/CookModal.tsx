@@ -425,12 +425,23 @@ export function summariseDeductions(
   // ingredient (or another component), so it merges into the same map by
   // pantry_item_id rather than always appending a fresh entry.
   const compoundDeductions: Array<{ ingredientName: string; componentName: string; deductQty: number }> = []
+  // Tracks every compoundOverrideKey already applied across ALL suggestions,
+  // not just within one. The backend can emit two CompoundSuggestion entries
+  // for the same ingredient_name (resolve_aliases_with_llm appends one per
+  // LLM result entry with no dedup — round-4 review on PR #616); both share
+  // one compoundOverrideKey, so without this guard the second suggestion's
+  // loop would read the same override and merge it a second time, doubling
+  // whatever the user typed even though only one input is ever rendered.
+  const appliedCompoundKeys = new Set<string>()
   for (const suggestion of proposal.compound_suggestions ?? []) {
     // Defensive dedupe (see dedupeByPantryItemId): guards against a proposal
     // that somehow still carries two component_items for the same pantry
     // row, which would otherwise merge (and double-deduct) twice here.
     for (const component of dedupeByPantryItemId(suggestion.component_items ?? [])) {
       const key = compoundOverrideKey(suggestion.ingredient_name, component.pantry_item_id)
+      if (appliedCompoundKeys.has(key)) continue
+      appliedCompoundKeys.add(key)
+
       const deductQty = parseFloat(overrides[key] ?? '0') || 0
       if (deductQty <= 0) continue
 

@@ -972,6 +972,26 @@ async def resolve_aliases_with_llm(
         # a missing component.
         _note(entry, entry.substitution_note)
 
+    # Dedupe by normalized ingredient_name, keeping the first. The LLM batch
+    # call can return two result entries for the same ingredient (a genuinely
+    # anomalous but observed response shape), and this loop appends one
+    # CompoundSuggestion per entry with no key of its own. The frontend
+    # renders inputs from only the first matching suggestion but keys its
+    # deduction merge by (ingredient_name, pantry_item_id) across the WHOLE
+    # list — so an undeduped second suggestion here would double-deduct
+    # whatever quantity the user types, even though they only ever see one
+    # input (round-4 review on PR #616).
+    if len(compound_suggestions) > 1:
+        seen_names: set[str] = set()
+        deduped: list[CompoundSuggestion] = []
+        for suggestion in compound_suggestions:
+            norm_name = _normalize_ingredient_name(suggestion.ingredient_name)
+            if norm_name in seen_names:
+                continue
+            seen_names.add(norm_name)
+            deduped.append(suggestion)
+        compound_suggestions = deduped
+
     _alias_cache_put(cache_key, (aliases, notes, compound_suggestions), now)
     return aliases, notes, compound_suggestions
 

@@ -1818,6 +1818,51 @@ class TestCompoundComponentItems:
         # only the structured, deducted-against list must be deduped.
         assert sug.components == ["milk", "milk"]
 
+    @pytest.mark.asyncio
+    async def test_compound_suggestions_dedupe_by_ingredient_name(self) -> None:
+        """Two LLM result entries for the same ingredient_name must collapse to
+        one CompoundSuggestion, keeping the first. Round-4 review on PR #616:
+        resolve_aliases_with_llm appends one CompoundSuggestion per result entry
+        with no dedup, and match_ingredients_with_llm only filters by name
+        against still_missing — it never collapses duplicates. The frontend
+        renders only the first suggestion's inputs (one compoundOverrideKey per
+        ingredient+pantry row), so a second undeduped suggestion for the same
+        ingredient would double-deduct whatever quantity the user types."""
+        butter = _make_item("butter", 200.0, "g", qty_base=200.0, unit_base="g")
+        pantry = [butter]
+        ingredients = [{"name": "heavy cream", "quantity": 100.0, "unit": "g"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["butter"],
+                        compound_note="Melt butter",
+                    ),
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.9,
+                        compound_components=["butter"],
+                        compound_note="Melt butter (duplicate model entry)",
+                    ),
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert len(proposal.compound_suggestions) == 1
+        # First entry wins.
+        assert proposal.compound_suggestions[0].note == "Melt butter"
+
 
 class TestUnitConflictFallback:
     """Issue #209 — soft fallback replaces blocking unit_conflict for unresolvable units.

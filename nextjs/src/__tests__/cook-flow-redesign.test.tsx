@@ -762,6 +762,45 @@ describe('summariseDeductions — compound substitution components (#284)', () =
     expect(deductions).toEqual([{ pantry_item_id: 'milk-1', deduct_qty: 100, base_unit: 'ml' }])
     expect(compoundDeductions).toHaveLength(1)
   })
+
+  // Regression for round-4 review on PR #616 (inline comment on
+  // CookModal.tsx:428): the backend can emit TWO separate CompoundSuggestion
+  // entries for the same ingredient_name (resolve_aliases_with_llm appends
+  // one per LLM result entry with no dedup). Both suggestions resolve to the
+  // same component, so both share one compoundOverrideKey — but before this
+  // fix, summariseDeductions iterated every suggestion in the list and ran
+  // mergeDeduction once per suggestion, doubling a typed quantity even
+  // though the on-screen input (rendered from the first suggestion only)
+  // showed just one field. The merge must be idempotent per
+  // (ingredient_name, pantry_item_id) across the WHOLE suggestions list, not
+  // just within one suggestion's component_items.
+  it('deducts a typed quantity once, not twice, when two suggestions share an ingredient_name', () => {
+    const first: CompoundSuggestion = {
+      ingredient_name: 'heavy cream',
+      components: ['butter'],
+      note: 'Melt butter',
+      component_items: [{ pantry_item_id: 'butter-1', name: 'butter', base_unit: 'g' }],
+    }
+    const second: CompoundSuggestion = {
+      ingredient_name: 'heavy cream',
+      components: ['butter'],
+      note: 'Melt butter (duplicate model entry)',
+      component_items: [{ pantry_item_id: 'butter-1', name: 'butter', base_unit: 'g' }],
+    }
+    const p = proposalOf([])
+    const withDuplicateSuggestions = {
+      ...p,
+      missing: ['heavy cream'],
+      compound_suggestions: [first, second],
+    } as CookProposal
+    const key = compoundOverrideKey('heavy cream', 'butter-1')
+    const { deductions, compoundDeductions } = summariseDeductions(withDuplicateSuggestions, {
+      [key]: '50',
+    })
+
+    expect(deductions).toEqual([{ pantry_item_id: 'butter-1', deduct_qty: 50, base_unit: 'g' }])
+    expect(compoundDeductions).toHaveLength(1)
+  })
 })
 
 describe('MissingItemsList — compound component quantity inputs (#284)', () => {
