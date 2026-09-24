@@ -59,9 +59,13 @@ logger = logging.getLogger(__name__)
 # (different name set) correctly busts it.
 #
 # Per-user isolation: `pantry_items` is always the calling user's slice of the
-# DB — the caller (match_ingredients_with_llm) passes only that user's items,
-# so the name-fingerprint is inherently user-scoped.  No explicit user_id
-# thread-through is needed.
+# DB — the caller (match_ingredients_with_llm) passes only that user's items —
+# but the cache KEY is names only, not ids or user_id. Two different users (or
+# the same user across a delete+re-add) can share a normalized name-set and
+# therefore a cache key. Display names and notes are safe to reuse across such
+# a collision; pantry row ids are NOT, so `component_items` is deliberately
+# excluded from what gets cached and is instead re-resolved against the
+# current request's `pantry_items` on every call — see `resolve_aliases_with_llm`.
 
 _ALIAS_CACHE_TTL: float = 180.0  # seconds; preview→confirm is < 30 s in practice
 _ALIAS_CACHE_MAX_SIZE: int = 256  # LRU eviction above this; one entry ≈ a small dict
@@ -94,11 +98,86 @@ def _copy_alias_result(result: _AliasResult) -> _AliasResult:
     return (dict(aliases), dict(notes), [s.model_copy() for s in suggestions])
 
 
+def _strip_component_items(
+    suggestions: list[CompoundSuggestion],
+) -> list[CompoundSuggestion]:
+    """Return copies of `suggestions` with `component_items` cleared.
+
+    `component_items` carries pantry row ids (`pantry_item_id`), which are only
+    valid for the pantry they were resolved against. The cache key is names-only
+    (see `_alias_cache_key`), so caching ids risks handing one pantry's row ids
+    to a request whose pantry merely has the same normalized name-set. `components`
+    (display names) and `note` are unaffected — they don't identify a specific row.
+    """
+    return [s.model_copy(update={"component_items": []}) for s in suggestions]
+
+
+def _resolve_component_items(
+    component_names: list[str],
+    pantry_by_norm: dict[str, PantryItem],
+) -> list[CompoundComponent] | None:
+    """Resolve display names to CURRENT pantry rows for one compound suggestion.
+
+    Returns None if any named component is no longer present in `pantry_by_norm`
+    (the whole suggestion must then be dropped — we must not invent stock).
+    Deduplicates by `pantry_item_id` (first occurrence wins), matching the
+    dedup applied when a suggestion is first built from the LLM's response.
+    """
+    resolved: list[CompoundComponent] = []
+    seen_pantry_item_ids: set[UUID] = set()
+    for component_name in component_names:
+        comp_norm = _normalize_ingredient_name(component_name)
+        pantry_item = pantry_by_norm.get(comp_norm)
+        if pantry_item is None:
+            return None
+        if pantry_item.id in seen_pantry_item_ids:
+            continue
+        seen_pantry_item_ids.add(pantry_item.id)
+        resolved.append(
+            CompoundComponent(
+                pantry_item_id=pantry_item.id,
+                name=pantry_item.name,
+                base_unit=_component_base_unit(pantry_item),
+            )
+        )
+    return resolved
+
+
+def _resolve_compound_suggestions_for_request(
+    suggestions: list[CompoundSuggestion],
+    pantry_by_norm: dict[str, PantryItem],
+) -> list[CompoundSuggestion]:
+    """Re-resolve `component_items` for each suggestion against THIS request's pantry.
+
+    Must run on every call — cache hit or miss — since the cache never stores
+    component_items (see `_strip_component_items`). A suggestion whose components
+    are no longer all present in `pantry_by_norm` is dropped entirely.
+    """
+    resolved: list[CompoundSuggestion] = []
+    for suggestion in suggestions:
+        component_items = _resolve_component_items(suggestion.components, pantry_by_norm)
+        if component_items is None:
+            continue
+        resolved.append(suggestion.model_copy(update={"component_items": component_items}))
+    return resolved
+
+
 def _alias_cache_key(
     unmatched_names: list[str],
     pantry_items: list[PantryItem],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Build a stable, user-scoped cache key for alias resolution."""
+    """Build a stable cache key for alias resolution, fingerprinted by name only.
+
+    NOT user-scoped: the key is (sorted unmatched names, sorted pantry names), so
+    two different users whose normalized pantry name-sets happen to be identical —
+    or the same user who deletes and re-adds a row under the same name within the
+    TTL — collide on the same key. That's safe for the cached `components` display
+    names and `notes`, which only depend on *what* is in the pantry. It is NOT safe
+    for pantry row ids, so `component_items` (which carries `pantry_item_id`) is
+    never cached — see `_strip_component_items` / the resolution step in
+    `resolve_aliases_with_llm`, which rebuilds it from the *current* request's
+    `pantry_items` on every call, cache hit or miss.
+    """
     norm_unmatched = tuple(sorted(_normalize_ingredient_name(n) for n in unmatched_names))
     # Sort by normalized name so ordering differences in pantry list don't bust the cache.
     norm_pantry = tuple(sorted(_normalize_ingredient_name(i.name) for i in pantry_items))
@@ -131,9 +210,14 @@ def _alias_cache_put(
     """Insert into cache, evicting the LRU entry when full."""
     if key in _alias_cache:
         _alias_cache.move_to_end(key)
+    aliases, notes, suggestions = result
     # Store a copy: the caller keeps using the collections it passed in, and a
-    # mutation there must not reach into the shared entry.
-    _alias_cache[key] = (_copy_alias_result(result), now)
+    # mutation there must not reach into the shared entry. component_items is
+    # deliberately stripped before caching — see _strip_component_items — since
+    # the cache key is names-only and pantry row ids are not safe to share
+    # across requests that merely collide on the same normalized name-set.
+    cacheable = (aliases, notes, _strip_component_items(suggestions))
+    _alias_cache[key] = (_copy_alias_result(cacheable), now)
     while len(_alias_cache) > _ALIAS_CACHE_MAX_SIZE:
         _alias_cache.popitem(last=False)  # evict oldest
 
@@ -742,13 +826,20 @@ async def resolve_aliases_with_llm(
         return {}, {}, []
 
     now = (_clock or time.monotonic)()
+    # Built before the cache check: needed on both the hit and miss paths, since
+    # component_items is never cached and must be resolved against THIS request's
+    # pantry every time (see _alias_cache_key's docstring).
+    pantry_by_norm = {_normalize_ingredient_name(i.name): i for i in pantry_items}
     cache_key = _alias_cache_key(unmatched_names, pantry_items)
     cached = _alias_cache_get(cache_key, now)
     if cached is not None:
         logger.debug("resolve_aliases_with_llm: cache hit, skipping LLM call")
-        return cached
-
-    pantry_by_norm = {_normalize_ingredient_name(i.name): i for i in pantry_items}
+        cached_aliases, cached_notes, cached_suggestions = cached
+        return (
+            cached_aliases,
+            cached_notes,
+            _resolve_compound_suggestions_for_request(cached_suggestions, pantry_by_norm),
+        )
 
     prompt = _SUBSTITUTION_PROMPT.format(
         unmatched="\n".join(f"- {n}" for n in unmatched_names),

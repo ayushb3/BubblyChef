@@ -838,6 +838,117 @@ class TestAliasCacheIsolation:
         assert manager.complete.await_count == 1, "should still be a cache hit"
 
 
+class TestAliasCacheComponentItemsAreRequestScoped:
+    """component_items must be resolved per-request, never handed out from another
+    pantry that merely shares the same normalized name-set (#616 review finding).
+
+    _alias_cache_key is built from names only (by design — see the module docstring),
+    so two different pantries with an identical normalized name-set collide on the
+    same cache key. That's fine for `components` (display names, safe to reuse) but
+    not for `component_items[].pantry_item_id`, which must always point at rows the
+    *current* request's pantry actually contains.
+    """
+
+    @staticmethod
+    def _ai_returning_compound(note: str = "Melt butter, whisk in flour, stir in milk") -> MagicMock:
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.8,
+                        compound_components=["butter", "milk", "flour"],
+                        compound_note=note,
+                    )
+                ]
+            )
+        )
+        return ai
+
+    def setup_method(self) -> None:
+        _alias_cache.clear()
+
+    @pytest.mark.asyncio
+    async def test_two_users_with_identical_pantry_names_each_get_their_own_row_ids(
+        self,
+    ) -> None:
+        """A cache hit from a different user's identically-named pantry must not
+        leak that user's pantry_item_ids into this user's compound suggestion."""
+        unmatched = ["heavy cream"]
+        ai = self._ai_returning_compound()
+
+        user1_pantry = [
+            _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g"),
+            _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml"),
+            _make_item("flour", 1.0, "kg", qty_base=1000.0, unit_base="g"),
+        ]
+        user2_pantry = [
+            _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g"),
+            _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml"),
+            _make_item("flour", 1.0, "kg", qty_base=1000.0, unit_base="g"),
+        ]
+        # Identical normalized name-sets, but every id is distinct.
+        user1_ids = {item.id for item in user1_pantry}
+        user2_ids = {item.id for item in user2_pantry}
+        assert user1_ids.isdisjoint(user2_ids)
+
+        _, _, suggestions1 = await resolve_aliases_with_llm(unmatched, user1_pantry, ai)
+        _, _, suggestions2 = await resolve_aliases_with_llm(unmatched, user2_pantry, ai)
+
+        # Second call is a cache hit (same normalized name-set) but must still
+        # resolve component_items against user2's own pantry rows.
+        ai.complete.assert_awaited_once()
+
+        assert len(suggestions1) == 1 and len(suggestions2) == 1
+        ids1 = {c.pantry_item_id for c in suggestions1[0].component_items}
+        ids2 = {c.pantry_item_id for c in suggestions2[0].component_items}
+
+        assert ids1 == user1_ids
+        assert ids2 == user2_ids
+        assert ids1.isdisjoint(ids2)
+
+    @pytest.mark.asyncio
+    async def test_same_user_delete_and_readd_within_ttl_gets_the_new_id(self) -> None:
+        """Deleting and re-adding a pantry row under the same name (same user,
+        within the TTL) must resolve to the NEW row id, not the stale cached one."""
+        unmatched = ["heavy cream"]
+        ai = self._ai_returning_compound()
+
+        pantry_before = [
+            _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g"),
+            _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml"),
+            _make_item("flour", 1.0, "kg", qty_base=1000.0, unit_base="g"),
+        ]
+        _, _, suggestions_before = await resolve_aliases_with_llm(unmatched, pantry_before, ai)
+        old_milk_id = next(
+            c.pantry_item_id for c in suggestions_before[0].component_items if c.name == "milk"
+        )
+
+        # Same names, but "milk" is now a freshly-inserted row with a new id —
+        # simulating a delete + re-add within the cache TTL.
+        pantry_after = [
+            _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g"),
+            _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml"),
+            _make_item("flour", 1.0, "kg", qty_base=1000.0, unit_base="g"),
+        ]
+        new_milk_id = next(item.id for item in pantry_after if item.name == "milk")
+        assert new_milk_id != old_milk_id
+
+        _, _, suggestions_after = await resolve_aliases_with_llm(unmatched, pantry_after, ai)
+
+        # Still a cache hit — only the LLM's first call happened.
+        ai.complete.assert_awaited_once()
+
+        milk_id_after = next(
+            c.pantry_item_id for c in suggestions_after[0].component_items if c.name == "milk"
+        )
+        assert milk_id_after == new_milk_id
+        assert milk_id_after != old_milk_id
+
+
 class TestCompoundSuggestions:
     """Compound substitution suggestions — suggest only, never deduct (#281)."""
 
