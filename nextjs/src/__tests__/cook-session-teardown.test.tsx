@@ -11,6 +11,8 @@ import {
   startCookSession,
   endCookSession,
   isCookSessionEnded,
+  saveAmendedIngredients,
+  getAmendedIngredients,
 } from '@/lib/cook-session'
 
 // ─── cook-session.ts — the persisted record itself ────────────────────────────
@@ -238,5 +240,53 @@ describe('/chat cookingRecipe banner gate (#440)', () => {
   it('leaves a different, still-active recipe session alone', () => {
     endCookSession('r1')
     expect(deriveCookingRecipe('r2', null, 'r2')).toBe(true)
+  })
+})
+
+// ─── /chat banner ingredient count — #490 amendment merge ─────────────────────
+//
+// Mirrors the amendment-merge half of app/chat/page.tsx's `cookingRecipe`
+// derivation: when the banner is visible at all (see the gate above), the
+// ingredient list it shows (and that "Finished cooking" would read from)
+// comes from `getAmendedIngredients` when one is on record, otherwise from
+// the recipe as fetched.
+
+describe('/chat cookingRecipe ingredient list — amendment merge (#490)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  const ORIGINAL = [{ name: 'milk', quantity: 1, unit: 'cup' }]
+  const AMENDED = [{ name: 'oat milk', quantity: 1, unit: 'cup' }]
+
+  const deriveIngredients = (recipeId: string, original: typeof ORIGINAL) =>
+    getAmendedIngredients(recipeId) ?? original
+
+  it('shows the original ingredient list when no amendment is on record', () => {
+    expect(deriveIngredients('r1', ORIGINAL)).toEqual(ORIGINAL)
+  })
+
+  it('shows the amended ingredient list once one is persisted for this recipe', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    expect(deriveIngredients('r1', ORIGINAL)).toEqual(AMENDED)
+  })
+
+  it('survives a reload — a fresh read finds the same amendment', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    // getAmendedIngredients reads straight from localStorage every call, so a
+    // second independent call is the reload simulation.
+    expect(deriveIngredients('r1', ORIGINAL)).toEqual(AMENDED)
+    expect(deriveIngredients('r1', ORIGINAL)).toEqual(AMENDED)
+  })
+
+  it('ending the cook session clears the amendment, so a later cook starts from the original', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    endCookSession('r1')
+    expect(deriveIngredients('r1', ORIGINAL)).toEqual(ORIGINAL)
+  })
+
+  it('does not apply a different recipe\'s amendment', () => {
+    saveAmendedIngredients('r1', AMENDED)
+    expect(deriveIngredients('r2', ORIGINAL)).toEqual(ORIGINAL)
   })
 })

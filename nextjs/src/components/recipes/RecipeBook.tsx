@@ -20,6 +20,7 @@ import {
   markGuidedFlowOpen,
   clearGuidedFlowOpen,
   wasGuidedFlowOpen,
+  getAmendedIngredients,
 } from '@/lib/cook-session'
 import { springs, heartPopVariants } from '@/lib/motion'
 import Chip from '@/components/ui/Chip'
@@ -124,9 +125,22 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     return () => document.removeEventListener('mousedown', handleMouseDown)
   }, [menuOpen])
 
-  // Merge optimistic favorite overrides into the recipe list
+  // Merge optimistic favorite overrides into the recipe list, and (#490)
+  // layer a persisted mid-cook amendment over `ingredients` when one is on
+  // record for that recipe — so a reload that resumes the guided flow (or
+  // just reopens this recipe's detail view) shows the amended list instead
+  // of silently reverting to the original. `getAmendedIngredients` reads
+  // straight from localStorage and returns `null` for any recipe with no
+  // amendment on record, so this is a no-op for every recipe that was never
+  // amended.
   const recipesWithOverrides = useMemo(
-    () => recipes.map((r) => r.id in favoriteOverrides ? { ...r, is_favorite: favoriteOverrides[r.id] } : r),
+    () =>
+      recipes.map((r) => {
+        const withFavorite =
+          r.id in favoriteOverrides ? { ...r, is_favorite: favoriteOverrides[r.id] } : r
+        const amended = getAmendedIngredients(r.id)
+        return amended ? { ...withFavorite, ingredients: amended } : withFavorite
+      }),
     [recipes, favoriteOverrides],
   )
 
