@@ -5,10 +5,23 @@
  */
 import React from 'react'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import NotificationBell from '@/components/layout/NotificationBell'
 
 function jsonResponse(body: unknown): Response {
   return { ok: true, json: async () => body } as Response
+}
+
+// useInboxEntries fetches through React Query (#496 standards fix — server
+// state goes through React Query, not hand-rolled useState/useEffect), so
+// every render needs a provider, same as HeroHome's tests.
+function renderBell() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <NotificationBell />
+    </QueryClientProvider>,
+  )
 }
 
 const originalFetch = global.fetch
@@ -27,7 +40,7 @@ describe('NotificationBell', () => {
       return jsonResponse({})
     }) as unknown as typeof fetch
 
-    render(<NotificationBell />)
+    renderBell()
 
     await waitFor(() => {
       expect(screen.queryByTestId('notification-badge')).not.toBeInTheDocument()
@@ -75,7 +88,7 @@ describe('NotificationBell', () => {
       return jsonResponse({})
     }) as unknown as typeof fetch
 
-    render(<NotificationBell />)
+    renderBell()
 
     await waitFor(() => {
       expect(screen.getByTestId('notification-badge')).toHaveTextContent('2')

@@ -218,10 +218,19 @@ export function deriveInboxEntries(data: InboxSourceData, now: Date = new Date()
     all.push(timerEntry(timer))
   }
 
-  const latest = latestCookedAt(data.recipes)
-  const daysSinceCook = latest ? Math.floor((today.getTime() - latest.getTime()) / 86_400_000) : null
-  if (daysSinceCook === null || daysSinceCook > COOK_NUDGE_DAYS) {
-    all.push(cookNudgeEntry())
+  // Gated on having at least one saved recipe: "no cooks" (the issue's own
+  // phrasing) means no *saved* recipe has been cooked, not "this account has
+  // zero recipes at all". Without this gate, a brand-new account with an
+  // empty pantry and no recipes would still get a badge — contradicting the
+  // acceptance criterion "Empty pantry, no timers -> bell shows no badge
+  // ... (never an empty box)", since there'd be nothing to suggest cooking
+  // *from* yet.
+  if (data.recipes.length > 0) {
+    const latest = latestCookedAt(data.recipes)
+    const daysSinceCook = latest ? Math.floor((today.getTime() - latest.getTime()) / 86_400_000) : null
+    if (daysSinceCook === null || daysSinceCook > COOK_NUDGE_DAYS) {
+      all.push(cookNudgeEntry())
+    }
   }
 
   if (data.groceryCount != null && data.groceryCount > 0) {

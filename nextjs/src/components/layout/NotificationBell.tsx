@@ -86,7 +86,9 @@ export default function NotificationBell() {
         ref={buttonRef}
         type="button"
         onClick={toggleOpen}
-        aria-label={count > 0 ? `Notifications, ${count} unread` : 'Notifications'}
+        // "unread" would imply persisted read state, which this lite inbox
+        // deliberately doesn't have (#496: "No persistence, no read/unread").
+        aria-label={count > 0 ? `Notifications, ${count} item${count === 1 ? '' : 's'}` : 'Notifications'}
         aria-haspopup="true"
         aria-expanded={open}
         data-testid="notification-bell"

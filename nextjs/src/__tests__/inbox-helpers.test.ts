@@ -62,16 +62,27 @@ describe('deriveInboxEntries', () => {
     })
 
     const result = deriveInboxEntries(
-      { pantryItems: [expiringTomorrow, expired], recipes: [] },
+      { pantryItems: [expiringTomorrow, expired], recipes: [{ last_cooked_at: NOW.toISOString() }] },
       NOW,
     )
 
-    // Cook nudge also fires here (no recipes), so 3 total: expired,
-    // expiring, then the nudge — expired must lead.
+    expect(result.entries).toHaveLength(2)
     expect(result.entries[0].kind).toBe('expired')
     expect(result.entries[0].id).toBe('expired:expired-1')
     expect(result.entries[1].kind).toBe('expiring')
     expect(result.entries[1].id).toBe('expiring:expiring-1')
+  })
+
+  it('never fires the cook nudge for an account with zero saved recipes (AC: empty pantry -> no badge)', () => {
+    // "No cooks" (the issue's own phrasing) means no *saved* recipe has ever
+    // been cooked — not "this account owns zero recipes". A brand-new
+    // account with nothing saved yet has nothing to suggest cooking from,
+    // so the nudge must stay silent here, or the "empty pantry, no timers
+    // -> bell shows no badge" acceptance criterion would never actually
+    // hold for a fresh account.
+    const result = deriveInboxEntries({ pantryItems: [], recipes: [] }, NOW)
+    expect(result.entries).toEqual([])
+    expect(result.totalCount).toBe(0)
   })
 
   it('orders expiring entries by days remaining, soonest first', () => {
@@ -166,6 +177,17 @@ describe('deriveInboxEntries', () => {
     expect(result.entries).toHaveLength(1)
     expect(result.entries[0].kind).toBe('timer')
     expect(result.entries[0].href).toBeNull()
+  })
+
+  // #496's acceptance criteria ask, verbatim: "With Spec B.3 merged, a
+  // completed timer appears as an entry until dismissed. (If B.3 is not
+  // merged yet, the hook's timer source is a no-op and the test for it is
+  // skipped with a reason.)" B.3 hasn't merged — there is no real timer
+  // store to drive `useInboxEntries`' `timers` input end to end, only the
+  // synthetic feed the test above exercises against the pure derivation.
+  // Skipped per that explicit instruction, not left out.
+  it.skip('shows a completed timer surfaced by the real Spec B.3 store (skipped: Spec B.3 is not merged — no timer store exists yet to drive this end to end)', () => {
+    // Intentionally empty — see skip reason above.
   })
 
   it('includes a grocery pointer when the B.5 count is present and positive', () => {
