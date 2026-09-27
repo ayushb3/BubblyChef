@@ -193,7 +193,7 @@ export default function NotificationBell() {
               </p>
             </div>
 
-            <div className="max-h-[340px] overflow-y-auto">
+            <div className="max-h-[340px] overflow-y-auto overscroll-contain">
               {loading ? (
                 <div className="px-4 py-6 text-center text-sm text-[var(--color-muted)]">
                   Loading…

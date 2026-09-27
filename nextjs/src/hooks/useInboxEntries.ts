@@ -77,9 +77,10 @@ export function useInboxEntries(): UseInboxEntriesResult {
     queryFn: fetchInboxSources,
   })
 
-  // A completed timer stays listed until the user dismisses it elsewhere
-  // (the cooking-timer dock owns dismissal, per #495/#619 — this hub only
-  // lists it); running/paused timers don't belong in the inbox at all.
+  // A completed timer stays listed until the user dismisses it, either here
+  // (the bell's dismiss button calls useCookingTimers().dismiss) or from the
+  // cooking-timer dock (#495/#619); running/paused timers don't belong in the
+  // inbox at all.
   const { timers: liveTimers } = useCookingTimers()
   const completedTimers = useMemo<InboxTimerSource[]>(
     () =>
