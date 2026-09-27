@@ -142,6 +142,23 @@ Each role file states, at minimum:
 - Its stack/domain context
 - Any project-specific conventions it must follow
 
+### Before spawning: the feasibility check
+
+A dev agent that starts an issue it can't finish costs a full implementation and a
+review round, and then the PR sits. PR #617 was built on issue #490 while its
+blocker #489 was still open. PRs #614 and #616 each hit a product decision halfway
+through. So the orchestrator (or `/implement-issue` §1.1) answers three questions
+before delegating, and any "yes" means don't spawn:
+
+1. **Blocked?** A "blocked by" / "depends on" pointing at an open issue.
+2. **Protected?** The likely change touches a CODEOWNERS path, which makes it human
+   work unless the human asked for it.
+3. **Undecided?** The triage comment leaves a product question open with no
+   defensible conservative default.
+
+The dev brief keeps its own hard stops as a second line. This check exists so the
+orchestrator catches these cases before an agent is spawned, not after it stalls.
+
 ### Orchestration depth: one level, hard cap
 
 The human drives the `pm` role directly (in-thread, no wrapper); `pm` spawns dev
@@ -178,6 +195,15 @@ Concretely:
   `how` skill run as (or by) a subagent — not the PM reading the subsystem itself.
 - A PM turn that's mostly tool output rather than orchestration decisions is a sign
   something should have been delegated instead.
+- **Context size is capped by auto-compaction, and state lives in a file.** Supervising
+  contexts of 365–634k tokens were the main cost driver in the 2026-09-23 cost report.
+  - A long-running orchestrator runs with a lowered auto-compact window. `/autocompact
+    400k tokens` is the current setting.
+  - It keeps a state file current at every milestone: mode, in-flight PRs and agents,
+    the human's decision pile, script paths.
+  - It re-reads that file after every compaction. Compaction keeps in-flight agents
+    and monitors attached to the same session. A handoff to a fresh session orphans
+    them. So a manual handoff is only for a natural break with the human present.
 
 ## 6. Autonomy gate
 
@@ -314,6 +340,33 @@ other work. So:
 - **Handoffs list every PR with an unread or unresolved review.** The vendored `/handoff`
   skill doesn't know this rule (it's drift-tracked in `skills-lock.json` and has no PR
   step), so whoever writes the handoff adds the list by hand.
+
+### Review rounds: review first, sweep siblings, cap at three
+
+PR #616 went through five Claude-review rounds. Each one found a new edge case from
+the same few families: key casing, duplicate components, cross-user cache rows,
+duplicate suggestions, a null unit. Each fix handled only the instance it was shown.
+Four rules:
+
+- **Opus reviews before the PR opens.** When the dev role reports done, the
+  orchestrator runs a fresh-context Opus review of the branch's diff, aimed at edge
+  cases rather than style, before `gh pr create` (`/implement-issue` §4.1). The
+  orchestrator runs it, not the dev role: `/code-review` fans out to two sub-agents,
+  and dev roles have no `Agent` tool under the one-level cap above. It also means a
+  Sonnet implementer isn't the only one reviewing its own work, and it would miss the
+  same things twice.
+- **Fix the class, then sweep for siblings.** Every finding names a pattern, not just
+  a line. Before pushing the fix, grep the diff for other instances of the same
+  pattern and fix those too. The resolutions comment says what the sweep covered.
+- **Fix rounds 3 and later go to a fresh agent.** After two rounds, the next fix goes
+  to a new agent. Its brief is only the open findings, the diff, and the sweep
+  instruction. It does not continue the implementer, whose context is large and
+  whose blind spots produced the findings.
+- **Cap: three review rounds.** If the third Claude review still raises new findings,
+  stop pushing. Post a comment listing the open findings with a one-line assessment
+  of each, and escalate to the human. There's no fourth round without them. A PR that
+  keeps turning up new edge cases usually has a design question underneath, and
+  more patches won't answer it.
 
 ### Deploy-side checks
 
