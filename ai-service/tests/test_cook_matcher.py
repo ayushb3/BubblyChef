@@ -1864,6 +1864,242 @@ class TestCompoundComponentItems:
         assert proposal.compound_suggestions[0].note == "Melt butter"
 
 
+class TestCompoundQuantityPrefill:
+    """Issue #284 Option B (2026-09-27) — the model's per-component quantity
+    suggestion pre-fills component_items[].suggested_quantity.
+
+    Nothing here writes to the pantry: this is still the same advisory
+    component_items resolution as before Option B, just carrying one more
+    (optional, validated) number per component for the frontend to pre-fill
+    an editable input with. The user can still edit or clear it; confirm
+    sends whatever ends up in the input.
+    """
+
+    @pytest.mark.asyncio
+    async def test_valid_quantities_pre_fill_every_component(self) -> None:
+        butter = _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g")
+        milk = _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml")
+        flour = _make_item("flour", 1.0, "kg", qty_base=1000.0, unit_base="g")
+        pantry = [butter, milk, flour]
+        ingredients = [{"name": "heavy cream", "quantity": 240.0, "unit": "ml"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["butter", "milk", "flour"],
+                        compound_note="Melt butter, whisk in flour, stir in milk",
+                        compound_quantities={"butter": 80, "milk": 180, "flour": 15},
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert len(proposal.compound_suggestions) == 1
+        by_name = {c.name: c for c in proposal.compound_suggestions[0].component_items}
+        assert by_name["butter"].suggested_quantity == 80.0
+        assert by_name["milk"].suggested_quantity == 180.0
+        assert by_name["flour"].suggested_quantity == 15.0
+
+    @pytest.mark.asyncio
+    async def test_no_quantities_leaves_every_component_unset(self) -> None:
+        """Same shape as before Option B when the model gives no compound_quantities
+        at all — every component's suggested_quantity stays None (blank input)."""
+        butter = _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g")
+        milk = _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml")
+        pantry = [butter, milk]
+        ingredients = [{"name": "heavy cream", "quantity": 240.0, "unit": "ml"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["butter", "milk"],
+                        compound_note="Melt butter, stir in milk",
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert len(proposal.compound_suggestions) == 1
+        for component in proposal.compound_suggestions[0].component_items:
+            assert component.suggested_quantity is None
+
+    @pytest.mark.asyncio
+    async def test_invalid_quantity_falls_back_to_blank_for_that_component_only(self) -> None:
+        """Missing, non-numeric, non-positive, and absurdly-large quantities all
+        drop to None (blank input) — one bad value must not sink the others."""
+        butter = _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g")
+        milk = _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml")
+        flour = _make_item("flour", 1.0, "kg", qty_base=1000.0, unit_base="g")
+        eggs = _make_item("eggs", 12.0, "count", qty_base=12.0, unit_base="count")
+        pantry = [butter, milk, flour, eggs]
+        ingredients = [{"name": "custard base", "quantity": 240.0, "unit": "ml"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="custard base",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["butter", "milk", "flour", "eggs"],
+                        compound_note="Whisk together",
+                        compound_quantities={
+                            "butter": "not a number",  # non-numeric
+                            "milk": -50,  # non-positive
+                            "flour": 999_999,  # absurdly large
+                            # "eggs" omitted entirely — missing
+                        },
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert len(proposal.compound_suggestions) == 1
+        by_name = {c.name: c for c in proposal.compound_suggestions[0].component_items}
+        assert by_name["butter"].suggested_quantity is None
+        assert by_name["milk"].suggested_quantity is None
+        assert by_name["flour"].suggested_quantity is None
+        assert by_name["eggs"].suggested_quantity is None
+
+    @pytest.mark.asyncio
+    async def test_casing_mismatch_between_quantities_and_components_still_resolves(self) -> None:
+        """compound_quantities keys need not match compound_components' casing —
+        the model echoes a name into both from the same generation with no
+        guarantee they're spelled identically (same class of bug as the
+        ingredient_name/missing casing mismatch fixed on PR #616 round 2)."""
+        butter = _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g")
+        pantry = [butter]
+        ingredients = [{"name": "heavy cream", "quantity": 240.0, "unit": "ml"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["Butter"],
+                        compound_note="Melt butter",
+                        compound_quantities={"  butter  ": 80},
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert len(proposal.compound_suggestions) == 1
+        component = proposal.compound_suggestions[0].component_items[0]
+        assert component.suggested_quantity == 80.0
+
+    @pytest.mark.asyncio
+    async def test_duplicate_components_keep_first_quantity_not_doubled(self) -> None:
+        """Two model-supplied names normalizing onto one pantry row collapse to
+        one component_item (existing #616 dedupe); its quantity must be the
+        first one's, never a sum of both."""
+        milk = _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml")
+        pantry = [milk]
+        ingredients = [{"name": "custard base", "quantity": 200.0, "unit": "ml"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="custard base",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["milk", "whole milk"],
+                        compound_note="Warm the milk",
+                        compound_quantities={"milk": 100, "whole milk": 200},
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        assert len(proposal.compound_suggestions) == 1
+        sug = proposal.compound_suggestions[0]
+        assert len(sug.component_items) == 1
+        assert sug.component_items[0].suggested_quantity == 100.0
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_still_pre_fills_quantities(self) -> None:
+        """component_quantities carries no pantry row id, so — unlike
+        component_items — it IS safe to cache and reuse across a hit. A second
+        request against an identical normalized pantry name-set must still get
+        its components pre-filled from the cached quantities."""
+        _alias_cache.clear()
+        unmatched = ["heavy cream"]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["butter", "milk"],
+                        compound_note="Melt butter, stir in milk",
+                        compound_quantities={"butter": 80, "milk": 180},
+                    )
+                ]
+            )
+        )
+
+        pantry1 = [
+            _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g"),
+            _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml"),
+        ]
+        pantry2 = [
+            _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g"),
+            _make_item("milk", 500.0, "ml", qty_base=500.0, unit_base="ml"),
+        ]
+
+        _, _, suggestions1 = await resolve_aliases_with_llm(unmatched, pantry1, ai)
+        _, _, suggestions2 = await resolve_aliases_with_llm(unmatched, pantry2, ai)
+
+        ai.complete.assert_awaited_once()  # second call is a cache hit
+
+        by_name2 = {c.name: c for c in suggestions2[0].component_items}
+        assert by_name2["butter"].suggested_quantity == 80.0
+        assert by_name2["milk"].suggested_quantity == 180.0
+        # And it resolved against pantry2's own row ids, not pantry1's.
+        pantry2_ids = {item.id for item in pantry2}
+        assert all(c.pantry_item_id in pantry2_ids for c in suggestions2[0].component_items)
+        assert suggestions1  # sanity: first call did produce a suggestion too
+
+
 class TestUnitConflictFallback:
     """Issue #209 — soft fallback replaces blocking unit_conflict for unresolvable units.
 

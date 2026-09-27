@@ -57,11 +57,14 @@ class IngredientMatch(BaseModel):
 class CompoundComponent(BaseModel):
     """One pantry item backing a compound substitution, ready to deduct.
 
-    Quantities are deliberately absent here (#284): the model is not asked to
-    apportion how much of a missing ingredient each component stands in for
-    — that is always-unresolved, the same as an existing unit_conflict row.
-    The user types an amount per component in the cook modal; this model
-    only carries what the deduction needs to target the right pantry row.
+    `suggested_quantity` (#284 Option B, 2026-09-27) is the model's best guess
+    at how much of this component stands in for the missing ingredient, in
+    `base_unit`. It only ever PRE-FILLS an editable input in the cook modal —
+    nothing is deducted until the user confirms, and the user can edit or
+    clear it first, exactly like an existing unit_conflict row. It is None
+    when the model gave no quantity, or one that failed validation (missing,
+    non-numeric, non-positive, or absurdly large) — the input then starts
+    blank, the same always-unresolved behaviour this carried before Option B.
     """
 
     pantry_item_id: UUID = Field(description="Pantry item this component would deduct from")
@@ -70,16 +73,26 @@ class CompoundComponent(BaseModel):
         default=None,
         description="Base unit the user's typed quantity is interpreted in (count | ml | g)",
     )
+    suggested_quantity: float | None = Field(
+        default=None,
+        description=(
+            "Model-suggested quantity in base_unit, pre-filling the modal's editable "
+            "input for this component. None when the model gave no usable amount — "
+            "the input then starts blank, same as before Option B."
+        ),
+    )
 
 
 class CompoundSuggestion(BaseModel):
     """A multi-item substitution the model proposes for a missing ingredient.
 
     The suggestion itself is advisory — the ingredient stays in
-    CookProposal.missing. Deduction is opt-in and always-unresolved (#284):
-    component_items carries enough to target a deduction, but nothing is
-    deducted until the user types a quantity for a component in the cook
-    modal and confirms, reusing the same editable-qty path as unit_conflict.
+    CookProposal.missing. Deduction is opt-in (#284): component_items carries
+    enough to target a deduction, and since Option B (2026-09-27) each
+    component's input starts pre-filled with the model's suggested_quantity
+    where one validated. Nothing is deducted until the user confirms — they
+    can edit or clear a pre-filled value first, reusing the same editable-qty
+    path as unit_conflict.
     """
 
     ingredient_name: str = Field(description="The missing ingredient this suggestion covers")
@@ -96,6 +109,17 @@ class CompoundSuggestion(BaseModel):
             "let the user type a per-component quantity and deduct it on confirm. "
             "Empty only if resolution somehow fails after `components` was already "
             "validated against the pantry — treated as always-unresolved in that case."
+        ),
+    )
+    component_quantities: dict[str, float] | None = Field(
+        default=None,
+        description=(
+            "Validated model-suggested quantity per component, keyed by normalized "
+            "(stripped, lowercased) component name — the source component_items' "
+            "suggested_quantity is resolved from. Unlike component_items this never "
+            "carries a pantry row id, so — same as `components` and `note` — it is "
+            "safe to cache and reuse across an alias-cache hit on a colliding "
+            "normalized pantry name-set (#616)."
         ),
     )
 

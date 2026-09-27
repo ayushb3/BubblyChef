@@ -1059,3 +1059,274 @@ describe('CookModal — compound component deduction end to end (#284)', () => {
     )
   })
 })
+
+// ─── Model-prefilled compound quantities (#284 Option B, 2026-09-27) ─────────
+//
+// The suggestion half already resolves component_items; Option B adds one
+// more (optional, backend-validated) field per component — suggested_quantity
+// — that pre-fills the same editable input rather than leaving it blank. The
+// user can still edit or clear it, and confirm always sends whatever ends up
+// in the input (effectiveCompoundOverride is the single place that decides
+// what that is, for both rendering and deducting).
+
+import { effectiveCompoundOverride } from '@/components/recipes/CookModal'
+
+const suggestionWithSuggestedQuantities = (
+  overrides: Partial<CompoundSuggestion> = {},
+): CompoundSuggestion => ({
+  ingredient_name: 'heavy cream',
+  components: ['butter', 'milk', 'flour'],
+  note: 'Melt butter, whisk in flour, add milk',
+  component_items: [
+    { pantry_item_id: 'butter-1', name: 'butter', base_unit: 'g', suggested_quantity: 80 },
+    { pantry_item_id: 'milk-1', name: 'milk', base_unit: 'ml', suggested_quantity: 180 },
+    { pantry_item_id: 'flour-1', name: 'flour', base_unit: 'g', suggested_quantity: 15 },
+  ],
+  ...overrides,
+})
+
+describe('effectiveCompoundOverride (#284 Option B)', () => {
+  it('falls back to the suggested_quantity when no override exists', () => {
+    expect(effectiveCompoundOverride({}, 'compound:heavy cream:butter-1', 80)).toBe('80')
+  })
+
+  it('returns blank when there is no override and no suggested_quantity', () => {
+    expect(effectiveCompoundOverride({}, 'compound:heavy cream:butter-1', null)).toBe('')
+    expect(effectiveCompoundOverride({}, 'compound:heavy cream:butter-1', undefined)).toBe('')
+  })
+
+  it('treats a non-positive suggested_quantity the same as absent', () => {
+    expect(effectiveCompoundOverride({}, 'k', 0)).toBe('')
+    expect(effectiveCompoundOverride({}, 'k', -5)).toBe('')
+  })
+
+  it('prefers an explicit override over the suggested_quantity, even an empty one (cleared)', () => {
+    expect(effectiveCompoundOverride({ k: '120' }, 'k', 80)).toBe('120')
+    expect(effectiveCompoundOverride({ k: '' }, 'k', 80)).toBe('')
+  })
+})
+
+describe('summariseDeductions — model-prefilled compound quantities (#284 Option B)', () => {
+  it('deducts the model-suggested quantity when the user has not touched the input', () => {
+    const p = proposalOf([])
+    const withSuggested = {
+      ...p,
+      missing: ['heavy cream'],
+      compound_suggestions: [suggestionWithSuggestedQuantities()],
+    } as CookProposal
+    const { deductions, compoundDeductions } = summariseDeductions(withSuggested, {})
+
+    expect(deductions).toEqual(
+      expect.arrayContaining([
+        { pantry_item_id: 'butter-1', deduct_qty: 80, base_unit: 'g' },
+        { pantry_item_id: 'milk-1', deduct_qty: 180, base_unit: 'ml' },
+        { pantry_item_id: 'flour-1', deduct_qty: 15, base_unit: 'g' },
+      ]),
+    )
+    expect(compoundDeductions).toEqual(
+      expect.arrayContaining([
+        { ingredientName: 'heavy cream', componentName: 'butter', deductQty: 80 },
+        { ingredientName: 'heavy cream', componentName: 'milk', deductQty: 180 },
+        { ingredientName: 'heavy cream', componentName: 'flour', deductQty: 15 },
+      ]),
+    )
+  })
+
+  it('produces no deduction when suggested_quantity is absent (no quantities from the model)', () => {
+    const p = proposalOf([])
+    const withCompound = {
+      ...p,
+      missing: ['heavy cream'],
+      compound_suggestions: [suggestionWithComponents()],
+    } as CookProposal
+    const { deductions, compoundDeductions } = summariseDeductions(withCompound, {})
+    expect(deductions).toHaveLength(0)
+    expect(compoundDeductions).toHaveLength(0)
+  })
+
+  it('produces no deduction for a component whose suggested_quantity is invalid (non-positive)', () => {
+    const invalidSuggestion: CompoundSuggestion = {
+      ingredient_name: 'heavy cream',
+      components: ['butter'],
+      note: 'Melt butter',
+      component_items: [
+        { pantry_item_id: 'butter-1', name: 'butter', base_unit: 'g', suggested_quantity: -5 },
+      ],
+    }
+    const p = proposalOf([])
+    const withInvalid = {
+      ...p,
+      missing: ['heavy cream'],
+      compound_suggestions: [invalidSuggestion],
+    } as CookProposal
+    const { deductions, compoundDeductions } = summariseDeductions(withInvalid, {})
+    expect(deductions).toHaveLength(0)
+    expect(compoundDeductions).toHaveLength(0)
+  })
+
+  it('deducts the edited value, not the pre-filled suggestion, once the user types over it', () => {
+    const p = proposalOf([])
+    const withSuggested = {
+      ...p,
+      missing: ['heavy cream'],
+      compound_suggestions: [suggestionWithSuggestedQuantities()],
+    } as CookProposal
+    const key = compoundOverrideKey('heavy cream', 'butter-1')
+    const { deductions } = summariseDeductions(withSuggested, { [key]: '200' })
+    expect(deductions).toEqual(
+      expect.arrayContaining([{ pantry_item_id: 'butter-1', deduct_qty: 200, base_unit: 'g' }]),
+    )
+    // Untouched components still fall back to their own suggestion.
+    expect(deductions).toEqual(
+      expect.arrayContaining([{ pantry_item_id: 'milk-1', deduct_qty: 180, base_unit: 'ml' }]),
+    )
+  })
+
+  it('deducts nothing for a component once the user clears its pre-filled value', () => {
+    const p = proposalOf([])
+    const withSuggested = {
+      ...p,
+      missing: ['heavy cream'],
+      compound_suggestions: [suggestionWithSuggestedQuantities()],
+    } as CookProposal
+    const key = compoundOverrideKey('heavy cream', 'butter-1')
+    const { deductions } = summariseDeductions(withSuggested, { [key]: '' })
+    expect(deductions.find((d) => d.pantry_item_id === 'butter-1')).toBeUndefined()
+    // The other, untouched components are unaffected by clearing one.
+    expect(deductions.find((d) => d.pantry_item_id === 'milk-1')).toEqual({
+      pantry_item_id: 'milk-1',
+      deduct_qty: 180,
+      base_unit: 'ml',
+    })
+  })
+
+  it('keeps a first-wins quantity, not doubled, when two component_items share a pantry_item_id', () => {
+    const duplicated: CompoundSuggestion = {
+      ingredient_name: 'custard base',
+      components: ['milk', 'milk'],
+      note: 'Warm the milk',
+      component_items: [
+        { pantry_item_id: 'milk-1', name: 'milk', base_unit: 'ml', suggested_quantity: 100 },
+        { pantry_item_id: 'milk-1', name: 'milk', base_unit: 'ml', suggested_quantity: 200 },
+      ],
+    }
+    const p = proposalOf([])
+    const withDuplicate = {
+      ...p,
+      missing: ['custard base'],
+      compound_suggestions: [duplicated],
+    } as CookProposal
+    const { deductions } = summariseDeductions(withDuplicate, {})
+    expect(deductions).toEqual([{ pantry_item_id: 'milk-1', deduct_qty: 100, base_unit: 'ml' }])
+  })
+})
+
+describe('MissingItemsList — model-prefilled compound quantities (#284 Option B)', () => {
+  it('pre-fills each component input with its suggested_quantity', () => {
+    render(
+      <MissingItemsList
+        missing={['heavy cream']}
+        compoundSuggestions={[suggestionWithSuggestedQuantities()]}
+        overrides={{}}
+        onOverrideChange={jest.fn()}
+      />,
+    )
+    expect(
+      screen.getByLabelText(/deduct quantity for butter \(heavy cream substitution\)/i),
+    ).toHaveValue(80)
+    expect(
+      screen.getByLabelText(/deduct quantity for milk \(heavy cream substitution\)/i),
+    ).toHaveValue(180)
+    expect(
+      screen.getByLabelText(/deduct quantity for flour \(heavy cream substitution\)/i),
+    ).toHaveValue(15)
+  })
+
+  it('renders blank when component_items carry no suggested_quantity', () => {
+    render(
+      <MissingItemsList
+        missing={['heavy cream']}
+        compoundSuggestions={[suggestionWithComponents()]}
+        overrides={{}}
+        onOverrideChange={jest.fn()}
+      />,
+    )
+    expect(
+      screen.getByLabelText(/deduct quantity for butter \(heavy cream substitution\)/i),
+    ).toHaveValue(null)
+  })
+
+  it('shows the user-typed override rather than the pre-fill once the user edits the input', () => {
+    const onOverrideChange = jest.fn()
+    const key = compoundOverrideKey('heavy cream', 'butter-1')
+    render(
+      <MissingItemsList
+        missing={['heavy cream']}
+        compoundSuggestions={[suggestionWithSuggestedQuantities()]}
+        overrides={{ [key]: '200' }}
+        onOverrideChange={onOverrideChange}
+      />,
+    )
+    expect(
+      screen.getByLabelText(/deduct quantity for butter \(heavy cream substitution\)/i),
+    ).toHaveValue(200)
+  })
+})
+
+describe('CookModal — model-prefilled compound quantities end to end (#284 Option B)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    window.localStorage.clear()
+  })
+
+  it('confirms with the model-suggested quantities when the user never touches the inputs', async () => {
+    const { confirmCook: mockConfirmCook } = jest.requireMock('@/lib/api/recipes') as {
+      confirmCook: jest.Mock
+    }
+    mockConfirmCook.mockResolvedValue({ applied: 3, skipped: [] })
+    mockCookRecipe.mockResolvedValue(compoundProposal([suggestionWithSuggestedQuantities()]))
+
+    renderWithQuery(
+      <CookModal recipeId="r1" recipeTitle="Cream Sauce" onClose={jest.fn()} onCooked={jest.fn()} />,
+    )
+
+    // The input is already pre-filled — nothing is typed before confirming.
+    await screen.findByLabelText(/deduct quantity for butter \(heavy cream substitution\)/i)
+    fireEvent.click(screen.getByRole('button', { name: /yes, i cooked this/i }))
+
+    await screen.findByText(/pantry updated/i)
+    expect(mockConfirmCook).toHaveBeenCalledWith(
+      'r1',
+      expect.arrayContaining([
+        { pantry_item_id: 'butter-1', deduct_qty: 80, base_unit: 'g' },
+        { pantry_item_id: 'milk-1', deduct_qty: 180, base_unit: 'ml' },
+        { pantry_item_id: 'flour-1', deduct_qty: 15, base_unit: 'g' },
+      ]),
+    )
+  })
+
+  it('confirms with the edited value, not the pre-fill, once the user changes an input', async () => {
+    const { confirmCook: mockConfirmCook } = jest.requireMock('@/lib/api/recipes') as {
+      confirmCook: jest.Mock
+    }
+    mockConfirmCook.mockResolvedValue({ applied: 3, skipped: [] })
+    mockCookRecipe.mockResolvedValue(compoundProposal([suggestionWithSuggestedQuantities()]))
+
+    renderWithQuery(
+      <CookModal recipeId="r1" recipeTitle="Cream Sauce" onClose={jest.fn()} onCooked={jest.fn()} />,
+    )
+
+    const butterInput = await screen.findByLabelText(
+      /deduct quantity for butter \(heavy cream substitution\)/i,
+    )
+    fireEvent.change(butterInput, { target: { value: '999' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /yes, i cooked this/i }))
+
+    await screen.findByText(/pantry updated/i)
+    expect(mockConfirmCook).toHaveBeenCalledWith(
+      'r1',
+      expect.arrayContaining([{ pantry_item_id: 'butter-1', deduct_qty: 999, base_unit: 'g' }]),
+    )
+  })
+})

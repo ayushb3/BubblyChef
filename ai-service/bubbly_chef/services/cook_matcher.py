@@ -8,6 +8,7 @@ insufficient, which have unit conflicts, and which are missing entirely.
 from __future__ import annotations
 
 import logging
+import math
 import re
 import time
 from collections import OrderedDict
@@ -137,6 +138,7 @@ def _strip_component_items(
 def _resolve_component_items(
     component_names: list[str],
     pantry_by_norm: dict[str, PantryItem],
+    component_quantities: dict[str, float] | None = None,
 ) -> list[CompoundComponent] | None:
     """Resolve display names to CURRENT pantry rows for one compound suggestion.
 
@@ -144,7 +146,13 @@ def _resolve_component_items(
     (the whole suggestion must then be dropped — we must not invent stock).
     Deduplicates by `pantry_item_id` (first occurrence wins), matching the
     dedup applied when a suggestion is first built from the LLM's response.
+
+    `component_quantities` (#284 Option B) is the suggestion's cached, already-
+    validated name->quantity map; each resolved component picks up its own
+    entry (by `_norm_component_key`) as `suggested_quantity`, so a cache hit
+    still pre-fills the modal exactly as a cache miss would.
     """
+    quantities_by_key = component_quantities or {}
     resolved: list[CompoundComponent] = []
     for component_name in component_names:
         comp_norm = _normalize_ingredient_name(component_name)
@@ -156,6 +164,7 @@ def _resolve_component_items(
                 pantry_item_id=pantry_item.id,
                 name=pantry_item.name,
                 base_unit=_component_base_unit(pantry_item),
+                suggested_quantity=quantities_by_key.get(_norm_component_key(component_name)),
             )
         )
     return _dedupe_keep_first(resolved, lambda c: c.pantry_item_id)
@@ -170,10 +179,15 @@ def _resolve_compound_suggestions_for_request(
     Must run on every call — cache hit or miss — since the cache never stores
     component_items (see `_strip_component_items`). A suggestion whose components
     are no longer all present in `pantry_by_norm` is dropped entirely.
+    `component_quantities` IS cached (it carries no pantry row id — see
+    `CompoundSuggestion.component_quantities`), so it is threaded through
+    unchanged to re-attach each component's `suggested_quantity` on a hit.
     """
     resolved: list[CompoundSuggestion] = []
     for suggestion in suggestions:
-        component_items = _resolve_component_items(suggestion.components, pantry_by_norm)
+        component_items = _resolve_component_items(
+            suggestion.components, pantry_by_norm, suggestion.component_quantities
+        )
         if component_items is None:
             continue
         resolved.append(suggestion.model_copy(update={"component_items": component_items}))
@@ -281,6 +295,21 @@ class _LLMIngredientMatch(BaseModel):
     compound_note: str | None = Field(
         default=None,
         description="Short instruction under ~20 words, e.g. 'Melt butter, whisk in flour, add milk'",
+    )
+    # Per-component suggested amounts (#284 Option B, 2026-09-27) — only set
+    # alongside compound_components. Typed loosely (not dict[str, float]) so a
+    # malformed or non-numeric value from the model is validated and dropped
+    # by _validate_compound_quantity() rather than rejected by pydantic before
+    # this matcher ever sees it — the same "degrade, never crash" contract
+    # this whole batch call already has for a bad best_match or confidence.
+    compound_quantities: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Suggested quantity for each name in compound_components, in a common "
+            "kitchen unit for that ingredient (grams, ml, or a whole count), keyed "
+            "by the exact same spelling used in compound_components. Omit a key "
+            "rather than guess when unsure of the amount."
+        ),
     )
 
 
@@ -416,6 +445,50 @@ def _component_base_unit(item: PantryItem) -> str | None:
         unit=item.unit,
     )
     return base_unit
+
+
+# A component quantity above this (in whatever unit the model chose — typically
+# grams, ml, or a small count) is far outside anything a real kitchen swap would
+# need, and is far more likely a model slip (an extra zero, a unit mix-up) than a
+# genuine amount. Dropping it back to blank is safer than pre-filling a number a
+# user might confirm without a second look (#284 Option B, 2026-09-27).
+_MAX_COMPOUND_QUANTITY = 10_000.0
+
+
+def _norm_component_key(name: str) -> str:
+    """Case/whitespace-insensitive key for matching a compound_quantities entry
+    to its compound_components name.
+
+    The model echoes a component name into both fields from the same
+    generation, but nothing enforces identical casing between them — the same
+    class of mismatch fixed for `ingredient_name` vs `proposal.missing` on PR
+    #616 round 2 (CookModal.tsx key casing).
+    """
+    return name.strip().lower()
+
+
+def _validate_compound_quantity(raw: Any) -> float | None:
+    """Validate one model-suggested per-component quantity (#284 Option B).
+
+    Mirrors the defensiveness already applied to compound_components: each
+    component *name* is checked against the live pantry before being trusted,
+    so each *quantity* gets the equivalent treatment before it is allowed to
+    pre-fill an editable input the user might confirm without a second look.
+    `bool` is rejected explicitly even though Python would happily coerce it
+    to 0.0/1.0 — True/False is never a real quantity.
+
+    Returns None (falls back to the pre-#284 blank input) unless `raw` is a
+    finite, positive number at or under `_MAX_COMPOUND_QUANTITY`.
+    """
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        qty = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(qty) or qty <= 0 or qty > _MAX_COMPOUND_QUANTITY:
+        return None
+    return qty
 
 
 def match_ingredients(
@@ -939,6 +1012,21 @@ async def resolve_aliases_with_llm(
                 all_present = True
                 resolved_components: list[str] = []
                 resolved_component_items: list[CompoundComponent] = []
+                # Model-suggested quantities (#284 Option B), keyed the same
+                # normalized way as the components loop below so a casing
+                # mismatch between compound_quantities and compound_components
+                # (the model echoes a name into both, with no guarantee of
+                # identical casing) still resolves. Each raw value is validated
+                # before it is trusted to pre-fill anything.
+                raw_quantities_by_key: dict[str, Any] = (
+                    {
+                        _norm_component_key(name): raw
+                        for name, raw in entry.compound_quantities.items()
+                    }
+                    if entry.compound_quantities
+                    else {}
+                )
+                component_quantities: dict[str, float] = {}
                 for component_name in entry.compound_components:
                     comp_norm = _normalize_ingredient_name(component_name)
                     if comp_norm not in pantry_by_norm:
@@ -951,11 +1039,18 @@ async def resolve_aliases_with_llm(
                     # Use the pantry's display name so the UI can show something consistent.
                     component_item = pantry_by_norm[comp_norm]
                     resolved_components.append(component_item.name)
+                    quantity_key = _norm_component_key(component_name)
+                    validated_qty = _validate_compound_quantity(
+                        raw_quantities_by_key.get(quantity_key)
+                    )
+                    if validated_qty is not None:
+                        component_quantities[quantity_key] = validated_qty
                     resolved_component_items.append(
                         CompoundComponent(
                             pantry_item_id=component_item.id,
                             name=component_item.name,
                             base_unit=_component_base_unit(component_item),
+                            suggested_quantity=validated_qty,
                         )
                     )
                 # Two model-supplied names (e.g. "milk" and "whole milk") can
@@ -974,6 +1069,7 @@ async def resolve_aliases_with_llm(
                             components=resolved_components,
                             note=entry.compound_note,
                             component_items=resolved_component_items,
+                            component_quantities=component_quantities or None,
                         )
                     )
                     # When a compound suggestion was accepted, do NOT also record a

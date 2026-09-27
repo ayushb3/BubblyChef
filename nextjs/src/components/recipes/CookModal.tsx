@@ -201,6 +201,30 @@ export function dedupeByPantryItemId(items: CompoundComponent[]): CompoundCompon
 }
 
 /**
+ * The quantity string that a compound component's input actually shows, and
+ * that its deduction is actually computed from (#284 Option B, 2026-09-27) —
+ * the user's typed override if one exists (including an explicit empty
+ * string, meaning "cleared"), else the model's `suggested_quantity` pre-fill,
+ * else blank.
+ *
+ * One function used by both `MissingItemsList` (what to render) and
+ * `summariseDeductions` (what to deduct) so the two can never disagree — the
+ * exact failure shape of the round-2 review finding on PR #616, where the
+ * input's key and the deduction's key were derived separately and drifted
+ * apart. A non-positive `suggested_quantity` is treated the same as absent:
+ * the backend already validates it away, but this stays defensive in case a
+ * stale/cached proposal ever carries one.
+ */
+export function effectiveCompoundOverride(
+  overrides: Record<string, string>,
+  key: string,
+  suggestedQuantity: number | null | undefined,
+): string {
+  if (key in overrides) return overrides[key]
+  return suggestedQuantity != null && suggestedQuantity > 0 ? String(suggestedQuantity) : ''
+}
+
+/**
  * "Not in pantry" list — exported for unit testing.
  *
  * Items with a note render as a small vertical block (name + muted note below).
@@ -211,10 +235,13 @@ export function dedupeByPantryItemId(items: CompoundComponent[]): CompoundCompon
  * Items without either render as plain chips, identical to the previous design.
  *
  * When a compound suggestion carries `component_items` (#284), each component
- * gets its own editable quantity input — the same always-unresolved pattern
- * as a unit_conflict row: nothing deducts until the user types an amount.
- * Suggestions without component_items (e.g. older cached proposals) render
- * exactly as before, with no inputs.
+ * gets its own editable quantity input — nothing deducts until the user
+ * confirms. Since Option B (2026-09-27) that input starts pre-filled with the
+ * model's `suggested_quantity` where it gave a valid one (via
+ * `effectiveCompoundOverride`); otherwise it starts blank, same as before.
+ * Either way the user can edit or clear it before confirming. Suggestions
+ * without component_items (e.g. older cached proposals) render exactly as
+ * before, with no inputs.
  */
 export function MissingItemsList({
   missing,
@@ -309,7 +336,7 @@ export function MissingItemsList({
                             type="number"
                             min="0"
                             step="0.1"
-                            value={overrides[key] ?? ''}
+                            value={effectiveCompoundOverride(overrides, key, component.suggested_quantity)}
                             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                               onOverrideChange?.(key, e.target.value)
                             }
@@ -368,13 +395,16 @@ function mergeDeduction(
  * gave up (#245).
  *
  * Compound-substitution components (#284) are folded into the same deductions
- * list, keyed the same way `overrides` keys them (`compoundOverrideKey`).
- * They are deliberately excluded from `matchedCount`/`skipped` — those track
+ * list, keyed the same way `overrides` keys them (`compoundOverrideKey`), via
+ * `effectiveCompoundOverride` — which also lets a model-suggested quantity
+ * (Option B, 2026-09-27) count as a real deduction even before the user
+ * types anything, as long as they haven't cleared or edited that input. They
+ * are deliberately excluded from `matchedCount`/`skipped` — those track
  * recipe ingredient lines from `proposal.matches`, and a compound component is
- * neither: it is an always-unresolved opt-in the user reaches through the
- * "Not in pantry" section, not a recipe line the model already matched.
- * `compoundDeductions` reports just the compound half so the UI can describe
- * it separately from the ingredient-line summary.
+ * neither: it is an opt-in the user reaches through the "Not in pantry"
+ * section, not a recipe line the model already matched. `compoundDeductions`
+ * reports just the compound half so the UI can describe it separately from
+ * the ingredient-line summary.
  */
 export function summariseDeductions(
   proposal: CookProposal,
@@ -437,9 +467,11 @@ export function summariseDeductions(
   // ingredient touched (#284) — otherwise X could exceed Y.
   const matchesDeductionCount = byPantryItem.size
 
-  // Compound substitution components (#284) — always-unresolved: only an
-  // explicit, positive typed quantity turns a suggested component into a
-  // real deduction. A component can share a pantry row with a matched
+  // Compound substitution components (#284): only a positive effective
+  // quantity — the user's typed override, or the model's pre-filled
+  // suggested_quantity if the user hasn't touched the input (Option B,
+  // 2026-09-27; see effectiveCompoundOverride) — turns a suggested component
+  // into a real deduction. A component can share a pantry row with a matched
   // ingredient (or another component), so it merges into the same map by
   // pantry_item_id rather than always appending a fresh entry.
   const compoundDeductions: Array<{ ingredientName: string; componentName: string; deductQty: number }> = []
@@ -468,7 +500,12 @@ export function summariseDeductions(
       if (appliedCompoundKeys.has(key)) continue
       appliedCompoundKeys.add(key)
 
-      const deductQty = parseFloat(overrides[key] ?? '0') || 0
+      // Reads the same value effectiveCompoundOverride would render into the
+      // input (typed override, else the model's pre-fill, else blank) — see
+      // that function's docstring for why this must share logic with
+      // rendering rather than re-deriving it here (#284 Option B).
+      const deductQty =
+        parseFloat(effectiveCompoundOverride(overrides, key, component.suggested_quantity) || '0') || 0
       if (deductQty <= 0) continue
 
       compoundDeductions.push({

@@ -27,9 +27,17 @@ briefly what changes — flavour, texture, sweetness.
 
 2. If NO single item works but 2-3 pantry items COMBINED can approximate the missing \
 ingredient, set match_type "none", best_match null, and populate compound_components \
-with the pantry item names AND compound_note with a short instruction (under 20 words).
-   Example: heavy cream is missing, pantry has butter, milk, and flour →
+with the pantry item names, compound_note with a short instruction (under 20 words), \
+and compound_quantities with your best estimate of how much of EACH named component to \
+use — a plain number in a common kitchen unit for that ingredient (grams for solids, \
+millilitres for liquids, or a whole count for discrete items like eggs), keyed by the \
+exact same spelling used in compound_components. Omit a component from \
+compound_quantities rather than guess when you are not confident of the amount — an \
+empty box the cook fills in themselves is better than a wrong number they might not \
+double-check.
+   Example: heavy cream (1 cup, ~240ml) is missing, pantry has butter, milk, and flour →
      compound_components: ["butter", "milk", "flour"]
+     compound_quantities: {{"butter": 80, "milk": 180, "flour": 15}}
      compound_note: "Melt butter, whisk in flour, stir in milk until thickened"
    ONLY list items the user actually has. Do not invent ingredients.
 
