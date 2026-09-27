@@ -7,154 +7,61 @@
 #
 #   looks-mergeable | needs-changes | needs-human | unknown
 #
-# Precedence, all fail-closed (see PR #636 round-1 review for why each of
-# these matters -- an earlier version of this script had all three holes):
+# This is a thin wrapper around `scripts/agent-gates/review-verdict.cjs`'s
+# `parseVerdict()` -- the CODEOWNERS-protected, unit-tested parser that
+# already runs as the required "Claude review verdict" check on every
+# agent-loop PR (`.github/workflows/claude-review.yml`). All verdict-parsing
+# RULES live there, in exactly one place, so the agent-writable merge queue
+# in this directory and the protected merge gate can never disagree about
+# what a review body means.
 #
-#   1. A `<!-- verdict: X -->` HTML marker is honoured ONLY when a line,
-#      after trimming whitespace, is EXACTLY the marker: not quoted in
-#      backticks, not part of a longer line, and not inside a ``` fenced
-#      code block. This stops a review that merely shows or discusses the
-#      marker format (e.g. documenting this very script) from being read as
-#      emitting one. The LAST such line wins.
-#   2. Prose: every line that reads as an actual verdict statement is
-#      considered -- either a line containing the word "Verdict" (bolded,
-#      backticked, or plain), or a markdown heading that itself names one
-#      of the three known phrases (the "## Re-review (round 3) —
-#      `looks mergeable`" style used once the review dropped the literal
-#      "Verdict:" label). Lines inside a ``` fenced code block or a `>`
-#      blockquote are skipped, the same as the marker pass -- a fenced or
-#      quoted example of a verdict line is not a verdict. Across all
-#      remaining verdict lines, the MOST RESTRICTIVE result wins, never
-#      "the last one": a re-review that quotes an earlier round's verdict
-#      ("Round 1 gave a verdict of `looks mergeable`...") alongside its own
-#      real verdict must not let the quoted phrase overwrite the real one.
-#      Within a single line, phrases are resolved most-restrictive-first:
-#      needs-changes beats needs-human beats looks-mergeable. A line is
-#      only read as looks-mergeable when it mentions NEITHER negative
-#      phrase -- otherwise a trailing "**TL;DR** -- the verdict is needs
-#      changes; everything else looks mergeable." would resolve to the
-#      permissive answer just because "looks mergeable" also appears on it.
-#   3. If both a valid marker (rule 1) and a determinable prose verdict
-#      (rule 2) are present and they disagree, the MORE RESTRICTIVE of the
-#      two wins (needs-changes > needs-human > looks-mergeable). A valid
-#      marker with no determinable prose verdict is used as-is; a
-#      determinable prose verdict with no valid marker is used as-is.
-#   4. Anything else -> unknown (fail closed).
+# (PR #636 round-3 review: an earlier version of this script had its own,
+# independently-evolved parsing logic -- a heading rule, an HTML marker, a
+# fence/blockquote skip, and a most-restrictive-wins precedence ladder built
+# up over three review rounds. That put a second, differently-behaving
+# verdict rule in an agent-writable path alongside the one already tested
+# and protected. Issue #624 asked to move scripts, not to introduce a second
+# answer, so this wrapper defers entirely to the protected parser instead
+# and the old shell-side rules are gone.)
 #
-# Deliberately narrow: prose that merely uses a word like "mergeable" in
-# passing must NOT be mistaken for the verdict. PR #619's review opened
-# with "No CODEOWNERS path is touched, so this is auto-mergeable once
-# checks pass" and then, further down, gave the real verdict:
-# "**Verdict: needs changes**". A parser that just greps the whole body for
-# "mergeable" would call that PR mergeable and merge over real findings —
-# that's the incident this script exists to not repeat. See
-# fixtures/619-preamble-then-needs-changes.txt and
-# test-parse-verdict.sh case (1).
+# review-verdict.cjs's parseVerdict(), briefly (see that file for the real
+# spec): it looks only for a literal "Verdict:" label -- any case, bold or
+# backticked or not -- and takes the value after the LAST such label found
+# anywhere in the body, including inside a fenced code block or a
+# blockquote (it does not skip either). A value is only recognised when,
+# after stripping markdown emphasis/backticks and trailing punctuation, it
+# is EXACTLY one of "looks mergeable", "needs changes", "needs a human".
+# Anything else -- no "Verdict:" label at all (e.g. a verdict stated only in
+# a heading), a marker like `<!-- verdict: x -->` (not a concept this parser
+# has), or a verdict phrase followed by more prose on the same line -- comes
+# back as '' ("unreadable").
+#
+# '' maps to `unknown` below. `guarded-merge.sh` requires the literal string
+# `VERDICT: looks-mergeable` to queue a merge, so `unknown` -- like
+# `needs-changes` and `needs-human` -- is NOT mergeable: every case the
+# protected parser can't read still fails closed.
+#
+# This is stricter, in some cases, than the parser this file used to
+# contain -- see fixtures/ and test-parse-verdict.sh for the concrete cases
+# that changed (a heading-only verdict, the `<!-- verdict: x -->` marker,
+# and a verdict phrase with trailing prose on the same line all used to
+# resolve to a real verdict and now come back `unknown`). That is a
+# deliberate consequence of having one authoritative rule instead of two;
+# see PR #636's body for the fixture-by-fixture list.
 
 set -u
+DIR="$(cd "$(dirname "$0")" && pwd)"
+CJS="$DIR/../agent-gates/review-verdict.cjs"
 
-body="$(cat)"
-
-# Most-restrictive-first ranking, used both within a line (rule 2) and to
-# resolve a marker/prose disagreement (rule 3). Higher = blocks merging.
-verdict_rank() {
-  case "$1" in
-    needs-changes) echo 3 ;;
-    needs-human) echo 2 ;;
-    looks-mergeable) echo 1 ;;
-    *) echo 0 ;;
-  esac
+node -e '
+const { parseVerdict } = require(process.argv[1])
+const fs = require("fs")
+const body = fs.readFileSync(0, "utf8")
+const verdict = parseVerdict(body)
+const TOKENS = {
+  "looks mergeable": "looks-mergeable",
+  "needs changes": "needs-changes",
+  "needs a human": "needs-human",
 }
-
-# --- 1. Structured marker, but only when unambiguous ------------------------
-# Honoured only when the ENTIRE line, after trimming whitespace, is exactly
-# the marker -- never inside a fenced code block, never wrapped in backticks
-# or other prose on the same line. That way a review merely quoting or
-# demonstrating the marker format cannot be read as emitting one.
-marker_value=""
-in_fence=0
-while IFS= read -r raw_line; do
-  trimmed=$(printf '%s' "$raw_line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
-  if printf '%s' "$trimmed" | grep -qE '^(```|~~~)'; then
-    in_fence=$((1 - in_fence))
-    continue
-  fi
-  [ "$in_fence" -eq 1 ] && continue
-  if printf '%s' "$trimmed" | grep -qiE '^<!--[[:space:]]*verdict:[[:space:]]*[a-z-]+[[:space:]]*-->$'; then
-    candidate=$(printf '%s' "$trimmed" | sed -E 's/.*verdict:[[:space:]]*([a-z-]+).*/\1/I' | tr '[:upper:]' '[:lower:]')
-    case "$candidate" in
-      looks-mergeable|needs-changes|needs-human) marker_value="$candidate" ;;
-    esac
-  fi
-done <<EOF
-$body
-EOF
-# Falls through to prose parsing when no valid marker line was found; an
-# unrecognised marker value is treated the same as no marker.
-
-# --- 2. Prose parsing: only lines that actually state a verdict ------------
-phrase_for_line() {
-  # $1 = one line of text; echoes the normalised verdict token, or nothing.
-  # Fail-closed within the line: check the negatives before the permissive
-  # phrase, so a line naming more than one phrase never resolves to
-  # looks-mergeable.
-  local line=$1
-  if printf '%s' "$line" | grep -qiE 'needs changes'; then
-    echo needs-changes
-  elif printf '%s' "$line" | grep -qiE 'needs a human'; then
-    echo needs-human
-  elif printf '%s' "$line" | grep -qiE 'looks mergeable'; then
-    echo looks-mergeable
-  fi
-}
-
-# A "verdict line" is either:
-#   - a line containing the standalone word "verdict" (e.g. "**Verdict:
-#     needs changes**", "**Verdict: `needs changes`**"), or
-#   - a markdown heading (starts with #) that carries one of the three
-#     phrases directly, with no "Verdict" label at all.
-# Lines inside a ``` fenced code block or a `>` blockquote are skipped --
-# same fence tracking as the marker pass above -- and the MOST RESTRICTIVE
-# verdict across all matching lines wins, not the last one.
-prose_value="unknown"
-prose_rank=0
-in_fence=0
-while IFS= read -r raw_line; do
-  trimmed=$(printf '%s' "$raw_line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
-  if printf '%s' "$trimmed" | grep -qE '^(```|~~~)'; then
-    in_fence=$((1 - in_fence))
-    continue
-  fi
-  [ "$in_fence" -eq 1 ] && continue
-  printf '%s' "$trimmed" | grep -qE '^>' && continue
-  if printf '%s' "$raw_line" | grep -qiE \
-    '(^|[^a-z])verdict([^a-z]|$)|^#+.*(looks mergeable|needs changes|needs a human)'; then
-    p=$(phrase_for_line "$raw_line")
-    if [ -n "$p" ]; then
-      r=$(verdict_rank "$p")
-      if [ "$r" -gt "$prose_rank" ]; then
-        prose_value="$p"
-        prose_rank="$r"
-      fi
-    fi
-  fi
-done <<EOF
-$body
-EOF
-
-# --- 3. Reconcile marker and prose, most restrictive wins on disagreement --
-if [ -n "$marker_value" ] && [ "$prose_value" != "unknown" ]; then
-  if [ "$marker_value" = "$prose_value" ]; then
-    result="$marker_value"
-  else
-    mr=$(verdict_rank "$marker_value")
-    pr=$(verdict_rank "$prose_value")
-    if [ "$mr" -ge "$pr" ]; then result="$marker_value"; else result="$prose_value"; fi
-  fi
-elif [ -n "$marker_value" ]; then
-  result="$marker_value"
-else
-  result="$prose_value"
-fi
-
-echo "$result"
+process.stdout.write((TOKENS[verdict] || "unknown") + "\n")
+' "$CJS"
