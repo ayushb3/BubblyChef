@@ -1,7 +1,7 @@
 ---
 name: backend
 description: Backend dev for BubblyChef — the FastAPI + LangGraph AI microservice in ai-service/. Implements API routes, agents/graph logic, data models, and services. Writes tests alongside. Does not spawn subagents.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 model: sonnet
 ---
 
