@@ -6,10 +6,18 @@
  * Per Ayush's decision on PR #597 (2026-09-23): "the whole homepage should
  * sort of render within the kitchen view, and we could integrate the tip and
  * the quick actions within the actual scene." This is a second pass on top
- * of the original Variant A lockup — everything that used to live BELOW the
- * scene (the quick-action chip row, the tip line) now lives INSIDE it as
- * hotspots on real kitchen furniture. Only the greeting stays outside, as a
- * one-line header.
+ * of the original Variant A lockup — the tip line now lives INSIDE the scene
+ * as a hotspot on real kitchen furniture. Only the greeting stays outside,
+ * as a one-line header.
+ *
+ * Per Ayush's follow-up (2026-09-27): "move the quick actions back to the
+ * original position as in Option A v1. the pill buttons. the rest were good
+ * adjustments." The quick-action chip row (Use Soon / Scan / Ask) is back
+ * below the scene, exactly as in the v1 lockup (commit 6b25245) — the
+ * in-scene `counter_left`/`counter_right` hotspots that stood in for it are
+ * gone. Everything else from the second pass (fridge-door tip hotspot,
+ * window-sill Recipes hotspot, Bubbles as a tappable chat hotspot) is
+ * unchanged.
  *
  * ## Placeholder art
  * `art/kitchen/MANIFEST.md` (branch `art/v1-assets`) shows every kitchen
@@ -21,19 +29,17 @@
  * the whole thing reads as "still a mockup" rather than a finished screen.
  *
  * ## Hotspot -> furniture mapping (for the real render)
- * Hotspots are positioned using the SAME percentage grid as
- * `lib/kitchen/slots.ts` (the 12 decoration slots), so they land exactly
- * where that furniture will be once illustrated:
+ * The remaining in-scene hotspots are positioned using the SAME percentage
+ * grid as `lib/kitchen/slots.ts` (the 12 decoration slots), so they land
+ * exactly where that furniture will be once illustrated:
  *   - `fridge_door`   -> tip note ("pinned to the fridge", per the brief)
  *   - `window_sill`   -> Recipes (not one of today's three quick actions —
  *                        see the open question below)
- *   - `counter_left`  -> Use Soon / pantry (carries the same expiring-item
- *                        count the old below-scene chip showed)
- *   - `counter_right` -> Scan (receipt set down on the counter)
  *   - `wall_shelf`, `wall_art`, `lights`, `hanging_plant`, `stove_top`,
- *     `table`, `rug`, `floor_corner` are left as empty placeholder slots —
- *     nothing in the current spec needed a ninth hotspot, and `wall_shelf`
- *     in particular is reserved (see below).
+ *     `table`, `rug`, `floor_corner`, `counter_left`, `counter_right` are
+ *     left as empty placeholder slots — quick actions render as the pill
+ *     row below the scene instead (see Ayush's 2026-09-27 feedback above),
+ *     and `wall_shelf` in particular is reserved (see below).
  *   - Bubbles + his speech bubble stand over `table`/`rug`/`floor_corner`,
  *     unchanged from the original lockup. Tapping Bubbles himself opens chat.
  *   - The pantry item-count readout (🧺 N items) sits just below the scene,
@@ -46,19 +52,18 @@
  *   when Recipes lived there in an earlier pass. Recipes moved to
  *   `window_sill` instead. The real render needs to either keep `wall_shelf`
  *   clear whenever a milestone is pending, or move the banner.
- * - `fridge_door`, `window_sill` and `counter_left`/`counter_right` are also
- *   decoration slots in the gamification catalog (`fridge_magnets` /
- *   `fridge_drawing`, `sill_succulent` / `sill_herbs`, etc). Reusing their
- *   coordinates for functional hotspots means the final illustration either
- *   (a) keeps those slots hotspot-only and moves their decorations
- *   elsewhere, or (b) draws the unlocked decoration AS the hotspot's
- *   backdrop (e.g. the herb pots the player unlocked double as the
- *   "Recipes" button). Not decided here.
+ * - `fridge_door` and `window_sill` are also decoration slots in the
+ *   gamification catalog (`fridge_magnets` / `fridge_drawing`,
+ *   `sill_succulent` / `sill_herbs`, etc). Reusing their coordinates for
+ *   functional hotspots means the final illustration either (a) keeps those
+ *   slots hotspot-only and moves their decorations elsewhere, or (b) draws
+ *   the unlocked decoration AS the hotspot's backdrop (e.g. the herb pots
+ *   the player unlocked double as the "Recipes" button). Not decided here.
  */
 import { useState } from 'react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Lightbulb, X, Fire, Camera, BookOpen } from '@phosphor-icons/react/dist/ssr'
+import { Lightbulb, X, BookOpen } from '@phosphor-icons/react/dist/ssr'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import KitchenScene from '@/components/kitchen/KitchenScene'
 import FadeInView from '@/components/ui/FadeInView'
@@ -85,7 +90,6 @@ export default function HomeVariantA({
   emoji,
   loading,
   totalCount,
-  expiringCount,
   tip,
   tipHref,
   speechMessage,
@@ -100,8 +104,6 @@ export default function HomeVariantA({
   const [sheetOpen, setSheetOpen] = useState(false)
   const [tipOpen, setTipOpen] = useState(false)
 
-  const useSoon = quickActions.find((a) => a.label === 'Use Soon')
-  const scan = quickActions.find((a) => a.label === 'Scan')
   const ask = quickActions.find((a) => a.label === 'Ask')
 
   return (
@@ -113,10 +115,11 @@ export default function HomeVariantA({
       </FadeInView>
 
       {/* The whole home page renders inside this box — the kitchen scene is
-          the page, not a banner above a list of cards. Everything below
-          (tip, quick actions, pantry count) sits as an absolutely-positioned
-          hotspot layered over KitchenScene's own 12 decoration slots +
-          balance pill, sharing their coordinate grid. */}
+          the page, not a banner above a list of cards. The tip sits as an
+          absolutely-positioned hotspot layered over KitchenScene's own 12
+          decoration slots + balance pill, sharing their coordinate grid;
+          quick actions render as their own pill row below the scene (see
+          Ayush's 2026-09-27 feedback further down). */}
       <div className="relative w-full max-w-[480px]">
         <KitchenScene unlocked={kitchen.unlocked} balance={kitchen.balance} loading={kitchen.loading} />
 
@@ -157,48 +160,11 @@ export default function HomeVariantA({
                 <span className="text-[10px] font-bold">Recipes</span>
               </Link>
             </div>
-
-            {/* PLACEHOLDER hotspot: counter -> Scan a receipt. */}
-            {scan && (
-              <div className="absolute z-10" style={slotBox('counter_right')}>
-                <Link
-                  href={scan.href}
-                  className="group w-full h-full flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-white/70 bg-white/15 backdrop-blur-[1px] px-1.5 py-1 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 hover:bg-white/25 transition-colors"
-                >
-                  <Camera size={20} weight="fill" aria-hidden="true" />
-                  <span className="text-[10px] font-bold">Scan</span>
-                </Link>
-              </div>
-            )}
-
-            {/* PLACEHOLDER hotspot: counter (opposite side) -> Use Soon /
-                pantry, carrying the same expiring-item count the old
-                below-scene chip showed, so nothing here is lost. */}
-            {useSoon && (
-              <div className="absolute z-10" style={slotBox('counter_left')}>
-                <Link
-                  href={useSoon.href}
-                  // Explicit aria-label rather than relying on the <br/>-split
-                  // text content, whose accessible-name whitespace handling
-                  // isn't guaranteed to insert a word boundary the way the
-                  // visual line break does.
-                  aria-label={`Use Soon — ${expiringCount > 0 ? `${expiringCount} item${expiringCount > 1 ? 's' : ''}` : 'all fresh'}`}
-                  className="group w-full h-full flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-white/70 bg-white/15 backdrop-blur-[1px] px-1.5 py-1 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 hover:bg-white/25 transition-colors"
-                >
-                  <Fire size={20} weight="fill" aria-hidden="true" />
-                  <span className="text-[10px] font-bold leading-tight text-center" aria-hidden="true">
-                    Use Soon
-                    <br />
-                    {expiringCount > 0 ? `${expiringCount} item${expiringCount > 1 ? 's' : ''}` : 'All fresh!'}
-                  </span>
-                </Link>
-              </div>
-            )}
           </>
         )}
 
         {/* Bubbles standing on the scene's floor, over `table`/`rug`/
-            `floor_corner` — the row the other four hotspots leave clear.
+            `floor_corner` — the row the other two hotspots leave clear.
             He's the "Bubbles -> chat" hotspot: a real link, not just a
             picture, wrapping the existing `ask` quick action's href so the
             component still only has one source of truth for that route. */}
@@ -245,6 +211,27 @@ export default function HomeVariantA({
             <span aria-hidden="true">🎁</span> New reward{milestoneThreshold ? ` at 🫧${milestoneThreshold}` : ''}!
           </button>
         )}
+      </div>
+
+      {/* Quick-action chips — one compact row, restored to the Option A v1
+          position/style per Ayush's 2026-09-27 feedback (the in-scene
+          counter hotspots that briefly replaced these are gone). */}
+      <div className="flex gap-2 w-full max-w-[480px] mt-4 px-1">
+        {quickActions.map((card) => {
+          const Icon = card.icon
+          return (
+            <Link key={card.href} href={card.href} className="flex-1">
+              <motion.div
+                whileTap={{ scale: 0.96 }}
+                className="flex items-center justify-center gap-1.5 rounded-full py-2.5 px-2 text-white text-xs font-bold min-h-11"
+                style={{ background: card.gradient }}
+              >
+                <Icon size={16} weight="fill" aria-hidden="true" />
+                {card.label}
+              </motion.div>
+            </Link>
+          )
+        })}
       </div>
 
       {/* Pantry-count readout — the dashboard content HeroHome shows as a
