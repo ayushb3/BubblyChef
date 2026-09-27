@@ -13,13 +13,26 @@ that agents invoke by hand or from the loop, and they are independent of it.
 
 - **`parse-verdict.sh`** — reads a review body (e.g. a `claude[bot]` PR/issue
   comment) on stdin, prints one of `looks-mergeable`, `needs-changes`,
-  `needs-human`, `unknown`. An explicit `<!-- verdict: X -->` HTML marker, if
-  present, wins over any prose. Otherwise it looks for an actual verdict
-  statement — a line naming "Verdict", or a heading that itself carries one
-  of the three phrases — and never treats an incidental use of a word like
-  "mergeable" in ordinary prose as the verdict. See the script's header
-  comment for the full precedence rules and the PR #619 incident that
-  motivated the narrow matching.
+  `needs-human`, `unknown`. Fails closed at every step:
+  - A `<!-- verdict: X -->` HTML marker is honoured only when a line, after
+    trimming whitespace, is *exactly* the marker — not quoted in backticks,
+    not inside a fenced code block, not part of a longer line. That keeps a
+    review that merely shows or discusses the marker format from being read
+    as emitting one.
+  - Otherwise it looks for an actual verdict statement — a line naming
+    "Verdict", or a heading that itself carries one of the three phrases —
+    and never treats an incidental use of a word like "mergeable" in
+    ordinary prose as the verdict. Within a line, the negative phrases
+    (`needs changes`, `needs a human`) are checked before the permissive one,
+    so a line mentioning more than one phrase never resolves to
+    `looks-mergeable`.
+  - If both a valid marker and a determinable prose verdict are present and
+    they disagree, the more restrictive of the two wins.
+
+  See the script's header comment for the exact precedence, the PR #619
+  incident that motivated narrow prose matching, and the PR #636 round-1
+  review that motivated the marker constraints and the fail-closed
+  within-line ordering.
 
   ```bash
   scripts/merge/parse-verdict.sh < review-body.txt
@@ -38,10 +51,11 @@ that agents invoke by hand or from the loop, and they are independent of it.
   ```
 
 - **`guarded-merge.sh <pr>...`** — for each PR, runs `wait-review.sh` and only
-  hands it to `merge-queue-novercel.sh` when nothing failed AND the verdict
-  is exactly `looks-mergeable`. Anything else (`needs-changes`,
-  `needs-human`, `unknown`, or a still-failing check) is reported as
-  `NOT QUEUED #<pr>` and left alone.
+  hands it to `merge-queue-novercel.sh` when checks finished with nothing
+  pending (`pending=0`), nothing failed (`failed=[]`), AND the verdict is
+  exactly `looks-mergeable`. Anything else (`needs-changes`, `needs-human`,
+  `unknown`, a still-failing check, or a `wait-review.sh` timeout with checks
+  still in flight) is reported as `NOT QUEUED #<pr>` and left alone.
 
   ```bash
   scripts/merge/guarded-merge.sh 624 625
@@ -81,14 +95,19 @@ gh api repos/ayushb3/BubblyChef/issues/<n>/comments \
 | `619-preamble-then-needs-changes.txt` | issue #619 comments — the PR #619 incident: "auto-mergeable once checks pass" in the preamble, real verdict is `needs changes` | `needs-changes` |
 | `569-round3-looks-mergeable.txt` | issue #569, round-3 re-review — verdict lives only in the heading (`` ## Re-review (round 3) — `looks mergeable` ``), no `Verdict:` label | `looks-mergeable` |
 | `552-needs-a-human.txt` | issue #552 comments — plain `**Verdict: needs a human**` | `needs-human` |
-| `marker-wins-over-prose.txt` | synthetic — `<!-- verdict: looks-mergeable -->` marker contradicts the surrounding prose | `looks-mergeable` |
+| `marker-disagrees-fails-closed.txt` | synthetic — a `<!-- verdict: looks-mergeable -->` marker disagrees with an explicit `**Verdict: needs changes**` line; the more restrictive one must win | `needs-changes` |
 | `no-verdict.txt` | synthetic — no verdict statement at all | `unknown` |
+| `tldr-mentions-both-phrases.txt` | synthetic, from the PR #636 round-1 review's own example — a trailing TL;DR line names both `needs changes` and `looks mergeable` | `needs-changes` |
+| `line-mentions-human-and-mergeable.txt` | synthetic — a line names both `needs a human` and `looks mergeable` | `needs-human` |
+| `marker-in-backticks-ignored.txt` | synthetic — the marker appears only as an inline, backtick-quoted documentation example; the real verdict is a plain `**Verdict: needs changes**` line | `needs-changes` |
+| `marker-in-fence-ignored.txt` | synthetic — the marker appears only inside a ` ``` ` fenced code block as an illustration; the real verdict is `**Verdict: needs a human**` | `needs-human` |
 
-The marker and no-verdict fixtures are synthetic because the `<!-- verdict:
-... -->` marker format doesn't exist in any past review yet (it's the
-structured-output change tracked against `.github/workflows/claude-review.yml`
-mentioned in issue #624); once real marker comments exist, prefer swapping in
-a real one.
+The marker, TL;DR/multi-phrase, and no-verdict fixtures are synthetic because
+the `<!-- verdict: ... -->` marker format doesn't exist in any past review
+yet (it's the structured-output change tracked against
+`.github/workflows/claude-review.yml` mentioned in issue #624) and the
+multi-phrase-per-line cases are deliberately constructed edge cases; once
+real examples exist, prefer swapping in a real one.
 
 ## Re-review workaround
 

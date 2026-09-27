@@ -12,7 +12,11 @@ for i in $(seq 1 40); do
   [ "$pend" = "0" ] && [ -n "$body" ] && break
   sleep 60
 done
-fail=$(gh api "repos/$REPO/commits/$sha/check-runs?per_page=100" --jq '[.check_runs[]|select((.name|startswith("Vercel")|not) and (.conclusion=="failure"))|.name]|join(",")')
+# Any non-null conclusion other than success/skipped/neutral counts as
+# failed (cancelled, timed_out, action_required, stale) -- not just
+# "failure" (PR #636 round-1 review, finding 4). Matches
+# merge-queue-novercel.sh's wait_checks, updated the same way alongside this.
+fail=$(gh api "repos/$REPO/commits/$sha/check-runs?per_page=100" --jq '[.check_runs[]|select((.name|startswith("Vercel")|not) and (.conclusion != null) and (.conclusion != "success") and (.conclusion != "skipped") and (.conclusion != "neutral"))|.name]|join(",")')
 verdict="<none yet>"
 [ -n "${body:-}" ] && verdict=$(printf '%s' "$body" | "$DIR/parse-verdict.sh")
 echo "PR #$n head=${sha:0:7} pending=$pend failed=[$fail]"

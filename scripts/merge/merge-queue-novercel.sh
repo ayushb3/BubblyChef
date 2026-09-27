@@ -18,7 +18,11 @@ wait_checks() {  # $1 = pr; echo "ok" when all checks are done and none failed
     pending=$(gh pr checks "$n" --repo "$REPO" --json state --jq '[.[]|select(.state=="PENDING" or .state=="QUEUED" or .state=="IN_PROGRESS")]|length' 2>/dev/null || echo 1)
     [ "$pending" = "0" ] && break
   done
-  failed=$(gh pr checks "$n" --repo "$REPO" --json name,state --jq '[.[]|select((.state=="FAILURE" or .state=="ERROR" or .state=="CANCELLED") and (.name|startswith("Vercel")|not))|.name]|join(", ")')
+  # Any non-passing state counts as failed, not just FAILURE/ERROR/CANCELLED
+  # -- TIMED_OUT, ACTION_REQUIRED and STALE are also not a pass. Sibling fix
+  # alongside wait-review.sh's equivalent check, both from the PR #636
+  # round-1 review (finding 4: the two scripts must agree on "failed").
+  failed=$(gh pr checks "$n" --repo "$REPO" --json name,state --jq '[.[]|select((.state=="FAILURE" or .state=="ERROR" or .state=="CANCELLED" or .state=="TIMED_OUT" or .state=="ACTION_REQUIRED" or .state=="STALE") and (.name|startswith("Vercel")|not))|.name]|join(", ")')
   if [ -n "$failed" ]; then echo "failed: $failed"; else echo ok; fi
 }
 

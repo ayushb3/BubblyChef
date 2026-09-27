@@ -39,13 +39,40 @@ check "round-3 heading says looks mergeable" \
 check "explicit needs-a-human verdict" \
   "552-needs-a-human.txt" "needs-human"
 
-# (4) The <!-- verdict: X --> marker overrides contradicting prose.
-check "structured marker wins over contradicting prose" \
-  "marker-wins-over-prose.txt" "looks-mergeable"
+# (4) The <!-- verdict: X --> marker, when it disagrees with the prose
+#     verdict, resolves to whichever is more restrictive (fails closed) —
+#     it does NOT win outright regardless of the prose. PR #636 round-1
+#     review: an earlier version of this fixture pinned the opposite
+#     ("marker always wins"), which is exactly the hole that review found.
+check "marker disagrees with prose: more restrictive wins" \
+  "marker-disagrees-fails-closed.txt" "needs-changes"
 
 # (5) No verdict anywhere -> unknown, fails closed.
 check "no verdict present" \
   "no-verdict.txt" "unknown"
+
+# (6) PR #636 round-1 review, finding 1: within-line precedence must fail
+#     closed. A trailing TL;DR line names both "needs changes" and "looks
+#     mergeable" -- the negative must win, not whichever phrase the naive
+#     ladder happened to test first.
+check "TL;DR line mentions both phrases: needs-changes wins" \
+  "tldr-mentions-both-phrases.txt" "needs-changes"
+
+# (7) Same finding, the needs-human / looks-mergeable pairing: needs-human
+#     is still more restrictive than looks-mergeable.
+check "line mentions both needs-a-human and looks-mergeable: needs-human wins" \
+  "line-mentions-human-and-mergeable.txt" "needs-human"
+
+# (8) PR #636 round-1 review, finding 2: a marker shown inline in backticks,
+#     as a documentation example, must not be honoured -- only the real
+#     "Verdict: needs changes" prose line counts.
+check "marker quoted in backticks is ignored" \
+  "marker-in-backticks-ignored.txt" "needs-changes"
+
+# (9) Same finding: a marker shown inside a fenced code block is an
+#     illustration, not an emitted verdict -- ignored in favour of prose.
+check "marker inside a fenced code block is ignored" \
+  "marker-in-fence-ignored.txt" "needs-human"
 
 echo
 echo "$pass passed, $fail failed"
