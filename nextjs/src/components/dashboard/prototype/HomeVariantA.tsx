@@ -10,79 +10,58 @@
  * as a hotspot on real kitchen furniture. Only the greeting stays outside,
  * as a one-line header.
  *
- * Per Ayush's follow-up (2026-09-27): "move the quick actions back to the
- * original position as in Option A v1. the pill buttons. the rest were good
- * adjustments." The quick-action chip row (Use Soon / Scan / Ask) is back
- * below the scene, exactly as in the v1 lockup (commit 6b25245) — the
- * in-scene `counter_left`/`counter_right` hotspots that stood in for it are
- * gone. Everything else from the second pass (fridge-door tip hotspot,
- * window-sill Recipes hotspot, Bubbles as a tappable chat hotspot) is
- * unchanged.
+ * Per Ayush's follow-up (2026-09-27, first round): "move the quick actions
+ * back to the original position as in Option A v1. the pill buttons. the
+ * rest were good adjustments." The quick-action chip row (Use Soon / Scan /
+ * Ask) is back below the scene, exactly as in the v1 lockup (commit
+ * 6b25245) — the in-scene `counter_left`/`counter_right` hotspots that
+ * stood in for it are gone.
+ *
+ * Per Ayush's follow-up (2026-09-27, second round): "get rid of recipes
+ * inside the decorations thing. and the open recipe suggestion and tip seem
+ * like a similar interaction of an auto suggestion... maybe the tip can be
+ * on the footer of the page. i dont want it in a card." Two changes:
+ *   - The `window_sill` -> Recipes hotspot is gone outright, no replacement.
+ *     Recipes stays reachable through the bottom nav only.
+ *   - The tip is no longer a hotspot or a card of any kind. It's a plain,
+ *     unboxed line of text at the bottom of the page content (footer area,
+ *     above the bottom nav), small and muted with a 💡. Since the
+ *     `fridge_door` hotspot existed ONLY to open the tip dialog, its tap
+ *     target is removed rather than made a dead decorative box — it's now
+ *     just an empty slot like the other unused ones (`wall_shelf`,
+ *     `wall_art`, etc). The tip dialog (`tipOpen` sheet) is gone with it.
+ *   - "The open recipe suggestion" is read here as the speech bubble's own
+ *     mood-specific button (e.g. it reads "Open recipe" in the happy state
+ *     with a suggestion) — left exactly as-is, it's the one suggestion
+ *     surface on the page now that the tip isn't a second one.
+ * Bubbles-as-chat-hotspot and the milestone banner/sheet are unchanged.
  *
  * ## Placeholder art
  * `art/kitchen/MANIFEST.md` (branch `art/v1-assets`) shows every kitchen
  * background and decoration is still `status: todo` — nothing has been
  * generated yet. `KitchenScene` already renders real Bubbles art (issue
  * #527 shipped the mascot half) over a flat gradient "room". This prototype
- * keeps that gradient as the walls/floor placeholder and adds dashed-outline
- * hotspot cards, styled like the scene's own empty-decoration-slot look, so
- * the whole thing reads as "still a mockup" rather than a finished screen.
+ * keeps that gradient as the walls/floor placeholder.
  *
  * ## Hotspot -> furniture mapping (for the real render)
- * The remaining in-scene hotspots are positioned using the SAME percentage
- * grid as `lib/kitchen/slots.ts` (the 12 decoration slots), so they land
- * exactly where that furniture will be once illustrated:
- *   - `fridge_door`   -> tip note ("pinned to the fridge", per the brief)
- *   - `window_sill`   -> Recipes (not one of today's three quick actions —
- *                        see the open question below)
- *   - `wall_shelf`, `wall_art`, `lights`, `hanging_plant`, `stove_top`,
- *     `table`, `rug`, `floor_corner`, `counter_left`, `counter_right` are
- *     left as empty placeholder slots — quick actions render as the pill
- *     row below the scene instead (see Ayush's 2026-09-27 feedback above),
- *     and `wall_shelf` in particular is reserved (see below).
- *   - Bubbles + his speech bubble stand over `table`/`rug`/`floor_corner`,
- *     unchanged from the original lockup. Tapping Bubbles himself opens chat.
- *   - The pantry item-count readout (🧺 N items) sits just below the scene,
- *     not on a slot — see its own comment for why.
- *
- * ## Open questions for the real render (flagged in the PR, not resolved here)
- * - `wall_shelf` (top-left) is deliberately left empty here: the milestone
- *   banner ("New reward at...") is pinned to that same corner
- *   (`top-1.5 left-1.5`, independent of the slot grid) and the two collided
- *   when Recipes lived there in an earlier pass. Recipes moved to
- *   `window_sill` instead. The real render needs to either keep `wall_shelf`
- *   clear whenever a milestone is pending, or move the banner.
- * - `fridge_door` and `window_sill` are also decoration slots in the
- *   gamification catalog (`fridge_magnets` / `fridge_drawing`,
- *   `sill_succulent` / `sill_herbs`, etc). Reusing their coordinates for
- *   functional hotspots means the final illustration either (a) keeps those
- *   slots hotspot-only and moves their decorations elsewhere, or (b) draws
- *   the unlocked decoration AS the hotspot's backdrop (e.g. the herb pots
- *   the player unlocked double as the "Recipes" button). Not decided here.
+ * Bubbles + his speech bubble stand over `table`/`rug`/`floor_corner`,
+ * unchanged from the original lockup — tapping Bubbles himself opens chat.
+ * Every other slot (`fridge_door`, `window_sill`, `wall_shelf`, `wall_art`,
+ * `lights`, `hanging_plant`, `stove_top`, `counter_left`, `counter_right`)
+ * is now an empty placeholder, rendered only by `KitchenScene`'s own
+ * decoration-slot look — quick actions are the pill row below the scene,
+ * Recipes is nav-only, and the tip is the footer line. `wall_shelf` in
+ * particular stays clear for the milestone banner pinned to that corner
+ * (`top-1.5 left-1.5`, independent of the slot grid).
  */
 import { useState } from 'react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Lightbulb, X, BookOpen } from '@phosphor-icons/react/dist/ssr'
+import { X } from '@phosphor-icons/react/dist/ssr'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import KitchenScene from '@/components/kitchen/KitchenScene'
 import FadeInView from '@/components/ui/FadeInView'
-import { SLOTS } from '@/lib/kitchen/slots'
 import type { HomeVariantProps } from './types'
-
-const SLOT_BY_KEY = new Map(SLOTS.map((s) => [s.key, s]))
-
-/** Inline percentage box matching a decoration slot's position, for a hotspot overlay. */
-function slotBox(key: string) {
-  const slot = SLOT_BY_KEY.get(key)
-  if (!slot) return {}
-  return {
-    left: `${slot.x}%`,
-    top: `${slot.y}%`,
-    width: `${slot.w}%`,
-    height: `${slot.h}%`,
-  }
-}
 
 export default function HomeVariantA({
   displayName,
@@ -102,7 +81,6 @@ export default function HomeVariantA({
   quickActions,
 }: HomeVariantProps) {
   const [sheetOpen, setSheetOpen] = useState(false)
-  const [tipOpen, setTipOpen] = useState(false)
 
   const ask = quickActions.find((a) => a.label === 'Ask')
 
@@ -115,57 +93,15 @@ export default function HomeVariantA({
       </FadeInView>
 
       {/* The whole home page renders inside this box — the kitchen scene is
-          the page, not a banner above a list of cards. The tip sits as an
-          absolutely-positioned hotspot layered over KitchenScene's own 12
-          decoration slots + balance pill, sharing their coordinate grid;
-          quick actions render as their own pill row below the scene (see
-          Ayush's 2026-09-27 feedback further down). */}
+          the page, not a banner above a list of cards. Quick actions render
+          as their own pill row below the scene, and the tip as a plain line
+          in the footer (see the 2026-09-27 second-round comment above) —
+          neither lives inside the scene as a hotspot any more. */}
       <div className="relative w-full max-w-[480px]">
         <KitchenScene unlocked={kitchen.unlocked} balance={kitchen.balance} loading={kitchen.loading} />
 
-        {!loading && (
-          <>
-            {/* PLACEHOLDER hotspot: fridge door -> today's tip, "pinned to
-                the fridge" per the brief. Real render: a sticky note or
-                magnet-clip graphic on the fridge door illustration. */}
-            <div className="absolute z-10" style={slotBox('fridge_door')}>
-              <button
-                type="button"
-                onClick={() => setTipOpen(true)}
-                aria-haspopup="dialog"
-                className="group w-full h-full flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-white/70 bg-white/15 backdrop-blur-[1px] px-1.5 py-1 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 hover:bg-white/25 transition-colors"
-              >
-                <Lightbulb size={20} weight="fill" aria-hidden="true" />
-                <span className="text-[9px] font-bold leading-tight text-center line-clamp-2">
-                  Tip: {tip}
-                </span>
-              </button>
-            </div>
-
-            {/* PLACEHOLDER hotspot: window sill -> Recipes. This isn't one of
-                the three chips HeroHome passes as `quickActions` today, so
-                its href is written directly rather than threaded through the
-                shared prop contract — flagged in the PR as an open question
-                (should Recipes become a fourth quick action?). Placed at
-                `window_sill` rather than `wall_shelf` (its more obvious
-                "cookbook stack" namesake) because `wall_shelf` shares its
-                top-left corner with the milestone banner below — see the
-                banner's own comment. */}
-            <div className="absolute z-10" style={slotBox('window_sill')}>
-              <Link
-                href="/recipes"
-                className="group w-full h-full flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-white/70 bg-white/15 backdrop-blur-[1px] px-1.5 py-1 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 hover:bg-white/25 transition-colors"
-              >
-                <BookOpen size={20} weight="fill" aria-hidden="true" />
-                <span className="text-[10px] font-bold">Recipes</span>
-              </Link>
-            </div>
-          </>
-        )}
-
         {/* Bubbles standing on the scene's floor, over `table`/`rug`/
-            `floor_corner` — the row the other two hotspots leave clear.
-            He's the "Bubbles -> chat" hotspot: a real link, not just a
+            `floor_corner`. He's the "Bubbles -> chat" hotspot: a real link, not just a
             picture, wrapping the existing `ask` quick action's href so the
             component still only has one source of truth for that route. */}
         <Link
@@ -249,57 +185,24 @@ export default function HomeVariantA({
         </FadeInView>
       )}
 
-      {/* Tip dialog — opened by the fridge-note hotspot. A modal (rather than
-          the old below-scene tappable line) because the hotspot itself is
-          too small to show the full tip text and its "Ask Bubbles" action. */}
-      <AnimatePresence>
-        {tipOpen && (
-          <>
-            <motion.div
-              className="fixed inset-0 bg-black/40 z-40"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setTipOpen(false)}
-            />
-            <motion.div
-              role="dialog"
-              aria-modal="true"
-              aria-label="Today's tip"
-              className="fixed left-0 right-0 bottom-0 z-50 rounded-t-3xl p-5 pb-8 max-w-[480px] mx-auto"
-              style={{ background: 'var(--color-surface)' }}
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            >
-              <div className="flex items-start justify-between mb-2 gap-3">
-                <p className="text-sm font-bold text-[var(--color-text)] flex items-start gap-2">
-                  <Lightbulb size={18} weight="fill" className="flex-shrink-0 text-[var(--color-primary)] mt-0.5" aria-hidden="true" />
-                  <span>{tip}</span>
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setTipOpen(false)}
-                  aria-label="Close"
-                  className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full"
-                  style={{ background: 'var(--color-bg)' }}
-                >
-                  <X size={16} weight="bold" />
-                </button>
-              </div>
-              <Link
-                href={tipHref}
-                onClick={() => setTipOpen(false)}
-                className="inline-block mt-2 text-xs font-semibold px-4 py-2 rounded-full text-white"
-                style={{ background: 'var(--color-primary)' }}
-              >
-                Ask Bubbles about this
-              </Link>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      {/* Tip — footer of the page content, above the bottom nav. Per Ayush's
+          2026-09-27 feedback, this and the speech bubble's suggestion button
+          both read as "an auto-suggestion", so this one drops the card
+          treatment entirely: no background, border or shadow, just a plain
+          muted line of text. Still a Link to `tipHref` (unchanged target —
+          same "ask Bubbles about this" destination the old dialog's button
+          pointed at), just no longer styled like a button. */}
+      {!loading && tip && (
+        <FadeInView delay={0.35}>
+          <Link
+            href={tipHref}
+            className="block text-center text-[11px] leading-snug text-[var(--color-muted)] mt-3 px-6 max-w-[480px]"
+          >
+            <span aria-hidden="true">💡</span>{' '}
+            <span className="font-semibold text-[var(--color-text)]">Tip:</span> {tip}
+          </Link>
+        </FadeInView>
+      )}
 
       {/* Milestone sheet */}
       <AnimatePresence>
