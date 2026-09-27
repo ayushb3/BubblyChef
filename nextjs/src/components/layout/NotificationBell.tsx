@@ -66,12 +66,22 @@ export default function NotificationBell() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
     }
+    // The dropdown is `position: fixed` with `top` measured once above, not
+    // re-measured on every frame — scrolling or resizing (e.g. a mobile
+    // orientation change) would otherwise leave it floating detached from
+    // the bell (#496 review, round 1/5). Closing is simpler and safer than
+    // tracking the button's position continuously.
+    const handleScrollOrResize = () => setOpen(false)
 
     document.addEventListener('mousedown', handleMouseDown)
     document.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('scroll', handleScrollOrResize, { passive: true })
+    window.addEventListener('resize', handleScrollOrResize)
     return () => {
       document.removeEventListener('mousedown', handleMouseDown)
       document.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('scroll', handleScrollOrResize)
+      window.removeEventListener('resize', handleScrollOrResize)
     }
   }, [open])
 
@@ -95,6 +105,13 @@ export default function NotificationBell() {
   // (and possibly wrong) leftover count (#496 review round 4).
   const count = entries.length + overflowCount
   const showBadge = !error && count > 0
+  // Same stale-data hazard as `showBadge` above: `overflowCount` is derived
+  // from the same memoised `data` React Query keeps around through a failed
+  // refetch, so it must only ever render alongside the actual success/list
+  // branch below — never next to the loading or error panels, which is what
+  // let a failed refresh show "Couldn't check right now" with a leftover
+  // "and N more" underneath it (#496 review round 5).
+  const showOverflowFooter = !loading && !error && entries.length > 0 && overflowCount > 0
 
   return (
     <div className="relative" ref={containerRef}>
@@ -214,7 +231,7 @@ export default function NotificationBell() {
               )}
             </div>
 
-            {overflowCount > 0 && (
+            {showOverflowFooter && (
               <div className="px-4 py-2 border-t border-[var(--color-border)] text-center">
                 <p className="text-xs text-[var(--color-muted)]">and {overflowCount} more</p>
               </div>

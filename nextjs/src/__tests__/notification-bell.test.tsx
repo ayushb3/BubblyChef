@@ -13,6 +13,11 @@ function jsonResponse(body: unknown): Response {
   return { ok: true, json: async () => body } as Response
 }
 
+/** A failed fetch — the shared shape behind every "refresh fails" scenario below. */
+function errorResponse(): Response {
+  return { ok: false, status: 500, json: async () => ({}) } as Response
+}
+
 /** Matches `pantryItems: []`/`recipes` with a recent cook — no expiry/nudge noise. */
 function mockQuietFetch() {
   global.fetch = jest.fn(async (input: RequestInfo | URL) => {
@@ -143,7 +148,7 @@ describe('NotificationBell', () => {
     // A 401/500 must not read as an all-clear (#496 review): `fetchPantryItems`
     // now throws on a non-ok response instead of degrading to `[]`, so the
     // dropdown should show an explicit error, not the empty-inbox mascot.
-    global.fetch = jest.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })) as unknown as typeof fetch
+    global.fetch = jest.fn(async () => errorResponse()) as unknown as typeof fetch
 
     renderBell()
     fireEvent.click(screen.getByTestId('notification-bell'))
@@ -244,7 +249,7 @@ describe('NotificationBell', () => {
       // every fetch from the second refresh() onward fails.
       const isFirstLoad = callCount <= 2
       if (url.includes('/api/pantry')) {
-        if (!isFirstLoad) return { ok: false, status: 500, json: async () => ({}) } as Response
+        if (!isFirstLoad) return errorResponse()
         return jsonResponse({
           items: [
             {
@@ -261,7 +266,7 @@ describe('NotificationBell', () => {
         })
       }
       if (url.includes('/api/recipes')) {
-        if (!isFirstLoad) return { ok: false, status: 500, json: async () => ({}) } as Response
+        if (!isFirstLoad) return errorResponse()
         return jsonResponse({ recipes: [{ last_cooked_at: today.toISOString() }] })
       }
       return jsonResponse({})
@@ -282,5 +287,90 @@ describe('NotificationBell', () => {
     })
     // No numeric badge — hidden outright rather than showing the stale "1".
     expect(screen.queryByTestId('notification-badge')).not.toBeInTheDocument()
+  })
+
+  it('hides the "and N more" footer after a failed refresh, instead of showing it beside the error panel', async () => {
+    // #496 review round 5: the footer read the same stale memoised
+    // `overflowCount` the round-4 badge fix stopped trusting, so it rendered
+    // outside the loading/error/empty branch — a failed refresh showed
+    // "Couldn't check right now" with "and 4 more" underneath it. 14 expired
+    // rows (cap 10) reproduces the reviewer's own repro: overflowCount 4.
+    const today = new Date()
+    const isoDate = today.toISOString().slice(0, 10)
+    const expiredItems = Array.from({ length: 14 }, (_, i) => ({
+      id: `expired-${i}`,
+      name: `Item ${i}`,
+      quantity: 1,
+      expiry_date: isoDate,
+      days_until_expiry: -1,
+      is_expired: true,
+      is_expiring_soon: false,
+    }))
+
+    let callCount = 0
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      callCount += 1
+      const isFirstLoad = callCount <= 2
+      if (url.includes('/api/pantry')) {
+        if (!isFirstLoad) return errorResponse()
+        return jsonResponse({ items: expiredItems, total_count: expiredItems.length })
+      }
+      if (url.includes('/api/recipes')) {
+        if (!isFirstLoad) return errorResponse()
+        return jsonResponse({ recipes: [{ last_cooked_at: today.toISOString() }] })
+      }
+      return jsonResponse({})
+    }) as unknown as typeof fetch
+
+    renderBell()
+
+    // Successful initial load: badge shows the real count (10 shown + 4 overflow).
+    await waitFor(() => {
+      expect(screen.getByTestId('notification-badge')).toHaveTextContent('14')
+    })
+
+    // Opening the dropdown renders the cached success data synchronously
+    // (before the refetch below resolves) and calls refresh() -> refetch(),
+    // which now fails.
+    fireEvent.click(screen.getByTestId('notification-bell'))
+
+    await waitFor(() => {
+      expect(screen.getByText(/and 4 more/i)).toBeInTheDocument()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText(/couldn.t check right now/i)).toBeInTheDocument()
+    })
+    // The footer must not survive alongside the error panel, even though
+    // the memoised `overflowCount` from the last successful fetch is still 4.
+    expect(screen.queryByText(/and 4 more/i)).not.toBeInTheDocument()
+  })
+
+  it('closes the dropdown on window scroll and resize, since it is position: fixed and only measures its top once on open', async () => {
+    // #496 review round 1/5: `top` is measured once when the dropdown opens
+    // and never re-measured, so scrolling (or resizing, e.g. a mobile
+    // orientation change) leaves it floating detached from the bell. Closing
+    // on either event is simpler and safer than re-measuring on every frame.
+    mockQuietFetch()
+    renderBell()
+
+    fireEvent.click(await screen.findByTestId('notification-bell'))
+    expect(await screen.findByRole('region')).toBeInTheDocument()
+
+    fireEvent.scroll(window)
+
+    await waitFor(() => {
+      expect(screen.queryByRole('region')).not.toBeInTheDocument()
+    })
+
+    fireEvent.click(await screen.findByTestId('notification-bell'))
+    expect(await screen.findByRole('region')).toBeInTheDocument()
+
+    fireEvent(window, new Event('resize'))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('region')).not.toBeInTheDocument()
+    })
   })
 })
