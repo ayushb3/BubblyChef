@@ -1,19 +1,27 @@
 import type { Metadata, Viewport } from "next";
-import { Nunito, Quicksand } from "next/font/google";
+import localFont from "next/font/local";
 import { Providers } from "@/components/Providers";
 import BottomNav from "@/components/layout/BottomNav";
 import PageTransition from "@/components/ui/PageTransition";
 import "./globals.css";
 
-const nunito = Nunito({
+// Self-hosted (not next/font/google) so production builds never fetch from
+// Google Fonts at build time — see issue #633. Variable woff2, latin subset,
+// downloaded from the fonts.gstatic.com URLs the fonts.googleapis.com/css2
+// API serves for these families; OFL license text (from google/fonts) is
+// alongside each file in ./fonts/<family>/OFL.txt.
+const nunito = localFont({
+  src: "./fonts/nunito/Nunito-Variable.woff2",
   variable: "--font-nunito",
-  subsets: ["latin"],
+  weight: "200 1000",
+  display: "swap",
 });
 
-const quicksand = Quicksand({
+const quicksand = localFont({
+  src: "./fonts/quicksand/Quicksand-Variable.woff2",
   variable: "--font-heading",
-  subsets: ["latin"],
-  weight: ["600", "700"],
+  weight: "300 700",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
