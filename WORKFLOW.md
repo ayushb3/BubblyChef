@@ -363,6 +363,59 @@ CODEOWNERS-protected: an agent that could edit it could raise its own limits.
 `dryRun: true` stops after Decide and deletes the issue branch: a cheap way to see how the
 loop reads an issue before letting it write anything.
 
+### Lesson curation (nightly)
+
+Each loop run proposes lessons in its PR body ("Lessons proposed") and reads
+`docs/agents/lessons.md` before it starts; no agent edits that file directly.
+`scripts/agent-gates/curate-lessons.cjs` closes the gap (issue #630). It runs nightly on
+Ayush's PC, like the loop itself: cloud sessions can't act as the bot (issue #474).
+
+- **Code decides what is new.** It reads the "Lessons proposed" section of every PR
+  merged since its watermark, drops "none" entries, and skips any source already handled.
+  A source counts as handled if `lessons.md` links it, if an earlier curation PR lists it
+  in its `lessons-curation-sources` marker, or if the local state file
+  (`~/.config/bubblychef/lessons-curation.json`, which holds the watermark) records it.
+  Losing any one of these records therefore never produces a second PR.
+- **A model judges the rest.** One `claude -p --model opus --json-schema` call, allowed
+  only Read/Grep/Glob, gets the current file and the candidates. It keeps or drops every
+  candidate: duplicate, issue-specific, not a lesson, or no longer true. It also merges
+  near-duplicates and words each kept lesson in the file's format. The script rejects a
+  judgment that leaves a candidate undecided. Source links are added by code, never by
+  the model.
+- **One PR, as `bubblychef-bot`, only if something survives.** It is opened from a
+  throwaway worktree at `origin/main`, so the checkout it runs from is never touched. It
+  never pushes to `main`. While a curation PR is open, later runs do nothing. It honours
+  `AGENTS_ENABLED` and checks the bot identity before writing, as the loop does.
+
+By hand, from the main checkout (on any branch that has the script):
+
+```bash
+node scripts/agent-gates/curate-lessons.cjs --dry-run       # reads everything, writes nothing
+node scripts/agent-gates/curate-lessons.cjs --collect-only  # no model call: list the candidates
+node scripts/agent-gates/curate-lessons.cjs                 # the real run
+node scripts/agent-gates/curate-lessons.test.cjs            # deterministic tests
+```
+
+Nightly, Windows Task Scheduler. Ayush registers it; nothing registers it for him.
+Run this once from PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.config\bubblychef" | Out-Null
+$action   = New-ScheduledTaskAction -Execute 'cmd.exe' -WorkingDirectory 'C:\Users\ayush\Code\BubblyChef' `
+              -Argument '/c node scripts\agent-gates\curate-lessons.cjs >> "%USERPROFILE%\.config\bubblychef\lessons-curation.log" 2>&1'
+$trigger  = New-ScheduledTaskTrigger -Daily -At 3:30am
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+Register-ScheduledTask -TaskName 'BubblyChef lessons curation' -Action $action -Trigger $trigger -Settings $settings
+```
+
+`Start-ScheduledTask 'BubblyChef lessons curation'` fires it once to test, and the log
+shows the result. `Unregister-ScheduledTask 'BubblyChef lessons curation'` removes it.
+Registered without `-User`, it runs as Ayush and only while he is logged on. That is what
+`claude` and the bot's `gh` config need. `-StartWhenAvailable` catches up a run missed
+while the PC slept. The first run also backfills the lessons proposed in
+`docs/plans/2026-09-20-autonomous-session-report.md` §9 and
+`docs/plans/2026-09-21-handoff-post-autonomous-batch.md` §7 (and §5, which §7 points to).
+
 
 ## 8. House rules
 
