@@ -96,7 +96,8 @@ instead of guessing.
 ### 1.1 Feasibility check — before any delegation (WORKFLOW.md §5)
 
 Before spawning a dev role, answer three questions from the issue body, its
-comments, and `.github/CODEOWNERS`. Any "yes" means **don't spawn**:
+comments, and `.github/CODEOWNERS`. Any "yes" means **don't spawn**. The one
+exception is in item 2:
 
 1. **Blocked?** Does the issue or a comment say "blocked by", "depends on", or
    "after #N", where #N is still open? Check with `gh issue view N --json state`.
@@ -105,12 +106,12 @@ comments, and `.github/CODEOWNERS`. Any "yes" means **don't spawn**:
    Read the file itself. Examples, not a complete list: all of `supabase/`,
    auth, prompts, `.github/`, `.claude/{settings.json,hooks,agents,workflows}`,
    `scripts/agent-gates/`, dependency manifests, `ai-service/railway.json` and
-   `Dockerfile`. If it does, the PR can't merge without the human, so:
-   - **Unattended run** (the human isn't driving and didn't ask for this issue):
-     skip it and add it to the human's pile.
-   - **The human is driving or asked for it:** build it. Flag the protected path
-     at the top of the PR body, and follow §3.1 if it's a migration. Code-owner
-     review gates the merge.
+   `ai-service/Dockerfile`. If it does, the PR can't merge without the human, so:
+   - **By default:** skip it and add it to the human's pile.
+   - **Exception: the human asked for this specific issue.** Their presence in the
+     session isn't enough. Then build it, flag the protected path at the top of
+     the PR body, and follow §3.1 if it's a migration. Code-owner review gates
+     the merge.
 3. **Undecided?** Does the triage comment leave a product question open, with
    no reading that supports a conservative default? If so, comment the question,
    relabel `needs-info`, and skip.
