@@ -115,10 +115,10 @@ export interface IngredientMatch {
 /**
  * One pantry item backing a compound substitution, ready to deduct.
  *
- * Quantities are deliberately absent — the model is not asked to apportion
- * how much of the missing ingredient each component stands in for (#284).
- * The user types an amount per component in the cook modal, the same
- * always-unresolved pattern as a unit_conflict row.
+ * The user types (or, since Option B, edits/confirms a pre-filled) an
+ * amount per component in the cook modal — nothing deducts until they
+ * confirm, the same pattern as a unit_conflict row. See
+ * `suggested_quantity` below for the pre-fill itself (#284 Option B).
  */
 export interface CompoundComponent {
   pantry_item_id: string

@@ -151,6 +151,12 @@ def _resolve_component_items(
     validated name->quantity map; each resolved component picks up its own
     entry (by `_norm_component_key`) as `suggested_quantity`, so a cache hit
     still pre-fills the modal exactly as a cache miss would.
+
+    This is the cache-hit twin of the inline build loop in
+    `resolve_aliases_with_llm` (the `all_present`/`resolved_component_items`
+    block) — that loop builds and validates `component_quantities` fresh from
+    the LLM response; this one just re-attaches an already-validated map to a
+    freshly re-resolved pantry row. Keep the two shapes in sync.
     """
     quantities_by_key = component_quantities or {}
     resolved: list[CompoundComponent] = []
@@ -1012,6 +1018,12 @@ async def resolve_aliases_with_llm(
                 all_present = True
                 resolved_components: list[str] = []
                 resolved_component_items: list[CompoundComponent] = []
+                # This is the cache-MISS build path — its cache-HIT twin is
+                # `_resolve_component_items`, which re-attaches this same
+                # (already-validated) component_quantities map to a freshly
+                # re-resolved pantry row instead of rebuilding it from the LLM
+                # response. Keep the two shapes in sync.
+                #
                 # Model-suggested quantities (#284 Option B), keyed the same
                 # normalized way as the components loop below so a casing
                 # mismatch between compound_quantities and compound_components
