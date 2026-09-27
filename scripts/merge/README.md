@@ -5,9 +5,11 @@ actually mergeable" step. Moved here from session scratchpads (issue #624) so
 they survive past the session that wrote them — a scratchpad dies with its
 session.
 
-Not a CODEOWNERS path. `scripts/agent-gates/` is a separate, CODEOWNERS-gated
-directory (the in-repo merge *gate*); these scripts are the *queue runner*
-that agents invoke by hand or from the loop, and they are independent of it.
+A CODEOWNERS path (PR #638): this directory holds the logic that decides
+whether a PR merges on a Claude verdict, which is the same "an agent that can
+edit its own gates can remove them" rationale that already protects
+`scripts/agent-gates/` (a separate, CODEOWNERS-gated directory — the in-repo
+merge *gate*, independent of the *queue runner* here).
 
 ## Scripts
 

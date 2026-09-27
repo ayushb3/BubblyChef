@@ -74,6 +74,33 @@ check "marker quoted in backticks is ignored" \
 check "marker inside a fenced code block is ignored" \
   "marker-in-fence-ignored.txt" "needs-human"
 
+# (10) PR #636 round-2 review, finding A: across-line precedence must also
+#      fail closed. A real "**Verdict: needs changes**" sits at the top;
+#      a numbered finding below it quotes an earlier round's permissive
+#      verdict ("Round 1 gave a verdict of `looks mergeable`..."). The
+#      quoted phrase must not overwrite the real one just for being later.
+check "top verdict needs-changes, later line quotes looks-mergeable" \
+  "top-needs-changes-later-quotes-mergeable.txt" "needs-changes"
+
+# (11) Same finding, the fenced-example angle: a ``` fenced block quotes
+#      CLAUDE.md's own review template, which names all three phrases on
+#      one line -- including "needs changes" -- ahead of the real
+#      "**Verdict: needs a human**" below it. The fenced line must be
+#      skipped by the prose pass exactly like the marker pass already
+#      skips fences, or the quoted "needs changes" wins by rank and masks
+#      the real, less restrictive "needs a human".
+check "fenced verdict-format example plus real needs-a-human verdict" \
+  "fenced-verdict-example-plus-real-needs-human.txt" "needs-human"
+
+# (12) Same finding, the blockquote angle: a `>` blockquote re-quotes the
+#      same three-phrase template line, ahead of the real
+#      "**Verdict: looks mergeable**". Blockquoted lines must be skipped
+#      by the prose pass the same way fenced lines are, or the quoted
+#      "needs changes" wins by rank and masks the real, less restrictive
+#      "looks mergeable".
+check "blockquoted prior/template verdict is ignored" \
+  "blockquoted-prior-verdict-ignored.txt" "looks-mergeable"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

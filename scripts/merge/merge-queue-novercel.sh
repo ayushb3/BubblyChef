@@ -18,11 +18,24 @@ wait_checks() {  # $1 = pr; echo "ok" when all checks are done and none failed
     pending=$(gh pr checks "$n" --repo "$REPO" --json state --jq '[.[]|select(.state=="PENDING" or .state=="QUEUED" or .state=="IN_PROGRESS")]|length' 2>/dev/null || echo 1)
     [ "$pending" = "0" ] && break
   done
-  # Any non-passing state counts as failed, not just FAILURE/ERROR/CANCELLED
-  # -- TIMED_OUT, ACTION_REQUIRED and STALE are also not a pass. Sibling fix
-  # alongside wait-review.sh's equivalent check, both from the PR #636
-  # round-1 review (finding 4: the two scripts must agree on "failed").
-  failed=$(gh pr checks "$n" --repo "$REPO" --json name,state --jq '[.[]|select((.state=="FAILURE" or .state=="ERROR" or .state=="CANCELLED" or .state=="TIMED_OUT" or .state=="ACTION_REQUIRED" or .state=="STALE") and (.name|startswith("Vercel")|not))|.name]|join(", ")')
+  # Re-test pending on loop exhaustion: if all 60 iterations ran out with
+  # checks still in flight, don't report a state that hasn't been
+  # established -- a required job still running is not a pass. This is the
+  # same pending gap guarded-merge.sh closed for its own timeout
+  # (PR #636 round-1 review, finding 3; round-2 review, finding B).
+  if [ "$pending" != "0" ]; then
+    echo "pending: $pending checks still running"
+    return
+  fi
+  # Deny-list, not an allow-list: any state that is not SUCCESS/SKIPPED/
+  # NEUTRAL counts as failed, matching wait-review.sh's conclusion check
+  # exactly (PR #636 round-1 review, finding 4). An earlier version of this
+  # enumerated six named failure states (FAILURE, ERROR, CANCELLED,
+  # TIMED_OUT, ACTION_REQUIRED, STALE) -- an allow-list that still missed
+  # real CheckConclusionState values such as STARTUP_FAILURE, which read as
+  # a pass here and a failure in wait-review.sh (PR #636 round-2 review,
+  # finding B).
+  failed=$(gh pr checks "$n" --repo "$REPO" --json name,state --jq '[.[]|select((.state!="SUCCESS" and .state!="SKIPPED" and .state!="NEUTRAL") and (.name|startswith("Vercel")|not))|.name]|join(", ")')
   if [ -n "$failed" ]; then echo "failed: $failed"; else echo ok; fi
 }
 

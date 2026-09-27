@@ -16,12 +16,18 @@
 #      code block. This stops a review that merely shows or discusses the
 #      marker format (e.g. documenting this very script) from being read as
 #      emitting one. The LAST such line wins.
-#   2. Prose: the LAST line that reads as an actual verdict statement
-#      decides it -- either a line containing the word "Verdict" (bolded,
+#   2. Prose: every line that reads as an actual verdict statement is
+#      considered -- either a line containing the word "Verdict" (bolded,
 #      backticked, or plain), or a markdown heading that itself names one
 #      of the three known phrases (the "## Re-review (round 3) —
 #      `looks mergeable`" style used once the review dropped the literal
-#      "Verdict:" label).
+#      "Verdict:" label). Lines inside a ``` fenced code block or a `>`
+#      blockquote are skipped, the same as the marker pass -- a fenced or
+#      quoted example of a verdict line is not a verdict. Across all
+#      remaining verdict lines, the MOST RESTRICTIVE result wins, never
+#      "the last one": a re-review that quotes an earlier round's verdict
+#      ("Round 1 gave a verdict of `looks mergeable`...") alongside its own
+#      real verdict must not let the quoted phrase overwrite the real one.
 #      Within a single line, phrases are resolved most-restrictive-first:
 #      needs-changes beats needs-human beats looks-mergeable. A line is
 #      only read as looks-mergeable when it mentions NEITHER negative
@@ -107,18 +113,34 @@ phrase_for_line() {
 #     needs changes**", "**Verdict: `needs changes`**"), or
 #   - a markdown heading (starts with #) that carries one of the three
 #     phrases directly, with no "Verdict" label at all.
-verdict_lines=$(printf '%s\n' "$body" | grep -iE \
-  '(^|[^a-z])verdict([^a-z]|$)|^#+.*(looks mergeable|needs changes|needs a human)')
-
+# Lines inside a ``` fenced code block or a `>` blockquote are skipped --
+# same fence tracking as the marker pass above -- and the MOST RESTRICTIVE
+# verdict across all matching lines wins, not the last one.
 prose_value="unknown"
-if [ -n "$verdict_lines" ]; then
-  while IFS= read -r line; do
-    p=$(phrase_for_line "$line")
-    [ -n "$p" ] && prose_value="$p"
-  done <<EOF
-$verdict_lines
+prose_rank=0
+in_fence=0
+while IFS= read -r raw_line; do
+  trimmed=$(printf '%s' "$raw_line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+  if printf '%s' "$trimmed" | grep -qE '^(```|~~~)'; then
+    in_fence=$((1 - in_fence))
+    continue
+  fi
+  [ "$in_fence" -eq 1 ] && continue
+  printf '%s' "$trimmed" | grep -qE '^>' && continue
+  if printf '%s' "$raw_line" | grep -qiE \
+    '(^|[^a-z])verdict([^a-z]|$)|^#+.*(looks mergeable|needs changes|needs a human)'; then
+    p=$(phrase_for_line "$raw_line")
+    if [ -n "$p" ]; then
+      r=$(verdict_rank "$p")
+      if [ "$r" -gt "$prose_rank" ]; then
+        prose_value="$p"
+        prose_rank="$r"
+      fi
+    fi
+  fi
+done <<EOF
+$body
 EOF
-fi
 
 # --- 3. Reconcile marker and prose, most restrictive wins on disagreement --
 if [ -n "$marker_value" ] && [ "$prose_value" != "unknown" ]; then
