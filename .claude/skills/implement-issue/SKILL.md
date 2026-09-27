@@ -101,10 +101,16 @@ comments, and `.github/CODEOWNERS`. Any "yes" means **don't spawn**:
 1. **Blocked?** Does the issue or a comment say "blocked by", "depends on", or
    "after #N", where #N is still open? Check with `gh issue view N --json state`.
    If so, pick the blocker if it's `ready-for-agent`, otherwise skip.
-2. **Protected?** Will the likely change touch a CODEOWNERS path (migrations,
+2. **Protected?** Will the likely change touch a path in `.github/CODEOWNERS`?
+   Read the file itself. Examples, not a complete list: all of `supabase/`,
    auth, prompts, `.github/`, `.claude/{settings.json,hooks,agents,workflows}`,
-   `scripts/agent-gates/`, dependency manifests)? If so, it's `ready-for-human`
-   work. Say so and skip, unless the human asked for this one.
+   `scripts/agent-gates/`, dependency manifests, `ai-service/railway.json` and
+   `Dockerfile`. If it does, the PR can't merge without the human, so:
+   - **Unattended run** (the human isn't driving and didn't ask for this issue):
+     skip it and add it to the human's pile.
+   - **The human is driving or asked for it:** build it. Flag the protected path
+     at the top of the PR body, and follow §3.1 if it's a migration. Code-owner
+     review gates the merge.
 3. **Undecided?** Does the triage comment leave a product question open, with
    no reading that supports a conservative default? If so, comment the question,
    relabel `needs-info`, and skip.
