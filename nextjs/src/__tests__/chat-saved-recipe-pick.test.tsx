@@ -1,7 +1,7 @@
 /**
- * Issue #494 / PR #614 review finding 1 — tapping a card in the many-match
- * saved-recipe list must act on the recipe by id, not by re-sending its
- * title as chat text.
+ * Issue #494 / PR #614 review finding 1 — picking a saved recipe from the
+ * many-match list must act on the recipe by id, not by re-sending its title
+ * as chat text.
  *
  * A live verification during review confirmed the original wiring
  * (`sendMessage(match.title)`) sends the bare title back through the chat
@@ -13,10 +13,17 @@
  * single-match card's "Cook this" action already uses (read reactively via
  * `useSearchParams` in `app/chat/page.tsx`).
  *
+ * Ayush's decision (2026-09-27): tapping a mini card no longer enters the
+ * cooking session directly — it expands inline into that recipe's
+ * single-match card, and only pressing **Cook this** inside the expanded
+ * card acts on it. These tests drive that two-step flow (tap to expand,
+ * then Cook this) rather than asserting on the mini-card tap alone.
+ *
  * Driven end to end through the real `ChatPage`, same harness as
  * `chat-recipe-card-render.test.tsx`: mock `useChat` at the module level,
  * feed it a fixed `messages` array carrying a `saved_recipe_lookup` turn
- * with several matches, render the real page tree, tap a card.
+ * with several matches, render the real page tree, tap a card, then Cook
+ * this.
  */
 import React from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -145,11 +152,30 @@ beforeEach(() => {
 })
 
 describe('saved_recipe_lookup many-match tap acts by id (issue #494)', () => {
-  it('navigates to /chat?cooking=<id> (via replace) and never sends the title as chat text', async () => {
+  it('does not navigate or send anything on the mini-card tap alone — it only expands', async () => {
     renderChat()
 
     const card = await screen.findByRole('listitem', { name: 'Pick Chicken Tikka Masala' })
     fireEvent.click(card)
+
+    expect(routerReplace).not.toHaveBeenCalled()
+    expect(routerPush).not.toHaveBeenCalled()
+    expect(sendMessage).not.toHaveBeenCalled()
+    // Expanding reveals the same single-match card actions.
+    expect(await screen.findByRole('link', { name: 'Open recipe' })).toHaveAttribute(
+      'href',
+      '/recipes/r2',
+    )
+    expect(screen.getByRole('button', { name: 'Cook this' })).toBeInTheDocument()
+  })
+
+  it('navigates to /chat?cooking=<id> (via replace) once Cook this is pressed in the expanded card, and never sends the title as chat text', async () => {
+    renderChat()
+
+    const card = await screen.findByRole('listitem', { name: 'Pick Chicken Tikka Masala' })
+    fireEvent.click(card)
+    const cookButton = await screen.findByRole('button', { name: 'Cook this' })
+    fireEvent.click(cookButton)
 
     // router.replace, not push — consistent with every other ?cooking= pin
     // (the "Start cooking" handler in app/chat/page.tsx) so the back button
@@ -160,7 +186,7 @@ describe('saved_recipe_lookup many-match tap acts by id (issue #494)', () => {
     expect(sendMessage).not.toHaveBeenCalledWith('Chicken Tikka Masala')
   })
 
-  it('clears a stale ended-cook record before pinning a previously-cooked recipe', async () => {
+  it('clears a stale ended-cook record once Cook this pins a previously-cooked recipe', async () => {
     // Regression for PR #614 re-review finding 1: without startCookSession(id)
     // before the navigation, isCookSessionEnded(id) — localStorage-backed,
     // survives across sessions — would make the ?cooking= param get stripped
@@ -174,6 +200,8 @@ describe('saved_recipe_lookup many-match tap acts by id (issue #494)', () => {
     renderChat()
     const card = await screen.findByRole('listitem', { name: 'Pick Chicken Tikka Masala' })
     fireEvent.click(card)
+    const cookButton = await screen.findByRole('button', { name: 'Cook this' })
+    fireEvent.click(cookButton)
 
     expect(isCookSessionEnded('r2')).toBe(false)
     expect(routerReplace).toHaveBeenCalledWith('/chat?cooking=r2', { scroll: false })

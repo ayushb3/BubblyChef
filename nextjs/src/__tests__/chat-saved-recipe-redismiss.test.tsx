@@ -10,6 +10,13 @@
  * reflect what router.replace/push last set, and re-render subscribers when
  * it changes) — the static `new URLSearchParams('')` mock used by
  * chat-saved-recipe-pick.test.tsx can't observe this, since it never changes.
+ *
+ * Ayush's decision (2026-09-27): the many-match mini card no longer acts on
+ * the recipe directly — tapping it expands inline into the single-match
+ * card, and only its Cook this button pins the recipe. The many-match
+ * describe block below drives that: tap to expand, then Cook this to pin,
+ * dismiss, then Cook this again (the card stays expanded across the
+ * dismiss, so the button is still on screen) to re-tap.
  */
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -196,25 +203,30 @@ describe('re-tapping a saved-recipe card after dismissing its banner (PR #614 ro
     currentMessage = messageWith(MANY_MATCH_RESPONSE)
   })
 
-  it('re-shows the Cooking now banner on a second tap of the same card (many-match)', async () => {
+  it('re-shows the Cooking now banner on a second Cook this tap of the same expanded card (many-match)', async () => {
     renderChat()
 
-    // First tap — pins the recipe, banner appears.
+    // Tap the mini card to expand it, then Cook this — pins the recipe,
+    // banner appears.
     const card = await screen.findByRole('listitem', { name: 'Pick Chicken Tikka Masala' })
     fireEvent.click(card)
+    const cookButton = await screen.findByRole('button', { name: 'Cook this' })
+    fireEvent.click(cookButton)
     expect(await screen.findByText('Chicken Tikka Masala', { selector: 'p' })).toBeInTheDocument()
 
-    // Dismiss the banner.
+    // Dismiss the banner. The card stays expanded (expansion is local UI
+    // state, unrelated to the cooking-session pin), so Cook this is still
+    // on screen.
     const dismissButton = screen.getByRole('button', { name: 'Dismiss cooking context' })
     fireEvent.click(dismissButton)
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'Dismiss cooking context' })).not.toBeInTheDocument()
     })
 
-    // Second tap of the SAME card — this is the regression: without clearing
-    // dismissedRecipeId, the banner would stay hidden even though the
-    // ?cooking= param is set again.
-    fireEvent.click(card)
+    // Second tap of Cook this on the SAME expanded card — this is the
+    // regression: without clearing dismissedRecipeId, the banner would stay
+    // hidden even though the ?cooking= param is set again.
+    fireEvent.click(screen.getByRole('button', { name: 'Cook this' }))
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Dismiss cooking context' })).toBeInTheDocument()
