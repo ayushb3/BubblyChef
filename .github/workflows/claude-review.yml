@@ -33,16 +33,24 @@ concurrency:
 jobs:
   review:
     # Drafts are work in progress; review fires when the PR is marked ready.
-    # New pushes (synchronize) are re-reviewed ONLY on PRs labelled `agent-loop`: the
-    # agent loop's Respond stage fixes the review's findings and pushes, and needs a
-    # fresh review of the new commit to know whether it worked. Human PRs are reviewed
-    # once, on open, as before.
+    # New pushes (synchronize) are re-reviewed on PRs labelled `agent-loop`, OR on any
+    # PR opened by bubblychef-bot (labelled or not): the agent loop's Respond stage
+    # fixes the review's findings and pushes, and needs a fresh review of the new
+    # commit to know whether it worked. The bot-author clause is what lets a bot PR get
+    # re-reviewed on every push even before the loop label lands on it (or when the
+    # loop never applies the label at all), retiring the old close-and-reopen
+    # workaround that faked a "reopened" event to force a re-review. It does NOT put
+    # such a PR under the `verdict` job's blocking gate or the loop's own round cap —
+    # both key off the `agent-loop` label alone (see review-verdict.cjs), so an
+    # unlabelled bot PR is reviewed again but never held by this workflow. Human PRs
+    # (not authored by bubblychef-bot, unlabelled) are still reviewed once, on open.
     if: >-
       github.event_name == 'pull_request'
       && vars.AGENTS_ENABLED == 'true'
       && github.event.pull_request.draft == false
       && (github.event.action != 'synchronize'
-          || contains(github.event.pull_request.labels.*.name, 'agent-loop'))
+          || contains(github.event.pull_request.labels.*.name, 'agent-loop')
+          || github.event.pull_request.user.login == 'bubblychef-bot')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -138,6 +146,13 @@ jobs:
             - The findings that drove the verdict, most severe first, one line each.
             - Anything you could not check.
             Keep it short enough to read on a phone.
+
+            End the whole comment with exactly one machine-readable line, on its own
+            line, after everything else — an HTML comment so it renders invisibly:
+            `<!-- verdict: looks-mergeable -->`, `<!-- verdict: needs-changes -->`, or
+            `<!-- verdict: needs-human -->`, matching the human-readable Verdict line
+            above it exactly (mergeable/changes/human). Do not add any other text on
+            that line, and do not emit more than one such line.
           claude_args: |
             --model claude-opus-5
             --max-turns 60
