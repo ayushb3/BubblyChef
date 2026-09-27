@@ -148,11 +148,14 @@ A dev agent that starts an issue it can't finish costs a full implementation and
 review round, and then the PR sits. PR #617 was built on issue #490 while its
 blocker #489 was still open. PRs #614 and #616 each hit a product decision halfway
 through. So the orchestrator (or `/implement-issue` §1.1) answers three questions
-before delegating, and any "yes" means don't spawn:
+before delegating. Any "yes" means don't spawn, with the one exception in item 2:
 
 1. **Blocked?** A "blocked by" / "depends on" pointing at an open issue.
-2. **Protected?** The likely change touches a CODEOWNERS path, which makes it human
-   work unless the human asked for it.
+2. **Protected?** The likely change touches a CODEOWNERS path. By default, skip it and
+   add it to the human's pile. The exception is when the human asked for that specific
+   issue; their presence in the session isn't enough. Then build it and flag it: the
+   protected path goes at the top of the PR body, and migrations follow
+   `/implement-issue` §3.1. Code-owner review then gates the merge.
 3. **Undecided?** The triage comment leaves a product question open with no
    defensible conservative default.
 
@@ -346,7 +349,10 @@ other work. So:
 PR #616 went through five Claude-review rounds. Each one found a new edge case from
 the same few families: key casing, duplicate components, cross-user cache rows,
 duplicate suggestions, a null unit. Each fix handled only the instance it was shown.
-Four rules:
+Four rules. They apply to PRs an orchestrator session drives directly (ship mode,
+`/implement-issue`). Agent-loop PRs keep the caps in the agent-loop table below,
+which `agent-loop.js` enforces: up to 3 pre-PR fix rounds (so up to 4 Opus reviews)
+and 2 Respond rounds. "Review round" below means one Claude GitHub review.
 
 - **Opus reviews before the PR opens.** When the dev role reports done, the
   orchestrator runs a fresh-context Opus review of the branch's diff, aimed at edge
@@ -358,8 +364,9 @@ Four rules:
 - **Fix the class, then sweep for siblings.** Every finding names a pattern, not just
   a line. Before pushing the fix, grep the diff for other instances of the same
   pattern and fix those too. The resolutions comment says what the sweep covered.
-- **Fix rounds 3 and later go to a fresh agent.** After two rounds, the next fix goes
-  to a new agent. Its brief is only the open findings, the diff, and the sweep
+- **Fixes after the second review go to a fresh agent.** The implementer fixes the
+  first Claude review's findings. If the second review still has findings, that fix
+  goes to a new agent. Its brief is only the open findings, the diff, and the sweep
   instruction. It does not continue the implementer, whose context is large and
   whose blind spots produced the findings.
 - **Cap: three review rounds.** If the third Claude review still raises new findings,
