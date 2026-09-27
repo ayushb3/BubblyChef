@@ -1,7 +1,7 @@
 ---
 name: ui-ux
 description: Design-system, motion, and accessibility dev for BubblyChef — owns nextjs/src/components/. Builds and maintains reusable components; enforces visual consistency, motion, and a11y. Does not spawn subagents.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 model: sonnet
 ---
 

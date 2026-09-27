@@ -14,7 +14,11 @@ interface BubblesMascotProps {
   animate?: boolean
 }
 
-const STATE_SRC: Record<BubblesState, string> = {
+// Exported (not just module-private) so tests can walk every entry and
+// assert the rendered `src` and the on-disk file both match — see issue
+// #612 (a wrong path here renders nothing, silently, because of the
+// `onError` handler below).
+export const STATE_SRC: Record<BubblesState, string> = {
   happy: '/mascot/bubbles-happy.png',
   surprised: '/mascot/bubbles-surprised.png',
   thinking: '/mascot/bubbles-thinking.png',
