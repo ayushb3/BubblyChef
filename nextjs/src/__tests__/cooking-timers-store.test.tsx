@@ -7,12 +7,16 @@
  */
 
 import React from 'react'
-import { act, renderHook, waitFor } from '@testing-library/react'
+import { act, render, renderHook, waitFor } from '@testing-library/react'
 import {
   CookingTimersProvider,
   useCookingTimers,
   TIMER_COMPLETED_EVENT,
 } from '@/lib/useCookingTimers'
+
+// Same persisted-storage key the store itself uses (not exported — these
+// tests seed/inspect it the same way a real reload would).
+const STORAGE_KEY = 'bubblychef:timers:v1'
 
 function wrapper({ children }: { children: React.ReactNode }) {
   return <CookingTimersProvider>{children}</CookingTimersProvider>
@@ -179,6 +183,100 @@ describe('useCookingTimers store', () => {
     expect(result2.current.timers[0].label).toBe('Simmer sauce')
     // 100s duration, 15s elapsed in total (10s + 5s while "reloaded").
     expect(result2.current.timers[0].remainingSeconds).toBe(85)
+  })
+
+  // ─── PR #619 review follow-ups (issue #495) ────────────────────────────
+
+  it('renders with no timers on the very first render pass, even when a timer is already persisted (no hydration mismatch)', () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([
+        {
+          id: 'timer-1',
+          label: 'Simmer sauce',
+          durationSeconds: 100,
+          endAt: Date.now() + 100_000,
+          frozenRemaining: 100,
+          status: 'running',
+          eventFired: false,
+        },
+      ]),
+    )
+
+    const renderedLengths: number[] = []
+    function Probe() {
+      const { timers } = useCookingTimers()
+      // Recorded during the render itself (not an effect) — this captures
+      // exactly what the very first render pass produced, before any
+      // post-mount effect has had a chance to run. A lazy `useState`
+      // initialiser that reads localStorage would make this synchronously
+      // non-empty; hydrating in an effect (matching `ThemeProvider.tsx`)
+      // keeps the first pass empty so server and client agree.
+      renderedLengths.push(timers.length)
+      return null
+    }
+
+    render(
+      <CookingTimersProvider>
+        <Probe />
+      </CookingTimersProvider>,
+    )
+
+    expect(renderedLengths[0]).toBe(0)
+  })
+
+  it('does not re-fire timerCompleted for an already-fired timer after a reload (remount)', async () => {
+    const { result, unmount } = renderHook(() => useCookingTimers(), { wrapper })
+    const onCompleted = jest.fn()
+    window.addEventListener(TIMER_COMPLETED_EVENT, onCompleted)
+
+    let id = ''
+    act(() => {
+      id = result.current.start('Boil egg', 5)
+    })
+    act(() => {
+      jest.advanceTimersByTime(5_000)
+    })
+    await waitFor(() => expect(onCompleted).toHaveBeenCalledTimes(1))
+    expect((onCompleted.mock.calls[0][0] as CustomEvent).detail).toEqual({
+      id,
+      label: 'Boil egg',
+    })
+
+    unmount()
+    window.removeEventListener(TIMER_COMPLETED_EVENT, onCompleted)
+
+    // Simulate a reload: the completed-but-undismissed timer is still in
+    // localStorage, a fresh component tree mounts (in-memory `firedRef` is
+    // gone), and a fresh listener is attached.
+    const onCompletedAfterReload = jest.fn()
+    window.addEventListener(TIMER_COMPLETED_EVENT, onCompletedAfterReload)
+    renderHook(() => useCookingTimers(), { wrapper })
+
+    // Let any mount/hydration effects settle.
+    await act(async () => {})
+
+    expect(onCompletedAfterReload).not.toHaveBeenCalled()
+    window.removeEventListener(TIMER_COMPLETED_EVENT, onCompletedAfterReload)
+  })
+
+  it('does not show phantom extra time when a timer starts after an idle period (stale tick)', () => {
+    const { result } = renderHook(() => useCookingTimers(), { wrapper })
+
+    // No timer is running yet, so the shared interval never starts and
+    // `tick` is never refreshed — it would otherwise go stale while real
+    // (faked) time keeps moving during this idle stretch.
+    act(() => {
+      jest.advanceTimersByTime(5 * 60 * 1000)
+    })
+
+    let id = ''
+    act(() => {
+      id = result.current.start('Boil egg', 30)
+    })
+
+    const timer = result.current.timers.find((t) => t.id === id)
+    expect(timer?.remainingSeconds).toBe(30)
   })
 
   it('falls back to an inert no-op store when used outside the provider', () => {

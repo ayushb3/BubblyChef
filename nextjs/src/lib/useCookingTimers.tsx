@@ -50,6 +50,14 @@ interface StoredTimer {
   /** Frozen remaining seconds while paused, or the final 0 once completed. */
   frozenRemaining: number
   status: CookingTimerStatus
+  /**
+   * Whether `TIMER_COMPLETED_EVENT` has already been dispatched for this
+   * timer. Persisted (not just tracked in-memory) so a reload of a
+   * completed-but-undismissed timer doesn't fire the event again — an
+   * in-memory-only guard resets on every remount, which is exactly the
+   * reload path this flag exists to survive.
+   */
+  eventFired: boolean
 }
 
 const STORAGE_KEY = 'bubblychef:timers:v1'
@@ -61,6 +69,15 @@ const TICK_MS = 1000
  * `event.detail` is `{ id, label }`.
  */
 export const TIMER_COMPLETED_EVENT = 'timerCompleted'
+
+/** Dispatched once, synchronously from `start()`, whenever a new timer
+ * begins. Exists so UI that wants to announce "X timer started" (e.g. the
+ * dock's screen-reader live region) can react to the actual event instead
+ * of diffing the timer list — diffing can't tell a genuinely new timer
+ * apart from timers restored on reload/hydration, which must NOT re-announce.
+ * `event.detail` is `{ id, label }`.
+ */
+export const TIMER_STARTED_EVENT = 'timerStarted'
 
 function nowMs(): number {
   return Date.now()
@@ -77,16 +94,25 @@ function readStored(): StoredTimer[] {
     if (!raw) return []
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    return parsed.filter(
-      (t): t is StoredTimer =>
-        t &&
-        typeof t === 'object' &&
-        typeof (t as StoredTimer).id === 'string' &&
-        typeof (t as StoredTimer).label === 'string' &&
-        typeof (t as StoredTimer).durationSeconds === 'number' &&
-        typeof (t as StoredTimer).frozenRemaining === 'number' &&
-        typeof (t as StoredTimer).status === 'string',
-    )
+    return parsed
+      .filter(
+        (t): t is StoredTimer =>
+          t &&
+          typeof t === 'object' &&
+          typeof (t as StoredTimer).id === 'string' &&
+          typeof (t as StoredTimer).label === 'string' &&
+          typeof (t as StoredTimer).durationSeconds === 'number' &&
+          typeof (t as StoredTimer).frozenRemaining === 'number' &&
+          typeof (t as StoredTimer).status === 'string',
+      )
+      .map((t) => ({
+        // `eventFired` is new — an entry persisted by an older build won't
+        // have it. Missing/malformed defaults to false, same as "never
+        // fired", which is the only safe default (the alternative,
+        // defaulting to true, would silently swallow a real completion).
+        ...t,
+        eventFired: typeof t.eventFired === 'boolean' ? t.eventFired : false,
+      }))
   } catch {
     // Storage unavailable or corrupt — start with no timers, same as a
     // fresh session. Not a new failure mode.
@@ -156,15 +182,49 @@ const NOOP_CONTEXT_VALUE: CookingTimersContextValue = {
 const CookingTimersContext = createContext<CookingTimersContextValue>(NOOP_CONTEXT_VALUE)
 
 export function CookingTimersProvider({ children }: { children: ReactNode }) {
-  const [stored, setStored] = useState<StoredTimer[]>(() => readStored())
+  // Start empty on every render pass, server or client, so the two agree —
+  // see `ThemeProvider.tsx` for the same WHY. Reading localStorage in a lazy
+  // `useState` initialiser here made the client's first render diverge from
+  // the server's (which never has a `window`), and React flags that as a
+  // hydration mismatch — on exactly the reload-with-a-running-timer path
+  // this store exists for.
+  const [stored, setStored] = useState<StoredTimer[]>([])
   const [tick, setTick] = useState(() => nowMs())
+  // Guards the persist effect against its own very first run: on mount,
+  // `stored` is still this render's empty array (the hydration effect's
+  // `setStored` hasn't landed yet — effects in the same commit don't see
+  // each other's state updates), so persisting unconditionally on every
+  // mount would overwrite localStorage with `[]` before hydration ever gets
+  // to read it back. The hydration effect's own `setStored` schedules a
+  // second run of this effect (with the restored array), which the guard
+  // lets through.
+  const skipNextPersistRef = useRef(true)
   // Tracks which ids have already fired the completion event, so a re-render
   // (or a timer that stays completed-but-undismissed across many ticks)
-  // never fires it twice.
+  // never fires it twice *within this mount*. `stored[].eventFired` is the
+  // persisted counterpart that also survives a reload — see the effect below.
   const firedRef = useRef<Set<string>>(new Set())
 
-  // Persist on every change.
+  // On mount: read localStorage and apply whatever was persisted. Runs only
+  // on the client, after hydration, so both render passes agree on empty —
+  // mirrors `ThemeProvider.tsx`'s mount effect for the same reason.
   useEffect(() => {
+    const restored = readStored()
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setStored(restored)
+    // A timer already running needs `tick` refreshed to "now" too, or the
+    // very first computed `remainingSeconds` uses the stale mount-time tick
+    // instead of the actual current time.
+    setTick(nowMs())
+  }, [])
+
+  // Persist on every change, except the very first run (see the guard's own
+  // comment above).
+  useEffect(() => {
+    if (skipNextPersistRef.current) {
+      skipNextPersistRef.current = false
+      return
+    }
     writeStored(stored)
   }, [stored])
 
@@ -189,38 +249,85 @@ export function CookingTimersProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval)
   }, [hasRunning])
 
-  // Fire the completion event exactly once per timer. This only dispatches
-  // a DOM event — it never calls setState — so doing it as a side effect of
-  // `timers` changing is safe (unlike mutating `stored` here would be).
+  // Fire the completion event exactly once per timer, ever — not just once
+  // per mount. `firedRef` alone only guards within this mount; a timer that
+  // completed, then survives a reload still completed-but-undismissed,
+  // would have a fresh (empty) `firedRef` and re-fire. `stored[].eventFired`
+  // is the persisted half of that guard, so it also does need a `setState`
+  // here (unlike a purely in-memory guard would) — but it's conditioned on
+  // "not already fired", so it settles after at most one extra render per
+  // newly-completed timer instead of looping.
   useEffect(() => {
-    for (const t of timers) {
-      if (t.status === 'completed' && !firedRef.current.has(t.id)) {
-        firedRef.current.add(t.id)
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(
-            new CustomEvent(TIMER_COMPLETED_EVENT, { detail: { id: t.id, label: t.label } }),
-          )
-        }
+    const newlyCompleted = timers.filter(
+      (t) => t.status === 'completed' && !firedRef.current.has(t.id),
+    )
+    if (newlyCompleted.length === 0) return
+
+    for (const t of newlyCompleted) {
+      firedRef.current.add(t.id)
+    }
+
+    // Of those, drop any already marked fired in the persisted record —
+    // that means they completed in an earlier session (before a reload)
+    // and already dispatched the event then.
+    const toDispatch = newlyCompleted.filter((t) => {
+      const persisted = stored.find((s) => s.id === t.id)
+      return !persisted?.eventFired
+    })
+    if (toDispatch.length === 0) return
+
+    if (typeof window !== 'undefined') {
+      for (const t of toDispatch) {
+        window.dispatchEvent(
+          new CustomEvent(TIMER_COMPLETED_EVENT, { detail: { id: t.id, label: t.label } }),
+        )
       }
     }
-  }, [timers])
 
-  const start = useCallback((label: string, seconds: number): string => {
-    const id = makeId()
-    const duration = Math.max(1, Math.round(seconds))
-    setStored((prev) => [
-      ...prev,
-      {
-        id,
-        label,
-        durationSeconds: duration,
-        endAt: nowMs() + duration * 1000,
-        frozenRemaining: duration,
-        status: 'running',
-      },
-    ])
-    return id
+    const dispatchedIds = new Set(toDispatch.map((t) => t.id))
+    setStored((prev) =>
+      prev.map((s) => (dispatchedIds.has(s.id) ? { ...s, eventFired: true } : s)),
+    )
+  }, [timers, stored])
+
+  // Refreshes `tick` to "now" and returns that same timestamp, so a caller
+  // can use it for `endAt` math too and both stay in sync. Shared by `start`
+  // and `resume`: either can hand a timer a freshly-computed `endAt` while
+  // `tick` (last updated whenever the shared interval last fired) is still
+  // sitting wherever it was before — possibly well behind "now" after any
+  // idle stretch with nothing running to keep that interval alive. Without
+  // this, the very first computed `remainingSeconds` for that timer briefly
+  // shows phantom extra time.
+  const refreshTick = useCallback((): number => {
+    const now = nowMs()
+    setTick(now)
+    return now
   }, [])
+
+  const start = useCallback(
+    (label: string, seconds: number): string => {
+      const id = makeId()
+      const duration = Math.max(1, Math.round(seconds))
+      const now = refreshTick()
+      setStored((prev) => [
+        ...prev,
+        {
+          id,
+          label,
+          durationSeconds: duration,
+          endAt: now + duration * 1000,
+          frozenRemaining: duration,
+          status: 'running',
+          eventFired: false,
+        },
+      ])
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(TIMER_STARTED_EVENT, { detail: { id, label } }))
+      }
+      return id
+    },
+    [refreshTick],
+  )
 
   const pause = useCallback((id: string) => {
     setStored((prev) =>
@@ -232,14 +339,18 @@ export function CookingTimersProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
-  const resume = useCallback((id: string) => {
-    setStored((prev) =>
-      prev.map((t) => {
-        if (t.id !== id || t.status !== 'paused') return t
-        return { ...t, status: 'running', endAt: nowMs() + t.frozenRemaining * 1000 }
-      }),
-    )
-  }, [])
+  const resume = useCallback(
+    (id: string) => {
+      const now = refreshTick()
+      setStored((prev) =>
+        prev.map((t) => {
+          if (t.id !== id || t.status !== 'paused') return t
+          return { ...t, status: 'running', endAt: now + t.frozenRemaining * 1000 }
+        }),
+      )
+    },
+    [refreshTick],
+  )
 
   const dismiss = useCallback((id: string) => {
     firedRef.current.delete(id)
