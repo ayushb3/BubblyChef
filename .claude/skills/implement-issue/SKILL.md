@@ -213,9 +213,11 @@ issue is **not** done — keep the dev role on it; do not open the PR.
 
 ### 4.1 Pre-PR edge-case review (WORKFLOW.md §7)
 
-Before opening the PR, get a **fresh-context Opus review** of the diff: run the
-`code-review` skill, or spawn a reviewer with `model: opus` that has seen none of
-the implementation. Tell it to hunt edge cases, not style. The classes that cost
+Before opening the PR, **you** (the orchestrator, not the dev role) get a
+**fresh-context Opus review** of the branch's diff. Run the `code-review` skill, or
+spawn a reviewer with `model: opus` that has seen none of the implementation. The
+dev role can't do this itself: `code-review` spawns two sub-agents, and dev roles
+have no `Agent` tool. Send the findings back to the dev role to fix. Tell it to hunt edge cases, not style. The classes that cost
 review rounds before: key casing, duplicates, cross-user data leaking through
 caches, null or missing fields, and ordering. For every finding, fix the class,
 then grep the diff for siblings of the same pattern before pushing.

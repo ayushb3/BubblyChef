@@ -348,9 +348,12 @@ the same few families: key casing, duplicate components, cross-user cache rows,
 duplicate suggestions, a null unit. Each fix handled only the instance it was shown.
 Four rules:
 
-- **Opus reviews before the PR opens.** The dev agent gets a fresh-context Opus review
-  of its diff, aimed at edge cases rather than style, before `gh pr create`
-  (`/implement-issue` §4.1). A Sonnet implementer reviewing its own work misses the
+- **Opus reviews before the PR opens.** When the dev role reports done, the
+  orchestrator runs a fresh-context Opus review of the branch's diff, aimed at edge
+  cases rather than style, before `gh pr create` (`/implement-issue` §4.1). The
+  orchestrator runs it, not the dev role: `/code-review` fans out to two sub-agents,
+  and dev roles have no `Agent` tool under the one-level cap above. It also means a
+  Sonnet implementer isn't the only one reviewing its own work, and it would miss the
   same things twice.
 - **Fix the class, then sweep for siblings.** Every finding names a pattern, not just
   a line. Before pushing the fix, grep the diff for other instances of the same
