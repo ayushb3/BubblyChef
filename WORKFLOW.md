@@ -142,6 +142,26 @@ Each role file states, at minimum:
 - Its stack/domain context
 - Any project-specific conventions it must follow
 
+### Before spawning: the feasibility check
+
+A dev agent that starts an issue it can't finish costs a full implementation and a
+review round, and then the PR sits. PR #617 was built on issue #490 while its
+blocker #489 was still open. PRs #614 and #616 each hit a product decision halfway
+through. So the orchestrator (or `/implement-issue` §1.1) answers three questions
+before delegating. Any "yes" means don't spawn, with the one exception in item 2:
+
+1. **Blocked?** A "blocked by" / "depends on" pointing at an open issue.
+2. **Protected?** The likely change touches a CODEOWNERS path. By default, skip it and
+   add it to the human's pile. The exception is when the human asked for that specific
+   issue; their presence in the session isn't enough. Then build it and flag it: the
+   protected path goes at the top of the PR body, and migrations follow
+   `/implement-issue` §3.1. Code-owner review then gates the merge.
+3. **Undecided?** The triage comment leaves a product question open with no
+   defensible conservative default.
+
+The dev brief keeps its own hard stops as a second line. This check exists so the
+orchestrator catches these cases before an agent is spawned, not after it stalls.
+
 ### Orchestration depth: one level, hard cap
 
 The human drives the `pm` role directly (in-thread, no wrapper); `pm` spawns dev
@@ -178,6 +198,15 @@ Concretely:
   `how` skill run as (or by) a subagent — not the PM reading the subsystem itself.
 - A PM turn that's mostly tool output rather than orchestration decisions is a sign
   something should have been delegated instead.
+- **Context size is capped by auto-compaction, and state lives in a file.** Supervising
+  contexts of 365–634k tokens were the main cost driver in the 2026-09-23 cost report.
+  - A long-running orchestrator runs with a lowered auto-compact window. `/autocompact
+    400k tokens` is the current setting.
+  - It keeps a state file current at every milestone: mode, in-flight PRs and agents,
+    the human's decision pile, script paths.
+  - It re-reads that file after every compaction. Compaction keeps in-flight agents
+    and monitors attached to the same session. A handoff to a fresh session orphans
+    them. So a manual handoff is only for a natural break with the human present.
 
 ## 6. Autonomy gate
 
@@ -315,6 +344,37 @@ other work. So:
   skill doesn't know this rule (it's drift-tracked in `skills-lock.json` and has no PR
   step), so whoever writes the handoff adds the list by hand.
 
+### Review rounds: review first, sweep siblings, cap at three
+
+PR #616 went through five Claude-review rounds. Each one found a new edge case from
+the same few families: key casing, duplicate components, cross-user cache rows,
+duplicate suggestions, a null unit. Each fix handled only the instance it was shown.
+Four rules. They apply to PRs an orchestrator session drives directly (ship mode,
+`/implement-issue`). Agent-loop PRs keep the caps in the agent-loop table below,
+which `agent-loop.js` enforces: up to 3 pre-PR fix rounds (so up to 4 Opus reviews)
+and 2 Respond rounds. "Review round" below means one Claude GitHub review.
+
+- **Opus reviews before the PR opens.** When the dev role reports done, the
+  orchestrator runs a fresh-context Opus review of the branch's diff, aimed at edge
+  cases rather than style, before `gh pr create` (`/implement-issue` §4.1). The
+  orchestrator runs it, not the dev role: `/code-review` fans out to two sub-agents,
+  and dev roles have no `Agent` tool under the one-level cap above. It also means a
+  Sonnet implementer isn't the only one reviewing its own work, and it would miss the
+  same things twice.
+- **Fix the class, then sweep for siblings.** Every finding names a pattern, not just
+  a line. Before pushing the fix, grep the diff for other instances of the same
+  pattern and fix those too. The resolutions comment says what the sweep covered.
+- **Fixes after the second review go to a fresh agent.** The implementer fixes the
+  first Claude review's findings. If the second review still has findings, that fix
+  goes to a new agent. Its brief is only the open findings, the diff, and the sweep
+  instruction. It does not continue the implementer, whose context is large and
+  whose blind spots produced the findings.
+- **Cap: three review rounds.** If the third Claude review still raises new findings,
+  stop pushing. Post a comment listing the open findings with a one-line assessment
+  of each, and escalate to the human. There's no fourth round without them. A PR that
+  keeps turning up new edge cases usually has a design question underneath, and
+  more patches won't answer it.
+
 ### Deploy-side checks
 
 `main` auto-deploys to Vercel and Railway, so the last line of defence is after the
@@ -362,6 +422,59 @@ CODEOWNERS-protected: an agent that could edit it could raise its own limits.
 
 `dryRun: true` stops after Decide and deletes the issue branch: a cheap way to see how the
 loop reads an issue before letting it write anything.
+
+### Lesson curation (nightly)
+
+Each loop run proposes lessons in its PR body ("Lessons proposed") and reads
+`docs/agents/lessons.md` before it starts; no agent edits that file directly.
+`scripts/agent-gates/curate-lessons.cjs` closes the gap (issue #630). It runs nightly on
+Ayush's PC, like the loop itself: cloud sessions can't act as the bot (issue #474).
+
+- **Code decides what is new.** It reads the "Lessons proposed" section of every PR
+  merged since its watermark, drops "none" entries, and skips any source already handled.
+  A source counts as handled if `lessons.md` links it, if an earlier curation PR lists it
+  in its `lessons-curation-sources` marker, or if the local state file
+  (`~/.config/bubblychef/lessons-curation.json`, which holds the watermark) records it.
+  Losing any one of these records therefore never produces a second PR.
+- **A model judges the rest.** One `claude -p --model opus --json-schema` call, allowed
+  only Read/Grep/Glob, gets the current file and the candidates. It keeps or drops every
+  candidate: duplicate, issue-specific, not a lesson, or no longer true. It also merges
+  near-duplicates and words each kept lesson in the file's format. The script rejects a
+  judgment that leaves a candidate undecided. Source links are added by code, never by
+  the model.
+- **One PR, as `bubblychef-bot`, only if something survives.** It is opened from a
+  throwaway worktree at `origin/main`, so the checkout it runs from is never touched. It
+  never pushes to `main`. While a curation PR is open, later runs do nothing. It honours
+  `AGENTS_ENABLED` and checks the bot identity before writing, as the loop does.
+
+By hand, from the main checkout (on any branch that has the script):
+
+```bash
+node scripts/agent-gates/curate-lessons.cjs --dry-run       # reads everything, writes nothing
+node scripts/agent-gates/curate-lessons.cjs --collect-only  # no model call: list the candidates
+node scripts/agent-gates/curate-lessons.cjs                 # the real run
+node scripts/agent-gates/curate-lessons.test.cjs            # deterministic tests
+```
+
+Nightly, Windows Task Scheduler. Ayush registers it; nothing registers it for him.
+Run this once from PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.config\bubblychef" | Out-Null
+$action   = New-ScheduledTaskAction -Execute 'cmd.exe' -WorkingDirectory 'C:\Users\ayush\Code\BubblyChef' `
+              -Argument '/c node scripts\agent-gates\curate-lessons.cjs >> "%USERPROFILE%\.config\bubblychef\lessons-curation.log" 2>&1'
+$trigger  = New-ScheduledTaskTrigger -Daily -At 3:30am
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+Register-ScheduledTask -TaskName 'BubblyChef lessons curation' -Action $action -Trigger $trigger -Settings $settings
+```
+
+`Start-ScheduledTask 'BubblyChef lessons curation'` fires it once to test, and the log
+shows the result. `Unregister-ScheduledTask 'BubblyChef lessons curation'` removes it.
+Registered without `-User`, it runs as Ayush and only while he is logged on. That is what
+`claude` and the bot's `gh` config need. `-StartWhenAvailable` catches up a run missed
+while the PC slept. The first run also backfills the lessons proposed in
+`docs/plans/2026-09-20-autonomous-session-report.md` §9 and
+`docs/plans/2026-09-21-handoff-post-autonomous-batch.md` §7 (and §5, which §7 points to).
 
 
 ## 8. House rules

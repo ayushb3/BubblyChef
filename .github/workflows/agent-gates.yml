@@ -37,6 +37,8 @@ jobs:
       # The merge gate the loop's small-tier auto-merge relies on (claude-review.yml).
       - name: Test the review-verdict gate
         run: node scripts/agent-gates/review-verdict.test.cjs
+      - name: Test the lessons curation job
+        run: node scripts/agent-gates/curate-lessons.test.cjs
 
   exemption:
     name: F2P exemption is legitimate

@@ -3,6 +3,8 @@
  * one-shot celebrate bounce/sparkle burst, and reduced-motion gating.
  */
 import React from 'react'
+import fs from 'fs'
+import path from 'path'
 import { render, screen } from '@testing-library/react'
 
 let mockReducedMotion = false
@@ -40,7 +42,7 @@ jest.mock('framer-motion', () => {
   }
 })
 
-import BubblesMascot from '@/components/ui/BubblesMascot'
+import BubblesMascot, { STATE_SRC, type BubblesState } from '@/components/ui/BubblesMascot'
 
 describe('BubblesMascot (#525)', () => {
   beforeEach(() => {
@@ -100,6 +102,34 @@ describe('BubblesMascot (#525)', () => {
       // animate, i.e. the idle float (`y: [0, -6, 0]`, repeat: Infinity)
       // does not leak through for any state when motion is disabled.
       expect(motionWrapper?.getAttribute('data-motion-animate')).toBe('{}')
+    },
+  )
+
+  // Issue #612 (PR #592 review, finding 2): the component's `onError` hides
+  // broken images, so a wrong `STATE_SRC` entry renders nothing while
+  // `getByAltText` assertions above stay green. Iterating `STATE_SRC`
+  // directly (rather than a hardcoded state list) keeps this guarding once
+  // #592 swaps in the final art and edits the map.
+  describe.each(Object.entries(STATE_SRC) as Array<[BubblesState, string]>)(
+    'STATE_SRC["%s"] = %s',
+    (state, src) => {
+      it('is what the rendered <img> uses for src', () => {
+        render(<BubblesMascot state={state} />)
+        const img = screen.getByAltText(`Bubbles ${state}`)
+        const rawSrc = img.getAttribute('src') ?? ''
+        // next/image rewrites `src` through its optimizer
+        // (`/_next/image?url=<encoded>&w=...&q=...`) rather than rendering
+        // the path verbatim, so pull the real path back out of the `url`
+        // query param before comparing against the map.
+        const optimizedUrl = new URL(rawSrc, 'http://localhost')
+        const actualSrc = optimizedUrl.searchParams.get('url') ?? rawSrc
+        expect(actualSrc).toBe(src)
+      })
+
+      it('resolves to a real file under nextjs/public/', () => {
+        const filePath = path.join(__dirname, '..', '..', 'public', src)
+        expect(fs.existsSync(filePath)).toBe(true)
+      })
     },
   )
 })
