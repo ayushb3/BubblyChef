@@ -119,6 +119,9 @@ pick issue (ready-for-agent, by priority)
 - **Lessons:** the loop *proposes* lessons in the PR body; the nightly job curates them
   into `docs/agents/lessons.md` (merge good ones, trim duplicates). The loop reads the
   file; interactive sessions don't. Not appended to `CLAUDE.md`.
+  *Built (issue #630):* `scripts/agent-gates/curate-lessons.cjs`, run nightly from Windows
+  Task Scheduler on Ayush's PC, not as a GitHub Action (see "Scheduled jobs"). Setup in
+  `WORKFLOW.md` §7, "Lesson curation (nightly)".
 
 ### Review
 
@@ -159,6 +162,11 @@ Channels: **GitHub mobile** and the **Claude app**.
 Digest, triage and lesson curation run as **GitHub Actions scheduled workflows** using
 the Claude GitHub Action on the Max OAuth token — versioned in `.github/workflows/`
 and CODEOWNERS-protected, not configured in a web UI.
+
+*Superseded for lesson curation (issue #630):* the loop became local-only when cloud
+sessions turned out unable to act as the bot (issue #474), and the bot token has no
+`workflow` scope. Lesson curation therefore runs on Ayush's PC from Windows Task
+Scheduler (`scripts/agent-gates/curate-lessons.cjs`; `WORKFLOW.md` §7).
 
 ### Kill switch
 

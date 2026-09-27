@@ -93,6 +93,32 @@ If the acceptance criteria are actually unclear once you read it, it was
 mislabelled — comment saying why, relabel `needs-info`, and pick the next issue
 instead of guessing.
 
+### 1.1 Feasibility check — before any delegation (WORKFLOW.md §5)
+
+Before spawning a dev role, answer three questions from the issue body, its
+comments, and `.github/CODEOWNERS`. Any "yes" means **don't spawn**. The one
+exception is in item 2:
+
+1. **Blocked?** Does the issue or a comment say "blocked by", "depends on", or
+   "after #N", where #N is still open? Check with `gh issue view N --json state`.
+   If so, pick the blocker if it's `ready-for-agent`, otherwise skip.
+2. **Protected?** Will the likely change touch a path in `.github/CODEOWNERS`?
+   Read the file itself. Examples, not a complete list: all of `supabase/`,
+   auth, prompts, `.github/`, `.claude/{settings.json,hooks,agents,workflows}`,
+   `scripts/agent-gates/`, dependency manifests, `ai-service/railway.json` and
+   `ai-service/Dockerfile`. If it does, the PR can't merge without the human, so:
+   - **By default:** skip it and add it to the human's pile.
+   - **Exception: the human asked for this specific issue.** Their presence in the
+     session isn't enough. Then build it, flag the protected path at the top of
+     the PR body, and follow §3.1 if it's a migration. Code-owner review gates
+     the merge.
+3. **Undecided?** Does the triage comment leave a product question open, with
+   no reading that supports a conservative default? If so, comment the question,
+   relabel `needs-info`, and skip.
+
+Record the outcome in one line when you report ("feasibility: clear" or which
+question stopped it).
+
 ## 2. Branch
 
 Off the current default branch (`main`), per WORKFLOW.md §4:
@@ -191,6 +217,17 @@ errors; otherwise skip it — do not block the PR on it.
 Only run the gates relevant to what changed (a `nextjs`-only change doesn't need
 `pytest`), but never skip a gate that covers touched code. If a gate fails, the
 issue is **not** done — keep the dev role on it; do not open the PR.
+
+### 4.1 Pre-PR edge-case review (WORKFLOW.md §7)
+
+Before opening the PR, **you** (the orchestrator, not the dev role) get a
+**fresh-context Opus review** of the branch's diff. Run the `code-review` skill, or
+spawn a reviewer with `model: opus` that has seen none of the implementation. The
+dev role can't do this itself: `code-review` spawns two sub-agents, and dev roles
+have no `Agent` tool. Send the findings back to the dev role to fix. Tell it to hunt edge cases, not style. The classes that cost
+review rounds before: key casing, duplicates, cross-user data leaking through
+caches, null or missing fields, and ordering. For every finding, fix the class,
+then grep the diff for siblings of the same pattern before pushing.
 
 ## 5. Open a draft PR
 
