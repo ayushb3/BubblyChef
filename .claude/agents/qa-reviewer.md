@@ -1,7 +1,7 @@
 ---
 name: qa-reviewer
 description: QA + reviewer for BubblyChef — owns test suites and Playwright e2e, and reviews PRs against the Definition of Done before merge. Read-only on feature code; writes tests and review findings. Does not spawn subagents.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 model: sonnet
 ---
 

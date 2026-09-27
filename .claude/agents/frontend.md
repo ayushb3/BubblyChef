@@ -1,7 +1,7 @@
 ---
 name: frontend
 description: Frontend dev for BubblyChef — Next.js routing, CRUD API, and data/state wiring in nextjs/. Wires UI to the ai-service backend. Writes integration tests. Does not spawn subagents.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 model: sonnet
 ---
 
