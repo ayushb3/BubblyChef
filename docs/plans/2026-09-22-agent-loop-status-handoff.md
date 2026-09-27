@@ -90,6 +90,16 @@ Cost: roughly 20 minutes and 6–8M tokens processed for a small fix; the #402 a
    copy (`tr -d '\r'`) — same code, and worth diffing against the committed file so the
    run is provably the approved script.
 
+## Built since this handoff
+
+- **Lesson curation (issue #630).** The "Lessons proposed" sections the loop writes in PR
+  bodies are no longer left unread. `scripts/agent-gates/curate-lessons.cjs` runs nightly on
+  Ayush's PC (Windows Task Scheduler), collects proposals from PRs merged since its
+  watermark, has Opus judge them, and opens one PR as bubblychef-bot adding the survivors to
+  `docs/agents/lessons.md`, each linked to its source. The first run backfills the 09-20
+  report §9 and the 09-21 handoff §7. How to run it and schedule it: `WORKFLOW.md` §7,
+  "Lesson curation (nightly)".
+
 ## Still open
 
 - Issue #467 — loop optimisations: production before-screenshots, and a Playwright helper.
