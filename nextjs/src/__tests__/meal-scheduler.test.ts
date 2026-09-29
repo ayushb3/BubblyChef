@@ -51,7 +51,7 @@ describe('scheduleMeal — pasta + sauce + salad', () => {
 
   it('interleaves the salad while the sauce reduces, with the exact cue string', () => {
     const row = timeline.rows.find((r) => r.cue !== undefined)
-    expect(row?.cue).toBe('While the sauce reduces, Chop salad veg')
+    expect(row?.cue).toBe('While the sauce reduces, chop salad veg')
   })
 
   it('matches the full golden timeline', () => {
@@ -75,8 +75,8 @@ describe('scheduleMeal — pasta + sauce + salad', () => {
       undefined,
       undefined,
       undefined,
-      'While the sauce reduces, Chop salad veg',
-      'While the sauce reduces, Toss salad',
+      'While the sauce reduces, chop salad veg',
+      'While the sauce reduces, toss salad',
       undefined,
     ])
   })
@@ -133,19 +133,19 @@ describe('scheduleMeal — roast + two sides', () => {
   it('cues alternate between whichever roast is the longest ongoing one', () => {
     const cues = timeline.rows.map((r) => r.cue).filter((c): c is string => c !== undefined)
     expect(cues).toEqual([
-      'While the chicken roasts, Parboil potatoes',
-      'While the chicken roasts, Toss potatoes',
-      'While the chicken roasts, Roast potatoes',
-      'While the potatoes roast, Rest chicken',
-      'While the potatoes roast, Trim beans',
-      'While the potatoes roast, Steam beans',
-      'While the potatoes roast, Carve chicken',
+      'While the chicken roasts, parboil potatoes',
+      'While the chicken roasts, toss potatoes',
+      'While the chicken roasts, roast potatoes',
+      'While the potatoes roast, rest chicken',
+      'While the potatoes roast, trim beans',
+      'While the potatoes roast, steam beans',
+      'While the potatoes roast, carve chicken',
     ])
   })
 })
 
 describe('scheduleMeal — one-pan meal (kitchen limits)', () => {
-  const timeline = scheduleMeal({ dishes: ONE_PAN_MEAL.dishes })
+  const timeline = scheduleMeal({ dishes: ONE_PAN_MEAL.dishes, constraints: ONE_PAN_MEAL.constraints })
 
   it('never overlaps two steps sharing the "pan" exclusive tag (guarantee 3)', () => {
     const panSteps = timeline.placements
@@ -158,12 +158,64 @@ describe('scheduleMeal — one-pan meal (kitchen limits)', () => {
     expect(panSteps[1].start).toBeGreaterThanOrEqual(panSteps[0].end)
   })
 
-  it('the pan side runs strictly after the pan main step (golden)', () => {
-    expect(timeline.total_minutes).toBe(11)
+  it('the hands-off braise waits for the sear to free the pan (golden)', () => {
+    expect(timeline.total_minutes).toBe(14)
     expect(timeline.placements.map((p) => [p.dish_id, p.step_index, p.start, p.end])).toEqual([
       ['chicken', 0, 0, 6],
-      ['chicken', 1, 6, 11],
-      ['veg', 0, 7, 11],
+      ['veg', 0, 6, 14],
+      ['chicken', 1, 9, 14],
+    ])
+  })
+
+  it('without the kitchen limit, the same pan-tagged steps overlap', () => {
+    const unlimited = scheduleMeal({ dishes: ONE_PAN_MEAL.dishes })
+    expect(unlimited.total_minutes).toBe(11)
+    const sear = unlimited.placements.find((p) => p.dish_id === 'chicken' && p.step_index === 0)!
+    const braise = unlimited.placements.find((p) => p.dish_id === 'veg' && p.step_index === 0)!
+    expect(braise.start).toBeLessThan(sear.end)
+  })
+
+  it('a limit the user named but no step uses changes nothing', () => {
+    const other = scheduleMeal({ dishes: ONE_PAN_MEAL.dishes, constraints: { exclusive_tags: ['oven'] } })
+    expect(other.placements).toEqual(scheduleMeal({ dishes: ONE_PAN_MEAL.dishes }).placements)
+  })
+})
+
+describe('scheduleMeal — cue copy (golden)', () => {
+  function twoDishes(ongoing: string | null, label: string): SchedulerDish[] {
+    return [
+      {
+        dish_id: 'a',
+        column: 'main',
+        title: 'A',
+        steps: [
+          step({ text: 'Simmer', label: 'Simmer', ongoing_label: ongoing, duration_minutes: 10, hands_on: false }),
+        ],
+      },
+      {
+        dish_id: 'b',
+        column: 'side_1',
+        title: 'B',
+        steps: [step({ text: label, label, duration_minutes: 3, hands_on: true })],
+      },
+    ]
+  }
+  const cues = (dishes: SchedulerDish[]) =>
+    scheduleMeal({ dishes }).rows.map((r) => r.cue).filter(Boolean)
+
+  it('"While {ongoing_label}, {label}" with the label lower-cased mid-sentence', () => {
+    expect(cues(twoDishes('the sauce reduces', 'Boil the pasta'))).toEqual([
+      'While the sauce reduces, boil the pasta',
+    ])
+  })
+
+  it('"Meanwhile, {label}" when the ongoing step has no ongoing label', () => {
+    expect(cues(twoDishes(null, 'Boil the pasta'))).toEqual(['Meanwhile, boil the pasta'])
+  })
+
+  it('keeps a leading all-caps word as written', () => {
+    expect(cues(twoDishes('the sauce reduces', 'BBQ the corn'))).toEqual([
+      'While the sauce reduces, BBQ the corn',
     ])
   })
 })

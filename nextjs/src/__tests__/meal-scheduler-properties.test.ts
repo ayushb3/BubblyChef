@@ -13,6 +13,8 @@ import type { Step } from '@/types/recipes'
 
 const COLUMNS: Column[] = ['main', 'side_1', 'side_2']
 const TAGS = ['pan', 'oven', 'board']
+// Every generated tag is a declared kitchen limit, so guarantee 3 is exercised on all of them.
+const LIMITS = { exclusive_tags: TAGS }
 
 function makeStep(rng: () => number, index: number): Step {
   const handsOn = rng() < 0.5
@@ -51,7 +53,7 @@ describe('scheduleMeal — property tests over seeded random dish sets', () => {
     for (const seed of SEEDS) {
       const rng = mulberry32(seed)
       const dishes = makeDishes(rng)
-      const timeline = scheduleMeal({ dishes })
+      const timeline = scheduleMeal({ dishes, constraints: LIMITS })
       const handsOn = timeline.placements.filter((p) => p.hands_on).sort((a, b) => a.start - b.start)
       for (let i = 1; i < handsOn.length; i++) {
         expect(handsOn[i].start).toBeGreaterThanOrEqual(handsOn[i - 1].end)
@@ -63,7 +65,7 @@ describe('scheduleMeal — property tests over seeded random dish sets', () => {
     for (const seed of SEEDS) {
       const rng = mulberry32(seed)
       const dishes = makeDishes(rng)
-      const timeline = scheduleMeal({ dishes })
+      const timeline = scheduleMeal({ dishes, constraints: LIMITS })
       const byKey = new Map(timeline.placements.map((p) => [`${p.dish_id}:${p.step_index}`, p]))
       for (const dish of dishes) {
         dish.steps.forEach((s, i) => {
@@ -82,7 +84,7 @@ describe('scheduleMeal — property tests over seeded random dish sets', () => {
     for (const seed of SEEDS) {
       const rng = mulberry32(seed)
       const dishes = makeDishes(rng)
-      const timeline = scheduleMeal({ dishes })
+      const timeline = scheduleMeal({ dishes, constraints: LIMITS })
       const tagPlacements = new Map<string, typeof timeline.placements>()
       for (const dish of dishes) {
         dish.steps.forEach((s, i) => {
@@ -107,7 +109,7 @@ describe('scheduleMeal — property tests over seeded random dish sets', () => {
     for (const seed of SEEDS) {
       const rng = mulberry32(seed)
       const dishes = makeDishes(rng)
-      const timeline = scheduleMeal({ dishes })
+      const timeline = scheduleMeal({ dishes, constraints: LIMITS })
       const ends = dishes
         .filter((d) => d.steps.length > 0)
         .map((d) =>
@@ -123,8 +125,8 @@ describe('scheduleMeal — property tests over seeded random dish sets', () => {
     for (const seed of SEEDS) {
       const rng = mulberry32(seed)
       const dishes = makeDishes(rng)
-      const a = scheduleMeal({ dishes })
-      const b = scheduleMeal({ dishes: JSON.parse(JSON.stringify(dishes)) })
+      const a = scheduleMeal({ dishes, constraints: LIMITS })
+      const b = scheduleMeal({ dishes: JSON.parse(JSON.stringify(dishes)), constraints: LIMITS })
       expect(b).toEqual(a)
     }
   })
@@ -133,9 +135,9 @@ describe('scheduleMeal — property tests over seeded random dish sets', () => {
     for (const seed of SEEDS) {
       const rng = mulberry32(seed)
       const dishes = makeDishes(rng)
-      const timeline = scheduleMeal({ dishes })
+      const timeline = scheduleMeal({ dishes, constraints: LIMITS })
       const sequentialTotal = dishes.reduce(
-        (acc, d) => acc + scheduleMeal({ dishes: [d] }).total_minutes,
+        (acc, d) => acc + scheduleMeal({ dishes: [d], constraints: LIMITS }).total_minutes,
         0,
       )
       expect(timeline.total_minutes).toBeLessThanOrEqual(sequentialTotal)
@@ -146,7 +148,7 @@ describe('scheduleMeal — property tests over seeded random dish sets', () => {
     for (const seed of SEEDS) {
       const rng = mulberry32(seed)
       const dishes = makeDishes(rng)
-      const fresh = scheduleMeal({ dishes })
+      const fresh = scheduleMeal({ dishes, constraints: LIMITS })
       if (fresh.placements.length === 0) continue
 
       // Mark roughly the first third of steps (by start time) as resolved,
@@ -168,7 +170,7 @@ describe('scheduleMeal — property tests over seeded random dish sets', () => {
       }
       progress.now_minutes = nowMinutes
 
-      const replanned = scheduleMeal({ dishes, progress })
+      const replanned = scheduleMeal({ dishes, progress, constraints: LIMITS })
 
       // Fixed placements are unchanged.
       for (const p of resolved) {

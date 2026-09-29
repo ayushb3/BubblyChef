@@ -39,8 +39,8 @@ The deterministic meal scheduler's output for a set of 1-3 dishes (a main plus o
 ### Kitchen limits
 User-stated cooking constraints, e.g. "I only have one pan" — not an equipment model (no burners/ovens/pans-as-inventory), just what the user says.
 
-- Extracted from chat as short phrases and mapped to `exclusive` tags on the relevant Structured steps (e.g. `"one pan"` → `pan`).
-- The Meal timeline scheduler treats each tag as a unary resource: two steps sharing a tag, hands-on or hands-off, never overlap — under "one pan", two pan steps always run one after the other regardless of which dish they belong to.
+- Two halves. A Structured step's `exclusive` tags say what equipment it ties up (`pan`, `oven`), whoever is cooking. The user's limits, extracted from chat as short phrases (`"one pan"` → `pan`), live on the Meal and reach the scheduler as `constraints.exclusive_tags`.
+- The Meal timeline scheduler treats a tag as a unary resource only when it is one of the user's limits. Under "one pan", two pan steps, hands-on or hands-off, never overlap and run one after the other, whichever dish they belong to. With no limit, the same steps overlap freely.
 - Stored on the meal (issue #647's `meals.constraints`), out of scope for #649 itself, which only consumes the tags already present on steps.
 
 ### Pantry

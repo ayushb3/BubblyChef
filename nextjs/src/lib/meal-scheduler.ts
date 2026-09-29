@@ -54,6 +54,13 @@ export interface SchedulerDish {
 export interface SchedulerConstraints {
   /** Every dish's last step should end within this many minutes of the latest. Default 2. */
   finish_window_minutes?: number
+  /**
+   * The user's kitchen limits ("I only have one pan" → `['pan']`). A step's
+   * `exclusive` tag is a unary resource only when it's listed here: two
+   * `pan`-tagged steps overlap freely for someone with several pans, and run
+   * one after the other under "one pan". Default: none.
+   */
+  exclusive_tags?: string[]
 }
 
 export type StepProgressStatus = 'done' | 'skipped' | 'running'
@@ -187,6 +194,7 @@ interface SanitizedDish {
 function sanitizeDish(
   dish: SchedulerDish,
   warnings: Set<SchedulerWarning>,
+  kitchenLimits: ReadonlySet<string>,
 ): { dish: SanitizedDish; degraded: boolean } {
   let sawInvalidDep = false
 
@@ -212,7 +220,8 @@ function sanitizeDish(
       duration_minutes: duration,
       hands_on: s.hands_on,
       depends_on: validDeps,
-      exclusive: s.exclusive ?? [],
+      // Only the tags the user actually named as kitchen limits constrain the plan.
+      exclusive: (s.exclusive ?? []).filter((t) => kitchenLimits.has(t)),
     }
   })
 
@@ -556,10 +565,23 @@ function buildCue(
   if (bestCol === null) return undefined
 
   const ongoingCell = cells[bestCol] as RowCellOngoing
+  const action = midSentence(startCell.label)
   if (ongoingCell.ongoing_label) {
-    return `While ${ongoingCell.ongoing_label}, ${startCell.label}`
+    return `While ${ongoingCell.ongoing_label}, ${action}`
   }
-  return `Meanwhile, ${startCell.label}`
+  return `Meanwhile, ${action}`
+}
+
+/**
+ * Labels are imperatives written to stand alone ("Boil the pasta"); inside a
+ * cue they follow a comma, so the first letter drops to lower case ("While
+ * the sauce reduces, boil the pasta"). A leading all-caps word ("BBQ the
+ * ribs") is left alone.
+ */
+function midSentence(label: string): string {
+  const first = label.split(/\s/, 1)[0] ?? ''
+  if (first.length > 1 && first === first.toUpperCase()) return label
+  return label.charAt(0).toLowerCase() + label.slice(1)
 }
 
 function buildTimeline(
@@ -684,12 +706,13 @@ function buildTimeline(
 export function scheduleMeal(input: ScheduleMealInput): MealTimeline {
   const finishWindowMinutes =
     input.constraints?.finish_window_minutes ?? DEFAULT_FINISH_WINDOW_MINUTES
+  const kitchenLimits = new Set(input.constraints?.exclusive_tags ?? [])
   const warnings = new Set<SchedulerWarning>()
   let degraded = false
 
   const sanitizedDishes: SanitizedDish[] = []
   for (const d of input.dishes) {
-    const { dish, degraded: dishDegraded } = sanitizeDish(d, warnings)
+    const { dish, degraded: dishDegraded } = sanitizeDish(d, warnings, kitchenLimits)
     sanitizedDishes.push(dish)
     if (dishDegraded) degraded = true
   }

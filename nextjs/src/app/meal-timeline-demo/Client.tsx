@@ -29,7 +29,7 @@ export default function MealTimelineDemoClient() {
 
   const fixture = ALL_MEAL_FIXTURES[fixtureIndex]
 
-  const timeline = useMemo(() => scheduleMeal({ dishes: fixture.dishes }), [fixture])
+  const timeline = useMemo(() => scheduleMeal({ dishes: fixture.dishes, constraints: fixture.constraints }), [fixture])
 
   const columns = useMemo(
     () =>

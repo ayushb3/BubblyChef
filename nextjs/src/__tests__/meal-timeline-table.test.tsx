@@ -74,7 +74,7 @@ describe('MealTimelineTable', () => {
         ]}
       />,
     )
-    expect(screen.getByText(/While the sauce reduces, Chop salad veg/)).toBeInTheDocument()
+    expect(screen.getByText(/While the sauce reduces, chop salad veg/)).toBeInTheDocument()
   })
 
   it('renders relative time offsets by default ("+0", "+N min")', () => {
@@ -108,28 +108,28 @@ describe('MealTimelineTable', () => {
   })
 
   it('a one-pan meal shows the two pan steps in sequence, never overlapping in rows', () => {
-    const timeline = scheduleMeal({ dishes: ONE_PAN_MEAL.dishes })
+    const timeline = scheduleMeal({ dishes: ONE_PAN_MEAL.dishes, constraints: ONE_PAN_MEAL.constraints })
     render(
       <MealTimelineTable
         timeline={timeline}
         columns={[
           { column: 'main', title: 'Pan-seared chicken' },
-          { column: 'side_1', title: 'Pan-fried vegetables' },
+          { column: 'side_1', title: 'Braised vegetables' },
         ]}
       />,
     )
     const rows = screen.getAllByTestId('meal-timeline-row')
-    // The main's sear starts in the first row, the side's fry starts later —
+    // The main's sear starts in the first row, the side's braise starts later —
     // never in the same row, since they share the "pan" exclusive tag.
     const rowWithSear = rows.find((r) =>
       within(r).queryAllByTestId('meal-timeline-cell-start').some((c) => /Sear chicken/.test(c.textContent ?? '')),
     )
-    const rowWithFry = rows.find((r) =>
-      within(r).queryAllByTestId('meal-timeline-cell-start').some((c) => /Fry veg/.test(c.textContent ?? '')),
+    const rowWithBraise = rows.find((r) =>
+      within(r).queryAllByTestId('meal-timeline-cell-start').some((c) => /Braise veg/.test(c.textContent ?? '')),
     )
     expect(rowWithSear).toBeDefined()
-    expect(rowWithFry).toBeDefined()
-    expect(rowWithSear).not.toBe(rowWithFry)
+    expect(rowWithBraise).toBeDefined()
+    expect(rowWithSear).not.toBe(rowWithBraise)
   })
 
   it('renders nothing-to-cook copy for an empty timeline', () => {

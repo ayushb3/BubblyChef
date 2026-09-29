@@ -6,7 +6,7 @@
  */
 
 import type { Step } from '@/types/recipes'
-import type { SchedulerDish } from '@/lib/meal-scheduler'
+import type { SchedulerConstraints, SchedulerDish } from '@/lib/meal-scheduler'
 
 function step(
   overrides: Partial<Step> & {
@@ -29,6 +29,8 @@ export interface MealFixture {
   slug: string
   title: string
   dishes: SchedulerDish[]
+  /** Passed straight to `scheduleMeal` — e.g. the one-pan meal's kitchen limit. */
+  constraints?: SchedulerConstraints
 }
 
 /** Main: pasta with sauce (two interleaved sub-tracks). Side: a green salad. */
@@ -170,10 +172,16 @@ export const ROAST_TWO_SIDES: MealFixture = {
   ],
 }
 
-/** A one-pan meal — main and side both tag their cooking step `pan`, so they run in sequence. */
+/**
+ * A one-pan meal. The chicken sear and the covered vegetable braise both use
+ * the pan. The braise is hands-off, so without the limit it would overlap the
+ * sear; the user's "one pan" (`exclusive_tags: ['pan']`) forces them into
+ * sequence.
+ */
 export const ONE_PAN_MEAL: MealFixture = {
   slug: 'one-pan-meal',
-  title: 'Pan-seared chicken + pan-fried vegetables (one pan)',
+  title: 'Pan-seared chicken + braised vegetables (one pan)',
+  constraints: { exclusive_tags: ['pan'] },
   dishes: [
     {
       dish_id: 'chicken',
@@ -200,13 +208,14 @@ export const ONE_PAN_MEAL: MealFixture = {
     {
       dish_id: 'veg',
       column: 'side_1',
-      title: 'Pan-fried vegetables',
+      title: 'Braised vegetables',
       steps: [
         step({
-          text: 'Fry the vegetables in the pan',
-          label: 'Fry veg',
-          duration_minutes: 4,
-          hands_on: true,
+          text: 'Braise the vegetables in the pan, covered',
+          label: 'Braise veg',
+          ongoing_label: 'the vegetables braise',
+          duration_minutes: 8,
+          hands_on: false,
           exclusive: ['pan'],
         }),
       ],
