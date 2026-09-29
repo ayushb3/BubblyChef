@@ -976,6 +976,51 @@ class SupabaseRepository:
             return _as_row(result.data[0])
         return None
 
+    # =========================================================================
+    # Meals (issue #650) -- default-servings lookup only. Full meal CRUD lives
+    # in the Next.js API layer (contract: docs/plans/2026-09-29-issue-650-meal-
+    # contract.md); this is the one read the ai-service meal generation
+    # workflow needs.
+    # =========================================================================
+
+    async def get_recent_meal_servings(self, user_id: str, limit: int = 3) -> list[int]:
+        """Servings from the user's most recently *cooked* meals, newest first.
+
+        Reads the `meals` table's `servings`/`last_cooked_at` columns
+        (migration 00013, issue #650) -- rows with no `last_cooked_at` (never
+        cooked) are excluded, since "default servings" should reflect what the
+        user actually cooks, not every draft they opened. Used only to pick a
+        default servings for meal generation when the ask has no explicit
+        number.
+
+        Returns `[]` on any query error -- including "relation does not
+        exist" before migration 00013 lands, which this ticket ships ahead
+        of -- so the caller degrades to a fixed default (2) rather than
+        failing the turn. Never raises.
+        """
+        try:
+            # `nullsfirst=False` (rather than a `.not_(..., "is", "null")`
+            # filter) pushes never-cooked rows to the end of the DESC order
+            # instead of excluding them at the query level -- Postgres's
+            # default for DESC is NULLS FIRST, which would otherwise put
+            # every never-cooked meal ahead of the ones we actually want.
+            result = (
+                self.client.table("meals")
+                .select("servings,last_cooked_at")
+                .eq("user_id", user_id)
+                .order("last_cooked_at", desc=True, nullsfirst=False)
+                .limit(limit)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning(f"Could not fetch recent meal servings for user {user_id}: {e}")
+            return []
+        return [
+            int(row["servings"])
+            for row in _as_rows(result.data or [])
+            if row.get("servings") is not None and row.get("last_cooked_at") is not None
+        ]
+
 
 # Singleton
 _repository: SupabaseRepository | None = None
