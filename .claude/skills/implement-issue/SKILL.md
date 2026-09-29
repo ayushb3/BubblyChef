@@ -174,11 +174,12 @@ CLI. Ayush asked for this on 2026-09-29 ("install supabase cli so you can
 handle it going forward"), then installed the CLI and linked the project with
 his own login. The CLI runs on that login token, so it needs no password.
 
-**Push last.** Write the migration with the code, but apply it only once
-everything else is done: gates green, `/code-review` and the Claude review say
-mergeable, and `verify` has run. If verify needs the schema, push just before
-verify. Pushing is the last irreversible step before the merge, so nothing
-after it should be able to ask for the migration to change.
+**Push as late as possible.** Write the migration with the code, but apply it
+only once gates are green and `/code-review` and the Claude review say
+mergeable, then run `verify`. Verify usually needs the new schema, so the push
+normally happens just before verify, after review. If anything after the push
+asks for a schema change (a verify finding, or a later review round), step 6
+applies: fix forward, never edit.
 
 1. **Say so up front.** Put it in the PR title or the summary's first line, and
    add a **Migration** section to the PR body: the filename, what it does in two
@@ -211,9 +212,10 @@ after it should be able to ask for the migration to change.
 6. **Never edit a migration that has been pushed.** Re-pushing the same version
    does nothing, so an edited file would silently drift from the live schema.
    If review wants a change after the push, add a new migration
-   (`000NN_fix_...`) that makes it. If the PR is abandoned after the push, add a
-   follow-up migration that reverts it, or leave the additive change and record
-   it in the sprint doc. Either way, `main` and the live schema must end up
+   (`000NN_fix_...`) that makes it. If the PR is abandoned after the push, either
+   land a follow-up migration on `main` that reverts it, or land the migration
+   file itself on `main` in a one-file PR, so the repo describes the live
+   schema. Either way, the migrations in `main` and the live schema must end up
    agreeing.
 
 There is one database. Local development and the deployed app share it, so an
