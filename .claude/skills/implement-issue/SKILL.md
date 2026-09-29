@@ -160,42 +160,50 @@ Route by ownership boundary (`.claude/agents/` + `docs/agents/roles/`):
 - Where there's a natural test seam, tell the dev role to use `/tdd`. Reviewing
   is `/code-review` (§7), run before the PR.
 
-### 3.1 Hard stop: database migrations
+### 3.1 Database migrations: apply before merge
 
-**If the work adds or changes a file under `supabase/migrations/`, this PR cannot
-merge from an agent session under any circumstance, even when §6 would otherwise
-let you merge it on green.**
+**If the work adds or changes a file under `supabase/migrations/`, the migration
+must be applied to the hosted database before the PR merges.** `main`
+auto-deploys to Vercel. If the PR merges first, the code goes live against a
+schema that lacks the column, and every affected request fails until the SQL
+runs. PR #293 hit exactly this ordering problem with
+`00007_add_pantry_events.sql`, and PR #655 would have broken every recipe save.
 
-Applying a migration needs a Postgres password or a Supabase personal access
-token. An agent session has neither: `ai-service/.env` carries PostgREST API keys,
-and PostgREST has no arbitrary-SQL endpoint. So the migration cannot be applied,
-and therefore cannot be verified. Meanwhile `main` auto-deploys to Vercel —
-merging first puts code live against a schema that lacks the table, and every
-affected request 500s until a human runs the SQL.
+Agent sessions can apply migrations themselves through the Supabase CLI. It was
+installed and linked on 2026-09-29 and runs on Ayush's login token, so it needs
+no password.
 
-This is not hypothetical. PR #293 hit exactly this ordering problem with
-`00007_add_pantry_events.sql`.
+1. **Say so up front.** Put it in the PR title or the summary's first line, and
+   add a **Migration** section to the PR body: the filename, what it does in two
+   or three lines, and whether it is **additive** (new table, new nullable column,
+   new index or function) or **destructive** (drops, renames, type changes, data
+   rewrites, or new NOT NULL columns without a default).
+2. **Link the worktree** if it isn't linked yet:
+   ```bash
+   supabase link --project-ref obmbwuqwpvntxhhbdfsg < /dev/null
+   ```
+3. **Dry run**, and confirm that only your migration would be pushed:
+   ```bash
+   supabase db push --linked --dry-run
+   ```
+   If older migrations show up as pending, the history has drifted. Check each
+   one's footprint with a read-only query before running
+   `supabase migration repair --status applied <versions> --linked`. Never
+   repair a migration you haven't confirmed is really in the database.
+4. **Apply it, additive migrations only:**
+   ```bash
+   supabase db push --linked --yes
+   ```
+   Then confirm with `supabase migration list` and a read-only
+   `supabase db query --linked` that the change exists. Record in the PR body's
+   Migration section that it was applied, and when.
+5. **Destructive migrations stay with the human.** Deleting or rewriting data is
+   still a human call (ADR 0004). Don't push one. Put the SQL in the PR body, say
+   what it would destroy, and wait.
 
-When a migration is in scope:
-
-1. Write it, and say so in the PR title or the first line of the summary.
-2. Add a **Migration** section to the PR body: filename, what it does in two or
-   three lines, and whether it is additive or destructive.
-3. Tell the human it needs applying **before** merge, and give both routes — the
-   Supabase dashboard SQL Editor, or `supabase db push`.
-4. Do not merge. Do not `gh pr ready`. Wait.
-
-You can check whether a table already exists without any of the missing
-credentials, which is worth doing before assuming the work is needed:
-
-```bash
-curl -s -o /dev/null -w "%{http_code}" \
-  "$BUBBLY_SUPABASE_URL/rest/v1/<table>?select=id&limit=1" \
-  -H "apikey: $BUBBLY_SUPABASE_SECRET_KEY" \
-  -H "Authorization: Bearer $BUBBLY_SUPABASE_SECRET_KEY"
-```
-
-`200` means it exists; `404` with `PGRST205` means it does not. Read-only.
+There is one database. Local development and the deployed app share it, so an
+applied migration is live for both at once. That's why only additive changes are
+applied from an agent session.
 
 ## 4. Quality gates (before any commit)
 

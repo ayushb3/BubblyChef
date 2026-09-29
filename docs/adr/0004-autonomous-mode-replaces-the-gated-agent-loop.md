@@ -123,7 +123,8 @@ ruleset's earlier required checks are in the git history of
 - **Still human, regardless of path:** force-pushing a shared branch, deleting data, sending
   external messages, rotating credentials, and changing v1 scope or anything that costs
   money. A migration still waits until it has been applied, because merging first puts code
-  live against a schema that lacks it.
+  live against a schema that lacks it. Since 2026-09-29 Claude applies additive migrations
+  itself through the Supabase CLI (see implement-issue §3.1). Destructive ones stay human.
 - **Visibility instead of approval:** any PR that changes CI, the gates or agent config is
   named in the sprint doc, and every reversible product call Claude makes is logged there
   with the alternative it rejected.
