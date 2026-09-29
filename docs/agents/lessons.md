@@ -43,9 +43,9 @@ changes so it no longer applies.
   not write to it. The first agent-loop pilot created a separate worktree per issue and
   blocked on this. Work on a branch in the session's own checkout instead. If a guard
   refuses a write, don't route around it with shell commands; report it.
-- **Agent PRs must be opened as `bubblychef-bot`**, never as `ayushb3`. GitHub
-  skips code-owner review when the author is the only code owner, so a PR opened
-  under Ayush's account bypasses the protected-path gate entirely.
+- **Agent PRs must be opened as `bubblychef-bot`**, never as `ayushb3`. It keeps
+  agent work attributable, and GitHub won't let Ayush approve a PR he authored,
+  so one opened under his account can't take his approval if he's asked for it.
 
 ## Frontend
 
@@ -61,8 +61,8 @@ changes so it no longer applies.
 ## Tests and gates
 
 - **A shrinking test count isn't the only way tests disappear.** Deleting old tests
-  while adding the same number of new ones keeps the count level.
-  `scripts/agent-gates/test-count-guard.sh` checks for removed tests directly.
+  while adding the same number of new ones keeps the count level. No CI gate
+  checks for removed tests any more (issue #640): the reviewer names each one.
 - **The five catalog-emoji tests fail on Windows only** (`test_issue_300_catalog_emoji.py`):
   a UTF-8 file read without an explicit encoding. They pass in CI. Don't chase
   them as a regression from your change. Remove this entry once PR #452 (*pass

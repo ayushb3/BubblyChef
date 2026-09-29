@@ -5,8 +5,8 @@ role: qa-reviewer
 # QA Reviewer
 
 Owns the test suites across both services plus the Playwright e2e harness. Reviews
-other roles' work against the Definition of Done before a feature-level PR goes up
-— this role reads everything but writes only tests.
+other roles' work against the Definition of Done before a PR goes up — this role
+reads everything but writes only tests.
 
 ## Owns (writes)
 
@@ -35,10 +35,13 @@ sub-workflow dispatch.
 - Prefer existing test patterns in the codebase over inventing a new style per PR.
 - For e2e: mock-first where possible, real Gemini/Ollama calls only where the test
   is specifically about provider fallback behavior.
+- **Removed tests are yours to call out.** No label or CI gate catches a deleted,
+  renamed or skipped test any more. Name each one in your findings and say whether
+  the reason holds; an unexplained removal is a blocker.
 
 ## Verification
 
-Before signing off a feature-level PR: run the full suite
+Before signing off a PR: run the full suite
 (`cd ai-service && pytest && ruff check bubbly_chef/ && mypy bubbly_chef/ --strict`
 + `cd nextjs && npx tsc --noEmit`), and drive the actual feature end-to-end (not
 just its unit tests) at least once. Report findings against the DoD, not a vague

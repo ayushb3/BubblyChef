@@ -14,13 +14,13 @@ no branching on state. The code that builds and sends prompts (routes,
 workflow nodes, services) stays in its existing location and imports the
 constant it needs from here.
 
-**Changes here need human review even when CI is green.** `pytest`, `mypy`,
+**A green CI run says nothing about a change here.** `pytest`, `mypy`,
 and `ruff` all pass on a prompt edit that quietly makes the model worse —
 none of them evaluate output quality. A rewording, a dropped constraint, a
 reflowed paragraph can silently change what the assistant says or does
-without failing a single test. This is why the path is CODEOWNERS-protected:
-someone has to actually read the diff and judge the behavior change, because
-the test suite can't.
+without failing a single test. So a prompt change needs a `verify` run that
+exercises the affected output, and the PR body should say what changed in
+the model's behaviour, because the test suite can't.
 
 If you're adding a new prompt, put it in the matching domain module (or add
 one) as a module-level constant, then import it at the call site under its
