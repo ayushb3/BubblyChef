@@ -122,8 +122,13 @@ ruleset's earlier required checks are in the git history of
   auto-revert are not built yet (issue #646).
 - **Still human, regardless of path:** force-pushing a shared branch, deleting data, sending
   external messages, rotating credentials, and changing v1 scope or anything that costs
-  money. A migration still waits until it has been applied, because merging first puts code
-  live against a schema that lacks it.
+  money. Destructive migrations stay human. The full definition is in implement-issue §3.1
+  step 1: drops, renames, type changes, data rewrites, new NOT NULL columns without a default,
+  `CREATE OR REPLACE` of an existing function, view or policy, and enabling RLS on an existing
+  table.
+  Every migration must be applied before its PR merges, because merging first puts code live
+  against a schema that lacks it. *Amended 2026-09-29, at Ayush's request:* Claude applies
+  additive migrations itself through the Supabase CLI, last, just before merge (implement-issue §3.1).
 - **Visibility instead of approval:** any PR that changes CI, the gates or agent config is
   named in the sprint doc, and every reversible product call Claude makes is logged there
   with the alternative it rejected.

@@ -244,9 +244,11 @@ and `verify` still exercises the change in a running app. A human rereading the 
 would add little to either.
 
 **Still irreversible, still human, regardless of path:** force-push to a shared
-branch, deleting data, sending external messages, rotating credentials. A migration
-also waits, for a practical reason: an agent session can't apply one, and merging
-first puts code live against a schema that lacks it (`/implement-issue` §3.1).
+branch, deleting data (which includes destructive migrations), sending external
+messages, rotating credentials. Every migration must be *applied before its PR
+merges*, because merging first puts code live against a schema that lacks it.
+Since 2026-09-29, at Ayush's request, Claude applies additive migrations itself
+through the Supabase CLI (`/implement-issue` §3.1).
 
 Because nobody reads the diff, **the PR body carries the review** (§4).
 
