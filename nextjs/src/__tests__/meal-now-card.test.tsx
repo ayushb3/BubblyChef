@@ -6,8 +6,8 @@
 
 import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
-import MealNowCard from '@/components/meal/MealNowCard'
-import type { NowCard, StreamStep } from '@/lib/meal-cook-stream'
+import MealNowCard, { type NowCard } from '@/components/meal/MealNowCard'
+import type { StreamStep } from '@/lib/meal-cook-stream'
 
 const HANDS_ON_STEP: StreamStep = {
   key: 'recipe-1:0',
@@ -141,6 +141,75 @@ describe('MealNowCard', () => {
       />,
     )
     expect(screen.queryByTestId('meal-now-card-waiting-on')).not.toBeInTheDocument()
+  })
+
+  it('shows "Nothing to do right now" and the running steps, soonest end first, with no action pills', () => {
+    const laterRunning: StreamStep = { ...HANDS_OFF_STEP, key: 'recipe-2:0', dish_title: 'Green beans', column: 'side_1', end: 30 }
+    const soonerRunning: StreamStep = { ...HANDS_OFF_STEP, ongoing_label: 'the sauce simmers', end: 18 }
+    const card: NowCard = { kind: 'waiting', running: [laterRunning, soonerRunning] }
+    render(
+      <MealNowCard
+        card={card}
+        clockLabel={clockLabel}
+        onDone={jest.fn()}
+        onExtend={jest.fn()}
+        onSkip={jest.fn()}
+        onStartEarly={jest.fn()}
+      />,
+    )
+    expect(screen.getByTestId('meal-now-card-waiting-copy')).toHaveTextContent('Nothing to do right now.')
+
+    const rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    // Sooner-ending step (the sauce, ends +18) listed before the later one (+30).
+    expect(rows[0]).toHaveTextContent('the sauce simmers')
+    expect(rows[0]).toHaveTextContent('until +18')
+    expect(rows[1]).toHaveTextContent('Green beans')
+    expect(rows[1]).toHaveTextContent('until +30')
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('is a stable aria-live="polite" region across every card kind, so a screen reader hears each change', () => {
+    const { rerender } = render(
+      <MealNowCard
+        card={{ kind: 'upcoming', step: HANDS_OFF_STEP, starts_in_minutes: 6 }}
+        clockLabel={clockLabel}
+        onDone={jest.fn()}
+        onExtend={jest.fn()}
+        onSkip={jest.fn()}
+        onStartEarly={jest.fn()}
+      />,
+    )
+    const region = screen.getByTestId('meal-now-card')
+    expect(region).toHaveAttribute('aria-live', 'polite')
+
+    rerender(
+      <MealNowCard
+        card={{ kind: 'active', step: HANDS_ON_STEP }}
+        clockLabel={clockLabel}
+        onDone={jest.fn()}
+        onExtend={jest.fn()}
+        onSkip={jest.fn()}
+        onStartEarly={jest.fn()}
+      />,
+    )
+    // Same DOM node — the live region never unmounted, so the mutation the
+    // screen reader needs to see actually happened on an already-watched node.
+    expect(screen.getByTestId('meal-now-card')).toBe(region)
+
+    rerender(
+      <MealNowCard
+        card={{ kind: 'waiting', running: [HANDS_OFF_STEP] }}
+        clockLabel={clockLabel}
+        onDone={jest.fn()}
+        onExtend={jest.fn()}
+        onSkip={jest.fn()}
+        onStartEarly={jest.fn()}
+      />,
+    )
+    expect(screen.getByTestId('meal-now-card')).toBe(region)
+    expect(screen.getByTestId('meal-now-card-waiting-copy')).toBeInTheDocument()
   })
 
   it('disables every pill when disabled', () => {

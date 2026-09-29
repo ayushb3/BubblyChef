@@ -181,6 +181,61 @@ function cellStepIndex(cell: RowCell): number | undefined {
   return cell.step_index
 }
 
+/**
+ * Review round 1 (S5) — progress must never be colour-only: a visible marker
+ * plus, for "done", an sr-only word backs every colour cue. `isRunning` is
+ * scoped to hands-off cells — a running hands-on step is the Now card
+ * elsewhere on the page, not something this table calls out separately.
+ */
+function CellMarkers({
+  isCurrent,
+  isDone,
+  isSkipped,
+  isRunning,
+}: {
+  isCurrent: boolean
+  isDone: boolean
+  isSkipped: boolean
+  isRunning: boolean
+}) {
+  if (!isCurrent && !isDone && !isSkipped && !isRunning) return null
+  return (
+    <div className="flex flex-wrap items-center gap-1 mt-1">
+      {isCurrent && (
+        <span
+          className="text-[10px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+          style={{ background: 'var(--color-text)', color: 'var(--color-surface)' }}
+          data-testid="meal-timeline-cell-now-marker"
+        >
+          Now
+        </span>
+      )}
+      {isDone && (
+        <span className="text-xs font-bold" data-testid="meal-timeline-cell-done-marker">
+          <span aria-hidden="true">✓</span>
+          <span className="sr-only"> done</span>
+        </span>
+      )}
+      {isSkipped && (
+        <span
+          className="text-[10px] font-bold uppercase tracking-wide"
+          data-testid="meal-timeline-cell-skipped-marker"
+        >
+          skipped
+        </span>
+      )}
+      {isRunning && (
+        <span
+          className="text-[10px] font-bold uppercase tracking-wide"
+          data-testid="meal-timeline-cell-cooking-marker"
+        >
+          cooking
+        </span>
+      )}
+    </div>
+  )
+}
+
 function CellView({
   column,
   cell,
@@ -206,9 +261,12 @@ function CellView({
     progress.current.step_index === stepIndex
   const isDone = status === 'done'
   const isSkipped = status === 'skipped'
-  const progressStyle = isCurrent
-    ? { boxShadow: `0 0 0 2px ${COLUMN_COLORS[column]}` }
-    : undefined
+  const isRunning =
+    status === 'running' && (cell.kind === 'start' || cell.kind === 'ongoing') && !cell.hands_on
+  // Review round 1 (S5) — the ring is `--color-text` (soft-charcoal), never
+  // one of the pastel dish colours: it has to contrast against every dish's
+  // own tinted fill, not blend into whichever one happens to be current.
+  const progressStyle = isCurrent ? { boxShadow: '0 0 0 2px var(--color-text)' } : undefined
 
   switch (cell.kind) {
     case 'start':
@@ -223,12 +281,14 @@ function CellView({
           }}
           data-testid="meal-timeline-cell-start"
           data-status={status}
+          aria-current={isCurrent ? 'step' : undefined}
         >
           <span style={isSkipped ? { textDecoration: 'line-through' } : undefined}>
             {cell.hands_on ? '✋ ' : '⏳ '}
             {cell.label}
           </span>
           <div className="font-normal opacity-70 tabular-nums">{cell.duration_minutes} min</div>
+          <CellMarkers isCurrent={isCurrent} isDone={isDone} isSkipped={isSkipped} isRunning={isRunning} />
         </div>
       )
     case 'ongoing':
@@ -243,12 +303,14 @@ function CellView({
           }}
           data-testid="meal-timeline-cell-ongoing"
           data-status={status}
+          aria-current={isCurrent ? 'step' : undefined}
         >
           <span style={isSkipped ? { textDecoration: 'line-through' } : undefined}>
             {cell.ongoing_label ?? cell.label}
           </span>
           {' · '}
           <span className="tabular-nums">{cell.remaining_minutes} min</span> left
+          <CellMarkers isCurrent={isCurrent} isDone={isDone} isSkipped={isSkipped} isRunning={isRunning} />
         </div>
       )
     case 'waiting':

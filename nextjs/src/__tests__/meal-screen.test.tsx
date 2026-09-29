@@ -6,7 +6,7 @@
  * "estimates" note on a dish that still has no structured steps.
  */
 import React from 'react'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Meal } from '@/types/meals'
 import type { Recipe } from '@/components/recipes/RecipePage'
@@ -15,9 +15,31 @@ import type { Step } from '@/types/recipes'
 // and writes cook-along session state.
 import {
   startMealCookSession,
+  saveMealCookProgress,
   endMealCookSession,
   getActiveMealCookSession,
 } from '@/lib/meal-cook-session'
+import { dishStepSignaturesForMeal } from '@/lib/meal-dishes'
+
+// Only the "Start over dismisses timers" test below exercises `dismiss` —
+// every other test in this file never records a running step with a
+// `timer_id`, so `mockDismiss` stays uncalled for them regardless of this
+// mock being in place file-wide.
+const mockDismiss = jest.fn()
+jest.mock('@/lib/useCookingTimers', () => {
+  const actual = jest.requireActual('@/lib/useCookingTimers')
+  return {
+    ...actual,
+    useCookingTimers: () => ({
+      timers: [],
+      start: jest.fn(),
+      pause: jest.fn(),
+      resume: jest.fn(),
+      dismiss: mockDismiss,
+      extend: jest.fn(),
+    }),
+  }
+})
 
 jest.mock('next/navigation', () => ({
   useParams: () => ({ id: 'meal-1' }),
@@ -572,7 +594,12 @@ describe('meal screen — cook-along entry (issue #653)', () => {
 
   it('shows a Resume banner (not a redirect) for a non-stale active session', async () => {
     fetchMeal.mockResolvedValue(baseMeal())
-    startMealCookSession('meal-1', ['r-main', 'r-side1', 'r-side2'], Date.now())
+    startMealCookSession(
+      'meal-1',
+      ['r-main', 'r-side1', 'r-side2'],
+      Date.now(),
+      dishStepSignaturesForMeal(baseMeal()),
+    )
 
     renderPage()
     await screen.findByTestId('meal-cook-resume-banner')
@@ -585,7 +612,12 @@ describe('meal screen — cook-along entry (issue #653)', () => {
 
   it('an ended session cannot be resumed — Start cooking shows again, not the banner', async () => {
     fetchMeal.mockResolvedValue(baseMeal())
-    startMealCookSession('meal-1', ['r-main', 'r-side1', 'r-side2'], Date.now())
+    startMealCookSession(
+      'meal-1',
+      ['r-main', 'r-side1', 'r-side2'],
+      Date.now(),
+      dishStepSignaturesForMeal(baseMeal()),
+    )
     endMealCookSession('meal-1')
 
     renderPage()
@@ -596,7 +628,7 @@ describe('meal screen — cook-along entry (issue #653)', () => {
 
   it('shows the stale notice, not Resume, once the meal changed dish ids since the session started', async () => {
     fetchMeal.mockResolvedValue(baseMeal())
-    startMealCookSession('meal-1', ['some-other-recipe'], Date.now())
+    startMealCookSession('meal-1', ['some-other-recipe'], Date.now(), ['1:x'])
 
     renderPage()
     await screen.findByTestId('meal-cook-stale-banner')
@@ -605,5 +637,65 @@ describe('meal screen — cook-along entry (issue #653)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start over' }))
     // Starting over replaces the stale session with a fresh one for the current dishes.
     expect(getActiveMealCookSession('meal-1')?.dish_ids).toEqual(['r-main', 'r-side1', 'r-side2'])
+  })
+
+  it('Start over dismisses the stale session\'s running dock timers before clearing it', async () => {
+    fetchMeal.mockResolvedValue(baseMeal())
+    const stale = startMealCookSession('meal-1', ['some-other-recipe'], Date.now(), ['1:x'])
+    saveMealCookProgress({
+      ...stale,
+      steps: {
+        'some-other-recipe:0': {
+          status: 'running',
+          started_at_minutes: 0,
+          extra_minutes: 0,
+          timer_id: 'timer-42',
+        },
+      },
+    })
+
+    renderPage()
+    await screen.findByTestId('meal-cook-stale-banner')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start over' }))
+
+    expect(mockDismiss).toHaveBeenCalledWith('timer-42')
+    expect(getActiveMealCookSession('meal-1')?.dish_ids).toEqual(['r-main', 'r-side1', 'r-side2'])
+  })
+
+  it('Start cooking stays disabled until the ensureSteps-triggered refetch has actually landed (review round 1, S4)', async () => {
+    const m = baseMeal()
+    const missingSteps = baseMeal({
+      dishes: [m.dishes[0], m.dishes[1], { role: 'side', position: 2, recipe: { ...SIDE2_RECIPE, steps: null } }],
+    })
+    let resolveRefetch!: (v: Meal) => void
+    fetchMeal.mockResolvedValueOnce(missingSteps)
+    fetchMeal.mockImplementationOnce(() => new Promise<Meal>((resolve) => { resolveRefetch = resolve }))
+    let resolveEnsure!: (v: { recipe_id: string; steps: Step[]; derived: boolean }) => void
+    ensureSteps.mockReturnValue(
+      new Promise((resolve) => {
+        resolveEnsure = resolve
+      }),
+    )
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Roast potatoes', level: 3 })
+    await waitFor(() => expect(ensureSteps).toHaveBeenCalledWith('r-side2'))
+
+    const startButton = () => screen.getByRole('button', { name: /Start cooking/ })
+    expect(startButton()).toBeDisabled()
+
+    // ensureSteps resolves with a derived step, which kicks off a refetch —
+    // Start cooking must stay disabled through that refetch too, not just
+    // while ensureSteps itself was in flight.
+    await act(async () => {
+      resolveEnsure({ recipe_id: 'r-side2', steps: [step('Roast the potatoes')], derived: true })
+    })
+    expect(startButton()).toBeDisabled()
+
+    await act(async () => {
+      resolveRefetch(baseMeal())
+    })
+    await waitFor(() => expect(startButton()).not.toBeDisabled())
   })
 })

@@ -25,6 +25,20 @@ function timer(overrides: Partial<CookingTimer>): CookingTimer {
 }
 
 describe('TimerDock +2 min', () => {
+  it('shows a visible "+2 min" label (review round 1 — not the abbreviated "+2m")', () => {
+    mockedUseCookingTimers.mockReturnValue({
+      timers: [timer({ status: 'running' })],
+      start: jest.fn(),
+      pause: jest.fn(),
+      resume: jest.fn(),
+      dismiss: jest.fn(),
+      extend: jest.fn(),
+    })
+    render(<TimerDock />)
+    fireEvent.click(screen.getByLabelText('Expand timers'))
+    expect(screen.getByLabelText('Add 2 minutes to Simmer sauce timer')).toHaveTextContent('+2 min')
+  })
+
   it('calls extend(id, 120) when tapped on a running timer', () => {
     const extend = jest.fn()
     mockedUseCookingTimers.mockReturnValue({

@@ -26,6 +26,7 @@ import {
   type MealCookSession,
 } from '@/lib/meal-cook-session'
 import { formatClockTime } from '@/lib/meal-anchor'
+import { dishStepSignaturesForMeal } from '@/lib/meal-dishes'
 import { TIMER_COMPLETED_EVENT, type CookingTimer } from '@/lib/useCookingTimers'
 
 const pushMock = jest.fn()
@@ -148,9 +149,14 @@ function renderPage() {
   )
 }
 
+// Issue #653 review round 1 (S4) — computed from the real `dishStepSignaturesForMeal`
+// rather than hand-typed, so a session seeded here is never spuriously "stale"
+// against what the page itself derives from `baseMeal()`.
+const MAIN_STEP_SIGNATURES = dishStepSignaturesForMeal(baseMeal())
+
 /** Seeds a session at `startedAtMs` with `steps` already recorded, mirroring a resumed reload. */
 function seedSession(startedAtMs: number, steps: MealCookSession['steps'] = {}): void {
-  const session = startMealCookSession('meal-1', ['r-main'], startedAtMs)
+  const session = startMealCookSession('meal-1', ['r-main'], startedAtMs, MAIN_STEP_SIGNATURES)
   saveMealCookProgress({ ...session, steps })
 }
 
@@ -185,13 +191,13 @@ describe('MealCookPage — restore / redirect', () => {
   })
 
   it('redirects when the session is stale (dish ids no longer match)', async () => {
-    startMealCookSession('meal-1', ['some-other-recipe'], Date.now())
+    startMealCookSession('meal-1', ['some-other-recipe'], Date.now(), ['1:x'])
     renderPage()
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/meals/meal-1'))
   })
 
   it('redirects when the session was already ended', async () => {
-    startMealCookSession('meal-1', ['r-main'], Date.now())
+    startMealCookSession('meal-1', ['r-main'], Date.now(), MAIN_STEP_SIGNATURES)
     endMealCookSession('meal-1')
     renderPage()
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/meals/meal-1'))
@@ -208,21 +214,28 @@ describe('MealCookPage — restore / redirect', () => {
 })
 
 describe('MealCookPage — Done / +2 min / Skip', () => {
-  it('Done advances the Now card; +2 min shifts the dependent step; no extra fetch', async () => {
-    seedSession(Date.now())
+  it('Done advances the Now card; +2 min shifts the dependent step by exactly 2 minutes; no extra fetch', async () => {
+    const startedAtMs = Date.now()
+    seedSession(startedAtMs)
     renderPage()
     await waitFor(() => expect(screen.getByText('Boil pasta')).toBeInTheDocument())
     await waitForStepStatus('r-main:0', 'running')
     expect(fetchMeal).toHaveBeenCalledTimes(1)
 
-    const beforeExtend = screen.getByTestId('meal-next-up').textContent
+    // Boil pasta (0-5) -> Simmer sauce, a strictly sequential single-dish
+    // chain with nothing else to align with, so Simmer's live-plan start is
+    // exactly Boil pasta's nominal end: 5.
+    const beforeLabel = formatClockTime(new Date(startedAtMs + 5 * 60_000))
+    expect(screen.getByTestId('meal-next-up')).toHaveTextContent(beforeLabel)
 
     act(() => {
       screen.getByRole('button', { name: 'Add 2 minutes' }).click()
     })
-    // The dependent hands-off step's start shifts by 2 minutes — next_up's
-    // displayed clock time changes even though the Now card is unchanged.
-    await waitFor(() => expect(screen.getByTestId('meal-next-up').textContent).not.toBe(beforeExtend))
+    // +2 min pushes Boil pasta's nominal end to 7 — the dependent hands-off
+    // step's start shifts by exactly 2 minutes, not merely "some amount".
+    const afterLabel = formatClockTime(new Date(startedAtMs + 7 * 60_000))
+    await waitFor(() => expect(screen.getByTestId('meal-next-up')).toHaveTextContent(afterLabel))
+    expect(afterLabel).not.toBe(beforeLabel)
 
     act(() => {
       screen.getByRole('button', { name: 'Done' }).click()
@@ -234,8 +247,9 @@ describe('MealCookPage — Done / +2 min / Skip', () => {
     expect(fetchMeal).toHaveBeenCalledTimes(1)
   })
 
-  it('Skip frees the step and its dependent becomes reachable', async () => {
-    seedSession(Date.now())
+  it('Skip frees the step — its dependent is no longer shown waiting on a running step', async () => {
+    const startedAtMs = Date.now()
+    seedSession(startedAtMs)
     renderPage()
     await waitFor(() => expect(screen.getByText('Boil pasta')).toBeInTheDocument())
     await waitForStepStatus('r-main:0', 'running')
@@ -244,6 +258,16 @@ describe('MealCookPage — Done / +2 min / Skip', () => {
       screen.getByRole('button', { name: 'Skip' }).click()
     })
     await waitFor(() => expect(screen.queryByText('Boil pasta')).not.toBeInTheDocument())
+    // Simmer sauce is now the topic, and — because a skipped step holds no
+    // resources and isn't `running` — it's no longer shown "waiting on"
+    // anything (a still-running Boil pasta would have surfaced a
+    // `waiting_on` line here instead). `hold_to_plan` still keeps its start
+    // at the baseline's 5 rather than rushing it forward to 0, so it reads
+    // as the upcoming card, not yet active.
+    expect(screen.getByText('Simmer sauce')).toBeInTheDocument()
+    expect(screen.queryByTestId('meal-now-card-waiting-on')).not.toBeInTheDocument()
+    const label = formatClockTime(new Date(startedAtMs + 5 * 60_000))
+    expect(screen.getByTestId('meal-now-card-upcoming-timing')).toHaveTextContent(label)
     expect(fetchMeal).toHaveBeenCalledTimes(1)
   })
 })
@@ -304,6 +328,36 @@ describe('MealCookPage — hands-off timer wiring', () => {
     expect(persisted?.steps['r-main:1']?.status).toBe('done')
   })
 
+  it('a running step whose linked timer is already completed on mount is marked done with no event needed', async () => {
+    seedSession(Date.now() - 8 * 60_000, {
+      'r-main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
+      'r-main:1': { status: 'running', started_at_minutes: 5, extra_minutes: 0, timer_id: 'timer-1' },
+    })
+    // The linked timer had already completed by the time the page mounts (it
+    // finished while the tab was closed) — no TIMER_COMPLETED_EVENT is ever
+    // dispatched here; the mount-time run of the timers-array-reactive
+    // effect is the only thing that can catch this.
+    mockTimers = [
+      { id: 'timer-1', label: 'Simmer sauce', durationSeconds: 480, remainingSeconds: 0, status: 'completed' },
+    ]
+    renderPage()
+
+    await waitForStepStatus('r-main:1', 'done')
+    expect(screen.getByText('Plate up')).toBeInTheDocument()
+  })
+
+  it('a running step whose linked timer is simply missing on mount (dismissed while closed) is also marked done', async () => {
+    seedSession(Date.now() - 8 * 60_000, {
+      'r-main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
+      'r-main:1': { status: 'running', started_at_minutes: 5, extra_minutes: 0, timer_id: 'timer-1' },
+    })
+    mockTimers = [] // no timer at all — dismissed while the tab was closed
+    renderPage()
+
+    await waitForStepStatus('r-main:1', 'done')
+    expect(screen.getByText('Plate up')).toBeInTheDocument()
+  })
+
   it('a dock extend (a longer remainingSeconds) re-plans the dependent step', async () => {
     // Fake timers from the start, same reasoning as the completion test above.
     jest.useFakeTimers()
@@ -329,6 +383,37 @@ describe('MealCookPage — hands-off timer wiring', () => {
     await waitFor(() =>
       expect(screen.getByTestId('meal-now-card-upcoming-timing').textContent).not.toBe(before),
     )
+  })
+})
+
+describe('MealCookPage — timeline sheet', () => {
+  it('opens showing clock times and progress markers for done and current steps', async () => {
+    // Session started 5 minutes ago — Boil pasta done on time at 5, and
+    // Simmer sauce (hands-off) is due now, so it's the *active* Now card
+    // (not merely upcoming), which is what puts a "Now" marker on its cell.
+    const startedAtMs = Date.now() - 5 * 60_000
+    seedSession(startedAtMs, {
+      'r-main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0, ended_at_minutes: 5 },
+    })
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Simmer sauce')).toBeInTheDocument())
+    expect(screen.getByTestId('meal-now-card-badge')).toHaveTextContent('Hands-off')
+
+    expect(screen.queryByTestId('meal-timeline-sheet')).not.toBeInTheDocument()
+    act(() => {
+      screen.getByRole('button', { name: 'Open timeline' }).click()
+    })
+    expect(screen.getByTestId('meal-timeline-sheet')).toBeInTheDocument()
+
+    // Clock times, anchored at the session's own start — the "0" row shows
+    // the moment cooking started.
+    const startLabel = formatClockTime(new Date(startedAtMs))
+    expect(screen.getAllByText(startLabel).length).toBeGreaterThan(0)
+
+    // Boil pasta's cell is marked done (sr-only "done", not colour-only —
+    // review round 1, S5), and Simmer sauce's cell carries the "Now" marker.
+    expect(screen.getByTestId('meal-timeline-cell-done-marker')).toBeInTheDocument()
+    expect(screen.getByTestId('meal-timeline-cell-now-marker')).toBeInTheDocument()
   })
 })
 
@@ -376,10 +461,9 @@ describe('MealCookPage — degraded (fallback-steps) dish', () => {
       instructions: ['Chop the vegetables and add them to the pot', 'Simmer until tender'],
       steps: null,
     }
-    fetchMeal.mockResolvedValue(
-      baseMeal({ dishes: [{ role: 'main', position: 0, recipe: degradedRecipe }] }),
-    )
-    startMealCookSession('meal-1', ['r-degraded'], Date.now())
+    const degradedMeal = baseMeal({ dishes: [{ role: 'main', position: 0, recipe: degradedRecipe }] })
+    fetchMeal.mockResolvedValue(degradedMeal)
+    startMealCookSession('meal-1', ['r-degraded'], Date.now(), dishStepSignaturesForMeal(degradedMeal))
     renderPage()
 
     await waitFor(() =>
@@ -395,11 +479,4 @@ describe('MealCookPage — degraded (fallback-steps) dish', () => {
       expect(screen.queryByText('Chop the vegetables and add them to the pot')).not.toBeInTheDocument(),
     )
   })
-})
-
-// Sanity check that `formatClockTime` is what the page's `clockLabel` uses —
-// guards against a future refactor silently changing the displayed format
-// without a test noticing.
-it('formatClockTime is the page clock label format', () => {
-  expect(typeof formatClockTime(new Date())).toBe('string')
 })

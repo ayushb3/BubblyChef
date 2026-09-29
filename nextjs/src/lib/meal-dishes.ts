@@ -56,3 +56,20 @@ export function schedulerDishesForMeal(meal: Meal): SchedulerDish[] {
         d.recipe.steps && d.recipe.steps.length > 0 ? d.recipe.steps : fallbackSteps(d.recipe.instructions),
     }))
 }
+
+/**
+ * Issue #653 review round 1 (S4) — a dish's step count plus labels, as a
+ * single comparable string: `${count}:${label1}|${label2}|...`. Used by
+ * `MealCookSession.dish_step_signatures` so a resumed cook-along session can
+ * tell an `ensureSteps` upgrade or an edited recipe (same dish id, different
+ * steps) apart from a genuinely unchanged dish, without the session storing
+ * — and needing to keep in sync — the full step list.
+ */
+export function dishStepSignature(dish: SchedulerDish): string {
+  return `${dish.steps.length}:${dish.steps.map((s) => s.label).join('|')}`
+}
+
+/** One signature per dish, in the same order `schedulerDishesForMeal` returns them. */
+export function dishStepSignaturesForMeal(meal: Meal): string[] {
+  return schedulerDishesForMeal(meal).map(dishStepSignature)
+}

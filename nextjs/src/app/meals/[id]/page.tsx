@@ -23,7 +23,7 @@ import { ensureSteps } from '@/lib/api/recipes'
 import { scaledIngredients } from '@/lib/recipe-helpers'
 import { scheduleMeal } from '@/lib/meal-scheduler'
 import { resolveMealAnchor } from '@/lib/meal-anchor'
-import { columnFor, fallbackSteps, schedulerDishesForMeal } from '@/lib/meal-dishes'
+import { columnFor, dishStepSignaturesForMeal, fallbackSteps, schedulerDishesForMeal } from '@/lib/meal-dishes'
 import {
   getActiveMealCookSession,
   startMealCookSession,
@@ -178,7 +178,15 @@ export default function MealDetailPage() {
         }
       }
       if (anyDerived) {
-        queryClient.invalidateQueries({ queryKey: ['meal', id] })
+        // Issue #653 review round 1 (S4) — awaited, so `stepsUpgrading`
+        // (and therefore Start cooking's disabled state) stays true until
+        // the refetch this triggers has actually landed, not just fired.
+        // `invalidateQueries`'s promise resolves once every active matching
+        // query (this page's `['meal', id]` query, currently rendered) has
+        // finished refetching — tapping Start cooking before then could
+        // build a cook-along session from steps that are about to change
+        // under it.
+        await queryClient.invalidateQueries({ queryKey: ['meal', id] })
       }
       setStepsUpgrading(false)
     })()
@@ -209,13 +217,19 @@ export default function MealDetailPage() {
   // stores and what `isStaleMealCookSession` compares against — position-
   // ordered recipe ids, the same shape the cook route restores dishes from.
   const dishIds = useMemo(() => dishesSorted.map((d) => d.recipe.id), [dishesSorted])
+  // Issue #653 review round 1 (S4) — one signature per dish (step count +
+  // labels), alongside `dishIds`: a resumed session where a dish's steps
+  // changed shape under the same recipe id (an `ensureSteps` upgrade landing
+  // mid-cook, or an edited recipe) is stale too, not just a swapped dish id.
+  const dishStepSignatures = useMemo(() => (meal ? dishStepSignaturesForMeal(meal) : []), [meal])
   // Recomputed from `meal` (not "checked once on mount"): a swap/remove on
   // *this* page can turn a previously-resumable session stale while it's
   // still open, and the banner should reflect that without a reload.
   const activeCookSession = useMemo(() => (meal ? getActiveMealCookSession(meal.id) : null), [meal])
   const cookSessionIsStale = useMemo(
-    () => (activeCookSession ? isStaleMealCookSession(activeCookSession, dishIds) : false),
-    [activeCookSession, dishIds],
+    () =>
+      activeCookSession ? isStaleMealCookSession(activeCookSession, dishIds, dishStepSignatures) : false,
+    [activeCookSession, dishIds, dishStepSignatures],
   )
 
   const serveAt = useMemo(() => {
@@ -254,7 +268,7 @@ export default function MealDetailPage() {
 
   function handleStartCooking() {
     if (!meal) return
-    startMealCookSession(meal.id, dishIds, Date.now())
+    startMealCookSession(meal.id, dishIds, Date.now(), dishStepSignatures)
     router.push(`/meals/${meal.id}/cook`)
   }
 
@@ -276,7 +290,7 @@ export default function MealDetailPage() {
       for (const timerId of timerIdsToDismiss(activeCookSession)) dismissTimer(timerId)
     }
     clearActiveMealCookSession(meal.id)
-    startMealCookSession(meal.id, dishIds, Date.now())
+    startMealCookSession(meal.id, dishIds, Date.now(), dishStepSignatures)
     router.push(`/meals/${meal.id}/cook`)
   }
 

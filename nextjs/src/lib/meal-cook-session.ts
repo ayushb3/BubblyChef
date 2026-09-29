@@ -19,10 +19,13 @@
  * reads or writes into it beyond initializing it empty.
  *
  * **Stale session:** the meal's current dish recipe ids might no longer
- * equal `session.dish_ids` (a side was swapped after cooking started).
- * `isStaleMealCookSession` is the one place that check lives — callers (the
- * meal screen, the cook route) both need it and must agree on what "stale"
- * means, so it isn't duplicated at each call site.
+ * equal `session.dish_ids` (a side was swapped after cooking started), or a
+ * dish's steps might have changed shape under the same recipe id (an
+ * `ensureSteps` upgrade landing mid-cook, or an edited recipe) — `dish_ids`
+ * alone can't see that. `isStaleMealCookSession` is the one place both
+ * checks live — callers (the meal screen, the cook route) both need it and
+ * must agree on what "stale" means, so it isn't duplicated at each call
+ * site.
  */
 
 export interface MealCookStepRecord {
@@ -31,6 +34,13 @@ export interface MealCookStepRecord {
   extra_minutes: number
   /** The dock timer started for a hands-off step, while it runs. */
   timer_id?: string
+  /**
+   * Issue #653 review round 1 (S1) — the actual minute a done/skipped step
+   * was recorded, fixing its end forever after rather than letting the
+   * scheduler recompute it against a later `now_minutes`. Set by
+   * `recordDone` / `recordSkip`; absent on a `running` record.
+   */
+  ended_at_minutes?: number
 }
 
 export interface MealCookSession {
@@ -39,6 +49,16 @@ export interface MealCookSession {
   started_at_ms: number
   /** The dish recipe ids at start, by position. A later mismatch makes the session stale. */
   dish_ids: string[]
+  /**
+   * Issue #653 review round 1 (S4) — one signature per dish, by position
+   * (same order as `dish_ids`): `${step count}:${label1}|${label2}|...`
+   * (see `lib/meal-dishes.ts`'s `dishStepSignature`). A dish whose steps
+   * changed shape since the session started — an `ensureSteps` upgrade
+   * landing mid-cook, or an edited recipe — makes the session stale the same
+   * way a changed dish id does, since a resumed step's progress would
+   * otherwise apply to a step that no longer means what it did.
+   */
+  dish_step_signatures: string[]
   steps: Record<string /* step key */, MealCookStepRecord>
   /** Reserved for issue #654 / the amendments work: per-dish ingredient amendments. Always {} here. */
   ingredient_amendments: Record<string /* dish_id */, unknown[]>
@@ -58,7 +78,9 @@ function isStepRecord(v: unknown): v is MealCookStepRecord {
     typeof (v as MealCookStepRecord).started_at_minutes === 'number' &&
     typeof (v as MealCookStepRecord).extra_minutes === 'number' &&
     (typeof (v as MealCookStepRecord).timer_id === 'undefined' ||
-      typeof (v as MealCookStepRecord).timer_id === 'string')
+      typeof (v as MealCookStepRecord).timer_id === 'string') &&
+    (typeof (v as MealCookStepRecord).ended_at_minutes === 'undefined' ||
+      typeof (v as MealCookStepRecord).ended_at_minutes === 'number')
   )
 }
 
@@ -68,6 +90,12 @@ function isMealCookSession(v: unknown): v is MealCookSession {
   if (typeof s.meal_id !== 'string') return false
   if (typeof s.started_at_ms !== 'number') return false
   if (!Array.isArray(s.dish_ids) || !s.dish_ids.every((id) => typeof id === 'string')) return false
+  if (
+    !Array.isArray(s.dish_step_signatures) ||
+    !s.dish_step_signatures.every((sig) => typeof sig === 'string')
+  ) {
+    return false
+  }
   if (!s.steps || typeof s.steps !== 'object') return false
   if (!Object.values(s.steps as Record<string, unknown>).every(isStepRecord)) return false
   if (!s.ingredient_amendments || typeof s.ingredient_amendments !== 'object') return false
@@ -140,7 +168,12 @@ export function isMealCookSessionEnded(mealId: string): boolean {
  * session at a time — starting one replaces any other, for this meal or a
  * different one, since the cook-along is a single full-screen flow.
  */
-export function startMealCookSession(mealId: string, dishIds: string[], nowMs: number): MealCookSession {
+export function startMealCookSession(
+  mealId: string,
+  dishIds: string[],
+  nowMs: number,
+  dishStepSignatures: string[],
+): MealCookSession {
   const ended = readEndedMealIds()
   if (ended.includes(mealId)) {
     writeEndedMealIds(ended.filter((id) => id !== mealId))
@@ -149,6 +182,7 @@ export function startMealCookSession(mealId: string, dishIds: string[], nowMs: n
     meal_id: mealId,
     started_at_ms: nowMs,
     dish_ids: dishIds,
+    dish_step_signatures: dishStepSignatures,
     steps: {},
     ingredient_amendments: {},
   }
@@ -225,8 +259,19 @@ export function endMealCookSession(mealId: string): void {
  * equal `session.dish_ids`" — a position swap changes which dish a resumed
  * step's progress would apply to, so it counts as stale even if the same set
  * of recipe ids is still in the meal.
+ *
+ * Issue #653 review round 1 (S4) — also stale when a dish's step signature
+ * (see `MealCookSession.dish_step_signatures`) has changed under the same
+ * id: an `ensureSteps` upgrade or an edited recipe landing mid-cook means a
+ * resumed step's progress no longer lines up with what that step is now.
  */
-export function isStaleMealCookSession(session: MealCookSession, currentDishIds: string[]): boolean {
+export function isStaleMealCookSession(
+  session: MealCookSession,
+  currentDishIds: string[],
+  currentDishStepSignatures: string[],
+): boolean {
   if (session.dish_ids.length !== currentDishIds.length) return true
-  return !session.dish_ids.every((id, i) => id === currentDishIds[i])
+  if (!session.dish_ids.every((id, i) => id === currentDishIds[i])) return true
+  if (session.dish_step_signatures.length !== currentDishStepSignatures.length) return true
+  return !session.dish_step_signatures.every((sig, i) => sig === currentDishStepSignatures[i])
 }

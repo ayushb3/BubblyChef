@@ -145,7 +145,7 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
           style={{ color: 'var(--color-primary-dark)' }}
           data-testid={`timer-extend-${timer.id}`}
         >
-          +2m
+          +2 min
         </button>
       )}
       {expanded && (

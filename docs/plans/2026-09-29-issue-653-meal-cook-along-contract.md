@@ -91,6 +91,7 @@ export type NowCard =
   | { kind: 'active'; step: StreamStep }                          // do it now
   | { kind: 'upcoming'; step: StreamStep; starts_in_minutes: number;
       waiting_on?: StreamStep }                                   // next thing, not yet due
+  | { kind: 'waiting'; running: StreamStep[] }                   // nothing to do: only hands-off steps are running (soonest end first)
   | { kind: 'finished' }
 
 export interface StreamState {
@@ -197,3 +198,13 @@ All presentational: props in, callbacks out, no fetching, no timers and no stora
   - A reload restores the stream.
   - The meal screen shows "Resume cooking?" rather than redirecting.
   - The finished screen appears.
+
+## Review round 1 (fresh-context review): decisions
+
+- **B1, a hands-off step never waits behind a hands-on one.** A pending hands-off step whose start ≤ now takes the Now card (`active`, "Start timer") ahead of a running hands-on step. The hands-on step keeps running (and keeps the cook busy) and returns to the Now card once the hands-off step is started or skipped. Order of precedence: (1) the earliest due pending hands-off step, (2) the running hands-on step, (3) the first pending step (`active` or `upcoming`), (4) `waiting` when only hands-off steps are running, (5) `finished` only when every step is done or skipped. Invariant: a cook who taps exactly on schedule finishes at the baseline total.
+- **B2:** the `waiting` card above. `finished` is never returned while anything runs.
+- **S1, a done or skipped step's end is fixed at the tap.** The scheduler's `StepProgress` gains `ended_at_minutes?: number` (additive). When present on a done or skipped step, its end is `max(started_at, ended_at_minutes)` instead of `min(nominalEnd, now)`. `recordDone` and `recordSkip` set it. Skip keeps an existing running record's `started_at`. With this, lateness really does only grow. Rejected alternative: a negative `extra_minutes`, which overloads a field that means "+2 min taps".
+- **S2, timer-driven ends use real elapsed time:** `end = ceil((nowMs − started_at_ms)/60000 + remainingSeconds/60)`, so the value is stable between dock ticks.
+- **S3:** one helper picks the baseline plan (initial vs sequential, the shorter), used by both the no-progress path and the `hold_to_plan` floors, so the cook-along starts from exactly the plan the meal screen showed.
+- **S4:** Start cooking stays disabled until the `ensureSteps` refetch has actually landed. The session also stores a per-dish step signature (step count plus labels), and a mismatch makes it stale, like a changed dish id.
+- **S5:** table progress isn't colour-only. A done cell shows ✓, a skipped cell shows "skipped", the current cell shows "Now" with `aria-current="step"`, and a running hands-off cell shows "cooking".

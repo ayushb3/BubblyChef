@@ -16,6 +16,7 @@
  */
 
 import {
+  sanitizedDependencyKeys,
   scheduleMeal,
   type Column,
   type MealTimeline,
@@ -50,6 +51,17 @@ export type NowCard =
       starts_in_minutes: number
       waiting_on?: StreamStep
     } // next thing, not yet due
+  | {
+      kind: 'waiting'
+      /**
+       * Issue #653 review round 1 (B2) — nothing pending or hands-on to show,
+       * but one or more hands-off steps are still running (their timers are
+       * in the dock). Distinct from `finished`: the cook still has to come
+       * back once a timer's done. Carries the same running list `StreamState`
+       * does, so a `waiting` card can render without also reading `running`.
+       */
+      running: StreamStep[]
+    }
   | { kind: 'finished' }
 
 export interface StreamState {
@@ -82,12 +94,6 @@ function durationLookup(dishes: SchedulerDish[]): Map<string, number> {
     d.steps.forEach((s, i) => map.set(`${d.dish_id}:${i}`, effectiveDuration(s.duration_minutes)))
   }
   return map
-}
-
-function dependencyKeysOf(dishes: SchedulerDish[], dishId: string, stepIndex: number): string[] {
-  const dish = dishes.find((d) => d.dish_id === dishId)
-  const step = dish?.steps[stepIndex]
-  return (step?.depends_on ?? []).map((i) => `${dishId}:${i}`)
 }
 
 function withStep(session: MealCookSession, key: string, record: MealCookStepRecord): MealCookSession {
@@ -166,24 +172,33 @@ export function applyOverdueRunningSteps(
 }
 
 /**
- * A running hands-off step's end follows its dock timer: `end = now +
- * ceil(remainingSeconds / 60)`, so `extra = max(0, end - start - duration)`.
- * A dock pause or a dock "+2 min" changes `remainingSeconds`, so calling this
- * again picks that up and re-plans on the next `deriveStream`. Does nothing
- * for a step whose linked timer is missing or `completed` — that transition
- * is `findTimerCompletedSteps` + `recordDone` instead, not an extra-minutes
- * adjustment.
+ * A running hands-off step's end follows its dock timer. Issue #653 review
+ * round 1 (S2) — computed from real elapsed wall-clock time rather than two
+ * independently-floored minute counts: `end = ceil((nowMs -
+ * session.started_at_ms) / 60000 + remainingSeconds / 60)`. The old
+ * `nowMinutes + ceil(remainingSeconds / 60)` rounded "now" down to a whole
+ * minute and the timer's remaining time up to one *separately*, so the sum
+ * could drift by up to a minute either way tick to tick — including
+ * oscillating back down — even though nothing about the timer had actually
+ * changed. Elapsed-ms-based rounding only ever moves forward as real time
+ * passes, so the same tick 15 seconds apart never disagrees enough to change
+ * the rounded minute. A dock pause or a dock "+2 min" changes
+ * `remainingSeconds`, so calling this again picks that up and re-plans on
+ * the next `deriveStream`. Does nothing for a step whose linked timer is
+ * missing or `completed` — that transition is `findTimerCompletedSteps` +
+ * `recordDone` instead, not an extra-minutes adjustment.
  */
 export function applyTimerState(
   session: MealCookSession,
   timers: Pick<CookingTimer, 'id' | 'status' | 'remainingSeconds'>[],
   dishes: SchedulerDish[],
-  nowMinutes: number,
+  nowMs: number,
 ): MealCookSession {
   const durationByKey = durationLookup(dishes)
   const timerById = new Map(timers.map((t) => [t.id, t]))
   let changed = false
   const steps: Record<string, MealCookStepRecord> = { ...session.steps }
+  const elapsedMinutes = (nowMs - session.started_at_ms) / 60000
 
   for (const [key, rec] of Object.entries(session.steps)) {
     if (rec.status !== 'running' || !rec.timer_id) continue
@@ -191,7 +206,7 @@ export function applyTimerState(
     if (!timer || timer.status === 'completed') continue
     const duration = durationByKey.get(key)
     if (duration === undefined) continue
-    const end = nowMinutes + Math.ceil(timer.remainingSeconds / 60)
+    const end = Math.ceil(elapsedMinutes + timer.remainingSeconds / 60)
     const extra = Math.max(0, end - rec.started_at_minutes - duration)
     if (extra !== rec.extra_minutes) {
       steps[key] = { ...rec, extra_minutes: extra }
@@ -314,6 +329,15 @@ export function recordStartTimer(
  * somehow no existing record yet (defensive — in the normal flow a running
  * record was already written by `recordBecomingActive` / `recordStartTimer`
  * / `recordStartEarly` before Done is ever reachable).
+ *
+ * Issue #653 review round 1 (S1) — also fixes `ended_at_minutes` at `now`,
+ * floored. Without it, a done step's *recorded* end kept climbing on every
+ * later `deriveStream` call (`scheduleWithProgress`'s old `min(nominalEnd,
+ * now)` recomputed against whatever `now_minutes` that later call happened
+ * to pass, not the minute Done was actually tapped) — a step already
+ * finished in the past kept looking like it was still "catching up" to its
+ * nominal end. `ended_at_minutes` is written once, here, and never
+ * recomputed.
  */
 export function recordDone(session: MealCookSession, step: StreamStep, nowMinutes: number): MealCookSession {
   const existing = session.steps[step.key]
@@ -321,7 +345,12 @@ export function recordDone(session: MealCookSession, step: StreamStep, nowMinute
   const existingExtra = existing?.extra_minutes ?? 0
   const nominalEnd = startedAt + step.duration_minutes + existingExtra
   const extra = nowMinutes > nominalEnd ? nowMinutes - startedAt - step.duration_minutes : existingExtra
-  return withStep(session, step.key, { status: 'done', started_at_minutes: startedAt, extra_minutes: extra })
+  return withStep(session, step.key, {
+    status: 'done',
+    started_at_minutes: startedAt,
+    extra_minutes: extra,
+    ended_at_minutes: Math.floor(nowMinutes),
+  })
 }
 
 /**
@@ -335,15 +364,27 @@ export function recordExtend(session: MealCookSession, key: string): MealCookSes
 }
 
 /**
- * Skip: `skipped` at `started_at_minutes = now`. Holds no resources (the
- * scheduler frees a skipped step's resources immediately — see
- * `scheduleWithProgress`), so its dependents unblock right away.
+ * Skip: `skipped`, holding no resources (the scheduler frees a skipped
+ * step's resources immediately — see `scheduleWithProgress`), so its
+ * dependents unblock right away.
+ *
+ * Issue #653 review round 1 (S1) — `started_at_minutes` now preserves an
+ * existing `running` record's own start (a step already begun and then
+ * skipped keeps the minute it actually started, not the minute it was
+ * skipped), falling back to `now` only when there's no running record to
+ * preserve (skipping a step that was never started, or already pending).
+ * `ended_at_minutes` is fixed at `now`, same as `recordDone` — see that
+ * function's doc comment.
  */
 export function recordSkip(session: MealCookSession, step: StreamStep, nowMinutes: number): MealCookSession {
+  const existing = session.steps[step.key]
+  const startedAt =
+    existing?.status === 'running' ? existing.started_at_minutes : Math.floor(nowMinutes)
   return withStep(session, step.key, {
     status: 'skipped',
-    started_at_minutes: Math.floor(nowMinutes),
+    started_at_minutes: startedAt,
     extra_minutes: 0,
+    ended_at_minutes: Math.floor(nowMinutes),
   })
 }
 
@@ -385,51 +426,71 @@ export function deriveStream(input: {
 
   const streamSteps = buildStreamSteps(dishes, timeline)
 
-  // Rule 4: finished when every step is done or skipped. (Status checks use
-  // the real `session`, not `effective` — `applyOverdueRunningSteps` only
-  // ever touches `extra_minutes`, never `status`, so they agree either way.)
-  const isDoneOrSkipped = (s: StreamStep) => {
-    const status = session.steps[s.key]?.status
-    return status === 'done' || status === 'skipped'
+  // Status checks use the real `session`, not `effective` —
+  // `applyOverdueRunningSteps` only ever touches `extra_minutes`, never
+  // `status`, so they agree either way.
+  const statusOf = (s: StreamStep) => session.steps[s.key]?.status
+
+  // Issue #653 review round 1 (B1/B2) — precedence order, replacing the old
+  // rules 2/3/4/5. `finished` (5) is last and only fires when every step is
+  // done or skipped; it is never returned while anything — hands-on or
+  // hands-off — is still running, which is what the old rule 4 got wrong
+  // (a session with nothing pending and nothing hands-on running, but a
+  // hands-off step still ticking in the dock, fell through to `finished`
+  // even though the cook wasn't done).
+  if (
+    streamSteps.length > 0 &&
+    streamSteps.every((s) => statusOf(s) === 'done' || statusOf(s) === 'skipped')
+  ) {
+    return { timeline, now: { kind: 'finished' }, next_up: null, running: [] }
   }
-  if (streamSteps.length > 0 && streamSteps.every(isDoneOrSkipped)) {
-    return {
-      timeline,
-      now: { kind: 'finished' },
-      next_up: null,
-      running: streamSteps.filter((s) => !s.hands_on && session.steps[s.key]?.status === 'running'),
-    }
-  }
 
-  const runningHandsOff = streamSteps.filter(
-    (s) => !s.hands_on && session.steps[s.key]?.status === 'running',
-  )
-
-  // Rule 2: a running hands-on step is always the Now card — at most one is
-  // ever current (guarantee 1 on the scheduler side: a single shared cook
-  // resource).
-  const runningHandsOn = streamSteps.find((s) => s.hands_on && session.steps[s.key]?.status === 'running')
-
-  // Rule 3: otherwise, the first pending step (no progress entry yet) in
-  // live-plan order.
+  const runningHandsOff = streamSteps.filter((s) => !s.hands_on && statusOf(s) === 'running')
+  const runningHandsOn = streamSteps.find((s) => s.hands_on && statusOf(s) === 'running')
   const pending = streamSteps.filter((s) => !session.steps[s.key])
 
+  // (1) The earliest-due pending hands-off step — "hands-off never waits
+  // behind hands-on": starting it costs nothing but a tap, and once started
+  // its own clock ticks independently in the dock, so there's no reason to
+  // hide it behind whatever hands-on step happens to be running. `pending`
+  // is already in live-plan order (start time, then column, then step
+  // index), so the first match here is the earliest-due one.
+  const dueHandsOffPending = pending.find((s) => !s.hands_on && s.start <= now_minutes)
+
   let now: NowCard
-  if (runningHandsOn) {
+  if (dueHandsOffPending) {
+    now = { kind: 'active', step: dueHandsOffPending }
+  } else if (runningHandsOn) {
+    // (2) A running hands-on step is the Now card — at most one is ever
+    // current (guarantee 1 on the scheduler side: a single shared cook
+    // resource).
     now = { kind: 'active', step: runningHandsOn }
   } else {
+    // (3) Otherwise, the first pending step, active if due, upcoming if not.
     const first = pending[0]
     if (!first) {
-      // Nothing running, nothing pending, but not every step is done/skipped
-      // either — shouldn't happen with a consistent session (every step is
-      // exactly one of pending/running/done/skipped), but stay total rather
-      // than throwing on a future bug.
-      return { timeline, now: { kind: 'finished' }, next_up: null, running: runningHandsOff }
+      // (4) Nothing pending, nothing hands-on running: `waiting` while one or
+      // more hands-off steps are still running in the dock, since there's
+      // still something left to come back to; otherwise every step really is
+      // accounted for elsewhere and this is (5) `finished` — defensive, since
+      // a consistent session already reaches the done/skipped check above in
+      // that case, but staying total rather than throwing on a future bug.
+      return runningHandsOff.length > 0
+        ? {
+            timeline,
+            now: { kind: 'waiting', running: runningHandsOff },
+            next_up: null,
+            running: runningHandsOff,
+          }
+        : { timeline, now: { kind: 'finished' }, next_up: null, running: [] }
     }
     if (first.start <= now_minutes) {
       now = { kind: 'active', step: first }
     } else {
-      const waitingOnKey = dependencyKeysOf(dishes, first.dish_id, first.step_index).find(
+      // Issue #653 review round 1 (nit) — sanitized deps, so a degraded dish
+      // (its `depends_on` fell back to running strictly in order) still shows
+      // the real "after X" reason instead of none at all.
+      const waitingOnKey = sanitizedDependencyKeys(dishes, first.dish_id, first.step_index).find(
         (depKey) => session.steps[depKey]?.status === 'running',
       )
       const waitingOn = waitingOnKey ? streamSteps.find((s) => s.key === waitingOnKey) : undefined
@@ -442,10 +503,15 @@ export function deriveStream(input: {
     }
   }
 
-  // Rule 5: next_up is the pending step after the Now card's step. When the
-  // Now card is the running hands-on override (not itself pending), that's
-  // simply the first pending step; otherwise it's the one after `first`.
-  const next_up = runningHandsOn ? pending[0] ?? null : pending[1] ?? null
+  // next_up: the pending step after the Now card's step, in live-plan order.
+  // The Now card's step isn't always `pending[0]` any more — the due-hands-
+  // off-pending and running-hands-on overrides can each promote a step that
+  // sits later in (or entirely outside) `pending` — so "the one after" is
+  // found by key, not by a fixed index, falling back to `pending[0]` when the
+  // Now card's step isn't itself in `pending` (the running-hands-on case).
+  const nowStep = now.kind === 'active' || now.kind === 'upcoming' ? now.step : undefined
+  const nowIndexInPending = nowStep ? pending.findIndex((s) => s.key === nowStep.key) : -1
+  const next_up = nowIndexInPending === -1 ? pending[0] ?? null : pending[nowIndexInPending + 1] ?? null
 
   return { timeline, now, next_up, running: runningHandsOff }
 }

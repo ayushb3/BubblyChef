@@ -11,7 +11,7 @@ import MealCookFinished from '@/components/meal/MealCookFinished'
 import MealTimelineSheet from '@/components/meal/MealTimelineSheet'
 import MealTimelineTable from '@/components/meal/MealTimelineTable'
 import { fetchMeal } from '@/lib/api/meals'
-import { schedulerDishesForMeal } from '@/lib/meal-dishes'
+import { dishStepSignaturesForMeal, schedulerDishesForMeal } from '@/lib/meal-dishes'
 import { formatClockTime } from '@/lib/meal-anchor'
 import type { Column } from '@/lib/meal-scheduler'
 import {
@@ -34,7 +34,7 @@ import {
   isStaleMealCookSession,
   type MealCookSession,
 } from '@/lib/meal-cook-session'
-import { useCookingTimers, TIMER_COMPLETED_EVENT } from '@/lib/useCookingTimers'
+import { useCookingTimers } from '@/lib/useCookingTimers'
 
 /**
  * Issue #653 — the full-screen cook-along (contract §5). Schedules the same
@@ -57,12 +57,15 @@ export default function MealCookPage() {
   // means this page's tab regularly transitions hidden -> visible while
   // cooking; the default focus-refetch would otherwise turn that into a
   // network request every single time, which the contract rules out ("no
-  // network request after the meal has loaded").
+  // network request after the meal has loaded"). `refetchOnReconnect: false`
+  // (review round 1) for the same reason — a phone in the kitchen dropping
+  // and regaining wifi mid-cook shouldn't trigger one either.
   const { data: meal, isLoading, isError } = useQuery({
     queryKey: ['meal', id],
     queryFn: () => fetchMeal(id),
     enabled: Boolean(id),
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 
   const { timers, start: startTimer } = useCookingTimers()
@@ -79,31 +82,53 @@ export default function MealCookPage() {
 
   const schedulerDishes = useMemo(() => (meal ? schedulerDishesForMeal(meal) : []), [meal])
   const dishIds = useMemo(() => schedulerDishes.map((d) => d.dish_id), [schedulerDishes])
+  // Issue #653 review round 1 (S4) — see the meal screen's identical memo.
+  const dishStepSignatures = useMemo(() => (meal ? dishStepSignaturesForMeal(meal) : []), [meal])
   const columns = useMemo(
     () => schedulerDishes.map((d) => ({ column: d.column, title: d.title })),
     [schedulerDishes],
   )
 
-  // Restore (or redirect away from) the session once the meal has loaded —
-  // staleness needs the meal's current dish ids, so this waits for `meal`
-  // rather than reading storage immediately.
+  // Restore (once — `restoredRef`) or redirect away from the session once the
+  // meal has loaded, and — issue #653 review round 1 (S4) — re-check
+  // staleness on every later change to `meal` too, not only at that first
+  // restore: an `ensureSteps` upgrade or an edited recipe can land *after*
+  // the cook-along is already open (the meal query can refetch/invalidate
+  // independently of this page's own actions), and a session that was fine
+  // at restore time can turn stale under it.
   useEffect(() => {
-    if (restoredRef.current) return
     if (!meal) return
-    restoredRef.current = true
-    const active = getActiveMealCookSession(id)
-    if (!active || isStaleMealCookSession(active, dishIds)) {
-      // Restoring from localStorage (an external system) on mount, exactly
-      // the "subscribe to an external system" case the rule carves out —
-      // same as `useCookingTimers.tsx`'s own restore-on-mount effect.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setRedirecting(true)
-      router.replace(`/meals/${id}`)
+    if (!restoredRef.current) {
+      restoredRef.current = true
+      const active = getActiveMealCookSession(id)
+      if (!active || isStaleMealCookSession(active, dishIds, dishStepSignatures)) {
+        // Restoring from localStorage (an external system) on mount, exactly
+        // the "subscribe to an external system" case the rule carves out —
+        // same as `useCookingTimers.tsx`'s own restore-on-mount effect.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setRedirecting(true)
+        router.replace(`/meals/${id}`)
+        return
+      }
+      setSession(active)
+      setNowMinutes(Math.floor((Date.now() - active.started_at_ms) / 60_000))
       return
     }
-    setSession(active)
-    setNowMinutes(Math.floor((Date.now() - active.started_at_ms) / 60_000))
-  }, [meal, dishIds, id, router])
+    // Already restored: re-check the *current* session (not necessarily
+    // `active` above, which only ran once) against the now-current meal.
+    if (session && isStaleMealCookSession(session, dishIds, dishStepSignatures)) {
+      setRedirecting(true)
+      router.replace(`/meals/${id}`)
+    }
+  }, [meal, dishIds, dishStepSignatures, id, router, session])
+
+  // Issue #653 review round 1 (nit) — depends on `startedAtMs` (a primitive,
+  // fixed for the life of the session), not `session` itself: `session`
+  // changes on every recorder call while cooking, which would otherwise tear
+  // down and recreate this interval on every single tap for no reason (the
+  // clock doesn't need to know about step progress, only when cooking
+  // started).
+  const startedAtMs = session?.started_at_ms
 
   // The clock: recomputes `now_minutes` immediately, then every 15s, but
   // only while the tab is visible — a backgrounded tab doesn't need a live
@@ -112,13 +137,13 @@ export default function MealCookPage() {
   // for the next 15s boundary, so the screen doesn't show minutes-old state
   // right after switching back.
   useEffect(() => {
-    if (!session) return
-    const startedAtMs = session.started_at_ms
+    if (startedAtMs === undefined) return
+    const startAt = startedAtMs
     function tick() {
       // `floor`, matching the contract's `now_minutes` definition exactly —
       // keeps `first.start <= now_minutes` activation checks from firing a
       // fraction of a minute early.
-      setNowMinutes(Math.floor((Date.now() - startedAtMs) / 60_000))
+      setNowMinutes(Math.floor((Date.now() - startAt) / 60_000))
     }
     let interval: ReturnType<typeof setInterval> | null = null
     function startInterval() {
@@ -145,7 +170,7 @@ export default function MealCookPage() {
       stopInterval()
       document.removeEventListener('visibilitychange', handleVisibility)
     }
-  }, [session])
+  }, [startedAtMs])
 
   // Persists `updated` (after locking in any overdue-running bump) and
   // updates state in one call — every recorder call in this page goes
@@ -192,14 +217,20 @@ export default function MealCookPage() {
     updateSession(recordBecomingActive(session, step, nowMinutes))
   }, [stream, session, nowMinutes, updateSession])
 
-  // Timer wiring, part 1: on mount and on every `timers` change, re-derive
-  // any running hands-off step's extra_minutes from its linked dock timer,
-  // and mark done anything whose linked timer completed, was dismissed, or
-  // is simply missing (a reload after it fired while the tab was closed).
-  // `timers` is the external system this effect subscribes to.
+  // Timer wiring: on mount and on every `timers` change, re-derive any
+  // running hands-off step's extra_minutes from its linked dock timer, and
+  // mark done anything whose linked timer completed, was dismissed, or is
+  // simply missing (a reload after it fired while the tab was closed).
+  // `timers` is the external system this effect subscribes to — including
+  // the store's own `TIMER_COMPLETED_EVENT` (`useCookingTimers` updates its
+  // returned `timers` array in the same tick it dispatches that event, so a
+  // second explicit listener here would just be the same transition handled
+  // twice; issue #653 review round 1 removed it as redundant).
   useEffect(() => {
     if (!session) return
-    let next = applyTimerState(session, timers, schedulerDishes, nowMinutes)
+    // Issue #653 review round 1 (S2) — real elapsed ms, not the floored
+    // `nowMinutes` state; see `applyTimerState`'s doc comment.
+    let next = applyTimerState(session, timers, schedulerDishes, Date.now())
     for (const key of findTimerCompletedSteps(next, timers)) {
       const step = stepByKey.get(key)
       if (step) next = recordDone(next, step, nowMinutes)
@@ -207,24 +238,6 @@ export default function MealCookPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (next !== session) updateSession(next)
   }, [timers, session, schedulerDishes, nowMinutes, stepByKey, updateSession])
-
-  // Timer wiring, part 2: react to the store's own completion event too,
-  // rather than relying solely on the `timers`-array-changed path above —
-  // the same explicit trigger `TimerDock` itself uses for its own
-  // completion feedback.
-  useEffect(() => {
-    if (!session) return
-    function handleTimerCompleted() {
-      let next = session as MealCookSession
-      for (const key of findTimerCompletedSteps(next, timers)) {
-        const step = stepByKey.get(key)
-        if (step) next = recordDone(next, step, nowMinutes)
-      }
-      if (next !== session) updateSession(next)
-    }
-    window.addEventListener(TIMER_COMPLETED_EVENT, handleTimerCompleted)
-    return () => window.removeEventListener(TIMER_COMPLETED_EVENT, handleTimerCompleted)
-  }, [session, timers, nowMinutes, stepByKey, updateSession])
 
   const timelineProgress = useMemo(() => {
     if (!session) return undefined
@@ -245,14 +258,42 @@ export default function MealCookPage() {
     return formatClockTime(new Date(session.started_at_ms + offsetMinutes * 60_000))
   }
 
-  // Pills are not disabled here even though `MealNowCard` supports it — every
-  // action below (a recorder call, or `timers.start`) is fully synchronous,
-  // so there is no in-flight window a double tap could land in (the second
-  // click can only ever be handled after the first has already produced a
-  // fully-updated session). A `disabled`/"applying" flag would guard against
-  // nothing real.
+  // Issue #653 review round 1 (nit) — double-tap guard: once the Now card's
+  // step key changes (a new step becomes current, or the card moves to
+  // upcoming/waiting/finished), taps are ignored for ~400ms. Every action
+  // below is otherwise fully synchronous (a recorder call, or
+  // `timers.start`) — there's no in-flight window a *stale* double tap could
+  // land in, which is why pills aren't `disabled` while "applying" — but a
+  // fast double tap can still land on the *next* card's primary button, in
+  // the same screen position, right after the first tap advances the Now
+  // card out from under the second one.
+  const tapGuardUntilRef = useRef(0)
+  const nowCardKeyRef = useRef<string | undefined>(undefined)
+  const nowCardInitializedRef = useRef(false)
+  useEffect(() => {
+    const key =
+      stream && (stream.now.kind === 'active' || stream.now.kind === 'upcoming')
+        ? stream.now.step.key
+        : stream?.now.kind
+    if (key !== nowCardKeyRef.current) {
+      // The very first assignment (mount restoring the session) isn't a
+      // "change" to guard against — only a later transition, where a stray
+      // tap could land on whatever button is now in the spot the previous
+      // card's primary action used to occupy.
+      if (nowCardInitializedRef.current) {
+        tapGuardUntilRef.current = Date.now() + 400
+      }
+      nowCardKeyRef.current = key
+      nowCardInitializedRef.current = true
+    }
+  }, [stream])
+  function tapGuarded(): boolean {
+    return Date.now() < tapGuardUntilRef.current
+  }
+
   function handleDone() {
     if (!session || !stream || stream.now.kind !== 'active') return
+    if (tapGuarded()) return
     const step = stream.now.step
     if (step.hands_on) {
       updateSession(recordDone(session, step, nowMinutes))
@@ -264,16 +305,20 @@ export default function MealCookPage() {
 
   function handleExtend() {
     if (!session || !stream || stream.now.kind !== 'active') return
+    if (tapGuarded()) return
     updateSession(recordExtend(session, stream.now.step.key))
   }
 
   function handleSkip() {
-    if (!session || !stream || stream.now.kind === 'finished') return
+    if (!session || !stream) return
+    if (stream.now.kind !== 'active' && stream.now.kind !== 'upcoming') return
+    if (tapGuarded()) return
     updateSession(recordSkip(session, stream.now.step, nowMinutes))
   }
 
   function handleStartEarly() {
     if (!session || !stream || stream.now.kind !== 'upcoming') return
+    if (tapGuarded()) return
     const step = stream.now.step
     if (step.hands_on) {
       updateSession(recordStartEarly(session, step, nowMinutes))
