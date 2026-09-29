@@ -13,7 +13,7 @@
  * dish tagging, so they're named constants here.
  */
 
-import type { Column, MealTimeline, RowCell, TimelineRow } from '@/lib/meal-scheduler'
+import type { Column, MealTimeline, RowCell, SchedulerWarning, TimelineRow } from '@/lib/meal-scheduler'
 import { anchoredTimeLabel, type MealAnchorResult } from '@/lib/meal-anchor'
 
 const COLUMN_COLORS: Record<Column, string> = {
@@ -26,6 +26,20 @@ const COLUMN_LABELS: Record<Column, string> = {
   main: 'Main',
   side_1: 'Side 1',
   side_2: 'Side 2',
+}
+
+/**
+ * Plain-language notes for a timeline's warnings. The scheduler's warnings
+ * are machine codes; this is the one place they become copy, so the fixture
+ * page and the real meal screen say the same thing.
+ */
+export function timelineNotes(timeline: MealTimeline): string[] {
+  const copy: Record<SchedulerWarning, string> = {
+    finish_spread: `The dishes finish up to ${timeline.finish_spread_minutes} min apart: the steps can't line up any closer.`,
+    estimated_duration: 'Some step times are estimates.',
+    sequential_fallback: "One dish's steps run strictly in order, because their order couldn't be read.",
+  }
+  return timeline.warnings.map((w) => copy[w])
 }
 
 export interface MealTimelineTableColumn {
@@ -76,13 +90,13 @@ export default function MealTimelineTable({
       >
         <div className="text-[var(--color-muted)]">Time</div>
         {columns.map(({ column, title }) => (
-          <div key={column} className="flex items-center gap-1.5 truncate">
+          <div key={column} className="flex items-start gap-1.5 min-w-0">
             <span
               aria-hidden="true"
-              className="inline-block h-2.5 w-2.5 rounded-full shrink-0"
+              className="mt-1 inline-block h-2.5 w-2.5 rounded-full shrink-0"
               style={{ background: COLUMN_COLORS[column] }}
             />
-            <span className="truncate">{title || COLUMN_LABELS[column]}</span>
+            <span className="min-w-0 break-words line-clamp-2">{title || COLUMN_LABELS[column]}</span>
           </div>
         ))}
       </div>

@@ -6,7 +6,7 @@
 // longer needed for verification.
 
 import { useMemo, useState } from 'react'
-import MealTimelineTable from '@/components/meal/MealTimelineTable'
+import MealTimelineTable, { timelineNotes } from '@/components/meal/MealTimelineTable'
 import { scheduleMeal } from '@/lib/meal-scheduler'
 import { resolveMealAnchor, formatClockTime } from '@/lib/meal-anchor'
 import { ALL_MEAL_FIXTURES } from '@/lib/meal-fixtures'
@@ -136,7 +136,7 @@ export default function MealTimelineDemoClient() {
         </h2>
         {timeline.warnings.length > 0 && (
           <p className="text-xs" style={{ color: 'var(--color-primary-dark)' }} data-testid="meal-timeline-warnings">
-            {timeline.warnings.join(', ')}
+            {timelineNotes(timeline).join(' ')}
           </p>
         )}
 

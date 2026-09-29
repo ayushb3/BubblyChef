@@ -7,9 +7,9 @@
 
 import React from 'react'
 import { render, screen, within } from '@testing-library/react'
-import MealTimelineTable from '@/components/meal/MealTimelineTable'
+import MealTimelineTable, { timelineNotes } from '@/components/meal/MealTimelineTable'
 import { scheduleMeal } from '@/lib/meal-scheduler'
-import { PASTA_SAUCE_SALAD, ONE_PAN_MEAL, ROAST_TWO_SIDES } from '@/lib/meal-fixtures'
+import { PASTA_SAUCE_SALAD, ONE_PAN_MEAL, ONE_SIDE_MEAL, ROAST_TWO_SIDES } from '@/lib/meal-fixtures'
 
 describe('MealTimelineTable', () => {
   it('renders one column per dish plus the time column', () => {
@@ -136,5 +136,21 @@ describe('MealTimelineTable', () => {
     const timeline = scheduleMeal({ dishes: [] })
     render(<MealTimelineTable timeline={timeline} columns={[]} />)
     expect(screen.getByTestId('meal-timeline-empty')).toBeInTheDocument()
+  })
+})
+
+describe('timelineNotes', () => {
+  it('turns finish_spread into copy with the spread, never the raw code', () => {
+    const timeline = scheduleMeal({ dishes: ONE_SIDE_MEAL.dishes })
+    expect(timeline.warnings).toContain('finish_spread')
+    const notes = timelineNotes(timeline)
+    expect(notes).toEqual([
+      "The dishes finish up to 3 min apart: the steps can't line up any closer.",
+    ])
+    expect(notes.join(' ')).not.toMatch(/finish_spread/)
+  })
+
+  it('is empty when there are no warnings', () => {
+    expect(timelineNotes(scheduleMeal({ dishes: PASTA_SAUCE_SALAD.dishes }))).toEqual([])
   })
 })
