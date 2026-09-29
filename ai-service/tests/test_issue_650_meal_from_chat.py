@@ -374,10 +374,19 @@ class TestOptionStage:
                 MealOptionLLM(
                     title="Takeout-Style Stir Fry",
                     dishes=[
-                        _dish_llm("main", "Stir Fry", ["tofu", "soy sauce"]),
+                        _dish_llm("main", "Stir Fry", ["tofu", "soy sauce", "rice"]),
                         _dish_llm("side", "Steamed Greens", ["broccoli"]),
                     ],
-                )
+                ),
+                # Needs far more than the to-buy cap. With the pantry ignored
+                # it must still be shown, not silently dropped.
+                MealOptionLLM(
+                    title="Big Shop Feast",
+                    dishes=[
+                        _dish_llm("main", "Paella", ["saffron", "prawns", "mussels", "chorizo"]),
+                        _dish_llm("side", "Aioli Toasts", ["baguette", "garlic"]),
+                    ],
+                ),
             ]
         )
         meal_ai = MagicMock()
@@ -418,6 +427,13 @@ class TestOptionStage:
         prompt_used = meal_ai.complete.await_args.kwargs["prompt"]
         assert MEAL_OPTIONS_SYSTEM_PROMPT_NO_PANTRY in prompt_used
         assert "rice" not in prompt_used
+
+        # PR #659 review: the opt-out also reaches what the user sees, not just
+        # the prompt. No coverage claim, no rescue chips, no cap-based drop.
+        options = envelope.proposal.options  # type: ignore[union-attr]
+        assert [o.title for o in options] == ["Takeout-Style Stir Fry", "Big Shop Feast"]
+        assert all(o.coverage is None for o in options)
+        assert all(o.rescues == [] for o in options)
 
 
 # ---------------------------------------------------------------------------
@@ -545,6 +561,8 @@ class TestPickStage:
         for dish in proposal.dishes:
             assert dish.recipe.steps is not None
             assert len(dish.recipe.steps) == len(dish.recipe.instructions)
+        # The idempotency key POST /api/meals dedupes on (PR #659 review).
+        assert len(proposal.meal_ref) == 32
 
 
 # ---------------------------------------------------------------------------

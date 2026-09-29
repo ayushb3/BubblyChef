@@ -42,6 +42,8 @@ The shared contract between the ai-service half and the Next.js half of issue #6
 ```
 
 - Coverage, `to_buy` and `rescues` are computed **in code** (deterministic pantry matching; staples count as assumed), never by the model.
+- **Pantry opt-out** ("don't use my pantry"): `coverage` is `null`, `rescues` is `[]`, and the to-buy cap isn't applied. The client hides the coverage chip and rescue flag (PR #659 review).
+- `est_total_minutes` / `est_hands_on_minutes`, on the option and on each dish, are `null` when the model gave no estimate. The client hides the time chip rather than print "null min".
 - The three options are retained in the session, next to `brainstorm_ideas`, keyed by `option_id`.
 - Pills: 2–4 short predicted replies ride the **existing** `metadata.follow_up_suggestions` channel. Issue #651 refines them.
 
@@ -56,6 +58,7 @@ The client sends a normal chat request with the same `conversation_id`. The visi
 ```jsonc
 {
   "proposal_type": "meal",
+  "meal_ref": "9f3c…",                // uuid4 hex, stamped per pick; persists in the conversation history
   "title": "Lemon chicken dinner",
   "servings": 2,
   "constraints": { "kitchen_limits": [], "exclusive_tags": [], "recipe_constraints": { } },
@@ -79,6 +82,7 @@ The client sends a normal chat request with the same `conversation_id`. The visi
 
 ```jsonc
 { "title": "...", "servings": 2, "constraints": { }, "is_draft": true, "source_type": "chat",
+  "source_ref": "9f3c…",              // the proposal's meal_ref; optional
   "dishes": [
     { "role": "main", "position": 0, "recipe": { /* new recipe payload incl. steps; saved with is_draft = the meal's is_draft */ } },
     { "role": "side", "position": 1, "recipe_id": "uuid-of-existing-recipe" }
@@ -87,9 +91,11 @@ The client sends a normal chat request with the same `conversation_id`. The visi
 
 It returns the meal as `GET /api/meals/[id]` would.
 
+**Idempotent on `source_ref`** (migration `00014_meals_source_ref.sql`: a nullable column plus a partial unique index on `(user_id, source_ref)`). A repeat `POST` with the same `source_ref` returns the existing meal with 200 instead of creating a second. When the repeat asks for `is_draft: false` and the existing meal is a draft, it's promoted first. A repeat asking for a draft never demotes a saved meal. Two concurrent first taps: the loser's insert hits 23505 and returns the winner's meal. This is what makes Open → Back → Save one meal, since the chat page's in-memory guard doesn't survive the remount.
+
 - **`GET /api/meals`**: saved meals, or drafts with `?drafts=1`. Each item is `{ id, title, servings, is_draft, dishes: [{ role, position, recipe_id, title, total_time_minutes }] }`.
 - **`GET /api/meals/[id]`**: the meal plus `dishes[].recipe`, each the full recipe row including `steps`.
-- **`PUT /api/meals/[id]`**: `{ title?, servings?, constraints?, promote?: true }`. `promote` sets `is_draft = false` on the meal and on its draft dish recipes. Dish replace / add / remove is part of the spec but not needed by this ticket's UI. If implemented, it must reject a change that leaves zero sides or more than two.
+- **`PUT /api/meals/[id]`**: `{ title?, servings?, constraints?, promote?: true }`. `servings` must be a whole number from 1 to 100, otherwise 400 and nothing is written. `promote` sets `is_draft = false` on the meal and on its draft dish recipes. Dish replace / add / remove is part of the spec but not needed by this ticket's UI. If implemented, it must reject a change that leaves zero sides or more than two.
 - **`DELETE /api/meals/[id]`**: deletes the meal and its *draft* dish recipes, and keeps the saved ones.
 - **Default servings** is the backend's job (it generates at that size): an explicit number in the ask, else the mode of `servings` over the user's last three meals with `last_cooked_at` set, else 2. The repository gets a read method for this.
 

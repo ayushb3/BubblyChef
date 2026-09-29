@@ -38,6 +38,7 @@ const MEAL_RESPONSE: ChatResponse = {
   assistant_message: 'Here is your meal:',
   proposal: {
     proposal_type: 'meal',
+    meal_ref: 'ref-abc123',
     title: 'Lemon chicken dinner',
     servings: 2,
     constraints: { kitchen_limits: [], exclusive_tags: [], recipe_constraints: {} },
@@ -145,6 +146,9 @@ describe('compact meal card actions (issue #650)', () => {
     await waitFor(() => expect(routerPush).toHaveBeenCalledWith('/meals/meal-1'))
     expect(createMeal).toHaveBeenCalledTimes(1)
     expect(createMeal).toHaveBeenCalledWith(expect.objectContaining({ is_draft: true }))
+    // The proposal's meal_ref rides along as the server-side idempotency key,
+    // which is what survives Open → Back → Save (the page remounts).
+    expect(createMeal).toHaveBeenCalledWith(expect.objectContaining({ source_ref: 'ref-abc123' }))
   })
 
   it('a second tap on Open meal while the first POST is in flight does not create a second meal', async () => {

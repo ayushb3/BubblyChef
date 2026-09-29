@@ -97,8 +97,9 @@ export interface MealOptionDish {
   role: 'main' | 'side'
   name: string
   key_ingredients: string[]
-  est_total_minutes: number
-  est_hands_on_minutes: number
+  /** null when the model gave no estimate. */
+  est_total_minutes: number | null
+  est_hands_on_minutes: number | null
 }
 
 export interface MealOptionCoverage {
@@ -113,9 +114,11 @@ export interface MealOption {
   blurb: string
   /** Exactly one main first, then 1-2 sides. */
   dishes: MealOptionDish[]
-  est_total_minutes: number
-  est_hands_on_minutes: number
-  coverage: MealOptionCoverage
+  /** null when no dish carried an estimate; the time chip is hidden then. */
+  est_total_minutes: number | null
+  est_hands_on_minutes: number | null
+  /** null when the user asked not to use the pantry; the coverage chip is hidden then. */
+  coverage: MealOptionCoverage | null
   /** Expiring-soon items this option uses; empty when none. */
   rescues: string[]
 }
@@ -137,6 +140,12 @@ export interface MealProposalDish {
 
 export interface MealProposal {
   proposal_type: 'meal'
+  /**
+   * Stamped by the ai-service per pick and kept in the conversation history.
+   * Sent to `POST /api/meals` as `source_ref` so Open and Save resolve to one
+   * meal even across navigation. Optional: older restored turns lack it.
+   */
+  meal_ref?: string
   title: string
   servings: number
   constraints: MealProposalConstraints

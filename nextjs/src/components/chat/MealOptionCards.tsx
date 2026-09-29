@@ -97,12 +97,18 @@ export default function MealOptionCards({
             </ul>
 
             <div className="flex flex-wrap gap-1.5 mt-1">
-              <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold border border-[var(--color-border)] text-[var(--color-text)]">
-                ⏱ {option.est_total_minutes} min total · {option.est_hands_on_minutes} min hands-on
-              </span>
-              <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold border border-[var(--color-border)] text-[var(--color-text)]">
-                uses {option.coverage.pantry_items_used} of your items · {option.coverage.to_buy.length} to buy
-              </span>
+              {option.est_total_minutes != null && (
+                <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold border border-[var(--color-border)] text-[var(--color-text)]">
+                  ⏱ {option.est_total_minutes} min total
+                  {option.est_hands_on_minutes != null && ` · ${option.est_hands_on_minutes} min hands-on`}
+                </span>
+              )}
+              {/* null when the user asked not to use the pantry — no coverage to report. */}
+              {option.coverage && (
+                <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold border border-[var(--color-border)] text-[var(--color-text)]">
+                  uses {option.coverage.pantry_items_used} of your items · {option.coverage.to_buy.length} to buy
+                </span>
+              )}
               {option.rescues.length > 0 && (
                 <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[var(--color-expiring)] text-[var(--color-expiring-text)]">
                   🍅 rescues {option.rescues.join(', ')}

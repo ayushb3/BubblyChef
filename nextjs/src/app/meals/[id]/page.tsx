@@ -46,7 +46,8 @@ export default function MealDetailPage() {
   const handleServingsChange = (delta: number) => {
     if (!meal) return
     const next = meal.servings + delta
-    if (next < 1) return
+    // Same bounds `PUT /api/meals/[id]` enforces.
+    if (next < 1 || next > 100) return
     servingsMutation.mutate(next)
   }
 
@@ -175,7 +176,7 @@ export default function MealDetailPage() {
                 type="button"
                 aria-label="Increase servings"
                 onClick={() => handleServingsChange(1)}
-                disabled={servingsMutation.isPending}
+                disabled={servingsMutation.isPending || meal.servings >= 100}
                 className="w-7 h-7 rounded-full flex items-center justify-center font-bold disabled:opacity-40"
                 style={{ background: 'var(--color-bg)', color: 'var(--color-text)' }}
               >

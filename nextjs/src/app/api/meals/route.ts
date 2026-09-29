@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse } from '@/lib/response-helpers'
 import { mergeTags, sanitizeSteps } from '@/lib/recipe-helpers'
-import { fetchFullMeal, fetchMealSummaries, normalizeConstraints, validateMealDishRoles } from '@/lib/meal-helpers'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import {
+  fetchFullMeal,
+  fetchMealSummaries,
+  normalizeConstraints,
+  promoteMeal,
+  validateMealDishRoles,
+} from '@/lib/meal-helpers'
 import type { CreateMealRequest } from '@/types/meals'
 
 /**
@@ -32,6 +39,15 @@ export async function GET(request: Request) {
  * steps sanitized through `sanitizeSteps` same as `POST /api/recipes`) or a
  * reference to an existing recipe id owned by this user. Returns the meal as
  * `GET /api/meals/[id]` would.
+ *
+ * Idempotent on `source_ref` (PR #659 review): the chat sends the `meal`
+ * proposal's `meal_ref`, which survives navigation in the conversation
+ * history, so Open → Back → Save on the same card resolves to the meal Open
+ * created instead of inserting a second one. A repeat with `is_draft: false`
+ * promotes an existing draft; a repeat asking for a draft never demotes a
+ * saved meal. The partial unique index on (user_id, source_ref) settles two
+ * concurrent first taps: the loser's insert hits 23505 and returns the
+ * winner's meal.
  */
 export async function POST(request: Request) {
   const result = await requireAuth()
@@ -50,9 +66,23 @@ export async function POST(request: Request) {
   const roleError = validateMealDishRoles(body.dishes)
   if (roleError) return errorResponse(roleError, 400)
 
+  const requested = body.servings
   const servings =
-    typeof body.servings === 'number' && body.servings > 0 ? body.servings : 2
+    typeof requested === 'number' && Number.isInteger(requested) && requested >= 1 && requested <= 100
+      ? requested
+      : 2
   const isDraft = body.is_draft ?? false
+  const sourceRef =
+    typeof body.source_ref === 'string' && body.source_ref.trim() ? body.source_ref.trim() : null
+
+  if (sourceRef) {
+    try {
+      const existing = await existingMealForRef(supabase, user.id, sourceRef, isDraft)
+      if (existing) return existing
+    } catch (err) {
+      return errorResponse(err instanceof Error ? err.message : 'Failed to create meal')
+    }
+  }
 
   const { data: meal, error: mealError } = await supabase
     .from('meals')
@@ -64,10 +94,19 @@ export async function POST(request: Request) {
       constraints: normalizeConstraints(body.constraints),
       is_draft: isDraft,
       source_type: body.source_type || 'chat',
+      source_ref: sourceRef,
     })
     .select()
     .single()
 
+  if (mealError?.code === '23505' && sourceRef) {
+    try {
+      const existing = await existingMealForRef(supabase, user.id, sourceRef, isDraft)
+      if (existing) return existing
+    } catch (err) {
+      return errorResponse(err instanceof Error ? err.message : 'Failed to create meal')
+    }
+  }
   if (mealError || !meal) {
     return errorResponse(mealError?.message ?? 'Failed to create meal')
   }
@@ -149,4 +188,33 @@ export async function POST(request: Request) {
   if (!full) return errorResponse('Failed to load created meal')
 
   return NextResponse.json(full, { status: 201 })
+}
+
+/**
+ * The meal this user already created from `sourceRef`, as `POST` returns it
+ * (200, not 201), or `null` when there is none. A save request (`isDraft`
+ * false) against an existing draft promotes it first.
+ */
+async function existingMealForRef(
+  supabase: SupabaseClient,
+  userId: string,
+  sourceRef: string,
+  isDraft: boolean,
+): Promise<NextResponse | null> {
+  const { data: existing, error } = await supabase
+    .from('meals')
+    .select('id, is_draft')
+    .eq('user_id', userId)
+    .eq('source_ref', sourceRef)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!existing) return null
+
+  if (!isDraft && existing.is_draft) {
+    await promoteMeal(supabase, userId, existing.id as string)
+  }
+
+  const full = await fetchFullMeal(supabase, userId, existing.id as string)
+  if (!full) return null
+  return NextResponse.json(full, { status: 200 })
 }

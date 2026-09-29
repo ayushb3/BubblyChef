@@ -321,7 +321,7 @@ def _apply_to_buy_cap(options: list[MealOption]) -> list[MealOption]:
     options when the cap genuinely filters some out, rather than padding
     back up to 3 with an option that needs a bigger shop.
     """
-    within_cap = [o for o in options if len(o.coverage.to_buy) <= _MAX_TO_BUY]
+    within_cap = [o for o in options if o.coverage is None or len(o.coverage.to_buy) <= _MAX_TO_BUY]
     return within_cap if within_cap else options
 
 
@@ -505,7 +505,9 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     if not isinstance(result, MealOptionsLLMResult) or not result.options:
         return _meal_generation_failed_state(state, "no options returned")
 
-    pantry_items = await _pantry_items_for_matching(user_id)
+    # Pantry opt-out (#287): match nothing, so the cards claim no pantry use,
+    # flag no rescues, and no option is dropped for its to-buy count.
+    pantry_items = await _pantry_items_for_matching(user_id) if pantry_grounded else []
 
     options: list[MealOption] = []
     for idx, raw_option in enumerate(result.options[:3], start=1):
@@ -513,7 +515,10 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         if dishes is None:
             logger.info("meal_options_stage: dropping option %r -- no valid side", raw_option.title)
             continue
-        coverage, rescues = _compute_coverage_and_rescues(dishes, pantry_items)
+        coverage: MealCoverage | None = None
+        rescues: list[str] = []
+        if pantry_grounded:
+            coverage, rescues = _compute_coverage_and_rescues(dishes, pantry_items)
         est_total, est_hands_on = _meal_level_estimates(dishes)
         options.append(
             MealOption(
@@ -531,7 +536,8 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     if not options:
         return _meal_generation_failed_state(state, "no valid options after normalization")
 
-    options = _apply_to_buy_cap(options)
+    if pantry_grounded:
+        options = _apply_to_buy_cap(options)
 
     constraints_echo = MealConstraintsEcho(
         kitchen_limits=kitchen_limit_phrases,

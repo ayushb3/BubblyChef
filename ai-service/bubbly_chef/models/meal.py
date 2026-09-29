@@ -8,6 +8,7 @@ these Python names) -- do not rename without updating that doc.
 """
 
 from typing import Any, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
@@ -72,7 +73,9 @@ class MealOption(BaseModel):
     dishes: list[MealDishOutline]
     est_total_minutes: int | None = None
     est_hands_on_minutes: int | None = None
-    coverage: MealCoverage
+    # None when the user opted out of the pantry (#287): nothing was matched,
+    # so there's no "uses N of your items" to show and no to-buy cap applied.
+    coverage: MealCoverage | None = None
     rescues: list[str] = Field(default_factory=list)
 
 
@@ -107,6 +110,11 @@ class MealProposal(BaseModel):
     constraints: MealConstraintsEcho
     dishes: list[MealDish]
     missing_ingredients: list[str] = Field(default_factory=list)
+    # Stable identity for this proposed meal. It's persisted with the proposal
+    # in the conversation history, and `POST /api/meals` is idempotent on it,
+    # so an Open or Save tapped again after navigating away and back returns
+    # the same meal rather than creating a second one (PR #659 review).
+    meal_ref: str = Field(default_factory=lambda: uuid4().hex)
 
 
 # ---------------------------------------------------------------------------

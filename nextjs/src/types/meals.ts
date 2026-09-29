@@ -105,6 +105,12 @@ export interface CreateMealRequest {
   constraints?: Partial<MealConstraints>
   is_draft?: boolean
   source_type?: string
+  /**
+   * Idempotency key: the chat sends the `meal` proposal's `meal_ref`. A
+   * repeat `POST` with the same one returns the existing meal (promoting a
+   * draft when `is_draft` is false) instead of creating a second.
+   */
+  source_ref?: string
   dishes: CreateMealDish[]
 }
 

@@ -6,6 +6,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { awardBubbles } from '@/lib/bubbles'
 import type { Meal, MealConstraints, MealSummary } from '@/types/meals'
 
 /** Always this shape on the wire, regardless of what the caller sent. */
@@ -86,6 +87,61 @@ export async function fetchFullMeal(
       recipe: d.recipes,
     })),
   } as Meal
+}
+
+/**
+ * Promotes a meal: `is_draft = false` on the meal and on its draft dish
+ * recipes, each promoted recipe earning the same `recipe_save` bubbles a
+ * fresh non-draft save does (idempotent by reference via `bubble_events`'
+ * unique constraint). Shared by `PUT /api/meals/[id] { promote }` and the
+ * idempotent `POST /api/meals` path that finds an existing draft for the
+ * same `source_ref`. Returns false when the meal isn't this user's.
+ */
+export async function promoteMeal(
+  supabase: SupabaseClient,
+  userId: string,
+  mealId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('meals')
+    .update({ is_draft: false })
+    .eq('id', mealId)
+    .eq('user_id', userId)
+    .select('id')
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) return false
+
+  await promoteMealDishes(supabase, userId, mealId)
+  return true
+}
+
+/** The dish half of `promoteMeal`, for callers that already updated the meal row. */
+export async function promoteMealDishes(
+  supabase: SupabaseClient,
+  userId: string,
+  mealId: string,
+): Promise<void> {
+  const { data: dishRows } = await supabase
+    .from('meal_dishes')
+    .select('recipe_id')
+    .eq('meal_id', mealId)
+    .eq('user_id', userId)
+
+  const recipeIds = (dishRows ?? []).map((d) => d.recipe_id as string)
+  if (recipeIds.length === 0) return
+
+  const { data: promoted } = await supabase
+    .from('recipes')
+    .update({ is_draft: false })
+    .in('id', recipeIds)
+    .eq('user_id', userId)
+    .eq('is_draft', true)
+    .select('id')
+
+  for (const recipe of promoted ?? []) {
+    await awardBubbles(userId, 'recipe_save', recipe.id as string)
+  }
 }
 
 /**

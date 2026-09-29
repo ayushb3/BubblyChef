@@ -165,6 +165,20 @@ describe('PUT /api/meals/[id] — promote cascades to draft dish recipes', () =>
     expect(awardBubblesMock).not.toHaveBeenCalled()
   })
 
+  it.each([0, -1, 2.5, 101, '4', null])(
+    'rejects servings=%p with 400 and writes nothing',
+    async (servings) => {
+      const { supabase, updates } = makeSupabase()
+      ;(requireAuth as jest.Mock).mockResolvedValue([supabase, mockUser])
+
+      const res = await PUT(putRequest({ servings, promote: true }), params())
+
+      expect(res.status).toBe(400)
+      expect(updates.meals).toHaveLength(0)
+      expect(updates.recipes).toHaveLength(0)
+    },
+  )
+
   it('returns 401 without touching Supabase when unauthenticated', async () => {
     const unauthorized = NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     ;(requireAuth as jest.Mock).mockResolvedValue(unauthorized)

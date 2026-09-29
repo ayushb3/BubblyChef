@@ -44,6 +44,9 @@ export function buildCreateMealPayload(
     constraints: proposal.constraints,
     is_draft: isDraft,
     source_type: 'chat',
+    // Proposals restored from history before `meal_ref` existed have none;
+    // they fall back to the per-mount guard in `app/chat/page.tsx`.
+    ...(proposal.meal_ref ? { source_ref: proposal.meal_ref } : {}),
     dishes,
   }
 }

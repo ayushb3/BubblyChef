@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
-import { awardBubbles } from '@/lib/bubbles'
-import { fetchFullMeal, normalizeConstraints } from '@/lib/meal-helpers'
+import { fetchFullMeal, normalizeConstraints, promoteMealDishes } from '@/lib/meal-helpers'
 import type { UpdateMealRequest } from '@/types/meals'
 
 /**
@@ -47,6 +46,16 @@ export async function PUT(
 
   const body = (await request.json()) as UpdateMealRequest
 
+  // Servings is a CHECK-free INT column that the meal page divides by to
+  // scale every dish's quantities, so 0, negatives, fractions and strings
+  // are rejected here rather than stored (PR #659 review).
+  if (
+    body.servings !== undefined &&
+    !(Number.isInteger(body.servings) && body.servings >= 1 && body.servings <= 100)
+  ) {
+    return errorResponse('servings must be a whole number from 1 to 100', 400)
+  }
+
   const updates: Record<string, unknown> = {}
   if (body.title !== undefined) updates.title = body.title
   if (body.servings !== undefined) updates.servings = body.servings
@@ -65,28 +74,7 @@ export async function PUT(
     if (!data) return notFound('Meal')
   }
 
-  if (body.promote) {
-    const { data: dishRows } = await supabase
-      .from('meal_dishes')
-      .select('recipe_id')
-      .eq('meal_id', id)
-      .eq('user_id', user.id)
-
-    const recipeIds = (dishRows ?? []).map((d) => d.recipe_id as string)
-    if (recipeIds.length > 0) {
-      const { data: promoted } = await supabase
-        .from('recipes')
-        .update({ is_draft: false })
-        .in('id', recipeIds)
-        .eq('user_id', user.id)
-        .eq('is_draft', true)
-        .select('id')
-
-      for (const recipe of promoted ?? []) {
-        await awardBubbles(user.id, 'recipe_save', recipe.id as string)
-      }
-    }
-  }
+  if (body.promote) await promoteMealDishes(supabase, user.id, id)
 
   const meal = await fetchFullMeal(supabase, user.id, id)
   if (!meal) return notFound('Meal')

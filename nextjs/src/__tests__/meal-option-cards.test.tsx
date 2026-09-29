@@ -54,6 +54,26 @@ describe('MealOptionCards', () => {
     expect(cards[0]).toHaveTextContent('Buttered orzo')
   })
 
+  it('hides the coverage chip and rescue flag when the user opted out of the pantry (coverage null)', () => {
+    const optedOut: MealOption[] = [{ ...OPTIONS[0], coverage: null, rescues: [] }]
+    render(<MealOptionCards options={optedOut} onSelect={jest.fn()} />)
+    expect(screen.queryByText(/of your items/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/rescues/)).not.toBeInTheDocument()
+    expect(screen.getByText(/35 min total/)).toBeInTheDocument()
+  })
+
+  it('hides the time chip when there is no estimate, and never prints "null min"', () => {
+    const noTimes: MealOption[] = [
+      { ...OPTIONS[0], est_total_minutes: null, est_hands_on_minutes: null },
+      { ...OPTIONS[1], est_hands_on_minutes: null },
+    ]
+    render(<MealOptionCards options={noTimes} onSelect={jest.fn()} />)
+    expect(screen.queryByText(/null/)).not.toBeInTheDocument()
+    // The second card still has a total, just no hands-on figure.
+    expect(screen.getAllByText(/min total/)).toHaveLength(1)
+    expect(screen.getByText(/20 min total/)).not.toHaveTextContent('hands-on')
+  })
+
   it('shows total/hands-on time and pantry coverage', () => {
     render(<MealOptionCards options={OPTIONS} onSelect={jest.fn()} />)
     expect(screen.getByText(/35 min total/)).toBeInTheDocument()
