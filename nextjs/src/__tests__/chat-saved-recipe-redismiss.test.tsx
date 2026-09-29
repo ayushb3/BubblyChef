@@ -208,7 +208,7 @@ describe('re-tapping a saved-recipe card after dismissing its banner (PR #614 ro
 
     // Tap the mini card to expand it, then Cook this — pins the recipe,
     // banner appears.
-    const card = await screen.findByRole('listitem', { name: 'Show options for Chicken Tikka Masala' })
+    const card = await screen.findByRole('button', { name: 'Show options for Chicken Tikka Masala' })
     fireEvent.click(card)
     const cookButton = await screen.findByRole('button', { name: 'Cook this' })
     fireEvent.click(cookButton)

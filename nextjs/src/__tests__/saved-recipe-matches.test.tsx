@@ -39,6 +39,13 @@ describe('SavedRecipeMatches', () => {
     expect(screen.getByRole('button', { name: 'Cook this' })).toBeInTheDocument()
   })
 
+  it('keeps its own max-width on the standalone single-match card (no list ancestor to inherit one from)', () => {
+    render(<SavedRecipeMatches matches={ONE} onSelect={jest.fn()} />)
+    const card = screen.getByRole('link', { name: 'Open recipe' }).closest('[class*="rounded-2xl"]')
+    expect(card).not.toBeNull()
+    expect(card?.className).toContain('max-w-[85%]')
+  })
+
   it('does not render a picker list for a single match', () => {
     render(<SavedRecipeMatches matches={ONE} onSelect={jest.fn()} />)
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
@@ -88,10 +95,14 @@ describe('SavedRecipeMatches', () => {
   it('labels each mini card by its action, not "Pick", and marks it collapsed', () => {
     render(<SavedRecipeMatches matches={MANY} onSelect={jest.fn()} />)
     for (const match of MANY) {
-      const item = screen.getByRole('listitem', { name: `Show options for ${match.title}` })
-      expect(item).toHaveAttribute('aria-expanded', 'false')
+      const button = screen.getByRole('button', { name: `Show options for ${match.title}` })
+      expect(button).toHaveAttribute('aria-expanded', 'false')
+      // The wrapping listitem still names itself after the title alone —
+      // the "Show options for" phrasing belongs to the button's own action,
+      // not the list item's identity.
+      expect(screen.getByRole('listitem', { name: match.title })).toContainElement(button)
     }
-    expect(screen.queryByRole('listitem', { name: `Pick ${MANY[0].title}` })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: `Pick ${MANY[0].title}` })).not.toBeInTheDocument()
   })
 
   // Ayush's decision (2026-09-27): tapping a mini card in the many-match list
@@ -104,13 +115,13 @@ describe('SavedRecipeMatches', () => {
   it('does not call onSelect when a mini card is tapped — it expands instead', () => {
     const onSelect = jest.fn()
     render(<SavedRecipeMatches matches={MANY} onSelect={onSelect} />)
-    fireEvent.click(screen.getByRole('listitem', { name: `Show options for ${MANY[1].title}` }))
+    fireEvent.click(screen.getByRole('button', { name: `Show options for ${MANY[1].title}` }))
     expect(onSelect).not.toHaveBeenCalled()
   })
 
   it('expands the tapped mini card into its single-match card with both actions', () => {
     render(<SavedRecipeMatches matches={MANY} onSelect={jest.fn()} />)
-    fireEvent.click(screen.getByRole('listitem', { name: `Show options for ${MANY[1].title}` }))
+    fireEvent.click(screen.getByRole('button', { name: `Show options for ${MANY[1].title}` }))
 
     // The expanded card reuses SingleMatchCard: same Open recipe link and
     // Cook this button, now scoped to the tapped match.
@@ -119,13 +130,28 @@ describe('SavedRecipeMatches', () => {
     expect(screen.getByRole('button', { name: 'Cook this' })).toBeInTheDocument()
     // Only two mini cards remain tappable — the expanded one is no longer
     // rendered as a "Show options for X" affordance button.
-    expect(screen.queryByRole('listitem', { name: `Show options for ${MANY[1].title}` })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: `Show options for ${MANY[1].title}` })).not.toBeInTheDocument()
+  })
+
+  it('renders the expanded card at the list\'s full width, not a nested 85% of it', () => {
+    // SingleMatchCard's own `max-w-[85%]` is for the one-match case, which
+    // has no `max-w-[85%]` ancestor. Nested inside the many-match list's
+    // identical constraint it compounded to ~72%, visibly narrower than the
+    // sibling mini cards and enough to wrap "Open recipe" onto two lines
+    // (PR #614 round 6 review — plainly visible in this PR's own
+    // many-matches-expanded.png).
+    render(<SavedRecipeMatches matches={MANY} onSelect={jest.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: `Show options for ${MANY[1].title}` }))
+    const openLink = screen.getByRole('link', { name: 'Open recipe' })
+    const card = openLink.closest('[class*="rounded-2xl"]')
+    expect(card).not.toBeNull()
+    expect(card?.className).not.toContain('max-w-[85%]')
   })
 
   it('calls onSelect with the match when Cook this is tapped inside the expanded card', () => {
     const onSelect = jest.fn()
     render(<SavedRecipeMatches matches={MANY} onSelect={onSelect} />)
-    fireEvent.click(screen.getByRole('listitem', { name: `Show options for ${MANY[1].title}` }))
+    fireEvent.click(screen.getByRole('button', { name: `Show options for ${MANY[1].title}` }))
     fireEvent.click(screen.getByRole('button', { name: 'Cook this' }))
     expect(onSelect).toHaveBeenCalledWith(MANY[1])
   })
@@ -133,13 +159,13 @@ describe('SavedRecipeMatches', () => {
   it('switches the expansion when a different mini card is tapped', () => {
     render(<SavedRecipeMatches matches={MANY} onSelect={jest.fn()} />)
 
-    fireEvent.click(screen.getByRole('listitem', { name: `Show options for ${MANY[0].title}` }))
+    fireEvent.click(screen.getByRole('button', { name: `Show options for ${MANY[0].title}` }))
     expect(screen.getByRole('link', { name: 'Open recipe' })).toHaveAttribute(
       'href',
       `/recipes/${MANY[0].id}`,
     )
 
-    fireEvent.click(screen.getByRole('listitem', { name: `Show options for ${MANY[2].title}` }))
+    fireEvent.click(screen.getByRole('button', { name: `Show options for ${MANY[2].title}` }))
     expect(screen.getByRole('link', { name: 'Open recipe' })).toHaveAttribute(
       'href',
       `/recipes/${MANY[2].id}`,
@@ -147,7 +173,7 @@ describe('SavedRecipeMatches', () => {
     // Only one card is expanded at a time.
     expect(screen.getAllByRole('link', { name: 'Open recipe' })).toHaveLength(1)
     // The previously-expanded card is back to being a tappable mini card.
-    expect(screen.getByRole('listitem', { name: `Show options for ${MANY[0].title}` })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: `Show options for ${MANY[0].title}` })).toBeInTheDocument()
   })
 
   it('expands via the keyboard — Enter activates the focused mini card, and does not start a cooking session', async () => {
@@ -159,7 +185,7 @@ describe('SavedRecipeMatches', () => {
     const user = userEvent.setup()
     const onSelect = jest.fn()
     render(<SavedRecipeMatches matches={MANY} onSelect={onSelect} />)
-    const card = screen.getByRole('listitem', { name: `Show options for ${MANY[0].title}` })
+    const card = screen.getByRole('button', { name: `Show options for ${MANY[0].title}` })
     card.focus()
     expect(card).toHaveFocus()
     await user.keyboard('{Enter}')
@@ -173,7 +199,7 @@ describe('SavedRecipeMatches', () => {
     const user = userEvent.setup()
     const onSelect = jest.fn()
     render(<SavedRecipeMatches matches={MANY} onSelect={onSelect} />)
-    const card = screen.getByRole('listitem', { name: `Show options for ${MANY[0].title}` })
+    const card = screen.getByRole('button', { name: `Show options for ${MANY[0].title}` })
     card.focus()
     expect(card).toHaveFocus()
     await user.keyboard(' ')
@@ -183,7 +209,7 @@ describe('SavedRecipeMatches', () => {
 
   it('moves focus into the expanded card so it does not land on the unmounted mini card', () => {
     render(<SavedRecipeMatches matches={MANY} onSelect={jest.fn()} />)
-    const card = screen.getByRole('listitem', { name: `Show options for ${MANY[1].title}` })
+    const card = screen.getByRole('button', { name: `Show options for ${MANY[1].title}` })
     card.focus()
     fireEvent.click(card)
     expect(screen.getByRole('link', { name: 'Open recipe' })).toHaveFocus()
@@ -197,7 +223,7 @@ describe('SavedRecipeMatches', () => {
     // attribute directly in addition to the click having no effect.
     const onSelect = jest.fn()
     render(<SavedRecipeMatches matches={MANY} onSelect={onSelect} disabled />)
-    const item = screen.getByRole('listitem', { name: `Show options for ${MANY[0].title}` })
+    const item = screen.getByRole('button', { name: `Show options for ${MANY[0].title}` })
     expect(item).toBeDisabled()
     fireEvent.click(item)
     expect(screen.queryByRole('button', { name: 'Cook this' })).not.toBeInTheDocument()

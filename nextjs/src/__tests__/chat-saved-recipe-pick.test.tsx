@@ -155,7 +155,7 @@ describe('saved_recipe_lookup many-match tap acts by id (issue #494)', () => {
   it('does not navigate or send anything on the mini-card tap alone — it only expands', async () => {
     renderChat()
 
-    const card = await screen.findByRole('listitem', { name: 'Show options for Chicken Tikka Masala' })
+    const card = await screen.findByRole('button', { name: 'Show options for Chicken Tikka Masala' })
     fireEvent.click(card)
 
     expect(routerReplace).not.toHaveBeenCalled()
@@ -172,7 +172,7 @@ describe('saved_recipe_lookup many-match tap acts by id (issue #494)', () => {
   it('navigates to /chat?cooking=<id> (via replace) once Cook this is pressed in the expanded card, and never sends the title as chat text', async () => {
     renderChat()
 
-    const card = await screen.findByRole('listitem', { name: 'Show options for Chicken Tikka Masala' })
+    const card = await screen.findByRole('button', { name: 'Show options for Chicken Tikka Masala' })
     fireEvent.click(card)
     const cookButton = await screen.findByRole('button', { name: 'Cook this' })
     fireEvent.click(cookButton)
@@ -198,7 +198,7 @@ describe('saved_recipe_lookup many-match tap acts by id (issue #494)', () => {
     expect(isCookSessionEnded('r2')).toBe(true)
 
     renderChat()
-    const card = await screen.findByRole('listitem', { name: 'Show options for Chicken Tikka Masala' })
+    const card = await screen.findByRole('button', { name: 'Show options for Chicken Tikka Masala' })
     fireEvent.click(card)
     const cookButton = await screen.findByRole('button', { name: 'Cook this' })
     fireEvent.click(cookButton)

@@ -54,7 +54,10 @@ export default function SavedRecipeMatches({
 
   // Move focus into the newly expanded card so a keyboard/screen-reader user
   // isn't left on a DOM node that just unmounted (the tapped mini card is
-  // replaced by the expanded card, not merely restyled).
+  // replaced by the expanded card, not merely restyled). Open recipe is
+  // always the first focusable element inside SingleMatchCard (it precedes
+  // Cook this in markup order), so this lands on it without naming it
+  // directly.
   useEffect(() => {
     if (!expandedId) return
     const target = expandedCardRef.current?.querySelector<HTMLElement>('a, button')
@@ -77,65 +80,71 @@ export default function SavedRecipeMatches({
         if (match.id === expandedId) {
           return (
             <div key={match.id} ref={expandedCardRef} role="listitem" aria-label={match.title}>
-              <SingleMatchCard match={match} onSelect={onSelect} disabled={disabled} />
+              <SingleMatchCard match={match} onSelect={onSelect} disabled={disabled} nested />
             </div>
           )
         }
 
         return (
-          <motion.button
-            key={match.id}
-            type="button"
-            role="listitem"
-            aria-label={`Show options for ${match.title}`}
-            // Always false in this branch — the moment `match.id ===
-            // expandedId`, this card stops rendering as a button at all (see
-            // the branch above, which swaps in the SingleMatchCard div
-            // instead). Written as the comparison rather than a literal
-            // `false` so it stays honest if that ever changes.
-            aria-expanded={match.id === expandedId}
-            disabled={disabled}
-            onClick={() => !disabled && setExpandedId(match.id)}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ ...springs.snappy, delay: i * 0.07 }}
-            whileTap={disabled ? undefined : { scale: 0.97 }}
-            className={[
-              'rounded-2xl bg-[var(--color-surface)] border border-[var(--color-accent)] shadow-sm overflow-hidden',
-              'w-full text-left',
-              disabled
-                ? 'cursor-default opacity-70'
-                : 'cursor-pointer hover:brightness-97 active:brightness-90',
-            ].join(' ')}
-          >
-            <div className="bg-[var(--color-accent)]/55 px-4 py-2.5 flex items-center justify-between gap-3">
-              <h4 className="text-[var(--color-text)] font-bold text-sm leading-snug flex-1">
-                {match.title}
-              </h4>
-              {!disabled && (
-                <span
-                  aria-hidden
-                  className="text-[var(--color-text)] text-xs font-semibold flex-shrink-0"
-                >
-                  Tap to view →
-                </span>
-              )}
-            </div>
-            {(match.cuisine || match.description) && (
-              <div className="px-4 py-2 flex flex-col gap-1">
-                {match.cuisine && (
-                  <span className="inline-block self-start px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[var(--color-accent)]/30 text-[var(--color-text)]">
-                    {match.cuisine}
+          // `role="listitem"` lives on this wrapper, not the button inside
+          // it — putting it directly on the button (as an earlier version
+          // did) suppressed the button's own implicit role and, with it,
+          // `aria-expanded`, which `listitem` doesn't support (PR #614
+          // round 6 review). The button keeps its native role and carries
+          // both the accessible name and the expand state.
+          <div key={match.id} role="listitem" aria-label={match.title}>
+            <motion.button
+              type="button"
+              aria-label={`Show options for ${match.title}`}
+              // Always false in practice — the moment `match.id ===
+              // expandedId`, this card stops rendering as a button at all
+              // (see the branch above, which swaps in the SingleMatchCard
+              // div instead). Written as the comparison rather than a
+              // literal `false` so it stays honest if that ever changes.
+              aria-expanded={match.id === expandedId}
+              disabled={disabled}
+              onClick={() => !disabled && setExpandedId(match.id)}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ ...springs.snappy, delay: i * 0.07 }}
+              whileTap={disabled ? undefined : { scale: 0.97 }}
+              className={[
+                'rounded-2xl bg-[var(--color-surface)] border border-[var(--color-accent)] shadow-sm overflow-hidden',
+                'w-full text-left',
+                disabled
+                  ? 'cursor-default opacity-70'
+                  : 'cursor-pointer hover:brightness-97 active:brightness-90',
+              ].join(' ')}
+            >
+              <div className="bg-[var(--color-accent)]/55 px-4 py-2.5 flex items-center justify-between gap-3">
+                <h4 className="text-[var(--color-text)] font-bold text-sm leading-snug flex-1">
+                  {match.title}
+                </h4>
+                {!disabled && (
+                  <span
+                    aria-hidden
+                    className="text-[var(--color-text)] text-xs font-semibold flex-shrink-0"
+                  >
+                    Tap to view →
                   </span>
                 )}
-                {match.description && (
-                  <p className="text-xs text-[var(--color-muted)] line-clamp-2">
-                    {match.description}
-                  </p>
-                )}
               </div>
-            )}
-          </motion.button>
+              {(match.cuisine || match.description) && (
+                <div className="px-4 py-2 flex flex-col gap-1">
+                  {match.cuisine && (
+                    <span className="inline-block self-start px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[var(--color-accent)]/30 text-[var(--color-text)]">
+                      {match.cuisine}
+                    </span>
+                  )}
+                  {match.description && (
+                    <p className="text-xs text-[var(--color-muted)] line-clamp-2">
+                      {match.description}
+                    </p>
+                  )}
+                </div>
+              )}
+            </motion.button>
+          </div>
         )
       })}
     </div>
@@ -146,10 +155,22 @@ function SingleMatchCard({
   match,
   onSelect,
   disabled,
+  nested = false,
 }: {
   match: SavedRecipeMatch
   onSelect: (match: SavedRecipeMatch) => void
   disabled: boolean
+  /**
+   * True when this card is the many-match list's expanded card, i.e.
+   * already inside that list's own `max-w-[85%]` container. The
+   * one-match case (`nested` false, the default) needs its own
+   * `max-w-[85%]` — it has no such ancestor. Applying both nested one
+   * 85%-of-85% ≈ 72% of the chat column, visibly narrower than the mini
+   * cards beside it and enough to wrap "Open recipe" onto two lines
+   * (PR #614 round 6 review, this component's own
+   * `many-matches-expanded.png`).
+   */
+  nested?: boolean
 }) {
   const linkClass = (variant: 'primary' | 'secondary') =>
     [
@@ -173,7 +194,12 @@ function SingleMatchCard({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={springs.snappy}
-      className="rounded-2xl bg-[var(--color-surface)] border border-[var(--color-accent)] shadow-sm overflow-hidden w-full max-w-[85%]"
+      className={[
+        'rounded-2xl bg-[var(--color-surface)] border border-[var(--color-accent)] shadow-sm overflow-hidden w-full',
+        nested ? '' : 'max-w-[85%]',
+      ]
+        .filter(Boolean)
+        .join(' ')}
     >
       <div className="bg-[var(--color-accent)]/55 px-4 py-2.5">
         <h4 className="text-[var(--color-text)] font-bold text-sm leading-snug">
