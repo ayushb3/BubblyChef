@@ -37,7 +37,7 @@ the give-up path below when any of these trips:
   or the approach is wrong.
 - **More than roughly an hour of wall clock**, or your context filling with tool
   output rather than orchestration decisions (§5 PM hygiene).
-- **The ticket needs something you cannot do** — credentials, a production
+- **The ticket needs something you cannot do** — credentials, a destructive
   migration (see §3.1), or a judgment call the issue doesn't settle.
 
 These are ceilings, not targets. Most tickets finish well under all of them.
@@ -184,8 +184,10 @@ applies: fix forward, never edit.
 1. **Say so up front.** Put it in the PR title or the summary's first line, and
    add a **Migration** section to the PR body: the filename, what it does in two
    or three lines, and whether it is **additive** (new table, new nullable column,
-   new index or function) or **destructive** (drops, renames, type changes, data
-   rewrites, or new NOT NULL columns without a default).
+   new index, or a function whose name doesn't exist yet) or **destructive**
+   (drops, renames, type changes, data rewrites, new NOT NULL columns without a
+   default, or `CREATE OR REPLACE` of an existing function, view or policy — with
+   one shared database, replacing a body is a live behaviour change).
 2. **Link the worktree** if it isn't linked yet:
    ```bash
    supabase link --project-ref obmbwuqwpvntxhhbdfsg < /dev/null
@@ -324,9 +326,10 @@ waits for the human. All three must hold:
 Merge with a real merge commit, one PR at a time: if `main` has moved, update the
 branch, wait for CI again, then `gh pr merge <n> --merge`.
 
-**A migration overrides all of this.** If the diff touches
-`supabase/migrations/`, it stays draft and waits for the human however small or
-green it is. See §3.1.
+**A migration adds one condition to this.** If the diff touches
+`supabase/migrations/`, the migration must already be applied to the hosted
+database (§3.1 steps 3–4) before you merge. A destructive migration stays draft
+and waits for the human however small or green it is (§3.1 step 5).
 
 **If the run ends before it can merge** — the session is cut short, the watch
 times out, the review hasn't landed — leave the PR as draft (or ready but still
