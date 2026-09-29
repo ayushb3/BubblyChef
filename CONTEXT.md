@@ -25,6 +25,24 @@ A recipe step with text, a short label, an ongoing label, a duration, hands-on/o
 - **Lazy upgrade**: `POST /v1/recipes/{recipe_id}/steps/ensure` returns existing steps with no model call (idempotent), or derives them from `instructions` + a model metadata call, validates, persists, and returns them. A failed or invalid model call persists nothing; the caller falls back to the client-side regex timer parser.
 - **Related**: Recipe (holds `steps` alongside `instructions`), Meal timeline (issue #649, the scheduler this feeds)
 
+### Meal timeline
+The deterministic meal scheduler's output for a set of 1-3 dishes (a main plus one or two sides) — placements, display rows and cues for cooking them together. Produced by `scheduleMeal()` in `nextjs/src/lib/meal-scheduler.ts` (issue #649).
+
+- **Pure module**: no LLM call, no clock read (`Date.now()`), no I/O, no randomness — the LLM supplies step facts (durations, dependencies, hands-on/off) via Structured step, and code builds the plan. Lives in the Next.js shared library, not ai-service, so cook-along can re-plan instantly and offline-tolerantly on every +2 min or Skip tap.
+- **Algorithm**: backward, as-late-as-possible list scheduling from a common finish time — implemented as forward ("as soon as possible") resource-constrained list scheduling run on the *reversed* dependency graph, then shifted so the earliest start is 0. The cook (one hands-on step at a time, across all dishes) and each Kitchen limit tag are unary resources. Resource-contention ties are broken by critical-path length (more chained work goes first), then column order (main, side 1, side 2), then step index — the last two are what guarantee byte-identical output for the same input. Re-planning (a `progress` input of done/skipped/running steps and `+2 min` extensions) instead runs forward in real time from `now_minutes`, with past placements fixed.
+- **Guarantees** (asserted as property tests over seeded-random dish sets): no two hands-on steps overlap; dependencies are respected; no two steps sharing an exclusive tag overlap; every dish finishes within the finish window when feasible, with the actual spread reported when it isn't; identical input gives identical output; the plan is never longer than cooking the dishes one after another (an explicit sequential-plan comparison is the fallback if it ever would be); re-planning keeps past placements fixed and places nothing before `now_minutes`.
+- **Rows and cues**: one row per moment at least one dish starts a new step. A cell is `start` / `ongoing` (rendered faded, e.g. "pasta boiling · 6 min left") / `waiting` / `done`. A row gets a cue — `"While {ongoing_label}, {label}"` for the longest-remaining ongoing hands-off step (ties by column order), or `"Meanwhile, {label}"` when that step has no ongoing label — generated from labels with no second LLM call.
+- **Defensive degradation**: a missing/invalid duration defaults to 3 minutes (`estimated_duration` warning); a dish whose `depends_on` can't be trusted as given falls back to running its steps strictly in order (`sequential_fallback` warning, `degraded: true`).
+- **Anchoring**: a separate pure helper (`resolveMealAnchor()`, `meal-anchor.ts`) maps offsets to clock time, given an explicit `now` — never reads a clock itself. Start-now shows relative offsets until cooking begins; serve-at computes `start = serve_at − total_minutes` and returns `too_late` plus the earliest ready time when that's already in the past.
+- **Related**: Structured step (the input), Kitchen limits (the `exclusive` resource), the timeline table component (`MealTimelineTable`, renders this) — see also issue #647's "the deterministic meal scheduler (contract)".
+
+### Kitchen limits
+User-stated cooking constraints, e.g. "I only have one pan" — not an equipment model (no burners/ovens/pans-as-inventory), just what the user says.
+
+- Two halves. A Structured step's `exclusive` tags say what equipment it ties up (`pan`, `oven`), whoever is cooking. The user's limits, extracted from chat as short phrases (`"one pan"` → `pan`), live on the Meal and reach the scheduler as `constraints.exclusive_tags`.
+- The Meal timeline scheduler treats a tag as a unary resource only when it is one of the user's limits. Under "one pan", two pan steps, hands-on or hands-off, never overlap and run one after the other, whichever dish they belong to. With no limit, the same steps overlap freely.
+- Stored on the meal (issue #647's `meals.constraints`), out of scope for #649 itself, which only consumes the tags already present on steps.
+
 ### Pantry
 User's inventory of food items. Tracks what's available, quantities, expiry dates, and location (storage slot).
 
