@@ -29,23 +29,40 @@ function params(id = 'r1') {
   return { params: Promise.resolve({ id }) }
 }
 
-function makeSupabase(mainOfRows: Array<{ meal_id: string }>) {
-  const calls: { mealsDeletedIds: string[][] } = { mealsDeletedIds: [] }
+function makeSupabase(
+  mainOfRows: Array<{ meal_id: string }>,
+  sideRows: Array<{ recipe_id: string; recipes: { is_draft: boolean } }> = [],
+) {
+  const calls: { mealsDeletedIds: string[][]; recipesDeletedIds: string[][] } = {
+    mealsDeletedIds: [],
+    recipesDeletedIds: [],
+  }
 
   const supabase = {
     from(table: string) {
       if (table === 'meal_dishes') {
         return {
           select: () => ({
+            // The main-of lookup: .eq(recipe_id).eq(user_id).eq(role)
             eq: () => ({
               eq: () => ({ eq: async () => ({ data: mainOfRows, error: null }) }),
+            }),
+            // The mainless meals' sides: .in(meal_id).eq(user_id).eq(role)
+            in: () => ({
+              eq: () => ({ eq: async () => ({ data: sideRows, error: null }) }),
             }),
           }),
         }
       }
       if (table === 'recipes') {
         return {
-          delete: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
+          delete: () => ({
+            eq: () => ({ eq: async () => ({ error: null }) }),
+            in: (_col: string, ids: string[]) => {
+              calls.recipesDeletedIds.push(ids)
+              return { eq: async () => ({ error: null }) }
+            },
+          }),
         }
       }
       if (table === 'meals') {
@@ -94,5 +111,21 @@ describe('DELETE /api/recipes/[id]', () => {
 
     expect(res.status).toBe(200)
     expect(calls.mealsDeletedIds).toEqual([])
+  })
+
+  it("deletes a mainless meal's draft sides and keeps its saved ones", async () => {
+    const { supabase, calls } = makeSupabase(
+      [{ meal_id: 'm1' }],
+      [
+        { recipe_id: 'draft-side', recipes: { is_draft: true } },
+        { recipe_id: 'saved-side', recipes: { is_draft: false } },
+      ],
+    )
+    ;(requireAuth as jest.Mock).mockResolvedValue([supabase, mockUser])
+
+    await DELETE(new Request('http://localhost/api/recipes/r1'), params())
+
+    expect(calls.mealsDeletedIds).toEqual([['m1']])
+    expect(calls.recipesDeletedIds).toEqual([['draft-side']])
   })
 })

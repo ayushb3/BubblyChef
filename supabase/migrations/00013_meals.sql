@@ -56,6 +56,9 @@ CREATE TABLE IF NOT EXISTS meal_dishes (
   -- 0 is always the main; 1-2 are sides (one or two, model's choice).
   position INTEGER NOT NULL CHECK (position >= 0 AND position <= 2),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- The main is always position 0 and a side is always 1-2, so the two
+  -- columns can never disagree.
+  CONSTRAINT ck_meal_dishes_role_position CHECK ((role = 'main') = (position = 0)),
   CONSTRAINT uq_meal_dishes_position UNIQUE (meal_id, position),
   CONSTRAINT uq_meal_dishes_recipe UNIQUE (meal_id, recipe_id)
 );

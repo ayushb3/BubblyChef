@@ -135,10 +135,26 @@ export async function DELETE(
 
   const mainlessMealIds = (mainOf ?? []).map((row) => row.meal_id as string)
   if (mainlessMealIds.length > 0) {
-    // Deleting the meal cascades its remaining meal_dishes rows (the sides'
-    // links) — the side recipes themselves are left untouched, whether
-    // draft or saved, same as any other recipe not referenced by a meal.
+    // A mainless meal is deleted by the same rule as `DELETE /api/meals/[id]`:
+    // its *draft* sides go with it (nothing else can reach them, since drafts
+    // are hidden from the library), and its saved sides stay in the library.
+    const { data: sides } = await supabase
+      .from('meal_dishes')
+      .select('recipe_id, recipes(is_draft)')
+      .in('meal_id', mainlessMealIds)
+      .eq('user_id', user.id)
+      .eq('role', 'side')
+    const draftSideIds = (sides ?? [])
+      .filter((d) => {
+        const recipe = d.recipes as { is_draft?: boolean } | { is_draft?: boolean }[] | null
+        return (Array.isArray(recipe) ? recipe[0]?.is_draft : recipe?.is_draft) === true
+      })
+      .map((d) => d.recipe_id as string)
+
     await supabase.from('meals').delete().in('id', mainlessMealIds).eq('user_id', user.id)
+    if (draftSideIds.length > 0) {
+      await supabase.from('recipes').delete().in('id', draftSideIds).eq('user_id', user.id)
+    }
   }
 
   return NextResponse.json({ deleted: true })
