@@ -21,11 +21,18 @@ import {
 } from '@/lib/api/meals'
 import { ensureSteps } from '@/lib/api/recipes'
 import { scaledIngredients } from '@/lib/recipe-helpers'
-import { scheduleMeal, type Column, type SchedulerDish } from '@/lib/meal-scheduler'
+import { scheduleMeal } from '@/lib/meal-scheduler'
 import { resolveMealAnchor } from '@/lib/meal-anchor'
-import type { Recipe } from '@/components/recipes/RecipePage'
+import { columnFor, dishStepSignaturesForMeal, fallbackSteps, schedulerDishesForMeal } from '@/lib/meal-dishes'
+import {
+  getActiveMealCookSession,
+  startMealCookSession,
+  clearActiveMealCookSession,
+  isStaleMealCookSession,
+} from '@/lib/meal-cook-session'
+import { timerIdsToDismiss } from '@/lib/meal-cook-stream'
+import { useCookingTimers } from '@/lib/useCookingTimers'
 import type { Meal, MealDishFull } from '@/types/meals'
-import type { Step } from '@/types/recipes'
 
 /**
  * The full meal screen (issue #652 / spec #647 "The meal screen"), replacing
@@ -51,35 +58,6 @@ interface RowUiState {
   retryIndex?: number
 }
 
-function columnFor(position: number): Column {
-  if (position === 0) return 'main'
-  return position === 1 ? 'side_1' : 'side_2'
-}
-
-/**
- * A dish recipe with no structured steps (the `ensure` call in the effect
- * below either hasn't run yet or failed) is scheduled as sequential 3-min
- * estimates built from `instructions` — the scheduler's own
- * `estimated_duration` path, with an explicit dependency chain so the steps
- * run in order rather than however the scheduler would otherwise interleave
- * unrelated steps.
- */
-function fallbackSteps(instructions: Recipe['instructions']): Step[] {
-  return instructions.map((instr, i) => {
-    const text = typeof instr === 'string' ? instr : instr.text ?? instr.step ?? ''
-    return {
-      text,
-      label: text.length > 40 ? `${text.slice(0, 40)}…` : text,
-      ongoing_label: null,
-      duration_minutes: 3,
-      duration_estimated: true,
-      hands_on: true,
-      depends_on: i > 0 ? [i - 1] : [],
-      exclusive: [],
-    }
-  })
-}
-
 function nextFreeSidePosition(meal: Meal): 1 | 2 {
   const used = new Set(meal.dishes.filter((d) => d.role === 'side').map((d) => d.position))
   return used.has(1) ? 2 : 1
@@ -99,6 +77,7 @@ export default function MealDetailPage() {
   const params = useParams()
   const router = useRouter()
   const queryClient = useQueryClient()
+  const { dismiss: dismissTimer } = useCookingTimers()
   const id = typeof params?.id === 'string' ? params.id : Array.isArray(params?.id) ? params.id[0] : ''
 
   const { data: meal, isLoading, isError } = useQuery({
@@ -121,6 +100,13 @@ export default function MealDetailPage() {
   // flight" flag that locks every other dish control (issue #652 review) so
   // two dish-mutating ops can never race each other client-side.
   const [pickMutating, setPickMutating] = useState(false)
+  // True only while the missing-steps upgrade effect below actually has
+  // in-flight `ensureSteps` calls — not "some dish still lacks structured
+  // steps forever", which would permanently disable Start cooking for a
+  // dish whose upgrade already failed and fell back to estimates (issue
+  // #653: "disabled while ... any dish has no steps and is still being
+  // upgraded").
+  const [stepsUpgrading, setStepsUpgrading] = useState(false)
   const attemptedStepsRef = useRef<Set<string>>(new Set())
   // Bumped on every new loadAlternatives/cancel so a stale async result
   // (an alternatives fetch, or a pick's expand+PUT) can tell it's been
@@ -178,6 +164,7 @@ export default function MealDetailPage() {
     )
     if (missing.length === 0) return
 
+    setStepsUpgrading(true)
     ;(async () => {
       let anyDerived = false
       for (const dish of missing) {
@@ -191,8 +178,17 @@ export default function MealDetailPage() {
         }
       }
       if (anyDerived) {
-        queryClient.invalidateQueries({ queryKey: ['meal', id] })
+        // Issue #653 review round 1 (S4) — awaited, so `stepsUpgrading`
+        // (and therefore Start cooking's disabled state) stays true until
+        // the refetch this triggers has actually landed, not just fired.
+        // `invalidateQueries`'s promise resolves once every active matching
+        // query (this page's `['meal', id]` query, currently rendered) has
+        // finished refetching — tapping Start cooking before then could
+        // build a cook-along session from steps that are about to change
+        // under it.
+        await queryClient.invalidateQueries({ queryKey: ['meal', id] })
       }
+      setStepsUpgrading(false)
     })()
   }, [meal, id, queryClient])
 
@@ -201,19 +197,7 @@ export default function MealDetailPage() {
     [meal],
   )
 
-  const schedulerDishes: SchedulerDish[] = useMemo(
-    () =>
-      dishesSorted.map((d) => ({
-        dish_id: d.recipe.id,
-        column: columnFor(d.position),
-        title: d.recipe.title,
-        steps:
-          d.recipe.steps && d.recipe.steps.length > 0
-            ? d.recipe.steps
-            : fallbackSteps(d.recipe.instructions),
-      })),
-    [dishesSorted],
-  )
+  const schedulerDishes = useMemo(() => (meal ? schedulerDishesForMeal(meal) : []), [meal])
 
   const timeline = useMemo(
     () =>
@@ -227,6 +211,25 @@ export default function MealDetailPage() {
   const columns = useMemo(
     () => dishesSorted.map((d) => ({ column: columnFor(d.position), title: d.recipe.title })),
     [dishesSorted],
+  )
+
+  // Cook-along entry (issue #653). `dishIds` mirrors what `startMealCookSession`
+  // stores and what `isStaleMealCookSession` compares against — position-
+  // ordered recipe ids, the same shape the cook route restores dishes from.
+  const dishIds = useMemo(() => dishesSorted.map((d) => d.recipe.id), [dishesSorted])
+  // Issue #653 review round 1 (S4) — one signature per dish (step count +
+  // labels), alongside `dishIds`: a resumed session where a dish's steps
+  // changed shape under the same recipe id (an `ensureSteps` upgrade landing
+  // mid-cook, or an edited recipe) is stale too, not just a swapped dish id.
+  const dishStepSignatures = useMemo(() => (meal ? dishStepSignaturesForMeal(meal) : []), [meal])
+  // Recomputed from `meal` (not "checked once on mount"): a swap/remove on
+  // *this* page can turn a previously-resumable session stale while it's
+  // still open, and the banner should reflect that without a reload.
+  const activeCookSession = useMemo(() => (meal ? getActiveMealCookSession(meal.id) : null), [meal])
+  const cookSessionIsStale = useMemo(
+    () =>
+      activeCookSession ? isStaleMealCookSession(activeCookSession, dishIds, dishStepSignatures) : false,
+    [activeCookSession, dishIds, dishStepSignatures],
   )
 
   const serveAt = useMemo(() => {
@@ -261,6 +264,34 @@ export default function MealDetailPage() {
     // Same bounds `PUT /api/meals/[id]` enforces.
     if (next < 1 || next > 100) return
     servingsMutation.mutate(next)
+  }
+
+  function handleStartCooking() {
+    if (!meal) return
+    startMealCookSession(meal.id, dishIds, Date.now(), dishStepSignatures)
+    router.push(`/meals/${meal.id}/cook`)
+  }
+
+  function handleResumeCooking() {
+    if (!meal) return
+    router.push(`/meals/${meal.id}/cook`)
+  }
+
+  /**
+   * "Start over" from either the Resume banner or the stale notice: per the
+   * contract, dismiss the old session's still-running dock timers first (an
+   * orphaned timer would otherwise sit in the dock forever, tied to a step
+   * that no longer exists once a fresh session starts), then clear and begin
+   * fresh.
+   */
+  function handleStartOverCooking() {
+    if (!meal) return
+    if (activeCookSession) {
+      for (const timerId of timerIdsToDismiss(activeCookSession)) dismissTimer(timerId)
+    }
+    clearActiveMealCookSession(meal.id)
+    startMealCookSession(meal.id, dishIds, Date.now(), dishStepSignatures)
+    router.push(`/meals/${meal.id}/cook`)
   }
 
   async function loadAlternatives(target: RowTarget) {
@@ -534,6 +565,70 @@ export default function MealDetailPage() {
             )}
             <MealTimelineTable timeline={timeline} columns={columns} anchor={anchor} />
           </div>
+        </FadeInView>
+
+        {/* Cook-along entry (issue #653) */}
+        <FadeInView delay={0.14}>
+          {!activeCookSession && (
+            <SpringButton
+              className="w-full py-3 rounded-full text-sm font-bold text-white active:scale-95 disabled:opacity-60"
+              style={{ background: 'var(--color-primary)' } as React.CSSProperties}
+              onClick={handleStartCooking}
+              disabled={dishOpInFlight || stepsUpgrading}
+              title="Start cooking"
+            >
+              🍳 Start cooking
+            </SpringButton>
+          )}
+          {activeCookSession && !cookSessionIsStale && (
+            <div
+              className="rounded-2xl p-4 flex items-center justify-between gap-3"
+              style={{ background: 'var(--color-surface)', border: '1.5px solid var(--color-border)' }}
+              data-testid="meal-cook-resume-banner"
+            >
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                Resume cooking?
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResumeCooking}
+                  className="min-h-[44px] px-4 rounded-full text-sm font-bold"
+                  style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
+                >
+                  Resume
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStartOverCooking}
+                  className="min-h-[44px] px-3 rounded-full text-sm font-bold"
+                  style={{ color: 'var(--color-muted)' }}
+                >
+                  Start over
+                </button>
+              </div>
+            </div>
+          )}
+          {activeCookSession && cookSessionIsStale && (
+            <div
+              className="rounded-2xl p-4 flex items-center justify-between gap-3"
+              style={{ background: 'var(--color-surface)', border: '1.5px solid var(--color-border)' }}
+              role="status"
+              data-testid="meal-cook-stale-banner"
+            >
+              <p className="text-sm" style={{ color: 'var(--color-text)' }}>
+                This meal changed since you started cooking.
+              </p>
+              <button
+                type="button"
+                onClick={handleStartOverCooking}
+                className="min-h-[44px] px-4 rounded-full text-sm font-bold"
+                style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
+              >
+                Start over
+              </button>
+            </div>
+          )}
         </FadeInView>
 
         {/* Dishes */}

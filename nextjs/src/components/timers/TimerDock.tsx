@@ -66,7 +66,7 @@ function vibrateOnComplete() {
 }
 
 function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolean }) {
-  const { pause, resume, dismiss } = useCookingTimers()
+  const { pause, resume, dismiss, extend } = useCookingTimers()
   const { reduced } = useMotionConfig()
   const isCompleted = timer.status === 'completed'
   const isPaused = timer.status === 'paused'
@@ -134,6 +134,18 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
           style={{ color: 'var(--color-primary-dark)' }}
         >
           {isPaused ? '▶' : '⏸'}
+        </button>
+      )}
+      {expanded && !isCompleted && (
+        <button
+          type="button"
+          onClick={() => extend?.(timer.id, 120)}
+          aria-label={`Add 2 minutes to ${timer.label} timer`}
+          className="text-xs font-bold active:scale-95 transition-transform"
+          style={{ color: 'var(--color-primary-dark)' }}
+          data-testid={`timer-extend-${timer.id}`}
+        >
+          +2 min
         </button>
       )}
       {expanded && (

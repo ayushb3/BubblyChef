@@ -71,6 +71,18 @@ export interface StepProgress {
   started_at_minutes: number
   /** Sum of +2 min taps applied to this step. */
   extra_minutes: number
+  /**
+   * Issue #653 review round 1 (S1) — fixes a done/skipped step's end at the
+   * moment it was actually recorded, instead of recomputing it against
+   * whatever `now_minutes` happens to be on a *later* derive. Without this, a
+   * done/skipped step's `end` drifted upward on every subsequent derive
+   * (capped at `min(nominalEnd, now)`) until it caught up with `nominalEnd`
+   * — real but already-finished lateness that kept climbing after the fact.
+   * Additive/optional: absent falls back to the pre-review
+   * `min(nominalEnd, now)` capping, so every #649 test that doesn't set it
+   * keeps passing unchanged.
+   */
+  ended_at_minutes?: number
 }
 
 export interface MealProgress {
@@ -78,6 +90,16 @@ export interface MealProgress {
   now_minutes: number
   /** Keyed by `${dish_id}:${step_index}`. */
   steps: Record<string, StepProgress>
+  /**
+   * Issue #653 — keeps a re-plan's still-pending steps landing together with
+   * the rest of the meal, the way the baseline plan does, instead of pulling
+   * them forward to start ASAP the moment a resource frees up. See
+   * `scheduleWithProgress`'s doc comment for the mechanics (`baseline_start`
+   * + `lateness`). The cook-along always passes `true`; omitted (or `false`)
+   * reproduces today's ASAP re-plan byte-for-byte, so every #649 test that
+   * doesn't set it keeps passing unchanged.
+   */
+  hold_to_plan?: boolean
 }
 
 export interface ScheduleMealInput {
@@ -109,6 +131,8 @@ export interface RowCellStart {
   text: string
   duration_minutes: number
   hands_on: boolean
+  /** Issue #653 — lets the cook-along table mark this cell done or current; the column identifies the dish. */
+  step_index: number
 }
 
 export interface RowCellOngoing {
@@ -119,6 +143,8 @@ export interface RowCellOngoing {
   label: string
   remaining_minutes: number
   hands_on: boolean
+  /** Issue #653 — lets the cook-along table mark this cell done or current; the column identifies the dish. */
+  step_index: number
 }
 
 export interface RowCellWaiting {
@@ -191,12 +217,54 @@ interface SanitizedDish {
  *    strictly in order (each step additionally depends on the one before it), and the
  *    `sequential_fallback` warning is raised with `degraded: true`.
  */
+/**
+ * The `depends_on` half of `sanitizeDish`'s cleanup, isolated so it can be
+ * reused without the rest of the sanitization (duration defaults, exclusive-
+ * tag filtering): a `depends_on` entry that isn't a strictly-earlier valid
+ * index is dropped, and if any were, every step additionally depends on the
+ * one before it (the sequential fallback). Returns one valid-dependency-
+ * indices array per step, in step order, plus whether the fallback fired.
+ *
+ * Exported as `sanitizedDependencyKeys` below for `meal-cook-stream.ts`'s
+ * `waiting_on` (issue #653 review round 1, nit) — the raw, unsanitized
+ * `depends_on` would show no wait reason (or the wrong one) once a dish has
+ * fallen back to running its steps strictly in order.
+ */
+function sanitizeDependsOn(steps: Pick<Step, 'depends_on'>[]): {
+  depsByIndex: number[][]
+  sawInvalidDep: boolean
+} {
+  let sawInvalidDep = false
+  const depsByIndex: number[][] = steps.map((s, i) => {
+    const rawDeps = s.depends_on ?? []
+    const validDeps = rawDeps.filter((d) => Number.isInteger(d) && d >= 0 && d < i)
+    if (validDeps.length !== rawDeps.length) sawInvalidDep = true
+    return validDeps
+  })
+  if (sawInvalidDep) {
+    for (let i = 1; i < depsByIndex.length; i++) {
+      const deps = new Set(depsByIndex[i])
+      deps.add(i - 1)
+      depsByIndex[i] = Array.from(deps).sort((a, b) => a - b)
+    }
+  }
+  return { depsByIndex, sawInvalidDep }
+}
+
+/** See `sanitizeDependsOn`'s doc comment. */
+export function sanitizedDependencyKeys(dishes: SchedulerDish[], dishId: string, stepIndex: number): string[] {
+  const dish = dishes.find((d) => d.dish_id === dishId)
+  if (!dish) return []
+  const { depsByIndex } = sanitizeDependsOn(dish.steps)
+  return (depsByIndex[stepIndex] ?? []).map((i) => `${dishId}:${i}`)
+}
+
 function sanitizeDish(
   dish: SchedulerDish,
   warnings: Set<SchedulerWarning>,
   kitchenLimits: ReadonlySet<string>,
 ): { dish: SanitizedDish; degraded: boolean } {
-  let sawInvalidDep = false
+  const { depsByIndex, sawInvalidDep } = sanitizeDependsOn(dish.steps)
 
   const steps: SanitizedStep[] = dish.steps.map((s, i) => {
     let duration = s.duration_minutes
@@ -208,10 +276,6 @@ function sanitizeDish(
     duration = Math.round(duration)
     if (estimated) warnings.add('estimated_duration')
 
-    const rawDeps = s.depends_on ?? []
-    const validDeps = rawDeps.filter((d) => Number.isInteger(d) && d >= 0 && d < i)
-    if (validDeps.length !== rawDeps.length) sawInvalidDep = true
-
     return {
       index: i,
       text: s.text,
@@ -219,26 +283,17 @@ function sanitizeDish(
       ongoing_label: s.ongoing_label ?? null,
       duration_minutes: duration,
       hands_on: s.hands_on,
-      depends_on: validDeps,
+      depends_on: depsByIndex[i],
       // Only the tags the user actually named as kitchen limits constrain the plan.
       exclusive: (s.exclusive ?? []).filter((t) => kitchenLimits.has(t)),
     }
   })
 
-  let degraded = false
-  if (sawInvalidDep) {
-    degraded = true
-    warnings.add('sequential_fallback')
-    for (let i = 1; i < steps.length; i++) {
-      const deps = new Set(steps[i].depends_on)
-      deps.add(i - 1)
-      steps[i].depends_on = Array.from(deps).sort((a, b) => a - b)
-    }
-  }
+  if (sawInvalidDep) warnings.add('sequential_fallback')
 
   return {
     dish: { dish_id: dish.dish_id, column: dish.column, title: dish.title, steps },
-    degraded,
+    degraded: sawInvalidDep,
   }
 }
 
@@ -471,6 +526,24 @@ function scheduleSequential(dishes: SanitizedDish[]): Map<string, { start: numbe
 }
 
 /**
+ * Issue #653 review round 1 (S3) — the one "baseline" plan both the
+ * no-progress path (`scheduleMeal` itself, what the meal screen shows) and
+ * `scheduleWithProgress`'s `hold_to_plan` floor must agree on: whichever of
+ * `scheduleInitial` (backward ALAP) or `scheduleSequential` is shorter,
+ * guarantee 6's own rule. Before this helper existed, `hold_to_plan`'s
+ * baseline used `scheduleInitial` alone — for a meal where the sequential
+ * plan actually wins (short, dependency-chained dishes with little real
+ * parallelism), the cook-along's re-plan floor silently diverged from the
+ * plan the meal screen had already shown, floored against a baseline nobody
+ * ever saw.
+ */
+function pickBaselinePlan(dishes: SanitizedDish[]): Map<string, { start: number; end: number }> {
+  const initial = scheduleInitial(dishes)
+  const sequential = scheduleSequential(dishes)
+  return totalMinutesOf(initial) <= totalMinutesOf(sequential) ? initial : sequential
+}
+
+/**
  * Re-plan from `progress`: done/skipped/running steps are fixed at their
  * recorded start (guarantee 7) and everything else is scheduled forward from
  * `now_minutes` — nothing new is placed earlier.
@@ -480,6 +553,29 @@ function scheduleSequential(dishes: SanitizedDish[]): Map<string, { start: numbe
  * Skip, or a Done tapped early, frees the cook and unblocks dependents
  * immediately. Only a running step keeps its resources until
  * start + duration + extra.
+ *
+ * Issue #653 — `progress.hold_to_plan`: plain ASAP re-planning (the block
+ * above) schedules every still-pending step the instant a resource frees up.
+ * That's correct for "nothing sits idle", but wrong for a cook-along: the
+ * *baseline* plan is backward ALAP from a common finish specifically so every
+ * dish lands together (guarantee 4); an ASAP re-plan of the remainder throws
+ * that away the moment the cook taps anything, pulling untouched sides
+ * forward to finish early and go cold. `hold_to_plan` gives every pending
+ * step (no progress entry yet) an extra floor — `baseline_start + lateness` —
+ * on top of its ordinary dependency/resource floor, so it still can't start
+ * any earlier than the original plan had it, unless the meal has actually
+ * fallen behind:
+ *
+ *  - `baseline` is `scheduleInitial` run on these same dishes with no
+ *    progress — deterministic, needs no new input.
+ *  - `lateness` is `max(0, ...)` over every step that *does* have progress,
+ *    of its fixed `end` (computed above) minus that same step's baseline
+ *    `end`. It only ever grows across the steps that have already happened:
+ *    a Skip or an early Done can't make it negative, so it can't pull the
+ *    rest of the meal earlier than baseline either (floored at 0). A late
+ *    step (a +2 min, or a running step that overran) pushes every pending
+ *    step later by exactly that much, so the meal keeps landing together —
+ *    just later.
  */
 function scheduleWithProgress(
   dishes: SanitizedDish[],
@@ -489,6 +585,11 @@ function scheduleWithProgress(
   const preBusy = new Map<string, number>()
   const fixedKeys = new Set<string>()
 
+  // S3 — the same baseline `scheduleMeal`'s own no-progress path would pick
+  // for these dishes (initial vs sequential, the shorter), not `scheduleInitial`
+  // alone.
+  const baseline = progress.hold_to_plan ? pickBaselinePlan(dishes) : null
+
   for (const dish of dishes) {
     for (const step of dish.steps) {
       const key = keyOf(dish.dish_id, step.index)
@@ -496,10 +597,15 @@ function scheduleWithProgress(
       if (!p) continue
 
       const nominalEnd = p.started_at_minutes + step.duration_minutes + (p.extra_minutes ?? 0)
-      const end =
-        p.status === 'running'
-          ? nominalEnd
-          : Math.max(p.started_at_minutes, Math.min(nominalEnd, progress.now_minutes))
+      let end: number
+      if (p.status === 'running') {
+        end = nominalEnd
+      } else if (p.ended_at_minutes !== undefined) {
+        // S1 — the fixed-at-the-tap end, when the caller recorded one.
+        end = Math.max(p.started_at_minutes, p.ended_at_minutes)
+      } else {
+        end = Math.max(p.started_at_minutes, Math.min(nominalEnd, progress.now_minutes))
+      }
       result.set(key, { start: p.started_at_minutes, end })
       fixedKeys.add(key)
       if (p.status !== 'running') continue
@@ -512,6 +618,16 @@ function scheduleWithProgress(
         preBusy.set(rk, Math.max(preBusy.get(rk) ?? 0, end))
       }
     }
+  }
+
+  let lateness = 0
+  if (baseline) {
+    for (const key of fixedKeys) {
+      const b = baseline.get(key)
+      if (!b) continue
+      lateness = Math.max(lateness, result.get(key)!.end - b.end)
+    }
+    lateness = Math.max(0, lateness)
   }
 
   const remainingNodes: Node[] = []
@@ -529,6 +645,11 @@ function scheduleWithProgress(
         } else {
           deps.push(dk)
         }
+      }
+
+      if (baseline) {
+        const b = baseline.get(key)
+        if (b) readyFloor = Math.max(readyFloor, b.start + lateness)
       }
 
       remainingNodes.push({
@@ -674,6 +795,7 @@ function buildTimeline(
           text: startingHere.text,
           duration_minutes: startingHere.duration_minutes,
           hands_on: startingHere.hands_on,
+          step_index: startingHere.step_index,
         }
         continue
       }
@@ -686,6 +808,7 @@ function buildTimeline(
           label: ongoing.label,
           remaining_minutes: ongoing.end - offset,
           hands_on: ongoing.hands_on,
+          step_index: ongoing.step_index,
         }
         continue
       }
@@ -733,12 +856,7 @@ export function scheduleMeal(input: ScheduleMealInput): MealTimeline {
     return buildTimeline(sanitizedDishes, placements, finishWindowMinutes, warnings, degraded)
   }
 
-  const initialPlacements = scheduleInitial(sanitizedDishes)
-  const sequentialPlacements = scheduleSequential(sanitizedDishes)
-  const placements =
-    totalMinutesOf(initialPlacements) <= totalMinutesOf(sequentialPlacements)
-      ? initialPlacements
-      : sequentialPlacements
+  const placements = pickBaselinePlan(sanitizedDishes)
 
   return buildTimeline(sanitizedDishes, placements, finishWindowMinutes, warnings, degraded)
 }

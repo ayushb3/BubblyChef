@@ -94,6 +94,9 @@ describe('scheduleMeal — pasta + sauce + salad', () => {
       label: 'Simmer sauce',
       remaining_minutes: 7,
       hands_on: false,
+      // Issue #653 (additive): step_index, so the cook-along table can mark
+      // a cell done or current.
+      step_index: 1,
     })
   })
 

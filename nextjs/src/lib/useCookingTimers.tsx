@@ -159,6 +159,15 @@ export interface CookingTimersContextValue {
   resume: (id: string) => void
   /** Removes a timer entirely — used for both "dismiss" and cancel. */
   dismiss: (id: string) => void
+  /**
+   * Issue #653 — adds `seconds` to a running timer's `endAt`, or to a
+   * paused one's frozen remaining time. A no-op on a completed timer (there
+   * is nothing left to extend) and on an unknown id. The dock's own "+2 min"
+   * button calls this; the meal cook-along also derives a re-plan from
+   * whatever the dock timer's `end` becomes, via `applyTimerState` in
+   * `lib/meal-cook-stream.ts`.
+   */
+  extend: (id: string, seconds: number) => void
 }
 
 /**
@@ -177,6 +186,7 @@ const NOOP_CONTEXT_VALUE: CookingTimersContextValue = {
   pause: () => {},
   resume: () => {},
   dismiss: () => {},
+  extend: () => {},
 }
 
 const CookingTimersContext = createContext<CookingTimersContextValue>(NOOP_CONTEXT_VALUE)
@@ -357,9 +367,35 @@ export function CookingTimersProvider({ children }: { children: ReactNode }) {
     setStored((prev) => prev.filter((t) => t.id !== id))
   }, [])
 
+  /**
+   * Adds `seconds` to a running timer's `endAt`, or to a paused one's frozen
+   * remaining time. A no-op on a completed timer — including a timer whose
+   * persisted `status` still literally says `"running"` because completion
+   * is only ever derived at read time (`toLiveTimer`, above) and never
+   * written back into `stored`. Extending by raw stored status alone would
+   * push a *derived*-completed timer's `endAt` into the future and silently
+   * resurrect it as running again — checked against `nowMs()` here instead,
+   * the same derivation `toLiveTimer` uses.
+   */
+  const extend = useCallback((id: string, seconds: number) => {
+    const now = nowMs()
+    setStored((prev) =>
+      prev.map((t) => {
+        if (t.id !== id) return t
+        if (t.status === 'running' && t.endAt !== null && t.endAt > now) {
+          return { ...t, endAt: t.endAt + seconds * 1000 }
+        }
+        if (t.status === 'paused') {
+          return { ...t, frozenRemaining: t.frozenRemaining + seconds }
+        }
+        return t // completed (or a running record already past its endAt) — no-op
+      }),
+    )
+  }, [])
+
   const value = useMemo<CookingTimersContextValue>(
-    () => ({ timers, start, pause, resume, dismiss }),
-    [timers, start, pause, resume, dismiss],
+    () => ({ timers, start, pause, resume, dismiss, extend }),
+    [timers, start, pause, resume, dismiss, extend],
   )
 
   return <CookingTimersContext.Provider value={value}>{children}</CookingTimersContext.Provider>

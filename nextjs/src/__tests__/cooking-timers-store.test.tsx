@@ -149,6 +149,88 @@ describe('useCookingTimers store', () => {
     })
   })
 
+  it('extend adds to a running timer\'s remaining time (issue #653)', () => {
+    const { result } = renderHook(() => useCookingTimers(), { wrapper })
+
+    let id = ''
+    act(() => {
+      id = result.current.start('Simmer sauce', 100)
+    })
+    act(() => {
+      jest.advanceTimersByTime(20_000)
+    })
+    expect(result.current.timers.find((t) => t.id === id)?.remainingSeconds).toBe(80)
+
+    act(() => {
+      result.current.extend(id, 30)
+    })
+    expect(result.current.timers.find((t) => t.id === id)).toMatchObject({
+      status: 'running',
+      remainingSeconds: 110,
+    })
+  })
+
+  it('extend adds to a paused timer\'s frozen remaining time (issue #653)', () => {
+    const { result } = renderHook(() => useCookingTimers(), { wrapper })
+
+    let id = ''
+    act(() => {
+      id = result.current.start('Rest dough', 100)
+    })
+    act(() => {
+      jest.advanceTimersByTime(40_000)
+      result.current.pause(id)
+    })
+    expect(result.current.timers.find((t) => t.id === id)?.remainingSeconds).toBe(60)
+
+    act(() => {
+      result.current.extend(id, 15)
+    })
+    expect(result.current.timers.find((t) => t.id === id)).toMatchObject({
+      status: 'paused',
+      remainingSeconds: 75,
+    })
+
+    // Still frozen until resumed — extending a paused timer doesn't restart it.
+    act(() => {
+      jest.advanceTimersByTime(30_000)
+    })
+    expect(result.current.timers.find((t) => t.id === id)?.remainingSeconds).toBe(75)
+  })
+
+  it('extend is a no-op on a completed timer (issue #653)', () => {
+    const { result } = renderHook(() => useCookingTimers(), { wrapper })
+
+    let id = ''
+    act(() => {
+      id = result.current.start('Boil egg', 5)
+    })
+    act(() => {
+      jest.advanceTimersByTime(5_000)
+    })
+    expect(result.current.timers.find((t) => t.id === id)?.status).toBe('completed')
+
+    act(() => {
+      result.current.extend(id, 60)
+    })
+    expect(result.current.timers.find((t) => t.id === id)).toMatchObject({
+      status: 'completed',
+      remainingSeconds: 0,
+    })
+  })
+
+  it('extend on an unknown id is a no-op', () => {
+    const { result } = renderHook(() => useCookingTimers(), { wrapper })
+    act(() => {
+      result.current.start('Simmer sauce', 100)
+    })
+    const before = result.current.timers
+    act(() => {
+      result.current.extend('not-a-real-id', 60)
+    })
+    expect(result.current.timers).toEqual(before)
+  })
+
   it('dismiss removes a timer entirely', () => {
     const { result } = renderHook(() => useCookingTimers(), { wrapper })
 
@@ -287,5 +369,6 @@ describe('useCookingTimers store', () => {
     expect(result.current.timers).toEqual([])
     expect(() => result.current.start('x', 10)).not.toThrow()
     expect(result.current.timers).toEqual([]) // no-op — nothing persisted
+    expect(() => result.current.extend('anything', 120)).not.toThrow()
   })
 })
