@@ -80,6 +80,14 @@ CASES: list[dict[str, Any]] = [
         "expected": ["recipe_generation", "recipe_brainstorm"],
     },
     {"input": "quick easy meal under 30 minutes", "expected": "recipe_generation"},
+    # meal_plan (issue #650): a meal occasion with no dish named goes to
+    # meal_plan; naming a dish -- even one that mentions a mealtime -- stays
+    # recipe_generation. The last case is the deciding boundary test.
+    {"input": "what's for dinner?", "expected": "meal_plan"},
+    {"input": "dinner tonight", "expected": "meal_plan"},
+    {"input": "cooking for friends this weekend", "expected": "meal_plan"},
+    {"input": "a meal for 4", "expected": "meal_plan"},
+    {"input": "a quick pasta recipe for dinner", "expected": "recipe_generation"},
     # cooking_help
     {"input": "how do I caramelise onions?", "expected": "cooking_help"},
     {"input": "how long does chicken last in the fridge?", "expected": "cooking_help"},
