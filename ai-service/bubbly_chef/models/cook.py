@@ -160,8 +160,9 @@ class CookProposal(BaseModel):
         default_factory=list,
         description=(
             "Advisory compound substitutions for missing ingredients — "
-            "e.g. heavy cream ← butter + milk + flour. "
-            "Nothing is deducted; the ingredient remains in missing."
+            "e.g. heavy cream ← butter + milk + flour. The ingredient itself "
+            "always remains in missing; deducting the components is opt-in "
+            "(#284) via each suggestion's component_items, not automatic."
         ),
     )
     expired_items: list[ExpiredMatchedItem] = Field(

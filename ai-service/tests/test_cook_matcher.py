@@ -1678,10 +1678,13 @@ class TestCompoundSuggestionTableDriven:
 class TestCompoundComponentItems:
     """Issue #284 — component_items resolves each compound component to a pantry row.
 
-    component_items is what the cook modal deducts from once the user types a
-    quantity; it must carry the real pantry_item_id and base_unit for every
-    name in `components`, in the same order, and must never itself trigger a
-    deduction (that stays always-unresolved — quantities come from the user).
+    component_items is what the cook modal deducts from once a quantity ends
+    up in its input; it must carry the real pantry_item_id and base_unit for
+    every name in `components`, in the same order, and must never itself
+    trigger a deduction — resolving component_items is still advisory. Since
+    Option B (2026-09-27, see TestCompoundQuantityPrefill below) that input
+    may start pre-filled with the model's suggested_quantity rather than
+    blank, but confirming a deduction is still the user's call either way.
     """
 
     @pytest.mark.asyncio
