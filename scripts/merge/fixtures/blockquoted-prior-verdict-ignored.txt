@@ -1,0 +1,15 @@
+## Re-review (round 2) — PR #711, *pantry expiry sort*
+
+Quoting the round-1 comment, which itself was quoting CLAUDE.md's review
+template to remind the author of the expected format:
+
+> - **Verdict:** `looks mergeable`, `needs changes`, or `needs a human`
+
+That's a quoted example of the template, not a verdict for this PR, and it
+must not be read as one just because it names "needs changes" -- a
+blockquoted line is skipped the same way a fenced one is.
+
+**Verdict: looks mergeable**
+
+Round 1's finding (duplicate-row bug) was fixed in the latest commit and
+the new fixture covers it.

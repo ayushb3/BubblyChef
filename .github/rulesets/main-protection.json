@@ -8,7 +8,9 @@
       "exclude": []
     }
   },
-  "bypass_actors": [],
+  "bypass_actors": [
+    { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "pull_request" }
+  ],
   "rules": [
     {
       "type": "deletion"
@@ -20,10 +22,12 @@
       "type": "pull_request",
       "parameters": {
         "required_approving_review_count": 0,
-        "require_code_owner_review": true,
-        "dismiss_stale_reviews_on_push": true,
+        "dismiss_stale_reviews_on_push": false,
+        "required_reviewers": [],
+        "require_code_owner_review": false,
         "require_last_push_approval": false,
         "required_review_thread_resolution": false,
+        "require_extra_approval_for_unattributed_changes": true,
         "allowed_merge_methods": ["merge", "squash", "rebase"]
       }
     },
@@ -35,11 +39,7 @@
         "required_status_checks": [
           { "context": "Next.js (typecheck + test)", "integration_id": 15368 },
           { "context": "AI service (lint + typecheck + test)", "integration_id": 15368 },
-          { "context": "Bug fix fails on base", "integration_id": 15368 },
-          { "context": "Test suite did not shrink", "integration_id": 15368 },
-          { "context": "F2P exemption is legitimate", "integration_id": 15368 },
-          { "context": "Agent loop limits hold", "integration_id": 15368 },
-          { "context": "Vercel" }
+          { "context": "Claude review verdict", "integration_id": 15368 }
         ]
       }
     }

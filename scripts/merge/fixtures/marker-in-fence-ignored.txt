@@ -1,0 +1,16 @@
+## Review — PR #704, *review workflow: emit a verdict marker*
+
+Example of the marker format this PR adds to `claude-review.yml`'s prompt:
+
+```
+<!-- verdict: looks-mergeable -->
+```
+
+That's illustrative only — this PR itself isn't reviewed by the new prompt
+yet, so no marker is actually being emitted for this comment.
+
+**Verdict: needs a human**
+
+Whether the marker's exact key names (`verdict`, not `mergeability` or
+`decision`) match what the rest of the loop expects is a call for Ayush,
+not something the diff itself can settle.

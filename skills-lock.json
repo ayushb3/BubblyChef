@@ -232,7 +232,7 @@
     "to-spec": {
       "source": "mattpocock/skills",
       "skillPath": "skills/engineering/to-spec/SKILL.md",
-      "computedHash": "267638edd513b5918de626ad5605d261952abb7428cb308869c663ca924e93e7",
+      "computedHash": "8fe699e2b6e3ab487609ed38f6236dd77820595549beee6d3c6e632fd9307e5f",
       "files": [
         "SKILL.md",
         "agents/openai.yaml"
@@ -241,7 +241,7 @@
     "to-tickets": {
       "source": "mattpocock/skills",
       "skillPath": "skills/engineering/to-tickets/SKILL.md",
-      "computedHash": "5ecdf1d4df8a360ed39df21a2347f97ba177afd449a577da4f6b6ea8e1ebb808",
+      "computedHash": "046f4a54661f812338155def8abf1ab9ef40c36effd8ad2a20f58ee9fe6fe45a",
       "files": [
         "SKILL.md",
         "agents/openai.yaml"
@@ -261,7 +261,7 @@
     "wayfinder": {
       "source": "mattpocock/skills",
       "skillPath": "skills/engineering/wayfinder/SKILL.md",
-      "computedHash": "257e40665b28ae959ffdcb97d7a72b074360f4a3d201bd84786505308546e434",
+      "computedHash": "349689574ed418153341be366ef171c35694b24bcbdc10d83edca840e64cebd5",
       "files": [
         "SKILL.md",
         "agents/openai.yaml"

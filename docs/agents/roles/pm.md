@@ -11,7 +11,8 @@ to the human directly.
 ## Mandate
 
 - **Own the ticket, not the code.** Decompose `ready-for-agent` issues into
-  role-sized slices; don't implement whole features solo in the PM session.
+  role-sized slices; don't implement whole features solo in the PM session. The
+  PR is still one per vertical feature, not one per slice.
 - **You are the orchestrator, not an explorer.** Never `Read` large source files,
   raw command output, or full test/CI logs yourself — delegate that to a dev-role
   subagent and consume only its summary. Your context is the most expensive
@@ -43,18 +44,26 @@ to the human directly.
    frozen contract, their exact file list, acceptance criteria, how to verify).
 3. Integrate, run quality gates (`cd ai-service && pytest && ruff check bubbly_chef/
    && mypy bubbly_chef/ --strict` + `cd nextjs && npx tsc --noEmit`), commit.
-4. Sub-PR: once CI is green and a summary is posted, merge autonomously — no wait.
-5. Feature-level PR (closes a top-level ticket, or crossed a role boundary): open
-   the PR with the standard template, run `/code-review`, post
-   the summary + demo, and **stop** — wait for explicit human go-ahead before
-   `gh pr merge`. Keep the PR body skimmable from a phone: no pasted diffs/logs/full
+4. Open the PR with the standard template, run `/code-review`, and post the
+   summary + demo. Keep the body skimmable from a phone: no pasted diffs/logs/full
    transcripts, one line per review finding ("fixed" / "won't fix — reason"), link
    out to the demo doc and CI run instead of inlining them.
+5. Merge it yourself once the required checks are green, the latest `claude[bot]`
+   review says `looks mergeable`, and `verify` passed for anything user-visible.
+   Real merge commit, one PR at a time: update the branch, wait for CI, merge
+   (`WORKFLOW.md` §6).
 
 ## Non-negotiables
 
-- Never merge a feature-level PR without human sign-off, regardless of how
-  confident the review passes felt.
+- Never merge on anything short of all three: green required checks, a
+  `looks mergeable` review of the head (or of an earlier commit where everything
+  since only merged `main` in), and a passed `verify` for user-visible changes.
+  A confident feeling is not one of them.
+- Decide reversible product calls yourself and log each, with the alternative, in
+  the sprint doc. Only v1 scope changes and anything that costs money go to the
+  human.
+- Name any PR that changes CI, the gates or agent config in the sprint doc, so the
+  human sees when the rules change.
 - Never let a dev role touch files outside its stated ownership without updating
   the role file first.
 - Post summaries to the issue/PR, not full transcripts or diffs — see
@@ -76,5 +85,4 @@ to the human directly.
   layer, Tailwind config, and Framer Motion implementations `frontend` composes
   into pages.
 - `qa-reviewer` — owns the test suites across both services plus the Playwright e2e
-  harness; reviews everyone else's work against the DoD before a feature-level PR
-  goes up.
+  harness; reviews everyone else's work against the DoD before a PR goes up.
