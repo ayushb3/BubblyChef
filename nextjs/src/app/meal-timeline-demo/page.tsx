@@ -8,6 +8,9 @@ import { notFound } from 'next/navigation'
 import MealTimelineDemoClient from './Client'
 
 export default function MealTimelineDemoPage() {
+  // VERCEL_ENV, not NODE_ENV like cook-prototype: verify runs a production
+  // build and Vercel previews need the page. It serves pure fixtures (no auth,
+  // no data), so a non-Vercel production build showing it is harmless.
   if (process.env.VERCEL_ENV === 'production') {
     notFound()
   }

@@ -107,7 +107,7 @@ describe('scheduleMeal — re-planning', () => {
     expect(serve.start).toBeGreaterThanOrEqual(simmer.end)
   })
 
-  it('Skip: a skipped step is fixed in the past and its dependent uses its recorded end', () => {
+  it('Skip: a skipped step ends at now, so its dependent can start straight away (PR #658 review)', () => {
     const main: SchedulerDish = {
       dish_id: 'main',
       column: 'main',
@@ -129,8 +129,78 @@ describe('scheduleMeal — re-planning', () => {
     const marinate = timeline.placements.find((p) => p.step_index === 0)!
     const cook = timeline.placements.find((p) => p.step_index === 1)!
     expect(marinate.start).toBe(0)
-    expect(marinate.end).toBe(20)
-    expect(cook.start).toBeGreaterThanOrEqual(20)
+    expect(marinate.end).toBe(1)
+    expect(cook.start).toBe(1)
+  })
+
+  it('Skip on a hands-on step frees the cook at now, not at its nominal end', () => {
+    const main: SchedulerDish = {
+      dish_id: 'main',
+      column: 'main',
+      title: 'Main',
+      steps: [step({ text: 'Knead', label: 'Knead', duration_minutes: 20, hands_on: true })],
+    }
+    const side: SchedulerDish = {
+      dish_id: 'side',
+      column: 'side_1',
+      title: 'Side',
+      steps: [step({ text: 'Chop', label: 'Chop', duration_minutes: 4, hands_on: true })],
+    }
+    const timeline = scheduleMeal({
+      dishes: [main, side],
+      progress: {
+        now_minutes: 1,
+        steps: { 'main:0': { status: 'skipped', started_at_minutes: 0, extra_minutes: 0 } },
+      },
+    })
+    const chop = timeline.placements.find((p) => p.dish_id === 'side')!
+    expect(chop.start).toBe(1)
+  })
+
+  it('Done tapped early ends the step at now and frees the cook', () => {
+    const main: SchedulerDish = {
+      dish_id: 'main',
+      column: 'main',
+      title: 'Main',
+      steps: [
+        step({ text: 'Sear', label: 'Sear', duration_minutes: 10, hands_on: true }),
+        step({ text: 'Plate', label: 'Plate', duration_minutes: 2, hands_on: true, depends_on: [0] }),
+      ],
+    }
+    const timeline = scheduleMeal({
+      dishes: [main],
+      progress: {
+        now_minutes: 6,
+        steps: { 'main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 } },
+      },
+    })
+    const [sear, plate] = [0, 1].map((i) => timeline.placements.find((p) => p.step_index === i)!)
+    expect(sear.end).toBe(6)
+    expect(plate.start).toBe(6)
+  })
+
+  it('a running hands-on step still holds the cook until start + duration + extra', () => {
+    const main: SchedulerDish = {
+      dish_id: 'main',
+      column: 'main',
+      title: 'Main',
+      steps: [step({ text: 'Knead', label: 'Knead', duration_minutes: 10, hands_on: true })],
+    }
+    const side: SchedulerDish = {
+      dish_id: 'side',
+      column: 'side_1',
+      title: 'Side',
+      steps: [step({ text: 'Chop', label: 'Chop', duration_minutes: 4, hands_on: true })],
+    }
+    const timeline = scheduleMeal({
+      dishes: [main, side],
+      progress: {
+        now_minutes: 1,
+        steps: { 'main:0': { status: 'running', started_at_minutes: 0, extra_minutes: 2 } },
+      },
+    })
+    const chop = timeline.placements.find((p) => p.dish_id === 'side')!
+    expect(chop.start).toBe(12)
   })
 
   it('resuming mid-meal with a running hands-on step keeps the cook busy until it ends', () => {

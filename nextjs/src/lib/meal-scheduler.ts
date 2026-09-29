@@ -472,9 +472,14 @@ function scheduleSequential(dishes: SanitizedDish[]): Map<string, { start: numbe
 
 /**
  * Re-plan from `progress`: done/skipped/running steps are fixed at their
- * recorded placement (guarantee 7), a running step's resources stay
- * occupied until it ends, and everything else is scheduled forward from
+ * recorded start (guarantee 7) and everything else is scheduled forward from
  * `now_minutes` — nothing new is placed earlier.
+ *
+ * Done and skipped steps are "fixed in the past" (#647): they end at their
+ * nominal end or at `now`, whichever is earlier, and hold no resources. So a
+ * Skip, or a Done tapped early, frees the cook and unblocks dependents
+ * immediately. Only a running step keeps its resources until
+ * start + duration + extra.
  */
 function scheduleWithProgress(
   dishes: SanitizedDish[],
@@ -490,9 +495,14 @@ function scheduleWithProgress(
       const p = progress.steps[key]
       if (!p) continue
 
-      const end = p.started_at_minutes + step.duration_minutes + (p.extra_minutes ?? 0)
+      const nominalEnd = p.started_at_minutes + step.duration_minutes + (p.extra_minutes ?? 0)
+      const end =
+        p.status === 'running'
+          ? nominalEnd
+          : Math.max(p.started_at_minutes, Math.min(nominalEnd, progress.now_minutes))
       result.set(key, { start: p.started_at_minutes, end })
       fixedKeys.add(key)
+      if (p.status !== 'running') continue
 
       if (step.hands_on) {
         preBusy.set('__cook__', Math.max(preBusy.get('__cook__') ?? 0, end))
