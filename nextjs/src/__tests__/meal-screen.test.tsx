@@ -278,6 +278,29 @@ describe('meal screen — serve-at (issue #652)', () => {
 })
 
 describe('meal screen — concurrent dish ops (issue #652 review)', () => {
+  it('an open remove confirm is locked once a swap starts on the other side (PR #660 review)', async () => {
+    fetchMeal.mockResolvedValue(baseMeal())
+    fetchSideAlternatives.mockResolvedValue([
+      { role: 'side', name: 'Charred broccolini', blurb: 'Smoky.', key_ingredients: ['broccolini'],
+        est_total_minutes: 10, est_hands_on_minutes: 5 },
+    ])
+    expandMealDish.mockReturnValue(new Promise(() => {}))
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Green salad', level: 3 })
+
+    // Open the remove confirm on the second side, then start a swap on the first.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[1])
+    const dialog = await screen.findByRole('alertdialog')
+    fireEvent.click(screen.getAllByRole('button', { name: 'Swap' })[0])
+    fireEvent.click(await screen.findByRole('listitem', { name: 'Pick Charred broccolini' }))
+
+    const confirm = within(dialog).getByRole('button', { name: 'Remove' })
+    await waitFor(() => expect(confirm).toBeDisabled())
+    fireEvent.click(confirm)
+    expect(updateMeal).not.toHaveBeenCalled()
+  })
+
   it('locks Swap, Remove and Add on every dish, and no-ops the row Cancel, while a pick is persisting', async () => {
     fetchMeal.mockResolvedValue(baseMeal())
     fetchSideAlternatives.mockResolvedValue([

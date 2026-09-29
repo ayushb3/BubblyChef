@@ -15,6 +15,7 @@
  */
 
 import type { ReactNode } from 'react'
+import Link from 'next/link'
 import { ingredientLabel } from '@/lib/recipe-helpers'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import type { RecipeIngredient, Step } from '@/types/recipes'
@@ -38,6 +39,8 @@ export interface MealDishCardProps {
   stepsEstimated?: boolean
   /** Slot for Swap / Remove controls — rendered in the card header. */
   actions?: ReactNode
+  /** The dish's own recipe page; when set, the title links there (favourite, edit, delete live there). */
+  href?: string
 }
 
 export default function MealDishCard({
@@ -48,6 +51,7 @@ export default function MealDishCard({
   steps,
   stepsEstimated = false,
   actions,
+  href,
 }: MealDishCardProps) {
   return (
     <section
@@ -68,7 +72,13 @@ export default function MealDishCard({
       </div>
 
       <h3 className="text-lg font-extrabold leading-tight mb-3" style={{ color: 'var(--color-text)' }}>
-        {title}
+        {href ? (
+          <Link href={href} className="underline-offset-2 hover:underline">
+            {title}
+          </Link>
+        ) : (
+          title
+        )}
       </h3>
 
       {ingredients.length > 0 && (

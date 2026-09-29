@@ -45,6 +45,15 @@ describe('MealDishCard', () => {
     expect(screen.getByTestId('meal-dish-role')).toHaveTextContent('Main')
   })
 
+  it('links the title to the dish recipe page when href is given, and not otherwise', () => {
+    const { rerender } = render(
+      <MealDishCard role="side" title="Green salad" ingredients={[]} instructions={[]} href="/recipes/r2" />,
+    )
+    expect(screen.getByRole('link', { name: 'Green salad' })).toHaveAttribute('href', '/recipes/r2')
+    rerender(<MealDishCard role="side" title="Green salad" ingredients={[]} instructions={[]} />)
+    expect(screen.queryByRole('link', { name: 'Green salad' })).not.toBeInTheDocument()
+  })
+
   it('shows the side role label', () => {
     render(<MealDishCard role="side" title="Green salad" ingredients={[]} instructions={[]} />)
     expect(screen.getByTestId('meal-dish-role')).toHaveTextContent('Side')

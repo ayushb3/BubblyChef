@@ -360,7 +360,8 @@ export default function MealDetailPage() {
   }
 
   function handleConfirmRemove(position: number) {
-    if (!meal) return
+    // The confirm can be open when a swap starts elsewhere; one dish op at a time.
+    if (!meal || dishOpInFlight) return
     removeMutation.mutate({ position, expectedRecipeId: dishRecipeIdAt(meal, position) })
   }
 
@@ -639,6 +640,7 @@ function DishSection({
         <MealDishCard
           role={dish.role}
           title={dish.recipe.title}
+          href={`/recipes/${dish.recipe.id}`}
           ingredients={scaledIngredients(dish.recipe.ingredients, scale)}
           instructions={dish.recipe.instructions}
           steps={dish.recipe.steps ?? fallbackSteps(dish.recipe.instructions)}
@@ -695,7 +697,8 @@ function DishSection({
                 <button
                   type="button"
                   onClick={onConfirmRemove}
-                  disabled={removePending}
+                  // controlsDisabled covers a pending remove and any swap/add in flight.
+                  disabled={controlsDisabled}
                   className="min-h-[44px] px-4 rounded-full text-xs font-bold text-white disabled:opacity-60"
                   style={{ background: 'var(--color-coral, #ff9aa2)' }}
                 >
