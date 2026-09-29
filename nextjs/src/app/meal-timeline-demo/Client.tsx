@@ -7,8 +7,9 @@
 
 import { useMemo, useState } from 'react'
 import MealTimelineTable, { timelineNotes } from '@/components/meal/MealTimelineTable'
+import ServeAtControl, { type ServeAtMode } from '@/components/meal/ServeAtControl'
 import { scheduleMeal } from '@/lib/meal-scheduler'
-import { resolveMealAnchor, formatClockTime } from '@/lib/meal-anchor'
+import { resolveMealAnchor } from '@/lib/meal-anchor'
 import { ALL_MEAL_FIXTURES } from '@/lib/meal-fixtures'
 import { COLUMN_ORDER } from '@/lib/meal-scheduler'
 
@@ -24,7 +25,7 @@ export default function MealTimelineDemoClient() {
   // the one place, in the UI, that has to.
   const [now] = useState(() => new Date())
   const [fixtureIndex, setFixtureIndex] = useState(0)
-  const [mode, setMode] = useState<'start-now' | 'serve-at'>('start-now')
+  const [mode, setMode] = useState<ServeAtMode>('start-now')
   const [serveAtInput, setServeAtInput] = useState(() => defaultServeAtInput(now))
 
   const fixture = ALL_MEAL_FIXTURES[fixtureIndex]
@@ -98,36 +99,14 @@ export default function MealTimelineDemoClient() {
         <h2 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
           Start
         </h2>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--color-text)' }}>
-            <input
-              type="radio"
-              name="mode"
-              checked={mode === 'start-now'}
-              onChange={() => setMode('start-now')}
-            />
-            Start now
-          </label>
-          <label className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--color-text)' }}>
-            <input
-              type="radio"
-              name="mode"
-              checked={mode === 'serve-at'}
-              onChange={() => setMode('serve-at')}
-            />
-            Serve at
-          </label>
-          {mode === 'serve-at' && (
-            <input
-              type="time"
-              value={serveAtInput}
-              onChange={(e) => setServeAtInput(e.target.value)}
-              className="rounded-lg border px-2 py-1 text-sm"
-              style={{ borderColor: 'var(--color-border)' }}
-              aria-label="Serve at time"
-            />
-          )}
-        </div>
+        <ServeAtControl
+          mode={mode}
+          serveAt={serveAtInput}
+          anchor={anchor}
+          onModeChange={setMode}
+          onServeAtChange={setServeAtInput}
+          totalMinutes={timeline.total_minutes}
+        />
       </section>
 
       <section className="space-y-2">
@@ -140,22 +119,7 @@ export default function MealTimelineDemoClient() {
           </p>
         )}
 
-        {anchor.status === 'too_late' ? (
-          <div
-            className="rounded-2xl border p-4 text-sm"
-            style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
-            data-testid="meal-timeline-too-late"
-          >
-            <p className="font-bold" style={{ color: 'var(--color-text)' }}>
-              That&apos;s too soon — this meal needs {timeline.total_minutes} minutes.
-            </p>
-            <p style={{ color: 'var(--color-muted)' }}>
-              The earliest it could be ready is {formatClockTime(anchor.earliest_ready_at)}.
-            </p>
-          </div>
-        ) : (
-          <MealTimelineTable timeline={timeline} columns={columns} anchor={anchor} />
-        )}
+        <MealTimelineTable timeline={timeline} columns={columns} anchor={anchor} />
       </section>
     </div>
   )
