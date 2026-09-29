@@ -89,19 +89,15 @@ export default function SavedRecipeMatches({
           // `role="listitem"` lives on this wrapper, not the button inside
           // it — putting it directly on the button (as an earlier version
           // did) suppressed the button's own implicit role and, with it,
-          // `aria-expanded`, which `listitem` doesn't support (PR #614
-          // round 6 review). The button keeps its native role and carries
-          // both the accessible name and the expand state.
+          // any state attribute on it (PR #614 round 6 review). The button
+          // keeps its native role and accessible name. There is deliberately
+          // no `aria-expanded`: expanding replaces this button with the
+          // two-button card and moves focus to "Open recipe", so there is no
+          // collapsed/expanded control left to describe (round 7 review).
           <div key={match.id} role="listitem" aria-label={match.title}>
             <motion.button
               type="button"
               aria-label={`Show options for ${match.title}`}
-              // Always false in practice — the moment `match.id ===
-              // expandedId`, this card stops rendering as a button at all
-              // (see the branch above, which swaps in the SingleMatchCard
-              // div instead). Written as the comparison rather than a
-              // literal `false` so it stays honest if that ever changes.
-              aria-expanded={match.id === expandedId}
               disabled={disabled}
               onClick={() => !disabled && setExpandedId(match.id)}
               initial={{ opacity: 0, y: 8 }}
@@ -167,8 +163,7 @@ function SingleMatchCard({
    * `max-w-[85%]` — it has no such ancestor. Applying both nested one
    * 85%-of-85% ≈ 72% of the chat column, visibly narrower than the mini
    * cards beside it and enough to wrap "Open recipe" onto two lines
-   * (PR #614 round 6 review, this component's own
-   * `many-matches-expanded.png`).
+   * (PR #614 round 6 review).
    */
   nested?: boolean
 }) {

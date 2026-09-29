@@ -92,11 +92,12 @@ describe('SavedRecipeMatches', () => {
     expect(items[2]).toHaveTextContent('Chicken Curry')
   })
 
-  it('labels each mini card by its action, not "Pick", and marks it collapsed', () => {
+  it('labels each mini card by its action, not "Pick"', () => {
     render(<SavedRecipeMatches matches={MANY} onSelect={jest.fn()} />)
     for (const match of MANY) {
       const button = screen.getByRole('button', { name: `Show options for ${match.title}` })
-      expect(button).toHaveAttribute('aria-expanded', 'false')
+      // No aria-expanded: expanding replaces the button (see the component).
+      expect(button).not.toHaveAttribute('aria-expanded')
       // The wrapping listitem still names itself after the title alone —
       // the "Show options for" phrasing belongs to the button's own action,
       // not the list item's identity.
@@ -138,8 +139,7 @@ describe('SavedRecipeMatches', () => {
     // has no `max-w-[85%]` ancestor. Nested inside the many-match list's
     // identical constraint it compounded to ~72%, visibly narrower than the
     // sibling mini cards and enough to wrap "Open recipe" onto two lines
-    // (PR #614 round 6 review — plainly visible in this PR's own
-    // many-matches-expanded.png).
+    // (PR #614 round 6 review).
     render(<SavedRecipeMatches matches={MANY} onSelect={jest.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: `Show options for ${MANY[1].title}` }))
     const openLink = screen.getByRole('link', { name: 'Open recipe' })
