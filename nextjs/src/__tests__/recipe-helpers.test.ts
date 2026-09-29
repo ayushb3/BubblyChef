@@ -2,6 +2,7 @@ import {
   mergeTags,
   ingredientLabel,
   ingredientParts,
+  instructionsChanged,
 } from '@/lib/recipe-helpers'
 
 describe('mergeTags', () => {
@@ -166,5 +167,29 @@ describe('ingredientParts (#315 / repeated-typeof cleanup)', () => {
     for (const ing of cases) {
       expect(ingredientLabel(ing)).toBe(ingredientParts(ing).label)
     }
+  })
+})
+
+describe('instructionsChanged (#648 — clears structured steps on a real instruction edit)', () => {
+  it('is false for byte-identical arrays', () => {
+    expect(instructionsChanged(['Boil water.', 'Add pasta.'], ['Boil water.', 'Add pasta.'])).toBe(false)
+  })
+
+  it('is true when any step text differs', () => {
+    expect(instructionsChanged(['Boil water.'], ['Boil salted water.'])).toBe(true)
+  })
+
+  it('is true when steps are reordered, even with the same content', () => {
+    expect(instructionsChanged(['A', 'B'], ['B', 'A'])).toBe(true)
+  })
+
+  it('is true when a step is added or removed', () => {
+    expect(instructionsChanged(['A'], ['A', 'B'])).toBe(true)
+    expect(instructionsChanged(['A', 'B'], ['A'])).toBe(true)
+  })
+
+  it('treats null/undefined current instructions as comparable, not a crash', () => {
+    expect(instructionsChanged(null, ['A'])).toBe(true)
+    expect(instructionsChanged(undefined, null)).toBe(false)
   })
 })

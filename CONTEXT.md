@@ -15,6 +15,16 @@ A structured instruction for preparing food. Has ingredients, steps, cuisine, di
 - **Constraints**: Can be grounded in pantry (uses available ingredients + expiring items)
 - **Related**: RecipeConstraints (user preferences), ProposalEnvelope (AI-generated with confidence)
 
+### Structured step
+A recipe step with text, a short label, an ongoing label, a duration, hands-on/off and dependencies — replaces regex-guessed cook-mode timers with real ones (issue #648).
+
+- **Fields**: `text` (identical to the matching `instructions` entry), `label` (2-5 word imperative, e.g. "Boil the pasta"), `ongoing_label` (subject+verb clause for a step in progress, e.g. "the pasta boils" — required when hands-off, optional when hands-on), `duration_minutes` (1-240), `duration_estimated` (bool — true when code, not the model, supplied the duration), `hands_on` (bool), `depends_on` (indices of earlier steps in the same recipe that must finish first), `exclusive` (kitchen-limit tags, usually empty)
+- **Storage**: `recipes.steps`, a nullable JSONB column alongside the unchanged `instructions` column. `steps = null` means "not yet structured". RLS is unchanged.
+- **Validation** (Pydantic validators on `StructuredStep`, `bubbly_chef/models/recipe.py`): a missing duration is estimated from a duration phrase in the text, or else 3 minutes, and flagged `duration_estimated`; a null `depends_on` means "the previous step" and an explicit `[]` means "no dependencies"; an index that isn't strictly earlier than the step is dropped (makes a dependency cycle impossible by construction); a missing `hands_on` becomes `true`; labels are trimmed and capped; a step count that doesn't match the instruction count rejects the whole set (`steps` stays `null`, generation still succeeds).
+- **Generation**: every recipe-generation path (the grounded chat recipe, refine, `/v1/recipes/generate`) asks the model for step *metadata only* — `text` always comes from the matching `instructions` entry via `build_structured_steps`, never from the model, so the two can never drift.
+- **Lazy upgrade**: `POST /v1/recipes/{recipe_id}/steps/ensure` returns existing steps with no model call (idempotent), or derives them from `instructions` + a model metadata call, validates, persists, and returns them. A failed or invalid model call persists nothing; the caller falls back to the client-side regex timer parser.
+- **Related**: Recipe (holds `steps` alongside `instructions`), Meal timeline (issue #649, the scheduler this feeds)
+
 ### Pantry
 User's inventory of food items. Tracks what's available, quantities, expiry dates, and location (storage slot).
 

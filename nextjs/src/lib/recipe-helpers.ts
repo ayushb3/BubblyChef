@@ -37,6 +37,24 @@ export function mergeTags(
   })
 }
 
+/**
+ * True when a candidate `instructions` array differs from the one currently
+ * stored for a recipe — used by `PUT /api/recipes/[id]` to decide whether to
+ * clear structured `steps` (issue #648: "editing a recipe's instructions
+ * clears its structured steps, so the next use re-derives them").
+ *
+ * Compared by value (`JSON.stringify`), not by reference or array identity —
+ * a save that resubmits the exact same instruction text (untouched by the
+ * user) must not count as a change, or every save would needlessly clear
+ * `steps`. Order matters: reordering steps is a real edit.
+ */
+export function instructionsChanged(
+  current: unknown,
+  incoming: unknown,
+): boolean {
+  return JSON.stringify(current ?? null) !== JSON.stringify(incoming ?? null)
+}
+
 /** Every part a call site could need from an ingredient list element. */
 export interface IngredientParts {
   /** Bare name — lowercase this yourself for a map/lookup key, do not use `label`. */

@@ -21,6 +21,7 @@
 
 import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   startCookSession,
   startGuidedCookSession,
@@ -189,8 +190,22 @@ jest.mock('@/lib/api/chat', () => ({
   streamChatMessage: jest.fn(),
 }))
 
+// This suite's fixture recipe has no `steps`, so GuidedCookFlow calls
+// ensureSteps on mount (issue #648) — stub it to a promise that never
+// resolves within a test's synchronous assertions, same as the "pending"
+// default in guided-cook-flow.test.tsx, so it's a no-op here.
+jest.mock('@/lib/api/recipes', () => ({
+  ensureSteps: jest.fn(() => new Promise(() => {})),
+}))
+
 import GuidedCookFlow from '@/components/recipes/GuidedCookFlow'
 import type { Recipe } from '@/components/recipes/RecipePage'
+
+/** GuidedCookFlow reads `useQuery`, so every render needs a QueryClientProvider. */
+function renderWithQuery(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+}
 
 const RECIPE: Recipe = {
   id: 'r1',
@@ -215,19 +230,19 @@ describe('GuidedCookFlow resume (#441)', () => {
   })
 
   it('mounts on the prep screen by default (no initialStep)', () => {
-    render(<GuidedCookFlow recipe={RECIPE} onExit={jest.fn()} />)
+    renderWithQuery(<GuidedCookFlow recipe={RECIPE} onExit={jest.fn()} />)
     expect(screen.getByTestId('guided-cook-prep')).toBeInTheDocument()
   })
 
   it('mounts directly on the persisted step when initialStep is provided', () => {
-    render(<GuidedCookFlow recipe={RECIPE} onExit={jest.fn()} initialStep={1} />)
+    renderWithQuery(<GuidedCookFlow recipe={RECIPE} onExit={jest.fn()} initialStep={1} />)
     expect(screen.getByTestId('guided-cook-step-2')).toBeInTheDocument()
     expect(screen.getByText('Step 2 of 3')).toBeInTheDocument()
   })
 
   it('advancing a step persists the new position for a later resume', () => {
     startGuidedCookSession('r1')
-    render(<GuidedCookFlow recipe={RECIPE} onExit={jest.fn()} />)
+    renderWithQuery(<GuidedCookFlow recipe={RECIPE} onExit={jest.fn()} />)
 
     fireEvent.click(screen.getByTestId('guided-cook-next')) // prep -> step 1
     expect(getActiveCookSession('r1')).toEqual({ recipeId: 'r1', step: 0 })
@@ -238,7 +253,7 @@ describe('GuidedCookFlow resume (#441)', () => {
 
   it('going back a step persists the earlier position', () => {
     startGuidedCookSession('r1')
-    render(<GuidedCookFlow recipe={RECIPE} onExit={jest.fn()} initialStep={1} />)
+    renderWithQuery(<GuidedCookFlow recipe={RECIPE} onExit={jest.fn()} initialStep={1} />)
 
     fireEvent.click(screen.getByTestId('guided-cook-back'))
     expect(getActiveCookSession('r1')).toEqual({ recipeId: 'r1', step: 0 })
@@ -247,7 +262,7 @@ describe('GuidedCookFlow resume (#441)', () => {
   it('does not resurrect an ended session — progress stops persisting once confirmed', () => {
     startGuidedCookSession('r1')
     endCookSession('r1')
-    render(<GuidedCookFlow recipe={RECIPE} onExit={jest.fn()} />)
+    renderWithQuery(<GuidedCookFlow recipe={RECIPE} onExit={jest.fn()} />)
 
     fireEvent.click(screen.getByTestId('guided-cook-next'))
     expect(getActiveCookSession('r1')).toBeNull()

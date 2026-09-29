@@ -3,6 +3,8 @@
  * Mirrors the backend ProposalEnvelope + SSE event protocol.
  */
 
+import type { Step } from '@/types/recipes'
+
 export type ChatIntent =
   | 'pantry_update'
   | 'recipe_card'
@@ -65,6 +67,8 @@ export interface ChatRecipeData {
     unit?: string | null
   }>
   instructions?: string[]
+  /** Structured steps alongside `instructions` (issue #648) — `null`/absent means not yet structured. */
+  steps?: Step[] | null
   cuisine?: string | null
   meal_type?: string | null
   dietary_tags?: string[]

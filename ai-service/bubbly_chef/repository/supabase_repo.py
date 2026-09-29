@@ -492,6 +492,7 @@ class SupabaseRepository:
             if recipe.ingredients
             else [],
             "instructions": recipe.instructions or [],
+            "steps": [s.model_dump(mode="json") for s in recipe.steps] if recipe.steps else None,
             "prep_time_minutes": recipe.prep_time_minutes,
             "cook_time_minutes": recipe.cook_time_minutes,
             "total_time_minutes": recipe.total_time_minutes,
@@ -689,6 +690,22 @@ class SupabaseRepository:
         if not result.data:
             return None
         return _as_row(result.data)
+
+    async def update_recipe_steps(
+        self, user_id: str, recipe_id: str, steps: list[dict[str, Any]]
+    ) -> None:
+        """Persist derived structured steps for one recipe (issue #648).
+
+        Used only by the lazy-upgrade ensure workflow — steps are already
+        validated by the time they reach here, so this is a plain write.
+        """
+        (
+            self.client.table("recipes")
+            .update({"steps": steps})
+            .eq("id", recipe_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
 
     async def update_recipe_cooked(self, user_id: str, recipe_id: str) -> None:
         """Increment times_cooked and set last_cooked_at to now."""

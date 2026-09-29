@@ -330,6 +330,9 @@ function ChatSurface() {
         description: recipe.description,
         ingredients: recipe.ingredients,
         instructions: recipe.instructions,
+        // Structured steps (issue #648) carried through from the proposal so
+        // guided cook mode doesn't have to derive them again on first open.
+        steps: recipe.steps,
         cuisine: recipe.cuisine,
         meal_type: recipe.meal_type,
         dietary_tags: recipe.dietary_tags,
