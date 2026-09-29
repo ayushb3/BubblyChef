@@ -413,7 +413,7 @@ way, the orchestrating session merges a loop PR under §6 like any other.
 
 The loop's shadow mode, protected-path tiering and `needs-decision` escalation predate
 §6 and still read `.github/CODEOWNERS`, which no longer exists. Aligning the script is
-a follow-up to issue #640.
+issue #645.
 
 `claude-review.yml` re-reviews new pushes **on PRs labelled `agent-loop`, and on any PR
 opened by `bubblychef-bot`, labelled or not**, which is what gives Respond a fresh review

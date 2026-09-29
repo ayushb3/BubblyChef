@@ -71,11 +71,14 @@ Once issues exist:
    new starts. Runs already in flight keep going.
 2. Settings → General → uncheck **Allow auto-merge**, so nothing already open can
    merge itself. To stop Claude merging by hand too, add a required approval to
-   main's ruleset (Settings → Rules → Rulesets).
+   main's ruleset (Settings → Rules → Rulesets). That stops merges made as
+   `bubblychef-bot`. The admin bypass in the ruleset still lets a merge made as
+   `ayushb3` through, so remove that bypass too if a session merges as you.
 
 Both are doable from a phone in under a minute. To roll back a bad deploy, use
-Vercel's instant rollback and Railway's redeploy-previous; the post-merge smoke test
-opens a revert PR on its own if it catches the failure first.
+Vercel's instant rollback and Railway's redeploy-previous. Nothing checks production
+after a merge yet, so rollback is manual today (issue #646 builds the smoke test and
+auto-revert).
 
 ---
 

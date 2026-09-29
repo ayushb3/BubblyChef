@@ -108,8 +108,9 @@ ruleset's earlier required checks are in the git history of
 
 ## What stays
 
-- The required checks that prove the code works: `Next.js (typecheck + test)` and
-  `AI service (lint + typecheck + test)`, on a branch up to date with `main`.
+- The required checks that prove the code works, `Next.js (typecheck + test)` and
+  `AI service (lint + typecheck + test)`, plus `Claude review verdict`, on a branch up
+  to date with `main`.
 - A **fresh-context Claude review** on every PR; Claude merges only on `looks mergeable`. The
   reviewer now lists every deleted or skipped test and judges the reason, replacing the
   test-count gate with a reading.
