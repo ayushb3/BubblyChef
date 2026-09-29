@@ -1,5 +1,8 @@
 # BubblyChef v1 — friend-ready PRD
 
+> **Superseded 2026-09-29** by [`2026-09-29-signature-prd.md`](2026-09-29-signature-prd.md).
+> Its "Carries over" section lists what from here still holds.
+
 **Date:** 2026-09-23 · **Status:** agreed with Ayush 2026-09-23 (meal object design session pending)
 **Replaces:** `ROADMAP.md` as the plan of record. Everything not in here is
 "later" or closed.
