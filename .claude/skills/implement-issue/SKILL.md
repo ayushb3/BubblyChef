@@ -169,9 +169,16 @@ schema that lacks the column, and every affected request fails until the SQL
 runs. PR #293 hit exactly this ordering problem with
 `00007_add_pantry_events.sql`, and PR #655 would have broken every recipe save.
 
-Agent sessions can apply migrations themselves through the Supabase CLI. It was
-installed and linked on 2026-09-29 and runs on Ayush's login token, so it needs
-no password.
+Agent sessions can apply additive migrations themselves through the Supabase
+CLI. Ayush asked for this on 2026-09-29 ("install supabase cli so you can
+handle it going forward"), then installed the CLI and linked the project with
+his own login. The CLI runs on that login token, so it needs no password.
+
+**Push last.** Write the migration with the code, but apply it only once
+everything else is done: gates green, `/code-review` and the Claude review say
+mergeable, and `verify` has run. If verify needs the schema, push just before
+verify. Pushing is the last irreversible step before the merge, so nothing
+after it should be able to ask for the migration to change.
 
 1. **Say so up front.** Put it in the PR title or the summary's first line, and
    add a **Migration** section to the PR body: the filename, what it does in two
@@ -194,12 +201,20 @@ no password.
    ```bash
    supabase db push --linked --yes
    ```
-   Then confirm with `supabase migration list` and a read-only
-   `supabase db query --linked` that the change exists. Record in the PR body's
-   Migration section that it was applied, and when.
+   Then confirm with `supabase migration list`, and with a read-only
+   `supabase db query --linked -f check.sql` (a subcommand in CLI 2.118+), that
+   the change exists. Record in the PR body's Migration section that it was
+   applied, and when.
 5. **Destructive migrations stay with the human.** Deleting or rewriting data is
    still a human call (ADR 0004). Don't push one. Put the SQL in the PR body, say
    what it would destroy, and wait.
+6. **Never edit a migration that has been pushed.** Re-pushing the same version
+   does nothing, so an edited file would silently drift from the live schema.
+   If review wants a change after the push, add a new migration
+   (`000NN_fix_...`) that makes it. If the PR is abandoned after the push, add a
+   follow-up migration that reverts it, or leave the additive change and record
+   it in the sprint doc. Either way, `main` and the live schema must end up
+   agreeing.
 
 There is one database. Local development and the deployed app share it, so an
 applied migration is live for both at once. That's why only additive changes are
