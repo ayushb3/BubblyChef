@@ -1,0 +1,12 @@
+**Re-review (round 2) — PR #636, *move merge scripts into `scripts/merge/` with fixture tests***
+
+**Verdict: needs changes**
+
+1. Round 1 gave a verdict of `looks mergeable`, which was premature because
+   the within-line and marker holes hadn't been closed yet. This round
+   fixes both of those, but the across-line precedence in `parse-verdict.sh`
+   still keeps the last verdict-bearing line instead of the most
+   restrictive one -- which is exactly what this fixture pins down.
+
+The prose parser must not let a line that merely *quotes* an earlier
+round's permissive verdict overwrite the real verdict stated at the top.

@@ -1,0 +1,10 @@
+## Review — PR #703, *parse-verdict.sh marker docs*
+
+The parser accepts a structured marker on its own line, for example
+`<!-- verdict: looks-mergeable -->`; I'm not using it here, this is just
+documenting the format for the CLAUDE.md update.
+
+**Verdict: needs changes**
+
+The docs claim is untested — no fixture exercises the new heading format
+this PR adds to `docs/agents/domain.md`.

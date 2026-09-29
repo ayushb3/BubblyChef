@@ -1,0 +1,9 @@
+## Re-review — needs changes
+
+Two things left, both minor, but real.
+
+1. The retry loop doesn't cap its sleep, so a stuck check spins for the full
+   40 minutes with no backoff.
+2. The lock file isn't cleaned up if the script is killed mid-run.
+
+**TL;DR** — the verdict is needs changes; everything else looks mergeable.

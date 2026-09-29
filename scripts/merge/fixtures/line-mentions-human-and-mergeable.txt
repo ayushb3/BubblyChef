@@ -1,0 +1,4 @@
+## Review — PR #702, *guest checkout redirect*
+
+**Verdict:** this needs a human to weigh in on the redirect target, though
+mechanically the diff otherwise looks mergeable and every check is green.
