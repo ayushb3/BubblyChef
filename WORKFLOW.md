@@ -208,7 +208,9 @@ Concretely:
 
 The gate used to sit at merge, then at risk (protected paths waited for a human).
 Now **Claude merges every PR itself**, and nothing needs the human's approval. There
-are no real users yet, and a bad deploy rolls back in minutes.
+are no real users yet, and a bad deploy rolls back in minutes. Why we changed, what
+the gated process was good at, and when to bring it back:
+[ADR 0004](docs/adr/0004-autonomous-mode-replaces-the-gated-agent-loop.md).
 
 **Claude merges a PR when all three hold:**
 
@@ -275,6 +277,10 @@ were honour-system (any agent could `touch` one), and the hook that read them
 The branch must also be up to date with `main`. There is no CODEOWNERS file and no
 required approval. The earlier fail-to-pass, test-count and exemption gates, and the
 agent-loop harness, were removed in issue #640.
+
+**A PR that edits `claude-review.yml` gets no automated review:** the action skips
+when its workflow file differs from `main`'s. Run a fresh-context review in a separate
+agent, post its verdict on the PR, and merge on that.
 
 **Removed tests are called out, not gated.** The reviewer lists every test a PR
 deletes, renames or skips, and says whether the PR's reason holds. An unexplained
