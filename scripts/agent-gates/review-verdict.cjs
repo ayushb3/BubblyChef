@@ -1,5 +1,5 @@
 // Gate: an agent-loop PR merges only on the independent reviewer's "looks mergeable"
-// for its EXACT head commit, or on a code owner's approval of that commit, or of an
+// for its EXACT head commit, or on the repo owner's approval of that commit, or of an
 // earlier commit when everything pushed since only merged the base branch in (so
 // "Update branch" does not force a re-approval: the PR's own diff must be unchanged).
 //
@@ -73,7 +73,7 @@ function decide(f) {
   if (!f.labels.includes(LOOP_LABEL)) return pass(`not an ${LOOP_LABEL} PR: not gated by the review verdict`)
   const approvals = standingOwnerApprovals(f)
   if (approvals.some(a => a.commitId === f.headSha)) {
-    return pass(`a code owner approved ${f.headSha.slice(0, 8)}`)
+    return pass(`the repo owner approved ${f.headSha.slice(0, 8)}`)
   }
   const review = decideReview(f, hold, pass)
   if (review.pass) return review
@@ -86,9 +86,9 @@ function decide(f) {
     try { r = f.prDiffUnchanged ? f.prDiffUnchanged(a.commitId) : { same: false, why: 'no git comparison available' } }
     catch (e) { r = { same: false, why: `git comparison failed: ${e && e.message}` } }
     if (r && r.same === true) {
-      return pass(`a code owner approved ${String(a.commitId).slice(0, 8)}, and every commit since only merged the base branch in (the PR's own diff is unchanged)`)
+      return pass(`the repo owner approved ${String(a.commitId).slice(0, 8)}, and every commit since only merged the base branch in (the PR's own diff is unchanged)`)
     }
-    note = `; a code owner approved ${String(a.commitId).slice(0, 8)}, but that approval does not carry to this commit: ${(r && r.why) || 'unknown'}`
+    note = `; the repo owner approved ${String(a.commitId).slice(0, 8)}, but that approval does not carry to this commit: ${(r && r.why) || 'unknown'}`
   }
   return hold(review.reason + note)
 }
@@ -168,8 +168,13 @@ function ensureCommits(git, shas) {
   }
 }
 
-function owners(root) {
-  const text = fs.readFileSync(path.join(root, '.github', 'CODEOWNERS'), 'utf8')
+// Whose approval clears a hold: the handles in .github/CODEOWNERS, or the repo owner
+// when there is no CODEOWNERS file (removed in issue #640; reading it unconditionally
+// would fail this required check on every PR).
+function owners(root, repoOwner) {
+  const file = path.join(root, '.github', 'CODEOWNERS')
+  if (!fs.existsSync(file)) return repoOwner ? [repoOwner] : []
+  const text = fs.readFileSync(file, 'utf8')
   return [...new Set((text.match(/@[\w-]+/g) || []).map(s => s.slice(1)))]
 }
 
@@ -218,18 +223,18 @@ function gather(repo, pr, headSha) {
     .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))[0]
   return {
     labels, approvals, headSha, reviewJob, prDiffUnchanged: prDiffUnchangedAt,
-    owners: owners(path.join(__dirname, '..', '..')),
+    owners: owners(path.join(__dirname, '..', '..'), String(repo).split('/')[0]),
     sticky: sticky ? { updatedAt: sticky.updated_at, body: sticky.body } : null,
   }
 }
 
-module.exports = { decide, parseVerdict, prDiffUnchanged, makeGit, fetchHistory, ensureCommits, LOOP_LABEL, REVIEW_JOB, REVIEW_STEP }
+module.exports = { decide, parseVerdict, prDiffUnchanged, owners, makeGit, fetchHistory, ensureCommits, LOOP_LABEL, REVIEW_JOB, REVIEW_STEP }
 
 if (require.main === module) {
   const [repo, pr, headSha] = process.argv.slice(2)
   if (!repo || !pr || !headSha) { console.error('usage: review-verdict.cjs <repo> <pr> <head-sha>'); process.exit(2) }
   const r = decide(gather(repo, pr, headSha))
   console.log(`${r.pass ? 'PASS' : 'HOLD'}: ${r.reason}`)
-  if (!r.pass) console.log(`::error::Agent-loop PR held: ${r.reason}. A code owner's approval of this commit (or of an earlier one, when every commit since only merged the base branch in) also clears it.`)
+  if (!r.pass) console.log(`::error::Agent-loop PR held: ${r.reason}. The repo owner's approval of this commit (or of an earlier one, when every commit since only merged the base branch in) also clears it.`)
   process.exit(r.pass ? 0 : 1)
 }

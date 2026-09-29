@@ -5,11 +5,10 @@ actually mergeable" step. Moved here from session scratchpads (issue #624) so
 they survive past the session that wrote them — a scratchpad dies with its
 session.
 
-A CODEOWNERS path (PR #638): this directory holds the logic that decides
-whether a PR merges on a Claude verdict, which is the same "an agent that can
-edit its own gates can remove them" rationale that already protects
-`scripts/agent-gates/` (a separate, CODEOWNERS-gated directory — the in-repo
-merge *gate*, independent of the *queue runner* here).
+This directory holds the logic that decides whether a PR merges on a Claude
+verdict, separate from the in-repo merge *gate* in `scripts/agent-gates/`. Both
+were CODEOWNERS paths until issue #640 removed that file; a PR that changes
+either is now named in the sprint doc instead (`WORKFLOW.md` §6).
 
 ## Scripts
 
@@ -19,7 +18,7 @@ merge *gate*, independent of the *queue runner* here).
 
   This is a thin wrapper: all verdict-parsing RULES live in
   `scripts/agent-gates/review-verdict.cjs`'s `parseVerdict()` — the single
-  source of truth. That directory is CODEOWNERS-protected (#638) and its
+  source of truth. Its
   parser is unit-tested and already runs as the required "Claude review
   verdict" check on every agent-loop PR
   (`.github/workflows/claude-review.yml`). This script exists so the
@@ -170,7 +169,7 @@ and dropped the reopen event.
   decision, but it means those specific improvements exist only in this
   PR's git history now, not in the parser that's actually authoritative. If
   any of them are wanted, they're a follow-up PR against
-  `scripts/agent-gates/review-verdict.cjs` itself — a CODEOWNERS path.
+  `scripts/agent-gates/review-verdict.cjs` itself.
 - No workflow emits a `<!-- verdict: X -->` marker (`claude-review.yml`
   doesn't produce one, and `review-verdict.cjs` doesn't read one either) —
   tracked separately as PR #637.

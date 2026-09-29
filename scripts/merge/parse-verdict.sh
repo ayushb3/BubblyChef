@@ -8,7 +8,7 @@
 #   looks-mergeable | needs-changes | needs-human | unknown
 #
 # This is a thin wrapper around `scripts/agent-gates/review-verdict.cjs`'s
-# `parseVerdict()` -- the CODEOWNERS-protected, unit-tested parser that
+# `parseVerdict()` -- the unit-tested parser that
 # already runs as the required "Claude review verdict" check on every
 # agent-loop PR (`.github/workflows/claude-review.yml`). All verdict-parsing
 # RULES live there, in exactly one place, so the agent-writable merge queue
