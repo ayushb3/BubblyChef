@@ -927,3 +927,43 @@ describe('deriveStream — on-schedule simulation (issue #653 review round 1)', 
     }
   })
 })
+
+describe('deriveStream — a Skip stays put as the clock runs (PR #661 review)', () => {
+  // Main: Sear (10, hands-on) -> Rest (3, hands-on, after Sear). Side: Chill
+  // (1, hands-off), which the baseline lands at the common finish. The cook
+  // starts Sear late at 2 and skips it at 3. The skip's end must stay fixed
+  // at 3, so lateness stays 0 and Chill keeps its baseline start. Before the
+  // fix the end was re-derived as min(nominal end 12, now) on every tick, so
+  // lateness grew with the clock and pushed Chill later while nothing happened.
+  const dishes: SchedulerDish[] = [
+    {
+      dish_id: 'main',
+      column: 'main',
+      title: 'Steak',
+      steps: [
+        step({ text: 'Sear the steak', label: 'Sear', duration_minutes: 10, hands_on: true, depends_on: [] }),
+        step({ text: 'Rest the steak', label: 'Rest', duration_minutes: 3, hands_on: true, depends_on: [0] }),
+      ],
+    },
+    {
+      dish_id: 'side',
+      column: 'side_1',
+      title: 'Salad',
+      steps: [
+        step({ text: 'Chill the salad', label: 'Chill', ongoing_label: 'the salad chills', duration_minutes: 1, hands_on: false, depends_on: [] }),
+      ],
+    },
+  ]
+  const baselineChill = scheduleMeal({ dishes }).placements.find((p) => p.dish_id === 'side')!.start
+
+  it.each([4, 8, 11])('Chill keeps its baseline start at now=%i', (now) => {
+    const skipped = recordSkip(
+      session({ steps: { 'main:0': { status: 'running', started_at_minutes: 2, extra_minutes: 0 } } }),
+      { key: 'main:0' } as Parameters<typeof recordSkip>[1],
+      3,
+    )
+    const stream = deriveStream({ dishes, exclusive_tags: [], session: skipped, now_minutes: now })
+    const chill = stream.timeline.placements.find((p) => p.dish_id === 'side')!
+    expect(chill.start).toBe(Math.max(baselineChill, now))
+  })
+})

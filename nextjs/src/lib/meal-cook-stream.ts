@@ -412,6 +412,9 @@ export function deriveStream(input: {
       status: rec.status,
       started_at_minutes: rec.started_at_minutes,
       extra_minutes: rec.extra_minutes,
+      // Without this the scheduler falls back to `min(nominalEnd, now)`, and
+      // a Skip or early Done drifts later with the clock (PR #661 review).
+      ended_at_minutes: rec.ended_at_minutes,
     }
   }
 
