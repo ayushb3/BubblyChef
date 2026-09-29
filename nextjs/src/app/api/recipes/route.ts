@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { requireAuth, errorResponse } from '@/lib/response-helpers'
-import { mergeTags } from '@/lib/recipe-helpers'
+import { mergeTags, sanitizeSteps } from '@/lib/recipe-helpers'
 import { awardBubbles } from '@/lib/bubbles'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -142,6 +142,10 @@ export async function POST(request: Request) {
       description: body.description,
       ingredients: body.ingredients || [],
       instructions: body.instructions || [],
+      // Structured steps (issue #648) — `steps` is nullable and absence means
+      // "not yet structured", same as omitting it entirely, so this is not
+      // defaulted to `[]` the way `ingredients`/`instructions` are.
+      steps: sanitizeSteps(body.steps, body.instructions),
       prep_time_minutes: body.prep_time_minutes,
       cook_time_minutes: body.cook_time_minutes,
       total_time_minutes: body.total_time_minutes,

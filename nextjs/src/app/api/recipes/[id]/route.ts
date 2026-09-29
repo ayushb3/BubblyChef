@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
-import { mergeTags } from '@/lib/recipe-helpers'
+import { mergeTags, instructionsChanged, sanitizeSteps } from '@/lib/recipe-helpers'
 import { awardBubbles } from '@/lib/bubbles'
 
 export async function GET(
@@ -41,11 +41,13 @@ export async function PUT(
     'prep_time_minutes', 'cook_time_minutes', 'total_time_minutes',
     'servings', 'source_url', 'tags', 'difficulty', 'source_type',
     'source_title', 'thumbnail_url', 'is_draft', 'cuisine', 'meal_type',
-    'is_favorite',
+    'is_favorite', 'steps',
   ]
   for (const field of fields) {
     if (body[field] !== undefined) updates[field] = body[field]
   }
+  // Never store client-supplied steps unvalidated (PR #655 review).
+  if (body.steps !== undefined) updates.steps = sanitizeSteps(body.steps, body.instructions)
 
   // If dietary_tags are present alongside (or instead of) tags, merge them.
   // This covers any client that forwards the raw AI response shape.
@@ -54,6 +56,26 @@ export async function PUT(
       body.tags as string[] | undefined,
       body.dietary_tags as string[] | undefined,
     )
+  }
+
+  // Structured steps (issue #648): editing a recipe's instruction text
+  // invalidates its structured steps, so the next use re-derives them. Only
+  // an actual text change clears them — resubmitting the same instructions
+  // (e.g. every RecipeEditModal save, which always sends the full array)
+  // must leave existing steps alone. This runs after the `fields` loop above
+  // so it wins over any `steps` the caller explicitly sent alongside changed
+  // instructions.
+  if (body.instructions !== undefined) {
+    const { data: current } = await supabase
+      .from('recipes')
+      .select('instructions')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (current && instructionsChanged(current.instructions, body.instructions)) {
+      updates.steps = null
+    }
   }
 
   const { data, error } = await supabase

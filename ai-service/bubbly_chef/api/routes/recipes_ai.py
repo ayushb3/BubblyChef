@@ -257,6 +257,58 @@ async def cook_recipe(
 
 
 @router.post(
+    "/{recipe_id}/steps/ensure",
+    summary="Ensure a recipe has structured steps, deriving them the first time",
+    responses={
+        200: {"description": "Structured steps -- existing, or just derived and persisted"},
+        401: {"description": "Missing or invalid JWT"},
+        404: {"description": "Recipe not found"},
+        502: {"description": "The model is unavailable or returned invalid step metadata"},
+    },
+)
+async def ensure_recipe_steps(
+    recipe_id: str,
+    user_id: str = Depends(get_current_user_id),
+) -> dict[str, Any]:
+    """Return a recipe's structured steps, deriving and persisting them once.
+
+    Idempotent: a recipe that already has structured steps is returned as-is
+    with no model call (`derived=False`). Nothing is persisted on failure --
+    the caller falls back to the regex duration parser.
+    """
+    from bubbly_chef.api.deps import get_ai_manager
+    from bubbly_chef.services.structured_steps import (
+        RecipeNotFoundError,
+        StructuredStepsUnavailableError,
+        ensure_structured_steps,
+    )
+
+    logger.info(f"Ensure structured steps: user={user_id}, recipe={recipe_id}")
+
+    repo = await get_repository()
+    try:
+        steps, derived = await ensure_structured_steps(
+            user_id=user_id,
+            recipe_id=recipe_id,
+            repo=repo,
+            ai_manager=get_ai_manager(),
+        )
+    except RecipeNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Recipe not found") from e
+    except StructuredStepsUnavailableError as e:
+        raise HTTPException(
+            status_code=502,
+            detail={"error_kind": e.error_kind, "message": e.message},
+        ) from e
+
+    return {
+        "recipe_id": recipe_id,
+        "steps": [s.model_dump(mode="json") for s in steps],
+        "derived": derived,
+    }
+
+
+@router.post(
     "/cook/confirm",
     summary="Apply pantry deductions and mark recipe as cooked",
     responses={

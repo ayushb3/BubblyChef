@@ -100,6 +100,11 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const [mutating, setMutating] = useState(false)
   // Local optimistic overrides for favorite state — avoids full re-fetch on toggle
   const [favoriteOverrides, setFavoriteOverrides] = useState<Record<string, boolean>>({})
+  // Same pattern, for structured steps a guided-cook session just ensured
+  // (issue #648): the AI service already persisted them, this just keeps
+  // this session's copy of `recipes` in sync so re-opening guided cook mode
+  // for the same recipe doesn't repeat the ensure call.
+  const [stepsOverrides, setStepsOverrides] = useState<Record<string, Recipe['steps']>>({})
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [thumbError, setThumbError] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -124,10 +129,14 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     return () => document.removeEventListener('mousedown', handleMouseDown)
   }, [menuOpen])
 
-  // Merge optimistic favorite overrides into the recipe list
+  // Merge optimistic favorite + structured-steps overrides into the recipe list
   const recipesWithOverrides = useMemo(
-    () => recipes.map((r) => r.id in favoriteOverrides ? { ...r, is_favorite: favoriteOverrides[r.id] } : r),
-    [recipes, favoriteOverrides],
+    () =>
+      recipes.map((r) => {
+        const withFavorite = r.id in favoriteOverrides ? { ...r, is_favorite: favoriteOverrides[r.id] } : r
+        return r.id in stepsOverrides ? { ...withFavorite, steps: stepsOverrides[r.id] } : withFavorite
+      }),
+    [recipes, favoriteOverrides, stepsOverrides],
   )
 
   const filteredRecipes = useMemo(
@@ -1032,6 +1041,9 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
           key={selectedRecipe.id}
           recipe={selectedRecipe}
           initialStep={resumeStep ?? undefined}
+          onStepsResolved={(steps) =>
+            setStepsOverrides((prev) => ({ ...prev, [selectedRecipe.id]: steps }))
+          }
           onExit={() => {
             // Deliberate exit back to the plain recipe view — nothing left
             // to resume (#441). Not the same as `endCookSession`: a later

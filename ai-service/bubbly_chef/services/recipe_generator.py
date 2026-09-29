@@ -11,7 +11,7 @@ from bubbly_chef.domain.normalizer import normalize_food_name
 from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.models.pantry import PantryItem
-from bubbly_chef.models.recipe import Ingredient, RecipeCard
+from bubbly_chef.models.recipe import Ingredient, RecipeCard, StepMetadata, build_structured_steps
 from bubbly_chef.prompts.recipe import RECIPE_FOLLOWUP_PROMPT, RECIPE_GENERATION_PROMPT
 
 # Maximum retry attempts for AI generation
@@ -38,6 +38,14 @@ class AIRecipeOutput(BaseModel):
     servings: int | None = Field(default=None)
     ingredients: list[AIRecipeIngredient]
     instructions: list[str] = Field(description="Step-by-step instructions")
+    steps: list[StepMetadata] = Field(
+        default_factory=list,
+        description=(
+            "Structured metadata for each instruction, in the same order and count "
+            "(issue #648) -- label, ongoing_label, duration_minutes, hands_on, "
+            "depends_on, exclusive. Do not repeat the instruction text here."
+        ),
+    )
     tips: list[str] = Field(default_factory=list, description="Cooking tips")
     cuisine: str | None = Field(default=None, description="Cuisine type")
     difficulty: str | None = Field(default=None, description="easy, medium, or hard")
@@ -384,6 +392,7 @@ async def generate_recipe(
         servings=result.servings,
         ingredients=ingredients,
         instructions=result.instructions,
+        steps=build_structured_steps(result.steps, result.instructions),
         tips=result.tips,
         cuisine=result.cuisine,
         difficulty=result.difficulty,

@@ -25,13 +25,16 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useQuery } from '@tanstack/react-query'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import { ingredientLabel } from '@/lib/recipe-helpers'
 import { useMotionConfig } from '@/lib/motion'
 import { streamChatMessage } from '@/lib/api/chat'
+import { ensureSteps } from '@/lib/api/recipes'
 import { saveCookProgress } from '@/lib/cook-session'
-import StepTimerChips from '@/components/timers/StepTimerChip'
+import StepTimerChips, { StructuredStepTimerChip } from '@/components/timers/StepTimerChip'
 import type { Recipe } from './RecipePage'
+import type { Step } from '@/types/recipes'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -53,6 +56,14 @@ interface CookStep {
    * server-side against the real cook proposal's match results.
    */
   uses: string[]
+  /**
+   * The matching structured step (issue #648), when the recipe has them and
+   * the count lines up 1:1 with `instructions` — the shape the validators on
+   * the AI service side guarantee. `null` means "use the regex duration
+   * parser on `text` instead", either because the recipe has no structured
+   * steps yet or because they haven't finished (or failed) ensuring.
+   */
+  structured: Step | null
 }
 
 // The PREP sentinel lives before step 0; -1 keeps arithmetic trivial.
@@ -78,10 +89,19 @@ function stepText(raw: unknown): string {
 
 /**
  * Build the step list from the recipe, annotating each step with the
- * ingredient names it likely uses (keyword scan over ingredient labels).
+ * ingredient names it likely uses (keyword scan over ingredient labels) and,
+ * when available, its matching structured step (issue #648).
+ *
+ * `structuredSteps` is only trusted when its length matches
+ * `recipe.instructions` — the AI service's own validators reject a
+ * mismatched set before it's ever persisted, but a defensive length check
+ * here means a step list that somehow got out of sync falls back to the
+ * regex parser for every step rather than zipping steps to the wrong text.
  */
-function buildSteps(recipe: Recipe): CookStep[] {
+function buildSteps(recipe: Recipe, structuredSteps: Step[] | null): CookStep[] {
   const ingredientNames = recipe.ingredients.map((ing) => ingredientLabel(ing))
+  const useStructured =
+    !!structuredSteps && structuredSteps.length === recipe.instructions.length
 
   return recipe.instructions.map((raw, i) => {
     const text = stepText(raw)
@@ -95,7 +115,7 @@ function buildSteps(recipe: Recipe): CookStep[] {
       return words.some((w) => w.length > 2 && lower.includes(w))
     })
 
-    return { n: i + 1, text, uses }
+    return { n: i + 1, text, uses, structured: useStructured ? structuredSteps![i] : null }
   })
 }
 
@@ -482,13 +502,60 @@ export interface GuidedCookFlowProps {
    * prep screen for a fresh session. Only consulted on first mount.
    */
   initialStep?: number
+  /**
+   * Called once, the first time this open's `ensureSteps` call resolves
+   * structured steps for a recipe that had none (issue #648). Lets the
+   * caller persist the result onto its own copy of the recipe — e.g. a
+   * local-override map keyed by recipe id, the same pattern `RecipeBook`
+   * already uses for optimistic favourite toggles — so re-opening guided
+   * cook mode again in the same session doesn't repeat the ensure call.
+   * The steps are already durably saved server-side by this point; this is
+   * purely a same-session cache, not a write.
+   */
+  onStepsResolved?: (steps: Step[]) => void
 }
 
-export default function GuidedCookFlow({ recipe, onExit, onFinish, initialStep }: GuidedCookFlowProps) {
+export default function GuidedCookFlow({
+  recipe,
+  onExit,
+  onFinish,
+  initialStep,
+  onStepsResolved,
+}: GuidedCookFlowProps) {
   const { springs } = useMotionConfig()
-  const steps = buildSteps(recipe)
   const [idx, setIdx] = useState<number>(initialStep ?? PREP)
   const [chatOpen, setChatOpen] = useState(false)
+
+  // Structured steps (issue #648). `recipe.steps` is the source of truth
+  // when present — `null`/absent means "not yet structured", which is
+  // exactly when the ensure call below fires. `enabled` plus react-query's
+  // own per-queryKey caching is what makes this "call once per recipe per
+  // session": a re-render (e.g. from `idx` changing on every step) does not
+  // re-fire it, and neither does remounting this component for the same
+  // recipe id within the query's cache lifetime.
+  const hasOwnSteps = Array.isArray(recipe.steps) && recipe.steps.length > 0
+  const ensureQuery = useQuery({
+    queryKey: ['ensure-recipe-steps', recipe.id],
+    queryFn: () => ensureSteps(recipe.id),
+    enabled: !hasOwnSteps,
+    staleTime: Infinity,
+    retry: false,
+  })
+
+  // Bubble a freshly-ensured result up to the caller exactly once. Guarded
+  // by a ref (not just `onStepsResolved` being defined) so a parent that
+  // re-renders for an unrelated reason — or a `useQuery` cache hit replaying
+  // the same `data` — never fires the callback twice for one resolution.
+  const reportedRef = useRef(false)
+  useEffect(() => {
+    if (ensureQuery.data && !reportedRef.current) {
+      reportedRef.current = true
+      onStepsResolved?.(ensureQuery.data.steps)
+    }
+  }, [ensureQuery.data, onStepsResolved])
+
+  const structuredSteps: Step[] | null = recipe.steps ?? ensureQuery.data?.steps ?? null
+  const steps = buildSteps(recipe, structuredSteps)
 
   // #441 — persist the step position on every change so a full page reload
   // (refresh, restored tab, a backgrounded mobile tab getting reclaimed) can
@@ -640,10 +707,34 @@ export default function GuidedCookFlow({ recipe, onExit, onFinish, initialStep }
                   >
                     Step {step.n} of {steps.length}
                   </span>
-                  {/* Step ⏱ chips — renders only when the step text has a
-                      parseable duration (issue #495). */}
+                  {/* Step timing (issue #648): a structured hands-off step gets a
+                      real timer chip named with its own label; a structured
+                      hands-on step shows its duration as plain text, no chip
+                      (starting a timer would just distract from a step that
+                      needs active attention). A step with no structured data
+                      yet — steps still `null`, or the ensure call is pending
+                      or failed — falls back to the regex chip (issue #495),
+                      which renders nothing when the text has no parseable
+                      duration. */}
                   <span className="ml-auto">
-                    <StepTimerChips stepText={step.text} />
+                    {step.structured ? (
+                      step.structured.hands_on ? (
+                        <span
+                          className="text-xs font-bold"
+                          style={{ color: 'var(--color-muted)' }}
+                          data-testid="step-duration-text"
+                        >
+                          {step.structured.duration_minutes} min
+                        </span>
+                      ) : (
+                        <StructuredStepTimerChip
+                          label={step.structured.label}
+                          durationMinutes={step.structured.duration_minutes}
+                        />
+                      )
+                    ) : (
+                      <StepTimerChips stepText={step.text} />
+                    )}
                   </span>
                 </div>
 

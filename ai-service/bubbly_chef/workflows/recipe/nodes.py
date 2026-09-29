@@ -26,6 +26,7 @@ from bubbly_chef.models.recipe import (
     RecipeCard,
     RecipeCardProposal,
     RecipeConstraints,
+    build_structured_steps,
 )
 from bubbly_chef.prompts.recipe import (
     BRAINSTORM_SYSTEM_PROMPT_NO_PANTRY,
@@ -1336,6 +1337,7 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
         servings=llm_result.servings,
         ingredients=ingredients_list,
         instructions=llm_result.instructions,
+        steps=build_structured_steps(llm_result.steps, llm_result.instructions),
         cuisine=llm_result.cuisine,
         meal_type=llm_result.meal_type,
         dietary_tags=llm_result.dietary_tags,

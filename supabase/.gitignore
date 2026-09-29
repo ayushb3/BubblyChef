@@ -1,0 +1,3 @@
+# Supabase CLI local state (project link, cached versions); per-checkout, never committed
+.temp/
+.branches/

@@ -2,6 +2,37 @@
  * Types for AI recipe generation and refinement.
  */
 
+/**
+ * A structured recipe step (issue #648 / #647 "Structured steps").
+ *
+ * Stored in the new nullable `recipes.steps` JSONB column, alongside the
+ * unchanged `instructions` string list — `text` here always matches the
+ * corresponding `instructions` entry verbatim. `steps: null` on a recipe
+ * means "not yet structured"; every string reader of `instructions` keeps
+ * working unchanged whether or not `steps` is present.
+ *
+ * Wire format is snake_case, as specced and as the AI service sends it —
+ * left as-is here rather than remapped to camelCase so payloads pass through
+ * untouched.
+ */
+export interface Step {
+  /** Full instruction text — identical to the matching `instructions` entry. */
+  text: string
+  /** Short imperative, 2-5 words, e.g. "Boil the pasta". */
+  label: string
+  /** Short subject-plus-verb clause for a step in progress, e.g. "the pasta boils". Required for hands-off steps. */
+  ongoing_label: string | null
+  /** Whole minutes, 1-240. */
+  duration_minutes: number
+  /** True when code (not the model) supplied `duration_minutes`. */
+  duration_estimated: boolean
+  hands_on: boolean
+  /** Indices of earlier steps in the same recipe that must finish first. Always an explicit array. */
+  depends_on: number[]
+  /** Kitchen-limit tags (e.g. "pan"), usually empty. */
+  exclusive: string[]
+}
+
 export interface RecipeConstraints {
   prompt: string
   cuisine?: string | null
@@ -43,6 +74,13 @@ export interface GeneratedRecipe {
    */
   ingredients: (string | RecipeIngredient)[]
   instructions: string[]
+  /**
+   * Structured steps alongside `instructions` (issue #648). `null` means the
+   * generation path hasn't produced them yet, or (for an older/URL-imported
+   * recipe) they haven't been derived — same "not yet structured" meaning as
+   * the DB column.
+   */
+  steps?: Step[] | null
   cuisine?: string | null
   meal_type?: string | null
   dietary_tags?: string[]
@@ -190,4 +228,16 @@ export interface DeductionItem {
   pantry_item_id: string
   deduct_qty: number
   base_unit: string
+}
+
+/**
+ * Response from `POST /v1/recipes/{recipe_id}/steps/ensure` (proxied via
+ * `/api/ai/recipes/[id]/steps/ensure`). `derived` is true the first time the
+ * model actually supplied step metadata for this recipe; false when the
+ * route just returned steps that already existed (idempotent re-call).
+ */
+export interface EnsureStepsResponse {
+  recipe_id: string
+  steps: Step[]
+  derived: boolean
 }

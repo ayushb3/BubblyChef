@@ -2,6 +2,8 @@ import {
   mergeTags,
   ingredientLabel,
   ingredientParts,
+  instructionsChanged,
+  sanitizeSteps,
 } from '@/lib/recipe-helpers'
 
 describe('mergeTags', () => {
@@ -166,5 +168,82 @@ describe('ingredientParts (#315 / repeated-typeof cleanup)', () => {
     for (const ing of cases) {
       expect(ingredientLabel(ing)).toBe(ingredientParts(ing).label)
     }
+  })
+})
+
+describe('instructionsChanged (#648 — clears structured steps on a real instruction edit)', () => {
+  it('is false for byte-identical arrays', () => {
+    expect(instructionsChanged(['Boil water.', 'Add pasta.'], ['Boil water.', 'Add pasta.'])).toBe(false)
+  })
+
+  it('is true when any step text differs', () => {
+    expect(instructionsChanged(['Boil water.'], ['Boil salted water.'])).toBe(true)
+  })
+
+  it('is true when steps are reordered, even with the same content', () => {
+    expect(instructionsChanged(['A', 'B'], ['B', 'A'])).toBe(true)
+  })
+
+  it('is true when a step is added or removed', () => {
+    expect(instructionsChanged(['A'], ['A', 'B'])).toBe(true)
+    expect(instructionsChanged(['A', 'B'], ['A'])).toBe(true)
+  })
+
+  it('treats null/undefined current instructions as comparable, not a crash', () => {
+    expect(instructionsChanged(null, ['A'])).toBe(true)
+    expect(instructionsChanged(undefined, null)).toBe(false)
+  })
+})
+
+describe('sanitizeSteps (#648 — never store client-supplied steps unvalidated)', () => {
+  const good = {
+    text: 'Boil the pasta',
+    label: 'Boil pasta',
+    ongoing_label: 'the pasta boils',
+    duration_minutes: 10,
+    duration_estimated: false,
+    hands_on: false,
+    depends_on: [],
+    exclusive: [],
+  }
+
+  it('passes a valid step list through unchanged', () => {
+    expect(sanitizeSteps([good], ['Boil the pasta'])).toEqual([good])
+  })
+
+  it('returns null for anything that is not an array', () => {
+    expect(sanitizeSteps(undefined)).toBeNull()
+    expect(sanitizeSteps(null)).toBeNull()
+    expect(sanitizeSteps({ steps: [good] })).toBeNull()
+  })
+
+  it('returns null when the count does not match the instructions', () => {
+    expect(sanitizeSteps([good], ['Boil the pasta', 'Drain it'])).toBeNull()
+  })
+
+  it('returns null for a step missing its text, label or a numeric duration', () => {
+    expect(sanitizeSteps([{ ...good, label: undefined }])).toBeNull()
+    expect(sanitizeSteps([{ ...good, text: 3 }])).toBeNull()
+    expect(sanitizeSteps([{ ...good, duration_minutes: 'ten' }])).toBeNull()
+    expect(sanitizeSteps([{ ...good, duration_minutes: Number.NaN }])).toBeNull()
+  })
+
+  it('clamps an out-of-range duration and flags it estimated', () => {
+    const [step] = sanitizeSteps([{ ...good, duration_minutes: 480 }]) ?? []
+    expect(step.duration_minutes).toBe(240)
+    expect(step.duration_estimated).toBe(true)
+  })
+
+  it('keeps only strictly-earlier depends_on indices and defaults missing fields', () => {
+    const steps = sanitizeSteps([
+      good,
+      { text: 'Drain', label: 'Drain', duration_minutes: 1, depends_on: [0, 1, 5] },
+      { text: 'Toss', label: 'Toss', duration_minutes: 1 },
+    ])
+    expect(steps?.[1].depends_on).toEqual([0])
+    expect(steps?.[1].hands_on).toBe(true)
+    expect(steps?.[1].ongoing_label).toBeNull()
+    expect(steps?.[2].depends_on).toEqual([1])
+    expect(steps?.[2].exclusive).toEqual([])
   })
 })
