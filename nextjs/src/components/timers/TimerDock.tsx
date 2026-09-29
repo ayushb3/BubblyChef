@@ -23,9 +23,22 @@ import {
   TIMER_STARTED_EVENT,
   TIMER_COMPLETED_EVENT,
   type CookingTimer,
+  type CookingTimersContextValue,
 } from '@/lib/useCookingTimers'
 import { formatDuration } from '@/lib/timers'
 import { useMotionConfig } from '@/lib/motion'
+
+/**
+ * Issue #653 — `extend` isn't on `CookingTimersContextValue` yet; frontend is
+ * adding it (`extend(id, seconds)`, §"Timer store: extend") in this same
+ * ticket, in parallel. Widened locally rather than editing
+ * `lib/useCookingTimers.tsx` (out of bounds for this slice), and read with
+ * `extend?.(...)` below so this compiles and no-ops safely either way. Once
+ * the real field lands this cast becomes redundant and can be dropped.
+ */
+type TimersContextWithExtend = CookingTimersContextValue & {
+  extend?: (id: string, seconds: number) => void
+}
 
 /** Best-effort completion beep — a short two-tone chime via WebAudio. Never
  * throws: browsers that block audio without a user gesture, or don't
@@ -66,7 +79,7 @@ function vibrateOnComplete() {
 }
 
 function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolean }) {
-  const { pause, resume, dismiss } = useCookingTimers()
+  const { pause, resume, dismiss, extend } = useCookingTimers() as TimersContextWithExtend
   const { reduced } = useMotionConfig()
   const isCompleted = timer.status === 'completed'
   const isPaused = timer.status === 'paused'
@@ -134,6 +147,18 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
           style={{ color: 'var(--color-primary-dark)' }}
         >
           {isPaused ? '▶' : '⏸'}
+        </button>
+      )}
+      {expanded && !isCompleted && (
+        <button
+          type="button"
+          onClick={() => extend?.(timer.id, 120)}
+          aria-label={`Add 2 minutes to ${timer.label} timer`}
+          className="text-xs font-bold active:scale-95 transition-transform"
+          style={{ color: 'var(--color-primary-dark)' }}
+          data-testid={`timer-extend-${timer.id}`}
+        >
+          +2m
         </button>
       )}
       {expanded && (

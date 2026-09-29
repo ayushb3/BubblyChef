@@ -21,11 +21,10 @@ import {
 } from '@/lib/api/meals'
 import { ensureSteps } from '@/lib/api/recipes'
 import { scaledIngredients } from '@/lib/recipe-helpers'
-import { scheduleMeal, type Column, type SchedulerDish } from '@/lib/meal-scheduler'
+import { scheduleMeal } from '@/lib/meal-scheduler'
 import { resolveMealAnchor } from '@/lib/meal-anchor'
-import type { Recipe } from '@/components/recipes/RecipePage'
+import { columnFor, fallbackSteps, schedulerDishesForMeal } from '@/lib/meal-dishes'
 import type { Meal, MealDishFull } from '@/types/meals'
-import type { Step } from '@/types/recipes'
 
 /**
  * The full meal screen (issue #652 / spec #647 "The meal screen"), replacing
@@ -49,35 +48,6 @@ interface RowUiState {
    * exact card instead of re-fetching the whole list (issue #652 review).
    */
   retryIndex?: number
-}
-
-function columnFor(position: number): Column {
-  if (position === 0) return 'main'
-  return position === 1 ? 'side_1' : 'side_2'
-}
-
-/**
- * A dish recipe with no structured steps (the `ensure` call in the effect
- * below either hasn't run yet or failed) is scheduled as sequential 3-min
- * estimates built from `instructions` — the scheduler's own
- * `estimated_duration` path, with an explicit dependency chain so the steps
- * run in order rather than however the scheduler would otherwise interleave
- * unrelated steps.
- */
-function fallbackSteps(instructions: Recipe['instructions']): Step[] {
-  return instructions.map((instr, i) => {
-    const text = typeof instr === 'string' ? instr : instr.text ?? instr.step ?? ''
-    return {
-      text,
-      label: text.length > 40 ? `${text.slice(0, 40)}…` : text,
-      ongoing_label: null,
-      duration_minutes: 3,
-      duration_estimated: true,
-      hands_on: true,
-      depends_on: i > 0 ? [i - 1] : [],
-      exclusive: [],
-    }
-  })
 }
 
 function nextFreeSidePosition(meal: Meal): 1 | 2 {
@@ -201,19 +171,7 @@ export default function MealDetailPage() {
     [meal],
   )
 
-  const schedulerDishes: SchedulerDish[] = useMemo(
-    () =>
-      dishesSorted.map((d) => ({
-        dish_id: d.recipe.id,
-        column: columnFor(d.position),
-        title: d.recipe.title,
-        steps:
-          d.recipe.steps && d.recipe.steps.length > 0
-            ? d.recipe.steps
-            : fallbackSteps(d.recipe.instructions),
-      })),
-    [dishesSorted],
-  )
+  const schedulerDishes = useMemo(() => (meal ? schedulerDishesForMeal(meal) : []), [meal])
 
   const timeline = useMemo(
     () =>

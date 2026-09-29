@@ -78,6 +78,16 @@ export interface MealProgress {
   now_minutes: number
   /** Keyed by `${dish_id}:${step_index}`. */
   steps: Record<string, StepProgress>
+  /**
+   * Issue #653 — keeps a re-plan's still-pending steps landing together with
+   * the rest of the meal, the way the baseline plan does, instead of pulling
+   * them forward to start ASAP the moment a resource frees up. See
+   * `scheduleWithProgress`'s doc comment for the mechanics (`baseline_start`
+   * + `lateness`). The cook-along always passes `true`; omitted (or `false`)
+   * reproduces today's ASAP re-plan byte-for-byte, so every #649 test that
+   * doesn't set it keeps passing unchanged.
+   */
+  hold_to_plan?: boolean
 }
 
 export interface ScheduleMealInput {
@@ -109,6 +119,8 @@ export interface RowCellStart {
   text: string
   duration_minutes: number
   hands_on: boolean
+  /** Issue #653 — lets the cook-along table mark this cell done or current; the column identifies the dish. */
+  step_index: number
 }
 
 export interface RowCellOngoing {
@@ -119,6 +131,8 @@ export interface RowCellOngoing {
   label: string
   remaining_minutes: number
   hands_on: boolean
+  /** Issue #653 — lets the cook-along table mark this cell done or current; the column identifies the dish. */
+  step_index: number
 }
 
 export interface RowCellWaiting {
@@ -480,6 +494,29 @@ function scheduleSequential(dishes: SanitizedDish[]): Map<string, { start: numbe
  * Skip, or a Done tapped early, frees the cook and unblocks dependents
  * immediately. Only a running step keeps its resources until
  * start + duration + extra.
+ *
+ * Issue #653 — `progress.hold_to_plan`: plain ASAP re-planning (the block
+ * above) schedules every still-pending step the instant a resource frees up.
+ * That's correct for "nothing sits idle", but wrong for a cook-along: the
+ * *baseline* plan is backward ALAP from a common finish specifically so every
+ * dish lands together (guarantee 4); an ASAP re-plan of the remainder throws
+ * that away the moment the cook taps anything, pulling untouched sides
+ * forward to finish early and go cold. `hold_to_plan` gives every pending
+ * step (no progress entry yet) an extra floor — `baseline_start + lateness` —
+ * on top of its ordinary dependency/resource floor, so it still can't start
+ * any earlier than the original plan had it, unless the meal has actually
+ * fallen behind:
+ *
+ *  - `baseline` is `scheduleInitial` run on these same dishes with no
+ *    progress — deterministic, needs no new input.
+ *  - `lateness` is `max(0, ...)` over every step that *does* have progress,
+ *    of its fixed `end` (computed above) minus that same step's baseline
+ *    `end`. It only ever grows across the steps that have already happened:
+ *    a Skip or an early Done can't make it negative, so it can't pull the
+ *    rest of the meal earlier than baseline either (floored at 0). A late
+ *    step (a +2 min, or a running step that overran) pushes every pending
+ *    step later by exactly that much, so the meal keeps landing together —
+ *    just later.
  */
 function scheduleWithProgress(
   dishes: SanitizedDish[],
@@ -488,6 +525,8 @@ function scheduleWithProgress(
   const result = new Map<string, { start: number; end: number }>()
   const preBusy = new Map<string, number>()
   const fixedKeys = new Set<string>()
+
+  const baseline = progress.hold_to_plan ? scheduleInitial(dishes) : null
 
   for (const dish of dishes) {
     for (const step of dish.steps) {
@@ -514,6 +553,16 @@ function scheduleWithProgress(
     }
   }
 
+  let lateness = 0
+  if (baseline) {
+    for (const key of fixedKeys) {
+      const b = baseline.get(key)
+      if (!b) continue
+      lateness = Math.max(lateness, result.get(key)!.end - b.end)
+    }
+    lateness = Math.max(0, lateness)
+  }
+
   const remainingNodes: Node[] = []
   for (const dish of dishes) {
     for (const step of dish.steps) {
@@ -529,6 +578,11 @@ function scheduleWithProgress(
         } else {
           deps.push(dk)
         }
+      }
+
+      if (baseline) {
+        const b = baseline.get(key)
+        if (b) readyFloor = Math.max(readyFloor, b.start + lateness)
       }
 
       remainingNodes.push({
@@ -674,6 +728,7 @@ function buildTimeline(
           text: startingHere.text,
           duration_minutes: startingHere.duration_minutes,
           hands_on: startingHere.hands_on,
+          step_index: startingHere.step_index,
         }
         continue
       }
@@ -686,6 +741,7 @@ function buildTimeline(
           label: ongoing.label,
           remaining_minutes: ongoing.end - offset,
           hands_on: ongoing.hands_on,
+          step_index: ongoing.step_index,
         }
         continue
       }
