@@ -23,6 +23,7 @@ persists an accepted result through `PUT /api/meals/[id]`.
 
 import json
 import logging
+import re
 from typing import Any, Literal, NamedTuple
 
 from bubbly_chef.ai import AIManager
@@ -50,7 +51,7 @@ from bubbly_chef.workflows.recipe.nodes import _format_pantry_item_for_prompt, i
 
 logger = logging.getLogger(__name__)
 
-ErrorKind = Literal["model_unavailable", "invalid_output"]
+ErrorKind = Literal["model_unavailable", "invalid_output", "generation_failed"]
 
 # Alternatives asked for per side-alternatives call -- matches the prompt's
 # "exactly 3".
@@ -68,10 +69,15 @@ class MealNotFoundError(Exception):
 class MealGenerationUnavailableError(Exception):
     """Raised when a meal-screen generation call can't be completed.
 
-    `error_kind` mirrors `structured_steps.StructuredStepsUnavailableError`:
+    `error_kind` mirrors `structured_steps.StructuredStepsUnavailableError`,
+    plus one meal-screen-specific kind:
     - "model_unavailable": no AI provider could be reached.
     - "invalid_output": the model responded, but nothing usable came back
       (wrong type, or -- for side-alternatives -- no valid alternative).
+    - "generation_failed": the dish-expansion call raised for some other
+      reason (a malformed response, a transient provider error, ...). The
+      exception is logged; `message` is always the same fixed, user-facing
+      string -- never `str(exception)`, which could leak provider internals.
     """
 
     def __init__(self, error_kind: ErrorKind, message: str) -> None:
@@ -95,6 +101,42 @@ def _role(value: Any) -> Literal["main", "side"]:
 
 def _dish_title(dish: dict[str, Any]) -> str:
     return str(dish["recipe"].get("title") or "")
+
+
+# ---------------------------------------------------------------------------
+# Fuzzy dish-name dedup (review fix on issue #652's PR)
+#
+# An exact-lowercase compare missed the common case: a stored recipe title
+# ("Garlicky Roasted Broccoli with Lemon") is almost always longer and more
+# specific than a short outline name for the same dish ("Roasted broccoli").
+# `_same_dish` normalises both to a stopword-stripped token set and treats
+# them as the same dish when one set is a subset of the other, or their
+# overlap (Jaccard) is at least 0.6 -- deterministic, no model call.
+# ---------------------------------------------------------------------------
+
+_PUNCT_RE = re.compile(r"[^\w\s]")
+_DISH_NAME_STOPWORDS = frozenset({"with", "and", "the", "a", "an", "of", "in", "on", "to", "for"})
+_JACCARD_SAME_DISH_THRESHOLD = 0.6
+
+
+def _dish_name_tokens(name: str) -> frozenset[str]:
+    cleaned = _PUNCT_RE.sub(" ", name.lower())
+    return frozenset(t for t in cleaned.split() if t and t not in _DISH_NAME_STOPWORDS)
+
+
+def _same_dish(name_a: str, name_b: str) -> bool:
+    """Whether `name_a` and `name_b` are close enough to count as one dish."""
+    tokens_a = _dish_name_tokens(name_a)
+    tokens_b = _dish_name_tokens(name_b)
+    if not tokens_a or not tokens_b:
+        # Nothing but stopwords/punctuation survived normalization on one
+        # side -- fall back to a plain exact compare rather than treating
+        # every such name as identical.
+        return name_a.strip().lower() == name_b.strip().lower()
+    if tokens_a <= tokens_b or tokens_b <= tokens_a:
+        return True
+    overlap = len(tokens_a & tokens_b) / len(tokens_a | tokens_b)
+    return overlap >= _JACCARD_SAME_DISH_THRESHOLD
 
 
 async def _load_meal(user_id: str, meal_id: str, repo: SupabaseRepository) -> _LoadedMeal | None:
@@ -191,7 +233,7 @@ async def generate_side_alternatives(
         None,
     )
     replaced_dish = next((d for d in loaded.dishes if d["position"] == position), None)
-    current_names = {_dish_title(d).strip().lower() for d in loaded.dishes if _dish_title(d)}
+    current_titles = [_dish_title(d) for d in loaded.dishes if _dish_title(d)]
 
     constraints_echo = loaded.constraints_echo
     pantry_grounded, scored_items = await _pantry_grounding(user_id, constraints_echo)
@@ -231,14 +273,21 @@ async def generate_side_alternatives(
         )
 
     valid: list[MealDishOutline] = []
-    seen_names = set(current_names)
     for raw in result.alternatives:
         if raw.role != "side":
             continue
-        key = raw.name.strip().lower()
-        if not key or key in seen_names:
+        name = raw.name.strip()
+        if not name:
             continue
-        seen_names.add(key)
+        # Fuzzy dedup, against every current dish (including the one being
+        # replaced) and against the alternatives already accepted this call
+        # -- `_same_dish` catches a stored title ("Garlicky Roasted Broccoli
+        # with Lemon") matching a shorter outline name ("Roasted broccoli"),
+        # which an exact compare missed.
+        if any(_same_dish(name, title) for title in current_titles):
+            continue
+        if any(_same_dish(name, v.name) for v in valid):
+            continue
         valid.append(
             MealDishOutline(
                 role="side",
@@ -314,4 +363,9 @@ async def expand_meal_dish(
             "model_unavailable", user_message_for_failure(e.kind, e.configured)
         ) from e
     except Exception as e:
-        raise MealGenerationUnavailableError("invalid_output", str(e)) from e
+        logger.exception(
+            "expand_meal_dish: dish expansion failed for meal=%s position=%s", meal_id, position
+        )
+        raise MealGenerationUnavailableError(
+            "generation_failed", "Couldn't put that dish together right now — try again."
+        ) from e

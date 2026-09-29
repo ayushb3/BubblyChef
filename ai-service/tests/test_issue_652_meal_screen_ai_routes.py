@@ -339,6 +339,98 @@ class TestSideAlternatives:
         prompt = ai.complete.await_args.kwargs["prompt"]
         assert "NOT to use their pantry" in prompt
 
+    @pytest.mark.asyncio
+    async def test_fuzzy_dedup_drops_a_longer_stored_title_match(self, client):
+        """A stored recipe title ("Garlicky Roasted Broccoli with Lemon") is
+        longer and more specific than the model's short outline name for the
+        same dish ("Roasted broccoli") -- an exact compare would miss this,
+        but the token-subset check catches it."""
+        meal = _meal_with_dishes(
+            dishes=[
+                _dish("main", 0, "Creamy Pasta"),
+                _dish("side", 1, "Garlicky Roasted Broccoli with Lemon"),
+                _dish("side", 2, "Roasted Carrots"),
+            ]
+        )
+        repo = _repo(meal)
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=MealSideAlternativesLLMResult(
+                alternatives=[
+                    _alt_llm("side", "Roasted broccoli"),  # same dish as position 1, reworded
+                    _alt_llm("side", "Charred Broccolini"),  # genuinely different
+                ]
+            )
+        )
+
+        p1, p2, p3 = _patched(repo, ai)
+        with p1, p2, p3:
+            response = await client.post(
+                "/v1/meals/side-alternatives", json={"meal_id": MEAL_ID, "position": 1}
+            )
+
+        assert response.status_code == 200, response.text
+        names = [a["name"] for a in response.json()["alternatives"]]
+        assert names == ["Charred Broccolini"]
+
+    @pytest.mark.asyncio
+    async def test_fuzzy_dedup_lets_a_genuinely_different_dish_through(self, client):
+        repo = _repo(_meal_with_dishes())  # main + "Garlic Bread" + "Roasted Carrots"
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=MealSideAlternativesLLMResult(
+                alternatives=[_alt_llm("side", "Charred Broccolini with Chili Oil")]
+            )
+        )
+
+        p1, p2, p3 = _patched(repo, ai)
+        with p1, p2, p3:
+            response = await client.post(
+                "/v1/meals/side-alternatives", json={"meal_id": MEAL_ID, "position": 1}
+            )
+
+        assert response.status_code == 200, response.text
+        names = [a["name"] for a in response.json()["alternatives"]]
+        assert names == ["Charred Broccolini with Chili Oil"]
+
+    @pytest.mark.asyncio
+    async def test_fuzzy_dedup_also_applies_between_alternatives(self, client):
+        """Two proposed alternatives that reword the same dish -- only the
+        first survives."""
+        repo = _repo(_meal_with_dishes())
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=MealSideAlternativesLLMResult(
+                alternatives=[
+                    _alt_llm("side", "Charred Broccolini"),
+                    _alt_llm("side", "Charred Broccolini with Lemon"),  # same dish, reworded
+                    _alt_llm("side", "Herby Couscous"),
+                ]
+            )
+        )
+
+        p1, p2, p3 = _patched(repo, ai)
+        with p1, p2, p3:
+            response = await client.post(
+                "/v1/meals/side-alternatives", json={"meal_id": MEAL_ID, "position": 1}
+            )
+
+        assert response.status_code == 200, response.text
+        names = [a["name"] for a in response.json()["alternatives"]]
+        assert names == ["Charred Broccolini", "Herby Couscous"]
+
+    @pytest.mark.asyncio
+    async def test_invalid_position_returns_422(self, client):
+        ai = MagicMock()
+        ai.complete = AsyncMock(side_effect=AssertionError("AI called despite invalid position"))
+        p1, p2, p3 = _patched(_repo(_meal_with_dishes()), ai)
+        with p1, p2, p3:
+            response = await client.post(
+                "/v1/meals/side-alternatives", json={"meal_id": MEAL_ID, "position": 3}
+            )
+        assert response.status_code == 422, response.text
+        ai.complete.assert_not_awaited()
+
 
 # ---------------------------------------------------------------------------
 # POST /v1/meals/expand-dish
@@ -477,3 +569,39 @@ class TestExpandDish:
         repo.get_all_pantry_items.assert_not_awaited()
         prompt = ai.complete.await_args.kwargs["prompt"]
         assert "NOT to use their pantry" in prompt
+
+    @pytest.mark.asyncio
+    async def test_unexpected_failure_returns_fixed_message_not_the_exception_text(self, client):
+        """A non-`NoProviderAvailableError` failure (e.g. a malformed
+        response) must not leak `str(exception)` into the 502 -- a fixed,
+        user-facing message and a "generation_failed" error_kind instead."""
+        repo = _repo(_meal_with_dishes())
+        ai = MagicMock()
+        ai.complete = AsyncMock(side_effect=ValueError("some provider-internal detail"))
+
+        outline = {"role": "side", "name": "Charred Broccolini", "key_ingredients": []}
+        p1, p2, p3 = _patched(repo, ai)
+        with p1, p2, p3:
+            response = await client.post(
+                "/v1/meals/expand-dish",
+                json={"meal_id": MEAL_ID, "position": 1, "outline": outline},
+            )
+
+        assert response.status_code == 502, response.text
+        detail = response.json()["detail"]
+        assert detail["error_kind"] == "generation_failed"
+        assert "some provider-internal detail" not in detail["message"]
+
+    @pytest.mark.asyncio
+    async def test_invalid_position_returns_422(self, client):
+        ai = MagicMock()
+        ai.complete = AsyncMock(side_effect=AssertionError("AI called despite invalid position"))
+        outline = {"role": "side", "name": "Charred Broccolini", "key_ingredients": []}
+        p1, p2, p3 = _patched(_repo(_meal_with_dishes()), ai)
+        with p1, p2, p3:
+            response = await client.post(
+                "/v1/meals/expand-dish",
+                json={"meal_id": MEAL_ID, "position": 0, "outline": outline},
+            )
+        assert response.status_code == 422, response.text
+        ai.complete.assert_not_awaited()

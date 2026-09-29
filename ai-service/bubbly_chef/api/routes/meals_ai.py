@@ -13,6 +13,7 @@ through `PUT /api/meals/[id]` (Next.js).
 """
 
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -38,7 +39,7 @@ class SideAlternativesRequest(BaseModel):
     """Request body for POST /v1/meals/side-alternatives."""
 
     meal_id: str = Field(description="UUID of the meal")
-    position: int | None = Field(
+    position: Literal[1, 2] | None = Field(
         default=None,
         description="The side being replaced (1 or 2); omit when adding a new side",
     )
@@ -54,7 +55,7 @@ class ExpandDishRequest(BaseModel):
     """Request body for POST /v1/meals/expand-dish."""
 
     meal_id: str = Field(description="UUID of the meal")
-    position: int = Field(description="Where the dish will go in the meal: 1 or 2")
+    position: Literal[1, 2] = Field(description="Where the dish will go in the meal: 1 or 2")
     outline: MealDishOutline = Field(description="The picked side-alternatives outline")
 
 
