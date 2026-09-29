@@ -114,6 +114,37 @@ export interface CreateMealRequest {
   dishes: CreateMealDish[]
 }
 
+/**
+ * `PUT /api/meals/[id]` dish operations (issue #652 / spec #647 "PUT
+ * /api/meals/[id]: dish operations"). Sides only — the main (position 0)
+ * can never be replaced or removed.
+ */
+export interface ReplaceDishOp {
+  /** The side being replaced — 1 or 2. Position 0 (the main) is rejected. */
+  position: number
+  recipe: NewDishRecipePayload
+  /**
+   * Optimistic-concurrency guard (issue #652 review): the recipe id the
+   * client last saw at `position`. When present, the server only replaces
+   * the dish if that recipe is *still* the one at `position` at write time —
+   * otherwise 409, writing nothing. Without this, a concurrent `remove_side`
+   * that renumbers a different side into this position could have this op
+   * silently overwrite it instead of the dish the caller actually meant.
+   */
+  expected_recipe_id?: string
+}
+
+export interface AddSideOp {
+  recipe: NewDishRecipePayload
+}
+
+export interface RemoveSideOp {
+  /** The side being removed — 1 or 2. */
+  position: number
+  /** Same optimistic-concurrency guard as `ReplaceDishOp.expected_recipe_id`. */
+  expected_recipe_id?: string
+}
+
 /** `PUT /api/meals/[id]` body. */
 export interface UpdateMealRequest {
   title?: string
@@ -121,4 +152,11 @@ export interface UpdateMealRequest {
   constraints?: Partial<MealConstraints>
   /** Sets `is_draft = false` on the meal AND cascades to its draft dishes. */
   promote?: boolean
+  /**
+   * At most one of `replace_dish` / `add_side` / `remove_side` per request —
+   * two dish ops in one body is a 400.
+   */
+  replace_dish?: ReplaceDishOp
+  add_side?: AddSideOp
+  remove_side?: RemoveSideOp
 }

@@ -46,6 +46,17 @@ const updateMeal = jest.fn()
 jest.mock('@/lib/api/meals', () => ({
   fetchMeal: (...args: unknown[]) => fetchMeal(...args),
   updateMeal: (...args: unknown[]) => updateMeal(...args),
+  fetchSideAlternatives: jest.fn(),
+  expandMealDish: jest.fn(),
+  toNewDishRecipePayload: jest.fn(),
+}))
+
+// The screen's missing-steps upgrade (issue #652) fires for every dish
+// without `steps` on mount — BASE_MEAL's dish has none, so this must be
+// mocked or the effect hits a real `fetch()` in jsdom.
+const ensureSteps = jest.fn()
+jest.mock('@/lib/api/recipes', () => ({
+  ensureSteps: (...args: unknown[]) => ensureSteps(...args),
 }))
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -62,6 +73,7 @@ function renderPage() {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  ensureSteps.mockResolvedValue({ recipe_id: 'r1', steps: [], derived: false })
 })
 
 describe('meal page servings scaling (issue #650)', () => {
@@ -79,6 +91,10 @@ describe('meal page servings scaling (issue #650)', () => {
     renderPage()
 
     await screen.findByText('2 lb chicken thighs')
+    // Durations never scale (issue #652 review, nit) — capture the timeline
+    // total before the servings change so the assertion below actually
+    // exercises that, not just quantities.
+    const timelineBefore = screen.getByText(/Timeline —/).textContent
 
     fireEvent.click(screen.getByRole('button', { name: 'Increase servings' }))
 
@@ -89,6 +105,9 @@ describe('meal page servings scaling (issue #650)', () => {
     // data rather than computing it once from the initial fetch.
     expect(await screen.findByText('4 lb chicken thighs')).toBeInTheDocument()
     expect(screen.queryByText('2 lb chicken thighs')).not.toBeInTheDocument()
+    // Same dish, same steps, same total — the timeline shouldn't have moved
+    // just because servings did.
+    expect(screen.getByText(/Timeline —/).textContent).toBe(timelineBefore)
   })
 
   it('the decrease button is disabled at 1 serving', async () => {

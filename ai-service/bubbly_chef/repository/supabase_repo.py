@@ -977,10 +977,10 @@ class SupabaseRepository:
         return None
 
     # =========================================================================
-    # Meals (issue #650) -- default-servings lookup only. Full meal CRUD lives
+    # Meals (issue #650) -- read-only from ai-service. Full meal CRUD lives
     # in the Next.js API layer (contract: docs/plans/2026-09-29-issue-650-meal-
-    # contract.md); this is the one read the ai-service meal generation
-    # workflow needs.
+    # contract.md); these are the reads the ai-service meal generation and
+    # meal-screen (issue #652) workflows need.
     # =========================================================================
 
     async def get_recent_meal_servings(self, user_id: str, limit: int = 3) -> list[int]:
@@ -1020,6 +1020,47 @@ class SupabaseRepository:
             for row in _as_rows(result.data or [])
             if row.get("servings") is not None and row.get("last_cooked_at") is not None
         ]
+
+    async def get_meal_with_dishes(self, user_id: str, meal_id: str) -> dict[str, Any] | None:
+        """Return `{"meal": <meals row>, "dishes": [...]}` for one meal, or
+        `None` when it doesn't exist or isn't this user's.
+
+        Each dish dict is `{"role", "position", "recipe": <recipes row>}`,
+        ordered by `position` (0 = main, 1-2 = sides) -- `recipe` is the same
+        raw-dict shape `get_recipe` returns. Scoped to `user_id` on both the
+        `meals` row and its `meal_dishes` rows, so a meal (or a dish inside
+        it) belonging to someone else is indistinguishable from one that
+        doesn't exist at all. Feeds the meal-screen AI routes (issue #652:
+        side-alternatives, expand-dish) -- full meal CRUD itself lives in the
+        Next.js API layer.
+        """
+        meal_result = (
+            self.client.table("meals")
+            .select("*")
+            .eq("id", meal_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        if not meal_result.data:
+            return None
+        meal_row = _as_row(meal_result.data[0])
+
+        dishes_result = (
+            self.client.table("meal_dishes")
+            .select("role,position,recipe_id")
+            .eq("meal_id", meal_id)
+            .eq("user_id", user_id)
+            .order("position")
+            .execute()
+        )
+        dishes: list[dict[str, Any]] = []
+        for raw in _as_rows(dishes_result.data or []):
+            recipe_row = await self.get_recipe(user_id, str(raw["recipe_id"]))
+            dishes.append(
+                {"role": raw["role"], "position": raw["position"], "recipe": recipe_row or {}}
+            )
+
+        return {"meal": meal_row, "dishes": dishes}
 
 
 # Singleton

@@ -210,6 +210,30 @@ export function scaledIngredientLabel(
 }
 
 /**
+ * Scale a full ingredient list to `RecipeIngredient[]` objects (issue #652:
+ * `MealDishCard.ingredients` is typed `RecipeIngredient[]`, not the
+ * `(string | RecipeIngredient)[]` shape recipes actually store — it formats
+ * via `ingredientLabel` itself and expects the caller to have already
+ * scaled). Same scaling rule as `scaledIngredientLabel`: only the object
+ * shape's numeric `quantity` is scaled; a string element becomes
+ * `{ name: <the string> }`, which renders identically to the original string
+ * since `ingredientLabel` on a name-only object is just the name.
+ */
+export function scaledIngredients(
+  ingredients: (string | RecipeIngredient)[],
+  scale: number,
+): RecipeIngredient[] {
+  const canScale = Number.isFinite(scale) && scale > 0 && scale !== 1
+  return ingredients.map((ing) => {
+    if (typeof ing === 'string') return { name: ing }
+    if (canScale && typeof ing.quantity === 'number') {
+      return { ...ing, quantity: Math.round(ing.quantity * scale * 100) / 100 }
+    }
+    return ing
+  })
+}
+
+/**
  * One editable ingredient row in `RecipeEditModal`.
  *
  * `original` is the element exactly as loaded from the recipe — `null` for a

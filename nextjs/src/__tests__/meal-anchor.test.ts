@@ -68,6 +68,42 @@ describe('resolveMealAnchor', () => {
     const result = resolveMealAnchor({ mode: 'serve-at', total_minutes: 40, now, serve_at: serveAt })
     expect(result.status).toBe('clock')
   })
+
+  it('rounds earliest_ready_at up to the next whole minute when now has seconds, and the round-trip never stays too_late', () => {
+    const nowWithSeconds = new Date('2026-09-29T18:00:30')
+    const tooSoon = new Date('2026-09-29T18:10:00')
+    const first = resolveMealAnchor({ mode: 'serve-at', total_minutes: 40, now: nowWithSeconds, serve_at: tooSoon })
+    expect(first.status).toBe('too_late')
+    if (first.status !== 'too_late') throw new Error('unreachable')
+    // 18:00:30 + 40 min = 18:40:30, rounded up (non-zero seconds) to 18:41:00 —
+    // never truncated down to 18:40, which would relitigate as too_late.
+    expect(first.earliest_ready_at.toISOString()).toBe(new Date('2026-09-29T18:41:00').toISOString())
+
+    // The UI round-trips this only as "HH:MM" (an <input type="time">
+    // value) — simulate that exactly, dropping the seconds.
+    const reentered = new Date(nowWithSeconds)
+    reentered.setHours(first.earliest_ready_at.getHours(), first.earliest_ready_at.getMinutes(), 0, 0)
+    const second = resolveMealAnchor({ mode: 'serve-at', total_minutes: 40, now: nowWithSeconds, serve_at: reentered })
+    expect(second.status).toBe('clock')
+  })
+
+  it('does not round an earliest_ready_at that already lands on a whole minute', () => {
+    const now = new Date('2026-09-29T18:00:00')
+    const result = resolveMealAnchor({ mode: 'serve-at', total_minutes: 40, now, serve_at: new Date('2026-09-29T18:10:00') })
+    expect(result.status).toBe('too_late')
+    if (result.status !== 'too_late') throw new Error('unreachable')
+    expect(result.earliest_ready_at.toISOString()).toBe(new Date('2026-09-29T18:40:00').toISOString())
+  })
+
+  it('compares at minute granularity: a startAt in the same minute as now (but a few seconds earlier) is feasible', () => {
+    const nowWithSeconds = new Date('2026-09-29T18:00:45')
+    // An HH:MM serve time whose computed start lands at 18:00:00 — earlier
+    // in raw ms than `now`, but the same whole minute.
+    const serveAt = new Date(nowWithSeconds.getTime())
+    serveAt.setHours(18, 40, 0, 0)
+    const result = resolveMealAnchor({ mode: 'serve-at', total_minutes: 40, now: nowWithSeconds, serve_at: serveAt })
+    expect(result.status).toBe('clock')
+  })
 })
 
 describe('formatRelativeOffset', () => {
