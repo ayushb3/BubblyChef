@@ -17,6 +17,7 @@ import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
 import ClarificationCard from '@/components/chat/ClarificationCard'
 import BrainstormOptions from '@/components/chat/BrainstormOptions'
+import SavedRecipeMatches from '@/components/chat/SavedRecipeMatches'
 import ConfirmBand from '@/components/chat/ConfirmBand'
 import CookModal from '@/components/recipes/CookModal'
 import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
@@ -36,12 +37,14 @@ import type {
 } from '@/types/chat'
 import {
   getBrainstormIdeas,
+  getSavedRecipeMatches,
   getClarificationSuggestions,
   getFollowUpSuggestions,
   isFollowUpsPending,
   buildClarificationText,
   getConfirmOptions,
 } from '@/types/chat'
+import type { SavedRecipeMatch } from '@/types/chat'
 import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
 
 // ---------------------------------------------------------------------------
@@ -418,6 +421,36 @@ function ChatSurface() {
     sendMessage(idea)
   }
 
+  // Acts on the match by id — the same contract the single-match card's
+  // "Cook this" action uses (`/chat?cooking=<id>`, read reactively via
+  // `useSearchParams` above). Deliberately NOT sendMessage(match.title):
+  // re-sending the bare title falls through to the LLM intent classifier,
+  // which has no saved-recipe re-pick shortcut and can generate a
+  // near-duplicate recipe instead of pinning the existing one (PR #614
+  // review, finding 1).
+  //
+  // startCookSession(id) must run before the navigation, same as the
+  // existing pin path at the "Start cooking" handler below: `isCookSessionEnded`
+  // is localStorage-backed and survives across sessions, so for a recipe the
+  // user already finished cooking, the ?cooking= param would otherwise be
+  // stripped straight back out by the isCookSessionEnded effect above,
+  // making the tap a silent no-op for exactly the recipes people look up
+  // most (PR #614 re-review).
+  //
+  // Also clear a stale `dismissedRecipeId` for this same match. `cookingRecipe`
+  // is gated on `cookingRecipeId !== dismissedRecipeId`, and dismissing the
+  // banner sets `dismissedRecipeId` to the recipe's id without ever clearing
+  // it — so tap → dismiss the banner → tap the same card again would
+  // re-set the same ?cooking=<id> param but the banner stays hidden, since
+  // dismissedRecipeId still matches it. An explicit re-tap is a fresh
+  // decision to cook this recipe, so it overrides an earlier dismissal
+  // (PR #614 round-3 review).
+  const handlePickSavedRecipe = (match: SavedRecipeMatch) => {
+    startCookSession(match.id)
+    setDismissedRecipeId((prev) => (prev === match.id ? null : prev))
+    router.replace(`/chat?cooking=${encodeURIComponent(match.id)}`, { scroll: false })
+  }
+
   const handleConfirmChoice = (
     forcedIntent: 'recipe_card' | 'recipe_brainstorm',
     label: string,
@@ -588,6 +621,7 @@ function ChatSurface() {
                 onTryAnother={handleChipTap.bind(null, 'Give me a different recipe')}
                 onChipTap={handleChipTap}
                 onPickIdea={handlePickIdea}
+                onPickSavedRecipe={handlePickSavedRecipe}
                 onConfirmChoice={handleConfirmChoice}
                 onStageText={handleStageText}
               />
@@ -746,6 +780,7 @@ interface MessageRendererProps {
   onTryAnother: () => void
   onChipTap: (message: string) => void
   onPickIdea: (idea: string) => void
+  onPickSavedRecipe: (match: SavedRecipeMatch) => void
   /** Called when the user taps a confirm-band button (#416 AC3). */
   onConfirmChoice: (
     forcedIntent: 'recipe_card' | 'recipe_brainstorm',
@@ -776,6 +811,7 @@ function MessageRenderer({
   onTryAnother,
   onChipTap,
   onPickIdea,
+  onPickSavedRecipe,
   onConfirmChoice,
   onStageText,
 }: MessageRendererProps) {
@@ -847,6 +883,45 @@ function MessageRenderer({
               />
             </div>
           </div>
+        </motion.div>
+      )
+    }
+  }
+
+  // Saved-recipe lookup intent — render intro bubble + ranked/single match
+  // cards. Zero matches falls through to the plain markdown reply (the
+  // assistant's "none found" text stands alone with the existing chips);
+  // metadata absence falls through the same way (backward compat, matching
+  // the brainstorm branch above). Follow-up chips (My saved recipes /
+  // Generate a new one) still render below the cards — they're the escape
+  // hatch when the matches are wrong, and dropping them here was a
+  // regression the issue didn't ask for (PR #614 review, finding 2).
+  if (intent === 'saved_recipe_lookup') {
+    const matches = getSavedRecipeMatches(message.response)
+    if (matches.length > 0) {
+      return (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+        >
+          <div className="flex items-end gap-2">
+            <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+            <div className="flex flex-col gap-2 items-start">
+              {message.content && <MessageBubble message={message} />}
+              <SavedRecipeMatches
+                matches={matches}
+                onSelect={onPickSavedRecipe}
+                disabled={!isLastSettledAssistant}
+              />
+            </div>
+          </div>
+          {isLastSettledAssistant && !isFollowUpsPending(message.response) && (
+            <PostMessageChips
+              chips={resolveChips(intent, getFollowUpSuggestions(message.response))}
+              onChipTap={onChipTap}
+            />
+          )}
         </motion.div>
       )
     }
