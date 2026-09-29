@@ -30,7 +30,7 @@ from bubbly_chef.models.proposals import (
     HandoffKind,
     HandoffProposal,
 )
-from bubbly_chef.models.recipe import RecipeCard, RecipeCardProposal
+from bubbly_chef.models.recipe import RecipeCard, RecipeCardProposal, StepMetadata
 
 # ---------------------------------------------------------------------------
 # LLM Response Schemas
@@ -127,6 +127,14 @@ class LLMRecipeResult(BaseModel):
     servings: int | None = None
     ingredients: list[dict[str, Any]] = Field(default_factory=list)
     instructions: list[str] = Field(default_factory=list)
+    steps: list[StepMetadata] = Field(
+        default_factory=list,
+        description=(
+            "Structured metadata for each instruction, in the same order and count "
+            "(issue #648) -- label, ongoing_label, duration_minutes, hands_on, "
+            "depends_on, exclusive. Do not repeat the instruction text here."
+        ),
+    )
     cuisine: str | None = None
     meal_type: str | None = None
     dietary_tags: list[str] = Field(default_factory=list)

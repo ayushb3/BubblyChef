@@ -12,10 +12,14 @@
  *  - "Ask Bubbles" button opens the overlay (dialog rendered)
  *  - Overlay close button dismisses and returns to same step
  *  - Empty instructions shows done-state immediately
+ *  - Structured steps (issue #648): structured chips, hands-on duration
+ *    text, the regex fallback while ensure is pending/failed, and ensure
+ *    being called exactly once
  */
 
 import React from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // ─── Mock heavy deps ──────────────────────────────────────────────────────────
 
@@ -53,8 +57,21 @@ jest.mock('@/lib/api/chat', () => ({
   streamChatMessage: jest.fn(),
 }))
 
+// ensureSteps is stubbed per-test (issue #648) — defaults to a promise that
+// never resolves within a test's synchronous assertions, which is the same
+// as "pending", so pre-existing tests that don't care about structured
+// steps keep exercising the regex-fallback path exactly as before.
+jest.mock('@/lib/api/recipes', () => ({
+  ensureSteps: jest.fn(() => new Promise(() => {})),
+}))
+
 import GuidedCookFlow from '@/components/recipes/GuidedCookFlow'
 import type { Recipe } from '@/components/recipes/RecipePage'
+import { ensureSteps } from '@/lib/api/recipes'
+import type { Step } from '@/types/recipes'
+import { CookingTimersProvider, useCookingTimers } from '@/lib/useCookingTimers'
+
+const ensureStepsMock = ensureSteps as jest.Mock
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -85,14 +102,48 @@ const EMPTY_RECIPE: Recipe = {
   instructions: [],
 }
 
+function structuredStep(overrides: Partial<Step> = {}): Step {
+  return {
+    text: 'Boil salted water and cook pasta until al dente.',
+    label: 'Boil the pasta',
+    ongoing_label: 'the pasta boils',
+    duration_minutes: 10,
+    duration_estimated: false,
+    hands_on: false,
+    depends_on: [],
+    exclusive: [],
+    ...overrides,
+  }
+}
+
+const STRUCTURED_STEPS: Step[] = RECIPE.instructions.map((text, i) =>
+  structuredStep({
+    text: text as string,
+    label: `Step label ${i + 1}`,
+    duration_minutes: 5 + i,
+    hands_on: i % 2 === 1, // steps 2 and 4 (1-indexed) are hands-on
+  }),
+)
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Every render needs its own QueryClient so `ensure-recipe-steps` cache hits never leak between tests. */
+function renderWithQuery(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+}
 
 function renderFlow(overrides: Partial<Recipe> = {}) {
   const onExit = jest.fn()
   const recipe = { ...RECIPE, ...overrides }
-  const utils = render(<GuidedCookFlow recipe={recipe} onExit={onExit} />)
+  const utils = renderWithQuery(<GuidedCookFlow recipe={recipe} onExit={onExit} />)
   return { ...utils, onExit }
 }
+
+beforeEach(() => {
+  ensureStepsMock.mockReset()
+  ensureStepsMock.mockImplementation(() => new Promise(() => {}))
+})
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -213,7 +264,7 @@ describe('GuidedCookFlow — done state', () => {
   })
 
   it('shows done state immediately for a recipe with no instructions', () => {
-    render(<GuidedCookFlow recipe={EMPTY_RECIPE} onExit={jest.fn()} />)
+    renderWithQuery(<GuidedCookFlow recipe={EMPTY_RECIPE} onExit={jest.fn()} />)
     expect(screen.getByTestId('guided-cook-done')).toBeInTheDocument()
   })
 })
@@ -331,7 +382,7 @@ describe('GuidedCookFlow — done-state deduction handoff (#263)', () => {
   function renderWithFinish() {
     const onExit = jest.fn()
     const onFinish = jest.fn()
-    render(<GuidedCookFlow recipe={RECIPE} onExit={onExit} onFinish={onFinish} />)
+    renderWithQuery(<GuidedCookFlow recipe={RECIPE} onExit={onExit} onFinish={onFinish} />)
     return { onExit, onFinish }
   }
 
@@ -369,5 +420,115 @@ describe('GuidedCookFlow — done-state deduction handoff (#263)', () => {
       fireEvent.click(screen.getByTestId('guided-cook-next'))
     }
     expect(screen.queryByTestId('guided-cook-deduct')).not.toBeInTheDocument()
+  })
+})
+
+// ─── Structured steps (issue #648) ─────────────────────────────────────────────
+
+describe('GuidedCookFlow — structured steps already on the recipe', () => {
+  it('shows a structured timer chip, not the regex chip, for a hands-off step', () => {
+    renderFlow({ steps: STRUCTURED_STEPS })
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // skip prep → step 1 (hands-off)
+
+    expect(screen.getByTestId('structured-step-timer-chip')).toHaveTextContent('Step label 1')
+    expect(screen.getByTestId('structured-step-timer-chip')).toHaveTextContent('5 min')
+    expect(screen.queryByTestId('step-timer-chip')).not.toBeInTheDocument()
+
+    // The recipe already had steps, so ensureSteps must never be called.
+    expect(ensureStepsMock).not.toHaveBeenCalled()
+  })
+
+  it('shows duration as plain text, with no chip, for a hands-on step', () => {
+    renderFlow({ steps: STRUCTURED_STEPS })
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // step 1
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // step 2 (hands-on, per fixture)
+
+    expect(screen.getByTestId('step-duration-text')).toHaveTextContent('6 min')
+    expect(screen.queryByTestId('structured-step-timer-chip')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('step-timer-chip')).not.toBeInTheDocument()
+  })
+
+  it('tapping a structured chip starts a dock timer named after the step label', () => {
+    function TimerList() {
+      const { timers } = useCookingTimers()
+      return (
+        <ul>
+          {timers.map((t) => (
+            <li key={t.id}>{t.label}</li>
+          ))}
+        </ul>
+      )
+    }
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <CookingTimersProvider>
+          <GuidedCookFlow recipe={{ ...RECIPE, steps: STRUCTURED_STEPS }} onExit={jest.fn()} />
+          <TimerList />
+        </CookingTimersProvider>
+      </QueryClientProvider>,
+    )
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // skip prep → step 1
+    fireEvent.click(screen.getByTestId('structured-step-timer-chip'))
+
+    // The chip button itself also matches "Step label 1" — assert on the
+    // dock's own list item specifically, not just any match in the DOM.
+    expect(screen.getByRole('listitem')).toHaveTextContent('Step label 1')
+  })
+})
+
+describe('GuidedCookFlow — regex fallback while structured steps are missing (issue #648)', () => {
+  it('calls ensureSteps exactly once when the recipe has no steps yet', () => {
+    renderFlow() // RECIPE has no `steps` field
+    expect(ensureStepsMock).toHaveBeenCalledTimes(1)
+    expect(ensureStepsMock).toHaveBeenCalledWith('r1')
+  })
+
+  it('uses the regex chip while the ensure call is still pending', () => {
+    renderFlow() // default mock never resolves — permanently "pending" for this test
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // skip prep → step 3 has "8 minutes"
+    fireEvent.click(screen.getByTestId('guided-cook-next'))
+    fireEvent.click(screen.getByTestId('guided-cook-next'))
+
+    expect(screen.getByTestId('step-timer-chip')).toBeInTheDocument()
+    expect(screen.queryByTestId('structured-step-timer-chip')).not.toBeInTheDocument()
+  })
+
+  it('keeps using the regex chip after the ensure call fails', async () => {
+    ensureStepsMock.mockRejectedValue(new Error('model unavailable'))
+    renderFlow()
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // skip prep → step 1
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // step 2
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // step 3 — has "8 minutes"
+
+    await waitFor(() => expect(ensureStepsMock).toHaveBeenCalledTimes(1))
+    expect(screen.getByTestId('step-timer-chip')).toBeInTheDocument()
+    expect(screen.queryByTestId('structured-step-timer-chip')).not.toBeInTheDocument()
+  })
+
+  it('switches to structured chips once the ensure call resolves', async () => {
+    ensureStepsMock.mockResolvedValue({ recipe_id: 'r1', steps: STRUCTURED_STEPS, derived: true })
+    renderFlow()
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // skip prep → step 1 (hands-off)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('structured-step-timer-chip')).toHaveTextContent('Step label 1'),
+    )
+    expect(screen.queryByTestId('step-timer-chip')).not.toBeInTheDocument()
+  })
+
+  it('reports the resolved steps to the caller via onStepsResolved, exactly once', async () => {
+    ensureStepsMock.mockResolvedValue({ recipe_id: 'r1', steps: STRUCTURED_STEPS, derived: true })
+    const onStepsResolved = jest.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <GuidedCookFlow recipe={RECIPE} onExit={jest.fn()} onStepsResolved={onStepsResolved} />
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() => expect(onStepsResolved).toHaveBeenCalledTimes(1))
+    expect(onStepsResolved).toHaveBeenCalledWith(STRUCTURED_STEPS)
   })
 })

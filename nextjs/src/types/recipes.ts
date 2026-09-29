@@ -2,6 +2,37 @@
  * Types for AI recipe generation and refinement.
  */
 
+/**
+ * A structured recipe step (issue #648 / #647 "Structured steps").
+ *
+ * Stored in the new nullable `recipes.steps` JSONB column, alongside the
+ * unchanged `instructions` string list — `text` here always matches the
+ * corresponding `instructions` entry verbatim. `steps: null` on a recipe
+ * means "not yet structured"; every string reader of `instructions` keeps
+ * working unchanged whether or not `steps` is present.
+ *
+ * Wire format is snake_case, as specced and as the AI service sends it —
+ * left as-is here rather than remapped to camelCase so payloads pass through
+ * untouched.
+ */
+export interface Step {
+  /** Full instruction text — identical to the matching `instructions` entry. */
+  text: string
+  /** Short imperative, 2-5 words, e.g. "Boil the pasta". */
+  label: string
+  /** Short subject-plus-verb clause for a step in progress, e.g. "the pasta boils". Required for hands-off steps. */
+  ongoing_label: string | null
+  /** Whole minutes, 1-240. */
+  duration_minutes: number
+  /** True when code (not the model) supplied `duration_minutes`. */
+  duration_estimated: boolean
+  hands_on: boolean
+  /** Indices of earlier steps in the same recipe that must finish first. Always an explicit array. */
+  depends_on: number[]
+  /** Kitchen-limit tags (e.g. "pan"), usually empty. */
+  exclusive: string[]
+}
+
 export interface RecipeConstraints {
   prompt: string
   cuisine?: string | null
@@ -43,6 +74,13 @@ export interface GeneratedRecipe {
    */
   ingredients: (string | RecipeIngredient)[]
   instructions: string[]
+  /**
+   * Structured steps alongside `instructions` (issue #648). `null` means the
+   * generation path hasn't produced them yet, or (for an older/URL-imported
+   * recipe) they haven't been derived — same "not yet structured" meaning as
+   * the DB column.
+   */
+  steps?: Step[] | null
   cuisine?: string | null
   meal_type?: string | null
   dietary_tags?: string[]
@@ -113,8 +151,36 @@ export interface IngredientMatch {
 }
 
 /**
- * Advisory multi-item substitution for a missing ingredient.
- * Nothing is deducted — the ingredient stays in CookProposal.missing.
+ * One pantry item backing a compound substitution, ready to deduct.
+ *
+ * The user types (or, since Option B, edits/confirms a pre-filled) an
+ * amount per component in the cook modal — nothing deducts until they
+ * confirm, the same pattern as a unit_conflict row. See
+ * `suggested_quantity` below for the pre-fill itself (#284 Option B).
+ */
+export interface CompoundComponent {
+  pantry_item_id: string
+  /** Matches the corresponding entry in CompoundSuggestion.components. */
+  name: string
+  /** Base unit the user's typed quantity is interpreted in (count | ml | g). */
+  base_unit: string | null
+  /**
+   * Model-suggested quantity in base_unit, pre-filling this component's
+   * editable input (#284 Option B). Null/absent when the model gave no
+   * quantity, or one the backend's validation dropped — the input then
+   * starts blank, same as before Option B. The user can edit or clear a
+   * pre-filled value; whatever ends up in the input is what confirm sends.
+   */
+  suggested_quantity?: number | null
+}
+
+/**
+ * A multi-item substitution the model proposes for a missing ingredient.
+ * The suggestion is advisory — the ingredient stays in CookProposal.missing —
+ * but component_items lets the user opt into deducting the components once
+ * they type a quantity for each and confirm (#284). Since Option B
+ * (2026-09-27) each component's input starts pre-filled with its
+ * `suggested_quantity` where the model provided a valid one.
  */
 export interface CompoundSuggestion {
   ingredient_name: string
@@ -122,6 +188,8 @@ export interface CompoundSuggestion {
   components: string[]
   /** Short instruction for the cook, e.g. "Melt butter, whisk in flour, add milk" */
   note: string
+  /** Same items as `components`, resolved to pantry rows for deduction. May be empty. */
+  component_items?: CompoundComponent[]
 }
 
 /**
@@ -160,4 +228,16 @@ export interface DeductionItem {
   pantry_item_id: string
   deduct_qty: number
   base_unit: string
+}
+
+/**
+ * Response from `POST /v1/recipes/{recipe_id}/steps/ensure` (proxied via
+ * `/api/ai/recipes/[id]/steps/ensure`). `derived` is true the first time the
+ * model actually supplied step metadata for this recipe; false when the
+ * route just returned steps that already existed (idempotent re-call).
+ */
+export interface EnsureStepsResponse {
+  recipe_id: string
+  steps: Step[]
+  derived: boolean
 }

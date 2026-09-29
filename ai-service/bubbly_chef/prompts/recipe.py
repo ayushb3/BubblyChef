@@ -125,6 +125,17 @@ Generate a full recipe with:
     "optional" (boolean, default false),
     "substitutes" (list of substitute ingredient names, default [])
 - step-by-step instructions
+- steps: one entry per instruction, same order and count, each with
+    "label" (a short imperative, 2-5 words, e.g. "Boil the pasta"),
+    "ongoing_label" (a short subject+verb clause for a step in progress, e.g.
+      "the pasta boils" — required when hands_on is false, optional otherwise),
+    "duration_minutes" (whole minutes, 1-240; omit only if genuinely unknown),
+    "hands_on" (true if the cook must be actively engaged for this step),
+    "depends_on" (indices of earlier steps that must finish first; omit for
+      "just the previous step", use [] for "can start at the beginning"),
+    "exclusive" (kitchen-limit tags this step needs, usually [])
+  Do not repeat the instruction text inside a steps entry — that comes from
+  "instructions" at the same index.
 - prep_time_minutes, cook_time_minutes, total_time_minutes
 - difficulty (easy/medium/hard)
 - servings
@@ -188,6 +199,9 @@ Generate a recipe that:
 3. Clearly lists all ingredients with quantities and units
 4. Provides clear, numbered step-by-step instructions
 5. Estimates prep and cook time realistically
+6. Gives each instruction a `steps` entry at the same index with its label, \
+ongoing_label, duration_minutes, hands_on, depends_on and exclusive tags -- \
+do not repeat the instruction text there, only the metadata
 
 IMPORTANT: You MUST return actual recipe data, NOT a schema or template.
 Generate a real recipe with actual values.
@@ -211,6 +225,14 @@ Example of what to return:
     "Slice chicken into thin strips, season with salt and pepper",
     "Mince garlic and prepare your vegetables",
     "Heat oil in a large wok or skillet over high heat"
+  ],
+  "steps": [
+    {{"label": "Slice the chicken", "ongoing_label": null,
+      "duration_minutes": 4, "hands_on": true, "depends_on": [], "exclusive": []}},
+    {{"label": "Prep the vegetables", "ongoing_label": null,
+      "duration_minutes": 3, "hands_on": true, "depends_on": null, "exclusive": []}},
+    {{"label": "Heat the wok", "ongoing_label": "the wok heats",
+      "duration_minutes": 2, "hands_on": false, "depends_on": null, "exclusive": ["pan"]}}
   ],
   "tips": [
     "Add extra honey for a sweeter sauce",
@@ -241,7 +263,9 @@ Keep the same format but adjust ingredients, instructions,
 or other aspects as needed.
 
 IMPORTANT: You MUST return actual recipe data with real values,
-NOT a schema or template.
+NOT a schema or template. Give each instruction a matching `steps` entry
+at the same index -- label, ongoing_label, duration_minutes, hands_on,
+depends_on and exclusive tags, never the instruction text itself.
 
 Example of what to return:
 {{
@@ -269,10 +293,52 @@ crisp vegetables, and a spicy kick",
     "Heat oil in a large wok or skillet over high heat",
     "Add chicken and stir-fry for 5-6 minutes until cooked through"
   ],
+  "steps": [
+    {{"label": "Slice the chicken", "ongoing_label": null,
+      "duration_minutes": 4, "hands_on": true, "depends_on": [], "exclusive": []}},
+    {{"label": "Prep the aromatics", "ongoing_label": null,
+      "duration_minutes": 2, "hands_on": true, "depends_on": null, "exclusive": []}},
+    {{"label": "Heat the wok", "ongoing_label": "the wok heats",
+      "duration_minutes": 2, "hands_on": false, "depends_on": null, "exclusive": ["pan"]}},
+    {{"label": "Stir-fry the chicken", "ongoing_label": "the chicken cooks",
+      "duration_minutes": 6, "hands_on": false, "depends_on": null, "exclusive": ["pan"]}}
+  ],
   "tips": ["Adjust red pepper flakes to taste", "Use a very hot wok for best results"],
   "cuisine": "Asian",
   "difficulty": "easy"
 }}
 
 Now generate YOUR modified recipe following this same structure with ACTUAL VALUES (not the schema).
+"""
+
+# Used by the structured-steps lazy-upgrade route (issue #648,
+# services/structured_steps.py::ensure_structured_steps). Asks only for step
+# *metadata* -- the instruction text is shown for context but must never be
+# echoed back; it's copied verbatim from `instructions` by the caller, not
+# taken from the model.
+STRUCTURED_STEPS_ENSURE_PROMPT = """\
+You are annotating an existing recipe's steps with cooking metadata -- you \
+are NOT rewriting the recipe.
+
+Recipe: {title}
+
+Instructions:
+{instructions_formatted}
+
+For each instruction above, in the same order, return one steps entry with:
+- "label": a short imperative, 2-5 words, e.g. "Boil the pasta"
+- "ongoing_label": a short subject+verb clause for a step in progress, e.g. \
+"the pasta boils" -- required when hands_on is false, optional otherwise
+- "duration_minutes": whole minutes, 1-240; omit only if genuinely unknown
+- "hands_on": true if the cook must be actively engaged for this step, \
+false if it's mostly waiting (simmering, baking, resting, marinating)
+- "depends_on": indices (0-based) of earlier steps in THIS list that must \
+finish before this one can start; omit for "just the previous step", use \
+[] for "can start at the beginning"
+- "exclusive": kitchen-limit tags this step needs (e.g. "pan", "oven"), \
+usually []
+
+Return exactly one steps entry per instruction, in the same order. Do not \
+include the instruction text itself in your response -- only the metadata \
+listed above.
 """

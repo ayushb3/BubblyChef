@@ -30,3 +30,28 @@ if (typeof global.fetch === 'undefined') {
     Promise.resolve({ ok: true, status: 200, json: async () => ({}) } as Response),
   ) as unknown as typeof fetch
 }
+
+/**
+ * jsdom doesn't implement the `PointerEvent` constructor (a long-standing
+ * upstream gap: https://github.com/jsdom/jsdom/issues/2527). framer-motion's
+ * keyboard-press shim (`motion-dom`'s `gestures/press/utils/keyboard`)
+ * constructs one directly whenever a `<motion.button whileTap>` is activated
+ * by a real Enter keypress, so a `user-event` keyboard test that presses
+ * Enter on one throws `ReferenceError: PointerEvent is not defined` before
+ * jsdom ever gets to the native click — unrelated to whatever the test is
+ * actually asserting. A thin `MouseEvent` subclass is enough for
+ * framer-motion's own construct/dispatch; it isn't a full spec
+ * implementation (no pointerId/pressure/etc.), so don't rely on those
+ * fields in a test.
+ */
+// Route/API tests run this same setup file under `@jest-environment node`
+// (see e.g. `health-route.test.ts`), which has neither `PointerEvent` nor
+// `MouseEvent` — only jsdom suites need (or can build) this polyfill.
+if (typeof global.PointerEvent === 'undefined' && typeof global.MouseEvent !== 'undefined') {
+  class PointerEventPolyfill extends MouseEvent {
+    constructor(type: string, params: MouseEventInit = {}) {
+      super(type, params)
+    }
+  }
+  global.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent
+}

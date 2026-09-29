@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import { ingredientLabel } from '@/lib/recipe-helpers'
 import HeaderQuickSetTimers from '@/components/timers/HeaderQuickSetTimers'
 import StepTimerChips from '@/components/timers/StepTimerChip'
-import type { RecipeIngredient } from '@/types/recipes'
+import type { RecipeIngredient, Step } from '@/types/recipes'
 
 /**
  * Re-exported as `Ingredient` for back-compat with existing imports
@@ -20,6 +20,8 @@ export interface Recipe {
   description?: string | null
   ingredients: (string | Ingredient)[]
   instructions: (string | { text?: string; step?: string })[]
+  /** Structured steps alongside `instructions` (issue #648) — `null`/absent means not yet structured. */
+  steps?: Step[] | null
   prep_time_minutes?: number | null
   cook_time_minutes?: number | null
   total_time_minutes?: number | null

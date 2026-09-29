@@ -12,6 +12,7 @@ import type {
   RefineRecipeRequest,
   CookProposal,
   DeductionItem,
+  EnsureStepsResponse,
 } from '@/types/recipes'
 import { localDateString } from '@/lib/date'
 
@@ -119,6 +120,36 @@ export async function confirmCook(
     const err = await res.json().catch(() => ({ error: 'Cook confirmation failed' }))
     throw new Error(err.error ?? `Cook confirmation failed: ${res.status}`)
   }
+}
+
+/**
+ * Ensure structured steps exist for one recipe (issue #648).
+ *
+ * Proxied through `/api/ai/recipes/[id]/steps/ensure` (auth-forwarding,
+ * same pattern as `generateRecipe`/`refineRecipe`/`cookRecipe`) rather than
+ * called directly from the browser, since this is a single non-streaming
+ * call. If the recipe already has steps, the AI service returns them as-is
+ * with no model call — idempotent, safe to call more than once. On a model
+ * failure the AI service returns 502 with `{ detail: { error_kind, message } }`;
+ * that message (falling back to a generic one) is what this throws, so
+ * callers should catch and fall back to the regex timer parser rather than
+ * surfacing the raw error.
+ */
+export async function ensureSteps(recipeId: string): Promise<EnsureStepsResponse> {
+  const res = await fetch(`/api/ai/recipes/${recipeId}/steps/ensure`, {
+    method: 'POST',
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => null) as
+      | { detail?: { error_kind?: string; message?: string }; error?: string }
+      | null
+    const message =
+      err?.detail?.message ?? err?.error ?? `Failed to ensure recipe steps: ${res.status}`
+    throw new Error(message)
+  }
+
+  return res.json()
 }
 
 /**
