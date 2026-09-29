@@ -143,16 +143,20 @@ the rest of the meal.\
 # The meal screen's "Swap"/"Add a side" flow (issue #652, `workflows/meal/
 # sides.py`). Unlike the option stage, this call is scoped to one slot in an
 # *existing* meal: it knows the main and the other side (not the one being
-# replaced) by name. The prompt does not name the side being replaced --
-# excluding it (and every other current dish) is enforced deterministically
-# in code afterward (`generate_side_alternatives`'s dedup filter), the same
-# "code decides, not the model" split the option stage's coverage uses.
+# replaced) by name as "the rest of the meal" -- but the side actually being
+# replaced is named separately, in {avoid_line}, as an explicit "don't
+# suggest this" instruction (empty string when adding a new side rather than
+# swapping one). Naming it there measurably cuts how often the model
+# proposes it again, which the deterministic dedup filter in
+# `generate_side_alternatives` would otherwise just drop, shrinking the row
+# below 3 cards -- that filter stays as the backstop regardless.
 MEAL_SIDE_ALTERNATIVES_SYSTEM_PROMPT = """\
 Propose exactly 3 alternative SIDE dishes for a meal called "{meal_title}" \
 ({servings} servings), to fill one side slot.
 
 The main dish: {main_name}
 The other side staying in the meal: {other_side}
+{avoid_line}
 
 Kitchen limits: {kitchen_limits}
 Exclusive-equipment tags in play for this meal: {exclusive_tags}

@@ -6,8 +6,11 @@ Two entry points, backing `POST /v1/meals/side-alternatives` and
 
 - `generate_side_alternatives` -- one structured `AIManager` call for up to
   3 alternative sides, naming the main and the *other* side (not the one
-  being replaced); every current dish, including the one being replaced, is
-  excluded afterward by a deterministic dedup filter, not by the prompt.
+  being replaced) as "the rest of the meal", plus a separate "don't suggest
+  this" line for the side actually being replaced. Every current dish,
+  including the one being replaced, is also excluded afterward by a
+  deterministic dedup filter -- the backstop regardless of what the prompt
+  says.
 - `expand_meal_dish` -- reuses `workflows.meal.nodes._expand_dish` (the pick
   stage's per-dish generation) to turn one outline into a full `RecipeCard`.
 
@@ -170,12 +173,13 @@ async def generate_side_alternatives(
 
     `position` is the side being replaced (1 or 2), or `None` when adding a
     new side. The prompt names the main and the *other* side (not the one at
-    `position`, so a swap or add never re-suggests the side staying put) --
-    it does not name the side being replaced. Excluding it, along with every
-    other current dish, is enforced afterward by a deterministic dedup
-    filter against `current_names`, not by the prompt. Returns fewer than 3
-    when the model's extras don't validate as distinct sides; raises
-    `MealGenerationUnavailableError("invalid_output", ...)` when none do.
+    `position`) as "the rest of the meal" -- but, for a swap, the side being
+    replaced is named separately in an explicit "don't suggest this" line
+    (`avoid_line`), because leaving it out of the prompt entirely made the
+    model re-propose it often enough to shrink the row below 3 cards once
+    the dedup filter (below) dropped the duplicate. That filter is still the
+    backstop: it excludes every current dish, including the one being
+    replaced, regardless of whether the model honors `avoid_line`.
     """
     loaded = await _load_meal(user_id, meal_id, repo)
     if loaded is None:
@@ -186,17 +190,24 @@ async def generate_side_alternatives(
         (d for d in loaded.dishes if d["role"] == "side" and d["position"] != position),
         None,
     )
+    replaced_dish = next((d for d in loaded.dishes if d["position"] == position), None)
     current_names = {_dish_title(d).strip().lower() for d in loaded.dishes if _dish_title(d)}
 
     constraints_echo = loaded.constraints_echo
     pantry_grounded, scored_items = await _pantry_grounding(user_id, constraints_echo)
     pantry_block = _pantry_block_text(pantry_grounded, scored_items)
 
+    avoid_line = ""
+    if replaced_dish is not None:
+        replaced_name = _dish_title(replaced_dish)
+        avoid_line = f'Suggest alternatives to "{replaced_name}"; don\'t suggest it or a close variant.'
+
     prompt = MEAL_SIDE_ALTERNATIVES_SYSTEM_PROMPT.format(
         meal_title=loaded.title,
         servings=loaded.servings,
         main_name=_dish_title(main_dish) if main_dish else "unknown",
         other_side=_dish_title(other_side) if other_side else "none -- this is the only side",
+        avoid_line=avoid_line,
         kitchen_limits=", ".join(constraints_echo.kitchen_limits) or "none",
         exclusive_tags=", ".join(constraints_echo.exclusive_tags) or "none",
         constraints_json=_constraints_json(constraints_echo),

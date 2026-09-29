@@ -186,7 +186,10 @@ class TestSideAlternatives:
         assert "Creamy Pasta" not in names
 
     @pytest.mark.asyncio
-    async def test_prompt_names_main_and_other_side_but_not_replaced(self, client):
+    async def test_prompt_names_main_and_other_side_and_avoids_the_replaced_one(self, client):
+        """The replaced dish's name appears exactly once in the prompt -- in
+        the explicit "avoid" line -- never as part of "the rest of the
+        meal" (the main / other-side lines)."""
         repo = _repo(_meal_with_dishes())
         ai = MagicMock()
         ai.complete = AsyncMock(
@@ -205,7 +208,9 @@ class TestSideAlternatives:
         prompt = ai.complete.await_args.kwargs["prompt"]
         assert "Creamy Pasta" in prompt  # the main
         assert "Roasted Carrots" in prompt  # the other side (position 2)
-        assert "Garlic Bread" not in prompt  # the side being replaced (position 1)
+        assert "The other side staying in the meal: Garlic Bread" not in prompt
+        assert 'Suggest alternatives to "Garlic Bread"; don\'t suggest it or a close variant.' in prompt
+        assert prompt.count("Garlic Bread") == 1  # only in the avoid line
 
     @pytest.mark.asyncio
     async def test_fewer_than_three_valid_alternatives_are_kept(self, client):
@@ -309,7 +314,8 @@ class TestSideAlternatives:
 
         assert response.status_code == 200, response.text
         prompt = ai.complete.await_args.kwargs["prompt"]
-        assert "Garlic Bread" in prompt  # the sole current side, named as "the other side"
+        assert "The other side staying in the meal: Garlic Bread" in prompt
+        assert "Suggest alternatives to" not in prompt  # no side is being replaced
 
     @pytest.mark.asyncio
     async def test_pantry_optout_never_reads_pantry(self, client):
