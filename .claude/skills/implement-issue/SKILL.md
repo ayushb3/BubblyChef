@@ -17,7 +17,7 @@ skill once per issue, not as a batch.
 **Prefer the scripted loop.** `.claude/workflows/agent-loop.js` runs the same
 lifecycle with fixed control flow: it adds a failing-test-first step for bugs, an
 Opus decision agent for ambiguity, a running-app `verify` step, a fresh-context
-review, and it acts as `bubblychef-bot` so CODEOWNERS applies. Run it with the
+review, and it acts as `bubblychef-bot` so its PRs are attributable. Run it with the
 Workflow tool (`name: "agent-loop"`, `args: {issue: <n>}`).
 Use this skill instead only when working an issue interactively with Ayush, and in
 that case still open the PR as the bot (`WORKFLOW.md` §7, "The agent loop").
@@ -95,26 +95,21 @@ instead of guessing.
 
 ### 1.1 Feasibility check — before any delegation (WORKFLOW.md §5)
 
-Before spawning a dev role, answer three questions from the issue body, its
-comments, and `.github/CODEOWNERS`. Any "yes" means **don't spawn**. The one
-exception is in item 2:
+Before spawning a dev role, answer two questions from the issue body and its
+comments. Either "yes" means **don't spawn**:
 
 1. **Blocked?** Does the issue or a comment say "blocked by", "depends on", or
    "after #N", where #N is still open? Check with `gh issue view N --json state`.
    If so, pick the blocker if it's `ready-for-agent`, otherwise skip.
-2. **Protected?** Will the likely change touch a path in `.github/CODEOWNERS`?
-   Read the file itself. Examples, not a complete list: all of `supabase/`,
-   auth, prompts, `.github/`, `.claude/{settings.json,hooks,agents,workflows}`,
-   `scripts/agent-gates/`, dependency manifests, `ai-service/railway.json` and
-   `ai-service/Dockerfile`. If it does, the PR can't merge without the human, so:
-   - **By default:** skip it and add it to the human's pile.
-   - **Exception: the human asked for this specific issue.** Their presence in the
-     session isn't enough. Then build it, flag the protected path at the top of
-     the PR body, and follow §3.1 if it's a migration. Code-owner review gates
-     the merge.
-3. **Undecided?** Does the triage comment leave a product question open, with
-   no reading that supports a conservative default? If so, comment the question,
-   relabel `needs-info`, and skip.
+2. **Needs the human?** Can it only be finished by changing v1 scope or spending
+   money? If so, comment the question, relabel `needs-info`, and skip. Any other
+   open product question is yours: decide it, log the decision and the
+   alternative in the sprint doc, and build.
+
+If the change touches CI, the gates or agent config (`.github/`,
+`.claude/{settings.json,hooks,agents,workflows}`, `scripts/agent-gates/`,
+`scripts/merge/`), build it and name the PR in the sprint doc. A migration still
+follows §3.1.
 
 Record the outcome in one line when you report ("feasibility: clear" or which
 question stopped it).
@@ -153,8 +148,9 @@ Route by ownership boundary (`.claude/agents/` + `docs/agents/roles/`):
 | `nextjs/src/components/**`, design system, motion, a11y | `ui-ux` |
 | Tests / e2e / DoD review | `qa-reviewer` |
 
-- If an issue spans two roles, it's a **feature-level** change (see §6) — delegate
-  each slice to its owning role, one at a time, and keep the boundaries clean.
+- If an issue spans two roles, delegate each slice to its owning role, one at a
+  time, and keep the boundaries clean. It is still one PR: one per vertical
+  feature, not one per slice.
 - **One level of delegation only** (WORKFLOW.md §5). Dev roles do **not** spawn
   their own subagents. If a role reports the task is too big to do in one session,
   that's a signal the ticket was under-sliced — say so and stop; don't grow a
@@ -165,8 +161,8 @@ Route by ownership boundary (`.claude/agents/` + `docs/agents/roles/`):
 ### 3.1 Hard stop: database migrations
 
 **If the work adds or changes a file under `supabase/migrations/`, this PR cannot
-merge from an agent session under any circumstance — including a sub-PR that §6
-would otherwise let you mark ready and merge on green.**
+merge from an agent session under any circumstance, even when §6 would otherwise
+let you merge it on green.**
 
 Applying a migration needs a Postgres password or a Supabase personal access
 token. An agent session has neither: `ai-service/.env` carries PostgREST API keys,
@@ -183,11 +179,9 @@ When a migration is in scope:
 1. Write it, and say so in the PR title or the first line of the summary.
 2. Add a **Migration** section to the PR body: filename, what it does in two or
    three lines, and whether it is additive or destructive.
-3. Treat the PR as feature-level regardless of how many role boundaries it
-   touches.
-4. Tell the human it needs applying **before** merge, and give both routes — the
+3. Tell the human it needs applying **before** merge, and give both routes — the
    Supabase dashboard SQL Editor, or `supabase db push`.
-5. Do not merge. Do not `gh pr ready`. Wait.
+4. Do not merge. Do not `gh pr ready`. Wait.
 
 You can check whether a table already exists without any of the missing
 credentials, which is worth doing before assuming the work is needed:
@@ -277,29 +271,27 @@ until the checks on the head commit have actually completed:
 gh pr checks <n> --watch    # blocks until every check finishes
 ```
 
-Then:
+Then **merge it yourself** when all three hold; nothing waits for the human:
 
-- **Sub-PR** (a scoped slice of a larger parent ticket, one role's ownership):
-  CI green + a legible summary on the PR → `gh pr ready <n>`, and it may merge
-  autonomously. No human wait.
-- **Feature-level / large PR** (closes a top-level spec ticket, or crosses more
-  than one role's ownership boundary): leave it as **draft**, post the summary,
-  and **stop for the human**. Do not merge.
-- **CI red, either bucket:** it is not done. Back to §3 with the failure; fix and
-  push. Never mark ready on red.
+- every required check is green;
+- the latest `claude[bot]` review says `looks mergeable` for the current head
+  (read it, inline comments included; §7 "Reading the review");
+- for anything a user could see or trigger, `verify` passed on the final commit.
 
-When unsure which bucket an issue is in, treat it as feature-level and wait.
+`gh pr ready <n>`, then merge with a real merge commit, one PR at a time: if `main`
+has moved, update the branch, wait for CI again, then `gh pr merge <n> --merge`.
+**CI red or `needs changes`:** it is not done. Back to §3 with the failure; fix and
+push. **`needs a human`:** stop and report why.
 
-**A migration overrides all three bullets.** If the diff touches
-`supabase/migrations/`, it stays draft and waits for the human however small,
-single-boundary or green it is. See §3.1.
+**A migration overrides all of this.** If the diff touches
+`supabase/migrations/`, it stays draft and waits for the human however small or
+green it is. See §3.1.
 
-**If the run ends before CI finishes** — the session is cut short, the watch
-times out — leave the PR as draft and say so explicitly in the handoff: *"draft
-pending CI, sub-PR, ready to flip when green."* A draft PR left silently behind
-green CI reads as "the agent judged this needs a human", which is the opposite of
-what happened. Only the deliberate cases above — feature-level, CI red, and a
-migration — may leave a PR in draft on purpose.
+**If the run ends before it can merge** — the session is cut short, the watch
+times out, the review hasn't landed — leave the PR as draft and say so explicitly
+in the handoff: *"draft pending CI/review, ready to merge when green."* A draft PR
+left silently behind green CI reads as "the agent judged this needs a human",
+which is the opposite of what happened.
 
 ## Worked example (do not implement here)
 
@@ -309,11 +301,11 @@ spurious unit conflicts" — labelled `bug`, `backend`, `ready-for-agent`.
 1. Pick: top of the `ready-for-agent` bug list, no open PR/branch for it.
 2. Branch: `fix/issue-223-size-adjective-units` off `main`.
 3. Delegate to **`backend`** — it's entirely in `ai-service/**` (the
-   normalizer / cook-matcher unit handling). Single role → not feature-level.
+   normalizer / cook-matcher unit handling).
 4. Gates: `cd ai-service && pytest && ruff check bubbly_chef/`. No `nextjs`
    change, so `tsc` is not needed; `mypy --strict` skipped (not a gate).
 5. Draft PR titled `fix: don't treat size adjectives as units (#223)`, body has
    `Fixes #223` on its own line.
-6. Single role, bounded bug → this is a **sub-PR**: watch `gh pr checks --watch`,
-   then `gh pr ready` + auto-merge on green. If the run ends first, the PR stays
-   draft and the handoff says "pending CI".
+6. Watch `gh pr checks --watch`, read the Claude review, run `verify` if the fix
+   is user-visible, then `gh pr ready` + merge. If the run ends first, the PR
+   stays draft and the handoff says "pending CI".

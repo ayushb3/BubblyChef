@@ -168,8 +168,13 @@ function ensureCommits(git, shas) {
   }
 }
 
-function owners(root) {
-  const text = fs.readFileSync(path.join(root, '.github', 'CODEOWNERS'), 'utf8')
+// Whose approval clears a hold: the handles in .github/CODEOWNERS, or the repo owner
+// when there is no CODEOWNERS file (removed in issue #640; reading it unconditionally
+// would fail this required check on every PR).
+function owners(root, repoOwner) {
+  const file = path.join(root, '.github', 'CODEOWNERS')
+  if (!fs.existsSync(file)) return repoOwner ? [repoOwner] : []
+  const text = fs.readFileSync(file, 'utf8')
   return [...new Set((text.match(/@[\w-]+/g) || []).map(s => s.slice(1)))]
 }
 
@@ -218,12 +223,12 @@ function gather(repo, pr, headSha) {
     .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))[0]
   return {
     labels, approvals, headSha, reviewJob, prDiffUnchanged: prDiffUnchangedAt,
-    owners: owners(path.join(__dirname, '..', '..')),
+    owners: owners(path.join(__dirname, '..', '..'), String(repo).split('/')[0]),
     sticky: sticky ? { updatedAt: sticky.updated_at, body: sticky.body } : null,
   }
 }
 
-module.exports = { decide, parseVerdict, prDiffUnchanged, makeGit, fetchHistory, ensureCommits, LOOP_LABEL, REVIEW_JOB, REVIEW_STEP }
+module.exports = { decide, parseVerdict, prDiffUnchanged, owners, makeGit, fetchHistory, ensureCommits, LOOP_LABEL, REVIEW_JOB, REVIEW_STEP }
 
 if (require.main === module) {
   const [repo, pr, headSha] = process.argv.slice(2)

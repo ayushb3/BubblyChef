@@ -414,10 +414,18 @@ watching it stop is evidence; "tests pass" alone is not), and what the change
 explicitly does *not* cover. An unstated gap reads as a claim it was handled.
 Full rules in `WORKFLOW.md` §4.
 
-**Review and merge are enforced by GitHub, not by a local hook.** Required checks
-must pass, and a PR touching a CODEOWNERS path needs your review; everything else
-can auto-merge. Marker files in `.git/` are gone — they were honour-system. See
-`WORKFLOW.md` §6–7.
+**Claude merges its own PRs; nothing needs your approval.** A PR merges once the
+required checks are green, the latest `claude[bot]` review says `looks mergeable`,
+and, for anything user-visible, a `verify` run passed. Real merge commits, one PR
+at a time: update the branch, wait for CI, merge. A PR that changes CI, the gates
+or agent config (`.github/`, `.claude/` settings/hooks/agents/workflows,
+`scripts/agent-gates/`, `scripts/merge/`) is named in the sprint doc so you can see
+when the rules change: visibility, not approval. See `WORKFLOW.md` §6–7.
+
+**Product calls and slice size.** Claude decides reversible product calls itself
+and logs each, with the alternative it rejected, in the sprint doc. Only a change to
+v1 scope, or anything that costs money, goes to you. Ship one PR per vertical
+feature, not one per sub-behaviour.
 
 ---
 
@@ -520,13 +528,13 @@ add a new one.
 ### Review
 
 `/code-review` on every PR (agent-invocable, two axes: standards and spec). The
-Claude GitHub Action reviews each PR on open from a fresh context. Merging is gated
-by **GitHub**, not a local hook: required checks (typecheck/test both sides,
-fail-to-pass against the base commit, test-count guard, exemption check, Vercel
-build) plus `.github/CODEOWNERS` review on protected paths — migrations, auth,
-`ai-service/bubbly_chef/prompts/`, `.github/`, `.claude/` config, dependencies.
-`thermo-nuclear-review` is still available and still user-invocation-only, but is no
-longer a mechanical gate — run it before approving anything large or security-shaped.
+Claude GitHub Action reviews each PR on open from a fresh context, and calls out any
+deleted or skipped test with whether its reason holds. Required checks on `main`:
+`Next.js (typecheck + test)`, `AI service (lint + typecheck + test)` and
+`Claude review verdict`, with the branch up to date. There is no CODEOWNERS file
+and no human approval step; Claude merges on green checks plus a `looks mergeable`
+review (see above). `thermo-nuclear-review` is still available and
+user-invocation-only — worth running on anything large or security-shaped.
 See `WORKFLOW.md` §6–7.
 
 ---

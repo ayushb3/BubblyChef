@@ -13,14 +13,15 @@ name: Claude PR review
 #
 # The `verdict` job ("Claude review verdict") turns the review into a merge gate for
 # PRs labelled `agent-loop`: it passes only on "looks mergeable" for the exact head
-# commit, or on a code owner's approval of that commit. It is a required check on main,
+# commit, or on Ayush's approval of that commit. It is a required check on main,
 # which is what lets the agent loop request auto-merge on a small PR without waiting
-# for this review itself. Human PRs pass it straight through.
+# for this review itself. Other PRs pass it straight through; whoever merges them
+# reads the verdict first (WORKFLOW.md §6).
 
 on:
   pull_request:
     types: [opened, ready_for_review, reopened, synchronize]
-  # Only re-evaluates the verdict gate (a code owner's approval clears a hold). The
+  # Only re-evaluates the verdict gate (Ayush's approval clears a hold). The
   # review itself never runs on this event.
   pull_request_review:
     types: [submitted]
@@ -88,7 +89,8 @@ jobs:
 
             You are the independent reviewer for BubblyChef. You did not write this
             change and have not seen the session that did. Review it as someone who
-            has to decide whether it can merge without a human reading the diff.
+            has to decide whether it can merge without a human reading the diff:
+            an agent merges on your verdict.
 
             Read CLAUDE.md first. It holds this repo's standards. Consult WORKFLOW.md
             only if you need a specific rule.
@@ -112,9 +114,12 @@ jobs:
                - Tests that do not actually test the change, or assert what the new
                  code happens to do rather than what it should do.
                - Violations of CLAUDE.md's Dev Guidelines.
-            3. If the PR touches a path in .github/CODEOWNERS, say so at the top of
-               your summary: a human must review it, and your review is input to
-               them, not a substitute.
+            3. If the PR changes CI, the gates or agent config (.github/,
+               .claude/settings.json, .claude/hooks/, .claude/agents/,
+               .claude/workflows/, scripts/agent-gates/, scripts/merge/), say so at
+               the top of your summary: the rules themselves are changing.
+               If the PR deletes, renames or skips any test, list each one and say
+               whether the reason given holds. An unexplained removal is a finding.
             4. If this is a re-review (the PR already has your earlier review and a
                resolutions comment from bubblychef-bot saying "fixed" or "disputed" per
                finding): check each "fixed" is genuinely fixed in the current diff, and
@@ -127,12 +132,14 @@ jobs:
 
             Finish with one summary comment:
             - **Verdict:** `looks mergeable`, `needs changes`, or `needs a human`
-              (a protected path, or something you could not verify).
+              (something you could not verify, or a change to v1 scope or to
+              anything that costs money).
               `looks mergeable` means an agent may merge this with no human ever
-              reading it. So if the change alters behaviour a user would notice
-              beyond what the issue describes — even if you think the new
-              behaviour is right — the verdict MUST be `needs a human`, with that
-              change named first. Never write "looks mergeable" together with
+              reading it. If the change alters behaviour a user would notice
+              beyond what the issue describes, name that change first. It can
+              still be `looks mergeable` if the PR body records it as a product
+              call with the alternative considered; unrecorded, it is
+              `needs changes`. Never write "looks mergeable" together with
               "the human should accept/confirm/decide …"; that combination is
               `needs a human`.
             - The findings that drove the verdict, most severe first, one line each.
@@ -158,7 +165,7 @@ jobs:
       actions: read
     steps:
       # The gate script comes from the BASE commit, so a PR can't loosen the check
-      # that gates it. (The script's own path is also in .github/CODEOWNERS.)
+      # that gates it.
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.base.sha }}

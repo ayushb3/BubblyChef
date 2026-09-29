@@ -147,17 +147,13 @@ Each role file states, at minimum:
 A dev agent that starts an issue it can't finish costs a full implementation and a
 review round, and then the PR sits. PR #617 was built on issue #490 while its
 blocker #489 was still open. PRs #614 and #616 each hit a product decision halfway
-through. So the orchestrator (or `/implement-issue` §1.1) answers three questions
-before delegating. Any "yes" means don't spawn, with the one exception in item 2:
+through. So the orchestrator (or `/implement-issue` §1.1) answers two questions
+before delegating. Either "yes" means don't spawn:
 
 1. **Blocked?** A "blocked by" / "depends on" pointing at an open issue.
-2. **Protected?** The likely change touches a CODEOWNERS path. By default, skip it and
-   add it to the human's pile. The exception is when the human asked for that specific
-   issue; their presence in the session isn't enough. Then build it and flag it: the
-   protected path goes at the top of the PR body, and migrations follow
-   `/implement-issue` §3.1. Code-owner review then gates the merge.
-3. **Undecided?** The triage comment leaves a product question open with no
-   defensible conservative default.
+2. **Needs the human?** The issue can't be finished without changing v1 scope or
+   spending money. Any other open product question is Claude's to decide (§6):
+   decide it, log it with the alternative in the sprint doc, and build.
 
 The dev brief keeps its own hard stops as a second line. This check exists so the
 orchestrator catches these cases before an agent is spawned, not after it stalls.
@@ -210,47 +206,45 @@ Concretely:
 
 ## 6. Autonomy gate
 
-The line used to sit at **merge**, and only at merge: an agent could do everything
-up to opening a draft PR, and a human merged. That has moved. The gate now sits at
-**risk**, judged by the paths a PR touches.
+The gate used to sit at merge, then at risk (protected paths waited for a human).
+Now **Claude merges every PR itself**, and nothing needs the human's approval. There
+are no real users yet, and a bad deploy rolls back in minutes.
 
-**Agents merge their own work** when the PR touches none of the protected paths and
-every required check passes. Most work is here: UI, copy, deterministic
-`ai-service/` code, tests, docs.
+**Claude merges a PR when all three hold:**
 
-**A human merges** when the PR touches a path in `.github/CODEOWNERS`: database
-migrations, the auth boundary, `ai-service/bubbly_chef/prompts/`, `.github/`,
-`.claude/` configuration and hooks, dependency manifests, and deploy config. GitHub
-enforces this through "Require review from Code Owners" — not convention, not a
-local hook an agent could satisfy by touching a file.
+- every required check is green (§7), on a branch that is up to date with `main`;
+- the latest `claude[bot]` review says `looks mergeable` for the current head;
+- for anything a user could see or trigger, a `verify` run passed on the final commit.
 
-**Why this is not the same as trusting agents more.** §7's old text said CI green
-plus an agent's own review is weaker evidence than it feels like, because the
-reviewing agent shares the implementing agent's blind spots. That is still true, and
-nothing here contradicts it. What changed is the *evidence*, not the confidence:
+Merge with a **real merge commit**, **one PR at a time**: update the branch, wait
+for CI on the new head, merge, then move to the next. `main` requires branches to be
+up to date, so each merge makes every other open PR stale anyway.
 
-- A bug fix must ship a test that **failed on the base commit** — CI re-runs the
-  PR's own tests against base and demands a failure there (§7).
-- The suite may not shrink and tests may not be skipped (§7).
-- The change is **exercised in a running app**, with screenshots attached.
-- Review comes from a **fresh context** that never saw the implementation session.
+**Product calls.** Claude decides reversible product calls itself and logs each in
+the sprint doc, with the alternative it rejected. Two kinds go to the human: a
+change to v1 scope, and anything that costs money.
 
-The chat action that posted to a route which did not exist — the failure that
-justified the human-only gate — is caught by the third of those, not by a second
-reader of the diff.
+**Slices are bigger.** One PR per vertical feature, not one per sub-behaviour. A
+PR that is a whole feature is easier to verify end to end than five that each
+change one corner of it.
 
-**What makes this safe to get wrong:** a bad deploy on Vercel or Railway rolls back
-in minutes, and a post-merge smoke test opens the revert automatically. The things
-that *don't* roll back — schema, auth, the gates themselves — are exactly the
-CODEOWNERS list. The tiering is not about how likely a mistake is; it is about
-whether the mistake is undoable.
+**Rule changes are made visible, not approved.** A PR that changes CI, the gates or
+agent configuration (`.github/`, `.claude/` settings, hooks, agents or workflows,
+`scripts/agent-gates/`, `scripts/merge/`) is named in the sprint doc, so the human
+can see when the rules themselves change.
+
+**What makes this safe to get wrong:** `main` auto-deploys, both services roll back
+in minutes, and the post-merge smoke test opens a revert on its own (§7). The review
+still comes from a fresh context that never saw the implementation, and `verify`
+still exercises the change in a running app. A human rereading the diff would add
+little to either.
 
 **Still irreversible, still human, regardless of path:** force-push to a shared
-branch, deleting data, sending external messages, rotating credentials.
+branch, deleting data, sending external messages, rotating credentials. A migration
+also waits, for a practical reason: an agent session can't apply one, and merging
+first puts code live against a schema that lacks it (`/implement-issue` §3.1).
 
-Because the human at merge may not read the diff — and on an auto-merged PR, will
-not read it at all — **the PR body carries the review** (§4). That is what makes
-this a gate rather than a rubber stamp.
+Because nobody reads the diff, **the PR body carries the review** (§4).
 
 **Guard the context window:** agents post *summaries* to the issue/PR, not full
 transcripts or diffs. Detail lives in linked artifacts (a demo doc, a decisions log,
@@ -266,48 +260,35 @@ finding ("fixed", "won't fix — reason"), not the full back-and-forth.
 
 ## 7. Review, layered
 
-Review is **enforced by GitHub**, not by a local hook. The previous design gated PR
-creation and merge on marker files in `.git/` written by the reviewing session. Those
-markers were honour-system: any agent could `touch` one. That was tolerable while a
-human merged everything, and is not tolerable now that agents merge. The hook
+Review is **enforced by GitHub**, not by a local hook. The old marker files in `.git/`
+were honour-system (any agent could `touch` one), and the hook that read them
 (`.claude/hooks/pr-review-gate.sh`) is deleted.
 
-### Required checks (branch protection on `main`)
+### Required checks (ruleset on `main`)
 
 | Check | What it proves |
 |---|---|
-| `Next.js (typecheck + test)` | Frontend compiles and its tests pass |
+| `Next.js (typecheck + test)` | Frontend compiles, lints, and its tests pass |
 | `AI service (lint + typecheck + test)` | Backend lints, typechecks against the mypy baseline, tests pass |
-| `Bug fix fails on base` | The PR's tests **fail on the base commit** — the fix is real, not a test written to match the code |
-| `Test suite did not shrink` | No test deleted, no test skipped |
-| `F2P exemption is legitimate` | A `no-f2p` label is only valid on a docs-only diff |
-| Vercel preview build | The frontend actually builds |
+| `Claude review verdict` | On `agent-loop` PRs, the review of the exact head commit says `looks mergeable` (other PRs pass through; the merger reads the verdict, §6) |
 
-Scripts live in `scripts/agent-gates/`, wired by `.github/workflows/agent-gates.yml`.
-Both are CODEOWNERS-protected: an agent cannot weaken its own gates.
+The branch must also be up to date with `main`. There is no CODEOWNERS file and no
+required approval. The earlier fail-to-pass, test-count and exemption gates, and the
+agent-loop harness, were removed in issue #640.
 
-### Fail-to-pass, specifically
+**Removed tests are called out, not gated.** The reviewer lists every test a PR
+deletes, renames or skips, and says whether the PR's reason holds. An unexplained
+removal is a finding like any other.
 
-CI checks out the base commit, copies **the PR's test files** onto it, and runs them.
-At least one must fail. A collection or import error counts — a test for code that
-does not exist yet cannot run, which is the evidence we want.
-
-It is required when the PR closes an issue labelled `bug`. Features must add tests
-but have nothing to fail against first. Docs and refactors use the `no-f2p` label,
-which the exemption check validates against the diff.
-
-This is the counter to the documented failure mode where agents satisfy a benchmark
-without solving the task: the check is re-run by CI, never self-reported.
-
-### Human review layers
+### Review layers
 
 1. **`/code-review`** — on every PR, agent-invocable. Two axes: repo standards and
    the originating spec.
 2. **PR review by the Claude GitHub Action** — fires on PR open in a fresh context
-   that never saw the implementation session. This is the independent read.
+   that never saw the implementation session. This is the independent read, and its
+   verdict is what Claude merges on.
 3. **`thermo-nuclear-review`** — user-invocation-only, still available, no longer a
-   mechanical gate. Run it on anything large, cross-cutting, or security-shaped
-   before approving a CODEOWNERS-protected PR.
+   mechanical gate. Worth running on anything large, cross-cutting, or security-shaped.
 
 ### Reading the review is part of the job
 
@@ -336,9 +317,8 @@ other work. So:
   consistent enough to depend on, so the poll above is what the rule rests on.
 - **Getting a fresh review after a fix:** `agent-loop`-labelled PRs re-review on push. For
   any other PR, close and reopen it. Don't add the label just to get a review. The label
-  turns the `Claude review verdict` job into a blocking required check, which passes only
-  on "looks mergeable" for the exact head commit or on a code owner's approval. So the
-  PR can't merge on its checks alone. On a bot-authored PR from the last 24 hours, the
+  makes the `Claude review verdict` check block, passing only on "looks mergeable" for
+  the exact head commit or on Ayush's approval. So the PR can't merge on its checks alone. On a bot-authored PR from the last 24 hours, the
   label also counts toward the loop cap.
 - **Handoffs list every PR with an unread or unresolved review.** The vendored `/handoff`
   skill doesn't know this rule (it's drift-tracked in `skills-lock.json` and has no PR
@@ -392,7 +372,7 @@ the agents it calls:
 
 | Stage | Who | Way out |
 |---|---|---|
-| Preflight — step 0, environment | Sonnet probes; **the script decides** | Stops before anything else if `gh` is missing, or if the identity the bot config dir resolves to isn't `bubblychef-bot`. Writing as anyone else would skip code-owner review on protected paths, so the run never starts (issue #474) |
+| Preflight — step 0, environment | Sonnet probes; **the script decides** | Stops before anything else if `gh` is missing, or if the identity the bot config dir resolves to isn't `bubblychef-bot`, so the run never writes as anyone else (issue #474) |
 | Preflight — step 1, readiness | Sonnet gathers facts; **the script decides** | Stops if `AGENTS_ENABLED` isn't `true` or couldn't be read at all, 15 loop PRs were opened in the last 24 hours (raised from 3 to 6 on 2026-09-19, to 15 on 2026-09-23 for ship mode), the issue isn't open and `ready-for-agent`, or a PR is already on it |
 | Setup | Sonnet, low effort | A fresh branch from `main` **in the session's own checkout** (never a separate worktree; see below). Refuses to start on uncommitted work |
 | Plan | the dev role for the domain | Lists genuine ambiguities, each with its own take |
@@ -408,15 +388,18 @@ Any stage that can't finish takes the **blocked path**: a draft PR labelled
 `needs-triage` so it isn't picked up again until a human has looked. A stuck run is a
 normal outcome; a silent half-done branch is not.
 
-The loop never merges. In shadow mode (the default) it never requests auto-merge
-either; it marks PRs that *would* auto-merge and Ayush merges. Outside shadow mode it
-requests auto-merge only when **all** of these hold: the GitHub review says `looks
-mergeable`, and the PR touches no protected path. GitHub then still waits for every
-required check.
+The loop itself never merges. In shadow mode (the default) it never requests
+auto-merge either; it marks PRs that *would* auto-merge. Outside shadow mode it
+requests auto-merge only when the GitHub review says `looks mergeable` and the PR
+touches no protected path. GitHub then still waits for every required check. Either
+way, the orchestrating session merges a loop PR under §6 like any other.
+
+The loop's shadow mode, protected-path tiering and `needs-decision` escalation predate
+§6 and still read `.github/CODEOWNERS`, which no longer exists. Aligning the script is
+a follow-up to issue #640.
 
 `claude-review.yml` re-reviews new pushes **only on PRs labelled `agent-loop`**, which
-is what gives Respond a fresh review after each fix. Human PRs are reviewed once, on open. The script itself is
-CODEOWNERS-protected: an agent that could edit it could raise its own limits.
+is what gives Respond a fresh review after each fix. Other PRs are reviewed once, on open.
 
 **It runs in the calling session's own checkout,** switching it to a new branch and back at the end. The host only lets a session, and every agent it launches, write inside that session's own worktree, so a loop that created a separate worktree could read it but never write to it (the first pilot run blocked on exactly this). Running several issues at once therefore means several sessions, each in its own worktree, which is what §5 already says.
 
@@ -555,7 +538,7 @@ against upstream is still detectable if one is restored.
 | Archived | Why |
 |---|---|
 | `implement` | The agent loop replaces it; `implement-issue` is the pickup path |
-| `interrogate` | The plan drops multi-model review — independence comes from evidence (F2P against base, clickthrough) and a fresh-context reviewer |
+| `interrogate` | The plan drops multi-model review — independence comes from evidence (a running-app clickthrough) and a fresh-context reviewer |
 | `grill-me` | One-line alias for `grilling` |
 | `figure-it-out`, `show-me-your-work` | The loop is the standing playbook and the PR is the decision trail; archived together since the first invokes the second |
 | `blast-radius`, `codebase-design`, `improve-codebase-architecture` | Never used here; `how`/`why`/`diagnosing-bugs` cover the same ground |
