@@ -92,6 +92,21 @@ describe('POST /api/recipes persists structured steps (#648)', () => {
 
     expect(storedInsert.current.steps).toBeNull()
   })
+
+  it('stores null instead of malformed steps (PR #655 review)', async () => {
+    const storedInsert = { current: {} as Record<string, unknown> }
+    ;(requireAuth as jest.Mock).mockResolvedValue([makeInsertSupabase(storedInsert), mockUser])
+
+    await POST(
+      makeRequest({
+        title: 'Pasta',
+        instructions: ['Boil the pasta.'],
+        steps: [{ text: 'Boil the pasta.', label: 'Boil', duration_minutes: 'ten' }],
+      }),
+    )
+
+    expect(storedInsert.current.steps).toBeNull()
+  })
 })
 
 describe('PUT /api/recipes/[id] clears steps only when instructions actually change (#648)', () => {

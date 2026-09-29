@@ -212,14 +212,37 @@ class TestBuildStructuredSteps:
 
         assert build_structured_steps(meta, instructions) is None
 
-    def test_out_of_range_duration_rejects_the_whole_set(self) -> None:
-        """An explicit, invalid field (not merely missing) fails Pydantic
-        validation -- the whole set is discarded rather than raising, so a
-        malformed structured-output call never fails the caller."""
-        instructions = ["Roast for way too long"]
-        meta = [{"label": "Roast", "duration_minutes": 9999}]
+    def test_out_of_range_duration_is_clamped_not_rejected(self) -> None:
+        """One long step ("marinate overnight") must not discard the whole
+        set -- on the ensure path that would re-fire a model call on every
+        cook-mode open (PR #655 review). It's clamped to 1-240 and flagged."""
+        instructions = ["Marinate overnight", "Sear the chicken"]
+        meta = [
+            {"label": "Marinate", "duration_minutes": 480, "hands_on": False},
+            {"label": "Sear", "duration_minutes": 0},
+        ]
+        steps = build_structured_steps(meta, instructions)
 
-        assert build_structured_steps(meta, instructions) is None
+        assert steps is not None
+        assert steps[0].duration_minutes == 240
+        assert steps[0].duration_estimated is True
+        assert steps[1].duration_minutes == 1
+        assert steps[1].duration_estimated is True
+
+    def test_in_range_explicit_duration_is_not_flagged_by_the_clamp(self) -> None:
+        steps = build_structured_steps([{"label": "Boil", "duration_minutes": 240}], ["Boil"])
+
+        assert steps is not None
+        assert steps[0].duration_minutes == 240
+        assert steps[0].duration_estimated is False
+
+    def test_invalid_field_type_still_rejects_the_whole_set(self) -> None:
+        """A malformed structured-output call (wrong type, not just out of
+        range) is still discarded rather than raising, so it never fails the
+        caller."""
+        meta = [{"label": "Roast", "duration_minutes": "a while"}]
+
+        assert build_structured_steps(meta, ["Roast"]) is None
 
     def test_empty_is_valid(self) -> None:
         assert build_structured_steps([], []) == []

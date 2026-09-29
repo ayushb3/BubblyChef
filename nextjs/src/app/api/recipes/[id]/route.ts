@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
-import { mergeTags, instructionsChanged } from '@/lib/recipe-helpers'
+import { mergeTags, instructionsChanged, sanitizeSteps } from '@/lib/recipe-helpers'
 import { awardBubbles } from '@/lib/bubbles'
 
 export async function GET(
@@ -46,6 +46,8 @@ export async function PUT(
   for (const field of fields) {
     if (body[field] !== undefined) updates[field] = body[field]
   }
+  // Never store client-supplied steps unvalidated (PR #655 review).
+  if (body.steps !== undefined) updates.steps = sanitizeSteps(body.steps, body.instructions)
 
   // If dietary_tags are present alongside (or instead of) tags, merge them.
   // This covers any client that forwards the raw AI response shape.

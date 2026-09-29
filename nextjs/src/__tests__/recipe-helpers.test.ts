@@ -3,6 +3,7 @@ import {
   ingredientLabel,
   ingredientParts,
   instructionsChanged,
+  sanitizeSteps,
 } from '@/lib/recipe-helpers'
 
 describe('mergeTags', () => {
@@ -191,5 +192,58 @@ describe('instructionsChanged (#648 — clears structured steps on a real instru
   it('treats null/undefined current instructions as comparable, not a crash', () => {
     expect(instructionsChanged(null, ['A'])).toBe(true)
     expect(instructionsChanged(undefined, null)).toBe(false)
+  })
+})
+
+describe('sanitizeSteps (#648 — never store client-supplied steps unvalidated)', () => {
+  const good = {
+    text: 'Boil the pasta',
+    label: 'Boil pasta',
+    ongoing_label: 'the pasta boils',
+    duration_minutes: 10,
+    duration_estimated: false,
+    hands_on: false,
+    depends_on: [],
+    exclusive: [],
+  }
+
+  it('passes a valid step list through unchanged', () => {
+    expect(sanitizeSteps([good], ['Boil the pasta'])).toEqual([good])
+  })
+
+  it('returns null for anything that is not an array', () => {
+    expect(sanitizeSteps(undefined)).toBeNull()
+    expect(sanitizeSteps(null)).toBeNull()
+    expect(sanitizeSteps({ steps: [good] })).toBeNull()
+  })
+
+  it('returns null when the count does not match the instructions', () => {
+    expect(sanitizeSteps([good], ['Boil the pasta', 'Drain it'])).toBeNull()
+  })
+
+  it('returns null for a step missing its text, label or a numeric duration', () => {
+    expect(sanitizeSteps([{ ...good, label: undefined }])).toBeNull()
+    expect(sanitizeSteps([{ ...good, text: 3 }])).toBeNull()
+    expect(sanitizeSteps([{ ...good, duration_minutes: 'ten' }])).toBeNull()
+    expect(sanitizeSteps([{ ...good, duration_minutes: Number.NaN }])).toBeNull()
+  })
+
+  it('clamps an out-of-range duration and flags it estimated', () => {
+    const [step] = sanitizeSteps([{ ...good, duration_minutes: 480 }]) ?? []
+    expect(step.duration_minutes).toBe(240)
+    expect(step.duration_estimated).toBe(true)
+  })
+
+  it('keeps only strictly-earlier depends_on indices and defaults missing fields', () => {
+    const steps = sanitizeSteps([
+      good,
+      { text: 'Drain', label: 'Drain', duration_minutes: 1, depends_on: [0, 1, 5] },
+      { text: 'Toss', label: 'Toss', duration_minutes: 1 },
+    ])
+    expect(steps?.[1].depends_on).toEqual([0])
+    expect(steps?.[1].hands_on).toBe(true)
+    expect(steps?.[1].ongoing_label).toBeNull()
+    expect(steps?.[2].depends_on).toEqual([1])
+    expect(steps?.[2].exclusive).toEqual([])
   })
 })

@@ -9,7 +9,7 @@
  * call sites: ingredient-shape handling (see `ingredientParts`).
  */
 
-import type { RecipeIngredient } from '@/types/recipes'
+import type { RecipeIngredient, Step } from '@/types/recipes'
 
 /**
  * Merge two tag arrays and return a deduplicated list.
@@ -53,6 +53,48 @@ export function instructionsChanged(
   incoming: unknown,
 ): boolean {
   return JSON.stringify(current ?? null) !== JSON.stringify(incoming ?? null)
+}
+
+/**
+ * Validate client-supplied structured `steps` before they're stored (issue
+ * #648, PR #655 review). `POST`/`PUT /api/recipes` otherwise pass `steps`
+ * straight through, and a malformed entry later renders as "undefined min"
+ * or a NaN-second dock timer.
+ *
+ * Returns a cleaned copy, or `null` ("not yet structured", so the next cook
+ * re-derives them) when the value isn't a usable step list. Durations are
+ * clamped to 1-240 like the AI service does, and `depends_on` keeps only
+ * strictly-earlier indices. When `instructions` is an array, the step count
+ * must match it, mirroring the AI service's whole-set rule.
+ */
+export function sanitizeSteps(raw: unknown, instructions?: unknown): Step[] | null {
+  if (!Array.isArray(raw)) return null
+  if (Array.isArray(instructions) && instructions.length !== raw.length) return null
+  const out: Step[] = []
+  for (const [i, s] of raw.entries()) {
+    if (typeof s !== 'object' || s === null) return null
+    const step = s as Record<string, unknown>
+    const minutes = step.duration_minutes
+    if (typeof step.text !== 'string' || typeof step.label !== 'string') return null
+    if (typeof minutes !== 'number' || !Number.isFinite(minutes)) return null
+    if (step.ongoing_label != null && typeof step.ongoing_label !== 'string') return null
+    const clamped = Math.max(1, Math.min(240, Math.round(minutes)))
+    out.push({
+      text: step.text,
+      label: step.label,
+      ongoing_label: typeof step.ongoing_label === 'string' ? step.ongoing_label : null,
+      duration_minutes: clamped,
+      duration_estimated: step.duration_estimated === true || clamped !== minutes,
+      hands_on: step.hands_on !== false,
+      depends_on: Array.isArray(step.depends_on)
+        ? step.depends_on.filter((d): d is number => Number.isInteger(d) && d >= 0 && d < i)
+        : i > 0 ? [i - 1] : [],
+      exclusive: Array.isArray(step.exclusive)
+        ? step.exclusive.filter((t): t is string => typeof t === 'string')
+        : [],
+    })
+  }
+  return out
 }
 
 /** Every part a call site could need from an ingredient list element. */

@@ -168,9 +168,18 @@ class StructuredStep(BaseModel):
             return data
         data = dict(data)
 
-        if data.get("duration_minutes") is None:
+        duration = data.get("duration_minutes")
+        if duration is None:
             data["duration_minutes"] = _estimate_duration_minutes(str(data.get("text") or ""))
             data["duration_estimated"] = True
+        elif isinstance(duration, (int, float)) and not isinstance(duration, bool):
+            # Clamp rather than reject: one out-of-range step ("marinate
+            # overnight" ~480 min) would otherwise fail the whole set, and on
+            # the ensure path re-fire a model call on every cook-mode open
+            # (PR #655 review). A clamped value is flagged as estimated.
+            clamped = max(1, min(240, round(duration)))
+            data["duration_minutes"] = clamped
+            data["duration_estimated"] = bool(data.get("duration_estimated")) or clamped != duration
         else:
             data.setdefault("duration_estimated", False)
 
