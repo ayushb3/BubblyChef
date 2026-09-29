@@ -4,6 +4,7 @@
  */
 
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import SavedRecipeMatches from '@/components/chat/SavedRecipeMatches'
 import type { SavedRecipeMatch } from '@/types/chat'
 
@@ -84,6 +85,15 @@ describe('SavedRecipeMatches', () => {
     expect(items[2]).toHaveTextContent('Chicken Curry')
   })
 
+  it('labels each mini card by its action, not "Pick", and marks it collapsed', () => {
+    render(<SavedRecipeMatches matches={MANY} onSelect={jest.fn()} />)
+    for (const match of MANY) {
+      const item = screen.getByRole('listitem', { name: `Show options for ${match.title}` })
+      expect(item).toHaveAttribute('aria-expanded', 'false')
+    }
+    expect(screen.queryByRole('listitem', { name: `Pick ${MANY[0].title}` })).not.toBeInTheDocument()
+  })
+
   // Ayush's decision (2026-09-27): tapping a mini card in the many-match list
   // must NOT act on the recipe directly any more — it expands inline into
   // that recipe's single-match card (the same component the one-match case
@@ -94,13 +104,13 @@ describe('SavedRecipeMatches', () => {
   it('does not call onSelect when a mini card is tapped — it expands instead', () => {
     const onSelect = jest.fn()
     render(<SavedRecipeMatches matches={MANY} onSelect={onSelect} />)
-    fireEvent.click(screen.getByRole('listitem', { name: `Pick ${MANY[1].title}` }))
+    fireEvent.click(screen.getByRole('listitem', { name: `Show options for ${MANY[1].title}` }))
     expect(onSelect).not.toHaveBeenCalled()
   })
 
   it('expands the tapped mini card into its single-match card with both actions', () => {
     render(<SavedRecipeMatches matches={MANY} onSelect={jest.fn()} />)
-    fireEvent.click(screen.getByRole('listitem', { name: `Pick ${MANY[1].title}` }))
+    fireEvent.click(screen.getByRole('listitem', { name: `Show options for ${MANY[1].title}` }))
 
     // The expanded card reuses SingleMatchCard: same Open recipe link and
     // Cook this button, now scoped to the tapped match.
@@ -108,14 +118,14 @@ describe('SavedRecipeMatches', () => {
     expect(openLink).toHaveAttribute('href', `/recipes/${MANY[1].id}`)
     expect(screen.getByRole('button', { name: 'Cook this' })).toBeInTheDocument()
     // Only two mini cards remain tappable — the expanded one is no longer
-    // rendered as a "Pick X" affordance button.
-    expect(screen.queryByRole('listitem', { name: `Pick ${MANY[1].title}` })).not.toBeInTheDocument()
+    // rendered as a "Show options for X" affordance button.
+    expect(screen.queryByRole('listitem', { name: `Show options for ${MANY[1].title}` })).not.toBeInTheDocument()
   })
 
   it('calls onSelect with the match when Cook this is tapped inside the expanded card', () => {
     const onSelect = jest.fn()
     render(<SavedRecipeMatches matches={MANY} onSelect={onSelect} />)
-    fireEvent.click(screen.getByRole('listitem', { name: `Pick ${MANY[1].title}` }))
+    fireEvent.click(screen.getByRole('listitem', { name: `Show options for ${MANY[1].title}` }))
     fireEvent.click(screen.getByRole('button', { name: 'Cook this' }))
     expect(onSelect).toHaveBeenCalledWith(MANY[1])
   })
@@ -123,13 +133,13 @@ describe('SavedRecipeMatches', () => {
   it('switches the expansion when a different mini card is tapped', () => {
     render(<SavedRecipeMatches matches={MANY} onSelect={jest.fn()} />)
 
-    fireEvent.click(screen.getByRole('listitem', { name: `Pick ${MANY[0].title}` }))
+    fireEvent.click(screen.getByRole('listitem', { name: `Show options for ${MANY[0].title}` }))
     expect(screen.getByRole('link', { name: 'Open recipe' })).toHaveAttribute(
       'href',
       `/recipes/${MANY[0].id}`,
     )
 
-    fireEvent.click(screen.getByRole('listitem', { name: `Pick ${MANY[2].title}` }))
+    fireEvent.click(screen.getByRole('listitem', { name: `Show options for ${MANY[2].title}` }))
     expect(screen.getByRole('link', { name: 'Open recipe' })).toHaveAttribute(
       'href',
       `/recipes/${MANY[2].id}`,
@@ -137,24 +147,43 @@ describe('SavedRecipeMatches', () => {
     // Only one card is expanded at a time.
     expect(screen.getAllByRole('link', { name: 'Open recipe' })).toHaveLength(1)
     // The previously-expanded card is back to being a tappable mini card.
-    expect(screen.getByRole('listitem', { name: `Pick ${MANY[0].title}` })).toBeInTheDocument()
+    expect(screen.getByRole('listitem', { name: `Show options for ${MANY[0].title}` })).toBeInTheDocument()
   })
 
-  it('expands via the keyboard (Enter/Space activate the mini card button)', () => {
-    render(<SavedRecipeMatches matches={MANY} onSelect={jest.fn()} />)
-    const card = screen.getByRole('listitem', { name: `Pick ${MANY[0].title}` })
-    // The mini card is a real <button>, so Enter/Space activation is native
-    // browser behavior — fireEvent.click is the faithful jsdom equivalent of
-    // that native keydown-triggered activation for a focused button.
+  it('expands via the keyboard — Enter activates the focused mini card, and does not start a cooking session', async () => {
+    // The mini card is a real <button>, so Enter activation is native browser
+    // behavior. jsdom does not synthesize that default action from a bare
+    // fireEvent.keyDown, so this drives it through user-event, which does
+    // simulate it — a faithful stand-in for the real keypress, not a
+    // fireEvent.click substitute for one.
+    const user = userEvent.setup()
+    const onSelect = jest.fn()
+    render(<SavedRecipeMatches matches={MANY} onSelect={onSelect} />)
+    const card = screen.getByRole('listitem', { name: `Show options for ${MANY[0].title}` })
     card.focus()
     expect(card).toHaveFocus()
-    fireEvent.click(card)
+    await user.keyboard('{Enter}')
     expect(screen.getByRole('button', { name: 'Cook this' })).toBeInTheDocument()
+    // Expanding is a preview, not a pick — Enter must not itself start a
+    // cooking session.
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('expands via the keyboard — Space activates the focused mini card, and does not start a cooking session', async () => {
+    const user = userEvent.setup()
+    const onSelect = jest.fn()
+    render(<SavedRecipeMatches matches={MANY} onSelect={onSelect} />)
+    const card = screen.getByRole('listitem', { name: `Show options for ${MANY[0].title}` })
+    card.focus()
+    expect(card).toHaveFocus()
+    await user.keyboard(' ')
+    expect(screen.getByRole('button', { name: 'Cook this' })).toBeInTheDocument()
+    expect(onSelect).not.toHaveBeenCalled()
   })
 
   it('moves focus into the expanded card so it does not land on the unmounted mini card', () => {
     render(<SavedRecipeMatches matches={MANY} onSelect={jest.fn()} />)
-    const card = screen.getByRole('listitem', { name: `Pick ${MANY[1].title}` })
+    const card = screen.getByRole('listitem', { name: `Show options for ${MANY[1].title}` })
     card.focus()
     fireEvent.click(card)
     expect(screen.getByRole('link', { name: 'Open recipe' })).toHaveFocus()
@@ -168,7 +197,7 @@ describe('SavedRecipeMatches', () => {
     // attribute directly in addition to the click having no effect.
     const onSelect = jest.fn()
     render(<SavedRecipeMatches matches={MANY} onSelect={onSelect} disabled />)
-    const item = screen.getByRole('listitem', { name: `Pick ${MANY[0].title}` })
+    const item = screen.getByRole('listitem', { name: `Show options for ${MANY[0].title}` })
     expect(item).toBeDisabled()
     fireEvent.click(item)
     expect(screen.queryByRole('button', { name: 'Cook this' })).not.toBeInTheDocument()

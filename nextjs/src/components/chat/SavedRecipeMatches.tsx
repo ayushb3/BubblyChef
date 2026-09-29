@@ -87,7 +87,13 @@ export default function SavedRecipeMatches({
             key={match.id}
             type="button"
             role="listitem"
-            aria-label={`Pick ${match.title}`}
+            aria-label={`Show options for ${match.title}`}
+            // Always false in this branch — the moment `match.id ===
+            // expandedId`, this card stops rendering as a button at all (see
+            // the branch above, which swaps in the SingleMatchCard div
+            // instead). Written as the comparison rather than a literal
+            // `false` so it stays honest if that ever changes.
+            aria-expanded={match.id === expandedId}
             disabled={disabled}
             onClick={() => !disabled && setExpandedId(match.id)}
             initial={{ opacity: 0, y: 8 }}
