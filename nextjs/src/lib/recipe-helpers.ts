@@ -178,6 +178,38 @@ export function ingredientLabel(
 }
 
 /**
+ * Render an ingredient's display label scaled by `scale` (issue #650: the
+ * meal page scales each dish's displayed quantities by
+ * `meal.servings / recipe.servings`).
+ *
+ * Only the object shape's numeric `quantity` can be scaled — the string
+ * shape (`RecipeEditModal`-flattened rows) carries no separate numeric
+ * field to scale, so it renders unchanged via `ingredientLabel`, same as an
+ * object-shape row with no `quantity` at all. `scale` of `1`, non-finite, or
+ * `<= 0` (a malformed `recipe.servings`) also renders unchanged, so a bad
+ * scale factor degrades to "unscaled" rather than a broken or negative
+ * quantity.
+ */
+export function scaledIngredientLabel(
+  ing: string | RecipeIngredient | null | undefined,
+  scale: number,
+): string {
+  if (
+    typeof ing === 'object' &&
+    ing !== null &&
+    typeof ing.quantity === 'number' &&
+    Number.isFinite(scale) &&
+    scale > 0 &&
+    scale !== 1
+  ) {
+    // Round to 2 decimals and trim trailing zeros (3 not 3.00, 1.5 not 1.50).
+    const scaledQuantity = Math.round(ing.quantity * scale * 100) / 100
+    return ingredientLabel({ ...ing, quantity: scaledQuantity })
+  }
+  return ingredientLabel(ing)
+}
+
+/**
  * One editable ingredient row in `RecipeEditModal`.
  *
  * `original` is the element exactly as loaded from the recipe — `null` for a
