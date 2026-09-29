@@ -139,3 +139,35 @@ pantry, their stock, or anything expiring, and do not steer the recipe \
 toward ingredients you think they might have. Work only from the dish and \
 the rest of the meal.\
 """
+
+# The meal screen's "Swap"/"Add a side" flow (issue #652, `workflows/meal/
+# sides.py`). Unlike the option stage, this call is scoped to one slot in an
+# *existing* meal: it knows the main and the other side (not the one being
+# replaced) by name. The prompt does not name the side being replaced --
+# excluding it (and every other current dish) is enforced deterministically
+# in code afterward (`generate_side_alternatives`'s dedup filter), the same
+# "code decides, not the model" split the option stage's coverage uses.
+MEAL_SIDE_ALTERNATIVES_SYSTEM_PROMPT = """\
+Propose exactly 3 alternative SIDE dishes for a meal called "{meal_title}" \
+({servings} servings), to fill one side slot.
+
+The main dish: {main_name}
+The other side staying in the meal: {other_side}
+
+Kitchen limits: {kitchen_limits}
+Exclusive-equipment tags in play for this meal: {exclusive_tags}
+Constraints: {constraints_json}
+{pantry_block}
+
+Each alternative must be a genuinely different side -- from the main, from \
+the other side, and from each other -- and must complement the main rather \
+than duplicate its main ingredient or flavor profile.
+
+For each alternative, give:
+- role: always "side"
+- name: 2-5 words
+- blurb: one short sentence describing it
+- key_ingredients: 3-6 ingredients that matter for whether the user has \
+what they need
+- est_total_minutes, est_hands_on_minutes: whole minutes\
+"""

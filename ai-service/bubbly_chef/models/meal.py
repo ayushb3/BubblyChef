@@ -26,10 +26,16 @@ class MealDishOutline(BaseModel):
     handful of key ingredients, and estimated times. `key_ingredients` is
     deliberately short (the model is asked for 3-6) -- it drives the
     deterministic pantry-coverage match in code, not a full ingredient list.
+
+    `blurb` (issue #652) is new: a one-sentence description, used by the
+    side-alternatives route's mini cards. It's `""` when absent -- the option
+    stage's dishes never set it, so existing option-card behavior is
+    unchanged.
     """
 
     role: Literal["main", "side"]
     name: str
+    blurb: str = ""
     key_ingredients: list[str] = Field(default_factory=list)
     est_total_minutes: int | None = None
     est_hands_on_minutes: int | None = None
@@ -147,6 +153,9 @@ class MealDishOutlineLLM(BaseModel):
         description="'main' for the entree, 'side' for a side dish"
     )
     name: str = Field(description="Dish name, 2-5 words")
+    blurb: str | None = Field(
+        default=None, description="Optional one-sentence description of the dish"
+    )
     key_ingredients: list[str] = Field(
         default_factory=list,
         description="3-6 ingredients that matter for whether the user has what they need",
@@ -171,3 +180,17 @@ class MealOptionsLLMResult(BaseModel):
     """Envelope for the option-stage structured call -- 3 options requested."""
 
     options: list[MealOptionLLM] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# LLM response schema -- internal to the meal-screen side-alternatives call
+# (issue #652, `workflows/meal/sides.py`)
+# ---------------------------------------------------------------------------
+
+
+class MealSideAlternativesLLMResult(BaseModel):
+    """Envelope for the side-alternatives structured call -- 3 alternatives
+    requested. Route-level validation (role, dedup against the current meal's
+    dishes) happens after this in `workflows/meal/sides.py`, not here."""
+
+    alternatives: list[MealDishOutlineLLM] = Field(default_factory=list)
