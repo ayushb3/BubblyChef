@@ -5,18 +5,14 @@
  * simmers · until 7:22". Presentational only; the live countdown itself
  * lives in the timer dock, not here.
  *
- * Contract §3's `StreamStep` (the type this renders) carries `label`
- * ("Simmer the sauce", a short imperative) but no `ongoing_label` field —
- * that field exists on the structured `Step` the scheduler consumes, not on
- * the derived stream step the contract specifies here. The contract's own
- * example phrasing ("the sauce simmers") reads like an `ongoing_label`, so
- * this is flagged as a likely contract gap rather than silently reproduced:
- * this component renders `step.label` since that's the only text `StreamStep`
- * actually has.
+ * `StreamStep.ongoing_label` (a contract addendum after this component's
+ * first pass — see `lib/meal-cook-stream.ts`) is the in-progress clause
+ * ("the sauce simmers"); falls back to `label` ("Simmer the sauce") when a
+ * step has none.
  */
 
 import { COLUMN_COLORS } from './MealTimelineTable'
-import type { StreamStep } from './streamTypes'
+import type { StreamStep } from '@/lib/meal-cook-stream'
 
 export interface MealRunningStripProps {
   steps: StreamStep[]
@@ -44,7 +40,7 @@ export default function MealRunningStrip({ steps, clockLabel }: MealRunningStrip
             {step.dish_title}
           </span>
           <span>
-            {step.label} · until {clockLabel(step.end)}
+            {step.ongoing_label ?? step.label} · until {clockLabel(step.end)}
           </span>
         </li>
       ))}

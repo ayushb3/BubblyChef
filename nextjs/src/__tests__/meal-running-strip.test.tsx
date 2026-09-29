@@ -6,7 +6,7 @@
 import React from 'react'
 import { render, screen } from '@testing-library/react'
 import MealRunningStrip from '@/components/meal/MealRunningStrip'
-import type { StreamStep } from '@/components/meal/streamTypes'
+import type { StreamStep } from '@/lib/meal-cook-stream'
 
 const STEP: StreamStep = {
   key: 'recipe-1:1',
@@ -15,6 +15,7 @@ const STEP: StreamStep = {
   dish_title: 'Pasta with tomato sauce',
   step_index: 1,
   label: 'Simmer the sauce',
+  ongoing_label: 'the sauce simmers',
   text: 'Let the sauce reduce.',
   duration_minutes: 12,
   hands_on: false,
@@ -28,12 +29,20 @@ describe('MealRunningStrip', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('shows the dish name, the step, and the clock end time', () => {
+  it('shows the dish name, the ongoing clause, and the clock end time', () => {
     render(<MealRunningStrip steps={[STEP]} clockLabel={(offset) => `+${offset}`} />)
     const strip = screen.getByTestId('meal-running-strip')
     expect(strip).toHaveTextContent('Pasta with tomato sauce')
-    expect(strip).toHaveTextContent('Simmer the sauce')
+    expect(strip).toHaveTextContent('the sauce simmers')
     expect(strip).toHaveTextContent('until +22')
+  })
+
+  it('falls back to label when the step has no ongoing_label', () => {
+    render(
+      <MealRunningStrip steps={[{ ...STEP, ongoing_label: null }]} clockLabel={(o) => `+${o}`} />,
+    )
+    const strip = screen.getByTestId('meal-running-strip')
+    expect(strip).toHaveTextContent('Simmer the sauce')
   })
 
   it('renders one row per running step', () => {

@@ -7,7 +7,7 @@
 import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import MealNowCard from '@/components/meal/MealNowCard'
-import type { NowCard, StreamStep } from '@/components/meal/streamTypes'
+import type { NowCard, StreamStep } from '@/lib/meal-cook-stream'
 
 const HANDS_ON_STEP: StreamStep = {
   key: 'recipe-1:0',
@@ -16,6 +16,7 @@ const HANDS_ON_STEP: StreamStep = {
   dish_title: 'Pasta with tomato sauce',
   step_index: 0,
   label: 'Boil the pasta',
+  ongoing_label: null,
   text: 'Bring a large pot of salted water to a boil, add the pasta.',
   duration_minutes: 10,
   hands_on: true,

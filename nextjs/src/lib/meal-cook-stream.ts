@@ -94,7 +94,13 @@ function withStep(session: MealCookSession, key: string, record: MealCookStepRec
   return { ...session, steps: { ...session.steps, [key]: record } }
 }
 
-function buildStreamSteps(dishes: SchedulerDish[], timeline: MealTimeline): StreamStep[] {
+/**
+ * Every step in `timeline`, as `StreamStep[]` in live-plan order. Exported
+ * (issue #653 slice B) so the cook-along page can build a `key -> StreamStep`
+ * lookup for `recordDone` when a linked timer completes — `deriveStream`'s
+ * own `StreamState` only surfaces now/next_up/running, not the full list.
+ */
+export function buildStreamSteps(dishes: SchedulerDish[], timeline: MealTimeline): StreamStep[] {
   const titleByDish = new Map(dishes.map((d) => [d.dish_id, d.title]))
   // `timeline.placements` is already sorted (start, then column order, then
   // step index — `meal-scheduler.ts`'s `buildTimeline`), exactly the "live-

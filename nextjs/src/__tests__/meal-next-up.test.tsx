@@ -6,7 +6,7 @@
 import React from 'react'
 import { render, screen } from '@testing-library/react'
 import MealNextUp from '@/components/meal/MealNextUp'
-import type { StreamStep } from '@/components/meal/streamTypes'
+import type { StreamStep } from '@/lib/meal-cook-stream'
 
 const STEP: StreamStep = {
   key: 'recipe-2:0',
@@ -15,6 +15,7 @@ const STEP: StreamStep = {
   dish_title: 'Green salad',
   step_index: 0,
   label: 'Toss the salad',
+  ongoing_label: null,
   text: 'Toss everything together.',
   duration_minutes: 3,
   hands_on: true,

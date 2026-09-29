@@ -13,7 +13,7 @@
  */
 
 import { COLUMN_COLORS } from './MealTimelineTable'
-import type { NowCard, StreamStep } from './streamTypes'
+import type { NowCard, StreamStep } from '@/lib/meal-cook-stream'
 
 export interface MealNowCardProps {
   card: NowCard

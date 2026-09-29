@@ -7,7 +7,7 @@
  */
 
 import { COLUMN_COLORS } from './MealTimelineTable'
-import type { StreamStep } from './streamTypes'
+import type { StreamStep } from '@/lib/meal-cook-stream'
 
 export interface MealNextUpProps {
   step: StreamStep | null

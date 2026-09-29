@@ -11,6 +11,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Meal } from '@/types/meals'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import type { Step } from '@/types/recipes'
+// Real module, real localStorage (jsdom) — mirrors how the page itself reads
+// and writes cook-along session state.
+import {
+  startMealCookSession,
+  endMealCookSession,
+  getActiveMealCookSession,
+} from '@/lib/meal-cook-session'
 
 jest.mock('next/navigation', () => ({
   useParams: () => ({ id: 'meal-1' }),
@@ -542,5 +549,61 @@ describe('meal screen — degraded dish note (issue #652)', () => {
     // The other dishes already had steps — no note on those.
     const saladCard = screen.getByRole('region', { name: 'Green salad — Side' })
     expect(within(saladCard).queryByTestId('meal-dish-steps-estimated')).not.toBeInTheDocument()
+  })
+})
+
+describe('meal screen — cook-along entry (issue #653)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  it('shows Start cooking with no active session; starting one persists it (no redirect)', async () => {
+    fetchMeal.mockResolvedValue(baseMeal())
+    renderPage()
+    await screen.findByRole('heading', { name: 'Green salad', level: 3 })
+
+    expect(screen.queryByTestId('meal-cook-resume-banner')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('meal-cook-stale-banner')).not.toBeInTheDocument()
+    const startButton = screen.getByRole('button', { name: /Start cooking/ })
+
+    fireEvent.click(startButton)
+    expect(getActiveMealCookSession('meal-1')).not.toBeNull()
+  })
+
+  it('shows a Resume banner (not a redirect) for a non-stale active session', async () => {
+    fetchMeal.mockResolvedValue(baseMeal())
+    startMealCookSession('meal-1', ['r-main', 'r-side1', 'r-side2'], Date.now())
+
+    renderPage()
+    await screen.findByTestId('meal-cook-resume-banner')
+    expect(screen.queryByRole('button', { name: /Start cooking/ })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    // Resuming doesn't clear or restart the session — it's still there for the cook route to pick up.
+    expect(getActiveMealCookSession('meal-1')).not.toBeNull()
+  })
+
+  it('an ended session cannot be resumed — Start cooking shows again, not the banner', async () => {
+    fetchMeal.mockResolvedValue(baseMeal())
+    startMealCookSession('meal-1', ['r-main', 'r-side1', 'r-side2'], Date.now())
+    endMealCookSession('meal-1')
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Green salad', level: 3 })
+    expect(screen.queryByTestId('meal-cook-resume-banner')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Start cooking/ })).toBeInTheDocument()
+  })
+
+  it('shows the stale notice, not Resume, once the meal changed dish ids since the session started', async () => {
+    fetchMeal.mockResolvedValue(baseMeal())
+    startMealCookSession('meal-1', ['some-other-recipe'], Date.now())
+
+    renderPage()
+    await screen.findByTestId('meal-cook-stale-banner')
+    expect(screen.queryByTestId('meal-cook-resume-banner')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start over' }))
+    // Starting over replaces the stale session with a fresh one for the current dishes.
+    expect(getActiveMealCookSession('meal-1')?.dish_ids).toEqual(['r-main', 'r-side1', 'r-side2'])
   })
 })
