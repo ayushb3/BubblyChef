@@ -14,6 +14,10 @@ export interface CompactMealCardProps {
    */
   openState?: 'idle' | 'pending' | 'opened'
   saveState?: 'idle' | 'saving' | 'saved' | 'error'
+  /** Bumped by the page when the "Save this meal" pill is tapped. On each change
+   *  to a non-zero value: scroll the Save meal button into view, focus it, and
+   *  highlight it (a ring) for ~2 s. A no-op while that button is disabled. */
+  focusSaveToken?: number
 }
 
 /**

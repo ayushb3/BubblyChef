@@ -10,9 +10,9 @@
  *   - the empty-state suggestion row in ChatSurface (COOKING_SUGGESTIONS / COOKING_SUGGESTION_TONES)
  */
 
-import type { ChipConfig } from '@/components/chat/PostMessageChips'
+import type { ChipConfig, ChipAction } from '@/components/chat/PostMessageChips'
 
-export { type ChipConfig }
+export { type ChipConfig, type ChipAction }
 
 /**
  * Cooking-help chips — substitution / prep / timing.

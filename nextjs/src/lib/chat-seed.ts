@@ -81,7 +81,15 @@ export function cookThisHref(name: string, expiryDate?: string | null): string {
   return `/chat?${params.toString()}`
 }
 
+/** Home screen "Plan" card → chat primed to plan dinner (issue #651). */
+export function planDinnerHref(): string {
+  return '/chat?plan=dinner'
+}
+
 // ─── Message builders ─────────────────────────────────────────────────────────
+
+/** Auto-sent message for the `?plan=dinner` seed (issue #651). */
+export const PLAN_DINNER_MESSAGE = 'Plan dinner for tonight'
 
 export function tipSeedMessage(tip: string): string {
   return `Tell me more about this kitchen tip: "${tip}" — why does it work, and when should I use it?`

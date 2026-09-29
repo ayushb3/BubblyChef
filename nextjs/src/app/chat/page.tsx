@@ -53,7 +53,7 @@ import {
   isMealProposal,
 } from '@/types/chat'
 import type { SavedRecipeMatch } from '@/types/chat'
-import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
+import { resolveChips, COOKING_CHIPS, type ChipConfig } from '@/lib/chat-chips'
 
 // ---------------------------------------------------------------------------
 // Intent-aware chip resolver — logic lives in lib/chat-chips.ts (testable
@@ -428,8 +428,8 @@ function ChatSurface() {
     return promise
   }
 
-  const handleChipTap = (message: string) => {
-    sendChipMessage(message)
+  const handleChipTap = (chip: ChipConfig) => {
+    sendChipMessage(chip.message)
   }
 
   const handleStageText = (text: string) => {
@@ -722,7 +722,7 @@ function ChatSurface() {
                     ? 'started'
                     : 'idle'
                 }
-                onTryAnother={handleChipTap.bind(null, 'Give me a different recipe')}
+                onTryAnother={() => sendChipMessage('Give me a different recipe')}
                 onChipTap={handleChipTap}
                 onPickIdea={handlePickIdea}
                 onPickSavedRecipe={handlePickSavedRecipe}
@@ -887,7 +887,7 @@ interface MessageRendererProps {
   onCookWithMe: (recipe: ChatRecipeData) => void
   onAlreadyMade: (recipe: ChatRecipeData) => void
   onTryAnother: () => void
-  onChipTap: (message: string) => void
+  onChipTap: (chip: ChipConfig) => void
   onPickIdea: (idea: string) => void
   onPickSavedRecipe: (match: SavedRecipeMatch) => void
   /** Called when the user taps a confirm-band button (#416 AC3). */

@@ -3,9 +3,13 @@
 import Chip from '@/components/ui/Chip'
 import type { ChipTone } from '@/components/ui/Chip'
 
+/** Client-coded app actions. A closed union: model output can never name one.
+ *  PR B/C extend it here, in one place. */
+export type ChipAction = 'save_meal' | 'open_scan' | 'open_meal'
+
 export interface ChipConfig {
   label: string
-  /** The text sent to the AI when the chip is tapped. */
+  /** Sent on a send-kind tap; put in the input by ✎. Unused for action-kind. */
   message: string
   /**
    * Display string for the empty-state suggestion row.  When present, the
@@ -16,11 +20,26 @@ export interface ChipConfig {
   suggestion?: string
   tone?: ChipTone
   emoji?: string
+  /** Default 'send'. */
+  kind?: 'send' | 'action'
+  /** Required when kind === 'action'. Ignored otherwise. */
+  action?: ChipAction
+  /** Client-set request context, forwarded with a send-kind tap. Set only by
+   *  the resolver (`{ meal_followup: true }`), never from model output. */
+  context?: Record<string, unknown>
 }
 
 export interface PostMessageChipsProps {
   chips: ChipConfig[]
-  onChipTap: (message: string) => void
+  /** Send-kind tap. Gets the whole chip, so `context` travels with it. */
+  onChipTap: (chip: ChipConfig) => void
+  /** ✎ tap on a send-kind chip. When absent, no ✎ renders. */
+  onEditChip?: (message: string) => void
+  /** Action-kind tap. When absent, action chips are not rendered. */
+  onChipAction?: (action: ChipAction) => void
+  /** 'bubble' (default) = today's `ml-11` mascot-gutter indent.
+   *  'center' = centred, no indent (the empty chat). */
+  align?: 'bubble' | 'center'
 }
 
 /**
@@ -37,7 +56,7 @@ export default function PostMessageChips({ chips, onChipTap }: PostMessageChipsP
           key={chip.label}
           tone={chip.tone ?? 'muted'}
           emoji={chip.emoji}
-          onClick={() => onChipTap(chip.message)}
+          onClick={() => onChipTap(chip)}
           ariaLabel={chip.label}
         >
           {chip.label}
