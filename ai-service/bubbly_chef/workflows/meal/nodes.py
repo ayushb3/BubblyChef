@@ -73,6 +73,20 @@ logger = logging.getLogger(__name__)
 # when enough others qualify. Otherwise the best are kept.").
 _MAX_TO_BUY = 3
 
+# Never on a meal's to-buy list. Water isn't a culinary staple for the cook
+# matcher (issue #305 keeps it "missing", since a measured amount may need
+# readying), but nobody shops for tap water, so "To buy: water" is noise on
+# the option card and meal card. Exact names only: "coconut water" still counts.
+_NEVER_TO_BUY = frozenset(
+    {"water", "tap water", "cold water", "warm water", "hot water", "boiling water", "ice"}
+)
+
+
+def _shoppable(names: list[str]) -> list[str]:
+    """`names` without the ones nobody buys (`_NEVER_TO_BUY`)."""
+    return [n for n in names if n.strip().lower() not in _NEVER_TO_BUY]
+
+
 # How many of a user's most recent recipes (saved or cooked, whichever came
 # last) to sample for the recent-cuisine soft preference (spec Q18). Small
 # and cheap: one extra DB read, no LLM call.
@@ -255,7 +269,9 @@ def _meal_level_estimates(dishes: list[MealDishOutline]) -> tuple[int | None, in
     total plus a fixed 5-minute plating/serving buffer when there's more
     than one dish, on the assumption sides mostly cook alongside the main
     rather than strictly after it. This is a cheap estimate for the option
-    card only -- the meal's *real* schedule comes from the deterministic
+    card only. The total is never less than the summed hands-on time: with
+    one cook, the meal can't finish before all the hands-on work is done.
+    The meal's *real* schedule comes from the deterministic
     scheduler (issue #649, Next.js-side); ai-service never computes an exact
     timeline.
     """
@@ -263,6 +279,8 @@ def _meal_level_estimates(dishes: list[MealDishOutline]) -> tuple[int | None, in
     hands_on = [d.est_hands_on_minutes for d in dishes if d.est_hands_on_minutes is not None]
     est_total = (max(totals) + (5 if len(dishes) > 1 else 0)) if totals else None
     est_hands_on = sum(hands_on) if hands_on else None
+    if est_total is not None and est_hands_on is not None:
+        est_total = max(est_total, est_hands_on)
     return est_total, est_hands_on
 
 
@@ -311,7 +329,7 @@ def _compute_coverage_and_rescues(
             rescues.append(pname)
 
     return (
-        MealCoverage(pantry_items_used=len(used_matches), to_buy=list(proposal.missing)),
+        MealCoverage(pantry_items_used=len(used_matches), to_buy=_shoppable(list(proposal.missing))),
         rescues,
     )
 
@@ -340,7 +358,7 @@ def _missing_ingredients_for_recipe(recipe: RecipeCard, pantry_items: list[Pantr
         recipe_ingredients=ingredient_dicts,
         pantry_items=pantry_items,
     )
-    return list(proposal.missing)
+    return _shoppable(list(proposal.missing))
 
 
 def _recipe_card_from_llm_result(llm_result: LLMRecipeResult, servings: int) -> RecipeCard:

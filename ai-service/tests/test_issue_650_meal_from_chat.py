@@ -916,3 +916,53 @@ class TestModelUnavailable:
         assert envelope.intent == Intent.GENERAL_CHAT
         assert envelope.next_action == NextAction.NONE
         assert envelope.assistant_message
+
+
+# ---------------------------------------------------------------------------
+# Card estimates and to-buy hygiene (found in PR #659 re-verify screenshots)
+# ---------------------------------------------------------------------------
+
+
+class TestCardEstimatesAndToBuy:
+    def test_total_is_never_less_than_summed_hands_on(self) -> None:
+        """One cook: "35 min total · 40 min hands-on" can't happen."""
+        from bubbly_chef.models.meal import MealDishOutline
+        from bubbly_chef.workflows.meal.nodes import _meal_level_estimates
+
+        dishes = [
+            MealDishOutline(
+                role="main", name="Kofta", key_ingredients=[], est_total_minutes=30,
+                est_hands_on_minutes=25,
+            ),
+            MealDishOutline(
+                role="side", name="Tabbouleh", key_ingredients=[], est_total_minutes=20,
+                est_hands_on_minutes=15,
+            ),
+        ]
+        total, hands_on = _meal_level_estimates(dishes)
+        assert hands_on == 40
+        assert total == 40  # was 35: longest (30) + 5
+
+    def test_total_keeps_longest_plus_buffer_when_that_is_larger(self) -> None:
+        from bubbly_chef.models.meal import MealDishOutline
+        from bubbly_chef.workflows.meal.nodes import _meal_level_estimates
+
+        dishes = [
+            MealDishOutline(
+                role="main", name="Roast", key_ingredients=[], est_total_minutes=60,
+                est_hands_on_minutes=10,
+            ),
+            MealDishOutline(
+                role="side", name="Salad", key_ingredients=[], est_total_minutes=10,
+                est_hands_on_minutes=10,
+            ),
+        ]
+        assert _meal_level_estimates(dishes) == (65, 20)
+
+    def test_water_is_never_to_buy_but_coconut_water_is(self) -> None:
+        from bubbly_chef.workflows.meal.nodes import _shoppable
+
+        assert _shoppable(["water", "Boiling water", "parsley", "coconut water"]) == [
+            "parsley",
+            "coconut water",
+        ]
