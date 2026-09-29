@@ -56,8 +56,9 @@ to the human directly.
 ## Non-negotiables
 
 - Never merge on anything short of all three: green required checks, a
-  `looks mergeable` review of the current head, and a passed `verify` for
-  user-visible changes. A confident feeling is not one of them.
+  `looks mergeable` review of the head (or of an earlier commit where everything
+  since only merged `main` in), and a passed `verify` for user-visible changes.
+  A confident feeling is not one of them.
 - Decide reversible product calls yourself and log each, with the alternative, in
   the sprint doc. Only v1 scope changes and anything that costs money go to the
   human.

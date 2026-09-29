@@ -21,6 +21,8 @@ review, and it acts as `bubblychef-bot` so its PRs are attributable. Run it with
 Workflow tool (`name: "agent-loop"`, `args: {issue: <n>}`).
 Use this skill instead only when working an issue interactively with Ayush, and in
 that case still open the PR as the bot (`WORKFLOW.md` §7, "The agent loop").
+The loop still tiers PRs by the deleted `.github/CODEOWNERS` and assumes the
+retired fail-to-pass CI job — issue #645.
 
 ## Run budget — check as you go, not at the end
 
@@ -258,12 +260,12 @@ in prose):
 - Keep it reviewable on a phone (§6): no pasted logs, diffs, or transcripts —
   link the CI run and artifacts instead.
 
-Open it as **draft**. It stays draft until you have *watched CI finish* — see §6.
+Open it as **draft**. It stays draft until CI on it is green — see §6.
 Creating the PR is not the end of the run.
 
 ## 6. Autonomy gate (WORKFLOW.md §6)
 
-**Wait for CI before deciding anything.** Pushing and opening the PR takes
+**Wait for CI before doing anything else.** Pushing and opening the PR takes
 seconds; the checks take minutes. Do not end the run at `gh pr create` — poll
 until the checks on the head commit have actually completed:
 
@@ -271,27 +273,41 @@ until the checks on the head commit have actually completed:
 gh pr checks <n> --watch    # blocks until every check finishes
 ```
 
-Then **merge it yourself** when all three hold; nothing waits for the human:
+**Then mark it ready.** `claude-review.yml`'s review job requires `draft ==
+false` — a draft PR is never reviewed, however green its checks are. Once checks
+are green:
+
+```bash
+gh pr ready <n>
+```
+
+**Wait for the `claude[bot]` review** that going ready triggers, then read it in
+full, inline comments included (§7 "Reading the review"). `needs changes`: fix
+the findings, sweep for the same pattern elsewhere, push — a bot-authored PR
+re-reviews on every push, so nothing extra is needed to get a fresh look.
+`needs a human`: stop and report why.
+
+Once the review says `looks mergeable` for the head — or for an earlier commit
+where everything since only merged `main` in — **merge it yourself**; nothing
+waits for the human. All three must hold:
 
 - every required check is green;
-- the latest `claude[bot]` review says `looks mergeable` for the current head
-  (read it, inline comments included; §7 "Reading the review");
+- the latest `claude[bot]` review says `looks mergeable` for the head, or for an
+  earlier commit where everything since only merged `main` in;
 - for anything a user could see or trigger, `verify` passed on the final commit.
 
-`gh pr ready <n>`, then merge with a real merge commit, one PR at a time: if `main`
-has moved, update the branch, wait for CI again, then `gh pr merge <n> --merge`.
-**CI red or `needs changes`:** it is not done. Back to §3 with the failure; fix and
-push. **`needs a human`:** stop and report why.
+Merge with a real merge commit, one PR at a time: if `main` has moved, update the
+branch, wait for CI again, then `gh pr merge <n> --merge`.
 
 **A migration overrides all of this.** If the diff touches
 `supabase/migrations/`, it stays draft and waits for the human however small or
 green it is. See §3.1.
 
 **If the run ends before it can merge** — the session is cut short, the watch
-times out, the review hasn't landed — leave the PR as draft and say so explicitly
-in the handoff: *"draft pending CI/review, ready to merge when green."* A draft PR
-left silently behind green CI reads as "the agent judged this needs a human",
-which is the opposite of what happened.
+times out, the review hasn't landed — leave the PR as draft (or ready but still
+awaiting review) and say so explicitly in the handoff: *"pending CI/review,
+ready to merge when green."* A draft PR left silently behind green CI reads as
+"the agent judged this needs a human", which is the opposite of what happened.
 
 ## Worked example (do not implement here)
 
@@ -306,6 +322,8 @@ spurious unit conflicts" — labelled `bug`, `backend`, `ready-for-agent`.
    change, so `tsc` is not needed; `mypy --strict` skipped (not a gate).
 5. Draft PR titled `fix: don't treat size adjectives as units (#223)`, body has
    `Fixes #223` on its own line.
-6. Watch `gh pr checks --watch`, read the Claude review, run `verify` if the fix
-   is user-visible, then `gh pr ready` + merge. If the run ends first, the PR
-   stays draft and the handoff says "pending CI".
+6. Watch `gh pr checks --watch` until green, run `verify` since the fix is
+   user-visible, then `gh pr ready` — that's what triggers the Claude review.
+   Read it, fix or dispute any findings, then merge once it says `looks
+   mergeable`. If the run ends first, the PR stays draft (or ready, pending
+   review) and the handoff says "pending CI/review".

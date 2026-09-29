@@ -59,8 +59,8 @@ mess?* Every layer was a piece of evidence that didn't depend on trusting the ag
   report or a teammate could go through the loop without a planning conversation, and the
   caps stopped one bad issue from eating a day.
 - **It produced the tooling we're keeping:** the bot identity, the review workflow and its
-  verdict marker, `verify`, the PR-body-as-review-surface rule, the post-merge smoke test
-  and auto-revert.
+  verdict marker, `verify`, the PR-body-as-review-surface rule, and the `/health` git-SHA
+  plumbing meant for a post-merge smoke test that was never actually built (issue #646).
 
 ## When the old process is the right one
 
@@ -78,15 +78,20 @@ Bring it back, whole or in part, when any of these become true:
   review that trusts tests it shouldn't.
 
 Restoring is mechanical. The deleted files (`.github/workflows/agent-gates.yml`,
-`.github/CODEOWNERS`, `scripts/agent-gates/*`) are on `main` at `64fa18a`, the commit before
-PR #644 merged. The ruleset's earlier required checks are in the git history of
+`.github/CODEOWNERS`, `scripts/agent-gates/f2p-check.sh`,
+`scripts/agent-gates/exemption-check.sh`, `scripts/agent-gates/test-count-guard.sh`) are
+on `main` at `64fa18a`, the commit before PR #644 merged. `agent-loop-harness.cjs`
+was never deleted — it still tests `agent-loop.js`'s control flow and runs in CI. The
+ruleset's earlier required checks are in the git history of
 `.github/rulesets/main-protection.json`.
 
 ## Why we're changing
 
 - **There is no prod to protect.** No real users, no data anyone would miss. Both services
-  roll back in minutes and the smoke test opens its own revert. The CODEOWNERS list existed
-  to guard things that don't undo, and right now nothing is at stake if they don't.
+  can be rolled back in minutes by redeploying the previous commit or reverting (an
+  automated post-merge smoke test that does this on its own isn't built yet — issue #646).
+  The CODEOWNERS list existed to guard things that don't undo, and right now nothing is at
+  stake if they don't.
 - **The bottleneck became Ayush, not safety.** Most interesting AI work touches `prompts/`, so
   it waited for his review. Gate labels held up PRs that were otherwise done (PR #595 sat
   blocked by the test-count gate alone). Small product calls queued up for him. Each wait
@@ -111,7 +116,9 @@ PR #644 merged. The ruleset's earlier required checks are in the git history of
 - **`verify`** on the final commit for anything a user can see or trigger.
 - **The PR body carries the review**: what changed, what was verified and how, what isn't
   covered.
-- Real merge commits, one PR at a time. The post-merge smoke test and auto-revert.
+- Real merge commits, one PR at a time. Both services can be rolled back in minutes by
+  redeploying the previous commit or reverting; an automated post-merge smoke test and
+  auto-revert are not built yet (issue #646).
 - **Still human, regardless of path:** force-pushing a shared branch, deleting data, sending
   external messages, rotating credentials, and changing v1 scope or anything that costs
   money. A migration still waits until it has been applied, because merging first puts code
@@ -135,6 +142,10 @@ PR #644 merged. The ruleset's earlier required checks are in the git history of
 
 ## Still to tidy
 
-- `.claude/workflows/agent-loop.js` still runs in shadow mode and tiers PRs by CODEOWNERS. It
-  needs to follow this policy or be retired.
-- A few comments in `ai-service/bubbly_chef/prompts/` and tests still say "CODEOWNERS-gated".
+- `.claude/workflows/agent-loop.js` still runs in shadow mode and tiers PRs by CODEOWNERS,
+  still assumes the deleted fail-to-pass CI job, and still escalates protected-path
+  decisions to a human — issue #645, "agent-loop.js still follows the gated policy".
+- A few comments in `ai-service/bubbly_chef/prompts/` and tests still say "CODEOWNERS-gated"
+  (rolled into issue #645).
+- The post-merge smoke test and auto-revert described under "What stays" were never
+  actually built — issue #646, "Post-merge smoke test + auto-revert".

@@ -215,7 +215,8 @@ the gated process was good at, and when to bring it back:
 **Claude merges a PR when all three hold:**
 
 - every required check is green (§7), on a branch that is up to date with `main`;
-- the latest `claude[bot]` review says `looks mergeable` for the current head;
+- the latest `claude[bot]` review says `looks mergeable` for the head, or for an
+  earlier commit where everything since only merged `main` in;
 - for anything a user could see or trigger, a `verify` run passed on the final commit.
 
 Merge with a **real merge commit**, **one PR at a time**: update the branch, wait
@@ -235,11 +236,12 @@ agent configuration (`.github/`, `.claude/` settings, hooks, agents or workflows
 `scripts/agent-gates/`, `scripts/merge/`) is named in the sprint doc, so the human
 can see when the rules themselves change.
 
-**What makes this safe to get wrong:** `main` auto-deploys, both services roll back
-in minutes, and the post-merge smoke test opens a revert on its own (§7). The review
-still comes from a fresh context that never saw the implementation, and `verify`
-still exercises the change in a running app. A human rereading the diff would add
-little to either.
+**What makes this safe to get wrong:** `main` auto-deploys, and both services can be
+rolled back in minutes by redeploying the previous commit or reverting (§7) — an
+automated post-merge smoke test that does this on its own isn't built yet (issue
+#646). The review still comes from a fresh context that never saw the implementation,
+and `verify` still exercises the change in a running app. A human rereading the diff
+would add little to either.
 
 **Still irreversible, still human, regardless of path:** force-push to a shared
 branch, deleting data, sending external messages, rotating credentials. A migration
@@ -275,8 +277,10 @@ were honour-system (any agent could `touch` one), and the hook that read them
 | `Claude review verdict` | On `agent-loop` PRs, the review of the exact head commit says `looks mergeable` (other PRs pass through; the merger reads the verdict, §6) |
 
 The branch must also be up to date with `main`. There is no CODEOWNERS file and no
-required approval. The earlier fail-to-pass, test-count and exemption gates, and the
-agent-loop harness, were removed in issue #640.
+required approval. The earlier fail-to-pass, test-count and exemption gates were
+removed in issue #640. The agent-loop harness (`scripts/agent-gates/agent-loop-
+harness.cjs`) stays: it tests `agent-loop.js`'s own control flow, which is unchanged,
+and runs as a non-required step in the `Agent scripts (unit tests)` job.
 
 **A PR that edits `claude-review.yml` gets no automated review:** the action skips
 when its workflow file differs from `main`'s. Run a fresh-context review in a separate
@@ -369,10 +373,12 @@ and 2 Respond rounds. "Review round" below means one Claude GitHub review.
 ### Deploy-side checks
 
 `main` auto-deploys to Vercel and Railway, so the last line of defence is after the
-merge, not before it. Both services report their commit SHA from `/health`; the
-post-merge smoke test waits until both match the merged commit, exercises core flows
-against production, and on failure an agent opens a revert PR that may auto-merge —
-a pure revert being the one change that is always safe.
+merge, not before it. Both services report their commit SHA from `/health`, which a
+post-merge smoke test could poll to confirm the merge actually deployed — but that
+smoke test and its auto-revert are not built yet (issue #646). Today, rolling back
+means redeploying the previous commit (Vercel's instant rollback, Railway's redeploy)
+or opening a plain revert PR by hand — a pure revert being the one change that is
+always safe.
 
 ### The agent loop
 

@@ -415,8 +415,9 @@ explicitly does *not* cover. An unstated gap reads as a claim it was handled.
 Full rules in `WORKFLOW.md` §4.
 
 **Claude merges its own PRs; nothing needs your approval.** A PR merges once the
-required checks are green, the latest `claude[bot]` review says `looks mergeable`,
-and, for anything user-visible, a `verify` run passed. Real merge commits, one PR
+required checks are green, the latest `claude[bot]` review says `looks mergeable`
+for the head (or for an earlier commit where everything since only merged `main`
+in), and, for anything user-visible, a `verify` run passed. Real merge commits, one PR
 at a time: update the branch, wait for CI, merge. A PR that changes CI, the gates
 or agent config (`.github/`, `.claude/` settings/hooks/agents/workflows,
 `scripts/agent-gates/`, `scripts/merge/`) is named in the sprint doc so you can see
