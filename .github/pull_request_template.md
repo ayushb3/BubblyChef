@@ -1,6 +1,7 @@
 <!--
-  Applies to both sub-PRs and feature-level PRs — see WORKFLOW.md §6 for which one
-  needs to wait for human review before merge.
+  This is the review surface — nobody reads the diff. Claude merges once required
+  checks are green, the latest claude[bot] review says "looks mergeable" for the
+  head, and (for anything user-visible) a verify run passed. See WORKFLOW.md §6-7.
 -->
 
 ## Summary
@@ -13,13 +14,12 @@
 
 ## Tests
 
-<!-- Commands run, and their result. If this is a sub-PR, CI green is enough
-     detail here — link the run rather than pasting output. -->
+<!-- Commands run, and their result. Link the CI run rather than pasting output. -->
 
 ## Demo
 
 <!-- Link to docs/DEMO-*.md or docs/media/ screenshots for anything with a
-     runtime/visual surface. For sub-PRs with no visible surface, "n/a" is fine. -->
+     runtime/visual surface. "n/a" is fine if there is none. -->
 
 ## Linked issue
 
@@ -34,3 +34,4 @@ Closes #<!-- issue number -->
 
 - [ ] `/code-review` run
 - [ ] CI green
+- [ ] `verify` run (if user-visible)

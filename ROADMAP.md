@@ -1,8 +1,9 @@
 # BubblyChef — Roadmap
 
-> **Superseded 2026-09-23.** The plan of record is now
-> [`docs/plans/2026-09-23-v1-friend-ready-prd.md`](docs/plans/2026-09-23-v1-friend-ready-prd.md)
-> (v1 friend-ready PRD). This file is kept for history only and is no longer updated.
+> **Superseded.** The plan of record is now
+> [`docs/plans/2026-09-29-signature-prd.md`](docs/plans/2026-09-29-signature-prd.md)
+> (signature PRD, 2026-09-29), which replaced the 2026-09-23 friend-ready PRD.
+> This file is kept for history only and is no longer updated.
 
 ## Vision
 

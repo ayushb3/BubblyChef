@@ -59,21 +59,26 @@ Once issues exist:
   to `backend`, `frontend`, `ui-ux`, `qa-reviewer` — see each role file for its
   ownership boundary)
 - Each completed issue → quality gates → commit → push → close issue
-- A PR merges itself when it touches no CODEOWNERS path and every required check
-  passes; a PR touching migrations, auth, `prompts/`, `.github/`, `.claude/` config
-  or dependency manifests waits for your review — see the shared `WORKFLOW.md` §6
+- One PR per vertical feature. Claude merges it once the required checks are green,
+  the latest `claude[bot]` review says `looks mergeable`, and `verify` passed for
+  anything user-visible; nothing waits for your approval. A PR that changes CI, the
+  gates or agent config is named in the sprint doc — see the shared `WORKFLOW.md` §6
 
 ### If the agents need stopping
 
 1. Set the repo variable `AGENTS_ENABLED` to `false` (GitHub → Settings → Secrets
    and variables → Actions → Variables). Agent workflows check it first, so nothing
    new starts. Runs already in flight keep going.
-2. Settings → General → uncheck **Allow auto-merge**. Nothing already open can then
-   merge itself.
+2. Settings → General → uncheck **Allow auto-merge**, so nothing already open can
+   merge itself. To stop Claude merging by hand too, add a required approval to
+   main's ruleset (Settings → Rules → Rulesets). That stops merges made as
+   `bubblychef-bot`. The admin bypass in the ruleset still lets a merge made as
+   `ayushb3` through, so remove that bypass too if a session merges as you.
 
 Both are doable from a phone in under a minute. To roll back a bad deploy, use
-Vercel's instant rollback and Railway's redeploy-previous; the post-merge smoke test
-opens a revert PR on its own if it catches the failure first.
+Vercel's instant rollback and Railway's redeploy-previous. Nothing checks production
+after a merge yet, so rollback is manual today (issue #646 builds the smoke test and
+auto-revert).
 
 ---
 
@@ -105,7 +110,7 @@ When you have a thorough design doc (e.g. `docs/plans/my-feature.md`):
 2. Tell Claude: *"Implement the spec at docs/plans/my-feature.md autonomously"*
 3. Claude creates a task tree with dependencies, assigns agents, they execute
 4. No back-and-forth — agents read the spec, implement, run tests, mark done
-5. You review the diff and commit
+5. Claude opens the PR and merges it under the shared `WORKFLOW.md` §6
 
 ### Autonomous improvement loop
 ```
@@ -173,7 +178,7 @@ If context is lost mid-session:
 | Fix spiral | >3 fix attempts on same thing → stop, revert, ask |
 | Context amnesia | Re-introducing old bugs → check MEMORY.md first |
 | Tests passing lie | Green suite, broken feature → add a smoke test |
-| Silent deletion | "Cleanup" removes edge-case handling → check git diff |
+| Silent deletion | "Cleanup" removes edge-case handling or a test → the reviewer names every removed test and why |
 
 ---
 

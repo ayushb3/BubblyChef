@@ -1,0 +1,6 @@
+## Review — PR #701, *typo fix in README*
+
+Nothing here to review — this is a one-line documentation typo fix with no
+behavioural change. Leaving this without an explicit verdict on purpose to
+make sure the tooling treats a missing verdict as "unknown" and fails
+closed rather than merging.

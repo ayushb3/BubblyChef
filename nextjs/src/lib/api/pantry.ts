@@ -7,6 +7,7 @@
 
 import { localDateString } from '@/lib/date'
 import type { PantryItem } from '@/types/pantry'
+import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
 
 /** Item shape accepted by `POST /api/pantry/bulk`. */
 export interface BulkAddItem {
@@ -171,4 +172,24 @@ export async function deletePantryItem(itemId: string): Promise<void> {
   if (!res.ok) {
     throw new Error("Couldn't delete that item. Please try again.")
   }
+}
+
+/**
+ * Every pantry row, enriched with expiry fields (`GET /api/pantry` via
+ * `buildPantryListResponse`/`enrichPantryItem`). Used by the notification
+ * center (#496) to derive expiring/expired/low-stock entries — deliberately
+ * the full list rather than `/api/pantry/expiring`, since that endpoint
+ * excludes already-expired rows (#239) and the inbox needs those too.
+ *
+ * Throws on a non-ok response rather than degrading to `[]`: a 401 or 500
+ * read as "nothing to do right now" is a confident all-clear for a user who
+ * may have expired food. The caller (`useInboxEntries`) lets this reject so
+ * React Query marks the query errored and the bell can show a "couldn't
+ * check right now" state instead of a false-empty inbox.
+ */
+export async function fetchPantryItems(): Promise<EnrichedPantryItem[]> {
+  const res = await fetch('/api/pantry')
+  if (!res.ok) throw new Error(`Failed to fetch pantry items: ${res.status}`)
+  const data = await res.json().catch(() => ({ items: [] }))
+  return data.items ?? []
 }

@@ -73,6 +73,30 @@ jobs:
       - name: Pytest
         run: pytest tests/ -x -q
 
+  # ── Agent scripts ─────────────────────────────────────────────────────────
+  # Unit tests for the review-verdict merge gate (claude-review.yml), the nightly
+  # lessons curation job, and agent-loop.js's own control-flow harness. No model or
+  # GitHub calls.
+  agent-scripts:
+    name: Agent scripts (unit tests)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Review-verdict gate
+        run: node scripts/agent-gates/review-verdict.test.cjs
+
+      - name: Lessons curation
+        run: node scripts/agent-gates/curate-lessons.test.cjs
+
+      - name: Agent loop control-flow harness
+        run: node scripts/agent-gates/agent-loop-harness.cjs
+
   # ── AI service live tests ─────────────────────────────────────────────────
   ai-service-live:
     name: AI service (live intent tests)

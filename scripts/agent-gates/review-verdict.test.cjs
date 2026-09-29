@@ -3,7 +3,7 @@
 'use strict'
 const fs = require('fs')
 const path = require('path')
-const { decide, parseVerdict, prDiffUnchanged, makeGit, REVIEW_JOB, REVIEW_STEP } = require('./review-verdict.cjs')
+const { decide, parseVerdict, prDiffUnchanged, owners, makeGit, REVIEW_JOB, REVIEW_STEP } = require('./review-verdict.cjs')
 
 let failures = 0
 function check(name, cond, detail) {
@@ -187,6 +187,20 @@ check('holds: approval of A by someone who is not a code owner', run({ ...BAD, a
     check('git: prDiffUnchanged never throws', r6.same === false && /exploded/.test(r6.why), r6.why)
   } catch (e) {
     check('git: repository scenarios ran', false, String((e && (e.stderr || e.message)) || e))
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+// who can clear a hold: CODEOWNERS handles, or the repo owner once that file is gone (#640)
+{
+  const os = require('os')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'verdict-owners-'))
+  try {
+    check('owners: no CODEOWNERS file falls back to the repo owner', JSON.stringify(owners(dir, 'ayushb3')) === '["ayushb3"]', JSON.stringify(owners(dir, 'ayushb3')))
+    fs.mkdirSync(path.join(dir, '.github'))
+    fs.writeFileSync(path.join(dir, '.github', 'CODEOWNERS'), ['/a/ @ayushb3', '/b/ @other-owner @ayushb3', ''].join('\n'))
+    check('owners: CODEOWNERS handles, deduplicated', JSON.stringify(owners(dir, 'x')) === '["ayushb3","other-owner"]', JSON.stringify(owners(dir, 'x')))
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }

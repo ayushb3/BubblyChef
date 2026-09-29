@@ -1,7 +1,7 @@
 name: Claude (@claude mentions)
 
 # On-demand Claude, from anywhere GitHub lets you comment, including GitHub mobile:
-# "@claude why did the fail-to-pass check fail here?", "@claude re-review this".
+# "@claude why did the typecheck fail here?", "@claude re-review this".
 #
 # Only accounts with write access can trigger it (the action's default), which on a
 # public repo is what keeps strangers' comments from spending the subscription or
