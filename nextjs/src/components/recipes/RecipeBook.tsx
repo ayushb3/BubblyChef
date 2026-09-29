@@ -757,6 +757,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                       onConfirm={handleDeleteConfirm}
                       onCancel={() => setDeleteOpen(false)}
                       deleting={mutating}
+                      mealTitles={selectedRecipe.meal_titles ?? []}
                     />
                   )}
                 </div>
@@ -886,6 +887,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                     onConfirm={handleDeleteConfirm}
                     onCancel={() => setDeleteOpen(false)}
                     deleting={mutating}
+                    mealTitles={selectedRecipe.meal_titles ?? []}
                   />
                 )}
               </div>
