@@ -105,6 +105,11 @@ export function resolveStaticChips(intent: string | undefined): ChipConfig[] {
         { label: 'Explore this idea', message: 'Tell me more about this recipe idea', tone: 'accent', emoji: '✨' },
         { label: 'Try a different direction', message: 'Give me some different recipe ideas', tone: 'primary', emoji: '🔀' },
       ]
+    case 'meal_plan':
+      return [
+        { label: 'Different options', message: 'Show me different meal options', tone: 'accent', emoji: '🔄' },
+        { label: 'Just one dish', message: 'Actually, just give me one recipe', tone: 'primary', emoji: '🍽️' },
+      ]
     case 'saved_recipe_lookup':
       return [
         // A chip can only send a message, and "another" isn't something the
