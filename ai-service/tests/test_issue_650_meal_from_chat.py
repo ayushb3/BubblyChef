@@ -564,6 +564,76 @@ class TestPickStage:
         # The idempotency key POST /api/meals dedupes on (PR #659 review).
         assert len(proposal.meal_ref) == 32
 
+    @pytest.mark.asyncio
+    async def test_pick_after_pantry_optout_never_reads_or_prompts_the_pantry(self) -> None:
+        """PR #659 review: the opt-out must reach the pick, not just the cards.
+
+        The retained constraints carry use_pantry=False, so the pick must not
+        read the pantry, must not put pantry items (or the grounded block's
+        wording) in any dish prompt, and reports no missing ingredients.
+        """
+        _reset_graphs()
+
+        from bubbly_chef.models.meal import MealDishOutline
+
+        option = MealOption(
+            option_id="opt_1",
+            title="Cozy Pasta Night",
+            dishes=[
+                MealDishOutline(role="main", name="Creamy Pasta", key_ingredients=["pasta", "cream"]),
+                MealDishOutline(role="side", name="Garlic Bread", key_ingredients=["bread", "butter"]),
+            ],
+            coverage=None,
+        )
+        meal_plan_state = MealPlanSessionState(
+            options=[option],
+            servings=2,
+            constraints=MealConstraintsEcho(
+                recipe_constraints=RecipeConstraints(use_pantry=False).model_dump()
+            ),
+        )
+        repo = _meal_repo(
+            pantry_items=[_pantry_item("wilting spinach", expiry_days=1)],
+            meal_plan_state=meal_plan_state,
+        )
+
+        meal_ai = MagicMock()
+        meal_ai.complete = AsyncMock(
+            side_effect=[
+                _recipe_llm_result("Creamy Pasta", ["pasta", "cream"], n_steps=2),
+                _recipe_llm_result("Garlic Bread", ["bread", "butter"], n_steps=1),
+            ]
+        )
+
+        with (
+            patch(
+                "bubbly_chef.workflows.router.get_repository",
+                new_callable=AsyncMock,
+                return_value=repo,
+            ),
+            patch("bubbly_chef.workflows.meal.nodes.get_repository", new_callable=AsyncMock, return_value=repo),
+            patch("bubbly_chef.workflows.meal.nodes.get_ai_manager", MagicMock(return_value=meal_ai)),
+        ):
+            envelope = await run_chat_workflow(
+                message="Cozy Pasta Night",
+                conversation_id=_CONV_ID,
+                user_id="user-1",
+                context={"meal_option_id": "opt_1"},
+            )
+        _reset_graphs()
+
+        proposal = envelope.proposal
+        assert isinstance(proposal, MealProposal)
+        assert len(proposal.dishes) == 2
+        repo.get_all_pantry_items.assert_not_awaited()
+        assert proposal.missing_ingredients == []
+        assert meal_ai.complete.await_count == 2
+        for call in meal_ai.complete.await_args_list:
+            prompt = call.kwargs["prompt"]
+            assert "spinach" not in prompt
+            assert "Priority ingredients" not in prompt
+            assert "NOT to use their pantry" in prompt
+
 
 # ---------------------------------------------------------------------------
 # Unknown option id

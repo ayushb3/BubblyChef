@@ -71,6 +71,7 @@ The client sends a normal chat request with the same `conversation_id`. The visi
 ```
 
 - Dishes are expanded concurrently, one grounded, meal-aware generation per dish through `AIManager`. Each prompt knows the other dishes and the kitchen limits.
+- **Pantry opt-out carries through to the pick.** When the retained constraints say `use_pantry: false`, the pick doesn't read the pantry, and the dish prompts get no pantry items (an explicit "don't use their pantry" instruction instead). `missing_ingredients` is `[]`.
 - Every dish's `recipe.steps` is validated (the #648 `build_structured_steps`). Steps that use limited equipment carry the tag in `exclusive`.
 - Model unavailable, at either stage: follow the existing recipe error-kind handling (`error_kind` + message), so the client shows a clear message and a retry.
 

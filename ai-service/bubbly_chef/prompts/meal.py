@@ -81,9 +81,7 @@ Kitchen limits: {kitchen_limits}
 Exclusive-equipment tags in play for this meal: {exclusive_tags}
 
 Constraints: {constraints_json}
-Priority ingredients (expiring soon -- a strong preference, not a \
-requirement): {priority_items}
-Supporting ingredients available: {supporting_items}
+{pantry_block}
 
 This dish is part of a meal with the other dishes listed above -- keep it \
 complementary: don't duplicate their main ingredient or flavor profile, and \
@@ -120,8 +118,24 @@ from "instructions" at the same index.
 - difficulty (easy/medium/hard)
 - servings (must be {servings})
 - cuisine, meal_type, dietary_tags
-- tips
+- tips\
+"""
 
-Build the recipe from the listed ingredients where you can. For any \
-missing ingredients, suggest pantry substitutes where possible.\
+# The pantry half of MEAL_DISH_EXPANSION_SYSTEM_PROMPT's {pantry_block}.
+# Exactly one is used per dish: grounded by default, the NO_PANTRY one when
+# the user asked us not to use their pantry (issue #287). The opt-out has to
+# reach the pick stage, not just the option cards (PR #659 review).
+MEAL_DISH_PANTRY_BLOCK = """\
+Priority ingredients (expiring soon -- a strong preference, not a \
+requirement): {priority_items}
+Supporting ingredients available: {supporting_items}
+Build the recipe from these ingredients where you can. For any missing \
+ingredients, suggest pantry substitutes where possible.\
+"""
+
+MEAL_DISH_PANTRY_BLOCK_NO_PANTRY = """\
+The user has asked you NOT to use their pantry. Do not mention their \
+pantry, their stock, or anything expiring, and do not steer the recipe \
+toward ingredients you think they might have. Work only from the dish and \
+the rest of the meal.\
 """

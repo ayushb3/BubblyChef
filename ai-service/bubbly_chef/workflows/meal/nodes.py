@@ -49,6 +49,8 @@ from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.models.recipe import Ingredient, RecipeCard, build_structured_steps
 from bubbly_chef.prompts.meal import (
     MEAL_DISH_EXPANSION_SYSTEM_PROMPT,
+    MEAL_DISH_PANTRY_BLOCK,
+    MEAL_DISH_PANTRY_BLOCK_NO_PANTRY,
     MEAL_OPTIONS_SYSTEM_PROMPT,
     MEAL_OPTIONS_SYSTEM_PROMPT_NO_PANTRY,
 )
@@ -582,12 +584,14 @@ async def _expand_dish(
     servings: int,
     constraints_echo: MealConstraintsEcho,
     scored_items: list[dict[str, Any]],
+    pantry_grounded: bool = True,
 ) -> RecipeCard:
     """One grounded, meal-aware recipe generation for a single dish.
 
     The prompt names the meal's other dishes (so sides complement rather
     than duplicate the main) and the exclusive-equipment tags in play, and
-    asks for the meal's servings exactly.
+    asks for the meal's servings exactly. With `pantry_grounded` false (the
+    user opted out, issue #287) no pantry item reaches the prompt.
     """
     other_dishes = [d for d in option.dishes if d is not dish]
     other_dishes_str = (
@@ -611,6 +615,15 @@ async def _expand_dish(
         }
     )
 
+    pantry_block = (
+        MEAL_DISH_PANTRY_BLOCK.format(
+            priority_items=", ".join(priority_items[:8]) or "none specified",
+            supporting_items=", ".join(supporting_items[:10]) or "none",
+        )
+        if pantry_grounded
+        else MEAL_DISH_PANTRY_BLOCK_NO_PANTRY
+    )
+
     prompt = MEAL_DISH_EXPANSION_SYSTEM_PROMPT.format(
         dish_name=dish.name,
         role=dish.role,
@@ -620,8 +633,7 @@ async def _expand_dish(
         kitchen_limits=", ".join(constraints_echo.kitchen_limits) or "none",
         exclusive_tags=", ".join(constraints_echo.exclusive_tags) or "none",
         constraints_json=constraints_json,
-        priority_items=", ".join(priority_items[:8]) or "none specified",
-        supporting_items=", ".join(supporting_items[:10]) or "none",
+        pantry_block=pantry_block,
     )
 
     result = await ai_manager.complete(prompt=prompt, response_schema=LLMRecipeResult, temperature=0.5)
@@ -659,14 +671,31 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
     constraints_echo = session_state.constraints
     user_id = state.get("user_id") or ""
 
-    pantry_items = await _pantry_items_for_matching(user_id)
-    scored_items = _score_items_for_dish_prompt(pantry_items, constraints_echo.recipe_constraints)
+    # The same opt-out gate the option stage applies (PR #659 review): after
+    # "don't use my pantry" the pantry is neither read, nor fed to the dish
+    # prompts, nor used for missing_ingredients (which is [] then -- there is
+    # no stock to be missing from).
+    pantry_grounded = is_pantry_grounded(constraints_echo.recipe_constraints)
+    pantry_items = await _pantry_items_for_matching(user_id) if pantry_grounded else []
+    scored_items = (
+        _score_items_for_dish_prompt(pantry_items, constraints_echo.recipe_constraints)
+        if pantry_grounded
+        else []
+    )
 
     ai_manager = get_ai_manager()
     try:
         expanded = await asyncio.gather(
             *(
-                _expand_dish(ai_manager, dish, option, servings, constraints_echo, scored_items)
+                _expand_dish(
+                    ai_manager,
+                    dish,
+                    option,
+                    servings,
+                    constraints_echo,
+                    scored_items,
+                    pantry_grounded,
+                )
                 for dish in option.dishes
             )
         )
@@ -679,7 +708,8 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
     missing_all: list[str] = []
     for position, (dish_outline, recipe_card) in enumerate(zip(option.dishes, expanded)):
         meal_dishes.append(MealDish(role=dish_outline.role, position=position, recipe=recipe_card))
-        missing_all.extend(_missing_ingredients_for_recipe(recipe_card, pantry_items))
+        if pantry_grounded:
+            missing_all.extend(_missing_ingredients_for_recipe(recipe_card, pantry_items))
 
     missing = list(dict.fromkeys(missing_all))  # dedupe, preserve order
 
