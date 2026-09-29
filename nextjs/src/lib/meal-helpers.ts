@@ -277,6 +277,9 @@ async function insertDishRecipe(
   return { id: data.id as string }
 }
 
+/** The concurrency-guard error shared by `replaceDish` and `removeSide`. */
+const CONFLICT_ERROR = { error: 'That side changed since you loaded this meal.', status: 409 } as const
+
 /**
  * `replace_dish`: sides only (contract — position 0, the main, is rejected).
  * Inserts the new recipe first, points the position's `meal_dishes` row at
@@ -284,6 +287,15 @@ async function insertDishRecipe(
  * that order, so a failed insert never touches the existing dish and a
  * failed re-point cleans up the just-inserted recipe rather than leaving an
  * orphan.
+ *
+ * `op.expected_recipe_id`, when present, is enforced *at the update itself*
+ * (an extra `.eq('recipe_id', ...)`, not just the initial read above it) —
+ * the real guard against a concurrent `remove_side` renumbering a different
+ * side into this position between this function's read and its write. The
+ * update's `.select('id')` is what lets a zero-row result (position no
+ * longer exists, or its recipe no longer matches) be told apart from a
+ * silent no-op: either way, the just-inserted recipe is cleaned up and this
+ * returns 409 rather than reporting success for a write that didn't happen.
  */
 export async function replaceDish(
   supabase: SupabaseClient,
@@ -306,6 +318,9 @@ export async function replaceDish(
 
   const target = ((dishes ?? []) as DishRow[]).find((d) => d.position === op.position)
   if (!target) return { error: `No dish at position ${op.position}.`, status: 400 }
+  if (op.expected_recipe_id && target.recipe_id !== op.expected_recipe_id) {
+    return CONFLICT_ERROR
+  }
 
   const inserted = await insertDishRecipe(supabase, userId, op.recipe, {
     isDraft: mealIsDraft,
@@ -313,15 +328,22 @@ export async function replaceDish(
   })
   if ('error' in inserted) return { error: inserted.error, status: 400 }
 
-  const { error: updateError } = await supabase
+  let updateQuery = supabase
     .from('meal_dishes')
     .update({ recipe_id: inserted.id })
     .eq('meal_id', mealId)
     .eq('position', op.position)
     .eq('user_id', userId)
+  if (op.expected_recipe_id) updateQuery = updateQuery.eq('recipe_id', op.expected_recipe_id)
+
+  const { data: updatedRows, error: updateError } = await updateQuery.select('id')
   if (updateError) {
     await supabase.from('recipes').delete().eq('id', inserted.id).eq('user_id', userId)
     return { error: updateError.message, status: 500 }
+  }
+  if (!updatedRows || updatedRows.length === 0) {
+    await supabase.from('recipes').delete().eq('id', inserted.id).eq('user_id', userId)
+    return CONFLICT_ERROR
   }
 
   if (isDraftRecipe(target.recipes)) {
@@ -382,6 +404,14 @@ export async function addSide(
  * isn't a side. Removing position 1 while position 2 exists renumbers 2 to
  * 1 — done *after* the delete, so the still-unique `(meal_id, position)`
  * constraint is never violated mid-way.
+ *
+ * `op.expected_recipe_id`, when present, is enforced at the delete itself
+ * (an extra `.eq('recipe_id', ...)`, not just the initial read above it),
+ * same reasoning as `replaceDish` — a concurrent op could have changed what
+ * sits at `position` between the read and the write. `.select('id')` on the
+ * delete is what makes a zero-row result (nothing actually matched)
+ * distinguishable from "deleted one row", so that race reports 409 instead
+ * of silently reporting success for a write that didn't happen.
  */
 export async function removeSide(
   supabase: SupabaseClient,
@@ -401,16 +431,23 @@ export async function removeSide(
   if (!target || target.role !== 'side') {
     return { error: 'That position is not a side.', status: 400 }
   }
+  if (op.expected_recipe_id && target.recipe_id !== op.expected_recipe_id) {
+    return CONFLICT_ERROR
+  }
   const sideCount = rows.filter((d) => d.role === 'side').length
   if (sideCount <= 1) return { error: 'A meal needs at least one side.', status: 400 }
 
-  const { error: deleteError } = await supabase
+  let deleteQuery = supabase
     .from('meal_dishes')
     .delete()
     .eq('meal_id', mealId)
     .eq('position', op.position)
     .eq('user_id', userId)
+  if (op.expected_recipe_id) deleteQuery = deleteQuery.eq('recipe_id', op.expected_recipe_id)
+
+  const { data: deletedRows, error: deleteError } = await deleteQuery.select('id')
   if (deleteError) return { error: deleteError.message, status: 500 }
+  if (!deletedRows || deletedRows.length === 0) return CONFLICT_ERROR
 
   if (op.position === 1 && rows.some((d) => d.position === 2)) {
     const { error: renumberError } = await supabase

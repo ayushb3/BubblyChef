@@ -91,6 +91,10 @@ describe('meal page servings scaling (issue #650)', () => {
     renderPage()
 
     await screen.findByText('2 lb chicken thighs')
+    // Durations never scale (issue #652 review, nit) — capture the timeline
+    // total before the servings change so the assertion below actually
+    // exercises that, not just quantities.
+    const timelineBefore = screen.getByText(/Timeline —/).textContent
 
     fireEvent.click(screen.getByRole('button', { name: 'Increase servings' }))
 
@@ -101,6 +105,9 @@ describe('meal page servings scaling (issue #650)', () => {
     // data rather than computing it once from the initial fetch.
     expect(await screen.findByText('4 lb chicken thighs')).toBeInTheDocument()
     expect(screen.queryByText('2 lb chicken thighs')).not.toBeInTheDocument()
+    // Same dish, same steps, same total — the timeline shouldn't have moved
+    // just because servings did.
+    expect(screen.getByText(/Timeline —/).textContent).toBe(timelineBefore)
   })
 
   it('the decrease button is disabled at 1 serving', async () => {

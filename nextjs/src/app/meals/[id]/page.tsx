@@ -43,6 +43,12 @@ interface RowUiState {
   alternatives: SideAlternativeOutline[]
   pendingIndex: number | null
   errorMessage?: string
+  /**
+   * Set only when the *last* failure was an expand/persist for a specific
+   * card (not the initial alternatives fetch) — so Retry re-attempts that
+   * exact card instead of re-fetching the whole list (issue #652 review).
+   */
+  retryIndex?: number
 }
 
 function columnFor(position: number): Column {
@@ -79,6 +85,11 @@ function nextFreeSidePosition(meal: Meal): 1 | 2 {
   return used.has(1) ? 2 : 1
 }
 
+/** The recipe id currently at `position` — the optimistic-concurrency guard sent as `expected_recipe_id`. */
+function dishRecipeIdAt(meal: Meal, position: number): string | undefined {
+  return meal.dishes.find((d) => d.position === position)?.recipe.id
+}
+
 function defaultServeAtInput(now: Date): string {
   const in90 = new Date(now.getTime() + 90 * 60_000)
   return `${String(in90.getHours()).padStart(2, '0')}:${String(in90.getMinutes()).padStart(2, '0')}`
@@ -103,7 +114,19 @@ export default function MealDetailPage() {
   const [serveAtInput, setServeAtInput] = useState(() => defaultServeAtInput(now))
   const [row, setRow] = useState<RowUiState | null>(null)
   const [confirmRemovePosition, setConfirmRemovePosition] = useState<number | null>(null)
+  const [removeError, setRemoveError] = useState<string | null>(null)
+  // True only while a swap/add's expand-then-PUT is actually persisting —
+  // browsing alternatives (loadAlternatives) doesn't set this. Combined with
+  // `removeMutation.isPending` below, this is the single "a dish op is in
+  // flight" flag that locks every other dish control (issue #652 review) so
+  // two dish-mutating ops can never race each other client-side.
+  const [pickMutating, setPickMutating] = useState(false)
   const attemptedStepsRef = useRef<Set<string>>(new Set())
+  // Bumped on every new loadAlternatives/cancel so a stale async result
+  // (an alternatives fetch, or a pick's expand+PUT) can tell it's been
+  // superseded and skip its `setRow` — otherwise a slow response could land
+  // after the user cancelled and opened a *different* row, clobbering it.
+  const rowOpIdRef = useRef(0)
 
   const servingsMutation = useMutation({
     mutationFn: (servings: number) => updateMeal(id, { servings }),
@@ -120,12 +143,34 @@ export default function MealDetailPage() {
     },
   })
 
+  const removeMutation = useMutation({
+    mutationFn: (payload: { position: number; expectedRecipeId?: string }) =>
+      updateMeal(id, {
+        remove_side: { position: payload.position, expected_recipe_id: payload.expectedRecipeId },
+      }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['meal', id], updated)
+      setConfirmRemovePosition(null)
+      setRemoveError(null)
+    },
+    onError: (err) => {
+      setRemoveError(err instanceof Error ? err.message : 'Failed to remove that side.')
+    },
+  })
+
+  const dishOpInFlight = pickMutating || removeMutation.isPending
+
   // Fallback for missing steps (issue #648 / #652): any dish recipe with no
   // structured steps is upgraded through `ensureSteps` when the screen
-  // opens; the meal is refetched only if something was actually derived.
-  // `attemptedStepsRef` makes each recipe id eligible exactly once per
-  // mount, so a recipe whose ensure call fails renders via `fallbackSteps`
-  // instead of being retried on every render.
+  // opens; the meal is refetched whenever something was actually derived —
+  // unconditionally, even if this effect instance has since been
+  // "cancelled" (React 18 StrictMode mounts, cleans up, and re-mounts
+  // effects once in dev; gating the invalidation on a `cancelled` flag set
+  // by that synthetic cleanup meant it never fired in StrictMode, since the
+  // cleanup runs before the `await ensureSteps(...)` below ever resolves).
+  // `attemptedStepsRef` is what actually prevents double-calling a given
+  // recipe id — it persists across the StrictMode remount since refs (unlike
+  // the synthetic mount/unmount) aren't reset by it.
   useEffect(() => {
     if (!meal) return
     const missing = meal.dishes.filter(
@@ -133,7 +178,6 @@ export default function MealDetailPage() {
     )
     if (missing.length === 0) return
 
-    let cancelled = false
     ;(async () => {
       let anyDerived = false
       for (const dish of missing) {
@@ -146,14 +190,10 @@ export default function MealDetailPage() {
           // "estimates" note until (if ever) a later attempt succeeds.
         }
       }
-      if (!cancelled && anyDerived) {
+      if (anyDerived) {
         queryClient.invalidateQueries({ queryKey: ['meal', id] })
       }
     })()
-
-    return () => {
-      cancelled = true
-    }
   }, [meal, id, queryClient])
 
   const dishesSorted = useMemo(
@@ -195,6 +235,16 @@ export default function MealDetailPage() {
     if (Number.isNaN(h) || Number.isNaN(m)) return undefined
     const d = new Date(now)
     d.setHours(h, m, 0, 0)
+    // An "HH:MM" earlier than `now` means tomorrow, not "already passed
+    // today" (issue #652 review) — e.g. typing, or "Use <earliest>"
+    // offering, "00:30" at 23:00. Minute granularity, not raw ms: `now`
+    // carries seconds the input can't express, so a same-minute
+    // reconstruction (a few seconds "before" `now`) must not roll over.
+    const dMinute = Math.floor(d.getTime() / 60_000)
+    const nowMinute = Math.floor(now.getTime() / 60_000)
+    if (dMinute < nowMinute) {
+      d.setDate(d.getDate() + 1)
+    }
     return d
   }, [mode, serveAtInput, now])
 
@@ -214,12 +264,16 @@ export default function MealDetailPage() {
   }
 
   async function loadAlternatives(target: RowTarget) {
+    if (dishOpInFlight) return
+    const opId = ++rowOpIdRef.current
     setRow({ target, state: 'loading', alternatives: [], pendingIndex: null })
     try {
       const position = target.kind === 'swap' ? target.position : undefined
       const alternatives = await fetchSideAlternatives({ meal_id: id, position })
+      if (rowOpIdRef.current !== opId) return // superseded by a newer row
       setRow({ target, state: 'ready', alternatives, pendingIndex: null })
     } catch (err) {
+      if (rowOpIdRef.current !== opId) return
       setRow({
         target,
         state: 'error',
@@ -231,11 +285,15 @@ export default function MealDetailPage() {
   }
 
   async function handlePick(index: number) {
-    if (!row || row.state !== 'ready' || !meal) return
+    if (!row || !meal) return
+    if (row.pendingIndex != null || dishOpInFlight) return // already mid-pick, or another op owns the lock
     const alt = row.alternatives[index]
     const target = row.target
-    setRow({ ...row, pendingIndex: index })
+    const opId = rowOpIdRef.current
+    setRow({ ...row, state: 'ready', pendingIndex: index, errorMessage: undefined, retryIndex: undefined })
+    setPickMutating(true)
     const position = target.kind === 'swap' ? target.position : nextFreeSidePosition(meal)
+    const expectedRecipeId = target.kind === 'swap' ? dishRecipeIdAt(meal, target.position) : undefined
 
     try {
       const expanded = await expandMealDish({
@@ -251,28 +309,59 @@ export default function MealDetailPage() {
       })
       const recipe = toNewDishRecipePayload(expanded.recipe, alt.name)
 
-      if (target.kind === 'swap') {
-        await updateMeal(id, { replace_dish: { position, recipe } })
-      } else {
-        await updateMeal(id, { add_side: { recipe } })
-      }
-      await queryClient.invalidateQueries({ queryKey: ['meal', id] })
-      setRow(null)
+      const updated =
+        target.kind === 'swap'
+          ? await updateMeal(id, {
+              replace_dish: { position, recipe, expected_recipe_id: expectedRecipeId },
+            })
+          : await updateMeal(id, { add_side: { recipe } })
+
+      queryClient.setQueryData(['meal', id], updated)
+      if (rowOpIdRef.current === opId) setRow(null)
     } catch (err) {
-      setRow({
-        target,
-        state: 'error',
-        alternatives: row.alternatives,
-        pendingIndex: null,
-        errorMessage: err instanceof Error ? err.message : "Couldn't build that dish.",
-      })
+      if (rowOpIdRef.current === opId) {
+        setRow({
+          target,
+          state: 'error',
+          alternatives: row.alternatives,
+          pendingIndex: null,
+          errorMessage: err instanceof Error ? err.message : "Couldn't build that dish.",
+          retryIndex: index,
+        })
+      }
+    } finally {
+      setPickMutating(false)
     }
   }
 
-  async function handleRemoveConfirmed(position: number) {
+  function handleRetryRow() {
+    if (!row) return
+    if (row.retryIndex != null) {
+      handlePick(row.retryIndex)
+    } else {
+      loadAlternatives(row.target)
+    }
+  }
+
+  function handleCancelRow() {
+    if (dishOpInFlight) return // can't abort an expand/PUT already in flight — the button no-ops until it settles
+    rowOpIdRef.current++ // invalidate any still-in-flight alternatives fetch
+    setRow(null)
+  }
+
+  function handleRequestRemove(position: number) {
+    setRemoveError(null)
+    setConfirmRemovePosition(position)
+  }
+
+  function handleCancelRemove() {
     setConfirmRemovePosition(null)
-    await updateMeal(id, { remove_side: { position } })
-    await queryClient.invalidateQueries({ queryKey: ['meal', id] })
+    setRemoveError(null)
+  }
+
+  function handleConfirmRemove(position: number) {
+    if (!meal) return
+    removeMutation.mutate({ position, expectedRecipeId: dishRecipeIdAt(meal, position) })
   }
 
   // ── Loading state ──────────────────────────────────────────────────────────
@@ -456,13 +545,16 @@ export default function MealDetailPage() {
               sideCount={sideCount}
               row={row}
               confirmRemovePosition={confirmRemovePosition}
+              removeError={removeError}
+              removePending={removeMutation.isPending}
+              controlsDisabled={dishOpInFlight}
               onSwap={() => loadAlternatives({ kind: 'swap', position: dish.position as 1 | 2 })}
-              onRequestRemove={() => setConfirmRemovePosition(dish.position)}
-              onCancelRemove={() => setConfirmRemovePosition(null)}
-              onConfirmRemove={() => handleRemoveConfirmed(dish.position)}
+              onRequestRemove={() => handleRequestRemove(dish.position)}
+              onCancelRemove={handleCancelRemove}
+              onConfirmRemove={() => handleConfirmRemove(dish.position)}
               onPick={handlePick}
-              onRetryRow={() => row && loadAlternatives(row.target)}
-              onCancelRow={() => setRow(null)}
+              onRetryRow={handleRetryRow}
+              onCancelRow={handleCancelRow}
             />
           ))}
         </div>
@@ -474,7 +566,8 @@ export default function MealDetailPage() {
                 <button
                   type="button"
                   onClick={() => loadAlternatives({ kind: 'add' })}
-                  className="self-start min-h-[44px] px-4 rounded-full text-sm font-bold"
+                  disabled={dishOpInFlight}
+                  className="self-start min-h-[44px] px-4 rounded-full text-sm font-bold disabled:opacity-40"
                   style={{ background: 'var(--color-surface)', border: '1.5px solid var(--color-border)', color: 'var(--color-text)' }}
                 >
                   + Add a side
@@ -487,8 +580,8 @@ export default function MealDetailPage() {
                   pendingIndex={row.pendingIndex}
                   errorMessage={row.errorMessage}
                   onPick={handlePick}
-                  onRetry={() => loadAlternatives(row.target)}
-                  onCancel={() => setRow(null)}
+                  onRetry={handleRetryRow}
+                  onCancel={handleCancelRow}
                 />
               )}
             </div>
@@ -505,6 +598,9 @@ function DishSection({
   sideCount,
   row,
   confirmRemovePosition,
+  removeError,
+  removePending,
+  controlsDisabled,
   onSwap,
   onRequestRemove,
   onCancelRemove,
@@ -518,6 +614,10 @@ function DishSection({
   sideCount: number
   row: RowUiState | null
   confirmRemovePosition: number | null
+  removeError: string | null
+  removePending: boolean
+  /** True while any dish op (a pick's expand+PUT, or a remove) is committing — locks Swap/Remove/Add/Cancel everywhere. */
+  controlsDisabled: boolean
   onSwap: () => void
   onRequestRemove: () => void
   onCancelRemove: () => void
@@ -531,6 +631,7 @@ function DishSection({
   const stepsEstimated = !dish.recipe.steps || dish.recipe.steps.length === 0
   const isSide = dish.role === 'side'
   const rowIsHere = row?.target.kind === 'swap' && row.target.position === dish.position
+  const removeIsHere = confirmRemovePosition === dish.position
 
   return (
     <FadeInView>
@@ -548,7 +649,8 @@ function DishSection({
                 <button
                   type="button"
                   onClick={onSwap}
-                  className="min-h-[44px] px-3 rounded-full text-xs font-bold"
+                  disabled={controlsDisabled}
+                  className="min-h-[44px] px-3 rounded-full text-xs font-bold disabled:opacity-40"
                   style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
                 >
                   Swap
@@ -557,7 +659,8 @@ function DishSection({
                   <button
                     type="button"
                     onClick={onRequestRemove}
-                    className="min-h-[44px] px-3 rounded-full text-xs font-bold"
+                    disabled={controlsDisabled}
+                    className="min-h-[44px] px-3 rounded-full text-xs font-bold disabled:opacity-40"
                     style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}
                   >
                     Remove
@@ -568,34 +671,43 @@ function DishSection({
           }
         />
 
-        {confirmRemovePosition === dish.position && (
+        {removeIsHere && (
           <div
-            className="rounded-2xl p-3 flex items-center justify-between gap-3"
+            className="rounded-2xl p-3 flex flex-col gap-2"
             style={{ background: 'var(--color-surface)', border: '1.5px solid var(--color-border)' }}
             role="alertdialog"
             aria-label={`Remove ${dish.recipe.title}?`}
           >
-            <p className="text-sm" style={{ color: 'var(--color-text)' }}>
-              Remove this side?
-            </p>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onCancelRemove}
-                className="min-h-[44px] px-3 rounded-full text-xs font-bold"
-                style={{ color: 'var(--color-muted)' }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={onConfirmRemove}
-                className="min-h-[44px] px-4 rounded-full text-xs font-bold text-white"
-                style={{ background: 'var(--color-coral, #ff9aa2)' }}
-              >
-                Remove
-              </button>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm" style={{ color: 'var(--color-text)' }}>
+                Remove this side?
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onCancelRemove}
+                  disabled={removePending}
+                  className="min-h-[44px] px-3 rounded-full text-xs font-bold disabled:opacity-40"
+                  style={{ color: 'var(--color-muted)' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={onConfirmRemove}
+                  disabled={removePending}
+                  className="min-h-[44px] px-4 rounded-full text-xs font-bold text-white disabled:opacity-60"
+                  style={{ background: 'var(--color-coral, #ff9aa2)' }}
+                >
+                  {removePending ? 'Removing…' : 'Remove'}
+                </button>
+              </div>
             </div>
+            {removeError && (
+              <p className="text-xs" role="alert" style={{ color: 'var(--color-coral, #ff9aa2)' }}>
+                {removeError}
+              </p>
+            )}
           </div>
         )}
 

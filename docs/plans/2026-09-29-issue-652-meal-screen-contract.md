@@ -56,14 +56,15 @@ Both routes are thin (logic in `workflows/meal/`), take the JWT like every other
 The body gains **at most one** of these alongside the existing `title` / `servings` / `constraints` / `promote`. Two dish ops in one request → 400.
 
 ```jsonc
-{ "replace_dish": { "position": 1, "recipe": { /* NewDishRecipePayload */ } } }
+{ "replace_dish": { "position": 1, "recipe": { /* NewDishRecipePayload */ }, "expected_recipe_id": "uuid" } }
 { "add_side":     { "recipe": { /* NewDishRecipePayload */ } } }
-{ "remove_side":  { "position": 2 } }
+{ "remove_side":  { "position": 2, "expected_recipe_id": "uuid" } }
 ```
 
 - **`replace_dish`**: sides only. Position 0 (the main) → 400. It inserts the new recipe, with `is_draft` equal to the meal's and steps through `sanitizeSteps`, then points that position's `meal_dishes` row at it. The **old** recipe is deleted if it was a draft, and kept in the library if it was saved (the same rule as `DELETE /api/meals/[id]`).
 - **`add_side`**: 400 when the meal already has two sides. The new side goes at the next free position (always 1 or 2, with positions kept compact).
 - **`remove_side`**: 400 when the meal has only one side, or when the position isn't a side. The removed recipe follows the same draft-delete / saved-keep rule. If position 1 is removed while position 2 exists, 2 is renumbered to 1, so the columns stay main / side 1 / side 2.
+- **`expected_recipe_id`** (optional, `replace_dish` and `remove_side` — issue #652 review): optimistic-concurrency guard. The client sends the recipe id it last saw at `position`. When present, the server only writes if that recipe id is *still* the one at `position` **at write time** — checked in the `UPDATE`/`DELETE`'s own `WHERE` clause (`.eq('recipe_id', expected_recipe_id)`), not just an initial read, so a concurrent op landing in the gap can't slip past it. A mismatch (either an early check before any insert, or zero rows affected by the guarded write) is a **409** (`{ "error": "That side changed since you loaded this meal.", ... }`) and writes nothing: for `replace_dish`, the just-inserted new recipe is deleted before returning; for `remove_side`, nothing was deleted. Without this, a concurrent `remove_side` that renumbers a different side into `position` could let a stale `replace_dish` silently overwrite the wrong dish.
 - Failure midway: remove whatever this request inserted (a new recipe row), best effort, the same as `POST /api/meals`. There's no transaction.
 - It returns the full meal, as `GET` does.
 

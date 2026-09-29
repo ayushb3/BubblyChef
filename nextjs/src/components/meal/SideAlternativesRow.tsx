@@ -49,8 +49,10 @@ export default function SideAlternativesRow({
         <button
           type="button"
           onClick={onCancel}
+          // An expand already in flight can't be aborted, so Cancel waits for it.
+          disabled={pendingIndex !== null}
           aria-label="Cancel choosing an alternative"
-          className="text-xs font-semibold underline-offset-2 hover:underline px-1 py-1"
+          className="text-xs font-semibold underline-offset-2 hover:underline px-1 py-1 disabled:opacity-40 disabled:no-underline"
           style={{ color: 'var(--color-muted)' }}
         >
           Cancel

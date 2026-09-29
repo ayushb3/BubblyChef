@@ -123,6 +123,15 @@ export interface ReplaceDishOp {
   /** The side being replaced — 1 or 2. Position 0 (the main) is rejected. */
   position: number
   recipe: NewDishRecipePayload
+  /**
+   * Optimistic-concurrency guard (issue #652 review): the recipe id the
+   * client last saw at `position`. When present, the server only replaces
+   * the dish if that recipe is *still* the one at `position` at write time —
+   * otherwise 409, writing nothing. Without this, a concurrent `remove_side`
+   * that renumbers a different side into this position could have this op
+   * silently overwrite it instead of the dish the caller actually meant.
+   */
+  expected_recipe_id?: string
 }
 
 export interface AddSideOp {
@@ -132,6 +141,8 @@ export interface AddSideOp {
 export interface RemoveSideOp {
   /** The side being removed — 1 or 2. */
   position: number
+  /** Same optimistic-concurrency guard as `ReplaceDishOp.expected_recipe_id`. */
+  expected_recipe_id?: string
 }
 
 /** `PUT /api/meals/[id]` body. */

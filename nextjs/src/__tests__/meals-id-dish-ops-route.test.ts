@@ -29,12 +29,42 @@ type Row = Record<string, unknown>
 type Store = Record<'meals' | 'recipes' | 'meal_dishes', Row[]>
 
 /**
+ * Mirrors `meal_dishes`' real constraints (`supabase/migrations/
+ * 00013_meals.sql`): unique `(meal_id, position)`, unique `(meal_id,
+ * recipe_id)`, and `(role = 'main') = (position = 0)`. Without this, the
+ * fake would silently accept a buggy write order (e.g. renumbering position
+ * 2 → 1 *before* deleting position 1) that a real Postgres constraint would
+ * reject — so `removeSide`'s delete-then-renumber ordering (issue #652
+ * review) wouldn't actually be exercised by the renumbering test below.
+ * `excludeId` is the row's own id on an update (never conflicts with
+ * itself); `null` on an insert (nothing to exclude).
+ */
+function checkMealDishesRow(store: Store, row: Row, excludeId: string | null): string | null {
+  const others = store.meal_dishes.filter((r) => r.id !== excludeId)
+  if (others.some((r) => r.meal_id === row.meal_id && r.position === row.position)) {
+    return 'duplicate key value violates unique constraint "uq_meal_dishes_position"'
+  }
+  if (others.some((r) => r.meal_id === row.meal_id && r.recipe_id === row.recipe_id)) {
+    return 'duplicate key value violates unique constraint "uq_meal_dishes_recipe"'
+  }
+  if ((row.role === 'main') !== (row.position === 0)) {
+    return 'new row for relation "meal_dishes" violates check constraint "ck_meal_dishes_role_position"'
+  }
+  return null
+}
+
+/**
  * Just enough of the supabase-js builder for the meals dish-op path:
  * insert / update / select / delete, `eq` / `in` filters, `order`,
  * `single` / `maybeSingle`, and the `recipes(is_draft)` join on
  * `meal_dishes`.
+ *
+ * `onRecipeInsert`, when given, fires the instant a `recipes` row is
+ * inserted — the exact async gap between `replaceDish`'s initial read and
+ * its update (`insertDishRecipe` awaits a `recipes.insert`) — so a test can
+ * simulate a concurrent `remove_side` landing in that window.
  */
-function makeStore() {
+function makeStore(opts: { onRecipeInsert?: (store: Store) => void } = {}) {
   const store: Store = { meals: [], recipes: [], meal_dishes: [] }
   let counter = 0
 
@@ -48,11 +78,22 @@ function makeStore() {
       if (op === 'insert') {
         counter += 1
         const row = { id: `${table}-${counter}`, ...values }
+        if (table === 'meal_dishes') {
+          const conflict = checkMealDishesRow(store, row, null)
+          if (conflict) return { data: [], error: { message: conflict } }
+        }
         store[table].push(row)
+        if (table === 'recipes') opts.onRecipeInsert?.(store)
         return { data: [row], error: null }
       }
       const matched = store[table].filter((r) => filters.every((f) => f(r)))
       if (op === 'update') {
+        if (table === 'meal_dishes') {
+          for (const r of matched) {
+            const conflict = checkMealDishesRow(store, { ...r, ...values }, r.id as string)
+            if (conflict) return { data: [], error: { message: conflict } }
+          }
+        }
         matched.forEach((r) => Object.assign(r, values))
         return { data: matched, error: null }
       }
@@ -212,6 +253,60 @@ describe('PUT /api/meals/[id] — replace_dish', () => {
     const created = store.recipes.find((r) => r.title === 'New side')
     expect(created?.is_draft).toBe(true)
   })
+
+  it('409s and writes nothing when expected_recipe_id no longer matches what is at that position', async () => {
+    const { supabase, store } = makeStore()
+    seedMeal(store, { sides: [{ recipeId: 'r-side1', isDraft: false }] })
+    ;(requireAuth as jest.Mock).mockResolvedValue([supabase, mockUser])
+
+    const res = await PUT(
+      putRequest({
+        replace_dish: { position: 1, recipe: newRecipe('New side'), expected_recipe_id: 'stale-id' },
+      }),
+      params(),
+    )
+
+    expect(res.status).toBe(409)
+    expect(store.recipes.some((r) => r.title === 'New side')).toBe(false) // never inserted
+  })
+
+  it('a remove_side landing between the read and the update makes replace_dish 409, cleans up the inserted recipe, and never touches the other side', async () => {
+    const { supabase, store } = makeStore({
+      onRecipeInsert: (s) => {
+        // Simulates a concurrent `remove_side { position: 2 }` completing
+        // in the gap between replaceDish's initial read and its update:
+        // position 2 is gone, and (since removing position 2 needs no
+        // renumbering) position 1 is untouched at the DB level — but a
+        // caller who read the meal *before* this still thinks position 1's
+        // recipe_id is what it was, which is exactly what expected_recipe_id
+        // is for.
+        const idx = s.meal_dishes.findIndex((d) => d.position === 2)
+        if (idx >= 0) s.meal_dishes.splice(idx, 1)
+        // And a genuinely conflicting concurrent replace of *this* position
+        // by someone else, landing first:
+        const row = s.meal_dishes.find((d) => d.position === 1)
+        if (row) row.recipe_id = 'r-side1-raced'
+      },
+    })
+    seedMeal(store, {
+      sides: [
+        { recipeId: 'r-side1', isDraft: false },
+        { recipeId: 'r-side2', isDraft: false },
+      ],
+    })
+    ;(requireAuth as jest.Mock).mockResolvedValue([supabase, mockUser])
+
+    const res = await PUT(
+      putRequest({
+        replace_dish: { position: 1, recipe: newRecipe('New side'), expected_recipe_id: 'r-side1' },
+      }),
+      params(),
+    )
+
+    expect(res.status).toBe(409)
+    expect(store.recipes.some((r) => r.title === 'New side')).toBe(false) // inserted, then cleaned up
+    expect(store.meal_dishes.find((d) => d.position === 1)?.recipe_id).toBe('r-side1-raced') // untouched
+  })
 })
 
 describe('PUT /api/meals/[id] — add_side', () => {
@@ -309,6 +404,25 @@ describe('PUT /api/meals/[id] — remove_side', () => {
     expect(res.status).toBe(200)
     expect(body.dishes).toHaveLength(2)
     expect(store.recipes.find((r) => r.id === 'r-side2')).toBeDefined() // saved — kept
+  })
+
+  it('409s and deletes nothing when expected_recipe_id no longer matches what is at that position', async () => {
+    const { supabase, store } = makeStore()
+    seedMeal(store, {
+      sides: [
+        { recipeId: 'r-side1', isDraft: false },
+        { recipeId: 'r-side2', isDraft: false },
+      ],
+    })
+    ;(requireAuth as jest.Mock).mockResolvedValue([supabase, mockUser])
+
+    const res = await PUT(
+      putRequest({ remove_side: { position: 1, expected_recipe_id: 'stale-id' } }),
+      params(),
+    )
+
+    expect(res.status).toBe(409)
+    expect(store.meal_dishes).toHaveLength(3) // nothing removed
   })
 })
 

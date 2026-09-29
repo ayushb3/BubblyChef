@@ -104,11 +104,18 @@ export async function deleteMeal(mealId: string): Promise<void> {
   }
 }
 
-/** Reads `detail.message` off a proxied AI-service error body, same shape `ensureSteps` reads. */
+/**
+ * Reads a message off a proxied AI-service error body, same shape
+ * `ensureSteps` reads: usually `detail.message` (the 502 structured-error
+ * shape), but FastAPI's own 404s send `detail` as a plain string
+ * (`{"detail": "Not Found"}`) rather than an object — that string is the
+ * message directly when it isn't the object shape.
+ */
 async function aiErrorMessage(res: Response, fallback: string): Promise<string> {
   const err = (await res.json().catch(() => null)) as
-    | { detail?: { error_kind?: string; message?: string }; error?: string }
+    | { detail?: { error_kind?: string; message?: string } | string; error?: string }
     | null
+  if (typeof err?.detail === 'string') return err.detail
   return err?.detail?.message ?? err?.error ?? `${fallback}: ${res.status}`
 }
 

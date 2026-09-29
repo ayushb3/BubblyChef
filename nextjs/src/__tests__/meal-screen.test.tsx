@@ -178,7 +178,11 @@ describe('meal screen — timeline recomputation (issue #652)', () => {
 
     await waitFor(() =>
       expect(updateMeal).toHaveBeenCalledWith('meal-1', {
-        replace_dish: { position: 1, recipe: expect.objectContaining({ title: 'Charred broccolini' }) },
+        replace_dish: {
+          position: 1,
+          recipe: expect.objectContaining({ title: 'Charred broccolini' }),
+          expected_recipe_id: 'r-side1',
+        },
       }),
     )
 
@@ -234,7 +238,11 @@ describe('meal screen — side-count rule (issue #652)', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[1])
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remove' }))
 
-    await waitFor(() => expect(updateMeal).toHaveBeenCalledWith('meal-1', { remove_side: { position: 2 } }))
+    await waitFor(() =>
+      expect(updateMeal).toHaveBeenCalledWith('meal-1', {
+        remove_side: { position: 2, expected_recipe_id: 'r-side2' },
+      }),
+    )
     await waitFor(() => expect(screen.queryByText('Roast potatoes')).not.toBeInTheDocument())
   })
 
@@ -258,10 +266,231 @@ describe('meal screen — serve-at (issue #652)', () => {
     await screen.findByRole('heading', { name: 'Green salad', level: 3 })
 
     fireEvent.click(screen.getByRole('radio', { name: 'Serve at' }))
-    fireEvent.change(screen.getByLabelText('Serve at time'), { target: { value: '10:00' } })
+    // Same-day, later than now, but sooner than the meal's total (15 min) —
+    // a time *earlier* than now would now roll over to tomorrow instead
+    // (issue #652 review, serve-at past midnight), so this test needs a
+    // same-day too-soon time instead.
+    fireEvent.change(screen.getByLabelText('Serve at time'), { target: { value: '18:05' } })
 
     expect(await screen.findByTestId('serve-at-too-late')).toHaveTextContent("That's too soon")
     expect(screen.getByRole('button', { name: /^Use / })).toBeInTheDocument()
+  })
+})
+
+describe('meal screen — concurrent dish ops (issue #652 review)', () => {
+  it('locks Swap, Remove and Add on every dish, and no-ops the row Cancel, while a pick is persisting', async () => {
+    fetchMeal.mockResolvedValue(baseMeal())
+    fetchSideAlternatives.mockResolvedValue([
+      {
+        role: 'side',
+        name: 'Charred broccolini',
+        blurb: 'Smoky.',
+        key_ingredients: ['broccolini'],
+        est_total_minutes: 10,
+        est_hands_on_minutes: 5,
+      },
+    ])
+    let resolveExpand: (value: unknown) => void = () => {}
+    expandMealDish.mockReturnValue(
+      new Promise((resolve) => {
+        resolveExpand = resolve
+      }),
+    )
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Green salad', level: 3 })
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Swap' })[0])
+    const pick = await screen.findByRole('listitem', { name: 'Pick Charred broccolini' })
+    fireEvent.click(pick)
+
+    // Mid-expand: every dish's Swap/Remove is locked (there are two of each —
+    // one per side), not just the row the pick came from.
+    await waitFor(() => {
+      for (const btn of screen.getAllByRole('button', { name: 'Swap' })) expect(btn).toBeDisabled()
+    })
+    for (const btn of screen.getAllByRole('button', { name: 'Remove' })) expect(btn).toBeDisabled()
+
+    // The row's own Cancel can't abort a mutation already in flight — it
+    // no-ops rather than abandoning it, so the row stays put.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel choosing an alternative' }))
+    expect(screen.getByTestId('side-alternatives-row')).toBeInTheDocument()
+
+    updateMeal.mockResolvedValue(baseMeal())
+    resolveExpand({
+      proposal_type: 'meal_dish',
+      role: 'side',
+      position: 1,
+      recipe: {
+        title: 'Charred broccolini',
+        instructions: ['Char it'],
+        steps: [step('Char it')],
+        servings: 2,
+      },
+    })
+
+    await waitFor(() => expect(updateMeal).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByTestId('side-alternatives-row')).not.toBeInTheDocument())
+    for (const btn of screen.getAllByRole('button', { name: 'Swap' })) expect(btn).not.toBeDisabled()
+  })
+})
+
+describe('meal screen — remove via mutation (issue #652 review)', () => {
+  it('shows a pending state while removing, then surfaces the server error instead of an unhandled rejection', async () => {
+    fetchMeal.mockResolvedValue(baseMeal())
+    let rejectRemove: (err: unknown) => void = () => {}
+    updateMeal.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectRemove = reject
+      }),
+    )
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Green salad', level: 3 })
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[1])
+    const dialog = screen.getByRole('alertdialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove' }))
+
+    expect(await within(dialog).findByRole('button', { name: 'Removing…' })).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled()
+
+    rejectRemove(new Error('That side changed since you loaded this meal.'))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That side changed since you loaded this meal.',
+    )
+    // The dialog stays open with the error surfaced — nothing unhandled, and
+    // the meal (both sides) is still on screen.
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Roast potatoes', level: 3 })).toBeInTheDocument()
+  })
+})
+
+describe('meal screen — missing-steps upgrade refetch (issue #652 review)', () => {
+  function mealMissingSideSteps(): Meal {
+    const m = baseMeal()
+    return baseMeal({
+      dishes: [m.dishes[0], m.dishes[1], { role: 'side', position: 2, recipe: { ...SIDE2_RECIPE, steps: null } }],
+    })
+  }
+
+  it('invalidates and refetches the meal after ensureSteps derives new steps', async () => {
+    fetchMeal.mockResolvedValueOnce(mealMissingSideSteps())
+    fetchMeal.mockResolvedValueOnce(baseMeal())
+    ensureSteps.mockResolvedValue({ recipe_id: 'r-side2', steps: [step('Roast the potatoes')], derived: true })
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Roast potatoes', level: 3 })
+
+    await waitFor(() => expect(ensureSteps).toHaveBeenCalledWith('r-side2'))
+    await waitFor(() => expect(fetchMeal).toHaveBeenCalledTimes(2))
+
+    const potatoesCard = await screen.findByRole('region', { name: 'Roast potatoes — Side' })
+    await waitFor(() =>
+      expect(within(potatoesCard).queryByTestId('meal-dish-steps-estimated')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('still refetches under React 18 StrictMode double-invoke', async () => {
+    fetchMeal.mockResolvedValue(mealMissingSideSteps())
+    ensureSteps.mockResolvedValue({ recipe_id: 'r-side2', steps: [step('Roast the potatoes')], derived: true })
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <React.StrictMode>
+        <QueryClientProvider client={client}>
+          <MealDetailPage />
+        </QueryClientProvider>
+      </React.StrictMode>,
+    )
+
+    await screen.findByRole('heading', { name: 'Roast potatoes', level: 3 })
+    await waitFor(() => expect(ensureSteps).toHaveBeenCalledWith('r-side2'))
+    // StrictMode's synthetic mount → effect → cleanup → effect again runs the
+    // cleanup before `ensureSteps` ever resolves — a `cancelled` gate on the
+    // invalidation would have swallowed it. `attemptedStepsRef` (a ref, not
+    // reset by the double-invoke) is what actually stops a second call.
+    await waitFor(() => expect(fetchMeal.mock.calls.length).toBeGreaterThanOrEqual(2))
+  })
+})
+
+describe('meal screen — serve-at past midnight (issue #652 review)', () => {
+  it('rolls "Use <earliest>" over to tomorrow and clears the too-late state', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-29T23:00:00'))
+    const longStep = step('Slow roast it')
+    longStep.duration_minutes = 60
+    const LONG_MAIN: Recipe = {
+      id: 'r-main-long',
+      user_id: 'user-1',
+      title: 'Slow roast',
+      ingredients: [],
+      instructions: ['Slow roast it'],
+      steps: [longStep],
+      servings: 2,
+    }
+    fetchMeal.mockResolvedValue(baseMeal({ dishes: [{ role: 'main', position: 0, recipe: LONG_MAIN }] }))
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Slow roast', level: 3 })
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Serve at' }))
+    fireEvent.change(screen.getByLabelText('Serve at time'), { target: { value: '23:10' } })
+
+    expect(await screen.findByTestId('serve-at-too-late')).toHaveTextContent("That's too soon")
+    const useButton = screen.getByRole('button', { name: /^Use / })
+    expect(useButton).toHaveTextContent('12:00 AM')
+
+    fireEvent.click(useButton)
+
+    await waitFor(() => expect(screen.queryByTestId('serve-at-too-late')).not.toBeInTheDocument())
+  })
+})
+
+describe('meal screen — retry after a failed pick (issue #652 review, nit)', () => {
+  it('retries the picked card rather than re-fetching alternatives', async () => {
+    fetchMeal.mockResolvedValue(baseMeal())
+    fetchSideAlternatives.mockResolvedValue([
+      {
+        role: 'side',
+        name: 'Charred broccolini',
+        blurb: 'Smoky.',
+        key_ingredients: ['broccolini'],
+        est_total_minutes: 10,
+        est_hands_on_minutes: 5,
+      },
+    ])
+    expandMealDish.mockRejectedValueOnce(new Error('AI service unavailable'))
+    expandMealDish.mockResolvedValueOnce({
+      proposal_type: 'meal_dish',
+      role: 'side',
+      position: 1,
+      recipe: {
+        title: 'Charred broccolini',
+        instructions: ['Char it'],
+        steps: [step('Char it')],
+        servings: 2,
+      },
+    })
+    updateMeal.mockResolvedValue(baseMeal())
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Green salad', level: 3 })
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Swap' })[0])
+    const pick = await screen.findByRole('listitem', { name: 'Pick Charred broccolini' })
+    fireEvent.click(pick)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('AI service unavailable')
+    expect(fetchSideAlternatives).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+
+    await waitFor(() => expect(updateMeal).toHaveBeenCalled())
+    // Still just the one alternatives fetch — Retry re-attempted the picked
+    // card (a second expand-dish call), not a fresh alternatives list.
+    expect(fetchSideAlternatives).toHaveBeenCalledTimes(1)
+    expect(expandMealDish).toHaveBeenCalledTimes(2)
   })
 })
 

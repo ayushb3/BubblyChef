@@ -109,6 +109,8 @@ describe('SideAlternativesRow', () => {
     expect(onPick).not.toHaveBeenCalled()
 
     expect(screen.getByRole('status')).toHaveTextContent('Building Charred broccolini…')
+    // An in-flight expand can't be aborted, so Cancel is disabled until it settles.
+    expect(screen.getByRole('button', { name: 'Cancel choosing an alternative' })).toBeDisabled()
   })
 
   it('calls onCancel from the Cancel control', () => {

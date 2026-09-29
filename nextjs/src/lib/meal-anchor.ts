@@ -46,6 +46,27 @@ export interface MealAnchorTooLate {
 
 export type MealAnchorResult = MealAnchorRelative | MealAnchorClock | MealAnchorTooLate
 
+/**
+ * Rounds a `Date` up to the next whole minute — but only when it actually
+ * has a non-zero second/millisecond component, so an already-round instant
+ * isn't pushed a minute later for no reason.
+ *
+ * `earliest_ready_at` needs this: it's built from `now`, which carries real
+ * seconds, but the UI only ever offers it back as an `"HH:MM"` value (the
+ * `<input type="time">` shape). Truncating instead of rounding up would
+ * suggest a time that's *not actually* far enough out — e.g. `now` at
+ * `18:00:30` plus a 40-minute meal is `18:40:30`; truncated to `"18:40"` and
+ * rebuilt at `:00` seconds, that start lands 30s before `now` again, and
+ * "Use 6:40 PM" would immediately relitigate as too late.
+ */
+function ceilToMinute(date: Date): Date {
+  if (date.getSeconds() === 0 && date.getMilliseconds() === 0) return date
+  const rounded = new Date(date)
+  rounded.setSeconds(0, 0)
+  rounded.setMinutes(rounded.getMinutes() + 1)
+  return rounded
+}
+
 export function resolveMealAnchor(input: MealAnchorInput): MealAnchorResult {
   if (input.started_at) {
     return { status: 'clock', start_at: input.started_at }
@@ -62,8 +83,18 @@ export function resolveMealAnchor(input: MealAnchorInput): MealAnchorResult {
   }
 
   const startAt = new Date(input.serve_at.getTime() - input.total_minutes * 60_000)
-  if (startAt.getTime() < input.now.getTime()) {
-    const earliestReadyAt = new Date(input.now.getTime() + input.total_minutes * 60_000)
+
+  // Minute granularity, not raw milliseconds: `serve_at` only ever comes
+  // from an `"HH:MM"` input, so `startAt` always lands on a whole minute
+  // (:00 seconds) — but `now` carries real seconds. Comparing raw ms would
+  // make a `startAt` in the *same* minute as `now` register as too_late
+  // whenever `now`'s seconds are non-zero, even though a minute-precision
+  // clock can't tell them apart. A serve time whose start is in an earlier
+  // minute is still too late.
+  const startMinute = Math.floor(startAt.getTime() / 60_000)
+  const nowMinute = Math.floor(input.now.getTime() / 60_000)
+  if (startMinute < nowMinute) {
+    const earliestReadyAt = ceilToMinute(new Date(input.now.getTime() + input.total_minutes * 60_000))
     return { status: 'too_late', earliest_ready_at: earliestReadyAt }
   }
   return { status: 'clock', start_at: startAt }
