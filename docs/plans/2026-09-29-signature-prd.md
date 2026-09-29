@@ -113,7 +113,8 @@ flow, not a restyle of everything.
 
 ## Carries over from the friend-ready PRD
 
-- Guest mode: no signup wall, state saved, 30-day cleanup of never-linked guests (PR #532).
+- Guest mode: no signup wall, state saved. Ayush confirmed the 30-day cleanup rule for
+  never-linked guests on 2026-09-29; the cron that runs it is still in draft PR #532.
 - Quality bars for scan, recipe ideas and UI (LCP ≤ 2 s, screen changes ≤ 0.5 s, instant
   tap feedback).
 - The gamification economy: bubbles 🫧 for every interaction, the most for rescuing food,
