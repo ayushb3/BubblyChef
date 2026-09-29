@@ -186,8 +186,10 @@ applies: fix forward, never edit.
    or three lines, and whether it is **additive** (new table, new nullable column,
    new index, or a function whose name doesn't exist yet) or **destructive**
    (drops, renames, type changes, data rewrites, new NOT NULL columns without a
-   default, or `CREATE OR REPLACE` of an existing function, view or policy — with
-   one shared database, replacing a body is a live behaviour change).
+   default, `CREATE OR REPLACE` of an existing function, view or policy — with
+   one shared database, replacing a body is a live behaviour change — or
+   `ENABLE ROW LEVEL SECURITY` on an existing table, which locks everyone out
+   until its policies exist).
 2. **Link the worktree** if it isn't linked yet:
    ```bash
    supabase link --project-ref obmbwuqwpvntxhhbdfsg < /dev/null
@@ -199,7 +201,10 @@ applies: fix forward, never edit.
    If older migrations show up as pending, the history has drifted. Check each
    one's footprint with a read-only query before running
    `supabase migration repair --status applied <versions> --linked`. Never
-   repair a migration you haven't confirmed is really in the database.
+   repair a migration you haven't confirmed is really in the database. If
+   nothing is pending, including your own migration, check the PR body's
+   Migration section: it was already applied in an earlier round, so skip to
+   step 4's confirmation.
 4. **Apply it, additive migrations only:**
    ```bash
    supabase db push --linked --yes
