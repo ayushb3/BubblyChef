@@ -2,9 +2,11 @@
 
 Feeds `bubbly_chef.services.cook_matcher` — the pass that decides, for each
 recipe ingredient with no pantry match, whether a pantry item (or a
-combination of pantry items) can stand in for it. Edits here are
-CODEOWNERS-gated: prompt wording changes model behavior even though the
-test suite can stay green.
+combination of pantry items) can stand in for it. Prompt wording changes
+model behavior even though the test suite can stay green, so a change here
+needs a `verify` run exercising the affected output (see
+`ai-service/bubbly_chef/prompts/README.md`) — no CODEOWNERS gate as of
+2026-09-29, but the review discipline still applies.
 """
 
 _SUBSTITUTION_PROMPT = """You are helping a home cook decide whether anything in their \
@@ -13,7 +15,8 @@ pantry can stand in for recipe ingredients they appear to be missing.
 Recipe ingredients with no pantry match:
 {unmatched}
 
-Everything currently in their pantry:
+Everything currently in their pantry, with the unit its quantity is tracked in \
+(a bracketed unit means we know it; "[unit unknown]" means we don't):
 {pantry}
 
 For each unmatched ingredient:
@@ -27,17 +30,21 @@ briefly what changes — flavour, texture, sweetness.
 
 2. If NO single item works but 2-3 pantry items COMBINED can approximate the missing \
 ingredient, set match_type "none", best_match null, and populate compound_components \
-with the pantry item names, compound_note with a short instruction (under 20 words), \
-and compound_quantities with your best estimate of how much of EACH named component to \
-use — a plain number in a common kitchen unit for that ingredient (grams for solids, \
-millilitres for liquids, or a whole count for discrete items like eggs), keyed by the \
-exact same spelling used in compound_components. Omit a component from \
-compound_quantities rather than guess when you are not confident of the amount — an \
-empty box the cook fills in themselves is better than a wrong number they might not \
-double-check.
-   Example: heavy cream (1 cup, ~240ml) is missing, pantry has butter, milk, and flour →
+with the pantry item names and compound_note with a short instruction (under 20 words).
+   You may also estimate how much of EACH named component to use, in compound_quantities \
+— a plain number — paired with compound_units giving the unit that number is in, both \
+keyed by the exact same spelling used in compound_components. The unit in compound_units \
+MUST be copied EXACTLY from that item's bracketed unit above (e.g. "g", "ml", or "count") \
+— never a different unit, and never a unit of your own choosing. If an item is listed as \
+"[unit unknown]", or you are not confident of the amount, omit it from BOTH \
+compound_quantities and compound_units entirely — an empty box the cook fills in \
+themselves is better than a wrong number they might not double-check, and a quantity in \
+the wrong unit is worse than no quantity at all.
+   Example: heavy cream (1 cup, ~240ml) is missing, pantry has butter [g], milk [ml], and \
+flour [g] →
      compound_components: ["butter", "milk", "flour"]
      compound_quantities: {{"butter": 80, "milk": 180, "flour": 15}}
+     compound_units: {{"butter": "g", "milk": "ml", "flour": "g"}}
      compound_note: "Melt butter, whisk in flour, stir in milk until thickened"
    ONLY list items the user actually has. Do not invent ingredients.
 

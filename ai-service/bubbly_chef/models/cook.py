@@ -62,8 +62,12 @@ class CompoundComponent(BaseModel):
     `base_unit`. It only ever PRE-FILLS an editable input in the cook modal —
     nothing is deducted until the user confirms, and the user can edit or
     clear it first, exactly like an existing unit_conflict row. It is None
-    when the model gave no quantity, or one that failed validation (missing,
-    non-numeric, non-positive, or absurdly large) — the input then starts
+    when the model gave no quantity, one that failed validation (missing,
+    non-numeric, non-positive, or absurdly large), or one whose unit did not
+    match this component's own `base_unit` (#284 round 7 — the model sees each
+    candidate's real unit and must echo it back; a mismatch means the number
+    cannot be trusted to mean what `base_unit` says it means, so it is dropped
+    rather than pre-filled under the wrong label) — the input then starts
     blank, the same always-unresolved behaviour this carried before Option B.
     """
 
@@ -77,8 +81,9 @@ class CompoundComponent(BaseModel):
         default=None,
         description=(
             "Model-suggested quantity in base_unit, pre-filling the modal's editable "
-            "input for this component. None when the model gave no usable amount — "
-            "the input then starts blank, same as before Option B."
+            "input for this component. None when the model gave no usable amount, or "
+            "one whose reported unit didn't match base_unit (#284 round 7) — the "
+            "input then starts blank, same as before Option B."
         ),
     )
 
@@ -120,6 +125,18 @@ class CompoundSuggestion(BaseModel):
             "carries a pantry row id, so — same as `components` and `note` — it is "
             "safe to cache and reuse across an alias-cache hit on a colliding "
             "normalized pantry name-set (#616)."
+        ),
+    )
+    component_quantity_units: dict[str, str] | None = Field(
+        default=None,
+        description=(
+            "The base unit (count | ml | g) each entry in component_quantities was "
+            "validated against, keyed the same normalized way. A pantry-name collision "
+            "at cache-hit time (#616) can resolve the same key to a row with a "
+            "DIFFERENT base unit than the one the quantity was originally checked "
+            "against — e.g. one user tracks butter in grams, another in whole sticks. "
+            "This lets a cache-hit re-verify unit agreement before re-attaching a "
+            "cached quantity, instead of trusting it still applies (#284 round 7)."
         ),
     )
 

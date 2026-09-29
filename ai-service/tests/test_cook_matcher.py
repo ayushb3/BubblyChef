@@ -1897,6 +1897,7 @@ class TestCompoundQuantityPrefill:
                         compound_components=["butter", "milk", "flour"],
                         compound_note="Melt butter, whisk in flour, stir in milk",
                         compound_quantities={"butter": 80, "milk": 180, "flour": 15},
+                        compound_units={"butter": "g", "milk": "ml", "flour": "g"},
                     )
                 ]
             )
@@ -1971,6 +1972,10 @@ class TestCompoundQuantityPrefill:
                             "flour": 999_999,  # absurdly large
                             # "eggs" omitted entirely — missing
                         },
+                        # Units are correct for every component so the test isolates
+                        # each value's own validity — none of these should fail on
+                        # the unit check (#284 round 7).
+                        compound_units={"butter": "g", "milk": "ml", "flour": "g", "eggs": "count"},
                     )
                 ]
             )
@@ -2008,6 +2013,7 @@ class TestCompoundQuantityPrefill:
                         compound_components=["Butter"],
                         compound_note="Melt butter",
                         compound_quantities={"  butter  ": 80},
+                        compound_units={"  butter  ": "g"},
                     )
                 ]
             )
@@ -2041,6 +2047,7 @@ class TestCompoundQuantityPrefill:
                         compound_components=["milk", "whole milk"],
                         compound_note="Warm the milk",
                         compound_quantities={"milk": 100, "whole milk": 200},
+                        compound_units={"milk": "ml", "whole milk": "ml"},
                     )
                 ]
             )
@@ -2075,6 +2082,7 @@ class TestCompoundQuantityPrefill:
                         compound_components=["butter", "milk"],
                         compound_note="Melt butter, stir in milk",
                         compound_quantities={"butter": 80, "milk": 180},
+                        compound_units={"butter": "g", "milk": "ml"},
                     )
                 ]
             )
@@ -2101,6 +2109,234 @@ class TestCompoundQuantityPrefill:
         pantry2_ids = {item.id for item in pantry2}
         assert all(c.pantry_item_id in pantry2_ids for c in suggestions2[0].component_items)
         assert suggestions1  # sanity: first call did produce a suggestion too
+
+
+class TestCompoundQuantityUnitGuard:
+    """Issue #284 round 7 — a compound_quantities value only pre-fills when the
+    model's reported compound_units entry agrees with the component's OWN
+    base_unit.
+
+    Round 6 (claude[bot] re-review) found that the model chose a unit for
+    compound_quantities from the ingredient's nature (grams for solids, ml for
+    liquids, ...) without ever seeing what unit the matching pantry ROW
+    actually tracks its quantity in. A butter row stored as "2 sticks" (base
+    unit "count") plus a model value of 80 rendered and would have deducted 80
+    of the row's own unit — wiping it — with no user action beyond the
+    already-pre-filled default. The fix: the prompt now lists each pantry
+    item's own unit and requires the model to echo it back in compound_units;
+    a value is only trusted when that echoed unit matches.
+    """
+
+    @pytest.mark.asyncio
+    async def test_matching_unit_pre_fills(self) -> None:
+        butter = _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g")
+        pantry = [butter]
+        ingredients = [{"name": "heavy cream", "quantity": 240.0, "unit": "ml"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["butter"],
+                        compound_note="Melt butter",
+                        compound_quantities={"butter": 80},
+                        compound_units={"butter": "g"},
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        component = proposal.compound_suggestions[0].component_items[0]
+        assert component.suggested_quantity == 80.0
+        assert component.base_unit == "g"
+
+    @pytest.mark.asyncio
+    async def test_count_unit_component_with_gram_sized_value_stays_blank(self) -> None:
+        """The exact bug this round fixes: a count-tracked pantry row (butter
+        stored as "2 sticks") plus a model value meant for grams must NOT
+        pre-fill — 80 is a plausible gram amount but an absurd count."""
+        butter_sticks = _make_item(
+            "butter", 2.0, "stick", qty_base=2.0, unit_base="count"
+        )
+        pantry = [butter_sticks]
+        ingredients = [{"name": "heavy cream", "quantity": 240.0, "unit": "ml"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["butter"],
+                        compound_note="Melt butter",
+                        # Model picked "g" for butter (a solid) with no visibility
+                        # into the fact this particular row is tracked by count.
+                        compound_quantities={"butter": 80},
+                        compound_units={"butter": "g"},
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        component = proposal.compound_suggestions[0].component_items[0]
+        assert component.suggested_quantity is None
+        assert component.base_unit == "count"
+
+    @pytest.mark.asyncio
+    async def test_missing_compound_units_field_entirely_stays_blank(self) -> None:
+        """A quantity with no paired unit at all (older/degenerate model
+        response) fails closed rather than being trusted by default."""
+        butter = _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g")
+        pantry = [butter]
+        ingredients = [{"name": "heavy cream", "quantity": 240.0, "unit": "ml"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["butter"],
+                        compound_note="Melt butter",
+                        compound_quantities={"butter": 80},
+                        # compound_units omitted entirely.
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        component = proposal.compound_suggestions[0].component_items[0]
+        assert component.suggested_quantity is None
+
+    @pytest.mark.asyncio
+    async def test_unit_synonym_spelling_still_matches(self) -> None:
+        """A light spelling variant ("grams" for "g") is tolerated — the model
+        is asked to copy the unit exactly, but this costs no precision and
+        avoids dropping an otherwise-correct pre-fill on wording alone."""
+        butter = _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g")
+        pantry = [butter]
+        ingredients = [{"name": "heavy cream", "quantity": 240.0, "unit": "ml"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["butter"],
+                        compound_note="Melt butter",
+                        compound_quantities={"butter": 80},
+                        compound_units={"butter": "grams"},
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        component = proposal.compound_suggestions[0].component_items[0]
+        assert component.suggested_quantity == 80.0
+
+    @pytest.mark.asyncio
+    async def test_genuinely_wrong_unit_still_rejected(self) -> None:
+        """The model reporting "ml" for a gram-tracked row is a real dimension
+        mismatch, not a spelling variant — must stay blank regardless of how
+        plausible the number looks."""
+        butter = _make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g")
+        pantry = [butter]
+        ingredients = [{"name": "heavy cream", "quantity": 240.0, "unit": "ml"}]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["butter"],
+                        compound_note="Melt butter",
+                        compound_quantities={"butter": 80},
+                        compound_units={"butter": "ml"},
+                    )
+                ]
+            )
+        )
+
+        proposal = await match_ingredients_with_llm(
+            RECIPE_ID, RECIPE_TITLE, ingredients, pantry, ai
+        )
+
+        component = proposal.compound_suggestions[0].component_items[0]
+        assert component.suggested_quantity is None
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_reverifies_unit_against_the_colliding_row(self) -> None:
+        """Round-4's cache-scoping fix means a name collision can resolve a
+        cached quantity to a DIFFERENT pantry row on the second request. This
+        is that scenario with a unit mismatch: pantry1's "butter" is tracked in
+        grams (the unit the cached quantity was validated against); pantry2's
+        "butter" — same normalized name, different row — is tracked in count.
+        The cache hit must re-verify the unit against pantry2's row, not just
+        trust the cached number."""
+        _alias_cache.clear()
+        unmatched = ["heavy cream"]
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=_LLMMatchBatch(
+                results=[
+                    _LLMIngredientMatch(
+                        ingredient_name="heavy cream",
+                        best_match=None,
+                        match_type="none",
+                        confidence=0.85,
+                        compound_components=["butter"],
+                        compound_note="Melt butter",
+                        compound_quantities={"butter": 80},
+                        compound_units={"butter": "g"},
+                    )
+                ]
+            )
+        )
+
+        pantry1 = [_make_item("butter", 250.0, "g", qty_base=250.0, unit_base="g")]
+        # Same normalized name, different row, different base unit — the
+        # colliding scenario the alias cache's own docstring warns about.
+        pantry2 = [_make_item("butter", 2.0, "stick", qty_base=2.0, unit_base="count")]
+
+        _, _, suggestions1 = await resolve_aliases_with_llm(unmatched, pantry1, ai)
+        _, _, suggestions2 = await resolve_aliases_with_llm(unmatched, pantry2, ai)
+
+        ai.complete.assert_awaited_once()  # second call is a cache hit
+
+        assert suggestions1[0].component_items[0].suggested_quantity == 80.0
+        component2 = suggestions2[0].component_items[0]
+        assert component2.base_unit == "count"
+        assert component2.suggested_quantity is None
 
 
 class TestUnitConflictFallback:

@@ -946,6 +946,52 @@ describe('MissingItemsList — compound component quantity inputs (#284)', () =>
     expect(screen.getByText(/can.t deduct mystery paste automatically/i)).toBeInTheDocument()
   })
 
+  // Regression for the claude[bot] round-7 review on PR #616: the heading
+  // above the inputs said "Type how much of each you'll use to deduct it",
+  // which was wrong once inputs started pre-filled and deducting by default
+  // (#284 Option B) — a user reading it literally could believe nothing
+  // happens unless they type something, when the opposite is true.
+  it('shows the deduct-by-default heading above a deductible component', () => {
+    render(
+      <MissingItemsList
+        missing={['heavy cream']}
+        compoundSuggestions={[suggestionWithComponents()]}
+        overrides={{}}
+        onOverrideChange={jest.fn()}
+      />,
+    )
+    expect(screen.getByText(/these amounts come out of your pantry/i)).toBeInTheDocument()
+    expect(screen.queryByText(/type how much of each/i)).not.toBeInTheDocument()
+  })
+
+  // Round-6 leftover, fixed this round: when EVERY component of a suggestion
+  // has a null base_unit, only "can't deduct" notes render — no input exists
+  // for the "these amounts come out of your pantry" heading to describe, so
+  // it must not render either.
+  it('does not render the deduct-by-default heading when every component has a null base_unit', () => {
+    const allNoUnit: CompoundSuggestion = {
+      ingredient_name: 'heavy cream',
+      components: ['mystery paste', 'mystery powder'],
+      note: 'Whisk both in',
+      component_items: [
+        { pantry_item_id: 'mystery-1', name: 'mystery paste', base_unit: null },
+        { pantry_item_id: 'mystery-2', name: 'mystery powder', base_unit: null },
+      ],
+    }
+    render(
+      <MissingItemsList
+        missing={['heavy cream']}
+        compoundSuggestions={[allNoUnit]}
+        overrides={{}}
+        onOverrideChange={jest.fn()}
+      />,
+    )
+    expect(screen.queryByText(/these amounts come out of your pantry/i)).not.toBeInTheDocument()
+    // The informative "can't deduct" notes still render for each component.
+    expect(screen.getByText(/can.t deduct mystery paste automatically/i)).toBeInTheDocument()
+    expect(screen.getByText(/can.t deduct mystery powder automatically/i)).toBeInTheDocument()
+  })
+
   it('renders an input for components with a base_unit and a note for the one without, in the same suggestion', () => {
     const mixed: CompoundSuggestion = {
       ingredient_name: 'heavy cream',
@@ -971,6 +1017,8 @@ describe('MissingItemsList — compound component quantity inputs (#284)', () =>
       screen.queryByLabelText(/deduct quantity for mystery paste \(heavy cream substitution\)/i),
     ).not.toBeInTheDocument()
     expect(screen.getByText(/can.t deduct mystery paste automatically/i)).toBeInTheDocument()
+    // One deductible component is enough for the heading to make sense.
+    expect(screen.getByText(/these amounts come out of your pantry/i)).toBeInTheDocument()
   })
 })
 

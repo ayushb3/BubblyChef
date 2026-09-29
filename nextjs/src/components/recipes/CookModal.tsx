@@ -302,9 +302,18 @@ export function MissingItemsList({
                 <span className="block italic mt-0.5">{suggestion.note}</span>
                 {componentItems.length > 0 && (
                   <div className="flex flex-col gap-1 mt-1.5" aria-label={`Use how much of each for ${name}`}>
-                    <span className="not-italic text-[9px] text-[var(--color-muted)]">
-                      Using this? Type how much of each you&apos;ll use to deduct it:
-                    </span>
+                    {/* Only shown when at least one component actually has an
+                        input to explain (#284 round 7, round-6 leftover) — a
+                        suggestion where every component has a null base_unit
+                        renders only "can't deduct" notes below, and a heading
+                        about typing quantities over a list with no typable
+                        input is worse than no heading at all. */}
+                    {componentItems.some((c) => c.base_unit) && (
+                      <span className="not-italic text-[9px] text-[var(--color-muted)]">
+                        Used this swap? These amounts come out of your pantry — clear any you
+                        didn&apos;t use.
+                      </span>
+                    )}
                     {componentItems.map((component) => {
                       const key = compoundOverrideKey(suggestion.ingredient_name, component.pantry_item_id)
                       // A component with no derivable base_unit can never
