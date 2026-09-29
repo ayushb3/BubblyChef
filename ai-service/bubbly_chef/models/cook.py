@@ -54,12 +54,50 @@ class IngredientMatch(BaseModel):
     )
 
 
+class CompoundComponent(BaseModel):
+    """One pantry item backing a compound substitution, ready to deduct.
+
+    `suggested_quantity` (#284 Option B, 2026-09-27) is the model's best guess
+    at how much of this component stands in for the missing ingredient, in
+    `base_unit`. It only ever PRE-FILLS an editable input in the cook modal —
+    nothing is deducted until the user confirms, and the user can edit or
+    clear it first, exactly like an existing unit_conflict row. It is None
+    when the model gave no quantity, one that failed validation (missing,
+    non-numeric, non-positive, or absurdly large), or one whose unit did not
+    match this component's own `base_unit` (#284 round 7 — the model sees each
+    candidate's real unit and must echo it back; a mismatch means the number
+    cannot be trusted to mean what `base_unit` says it means, so it is dropped
+    rather than pre-filled under the wrong label) — the input then starts
+    blank, the same always-unresolved behaviour this carried before Option B.
+    """
+
+    pantry_item_id: UUID = Field(description="Pantry item this component would deduct from")
+    name: str = Field(description="Pantry item display name, matching the entry in `components`")
+    base_unit: str | None = Field(
+        default=None,
+        description="Base unit the user's typed quantity is interpreted in (count | ml | g)",
+    )
+    suggested_quantity: float | None = Field(
+        default=None,
+        description=(
+            "Model-suggested quantity in base_unit, pre-filling the modal's editable "
+            "input for this component. None when the model gave no usable amount, or "
+            "one whose reported unit didn't match base_unit (#284 round 7) — the "
+            "input then starts blank, same as before Option B."
+        ),
+    )
+
+
 class CompoundSuggestion(BaseModel):
     """A multi-item substitution the model proposes for a missing ingredient.
 
-    This is advisory only — nothing is deducted, and the ingredient stays in
-    CookProposal.missing. Deduction from compound substitutions is a deliberate
-    follow-up tracked separately.
+    The suggestion itself is advisory — the ingredient stays in
+    CookProposal.missing. Deduction is opt-in (#284): component_items carries
+    enough to target a deduction, and since Option B (2026-09-27) each
+    component's input starts pre-filled with the model's suggested_quantity
+    where one validated. Nothing is deducted until the user confirms — they
+    can edit or clear a pre-filled value first, reusing the same editable-qty
+    path as unit_conflict.
     """
 
     ingredient_name: str = Field(description="The missing ingredient this suggestion covers")
@@ -68,6 +106,38 @@ class CompoundSuggestion(BaseModel):
     )
     note: str = Field(
         description="Short instruction for the cook, e.g. 'Melt butter, whisk in flour, add milk'"
+    )
+    component_items: list[CompoundComponent] = Field(
+        default_factory=list,
+        description=(
+            "Same items as `components`, resolved to pantry rows so the modal can "
+            "let the user type a per-component quantity and deduct it on confirm. "
+            "Empty only if resolution somehow fails after `components` was already "
+            "validated against the pantry — treated as always-unresolved in that case."
+        ),
+    )
+    component_quantities: dict[str, float] | None = Field(
+        default=None,
+        description=(
+            "Validated model-suggested quantity per component, keyed by normalized "
+            "(stripped, lowercased) component name — the source component_items' "
+            "suggested_quantity is resolved from. Unlike component_items this never "
+            "carries a pantry row id, so — same as `components` and `note` — it is "
+            "safe to cache and reuse across an alias-cache hit on a colliding "
+            "normalized pantry name-set (#616)."
+        ),
+    )
+    component_quantity_units: dict[str, str] | None = Field(
+        default=None,
+        description=(
+            "The base unit (count | ml | g) each entry in component_quantities was "
+            "validated against, keyed the same normalized way. A pantry-name collision "
+            "at cache-hit time (#616) can resolve the same key to a row with a "
+            "DIFFERENT base unit than the one the quantity was originally checked "
+            "against — e.g. one user tracks butter in grams, another in whole sticks. "
+            "This lets a cache-hit re-verify unit agreement before re-attaching a "
+            "cached quantity, instead of trusting it still applies (#284 round 7)."
+        ),
     )
 
 
@@ -107,8 +177,9 @@ class CookProposal(BaseModel):
         default_factory=list,
         description=(
             "Advisory compound substitutions for missing ingredients — "
-            "e.g. heavy cream ← butter + milk + flour. "
-            "Nothing is deducted; the ingredient remains in missing."
+            "e.g. heavy cream ← butter + milk + flour. The ingredient itself "
+            "always remains in missing; deducting the components is opt-in "
+            "(#284) via each suggestion's component_items, not automatic."
         ),
     )
     expired_items: list[ExpiredMatchedItem] = Field(

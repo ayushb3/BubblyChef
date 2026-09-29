@@ -151,8 +151,36 @@ export interface IngredientMatch {
 }
 
 /**
- * Advisory multi-item substitution for a missing ingredient.
- * Nothing is deducted — the ingredient stays in CookProposal.missing.
+ * One pantry item backing a compound substitution, ready to deduct.
+ *
+ * The user types (or, since Option B, edits/confirms a pre-filled) an
+ * amount per component in the cook modal — nothing deducts until they
+ * confirm, the same pattern as a unit_conflict row. See
+ * `suggested_quantity` below for the pre-fill itself (#284 Option B).
+ */
+export interface CompoundComponent {
+  pantry_item_id: string
+  /** Matches the corresponding entry in CompoundSuggestion.components. */
+  name: string
+  /** Base unit the user's typed quantity is interpreted in (count | ml | g). */
+  base_unit: string | null
+  /**
+   * Model-suggested quantity in base_unit, pre-filling this component's
+   * editable input (#284 Option B). Null/absent when the model gave no
+   * quantity, or one the backend's validation dropped — the input then
+   * starts blank, same as before Option B. The user can edit or clear a
+   * pre-filled value; whatever ends up in the input is what confirm sends.
+   */
+  suggested_quantity?: number | null
+}
+
+/**
+ * A multi-item substitution the model proposes for a missing ingredient.
+ * The suggestion is advisory — the ingredient stays in CookProposal.missing —
+ * but component_items lets the user opt into deducting the components once
+ * they type a quantity for each and confirm (#284). Since Option B
+ * (2026-09-27) each component's input starts pre-filled with its
+ * `suggested_quantity` where the model provided a valid one.
  */
 export interface CompoundSuggestion {
   ingredient_name: string
@@ -160,6 +188,8 @@ export interface CompoundSuggestion {
   components: string[]
   /** Short instruction for the cook, e.g. "Melt butter, whisk in flour, add milk" */
   note: string
+  /** Same items as `components`, resolved to pantry rows for deduction. May be empty. */
+  component_items?: CompoundComponent[]
 }
 
 /**
