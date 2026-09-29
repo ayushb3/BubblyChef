@@ -25,6 +25,29 @@ A recipe step with text, a short label, an ongoing label, a duration, hands-on/o
 - **Lazy upgrade**: `POST /v1/recipes/{recipe_id}/steps/ensure` returns existing steps with no model call (idempotent), or derives them from `instructions` + a model metadata call, validates, persists, and returns them. A failed or invalid model call persists nothing; the caller falls back to the client-side regex timer parser.
 - **Related**: Recipe (holds `steps` alongside `instructions`), Meal timeline (issue #649, the scheduler this feeds)
 
+### Meal
+A saved or draft grouping of one main and one or two sides, with a single servings number and optional Kitchen limits (issue #650 / spec #647). It refers to its Dishes and never copies them.
+
+- **Fields**: `title`, `description`, `servings` (int), `constraints` (JSONB — kitchen limits, the mapped exclusive tags, and the RecipeConstraints echo used to regenerate sides), `is_draft`, `source_type` (default `chat`), `last_cooked_at`, `times_cooked`, `user_id`, timestamps
+- **Storage**: `meals` + `meal_dishes` (join table: `meal_id`, `recipe_id`, `user_id`, `role`, `position`), `supabase/migrations/00013_meals.sql`. `meal_dishes` cascades on either its meal or its recipe being deleted. One main per meal (a partial unique index on `role = 'main'`), unique `(meal_id, position)`, unique `(meal_id, recipe_id)`. RLS: own rows only, same shape as `recipes`.
+- **Drafts**: opening a meal from chat persists it (and any new Dish recipes) as a draft — the same pattern as a chat-generated Recipe — so it has an id, a route, and a cook session that survives reload. Saving promotes the meal and its draft dishes together.
+- **Deleting**: deleting a meal deletes it and its *draft* dish recipes, keeping saved ones. Deleting a recipe that's a meal's main deletes that meal too (a mainless meal can't stand); deleting a side recipe just removes it from the meal.
+- **The Meal timeline is not stored** — recomputed from the dishes' Structured steps and the meal's constraints, since the scheduler is deterministic.
+- **Related**: Dish, Meal option, Meal timeline, Kitchen limits, Recipe
+
+### Dish
+A Recipe playing a role (`main` | `side`) in a Meal, at a position (0 = main, 1-2 = sides). A Dish *is* a Recipe — dish identity is by recipe id only, never a copy — so the same Recipe can be a Dish in several Meals.
+
+- **Related**: Meal (holds 1-3 Dishes via `meal_dishes`), Recipe
+
+### Meal option
+One of the three lightweight outlines shown as tappable cards before the user picks a Meal to expand (issue #650 / spec #647). Holds dish names and roles, estimated total/hands-on time, pantry coverage, and a rescue flag — not yet a set of full recipes.
+
+- **Fields** (`meal_options` proposal, `intent: "meal_plan"`, `next_action: "pick_meal"`): `option_id` (stable within the conversation), `title`, `blurb`, `dishes` (role, name, key_ingredients, est_total_minutes, est_hands_on_minutes — one main first, then 1-2 sides), `est_total_minutes`, `est_hands_on_minutes`, `coverage` (`pantry_items_used`, `to_buy`), `rescues` (expiring-soon items used, `[]` when none)
+- **Computed in code, never by the model**: coverage, `to_buy`, and the rescue flag — deterministic pantry matching, staples counted as assumed.
+- **Pick**: a tap sends the option's `option_id` in `context.meal_option_id`, never fuzzy-matched from the visible message text. The backend resolves it from the three options retained in the session (next to `brainstorm_ideas`). The response is then a `meal` proposal — one full RecipeCard with Structured steps per Dish.
+- **Related**: Meal (what picking an option expands into), Dish
+
 ### Meal timeline
 The deterministic meal scheduler's output for a set of 1-3 dishes (a main plus one or two sides) — placements, display rows and cues for cooking them together. Produced by `scheduleMeal()` in `nextjs/src/lib/meal-scheduler.ts` (issue #649).
 
