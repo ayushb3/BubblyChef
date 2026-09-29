@@ -334,12 +334,16 @@ other work. So:
   it was pointed at. It misses inline comments, and it misses PRs it wasn't given.
 - **The desktop app's PR monitoring is a convenience, not the mechanism.** It isn't
   consistent enough to depend on, so the poll above is what the rule rests on.
-- **Getting a fresh review after a fix:** `agent-loop`-labelled PRs re-review on push. For
-  any other PR, close and reopen it. Don't add the label just to get a review. The label
-  turns the `Claude review verdict` job into a blocking required check, which passes only
-  on "looks mergeable" for the exact head commit or on a code owner's approval. So the
-  PR can't merge on its checks alone. On a bot-authored PR from the last 24 hours, the
-  label also counts toward the loop cap.
+- **Getting a fresh review after a fix:** `agent-loop`-labelled PRs re-review on push, and
+  so does any PR opened by `bubblychef-bot`, labelled or not — one review per push, no
+  extra action needed. This retired the old close-and-reopen workaround (it raced and
+  could silently skip a review). For a human-authored, unlabelled PR, close and reopen it
+  to force a fresh review. Don't add the `agent-loop` label just to get a review: it turns
+  the `Claude review verdict` job into a blocking required check, which passes only on
+  "looks mergeable" for the exact head commit or on a code owner's approval, so the PR
+  can't merge on its checks alone, and on a bot-authored PR from the last 24 hours the
+  label also counts toward the loop cap. A bot PR without the label is re-reviewed but
+  never gated by the verdict job or the loop cap — only the label does that.
 - **Handoffs list every PR with an unread or unresolved review.** The vendored `/handoff`
   skill doesn't know this rule (it's drift-tracked in `skills-lock.json` and has no PR
   step), so whoever writes the handoff adds the list by hand.
@@ -414,9 +418,13 @@ requests auto-merge only when **all** of these hold: the GitHub review says `loo
 mergeable`, and the PR touches no protected path. GitHub then still waits for every
 required check.
 
-`claude-review.yml` re-reviews new pushes **only on PRs labelled `agent-loop`**, which
-is what gives Respond a fresh review after each fix. Human PRs are reviewed once, on open. The script itself is
-CODEOWNERS-protected: an agent that could edit it could raise its own limits.
+`claude-review.yml` re-reviews new pushes **on PRs labelled `agent-loop`, and on any PR
+opened by `bubblychef-bot`, labelled or not**, which is what gives Respond a fresh review
+after each fix even before the loop label lands. Only the label puts a PR under the
+`verdict` job's blocking gate and the loop's round cap; an unlabelled bot PR is
+re-reviewed but never held by this workflow. Human PRs are reviewed once, on open. The
+script itself is CODEOWNERS-protected: an agent that could edit it could raise its own
+limits.
 
 **It runs in the calling session's own checkout,** switching it to a new branch and back at the end. The host only lets a session, and every agent it launches, write inside that session's own worktree, so a loop that created a separate worktree could read it but never write to it (the first pilot run blocked on exactly this). Running several issues at once therefore means several sessions, each in its own worktree, which is what §5 already says.
 
