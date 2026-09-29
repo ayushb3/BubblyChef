@@ -46,6 +46,17 @@ const updateMeal = jest.fn()
 jest.mock('@/lib/api/meals', () => ({
   fetchMeal: (...args: unknown[]) => fetchMeal(...args),
   updateMeal: (...args: unknown[]) => updateMeal(...args),
+  fetchSideAlternatives: jest.fn(),
+  expandMealDish: jest.fn(),
+  toNewDishRecipePayload: jest.fn(),
+}))
+
+// The screen's missing-steps upgrade (issue #652) fires for every dish
+// without `steps` on mount — BASE_MEAL's dish has none, so this must be
+// mocked or the effect hits a real `fetch()` in jsdom.
+const ensureSteps = jest.fn()
+jest.mock('@/lib/api/recipes', () => ({
+  ensureSteps: (...args: unknown[]) => ensureSteps(...args),
 }))
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -62,6 +73,7 @@ function renderPage() {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  ensureSteps.mockResolvedValue({ recipe_id: 'r1', steps: [], derived: false })
 })
 
 describe('meal page servings scaling (issue #650)', () => {

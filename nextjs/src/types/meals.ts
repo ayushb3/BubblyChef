@@ -114,6 +114,26 @@ export interface CreateMealRequest {
   dishes: CreateMealDish[]
 }
 
+/**
+ * `PUT /api/meals/[id]` dish operations (issue #652 / spec #647 "PUT
+ * /api/meals/[id]: dish operations"). Sides only — the main (position 0)
+ * can never be replaced or removed.
+ */
+export interface ReplaceDishOp {
+  /** The side being replaced — 1 or 2. Position 0 (the main) is rejected. */
+  position: number
+  recipe: NewDishRecipePayload
+}
+
+export interface AddSideOp {
+  recipe: NewDishRecipePayload
+}
+
+export interface RemoveSideOp {
+  /** The side being removed — 1 or 2. */
+  position: number
+}
+
 /** `PUT /api/meals/[id]` body. */
 export interface UpdateMealRequest {
   title?: string
@@ -121,4 +141,11 @@ export interface UpdateMealRequest {
   constraints?: Partial<MealConstraints>
   /** Sets `is_draft = false` on the meal AND cascades to its draft dishes. */
   promote?: boolean
+  /**
+   * At most one of `replace_dish` / `add_side` / `remove_side` per request —
+   * two dish ops in one body is a 400.
+   */
+  replace_dish?: ReplaceDishOp
+  add_side?: AddSideOp
+  remove_side?: RemoveSideOp
 }
