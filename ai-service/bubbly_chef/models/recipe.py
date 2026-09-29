@@ -329,6 +329,17 @@ class RecipeConstraints(BaseModel):
             "survive instead of being overwritten by every silent turn."
         ),
     )
+    kitchen_limits: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Short phrases naming equipment the user says is limited or shared, "
+            "e.g. 'one pan', 'one pot', 'no oven' (issue #650). Mapped to exclusive "
+            "resource tags by bubbly_chef.domain.kitchen_limits.map_kitchen_limits_to_tags "
+            "and carried on a meal's constraints so the scheduler can keep steps "
+            "that share equipment from overlapping. Not an equipment model -- only "
+            "what the user actually stated."
+        ),
+    )
 
     @property
     def pantry_grounded(self) -> bool:

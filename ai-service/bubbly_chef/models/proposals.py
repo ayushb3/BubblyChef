@@ -320,13 +320,20 @@ class RecipeAmendmentProposal(BaseModel):
 # ---------------------------------------------------------------------------
 # Discriminated proposal union
 # ---------------------------------------------------------------------------
-# Imported here (not at top) to avoid circular imports with pantry/recipe/cook.
+# Imported here (not at top) to avoid circular imports with pantry/recipe/cook/meal.
 from bubbly_chef.models.cook import CookProposal  # noqa: E402
+from bubbly_chef.models.meal import MealOptionsProposal, MealProposal  # noqa: E402
 from bubbly_chef.models.pantry import PantryProposal  # noqa: E402
 from bubbly_chef.models.recipe import RecipeCardProposal  # noqa: E402
 
 ProposalUnion = (
-    PantryProposal | HandoffProposal | RecipeCardProposal | CookProposal | RecipeAmendmentProposal
+    PantryProposal
+    | HandoffProposal
+    | RecipeCardProposal
+    | CookProposal
+    | RecipeAmendmentProposal
+    | MealOptionsProposal
+    | MealProposal
 )
 """Bare union of all concrete proposal types.
 
@@ -342,6 +349,8 @@ AnyProposal = Annotated[
         RecipeCardProposal,
         CookProposal,
         RecipeAmendmentProposal,
+        MealOptionsProposal,
+        MealProposal,
     ],
     Field(discriminator="proposal_type"),
 ]

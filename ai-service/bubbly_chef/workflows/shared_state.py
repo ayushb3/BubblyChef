@@ -20,6 +20,7 @@ from bubbly_chef.models.base import (
     ProposalEnvelope,
     WorkflowStatus,
 )
+from bubbly_chef.models.meal import MealOptionsProposal, MealProposal
 from bubbly_chef.models.pantry import (
     ActionType,
     FoodCategory,
@@ -65,7 +66,7 @@ class LLMIntentResult(BaseModel):
             "One of: pantry_update, receipt_ingest_request,"
             " product_ingest_request, recipe_ingest_request,"
             " recipe_generation, recipe_brainstorm, recipe_card,"
-            " cooking_help, general_chat"
+            " cooking_help, saved_recipe_lookup, meal_plan, general_chat"
         )
     )
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -242,6 +243,71 @@ def create_recipe_envelope(
         workflow_status=WorkflowStatus.AWAITING_REVIEW
         if requires_review
         else WorkflowStatus.COMPLETED,
+    )
+
+
+def create_meal_options_envelope(
+    proposal: MealOptionsProposal,
+    assistant_message: str,
+    confidence: float = 1.0,
+    warnings: list[str] | None = None,
+    errors: list[str] | None = None,
+    request_id: str | None = None,
+    workflow_id: str | None = None,
+    conversation_id: str | None = None,
+) -> ProposalEnvelope[MealOptionsProposal]:
+    """Create a proposal envelope for the meal_plan option stage (issue #650).
+
+    Always `next_action=PICK_MEAL` and `requires_review=True` -- an option
+    card is never auto-applied, the user must tap one.
+    """
+    return ProposalEnvelope[MealOptionsProposal](
+        request_id=UUID(request_id) if request_id else uuid4(),
+        workflow_id=UUID(workflow_id) if workflow_id else uuid4(),
+        conversation_id=UUID(conversation_id) if conversation_id else None,
+        schema_version=settings.schema_version,
+        intent=Intent.MEAL_PLAN,
+        proposal=proposal,
+        assistant_message=assistant_message,
+        confidence=ConfidenceScore(overall=confidence),
+        warnings=warnings or [],
+        errors=errors or [],
+        requires_review=True,
+        next_action=NextAction.PICK_MEAL,
+        workflow_status=WorkflowStatus.AWAITING_REVIEW,
+    )
+
+
+def create_meal_proposal_envelope(
+    proposal: MealProposal,
+    assistant_message: str,
+    confidence: float = 0.9,
+    warnings: list[str] | None = None,
+    errors: list[str] | None = None,
+    request_id: str | None = None,
+    workflow_id: str | None = None,
+    conversation_id: str | None = None,
+) -> ProposalEnvelope[MealProposal]:
+    """Create a proposal envelope for the meal_plan pick stage (issue #650).
+
+    Always `next_action=REVIEW_PROPOSAL` and `requires_review=True`, matching
+    a single recipe_card proposal -- nothing is written until the user
+    confirms (Open meal / Save meal, both Next.js-side).
+    """
+    return ProposalEnvelope[MealProposal](
+        request_id=UUID(request_id) if request_id else uuid4(),
+        workflow_id=UUID(workflow_id) if workflow_id else uuid4(),
+        conversation_id=UUID(conversation_id) if conversation_id else None,
+        schema_version=settings.schema_version,
+        intent=Intent.MEAL_PLAN,
+        proposal=proposal,
+        assistant_message=assistant_message,
+        confidence=ConfidenceScore(overall=confidence),
+        warnings=warnings or [],
+        errors=errors or [],
+        requires_review=True,
+        next_action=NextAction.REVIEW_PROPOSAL,
+        workflow_status=WorkflowStatus.AWAITING_REVIEW,
     )
 
 
@@ -457,6 +523,8 @@ __all__ = [
     # Envelope factories
     "create_pantry_envelope",
     "create_recipe_envelope",
+    "create_meal_options_envelope",
+    "create_meal_proposal_envelope",
     "create_handoff_envelope",
     "create_general_chat_envelope",
     # Helpers
