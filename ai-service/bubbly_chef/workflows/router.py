@@ -35,6 +35,7 @@ from bubbly_chef.models.base import (
     ProposalEnvelope,
     WorkflowStatus,
 )
+from bubbly_chef.models.meal import MealOptionsProposal, MealProposal
 from bubbly_chef.models.pantry import (
     PantryProposal,
 )
@@ -71,6 +72,7 @@ from bubbly_chef.workflows.chat.nodes import (
     saved_recipe_lookup_response,
     suggest_follow_ups,
 )
+from bubbly_chef.workflows.meal.nodes import meal_options_stage, meal_pick_stage
 from bubbly_chef.workflows.pantry.nodes import (
     apply_expiry_heuristics,
     check_for_duplicates,
@@ -97,6 +99,8 @@ from bubbly_chef.workflows.state import (
     WorkflowState,
     create_general_chat_envelope,
     create_handoff_envelope,
+    create_meal_options_envelope,
+    create_meal_proposal_envelope,
     create_pantry_envelope,
     create_recipe_envelope,
 )
@@ -260,11 +264,14 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
     Routing priority (highest → lowest):
     1. forced_intent — deterministic override from an explicit UI action (chip tap).
        [Start over] = recipe_brainstorm + set invalidation; [Edit this recipe] = recipe_card.
-    2. Empty input — short-circuit to general_chat.
-    3. Exit phrase — breaks out of any active mode.
-    4. URL shortcut — unambiguous recipe_ingest (no LLM).
-    5. Brainstorm set re-pick — re-pick from stored set without regeneration.
-    6. LLM classifier — with session-mode bias injected into the prompt.
+    2. context.meal_option_id — deterministic meal_plan pick shortcut (#650), no LLM
+       call. The pick turn's message is just the option's title, which alone would
+       misclassify as recipe_generation.
+    3. Empty input — short-circuit to general_chat.
+    4. Exit phrase — breaks out of any active mode.
+    5. URL shortcut — unambiguous recipe_ingest (no LLM).
+    6. Brainstorm set re-pick — re-pick from stored set without regeneration.
+    7. LLM classifier — with session-mode bias injected into the prompt.
        Post-classify logic then:
        - RECIPE_EXPLORING + pinned recipe: conservative bias (ambiguous → stay on recipe).
        - RECIPE_EXPLORING + modify-vs-new boundary: confirm band (low/medium → CONFIRM_CHOICE).
@@ -311,6 +318,26 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             # turns don't re-pick from a stale menu (Q6).
             forced_state["brainstorm_ideas"] = []
         return forced_state
+
+    # ── Priority 1.5: meal option pick (#650) — deterministic, no LLM call ──
+    # The pick turn's visible message is just the chosen option's title (e.g.
+    # "Cozy Pasta Night") — on its own that reads as a named dish and would
+    # misclassify as recipe_generation under the meal_plan/recipe_generation
+    # disambiguation below. context.meal_option_id is an explicit, unambiguous
+    # UI signal (the card tap), so it short-circuits straight to meal_plan —
+    # the same tier of trust as the forced_intent chip-tap above.
+    # route_by_intent then reads this same field to send the turn to
+    # meal_pick_stage rather than meal_options_stage.
+    context = state.get("context") or {}
+    if context.get("meal_option_id"):
+        logger.info("classify_intent: meal_option_id present — meal_plan pick shortcut")
+        return {
+            **state,
+            "intent": Intent.MEAL_PLAN.value,
+            "intent_confidence": 1.0,
+            "intent_reasoning": "Meal option pick — context.meal_option_id present",
+            "detected_entities": [],
+        }
 
     # ── R2: Mode-aware routing ──
     session_mode = state.get("session_mode")
@@ -485,6 +512,7 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "recipe_card": Intent.RECIPE_CARD.value,
             "cooking_help": Intent.COOKING_HELP.value,
             "saved_recipe_lookup": Intent.SAVED_RECIPE_LOOKUP.value,
+            "meal_plan": Intent.MEAL_PLAN.value,
             "general_chat": Intent.GENERAL_CHAT.value,
         }
 
@@ -744,6 +772,13 @@ def route_by_intent(state: WorkflowState) -> str:
         return "cooking_help_response"
     elif intent == Intent.SAVED_RECIPE_LOOKUP.value:
         return "saved_recipe_lookup_response"
+    elif intent == Intent.MEAL_PLAN.value:
+        # The pick request carries the chosen option id in context; its
+        # presence (not a second LLM call) decides option vs. pick (#650).
+        context = state.get("context") or {}
+        if context.get("meal_option_id"):
+            return "meal_pick_stage"
+        return "meal_options_stage"
     elif intent == Intent.RECIPE_GENERATION.value:
         # Generation and brainstorm share constraint extraction + pantry scoring;
         # they diverge AFTER score_pantry (see route_after_scoring). Generation
@@ -1272,6 +1307,18 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                 session.pinned_recipe_id = str(match.get("id"))
                 session.metadata.last_recipe_title = match.get("title")
 
+        elif intent == Intent.MEAL_PLAN.value:
+            # Retain the three meal options next to brainstorm_ideas (#650):
+            # only the option stage sets meal_plan_session_state, so a pick
+            # turn (which resolves against the ALREADY-retained set) leaves
+            # it untouched rather than clobbering it with nothing. Session
+            # mode is deliberately left alone -- the pick resolves purely by
+            # context.meal_option_id against session.metadata.meal_plan, so
+            # no dedicated SessionMode is needed for this flow.
+            meal_state = state.get("meal_plan_session_state")
+            if meal_state is not None:
+                session.metadata.meal_plan = meal_state
+
         elif intent == Intent.COOKING_HELP.value:
             # Belt-and-suspenders: if brainstorm_ideas exist in state, the brainstorm
             # pipeline ran. BUT only flip to RECIPE_EXPLORING when the session is NOT
@@ -1424,6 +1471,10 @@ def build_chat_router_graph(
     # Saved-recipe lookup path
     workflow.add_node("saved_recipe_lookup_response", saved_recipe_lookup_response)
 
+    # Meal plan path (#650) -- option stage and pick stage
+    workflow.add_node("meal_options_stage", meal_options_stage)
+    workflow.add_node("meal_pick_stage", meal_pick_stage)
+
     # Recipe grounding path (brainstorm)
     workflow.add_node("extract_recipe_constraints", extract_recipe_constraints)
     workflow.add_node("score_pantry", score_pantry_ingredients)
@@ -1452,6 +1503,8 @@ def build_chat_router_graph(
         "build_handoff_recipe": "build_handoff_recipe",
         "cooking_help_response": "cooking_help_response",
         "saved_recipe_lookup_response": "saved_recipe_lookup_response",
+        "meal_options_stage": "meal_options_stage",
+        "meal_pick_stage": "meal_pick_stage",
         "general_chat_response": "general_chat_response",
         "extract_recipe_constraints": "extract_recipe_constraints",
         "research_recipe": "research_recipe",
@@ -1493,6 +1546,10 @@ def build_chat_router_graph(
 
     # Saved-recipe lookup → update_session → END
     workflow.add_edge("saved_recipe_lookup_response", "update_session")
+
+    # Meal plan (#650) → update_session → END
+    workflow.add_edge("meal_options_stage", "update_session")
+    workflow.add_edge("meal_pick_stage", "update_session")
 
     # Confirm band → update_session → END (no generation runs)
     workflow.add_edge("confirm_choice_response", "update_session")
@@ -1727,6 +1784,41 @@ async def run_chat_workflow(
             conversation_id=final_state.get("conversation_id"),
         )
 
+    elif intent == Intent.MEAL_PLAN.value:
+        proposal = final_state.get("proposal")
+        if isinstance(proposal, MealOptionsProposal):
+            return create_meal_options_envelope(
+                proposal=proposal,
+                assistant_message=final_state.get("assistant_message", ""),
+                confidence=final_state.get("confidence", 1.0),
+                warnings=final_state.get("warnings", []),
+                errors=final_state.get("errors", []),
+                request_id=final_state.get("request_id"),
+                workflow_id=final_state.get("workflow_id"),
+                conversation_id=final_state.get("conversation_id"),
+            )
+        if isinstance(proposal, MealProposal):
+            return create_meal_proposal_envelope(
+                proposal=proposal,
+                assistant_message=final_state.get("assistant_message", ""),
+                confidence=final_state.get("confidence", 0.9),
+                warnings=final_state.get("warnings", []),
+                errors=final_state.get("errors", []),
+                request_id=final_state.get("request_id"),
+                workflow_id=final_state.get("workflow_id"),
+                conversation_id=final_state.get("conversation_id"),
+            )
+        # Model-unavailable / unknown-option-id paths degrade intent to
+        # general_chat before returning (see meal.nodes), so this is
+        # defensive only -- mirrors the RECIPE_CARD fallback above.
+        return create_general_chat_envelope(
+            assistant_message=final_state.get("assistant_message", "I'm here to help!"),
+            intent=Intent.GENERAL_CHAT,
+            request_id=final_state.get("request_id"),
+            workflow_id=final_state.get("workflow_id"),
+            conversation_id=final_state.get("conversation_id"),
+        )
+
     else:  # general_chat, cooking_help, recipe_brainstorm — all return plain text envelope
         envelope = create_general_chat_envelope(
             assistant_message=final_state.get("assistant_message", "I'm here to help!"),
@@ -1857,6 +1949,44 @@ def _build_envelope_from_state(
         )
         envelope_fallback.suggested_mode = final_state.get("suggested_mode")
         return envelope_fallback
+    elif intent == Intent.MEAL_PLAN.value:
+        proposal = final_state.get("proposal")
+        if isinstance(proposal, MealOptionsProposal):
+            meal_options_env: ProposalEnvelope[Any] = create_meal_options_envelope(
+                proposal=proposal,
+                assistant_message=final_state.get("assistant_message", ""),
+                confidence=final_state.get("confidence", 1.0),
+                warnings=final_state.get("warnings", []),
+                errors=final_state.get("errors", []),
+                request_id=final_state.get("request_id"),
+                workflow_id=final_state.get("workflow_id"),
+                conversation_id=final_state.get("conversation_id"),
+            )
+            return meal_options_env
+        if isinstance(proposal, MealProposal):
+            meal_env: ProposalEnvelope[Any] = create_meal_proposal_envelope(
+                proposal=proposal,
+                assistant_message=final_state.get("assistant_message", ""),
+                confidence=final_state.get("confidence", 0.9),
+                warnings=final_state.get("warnings", []),
+                errors=final_state.get("errors", []),
+                request_id=final_state.get("request_id"),
+                workflow_id=final_state.get("workflow_id"),
+                conversation_id=final_state.get("conversation_id"),
+            )
+            return meal_env
+        # Model-unavailable / unknown-option-id paths degrade intent to
+        # general_chat before returning (see meal.nodes), so this is
+        # defensive only -- mirrors the RECIPE_CARD fallback above.
+        meal_fallback: ProposalEnvelope[Any] = create_general_chat_envelope(
+            assistant_message=final_state.get("assistant_message", "I'm here to help!"),
+            intent=Intent.GENERAL_CHAT,
+            request_id=final_state.get("request_id"),
+            workflow_id=final_state.get("workflow_id"),
+            conversation_id=final_state.get("conversation_id"),
+        )
+        meal_fallback.suggested_mode = final_state.get("suggested_mode")
+        return meal_fallback
     else:
         envelope = create_general_chat_envelope(
             assistant_message=final_state.get("assistant_message", "I'm here to help!"),

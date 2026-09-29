@@ -20,9 +20,14 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     "- recipe_brainstorm: User asks open-ended 'what can I make?' style "
     "questions — brainstorm ideas from pantry, 'recipe suggestions', "
     "'what should I cook tonight?'\n"
-    "- recipe_generation: User wants a SPECIFIC recipe MADE for them — "
-    "meal ideas, dinner suggestions, 'give me a recipe for X', "
-    "'recipe for X', 'what's for dinner'\n"
+    "- recipe_generation: User wants a SPECIFIC, NAMED DISH made for them — "
+    "'give me a recipe for X', 'recipe for X', 'a quick pasta recipe for "
+    "dinner' (names a dish, even though it mentions a mealtime)\n"
+    "- meal_plan: User wants a full MEAL (a main plus one or two sides), "
+    "not one named dish — 'what's for dinner?', 'dinner tonight', "
+    "'cooking for friends', 'a meal for 4', 'lunch for the family'. The "
+    "ask names a MEAL OCCASION (dinner/lunch/a meal/cooking for people) "
+    "but no specific dish\n"
     "- recipe_card: User is selecting or refining a specific recipe from "
     "a prior brainstorm — 'make me the pasta one', 'no cheese', 'less salt'\n"
     "- cooking_help: User asking HOW-TO questions about cooking — "
@@ -60,6 +65,16 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     "- 'give me a pasta recipe' → recipe_generation\n"
     "- 'how do I cook pasta?' → cooking_help\n"
     "- 'how long does chicken last?' → cooking_help\n\n"
+    "IMPORTANT: Distinguish meal_plan from recipe_generation — the deciding "
+    "factor is whether the user named a specific dish. A meal occasion word "
+    "alone (dinner/lunch/a meal) is NOT a dish:\n"
+    "- 'what's for dinner?' → meal_plan (no dish named)\n"
+    "- 'dinner tonight' → meal_plan\n"
+    "- 'cooking for friends this weekend' → meal_plan\n"
+    "- 'a meal for 4' → meal_plan\n"
+    "- 'a quick pasta recipe for dinner' → recipe_generation (names "
+    "'pasta' — a dish — even though it mentions dinner)\n"
+    "- 'give me a recipe for butter chicken' → recipe_generation\n\n"
     "IMPORTANT: Distinguish saved_recipe_lookup from recipe_generation "
     "(a saved-recipe reference is NOT a request to make a new one):\n"
     "- 'make that butter chicken I saved' → saved_recipe_lookup\n"
@@ -94,8 +109,9 @@ INTENT_CLASSIFICATION_SYSTEM_PROMPT = (
     " has URL -> recipe_ingest_request\n"
     '- "what can I make", "recipe ideas", "what should I cook",'
     ' "suggestions" -> recipe_brainstorm\n'
-    '- "give me a recipe", "recipe for", "meal ideas",'
-    ' "make me something", "suggest a meal" -> recipe_generation\n'
+    '- "give me a recipe", "recipe for" (names a dish) -> recipe_generation\n'
+    '- "what\'s for dinner", "dinner tonight", "a meal for", "cooking for'
+    ' friends/family/guests" (no dish named) -> meal_plan\n'
     '- "no X", "less X", "without X", "make it more X"'
     " (in context of prior recipe) -> recipe_card\n"
     '- "how to cook", "how long does X last", "substitute for",'
