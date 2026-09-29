@@ -214,10 +214,11 @@ applies: fix forward, never edit.
 6. **Never edit a migration that has been pushed.** Re-pushing the same version
    does nothing, so an edited file would silently drift from the live schema.
    If review wants a change after the push, add a new migration
-   (`000NN_fix_...`) that makes it. If the PR is abandoned after the push, either
-   land a follow-up migration on `main` that reverts it, or land the migration
-   file itself on `main` in a one-file PR, so the repo describes the live
-   schema. Either way, the migrations in `main` and the live schema must end up
+   (`000NN_fix_...`) that makes it. If the PR is abandoned after the push, land
+   the migration file itself on `main` in a one-file PR, so the repo describes
+   the live schema. Reverting it instead (dropping what it added) is destructive,
+   so that choice is the human's under step 5: propose it in the PR, don't push
+   it. Either way, the migrations in `main` and the live schema must end up
    agreeing.
 
 There is one database. Local development and the deployed app share it, so an
