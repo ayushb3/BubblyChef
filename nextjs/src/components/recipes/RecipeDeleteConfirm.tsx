@@ -8,6 +8,13 @@ interface RecipeDeleteConfirmProps {
   onConfirm: () => Promise<void>
   onCancel: () => void
   deleting: boolean
+  /**
+   * Meals this recipe is a dish in (issue #650) — the confirmation names
+   * them, since deleting the recipe removes it from every one, and a meal
+   * left with no main is deleted outright. Empty/absent renders nothing
+   * extra.
+   */
+  mealTitles?: string[]
 }
 
 export default function RecipeDeleteConfirm({
@@ -15,6 +22,7 @@ export default function RecipeDeleteConfirm({
   onConfirm,
   onCancel,
   deleting,
+  mealTitles = [],
 }: RecipeDeleteConfirmProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   // This swaps in for whatever "Delete" trigger opened it (usually inside an
@@ -34,46 +42,54 @@ export default function RecipeDeleteConfirm({
       aria-modal="true"
       aria-labelledby="recipe-delete-confirm-title"
       tabIndex={-1}
-      className="flex items-center gap-3 mt-2 px-3 py-2.5 rounded-xl outline-none"
+      className="flex flex-col gap-1.5 mt-2 px-3 py-2.5 rounded-xl outline-none"
       style={{
         background: 'var(--color-bg)',
         border: '1.5px solid var(--color-border)',
         fontFamily: 'Nunito, sans-serif',
       }}
     >
-      <span
-        id="recipe-delete-confirm-title"
-        className="text-sm flex-1 truncate"
-        style={{ color: 'var(--color-text)' }}
-      >
-        Delete &ldquo;{recipeTitle}&rdquo;?
-      </span>
-      <button
-        onClick={onConfirm}
-        disabled={deleting}
-        className="px-3 py-1 rounded-full text-xs font-bold disabled:opacity-50 active:scale-95 transition-transform"
-        style={{
-          color: 'var(--color-coral, #ff9aa2)',
-          border: '1.5px solid var(--color-coral, #ff9aa2)',
-          background: 'transparent',
-          fontFamily: 'Nunito, sans-serif',
-        }}
-      >
-        {deleting ? 'Deleting...' : 'Delete'}
-      </button>
-      <button
-        onClick={onCancel}
-        disabled={deleting}
-        className="px-3 py-1 rounded-full text-xs font-bold disabled:opacity-50 active:scale-95 transition-transform"
-        style={{
-          color: 'var(--color-muted)',
-          border: '1.5px solid var(--color-border)',
-          background: 'transparent',
-          fontFamily: 'Nunito, sans-serif',
-        }}
-      >
-        Cancel
-      </button>
+      <div className="flex items-center gap-3">
+        <span
+          id="recipe-delete-confirm-title"
+          className="text-sm flex-1 truncate"
+          style={{ color: 'var(--color-text)' }}
+        >
+          Delete &ldquo;{recipeTitle}&rdquo;?
+        </span>
+        <button
+          onClick={onConfirm}
+          disabled={deleting}
+          className="px-3 py-1 rounded-full text-xs font-bold disabled:opacity-50 active:scale-95 transition-transform"
+          style={{
+            color: 'var(--color-coral, #ff9aa2)',
+            border: '1.5px solid var(--color-coral, #ff9aa2)',
+            background: 'transparent',
+            fontFamily: 'Nunito, sans-serif',
+          }}
+        >
+          {deleting ? 'Deleting...' : 'Delete'}
+        </button>
+        <button
+          onClick={onCancel}
+          disabled={deleting}
+          className="px-3 py-1 rounded-full text-xs font-bold disabled:opacity-50 active:scale-95 transition-transform"
+          style={{
+            color: 'var(--color-muted)',
+            border: '1.5px solid var(--color-border)',
+            background: 'transparent',
+            fontFamily: 'Nunito, sans-serif',
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+      {mealTitles.length > 0 && (
+        <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+          Used in {mealTitles.length === 1 ? 'meal' : 'meals'}: {mealTitles.join(', ')}.
+          {' '}A meal left with no main will be deleted too.
+        </p>
+      )}
     </div>
   )
 }

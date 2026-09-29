@@ -98,6 +98,23 @@ def test_merge_fresh_must_use_overrides_prior() -> None:
     assert merged["must_use_ingredients"] == ["chicken"]
 
 
+def test_merge_applies_kitchen_limits_stated_on_a_later_turn() -> None:
+    """The #650 verify bug: "I only have one pan" on turn 2 was dropped,
+    because the prior turn's empty list was kept and the fresh one ignored."""
+    prior: dict[str, Any] = {"kitchen_limits": [], "servings": 2}
+    fresh: dict[str, Any] = {"kitchen_limits": ["one pan"], "servings": 4}
+    merged = _merge_constraints(prior, fresh)
+    assert merged["kitchen_limits"] == ["one pan"]
+    assert merged["servings"] == 4
+
+
+def test_merge_inherits_kitchen_limits_when_fresh_is_empty() -> None:
+    prior: dict[str, Any] = {"kitchen_limits": ["one pan"]}
+    fresh: dict[str, Any] = {"kitchen_limits": []}
+    merged = _merge_constraints(prior, fresh)
+    assert merged["kitchen_limits"] == ["one pan"]
+
+
 def test_merge_inherits_max_time_when_fresh_is_none() -> None:
     prior = {"max_time_minutes": 30}
     fresh: dict[str, Any] = {"max_time_minutes": None}

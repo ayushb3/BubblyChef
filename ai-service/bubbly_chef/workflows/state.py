@@ -2,6 +2,7 @@
 
 from typing import Any, TypedDict
 
+from bubbly_chef.models.meal import MealPlanSessionState
 from bubbly_chef.models.pantry import PantryUpsertAction
 from bubbly_chef.models.proposals import ProposalUnion
 from bubbly_chef.models.recipe import RecipeCard
@@ -24,6 +25,8 @@ from bubbly_chef.workflows.shared_state import (  # noqa: F401
     TermSuggestion,
     create_general_chat_envelope,
     create_handoff_envelope,
+    create_meal_options_envelope,
+    create_meal_proposal_envelope,
     create_pantry_envelope,
     create_recipe_envelope,
     map_action_type,
@@ -45,6 +48,8 @@ __all__ = [
     "WorkflowState",
     "create_general_chat_envelope",
     "create_handoff_envelope",
+    "create_meal_options_envelope",
+    "create_meal_proposal_envelope",
     "create_pantry_envelope",
     "create_recipe_envelope",
     "map_action_type",
@@ -143,6 +148,13 @@ class WorkflowState(TypedDict, total=False):
     repick_different_idea: bool
     web_search_result: dict[str, Any] | None
     ingredient_availability: list[dict[str, Any]]
+
+    # ==========================================================================
+    # Meal plan (issue #650) -- the option stage's output, read by
+    # update_session_node to retain it in session.metadata.meal_plan (next to
+    # brainstorm_ideas) for the pick turn.
+    # ==========================================================================
+    meal_plan_session_state: MealPlanSessionState | None
 
     # ==========================================================================
     # Saved-recipe lookup

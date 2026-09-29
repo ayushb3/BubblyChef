@@ -680,6 +680,9 @@ def _merge_constraints(
     - must_use_ingredients: fresh list wins when non-empty; otherwise inherit
       prior. This ensures dietary restrictions AND must-use ingredients both
       survive a follow-up turn that doesn't repeat them.
+    - kitchen_limits (#650): the same list rule. "I only have one pan" said on
+      a later turn applies, and it stays true for the rest of the conversation
+      unless restated.
     - use_pantry: tri-state. A fresh True or False wins; None means the user said
       nothing this turn, so the prior choice stands. Without this a user who said
       "don't look at my pantry" got the pantry back on their very next message
@@ -693,6 +696,7 @@ def _merge_constraints(
         "preferred_ingredients",
         "excluded_ingredients",
         "must_use_ingredients",
+        "kitchen_limits",
     )
 
     for key in scalar_keys:

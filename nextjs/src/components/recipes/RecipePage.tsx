@@ -38,6 +38,8 @@ export interface Recipe {
   meal_type?: string | null
   is_favorite?: boolean
   created_at?: string
+  /** Titles of meals this recipe is a dish in (issue #650) — `[]` when none. */
+  meal_titles?: string[]
 }
 
 interface RecipeDetailProps {

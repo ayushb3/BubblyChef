@@ -13,6 +13,8 @@ export type ChatIntent =
   | 'general_chat'
   | 'recipe_brainstorm'
   | 'saved_recipe_lookup'
+  /** Meal-shaped asks ("what's for dinner?") — issue #650 / spec #647. */
+  | 'meal_plan'
 
 export type ChatNextAction =
   | 'none'
@@ -20,6 +22,8 @@ export type ChatNextAction =
   | 'review_proposal'
   | 'pick_recipe'
   | 'confirm_choice'
+  /** The option stage of `meal_plan` — three cards await a pick (issue #650). */
+  | 'pick_meal'
 
 // ─── Pantry Proposals ─────────────────────────────────────────────────────────
 
@@ -75,6 +79,98 @@ export interface ChatRecipeData {
   ingredient_availability?: IngredientAvailability[]
 }
 
+// ─── Meal proposals (issue #650 / spec #647) ───────────────────────────────────
+//
+// Field names match `docs/plans/2026-09-29-issue-650-meal-contract.md`
+// exactly. The option stage (`meal_options`) shows three lightweight
+// outlines; the pick stage (`meal`) is one full RecipeCard per dish.
+
+/** Echoed constraints — kitchen limits, the mapped exclusive tags, and the
+ * RecipeConstraints extraction used to regenerate sides. */
+export interface MealProposalConstraints {
+  kitchen_limits: string[]
+  exclusive_tags: string[]
+  recipe_constraints: Record<string, unknown>
+}
+
+export interface MealOptionDish {
+  role: 'main' | 'side'
+  name: string
+  key_ingredients: string[]
+  /** null when the model gave no estimate. */
+  est_total_minutes: number | null
+  est_hands_on_minutes: number | null
+}
+
+export interface MealOptionCoverage {
+  pantry_items_used: number
+  to_buy: string[]
+}
+
+export interface MealOption {
+  /** Stable within the conversation — sent back verbatim on pick. */
+  option_id: string
+  title: string
+  blurb: string
+  /** Exactly one main first, then 1-2 sides. */
+  dishes: MealOptionDish[]
+  /** null when no dish carried an estimate; the time chip is hidden then. */
+  est_total_minutes: number | null
+  est_hands_on_minutes: number | null
+  /** null when the user asked not to use the pantry; the coverage chip is hidden then. */
+  coverage: MealOptionCoverage | null
+  /** Expiring-soon items this option uses; empty when none. */
+  rescues: string[]
+}
+
+export interface MealOptionsProposal {
+  proposal_type: 'meal_options'
+  /** Exactly 3, fewer only if generation fails for some. */
+  options: MealOption[]
+  servings: number
+  constraints: MealProposalConstraints
+}
+
+export interface MealProposalDish {
+  role: 'main' | 'side'
+  position: number
+  /** The existing RecipeCard shape, including `steps`, at the meal's servings. */
+  recipe: ChatRecipeData
+}
+
+export interface MealProposal {
+  proposal_type: 'meal'
+  /**
+   * Stamped by the ai-service per pick and kept in the conversation history.
+   * Sent to `POST /api/meals` as `source_ref` so Open and Save resolve to one
+   * meal even across navigation. Optional: older restored turns lack it.
+   */
+  meal_ref?: string
+  title: string
+  servings: number
+  constraints: MealProposalConstraints
+  dishes: MealProposalDish[]
+  missing_ingredients: string[]
+}
+
+export function isMealOptionsProposal(
+  proposal: unknown,
+): proposal is MealOptionsProposal {
+  return (
+    !!proposal &&
+    typeof proposal === 'object' &&
+    (proposal as { proposal_type?: unknown }).proposal_type === 'meal_options'
+  )
+}
+
+export function isMealProposal(proposal: unknown): proposal is MealProposal {
+  return (
+    !!proposal &&
+    typeof proposal === 'object' &&
+    (proposal as { proposal_type?: unknown }).proposal_type === 'meal'
+  )
+}
+
 // ─── Chat Response ────────────────────────────────────────────────────────────
 
 export interface ChatResponse {
@@ -83,7 +179,7 @@ export interface ChatResponse {
   conversation_id: string | null
   intent: ChatIntent
   assistant_message: string
-  proposal: PantryProposalData | ChatRecipeData | null
+  proposal: PantryProposalData | ChatRecipeData | MealOptionsProposal | MealProposal | null
   confidence: { overall: number }
   requires_review: boolean
   next_action: ChatNextAction

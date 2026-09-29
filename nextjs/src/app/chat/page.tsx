@@ -19,6 +19,8 @@ import ClarificationCard from '@/components/chat/ClarificationCard'
 import BrainstormOptions from '@/components/chat/BrainstormOptions'
 import SavedRecipeMatches from '@/components/chat/SavedRecipeMatches'
 import ConfirmBand from '@/components/chat/ConfirmBand'
+import MealOptionCards from '@/components/chat/MealOptionCards'
+import CompactMealCard from '@/components/chat/CompactMealCard'
 import CookModal from '@/components/recipes/CookModal'
 import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
 import Chip, { type ChipTone } from '@/components/ui/Chip'
@@ -26,6 +28,8 @@ import EmptyState from '@/components/ui/EmptyState'
 import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
 import { fetchRecipe, promoteRecipeDraft } from '@/lib/api/recipes'
+import { createMeal, updateMeal } from '@/lib/api/meals'
+import { buildCreateMealPayload } from '@/lib/meal-chat-helpers'
 import { cookingContextForId, deriveChatSeed } from '@/lib/chat-seed'
 import { startCookSession, isCookSessionEnded } from '@/lib/cook-session'
 import type { Recipe } from '@/components/recipes/RecipePage'
@@ -34,6 +38,8 @@ import type {
   ChatRecipeData,
   PantryProposalData,
   PantryProposalAction,
+  MealOption,
+  MealProposal,
 } from '@/types/chat'
 import {
   getBrainstormIdeas,
@@ -43,6 +49,8 @@ import {
   isFollowUpsPending,
   buildClarificationText,
   getConfirmOptions,
+  isMealOptionsProposal,
+  isMealProposal,
 } from '@/types/chat'
 import type { SavedRecipeMatch } from '@/types/chat'
 import { resolveChips, COOKING_CHIPS } from '@/lib/chat-chips'
@@ -150,6 +158,15 @@ function ChatSurface() {
     mode: 'preview' | 'confirm'
     msgId?: string
   } | null>(null)
+  /**
+   * Meal chat state (issue #650). msgId → the created meal's { id, isDraft },
+   * set the first time Open meal / Save meal succeeds for that card.
+   */
+  const [mealIds, setMealIds] = useState<Record<string, { id: string; isDraft: boolean }>>({})
+  const [mealOpenStates, setMealOpenStates] = useState<Record<string, 'idle' | 'pending' | 'opened'>>({})
+  const [mealSaveStates, setMealSaveStates] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({})
+  /** In-flight POST promises keyed by msgId — the double-creation guard Open and Save share. */
+  const mealCreateInFlight = useRef<Map<string, Promise<{ id: string; isDraft: boolean }>>>(new Map())
   const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
   const [dismissedRecipeId, setDismissedRecipeId] = useState<string | null>(null)
   const [dismissedSeedKey, setDismissedSeedKey] = useState<string | null>(null)
@@ -424,6 +441,90 @@ function ChatSurface() {
     sendMessage(idea)
   }
 
+  // ── Meal chat (issue #650) ────────────────────────────────────────────────
+
+  /**
+   * Tapping a meal option card sends a normal chat message — the option's
+   * title as the visible text — with the structured option id in context.
+   * The backend resolves the option from the session by id; it's never
+   * fuzzy-matched from the title text (contract: "Pick: the request").
+   */
+  const handlePickMealOption = (option: MealOption) => {
+    sendMessage(option.title, { meal_option_id: option.option_id })
+  }
+
+  /**
+   * Resolves this message's meal id, creating it via `POST /api/meals` if it
+   * doesn't exist yet. Shared by Open and Save so a tap on either while the
+   * other's create is in flight reuses the same promise — the guard against
+   * a second tap creating a second meal (contract: "A second tap never
+   * creates a second meal").
+   */
+  const ensureMeal = (
+    msgId: string,
+    proposal: MealProposal,
+    isDraft: boolean,
+  ): Promise<{ id: string; isDraft: boolean }> => {
+    const existing = mealIds[msgId]
+    if (existing) return Promise.resolve(existing)
+
+    const inflight = mealCreateInFlight.current.get(msgId)
+    if (inflight) return inflight
+
+    const promise = createMeal(buildCreateMealPayload(proposal, isDraft))
+      .then((meal) => {
+        const result = { id: meal.id, isDraft: meal.is_draft }
+        setMealIds((prev) => ({ ...prev, [msgId]: result }))
+        return result
+      })
+      .finally(() => {
+        mealCreateInFlight.current.delete(msgId)
+      })
+
+    mealCreateInFlight.current.set(msgId, promise)
+    return promise
+  }
+
+  /** Open meal: persists as a draft, then routes to the minimal meal page. */
+  const handleOpenMeal = (msgId: string, proposal: MealProposal) => {
+    if ((mealOpenStates[msgId] ?? 'idle') !== 'idle') return
+    setMealOpenStates((prev) => ({ ...prev, [msgId]: 'pending' }))
+    ensureMeal(msgId, proposal, true)
+      .then(({ id }) => {
+        setMealOpenStates((prev) => ({ ...prev, [msgId]: 'opened' }))
+        router.push(`/meals/${id}`)
+      })
+      .catch(() => {
+        setMealOpenStates((prev) => ({ ...prev, [msgId]: 'idle' }))
+      })
+  }
+
+  /**
+   * Save meal: `POST`s with `is_draft: false` if nothing exists for this
+   * card yet, or `PUT { promote: true }` if Open meal already created a
+   * draft (`ensureMeal` resolving to an existing draft row is exactly that
+   * case — the resolved `isDraft` flag decides, not which button was tapped
+   * first, so a race between the two buttons always ends in one meal).
+   */
+  const handleSaveMeal = (msgId: string, proposal: MealProposal) => {
+    const state = mealSaveStates[msgId] ?? 'idle'
+    if (state === 'saving' || state === 'saved') return
+    setMealSaveStates((prev) => ({ ...prev, [msgId]: 'saving' }))
+
+    ensureMeal(msgId, proposal, false)
+      .then(async ({ id, isDraft }) => {
+        if (isDraft) {
+          await updateMeal(id, { promote: true })
+          setMealIds((prev) => ({ ...prev, [msgId]: { id, isDraft: false } }))
+        }
+        setMealSaveStates((prev) => ({ ...prev, [msgId]: 'saved' }))
+        queryClient.invalidateQueries({ queryKey: ['bubbles'] })
+      })
+      .catch(() => {
+        setMealSaveStates((prev) => ({ ...prev, [msgId]: 'error' }))
+      })
+  }
+
   // Acts on the match by id — the same contract the single-match card's
   // "Cook this" action uses (`/chat?cooking=<id>`, read reactively via
   // `useSearchParams` above). Deliberately NOT sendMessage(match.title):
@@ -627,6 +728,11 @@ function ChatSurface() {
                 onPickSavedRecipe={handlePickSavedRecipe}
                 onConfirmChoice={handleConfirmChoice}
                 onStageText={handleStageText}
+                onPickMealOption={handlePickMealOption}
+                onOpenMeal={(proposal) => handleOpenMeal(msg.id, proposal)}
+                onSaveMeal={(proposal) => handleSaveMeal(msg.id, proposal)}
+                mealOpenState={mealOpenStates[msg.id] ?? 'idle'}
+                mealSaveState={mealSaveStates[msg.id] ?? 'idle'}
               />
             ))}
 
@@ -792,6 +898,13 @@ interface MessageRendererProps {
   ) => void
   /** Stage text in the input field (clarification pill selections). */
   onStageText: (text: string) => void
+  /** Meal chat (issue #650) — a tap on an option card. */
+  onPickMealOption: (option: MealOption) => void
+  /** Compact meal card — Open meal / Save meal. */
+  onOpenMeal: (proposal: MealProposal) => void
+  onSaveMeal: (proposal: MealProposal) => void
+  mealOpenState: 'idle' | 'pending' | 'opened'
+  mealSaveState: 'idle' | 'saving' | 'saved' | 'error'
 }
 
 function MessageRenderer({
@@ -817,6 +930,11 @@ function MessageRenderer({
   onPickSavedRecipe,
   onConfirmChoice,
   onStageText,
+  onPickMealOption,
+  onOpenMeal,
+  onSaveMeal,
+  mealOpenState,
+  mealSaveState,
 }: MessageRendererProps) {
   // User messages — simple bubble
   if (message.role === 'user') {
@@ -925,6 +1043,66 @@ function MessageRenderer({
               onChipTap={onChipTap}
             />
           )}
+        </motion.div>
+      )
+    }
+  }
+
+  // Meal plan intent (issue #650) — option stage renders three tappable meal
+  // option cards; the pick stage renders the compact meal card. Falls through
+  // to the plain markdown reply for anything else (a model failure that
+  // never produced a proposal, matching the existing recipe/brainstorm
+  // fallback pattern) — the generic chat error text plus a resend is the
+  // retry affordance, same as every other intent.
+  if (intent === 'meal_plan') {
+    const proposal = message.response?.proposal
+    if (message.response?.next_action === 'pick_meal' && isMealOptionsProposal(proposal)) {
+      return (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+        >
+          <div className="flex items-end gap-2">
+            <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+            <div className="flex flex-col gap-2 items-start">
+              {message.content && <MessageBubble message={message} />}
+              <MealOptionCards
+                options={proposal.options}
+                onSelect={onPickMealOption}
+                disabled={!isLastSettledAssistant}
+              />
+            </div>
+          </div>
+          {isLastSettledAssistant && !isFollowUpsPending(message.response) && (
+            <PostMessageChips
+              chips={resolveChips(intent, getFollowUpSuggestions(message.response))}
+              onChipTap={onChipTap}
+            />
+          )}
+        </motion.div>
+      )
+    }
+    if (isMealProposal(proposal)) {
+      return (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+        >
+          <div className="flex items-end gap-2">
+            <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+            <div className="flex flex-col gap-2 items-start">
+              {message.content && <MessageBubble message={message} />}
+              <CompactMealCard
+                proposal={proposal}
+                onOpenMeal={() => onOpenMeal(proposal)}
+                onSaveMeal={() => onSaveMeal(proposal)}
+                openState={mealOpenState}
+                saveState={mealSaveState}
+              />
+            </div>
+          </div>
         </motion.div>
       )
     }

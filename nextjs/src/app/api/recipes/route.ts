@@ -3,6 +3,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { requireAuth, errorResponse } from '@/lib/response-helpers'
 import { mergeTags, sanitizeSteps } from '@/lib/recipe-helpers'
 import { awardBubbles } from '@/lib/bubbles'
+import { withMealTitles } from '@/lib/meal-helpers'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -72,9 +73,12 @@ export async function GET(request: Request) {
   const limit = parseInt(searchParams.get('limit') || '50', 10)
   const offset = parseInt(searchParams.get('offset') || '0', 10)
 
+  // `meal_dishes(meals(title))` (issue #650) — flattened to `meal_titles`
+  // below, same as the single-recipe GET, so the delete confirmation can
+  // name a recipe's meals without a second round trip per recipe.
   let query = supabase
     .from('recipes')
-    .select('*', { count: 'exact' })
+    .select('*, meal_dishes(meals(title))', { count: 'exact' })
     .eq('user_id', user.id)
 
   if (search) query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`)
@@ -95,7 +99,7 @@ export async function GET(request: Request) {
   if (error) return errorResponse(error.message)
 
   return NextResponse.json({
-    recipes: data,
+    recipes: (data ?? []).map(withMealTitles),
     total_count: count || 0,
     limit,
     offset,

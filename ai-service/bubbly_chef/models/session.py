@@ -7,6 +7,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from bubbly_chef.models.meal import MealPlanSessionState
 from bubbly_chef.models.recipe import RecipeCard, RecipeConstraints
 
 
@@ -101,6 +102,11 @@ class SessionContext(BaseModel):
     brainstorm_ideas: list[str] = Field(default_factory=list)
     recipe_constraints: RecipeConstraints | None = None
     last_recipe_title: str | None = None
+    meal_plan: MealPlanSessionState | None = None
+    """The three retained meal options from the most recent `meal_plan` option
+    stage, kept next to `brainstorm_ideas` (issue #650). The pick turn resolves
+    `context.meal_option_id` against `meal_plan.options` -- never fuzzy-matched.
+    """
     picked_recipe: RecipeCard | None = None
     """Full recipe card for the most recently pinned recipe_card proposal.
 
