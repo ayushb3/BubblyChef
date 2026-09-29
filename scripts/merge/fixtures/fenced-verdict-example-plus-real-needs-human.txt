@@ -1,0 +1,17 @@
+## Review — PR #705, *review template: document the verdict line format*
+
+Example of the verdict line format reviewers should use, straight from
+CLAUDE.md's own template:
+
+```
+- **Verdict:** `looks mergeable`, `needs changes`, or `needs a human`
+```
+
+That block is illustrative only -- it names all three phrases as options,
+it isn't this review's own verdict, and it must not be read as one just
+because it's the last thing in the body that matches the verdict grep.
+
+**Verdict: needs a human**
+
+Whether the template wording itself needs to change is a call for Ayush,
+not something the diff can settle on its own.

@@ -1,0 +1,23 @@
+## Re-review (round 3) — `looks mergeable`
+
+No CODEOWNERS path is touched — checked `.github/CODEOWNERS` directly: no migration, no `lib/supabase/`, no `response-helpers.ts`, no `middleware.ts`, no `.github`/`.claude`, no `package.json`. Only files under `nextjs/src/app/api/kitchen/`, `nextjs/src/components/kitchen/`, `nextjs/src/lib/kitchen/`, `nextjs/src/lib/api/kitchen.ts`, `nextjs/src/__tests__/`, and `docs/media/`. So this stays agent-mergeable.
+
+**Last round’s findings, re-checked:**
+
+1. **Discarded `bubble_balances` read error — fixed.** `offer/route.ts:24-32` and `unlock/route.ts:62-70` now destructure `error` alongside `data` and return `errorResponse(...)` (default 500) before any reached/claimed logic. A read failure can no longer masquerade as balance 0. One inline note on its test coverage.
+2. **Weak same-slot-sibling test — fixed.** `kitchen-offer-helper.test.ts:65-89` now pins the *specific* losing sibling winning some differently-keyed offer, and asserts it is excluded once its winner is unlocked. The companion `never offers two entries from the same slot in one offer` test (line 54) independently fails if the per-slot cap in `offer.ts:62-68` is reverted, so the behaviour is double-covered.
+3. **PR body allegedly omitting the `7d561ad` fixes — dispute accepted.** The body’s "Second review round" section does name both fixes and does link `07-offer-m60-no-decoy-sibling.png` and `08-after-claim-m60-review-fix.png`. That finding was mine and it was wrong; nothing owed here.
+
+**New findings:** one, non-blocking — the balance-error path added this round has no test. Both route tests’ `supabaseWith()` helpers mock the balance read with a `data` key and no `error` key, so the new branch never runs in the suite. Inline on `kitchen-offer-route.test.ts:35`.
+
+**Checked against issue #522’s acceptance criteria:** all the code criteria hold — `requireAuth()` on both routes; the service-role client used only for the insert, with `user_id` taken from the session and never from the body; the offer recomputed server-side rather than trusted from the client; `23505` mapped to 409 on the real partial unique index; `unlocked_at` stamped on claim; offers never include an unlocked entry or one for an occupied slot; the thresholds sit inside what the issue explicitly leaves tunable. No user-visible behaviour beyond the offer card the issue asks for.
+
+**Still open, all disclosed in the body, none blocking:** raw server error text ("rug_pastel was not offered for milestone m25") rendered straight into the user-facing line at `UnlockOffer.tsx:115`; the `claimUnlock` docstring still says 409 covers "not offered" when the route returns 400; nothing invalidates the `kitchen-offer` query when bubbles are awarded elsewhere, so a user crossing a threshold may see the cached null for up to the provider’s 1-minute `staleTime`.
+
+**Could not check:** CI status (`gh pr checks` was not available to me), live Supabase state, and the fall-through-past-an-empty-milestone path — the body states it is untested and today behaves identically to returning null.
+
+---
+
+**TL;DR** — Both real findings from the last round are genuinely fixed, and the third was my error, correctly disputed. What remains is one missing test on a two-line failure path plus three cosmetic items already written down in the PR body. Nothing here needs a human to open the diff.
+
+**Action items** — Nothing needed from you. Optionally, add a balance-read-error case to the two route tests, before or after merge.

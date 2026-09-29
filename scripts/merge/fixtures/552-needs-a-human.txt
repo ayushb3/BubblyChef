@@ -1,0 +1,92 @@
+## Review — issue #518 guest walkthrough spec
+
+**No CODEOWNERS path is touched** (test file + screenshots only), so nothing forces a human gate mechanically. I'm still calling this one for a human, for the reason below.
+
+**Verdict: needs a human**
+
+Findings, most severe first:
+
+1. **`Fixes #518` closes the issue with one of its acceptance criteria knowingly unmet, and no follow-up filed.** The issue's first bullet asks that `goto('/')` show the guest banner; the PR moves that assertion to `/profile` instead. I checked and the reasoning is correct — `SaveAccountBanner` is mounted only at `nextjs/src/app/profile/page.tsx:65`, nowhere on the home page or in a shared layout — but the PR body then asks *a human to decide whether the PRD's home-page banner expectation should be implemented*, which is exactly the thing that cannot ride along with an auto-merge. CLAUDE.md: a partial fix gets `Related to #518` plus a note on what remains, not a closing keyword. Either file the placement call as its own `v1:M1` issue and link it, or drop the keyword. (inline at line 260)
+2. **Second flagged gap also has no issue: `e2e/sign-out.spec.ts`'s AC2 block.** The PR body confirms it now asserts removed behaviour (unauthenticated `/pantry` no longer redirects to `/login` since guest mode landed in PR #388) and reproduces it standalone. Correctly out of scope for #518, but it leaves the default e2e sweep with a known-red spec and nothing tracking it. One `gh issue create` closes this out.
+3. **The spec writes to the shared hosted Supabase project on every default `npm run test:e2e` sweep, un-gated.** It creates a real anonymous `auth.users` row plus a pantry item and a recipe. The repo's other hosted-write specs are opt-in behind `BUBBLY_E2E_LIVE_SCAN` / `BUBBLY_E2E_LIVE_COOK`, and `auth.spec.ts` stubs `signUp` specifically to avoid creating a real user. Cleanup is best-effort: it returns early if the UID was never captured, only warns on failure, and `retries: 2` under CI can create three guests while remembering one. The PR body's own `over_request_rate_limit` report during verification is this risk showing up already. `ON DELETE CASCADE` bounds the damage when deletion succeeds. (inline at line 32)
+4. **The "no error state" assertions in the route sweep are near-vacuous as ordered.** `toHaveCount(0)` fires immediately after `goto`, before any fetch resolves, so it cannot see an error boundary that renders when the fetch fails. Swapping each pair so the positive landmark waits first makes them mean what the comment says. (inline at line 255-257)
+
+What I could not check: I did not run the spec — no hosted Supabase credentials in this environment — so the "1 passed" result, the screenshots, and the smoke-suite run are taken at face value. The Vercel check failed on a free-tier deploy cap, unrelated to this diff.
+
+The spec itself is solid work: real POST for the recipe save rather than a stub, stubbing confined to the AI boundary, the base64- cookie decode correction is right, and the testid/labels it drives all exist. The blocker is tracker hygiene and the open product question, not the test code.
+## Re-review — issue #518 guest walkthrough spec
+
+**No CODEOWNERS path touched** (one new test file + five screenshots), so nothing forces a mechanical human gate. I'm still calling it for a human — reason below.
+
+### Prior findings
+
+| # | Prior finding | Status |
+|---|---|---|
+| 1 | `Fixes #518` closed the issue with an AC knowingly unmet | **Fixed** — body now says `Related to #518`; issue stays open |
+| 2 | `sign-out.spec.ts` AC2 drift untracked | **Fixed** — issue #458, *sign-out.spec.ts AC2 fails 5/5 on main*, is open and describes exactly this |
+| 3 | Un-gated hosted-Supabase writes + best-effort cleanup | **Fixed** — `BUBBLY_E2E_LIVE_GUEST=1` gate matches the `BUBBLY_E2E_LIVE_SCAN`/`_COOK` convention; uids now collected in a `Set` with `afterEach` + `afterAll` so a retry can't orphan the first attempt |
+| 4 | Error-count assertions fired before render | **Fixed** — all four sweep routes now await the positive landmark first |
+
+I also spot-checked the things the spec drives rather than trusting the body: `SaveAccountBanner` is mounted only at `app/profile/page.tsx:65` (so the "moved to /profile" reasoning holds), the banner string is `🫧 Save your account`, `data-testid="chat-message-assistant"` exists in `MessageBubble.tsx:21`, and the SSE stub's `{type:'envelope', data:…}` shape matches what `lib/api/chat.ts:125` unwraps via `onDone(parsed.data)`.
+
+### Verdict: needs a human
+
+1. **An open product decision is addressed to @ayushb3 in the PR body itself.** Issue #518's first acceptance criterion says the guest banner is visible on `goto('/')`; the spec asserts it on `/profile` instead. The code reading is right — nothing mounts the banner on home or in a shared layout — but "either the home-page banner gets built, or the issue's wording was loose" is a call only you can make, and it's what keeps #518 open. That is exactly the thing that can't ride along with an auto-merge.
+2. **#518's AC "any guest-only failure found is filed as its own issue and linked in the PR body" isn't met for the banner gap** — it's described in prose, not filed. Low stakes now that the closing keyword is gone (#518 stays open and holds the thread), but if you decide the banner should exist, it wants its own `v1:M1` issue.
+3. **The guest walkthrough now runs in CI exactly never.** The gate is the right call for a spec that creates a real `auth.users` row, but `receipt-ingestion.spec.ts` and `cook-confirm.spec.ts` each keep a stubbed, always-on variant alongside their live one; this spec has no such half. As landed, #518 is proved once, on one laptop, and gets no ongoing regression protection. A nightly job with the flag set, or splitting the stub-only assertions out, would close that.
+4. **Chunked auth cookie breaks both the assertion and the cleanup** — inline at line 73. Passes today only because an anon session happens to fit in one cookie.
+
+### Not covered / not checked
+
+- The guest → ai-service auth boundary is never exercised: `/v1/chat/stream` is stubbed, so an anon JWT is never validated by `get_current_user_id`. Issue #518 asks for the AI to be stubbed, so this is compliant, but it's the likeliest guest-specific backend failure and the body doesn't name it as a gap.
+- The parent PRD row says a guest can "cook it"; the cook flow isn't in this spec. #518's build points don't require it, so out of scope — flagging only so it isn't assumed covered.
+- I did not run the spec (no hosted Supabase credentials here), so "1 passed", the smoke run, and the screenshots are taken at face value. The body itself notes the live spec wasn't re-run after the last push.
+- The failed Vercel check is a free-tier deploy cap, unrelated to this diff.
+
+The test code itself is good: real `POST /api/recipes` rather than a stub for the write that proves persistence, stubbing confined to the AI boundary, and the `base64-` cookie decode correction is right.
+**Re-review (3rd pass) — issue #518 guest walkthrough spec**
+
+**No CODEOWNERS path touched** (one new test file + five screenshots), so nothing forces a mechanical human gate. Calling it for a human anyway — reason 1.
+
+No commits since the last review (`bb157c03`, 06:01) and no resolutions comment, so the prior findings stand as that pass left them: findings 1–4 of the *first* review were genuinely fixed in `668a24a7` (gate, `Set` + `afterEach` cleanup, landmark-before-error-count reordering, `Related to #518` instead of `Fixes`). I re-checked all four against the current diff and agree. Finding 4 of the second review was never addressed.
+
+**Verdict: needs a human**
+
+1. **The PR body puts an open product decision to @ayushb3 in writing.** Issue #518, *"Prove every core flow works in a fresh guest session (Playwright guest walkthrough)"* — its first acceptance criterion says the guest banner shows on `goto("/")`; the spec asserts it on `/profile`. The code reading behind that move is right (`SaveAccountBanner` is mounted only at `app/profile/page.tsx:65`), but "either the home-page banner gets built, or the issue was worded loosely" is a call only you can make, and it is what keeps issue #518 open. An auto-merge cannot carry that.
+2. **A chunked auth cookie breaks the assertion *and* silently orphans the guest user** — inline at line 73. `readGuestUid` matches only `sb-<ref>-auth-token`; `@supabase/ssr` writes `.0`/`.1` once the value crosses its chunk size, and then nothing is added to `guestUids`, so the cleanup this PR was re-pushed to add does nothing. Works today only because an anon session happens to fit in one cookie.
+3. **Nothing has run the file as it currently stands.** The body says so plainly, which is the honest call: the "1 passed" run was the pre-gate version, and the gate means CI will never run it either. The reordering is low-risk, but the spec's entire value is "does it catch these flows", and the committed version has never been executed green. Combined with the previous review's finding 3 — `receipt-ingestion.spec.ts` and `cook-confirm.spec.ts` each keep a stubbed always-on half beside their live half; this spec has no such half — issue #518 ends up proved once, on one laptop, with no ongoing regression protection.
+4. **Issue #518's AC "any guest-only failure found is filed as its own issue and linked in the PR body" is not met for the banner gap.** It is prose, not a filed issue. Low stakes while issue #518 stays open and holds the thread, but if you decide the home-page banner should exist it wants its own `v1:M1` ticket.
+
+**Not checked / not covered**
+
+- I did not run the spec — no hosted Supabase credentials here — so the screenshots, the "1 passed", and the smoke-suite run are taken at face value.
+- The guest → ai-service auth boundary is never exercised: `/v1/chat/stream` is stubbed, so an anon JWT is never validated by `get_current_user_id`. Issue #518 asks for the AI to be stubbed so this is compliant, but it is the likeliest guest-specific backend failure and the body does not list it among the gaps.
+- The cook flow is not in this spec. Out of scope for issue #518's build points; flagging only so it is not assumed covered.
+- The failed Vercel check is a free-tier daily deploy cap, unrelated to this diff.
+- Issue #458, *sign-out.spec.ts AC2 fails 5/5 on main* — open, and correctly tracks the neighbouring red spec the body flags. Not this PR's problem.
+
+The test code itself remains good: a real `POST /api/recipes` for the write that proves persistence rather than a stub, stubbing confined to the AI boundary, the `base64-` cookie decode correction, and the gate matching the `BUBBLY_E2E_LIVE_SCAN`/`_COOK` convention exactly. The blocker is the open product question plus the cookie-chunking hole, not the shape of the spec.
+**Re-review (4th pass) — issue #518 guest walkthrough spec**
+
+**No CODEOWNERS path touched** (one spec, one test-support helper, one jest test, five screenshots). All required checks green. Calling it for a human anyway — reason 1.
+
+### Prior findings — checked against `de69b7b`
+
+- **Chunked auth cookie (2nd review, finding 2 / 3rd review, finding 2) — genuinely fixed.** `guestUidFromCookies` in `e2e/support/guest-auth-cookie.ts` joins `.0`/`.1`/… in order and returns `null` on a gap rather than guessing, then applies the `base64-` decode. The jest cover in `src/__tests__/e2e-guest-auth-cookie.test.ts` really does run: `testPathIgnorePatterns: ['/node_modules/', '/e2e/']` doesn't match `src/__tests__/e2e-guest-auth-cookie.test.ts` (no `/e2e/` path segment), and the out-of-order 3-chunk and missing-middle cases are the right ones to assert. Good fix.
+- **Nothing had run the committed file (3rd review, finding 3) — addressed.** The body now documents a live run on `de69b7b` with the create/delete pair in the output, plus an independent check that the uid is 404 in the Auth admin API and has zero rows in five tables. I can't re-run it (no hosted credentials), so this is taken at face value, but it is the right evidence and it is specific.
+- **The banner AC not being filed as an issue (3rd review, finding 4) — addressed.** Issue #557, *"Parked: show the guest save-account banner beyond /profile, if usage shows guests miss it"* — a parked product idea to surface `SaveAccountBanner` outside `/profile`, to revisit on v1 usage data. Open.
+
+### Verdict: needs a human
+
+1. **The product decision that justifies `Fixes #518` exists only as the bot's own word, and its date doesn't fit.** Issue #557 says Ayush decided *"on 2026-09-22 (while reviewing PR #552)"* — but PR #552 was opened **2026-09-23 05:39 UTC**, and #557 was filed by `bubblychef-bot` at **06:07**, one minute after the previous review raised the question. Every review on this PR is from `claude`; there is no comment or review from @ayushb3 anywhere on it. That decision is the whole basis for restoring the `Fixes #518` keyword, and merging auto-closes issue #518, *"Prove every core flow works in a fresh guest session (Playwright guest walkthrough)"* — whose first acceptance criterion says the guest banner is visible on `goto('/')`, which this spec asserts on `/profile` instead. @ayushb3: if you did make that call, this is fine as written; if you didn't, #518 closes with AC1 unmet. Not something an auto-merge can carry either way.
+2. **A failing run still orphans the guest** — inline at line 144. The uid is captured after two assertions that can fail, so the anonymous user the `goto` created is never added to `guestUids` and never deleted. Same silent-orphan outcome the chunked-cookie fix was pushed to close, reached by a different route. One-line reorder.
+3. **The spec still runs in CI exactly never** (2nd review finding 3, 3rd review finding 3 — restated, not disputed, not addressed). The `BUBBLY_E2E_LIVE_GUEST` gate is the right call for a spec that writes to the production Supabase project, but `receipt-ingestion.spec.ts` and `cook-confirm.spec.ts` each keep a stubbed always-on half beside their live half and this one has none. As landed, #518 is proved once, by hand, with no ongoing regression protection — which is most of what the issue was asking for.
+
+### Not checked / not covered
+
+- I did not run the spec or verify the screenshots — no hosted Supabase credentials here.
+- The guest → ai-service auth boundary is never exercised (`/v1/chat/stream` is stubbed, so an anon JWT never reaches `get_current_user_id`). Compliant with #518, and the body now names it as a gap.
+- The cook flow as a guest — out of scope for #518, listed as not covered.
+- Issue #458, *sign-out.spec.ts AC2 fails on main* — open, correctly tracks the neighbouring red spec the body flags. Not this PR's problem.
+
+The spec itself remains good work: a real `POST /api/recipes` for the write that proves persistence, stubbing confined to the AI boundary, landmark-before-error-count ordering, and cleanup that is now both chunk-safe and retry-safe.

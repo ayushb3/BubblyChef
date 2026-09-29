@@ -1,0 +1,18 @@
+## Review — PR #619, *cooking timers: dock, step chips, header quick-set*
+
+**No CODEOWNERS path is touched**, so this is auto-mergeable once checks pass — which is why the findings below matter.
+
+**Verdict: needs changes**
+
+The shape is right: all six numbered requirements of issue #495 are implemented, scope is honest (the "Not covered" section is real, not decorative), and the PR body is genuinely reviewable without the diff — behavioural description, four screenshots on the actual acceptance path, and gates named. Tests test behaviour through the public hook rather than internals. Nothing here is a security or data concern; it's all client-side, no API routes, no auth surface.
+
+Four findings, most severe first:
+
+1. **Hydration mismatch — `localStorage` read in a lazy `useState` initialiser** (`useCookingTimers.tsx:159`). `ThemeProvider.tsx:34`, the sibling provider in the same tree, carries an explicit WHY comment saying not to do this. Server renders no dock, client's hydration pass renders one, React errors and re-renders the subtree — on exactly the reload-with-a-running-timer path the PR verifies.
+2. **`timerCompleted` re-fires on every reload** (`useCookingTimers.tsx:195`). `firedRef` is in-memory, so an undismissed completed timer dispatches the event again each time the app loads — contradicting the PR's "exactly once per timer" and issue #495 §6. `announcedRef` in `TimerDock.tsx:145` has the same flaw, so the chime and vibration replay too. The store tests only cover a single session, so nothing catches it.
+3. **Stale `tick` flashes a wrong countdown** (`useCookingTimers.tsx:186`). The interval only runs while something is running, so `tick` freezes in between; a timer started after an idle period renders with minutes of phantom time for ~1s before the interval corrects it.
+4. **The dock announces the countdown every second to screen readers** (`TimerDock.tsx:90`). `role="status"` on a badge whose label and text change per tick means one polite-live announcement per second per timer, on every route.
+
+Also minor, not worth its own thread: `readStored` validates every persisted field except `endAt`, so a corrupt entry with a non-numeric `endAt` yields `NaN` remaining (rendered as `NaN:NaN`) and an interval that never stops, since `status` stays `'running'` forever.
+
+**Could not check:** the screenshots render behaviour I can't independently confirm — in particular whether the header quick-set row keeps `RecipeDetail`'s ruled-paper line grid aligned, and whether the step chip fits the guided-cook-flow header row (no screenshot of that surface, though the existing suites there still pass). The Playwright smoke suite was not run, which the PR states and justifies; I agree it doesn't touch this path.

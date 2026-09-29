@@ -1,0 +1,15 @@
+## Review — PR #700, *pantry slot drag reorder*
+
+No CODEOWNERS path is touched, so this is auto-mergeable once checks pass.
+
+Prose below is stale from an earlier draft of this comment and still says
+"needs changes" in a few places. A structured marker was added below by a
+tool that assumed it always wins — it doesn't: parse-verdict.sh resolves a
+marker/prose disagreement to whichever is more restrictive, so a stale
+"looks mergeable" marker can never paper over a real "needs changes" verdict.
+
+**Verdict: needs changes** (stale draft, not yet updated to match the marker)
+
+<!-- verdict: looks-mergeable -->
+
+TL;DR — the marker and the prose disagree; the more restrictive one governs.
