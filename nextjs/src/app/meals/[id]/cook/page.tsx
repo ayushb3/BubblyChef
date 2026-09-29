@@ -419,8 +419,14 @@ export default function MealCookPage() {
               onSkip={handleSkip}
               onStartEarly={handleStartEarly}
             />
-            <MealRunningStrip steps={stream.running} clockLabel={clockLabel} />
-            <MealNextUp step={stream.next_up} clockLabel={clockLabel} />
+            {/* A waiting card already lists what's running, and has nothing
+                next to preview: rendering either here would repeat it (PR #661 review). */}
+            {stream.now.kind !== 'waiting' && (
+              <>
+                <MealRunningStrip steps={stream.running} clockLabel={clockLabel} />
+                <MealNextUp step={stream.next_up} clockLabel={clockLabel} />
+              </>
+            )}
           </div>
         )}
       </div>

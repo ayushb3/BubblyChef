@@ -480,3 +480,32 @@ describe('MealCookPage — degraded (fallback-steps) dish', () => {
     )
   })
 })
+
+describe('MealCookPage — waiting card (PR #661 review)', () => {
+  it('renders the running strip once and no next-up line while only a hands-off step cooks', async () => {
+    // Last step is hands-off: once it's started there's nothing pending, so
+    // the stream falls to `waiting`. The card already lists what's running.
+    const endsOnSimmer: Recipe = { ...MAIN_RECIPE, steps: MAIN_RECIPE.steps!.slice(0, 2) }
+    const meal = baseMeal({ dishes: [{ role: 'main', position: 0, recipe: endsOnSimmer }] })
+    fetchMeal.mockResolvedValue(meal)
+    mockTimers = [
+      { id: 'timer-1', label: 'Simmer sauce', durationSeconds: 480, remainingSeconds: 400, status: 'running' },
+    ]
+    const startedAt = Date.now() - 6 * 60_000
+    const session = startMealCookSession('meal-1', ['r-main'], startedAt, dishStepSignaturesForMeal(meal))
+    saveMealCookProgress({
+      ...session,
+      steps: {
+        'r-main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0, ended_at_minutes: 5 },
+        'r-main:1': { status: 'running', started_at_minutes: 5, extra_minutes: 0, timer_id: 'timer-1' },
+      },
+    })
+
+    renderPage()
+
+    await waitFor(() => expect(screen.getByTestId('meal-now-card-waiting-copy')).toBeInTheDocument())
+    expect(screen.getAllByTestId('meal-running-strip')).toHaveLength(1)
+    expect(screen.queryByTestId('meal-next-up')).not.toBeInTheDocument()
+    expect(screen.queryByText("That's the last step")).not.toBeInTheDocument()
+  })
+})
