@@ -13,11 +13,22 @@
  * only place that needs updating if the contract changes.
  */
 
-import { SCAN_CLIENT_TIMEOUT_CODE } from '@/lib/api/scan'
+import {
+  SCAN_CLIENT_TIMEOUT_CODE,
+  SCAN_NETWORK_ERROR_CODE,
+  SCAN_NOT_AN_IMAGE_CODE,
+} from '@/lib/api/scan'
 
 const TIMEOUT_COPY = 'That scan is taking too long. Try again, or add items manually.'
 
 const GENERIC_COPY = "Couldn't read that receipt — try again, or add items manually."
+
+/**
+ * The scan succeeded but parsed zero items. Not an HTTP failure — the UI
+ * raises it itself (`ScanPage`, `ScanTab`) when a result is empty, so the
+ * user gets a clear "nothing found" state instead of an empty review list.
+ */
+export const SCAN_NO_ITEMS_CODE = 'no_items_found'
 
 const COPY_BY_CODE: Record<string, string> = {
   // Client-side abort and a server-reported timeout are the same thing to a
@@ -29,6 +40,15 @@ const COPY_BY_CODE: Record<string, string> = {
   unreadable_image:
     "We couldn't read that photo. Try a clearer picture of the receipt, or add items manually.",
   scan_failed: GENERIC_COPY,
+  scan_rate_limited:
+    'Scanning is busy right now. Give it a minute and try again, or add items manually.',
+  scan_auth_expired: 'Your session expired. Sign in again, then try scanning once more.',
+  scan_file_too_large: 'That photo is too big to scan. Try a smaller one, or add items manually.',
+  [SCAN_NETWORK_ERROR_CODE]:
+    "Couldn't reach the scanner. Check your connection and try again, or add items manually.",
+  [SCAN_NOT_AN_IMAGE_CODE]: 'That file is not a photo. Pick a picture of your receipt instead.',
+  [SCAN_NO_ITEMS_CODE]:
+    "We couldn't find any items on that receipt. Try a clearer, well-lit photo, or add items manually.",
 }
 
 /**

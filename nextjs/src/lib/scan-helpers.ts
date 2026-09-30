@@ -33,6 +33,19 @@ export function assignScanIds(result: ScanResult): {
 }
 
 /**
+ * True when a scan came back successfully but parsed nothing in any tier. The
+ * containers treat this as a friendly "nothing found" state rather than
+ * rendering an empty review list (issue #642).
+ */
+export function isEmptyScan(result: {
+  ready_to_add: unknown[]
+  needs_review: unknown[]
+  skipped: unknown[]
+}): boolean {
+  return result.ready_to_add.length + result.needs_review.length + result.skipped.length === 0
+}
+
+/**
  * Convert a scanned/OCR'd item into the shape `POST /api/pantry/bulk`
  * expects. Shared by every container that lets a user confirm scan results
  * (the pantry add sheet's scan tab, the `/scan` route) so there is exactly
