@@ -23,12 +23,19 @@ jest.mock('next/navigation', () => ({
 
 const signInWithPassword = jest.fn()
 const signUp = jest.fn()
+// Issue #389: the page now asks who the current session is before Google
+// sign-in, so guests link instead of forking a second account.
+const mockGetUser = jest.fn()
+const mockLinkIdentity = jest.fn()
+const mockSignInWithOAuth = jest.fn()
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     auth: {
       signUp: (...args: unknown[]) => signUp(...args),
       signInWithPassword: (...args: unknown[]) => signInWithPassword(...args),
-      signInWithOAuth: jest.fn(),
+      signInWithOAuth: (...args: unknown[]) => mockSignInWithOAuth(...args),
+      linkIdentity: (...args: unknown[]) => mockLinkIdentity(...args),
+      getUser: (...args: unknown[]) => mockGetUser(...args),
     },
   }),
 }))
@@ -51,6 +58,7 @@ beforeEach(() => {
 
 afterEach(() => {
   window.history.pushState({}, '', '/login')
+  window.sessionStorage.clear()
 })
 
 describe('login page reads the OAuth callback error (#383)', () => {
