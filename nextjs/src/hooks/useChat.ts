@@ -2,8 +2,19 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { streamChatMessage, fetchChatHistory, applyPantryProposal } from '@/lib/api/chat'
-import type { ChatMessage, ChatResponse, ChatIntent, PantryProposalData, PantryProposalAction } from '@/types/chat'
+import {
+  streamChatMessage,
+  fetchChatHistory,
+  applyPantryProposal,
+  rejectPantryProposal,
+} from '@/lib/api/chat'
+import type {
+  ChatMessage,
+  ChatResponse,
+  PantryProposalData,
+  PantryProposalAction,
+  PendingProposal,
+} from '@/types/chat'
 import {
   getClarificationSuggestions,
   mergeTermSuggestions,
@@ -11,12 +22,7 @@ import {
   filterResolvedTerms,
   proposalActionKey,
 } from '@/types/chat'
-
-/** Everything needed to apply a pantry proposal once the user approves it. */
-interface PendingProposal {
-  requestId: string
-  actions: PantryProposalAction[]
-}
+import { buildRestoredThread } from '@/lib/chat-restore'
 
 /**
  * Issue #265 — the active conversation survives navigation.
@@ -137,6 +143,13 @@ export function useChat(options?: UseChatOptions) {
   useEffect(() => {
     pendingProposalsRef.current = pendingProposals
   }, [pendingProposals])
+  // The conversation an approve/reject records against (#444). Read through a
+  // ref, never a closure: on a fresh mount the id is only set inside the resume
+  // effect, after the first render, so a captured value would be null.
+  const conversationIdRef = useRef(conversationId)
+  useEffect(() => {
+    conversationIdRef.current = conversationId
+  }, [conversationId])
 
   // ── History loading ──────────────────────────────────────────────────────
 
@@ -162,6 +175,7 @@ export function useChat(options?: UseChatOptions) {
     // would later stomp back over (the id) while also discarding the
     // just-sent message (the content).
     setConversationId(storedId)
+    conversationIdRef.current = storedId
 
     fetchChatHistory(storedId)
       .then((turns) => {
@@ -179,50 +193,15 @@ export function useChat(options?: UseChatOptions) {
           return
         }
 
-        const restored: ChatMessage[] = turns.map((turn) => {
-          const base = {
-            id: crypto.randomUUID(),
-            role: turn.role as 'user' | 'assistant',
-            content: turn.content,
-            intent: (turn.intent as ChatMessage['intent']) ?? undefined,
-            timestamp: new Date(turn.created_at),
-          }
-          // Rebuild response so the card render branches fire on reload.
-          // Exclude pantry_update: a restored pantry proposal has no entry in
-          // pendingProposalsRef, so its Approve/Reject buttons would no-op — a
-          // dead button is worse than the prior no-card state. Persisting the
-          // interactive approve/reject state across reload is a separate pass.
-          // Recipe cards and brainstorm cards are read-only, so they restore
-          // fully and safely.
-          const canRestoreCard =
-            turn.role === 'assistant' &&
-            turn.intent !== 'pantry_update' &&
-            (turn.proposal || turn.metadata)
-          if (canRestoreCard) {
-            return {
-              ...base,
-              response: {
-                intent: (turn.intent ?? 'general_chat') as ChatIntent,
-                assistant_message: turn.content,
-                proposal: turn.proposal ?? null,
-                // A restored turn has no live stream behind it, so it can't still
-                // be waiting for follow-up chips (#498).
-                metadata: turn.metadata ? { ...turn.metadata, follow_ups_pending: false } : null,
-                // fill required fields with safe defaults; the real confidence
-                // is not persisted, so restored turns report unknown (0), not a
-                // fabricated 1.0 that a future confidence indicator would trust.
-                request_id: '',
-                workflow_id: '',
-                conversation_id: storedId,
-                confidence: { overall: 0 },
-                requires_review: false,
-                next_action: 'none',
-              } as ChatResponse,
-            }
-          }
-          return base
-        })
-        setMessages(restored)
+        // Pantry proposals restore from the outcome the AI service recorded on
+        // the persisted turns, so a card is live only if it was never handled
+        // (#444). The mapper never throws; a bad row degrades to a text bubble.
+        const restored = buildRestoredThread(turns, storedId)
+        setMessages(restored.messages)
+        setPendingProposals(restored.pendingProposals)
+        setProposalStates(restored.proposalStates)
+        setProposalErrors(restored.proposalErrors)
+        setProposalFailedNames(restored.proposalFailedNames)
         setIsResuming(false)
       })
       .catch(() => {
@@ -265,6 +244,7 @@ export function useChat(options?: UseChatOptions) {
       if (!convId) {
         convId = crypto.randomUUID()
         setConversationId(convId)
+        conversationIdRef.current = convId
         // Persist as soon as the conversation actually exists, so it becomes
         // resumable after navigation even if the user never returns before
         // sending another message.
@@ -471,6 +451,12 @@ export function useChat(options?: UseChatOptions) {
                 next[assistantMsgId] = {
                   requestId: response.request_id ?? originalPending.requestId,
                   actions: mergedActions,
+                  // The card now spans this turn too. Any pantry turn joins,
+                  // zero-action ones included: it owns the card, so its id must
+                  // be a chain member (#444).
+                  turnRequestIds: response.request_id
+                    ? [...originalPending.turnRequestIds, response.request_id]
+                    : originalPending.turnRequestIds,
                 }
               } else if (
                 response.intent === 'pantry_update' &&
@@ -480,6 +466,7 @@ export function useChat(options?: UseChatOptions) {
                 next[assistantMsgId] = {
                   requestId: response.request_id,
                   actions: proposal.actions,
+                  turnRequestIds: [response.request_id],
                 }
               }
               return next
@@ -500,6 +487,7 @@ export function useChat(options?: UseChatOptions) {
               [assistantMsgId]: {
                 requestId: response.request_id,
                 actions: proposal.actions,
+                turnRequestIds: [response.request_id],
               },
             }))
             setProposalStates((prev) => ({
@@ -588,6 +576,7 @@ export function useChat(options?: UseChatOptions) {
     cancelStream()
     setMessages([])
     setConversationId(null)
+    conversationIdRef.current = null
     setProposalStates({})
     clearStoredConversationId()
     setProposalErrors({})
@@ -629,7 +618,15 @@ export function useChat(options?: UseChatOptions) {
     })
 
     try {
-      const result = await applyPantryProposal(pending.requestId, pending.actions)
+      // Record the outcome on the persisted turns the card spans (#444). With
+      // no conversation id there is nothing to record against: behave as before.
+      const convId = conversationIdRef.current
+      const result = convId
+        ? await applyPantryProposal(pending.requestId, pending.actions, {
+            conversationId: convId,
+            turnRequestIds: pending.turnRequestIds,
+          })
+        : await applyPantryProposal(pending.requestId, pending.actions)
 
       if (!result.success) {
         // If only some actions failed, update pendingProposals to hold only
@@ -711,13 +708,22 @@ export function useChat(options?: UseChatOptions) {
   /**
    * Reject a chat-proposed pantry update.
    *
-   * The AI service has no reject/skip operation for proposals (only
-   * `POST /v1/workflows/apply`, which writes to the DB) — rejection is a
-   * client-side dismissal only. It does not call the AI service, so a failed
-   * "rejection" can never happen and this is synchronous.
+   * The card flips to 'rejected' at once. The dismissal is also recorded on the
+   * persisted turns (`POST /v1/workflows/reject`, #444) so it survives a reload
+   * and shows on another device. That call is fire and forget: if it fails the
+   * worst case is the card coming back pending, which carries no write risk, so
+   * it never reverts the UI and never throws.
    */
   const rejectProposal = useCallback((msgId: string) => {
     setProposalStates((prev) => ({ ...prev, [msgId]: 'rejected' }))
+    const pending = pendingProposalsRef.current[msgId]
+    const convId = conversationIdRef.current
+    if (!convId || !pending || pending.turnRequestIds.length === 0) return
+    try {
+      Promise.resolve(rejectPantryProposal(convId, pending.turnRequestIds)).catch(() => {})
+    } catch {
+      // Best effort only.
+    }
   }, [])
 
   // ── Chip tap send (interrupts streaming) ────────────────────────────────
