@@ -270,14 +270,14 @@ Gemini is over its spending cap. **[model]** marks a step that needs a live mode
 
 1. **#669** (no model; the ai-service must be running for `normalize-base-unit`). Add "Flour, 500 g". Edit it to 1 kg. Read the row (`GET /api/pantry/<id>` or the Supabase table): `quantity_base` is 1000. On main it's 500. Then cook a recipe using 400 g of flour: about 600 g is left, not about 100 g.
 2. **#671** (the cook proposal may call the model). Deleting the item in a second tab can't reproduce the bug, because `readExpiryByItemId` (`cook/confirm/route.ts:30`) then finds no row, so there's no expiry and no rescue. Instead:
-   - Seed a pantry row expiring tomorrow whose base is null and can't be derived, for example "Baby spinach, 1 bag", with `quantity_base`/`unit_base` null. `deduct_pantry_item` refuses it (`supabase_repo.py:885-895`), and the row keeps its expiry.
+   - Seed a pantry row expiring tomorrow whose base is null and can't be derived, with `quantity_base`/`unit_base` null. Correction from verify: "bag" is derivable as `(1, count)`, so use a unit like `tub`/`punnet`/`packet`, and change the row to that unit after the cook proposal is built, because the proposal marks rows it can't quantify as "Have it" with no deduction. `deduct_pantry_item` refuses it (`supabase_repo.py:885-895`), and the row keeps its expiry.
    - Cook a recipe that uses spinach through CookModal and confirm.
    - The server lists the row in `deductions_skipped`, and the `bubble_events` ledger has **no `rescue` row** for it. On main it has one.
    - If the proposal can't run, `cook-confirm-route.test.ts` is the evidence.
 3. **#662** (no model for the setup; **[model]** for the chat lookup, which needs the classifier):
    - `POST /api/recipes` with `is_draft: true`, title "Zzz Draft Test Pasta".
    - The dashboard suggestion (`GET /v1/dashboard/daily`, which falls back to `source: "fallback"` without AI) never names it.
-   - **[model]** "show me my saved recipes" doesn't list it, and "show me my saved zzz draft test pasta" gives "couldn't find".
+   - **[model]** "show me my saved recipes" doesn't list it, and "show me my saved zzz draft" gives "couldn't find". Correction from verify: adding "pasta" fuzzy-matches other saved pasta recipes; the draft is still absent.
    - Delete the row afterwards.
 4. **#665** (no model). On an empty `/chat`, the starter pills have no `aria-pressed`. Paste `[...document.querySelectorAll('button[aria-pressed]')].map(b => b.textContent)`, which should give `[]`. **[model]** Also check a clarification card's selected pill, which gives `aria-pressed="true"`.
 5. **#672** **[model]**. In a meal cook-along, open Ask Bubbles on a dish and ask "can I swap the cream for milk?" Screenshot: the amendment card's two buttons are visible without scrolling. Then run `document.querySelector('[data-testid="ask-bubbles-thread"]').scrollTop > 0`.
