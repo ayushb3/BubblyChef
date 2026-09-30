@@ -268,7 +268,7 @@ class _FakeTable:
         self._rows = rows
         self._filters: dict[str, Any] = {}
         self._order_field: str | None = None
-        self._single = False
+        self._limit: int | None = None
 
     def select(self, *_args: Any, **_kwargs: Any) -> "_FakeTable":
         return self
@@ -281,16 +281,16 @@ class _FakeTable:
         self._order_field = field
         return self
 
-    def single(self) -> "_FakeTable":
-        self._single = True
+    def limit(self, n: int) -> "_FakeTable":
+        self._limit = n
         return self
 
     def execute(self) -> Any:
         rows = [r for r in self._rows if all(r.get(k) == v for k, v in self._filters.items())]
         if self._order_field:
             rows = sorted(rows, key=lambda r: r.get(self._order_field))
-        if self._single:
-            return _Result(rows[0] if rows else None)  # type: ignore[arg-type]
+        if self._limit is not None:
+            rows = rows[: self._limit]
         return _Result(rows)
 
 

@@ -13,7 +13,7 @@
  */
 
 import { act, renderHook } from '@testing-library/react'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
 import { useChat } from '@/hooks/useChat'
@@ -199,6 +199,83 @@ describe('ActionRow inline qty editor — onChange', () => {
         }),
       ])
     )
+  })
+})
+
+// ─── 2b. Failed card: editor on the failed rows only (#677 §2) ────────────────
+
+describe('failed card — inline editor follows failedNames', () => {
+  const eggs: PantryProposalAction = {
+    action_type: 'use',
+    item: { name: 'eggs', quantity: 2, unit: 'item' },
+    confidence: 0.9,
+  }
+  // Capitalised on purpose: the failedNames key is trim().toLowerCase().
+  const spinach: PantryProposalAction = {
+    action_type: 'use',
+    item: { name: 'Spinach', quantity: 1, unit: 'handful' },
+    confidence: 0.9,
+  }
+  const proposal = makeProposal([eggs, spinach])
+
+  function card(
+    state: 'pending' | 'approving' | 'approved' | 'failed',
+    failedNames?: string[],
+  ) {
+    return (
+      <PantryProposalCard
+        proposal={proposal}
+        onApprove={jest.fn()}
+        onReject={jest.fn()}
+        state={state}
+        error="Units don't match (handful vs g), edit the unit for: Spinach"
+        failedNames={failedNames}
+      />
+    )
+  }
+
+  it('walks pending -> failed -> approving -> approved', async () => {
+    const { rerender } = render(card('pending'))
+    // A real unit ("handful") gets no editor on a pending card.
+    expect(screen.queryByRole('textbox', { name: /unit for spinach/i })).not.toBeInTheDocument()
+
+    rerender(card('failed', ['spinach']))
+    const spinachUnit = screen.getByRole('textbox', { name: /unit for spinach/i })
+    expect(spinachUnit).toHaveValue('handful')
+    expect(spinachUnit).not.toBeDisabled()
+    // Eggs shows its editor (unit "item") but it already applied: read-only.
+    expect(screen.getByRole('textbox', { name: /unit for eggs/i })).toBeDisabled()
+    expect(screen.getByRole('spinbutton', { name: /quantity for eggs/i })).toBeDisabled()
+
+    rerender(card('approving', ['spinach']))
+    expect(screen.getByRole('textbox', { name: /unit for spinach/i })).toBeDisabled()
+
+    rerender(card('approved'))
+    await waitFor(() => {
+      expect(screen.queryByRole('textbox', { name: /unit for spinach/i })).not.toBeInTheDocument()
+    })
+    // The eggs row (unit "item") keeps its editor for the life of the row by
+    // design (`wasEverEditable`, frozen at mount), on main too. It is inert.
+    expect(screen.getByRole('textbox', { name: /unit for eggs/i })).toBeDisabled()
+  })
+
+  it('a first approve (no failedNames yet) does not open any editor', () => {
+    render(
+      <PantryProposalCard
+        proposal={makeProposal([spinach])}
+        onApprove={jest.fn()}
+        onReject={jest.fn()}
+        state="approving"
+      />
+    )
+    expect(screen.queryByRole('textbox', { name: /unit for spinach/i })).not.toBeInTheDocument()
+  })
+
+  it('a failed card with failedNames undefined leaves every row editable', () => {
+    render(card('failed', undefined))
+    expect(screen.getByRole('textbox', { name: /unit for spinach/i })).not.toBeDisabled()
+    expect(screen.getByRole('textbox', { name: /unit for eggs/i })).not.toBeDisabled()
+    expect(screen.getByRole('spinbutton', { name: /quantity for eggs/i })).not.toBeDisabled()
   })
 })
 

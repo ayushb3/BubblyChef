@@ -842,7 +842,7 @@ def _confirm_repo(
     repo.get_meal_with_dishes.return_value = meal_data
     repo.claim_meal_cook.return_value = claim
     repo.deduct_pantry_item.return_value = deduct_returns
-    repo.update_recipe_cooked.return_value = None
+    repo.update_recipe_cooked.return_value = True
     repo.mark_meal_cook_applied.return_value = None
     return repo
 

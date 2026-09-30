@@ -380,8 +380,12 @@ async def meal_cook_confirm(
             applied, requested, skipped = await apply_collapsed_deductions(
                 repo, user_id, request.deductions
             )
+            marked: list[str] = []
             for recipe_id in request.recipe_ids:
-                await repo.update_recipe_cooked(user_id=user_id, recipe_id=str(recipe_id))
+                # A dish whose recipe vanished after the deductions is skipped,
+                # not raised: a raise would strand the claim (#676).
+                if await repo.update_recipe_cooked(user_id=user_id, recipe_id=str(recipe_id)):
+                    marked.append(str(recipe_id))
             await repo.mark_meal_cook_applied(user_id, str(request.meal_id), request.cook_ref)
         except Exception as e:
             logger.error(
@@ -399,7 +403,7 @@ async def meal_cook_confirm(
             "deductions_applied": applied,
             "deductions_requested": requested,
             "deductions_skipped": skipped,
-            "recipes_marked_cooked": [str(r) for r in request.recipe_ids],
+            "recipes_marked_cooked": marked,
             "meal_times_cooked": claim.times_cooked,
             "cooked_on": claim.cooked_on.isoformat(),
         }

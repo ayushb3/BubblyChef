@@ -6,6 +6,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client'
+import { proposalActionKey } from '@/types/chat'
 import type {
   ChatRequest,
   ChatResponse,
@@ -273,6 +274,31 @@ export interface ApplyProposalResult {
   failedActions?: PantryProposalAction[]
 }
 
+const APPLY_FALLBACK_MESSAGE = "Couldn't update your pantry"
+
+/**
+ * A readable message from a non-2xx `/api/ai/workflows/apply` body. `error`
+ * may be a string (the proxy's own errors) or an object, and a FastAPI 422
+ * arrives as `{ detail: [{ msg, ... }] }` (top level or under `error`).
+ * Anything unreadable becomes a generic line rather than "[object Object]".
+ */
+function applyErrorMessage(body: unknown): string {
+  const asRecord = (v: unknown): Record<string, unknown> | null =>
+    v && typeof v === 'object' ? (v as Record<string, unknown>) : null
+  const root = asRecord(body)
+  if (!root) return APPLY_FALLBACK_MESSAGE
+  if (typeof root.error === 'string' && root.error.trim()) return root.error
+  for (const holder of [root, asRecord(root.error)]) {
+    const detail = holder?.detail
+    if (typeof detail === 'string' && detail.trim()) return detail
+    if (Array.isArray(detail)) {
+      const msg = asRecord(detail[0])?.msg
+      if (typeof msg === 'string' && msg.trim()) return msg
+    }
+  }
+  return APPLY_FALLBACK_MESSAGE
+}
+
 /**
  * Apply a pantry-update proposal surfaced by chat.
  *
@@ -312,7 +338,7 @@ export async function applyPantryProposal(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Failed to add items' }))
-    throw new Error(err.error ?? `Failed to add items: ${res.status}`)
+    throw new Error(applyErrorMessage(err))
   }
 
   const data = await res.json()
@@ -334,7 +360,7 @@ export async function applyPantryProposal(
         .filter((n): n is string => n !== null),
     )
     const matched = failedNames.size > 0
-      ? actions.filter((a) => failedNames.has(a.item.name.toLowerCase()))
+      ? actions.filter((a) => failedNames.has(proposalActionKey(a)))
       : undefined
     // If we couldn't match any names, leave failedActions undefined so the
     // caller falls back to resending all actions (better than silently dropping).

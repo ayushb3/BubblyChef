@@ -15,8 +15,10 @@ Extract ALL grocery items mentioned in the text. For each item:
 - unit: unit of measurement (e.g., "gallon", "dozen", "lb", "item")
 - category: food category (produce, dairy, meat, seafood, frozen,
   canned, dry_goods, condiments, beverages, snacks, bakery, other)
-- action: "add" for purchases, "remove" for items used/thrown out,
-  "use" for partial consumption
+- action: "add" for purchases; "use" when some of an item was used, eaten or
+  cooked with (quantity = the amount used; unit as in rule 3, so "item" when
+  the user just counts); "remove" only when the item is gone entirely (used
+  up, finished, thrown out, or the user used all of it, the rest, or the last of it)
 - confidence: how confident you are about this item (0-1)
 
 Rules:

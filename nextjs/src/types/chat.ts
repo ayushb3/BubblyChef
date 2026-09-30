@@ -527,6 +527,16 @@ export function mergeTermSuggestions(
 }
 
 /**
+ * The one key a pantry-proposal row is tracked by: the item name, trimmed and
+ * lower-cased. The card, `useChat`'s pending-set filter and its failed-names
+ * record all use this same expression, so a row can't be "failed" under one
+ * spelling and "pending" under another (issue #677).
+ */
+export function proposalActionKey(action: PantryProposalAction): string {
+  return action.item.name.trim().toLowerCase()
+}
+
+/**
  * Merge new proposal actions onto existing ones, deduping by item name
  * (case-insensitive). Incoming actions for an already-present item replace
  * the existing one (the newer turn has fresher confidence/quantity info).

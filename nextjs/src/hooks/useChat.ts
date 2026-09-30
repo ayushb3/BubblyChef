@@ -4,7 +4,13 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { streamChatMessage, fetchChatHistory, applyPantryProposal } from '@/lib/api/chat'
 import type { ChatMessage, ChatResponse, ChatIntent, PantryProposalData, PantryProposalAction } from '@/types/chat'
-import { getClarificationSuggestions, mergeTermSuggestions, mergeActions, filterResolvedTerms } from '@/types/chat'
+import {
+  getClarificationSuggestions,
+  mergeTermSuggestions,
+  mergeActions,
+  filterResolvedTerms,
+  proposalActionKey,
+} from '@/types/chat'
 
 /** Everything needed to apply a pantry proposal once the user approves it. */
 interface PendingProposal {
@@ -82,6 +88,12 @@ export function useChat(options?: UseChatOptions) {
     Record<string, 'pending' | 'approving' | 'approved' | 'rejected' | 'failed'>
   >({})
   const [proposalErrors, setProposalErrors] = useState<Record<string, string>>({})
+  /**
+   * Keys (`proposalActionKey`) of the actions a failed card will retry, per
+   * message id. Set on every failure, cleared on success. The card keeps rows
+   * that already applied read-only and opens the editor only on these.
+   */
+  const [proposalFailedNames, setProposalFailedNames] = useState<Record<string, string[]>>({})
   /**
    * Stores the requestId + actions needed to call applyPantryProposal when the
    * user clicks "Add to Pantry". Keyed by the message ID that owns the card.
@@ -579,6 +591,7 @@ export function useChat(options?: UseChatOptions) {
     setProposalStates({})
     clearStoredConversationId()
     setProposalErrors({})
+    setProposalFailedNames({})
     setPendingProposals({})
     historyLoaded.current = false
   }, [cancelStream])
@@ -622,12 +635,19 @@ export function useChat(options?: UseChatOptions) {
         // If only some actions failed, update pendingProposals to hold only
         // the failed actions so a retry doesn't double-count the ones that
         // already succeeded.
-        if (result.failedActions && result.failedActions.length > 0) {
+        const hasNarrowed = Boolean(result.failedActions && result.failedActions.length > 0)
+        if (hasNarrowed) {
           setPendingProposals((prev) => ({
             ...prev,
             [msgId]: { ...pending, actions: result.failedActions! },
           }))
         }
+        // What the retry will send: the narrowed set, else the whole pending set.
+        const retryActions = hasNarrowed ? result.failedActions! : pending.actions
+        setProposalFailedNames((prev) => ({
+          ...prev,
+          [msgId]: retryActions.map(proposalActionKey),
+        }))
         setProposalErrors((prev) => ({
           ...prev,
           [msgId]: result.errors[0] ?? 'Some items could not be added. Please try again.',
@@ -637,12 +657,23 @@ export function useChat(options?: UseChatOptions) {
       }
 
       setProposalStates((prev) => ({ ...prev, [msgId]: 'approved' }))
+      setProposalFailedNames((prev) => {
+        const next = { ...prev }
+        delete next[msgId]
+        return next
+      })
       // The approve route (/api/ai/workflows/apply) awards pantry_add
       // bubbles server-side (#520) — refetch so the balance shown in the UI
       // picks it up, same as every other awarding mutation (CookModal,
       // RecipeBook import, scan confirm, the pantry add sheet).
       queryClient.invalidateQueries({ queryKey: ['bubbles'] })
     } catch (err) {
+      // Nothing is known to have applied and the pending set is unchanged, so
+      // every pending row stays retryable.
+      setProposalFailedNames((prev) => ({
+        ...prev,
+        [msgId]: pending.actions.map(proposalActionKey),
+      }))
       setProposalErrors((prev) => ({
         ...prev,
         [msgId]: err instanceof Error ? err.message : 'Failed to add items. Please try again.',
@@ -657,12 +688,23 @@ export function useChat(options?: UseChatOptions) {
    * Called by PantryProposalCard whenever the user edits a quantity/unit
    * inline. The edited actions are what get sent to the DB on approve, not
    * the original backend values.
+   *
+   * Only actions already in the pending set are kept. The card renders every
+   * row and sends its whole list on an edit, so after a partial failure (the
+   * pending set narrowed to the failed rows) an unfiltered replace would bring
+   * back the rows that already applied and Try again would apply them twice.
+   * Before any failure the pending set is every action, so pre-approve edits
+   * are unchanged.
    */
   const updateProposalActions = useCallback((msgId: string, actions: PantryProposalAction[]) => {
     setPendingProposals((prev) => {
       const existing = prev[msgId]
       if (!existing) return prev
-      return { ...prev, [msgId]: { ...existing, actions } }
+      const pendingKeys = new Set(existing.actions.map(proposalActionKey))
+      return {
+        ...prev,
+        [msgId]: { ...existing, actions: actions.filter((a) => pendingKeys.has(proposalActionKey(a))) },
+      }
     })
   }, [])
 
@@ -726,6 +768,7 @@ export function useChat(options?: UseChatOptions) {
     conversationId,
     proposalStates,
     proposalErrors,
+    proposalFailedNames,
     sendMessage,
     sendChipMessage,
     sendConfirmChoice,
