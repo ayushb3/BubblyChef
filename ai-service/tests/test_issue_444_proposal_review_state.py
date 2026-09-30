@@ -646,10 +646,118 @@ async def test_b8_everything_already_applied_skips_the_pantry_write(
 
     data = resp.json()
     assert resp.status_code == 200
-    assert sent == []
-    repo.apply_pantry_proposal.assert_not_called()  # type: ignore[attr-defined]
+    assert sent == [], "the pantry write path (apply_pantry_proposal_detailed) was never entered"
     assert data["success"] is True and data["applied_count"] == 0
     assert data["already_applied_names"] == ["lemon"]
+
+
+def _applied_review(*keys: str, chain: list[str] | None = None) -> dict[str, Any]:
+    return {
+        "status": "applied",
+        "applied_keys": list(keys),
+        "failed": [],
+        "error": None,
+        "chain_request_ids": chain or [RID_A],
+        "updated_at": "2026-09-30T12:00:00+00:00",
+    }
+
+
+@pytest.mark.asyncio
+async def test_stale_tab_merge_where_every_row_is_dropped_still_records_the_new_turn(
+    client: AsyncClient,
+) -> None:
+    """Another tab applied A (lemon); this tab merged C (lemon) into A's card and
+    approves [A, C]. The guard drops lemon, but C must still be recorded as applied,
+    or it restores as a lone armed card and a tap writes lemon twice."""
+    turn_a = _turn_row(RID_A, ["lemon"], review=_applied_review("lemon"))
+    turn_c = _turn_row(RID_C, ["lemon"])
+    repo, _fake, sent = _make_repo([turn_a, turn_c])
+
+    with _patch_repo(repo):
+        first = await client.post(
+            "/v1/workflows/apply",
+            json=_apply_body([_flat("lemon", qty=3)], turn_ids=[RID_A, RID_C], request_id=RID_C),
+        )
+        review_c = copy.deepcopy(turn_c["metadata"]["proposal_review"])
+        later = await client.post(
+            "/v1/workflows/apply",
+            json=_apply_body([_flat("lemon", qty=3)], turn_ids=[RID_C], request_id=RID_C),
+        )
+
+    data = first.json()
+    assert first.status_code == 200
+    assert sent == [], "nothing may be written to the pantry"
+    assert data["success"] is True and data["applied_count"] == 0
+    assert data["already_applied_names"] == ["lemon"]
+    assert data["recorded_turn_request_ids"] == [RID_A, RID_C]
+    assert review_c["status"] == "applied"
+    assert review_c["applied_keys"] == ["lemon"]
+    assert review_c["chain_request_ids"] == [RID_A, RID_C]
+    # a later apply of C alone is dropped by the guard too
+    assert sent == []
+    assert later.json()["already_applied_names"] == ["lemon"]
+    assert later.json()["recorded_turn_request_ids"] == [RID_C]
+
+
+@pytest.mark.asyncio
+async def test_stale_tab_merge_credits_dropped_rows_to_the_new_turn(
+    client: AsyncClient,
+) -> None:
+    """A applied lemon elsewhere; C is lemon + carrot. Approving [A, C] sends only
+    carrot, and once it lands C is applied with BOTH keys (not failed with nothing
+    live and no error)."""
+    turn_a = _turn_row(RID_A, ["lemon"], review=_applied_review("lemon"))
+    turn_c = _turn_row(RID_C, ["lemon", "carrot"])
+    repo, _fake, sent = _make_repo([turn_a, turn_c])
+
+    with _patch_repo(repo):
+        resp = await client.post(
+            "/v1/workflows/apply",
+            json=_apply_body(
+                [_flat("lemon"), _flat("carrot")], turn_ids=[RID_A, RID_C], request_id=RID_C
+            ),
+        )
+
+    assert [a["name"] for a in sent[0]] == ["carrot"]
+    assert resp.json()["recorded_turn_request_ids"] == [RID_A, RID_C]
+    review_c = turn_c["metadata"]["proposal_review"]
+    assert review_c["status"] == "applied"
+    assert sorted(review_c["applied_keys"]) == ["carrot", "lemon"]
+    assert review_c["failed"] == [] and review_c["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_stale_tab_merge_with_a_failing_carrot_leaves_only_carrot_live(
+    client: AsyncClient,
+) -> None:
+    turn_a = _turn_row(RID_A, ["lemon"], review=_applied_review("lemon"))
+    turn_c = _turn_row(RID_C, ["lemon", "carrot"])
+    repo, _fake, sent = _make_repo([turn_a, turn_c], failed_indices=[0], failed_errors={0: "nf"})
+
+    with _patch_repo(repo):
+        await client.post(
+            "/v1/workflows/apply",
+            json=_apply_body(
+                [_flat("lemon"), _flat("carrot")], turn_ids=[RID_A, RID_C], request_id=RID_C
+            ),
+        )
+
+    review_c = turn_c["metadata"]["proposal_review"]
+    assert review_c["status"] == "failed"
+    assert review_c["applied_keys"] == ["lemon"]
+    assert [f["key"] for f in review_c["failed"]] == ["carrot"]
+    assert review_c["error"] == "nf"
+
+
+def test_review_after_apply_credits_guard_dropped_rows_that_are_its_own() -> None:
+    from bubbly_chef.services.proposal_review import review_after_apply
+
+    turn_c = _turn_row(RID_C, ["lemon", "carrot"])
+    review = review_after_apply(
+        turn_c, [_flat("carrot")], [], {}, [RID_A, RID_C], NOW, dropped_keys=["lemon", "zucchini"]
+    )
+    assert review.status == "applied"
+    assert sorted(review.applied_keys) == ["carrot", "lemon"]  # zucchini is not C's row
 
 
 @pytest.mark.asyncio

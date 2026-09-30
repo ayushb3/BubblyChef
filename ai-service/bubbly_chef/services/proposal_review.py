@@ -17,7 +17,7 @@ Two halves:
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -31,7 +31,7 @@ from bubbly_chef.models.requests import (
     RejectRequest,
     RejectResponse,
 )
-from bubbly_chef.repository.supabase_repo import SupabaseRepository
+from bubbly_chef.repository.supabase_repo import PantryApplyResult, SupabaseRepository
 
 logger = logging.getLogger(__name__)
 
@@ -162,12 +162,15 @@ def review_after_apply(
     failed_errors: dict[int, str],
     chain_request_ids: list[str],
     now: datetime,
+    dropped_keys: Sequence[str] = (),
 ) -> ProposalReview:
     """The review to record on one chain turn after an apply attempt.
 
     `sent_actions` is the list actually handed to the repository (after the
     already-applied guard); `failed_indices` and the keys of `failed_errors`
-    index into it.
+    index into it. `dropped_keys` are the rows the guard removed because a
+    sibling turn had already applied them: this turn's own rows among them are
+    credited as applied, so a stale-tab merge doesn't leave them live.
     """
     own = own_keys(turn_row)
     previous = read_review(turn_row.get("metadata"))
@@ -197,6 +200,10 @@ def review_after_apply(
             if error is None:
                 error = failed_errors.get(index)
         elif key not in applied_keys:
+            applied_keys.append(key)
+
+    for key in dropped_keys:
+        if key in own and key not in applied_keys:
             applied_keys.append(key)
 
     live = own - set(applied_keys)
@@ -334,15 +341,14 @@ async def apply_pantry_with_review(
         else:
             sent_actions.append(action)
 
-    if not sent_actions:
-        return ApplyResponse(
-            request_id=request.request_id,
-            success=True,
-            applied_count=0,
-            already_applied_names=already_applied_names,
-        )
-
-    result = await repo.apply_pantry_proposal_detailed(user_id=user_id, actions=sent_actions)
+    # When the guard drops every row there is nothing to write to the pantry, but
+    # the named turns still need their review: a stale tab may have merged a new
+    # turn into a card another tab already applied, and that turn must not be left
+    # pending (it would restore armed and write its rows a second time).
+    if sent_actions:
+        result = await repo.apply_pantry_proposal_detailed(user_id=user_id, actions=sent_actions)
+    else:
+        result = PantryApplyResult(applied=0, failed=0, errors=[], affected_item_ids=[])
     failed_names = [
         _sent_key(sent_actions[i]) for i in result.failed_indices if 0 <= i < len(sent_actions)
     ]
@@ -354,11 +360,18 @@ async def apply_pantry_with_review(
         turns,
         turn_ids,
         lambda row: review_after_apply(
-            row, sent_actions, result.failed_indices, result.failed_errors, turn_ids, now
+            row,
+            sent_actions,
+            result.failed_indices,
+            result.failed_errors,
+            turn_ids,
+            now,
+            already_applied_names,
         ),
     )
 
-    await _log_ingestion(repo, user_id, request, len(sent_actions), result.errors)
+    if sent_actions:
+        await _log_ingestion(repo, user_id, request, len(sent_actions), result.errors)
     return ApplyResponse(
         request_id=request.request_id,
         success=result.failed == 0,
