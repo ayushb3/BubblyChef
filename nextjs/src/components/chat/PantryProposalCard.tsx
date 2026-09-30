@@ -231,8 +231,8 @@ export default function PantryProposalCard({
   useEffect(() => {
     setLocalActions((prev) => {
       return proposal.actions.map((incoming) => {
-        const key = incoming.item.name.toLowerCase()
-        const existing = prev.find((a) => a.item.name.toLowerCase() === key)
+        const key = proposalActionKey(incoming)
+        const existing = prev.find((a) => proposalActionKey(a) === key)
         // If the user has edited this item's qty/unit, keep their version.
         if (existing && editedNamesRef.current.has(key)) return existing
         // Otherwise take the fresh backend action (handles new items and resets
@@ -253,7 +253,7 @@ export default function PantryProposalCard({
         return { ...action, item: { ...action.item, quantity, unit } }
       })
       // Mark this item name as user-edited so the reconcile effect preserves it.
-      editedNamesRef.current.add(prev[index]?.item.name.toLowerCase() ?? '')
+      if (prev[index]) editedNamesRef.current.add(proposalActionKey(prev[index]))
       return next
     })
     onActionsChange?.(next)

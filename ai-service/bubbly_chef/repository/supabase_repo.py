@@ -7,6 +7,7 @@ Replaces SQLiteRepository. Uses supabase-py with the service_role key
 import logging
 import re
 from collections import Counter
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any, Literal, cast
 from uuid import UUID
@@ -192,6 +193,24 @@ def _as_rows(value: list[JSON]) -> list[dict[str, Any]]:
 # A base amount below this (a thousandth of a gram/ml/piece) is rounding residue,
 # not stock: the row is treated as used up.
 _USED_UP_BASE_EPSILON = 1e-3
+
+
+@dataclass(frozen=True)
+class PantryApplyResult:
+    """Outcome of `apply_pantry_proposal_detailed` (#444).
+
+    `failed_indices` are positions in the `actions` list that call received, and
+    `failed_errors` maps each of those positions to its error string. The route
+    reads these instead of regex-ing the error strings (the generic
+    `Error processing {...}` message carries no parseable name).
+    """
+
+    applied: int
+    failed: int
+    errors: list[str]
+    affected_item_ids: list[UUID]
+    failed_indices: list[int] = field(default_factory=list)
+    failed_errors: dict[int, str] = field(default_factory=dict)
 
 
 class _PantryUsePlan:
@@ -480,13 +499,32 @@ class SupabaseRepository:
         call created, updated, or deleted -- ApplyResponse was always
         dropping this on the floor, so a caller (the bubbles ledger) had no
         way to award credit for items that did apply on a partial failure.
+
+        Thin wrapper over `apply_pantry_proposal_detailed` that keeps the
+        4-tuple signature the scan confirm and several tests depend on.
         """
+        result = await self.apply_pantry_proposal_detailed(user_id, actions)
+        return result.applied, result.failed, result.errors, result.affected_item_ids
+
+    async def apply_pantry_proposal_detailed(
+        self, user_id: str, actions: list[dict[str, Any]]
+    ) -> PantryApplyResult:
+        """`apply_pantry_proposal`, plus which action positions failed (#444)."""
         applied = 0
         failed = 0
         errors: list[str] = []
         affected_item_ids: list[UUID] = []
+        failed_indices: list[int] = []
+        failed_errors: dict[int, str] = {}
 
-        for action in actions:
+        def _record_failure(index: int, message: str) -> None:
+            nonlocal failed
+            errors.append(message)
+            failed += 1
+            failed_indices.append(index)
+            failed_errors[index] = message
+
+        for index, action in enumerate(actions):
             try:
                 action_type = action.get("action", "add")
                 name = action.get("name", "")
@@ -566,14 +604,12 @@ class SupabaseRepository:
                 elif action_type in ("update", "use"):
                     existing = await self.find_similar_item(user_id, name)
                     if not existing:
-                        errors.append(f"Item not found: {name}")
-                        failed += 1
+                        _record_failure(index, f"Item not found: {name}")
                         continue
                     if action_type == "use":
                         plan = _plan_pantry_use(existing, name, action)
                         if plan.refusal is not None:
-                            errors.append(plan.refusal)
-                            failed += 1
+                            _record_failure(index, plan.refusal)
                             continue
                         if plan.updates is None:
                             await self.delete_pantry_item(user_id, str(existing.id))
@@ -615,14 +651,19 @@ class SupabaseRepository:
                         affected_item_ids.append(existing.id)
                         applied += 1
                     else:
-                        errors.append(f"Item not found for removal: {name}")
-                        failed += 1
+                        _record_failure(index, f"Item not found for removal: {name}")
 
             except Exception as e:
-                errors.append(f"Error processing {action}: {e}")
-                failed += 1
+                _record_failure(index, f"Error processing {action}: {e}")
 
-        return applied, failed, errors, affected_item_ids
+        return PantryApplyResult(
+            applied=applied,
+            failed=failed,
+            errors=errors,
+            affected_item_ids=affected_item_ids,
+            failed_indices=failed_indices,
+            failed_errors=failed_errors,
+        )
 
     # =========================================================================
     # Recipe operations
@@ -1071,6 +1112,14 @@ class SupabaseRepository:
         proposal: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
+        """Insert one history row.
+
+        Issue #444: `metadata` on an assistant `pantry_update` turn carries two
+        reserved keys, `request_id` (stamped at save time) and `proposal_review`
+        (written later by `set_turn_metadata`). Nothing else may rewrite a saved
+        row's `metadata` -- pantry-proposal turns get no follow-up chips, so no
+        later writer exists today. Keep it that way, or an outcome gets clobbered.
+        """
         self.client.table("conversation_history").insert(
             {
                 "user_id": user_id,
@@ -1115,6 +1164,40 @@ class SupabaseRepository:
         rows = _as_rows(result.data)
         rows.reverse()
         return rows
+
+    async def get_turns_by_request_ids(
+        self, user_id: str, conversation_id: str, request_ids: list[str]
+    ) -> list[dict[str, Any]]:
+        """Assistant turns of this user's conversation stamped with any of
+        `request_ids` (`metadata.request_id`, #444). Returns `id`, `proposal`
+        and `metadata`. Another user's rows never match: `user_id` is filtered.
+        """
+        if not request_ids:
+            return []
+        result = (
+            self.client.table("conversation_history")
+            .select("id,proposal,metadata")
+            .eq("user_id", user_id)
+            .eq("conversation_id", conversation_id)
+            .eq("role", "assistant")
+            .in_("metadata->>request_id", request_ids)
+            .execute()
+        )
+        return _as_rows(result.data)
+
+    async def set_turn_metadata(
+        self, user_id: str, turn_id: str, metadata: dict[str, Any]
+    ) -> bool:
+        """Replace one history row's `metadata` (#444). Filters on `id` AND
+        `user_id`; returns whether a row matched."""
+        result = (
+            self.client.table("conversation_history")
+            .update({"metadata": metadata})
+            .eq("id", turn_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return len(result.data) > 0
 
     # =========================================================================
     # Session operations

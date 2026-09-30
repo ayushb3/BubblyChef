@@ -42,7 +42,21 @@ export async function POST(request: Request) {
         // Only 'add' actions earn pantry_add — 'update', 'remove', and 'use'
         // are not adds and must not mint bubbles for them (see
         // PantryProposalAction.action_type in nextjs/src/types/chat.ts).
-        const addActions = actions.filter((action) => action.action === 'add')
+        // Rows the AI service dropped because an earlier attempt already applied
+        // (and awarded) them are not new adds: skip them (#444). Same key as the
+        // client and the service: trimmed, lower-cased.
+        const alreadyApplied = new Set<string>(
+          Array.isArray(data.already_applied_names)
+            ? (data.already_applied_names as unknown[])
+                .filter((n): n is string => typeof n === 'string')
+                .map((n) => n.trim().toLowerCase())
+            : [],
+        )
+        const addActions = actions.filter(
+          (action) =>
+            action.action === 'add' &&
+            !alreadyApplied.has(String(action.name ?? '').trim().toLowerCase()),
+        )
         if (requestId) {
           await Promise.all(
             addActions.map((action) => {

@@ -443,6 +443,46 @@ describe('bubbles award never blocks the underlying write', () => {
     )
   })
 
+  it('POST /api/ai/workflows/apply does not award for add rows the guard dropped as already applied (#444)', async () => {
+    mockRequireAuth.mockResolvedValue([{}, mockUser])
+    const { aiProxyJson } = jest.requireMock('@/lib/api/ai-proxy') as { aiProxyJson: jest.Mock }
+    aiProxyJson.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          request_id: 'req-3',
+          success: true,
+          applied_count: 1,
+          already_applied_names: ['lemon'],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    const { POST } = await import('@/app/api/ai/workflows/apply/route')
+    const res = await POST(
+      new Request('http://localhost/api/ai/workflows/apply', {
+        method: 'POST',
+        body: JSON.stringify({
+          request_id: 'req-3',
+          intent: 'pantry_update',
+          proposal: {
+            actions: [
+              { action: 'add', name: ' Lemon ' },
+              { action: 'add', name: 'Carrot' },
+            ],
+          },
+        }),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(upsertMock).toHaveBeenCalledTimes(1)
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'pantry_add', ref_key: 'req-3:carrot' }),
+      expect.anything(),
+    )
+  })
+
   it('PUT /api/recipes/[id] still succeeds when the award insert throws, on draft promotion', async () => {
     const supabase = {
       from: () => ({

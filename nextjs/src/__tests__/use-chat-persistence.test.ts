@@ -9,16 +9,32 @@ import { createElement, type ReactNode } from 'react'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useChat } from '@/hooks/useChat'
-import { fetchChatHistory, streamChatMessage } from '@/lib/api/chat'
-import type { ConversationHistoryTurn, ChatRecipeData } from '@/types/chat'
+import {
+  fetchChatHistory,
+  streamChatMessage,
+  applyPantryProposal,
+  rejectPantryProposal,
+} from '@/lib/api/chat'
+import type {
+  ConversationHistoryTurn,
+  ChatRecipeData,
+  ChatResponse,
+  PantryProposalAction,
+  PantryProposalData,
+  ProposalReview,
+} from '@/types/chat'
 
 jest.mock('@/lib/api/chat', () => ({
   fetchChatHistory: jest.fn(),
   streamChatMessage: jest.fn(),
+  applyPantryProposal: jest.fn(),
+  rejectPantryProposal: jest.fn(),
 }))
 
 const mockFetchChatHistory = fetchChatHistory as jest.MockedFunction<typeof fetchChatHistory>
 const mockStreamChatMessage = streamChatMessage as jest.MockedFunction<typeof streamChatMessage>
+const mockApply = applyPantryProposal as jest.MockedFunction<typeof applyPantryProposal>
+const mockReject = rejectPantryProposal as jest.MockedFunction<typeof rejectPantryProposal>
 
 const STORAGE_KEY = 'bubblychef:chat:conversationId'
 
@@ -377,5 +393,345 @@ describe('useChat — conversation persistence (#265)', () => {
     expect(assistant.intent).toBe('recipe_card')
     expect(assistant.response?.proposal).toBeTruthy()
     expect((assistant.response?.proposal as { proposal_type?: string })?.proposal_type).toBe('recipe_card')
+  })
+})
+
+// ─── Issue #444 — a pantry proposal survives navigating away and back ─────────
+//
+// The handled state is stored server side on the persisted turn
+// (`metadata.request_id` + `metadata.proposal_review`); the restore mapper
+// itself is covered purely in chat-restore.test.ts. These tests drive it
+// through the hook: approve / retry / reject after a restore, and the request
+// ids that reach the API client.
+
+describe('useChat — pantry proposal restore (#444)', () => {
+  const CONV = 'conv-444'
+  const A = '11111111-1111-4111-8111-111111111111'
+  const B = '22222222-2222-4222-8222-222222222222'
+  const LIVE = '99999999-9999-4999-8999-999999999999'
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+  const act1 = (name: string, quantity: number, unit = 'whole'): PantryProposalAction => ({
+    action_type: 'add',
+    item: { name, quantity, unit },
+    confidence: 0.9,
+  })
+
+  function review(over: Partial<ProposalReview>): ProposalReview {
+    return {
+      status: 'applied',
+      applied_keys: [],
+      failed: [],
+      error: null,
+      chain_request_ids: [],
+      updated_at: '2026-09-30T12:00:00+00:00',
+      ...over,
+    }
+  }
+
+  function pantryTurn(
+    actions: PantryProposalAction[],
+    requestId: string | null,
+    proposalReview?: unknown,
+    extra: Record<string, unknown> = {},
+  ): ConversationHistoryTurn {
+    const metadata: Record<string, unknown> = { ...extra }
+    if (requestId) metadata.request_id = requestId
+    if (proposalReview !== undefined) metadata.proposal_review = proposalReview
+    return {
+      role: 'assistant',
+      content: 'Got it!',
+      intent: 'pantry_update',
+      proposal: { actions },
+      metadata,
+      created_at: new Date().toISOString(),
+    }
+  }
+
+  function liveResponse(requestId: string, actions: PantryProposalAction[]): ChatResponse {
+    return {
+      request_id: requestId,
+      workflow_id: 'wf',
+      conversation_id: CONV,
+      intent: 'pantry_update',
+      assistant_message: 'Review before adding.',
+      proposal: { actions },
+      confidence: { overall: 0.9 },
+      requires_review: true,
+      next_action: 'review_proposal',
+    }
+  }
+
+  function respondWith(response: ChatResponse) {
+    const calls = mockStreamChatMessage.mock.calls
+    const onDone = calls[calls.length - 1][2] as (r: ChatResponse) => void
+    act(() => {
+      onDone(response)
+    })
+  }
+
+  const OK = { success: true, appliedCount: 1, failedCount: 0, errors: [] }
+
+  async function mountRestored(turns: ConversationHistoryTurn[]) {
+    window.localStorage.setItem(STORAGE_KEY, CONV)
+    mockFetchChatHistory.mockResolvedValueOnce(turns)
+    const hook = renderHook(() => useChat(), { wrapper })
+    await waitFor(() => expect(hook.result.current.messages).toHaveLength(turns.length))
+    return hook
+  }
+
+  const assistantOf = (hook: { result: { current: ReturnType<typeof useChat> } }, nth = 0) =>
+    hook.result.current.messages.filter((m) => m.role === 'assistant')[nth]
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockFetchChatHistory.mockReset()
+    mockApply.mockReset()
+    mockReject.mockReset()
+    mockReject.mockResolvedValue(undefined)
+    window.localStorage.clear()
+    mockStreamChatMessage.mockResolvedValue(undefined)
+  })
+
+  it('F9: a restored pending card approves with the persisted request id and the chain', async () => {
+    const hook = await mountRestored([turn('user', 'I bought 2 lemons'), pantryTurn([act1('lemon', 2)], A)])
+    const msg = assistantOf(hook)
+    expect(hook.result.current.proposalStates[msg.id]).toBe('pending')
+
+    mockApply.mockResolvedValueOnce(OK)
+    await act(async () => {
+      await hook.result.current.approveProposal(msg.id)
+    })
+
+    expect(mockApply).toHaveBeenCalledTimes(1)
+    expect(mockApply).toHaveBeenCalledWith(A, [act1('lemon', 2)], {
+      conversationId: CONV,
+      turnRequestIds: [A],
+    })
+    expect(hook.result.current.proposalStates[msg.id]).toBe('approved')
+  })
+
+  it('F10: a restored partial card retries only the failed row, lemon is never sent', async () => {
+    const hook = await mountRestored([
+      turn('user', 'lemon and spinach'),
+      pantryTurn(
+        [act1('lemon', 1), act1('spinach', 1, 'cup')],
+        A,
+        review({
+          status: 'failed',
+          applied_keys: ['lemon'],
+          failed: [{ key: 'spinach', name: 'spinach', quantity: 3, unit: 'cup' }],
+          error: 'Item not found: spinach',
+          chain_request_ids: [A],
+        }),
+      ),
+    ])
+    const msg = assistantOf(hook)
+    expect(hook.result.current.proposalStates[msg.id]).toBe('failed')
+    expect(hook.result.current.proposalFailedNames[msg.id]).toEqual(['spinach'])
+    expect(hook.result.current.proposalErrors[msg.id]).toBe('Item not found: spinach')
+
+    mockApply.mockResolvedValueOnce(OK)
+    await act(async () => {
+      await hook.result.current.approveProposal(msg.id)
+    })
+
+    expect(mockApply).toHaveBeenCalledTimes(1)
+    const [, sent, reviewArg] = mockApply.mock.calls[0]
+    expect(sent).toEqual([act1('spinach', 3, 'cup')])
+    expect(reviewArg).toEqual({ conversationId: CONV, turnRequestIds: [A] })
+    expect(hook.result.current.proposalStates[msg.id]).toBe('approved')
+  })
+
+  it('F11: a restored applied card cannot be approved again; its state stays approved', async () => {
+    const hook = await mountRestored([
+      turn('user', 'lemons'),
+      pantryTurn(
+        [act1('lemon', 2)],
+        A,
+        review({ status: 'applied', applied_keys: ['lemon'], chain_request_ids: [A] }),
+      ),
+    ])
+    const msg = assistantOf(hook)
+    await act(async () => {
+      await hook.result.current.approveProposal(msg.id)
+    })
+    expect(mockApply).not.toHaveBeenCalled()
+    expect(hook.result.current.proposalStates[msg.id]).toBe('approved')
+  })
+
+  it('F12: a live pantry turn after restored applied and legacy turns does not merge into history', async () => {
+    const hook = await mountRestored([
+      turn('user', 'lemons'),
+      pantryTurn(
+        [act1('lemon', 2)],
+        A,
+        review({ status: 'applied', applied_keys: ['lemon'], chain_request_ids: [A] }),
+      ),
+      turn('user', 'old one'),
+      pantryTurn([act1('pear', 1)], null),
+    ])
+    const restoredApplied = assistantOf(hook, 0)
+
+    act(() => {
+      hook.result.current.sendMessage('and a carrot')
+    })
+    respondWith(liveResponse(LIVE, [act1('carrot', 1)]))
+
+    const liveMsg = assistantOf(hook, 2)
+    expect(hook.result.current.proposalStates[liveMsg.id]).toBe('pending')
+    expect(hook.result.current.proposalStates[restoredApplied.id]).toBe('approved')
+    expect((restoredApplied.response?.proposal as PantryProposalData).actions).toHaveLength(1)
+
+    mockApply.mockResolvedValueOnce(OK)
+    await act(async () => {
+      await hook.result.current.approveProposal(liveMsg.id)
+    })
+    expect(mockApply).toHaveBeenCalledWith(LIVE, [act1('carrot', 1)], {
+      conversationId: CONV,
+      turnRequestIds: [LIVE],
+    })
+  })
+
+  it('F13: after a fresh mount the live two-turn merge sends the STORED conversation id and both turn ids', async () => {
+    // One prior text turn keeps the stored id valid (an empty history would
+    // clear it). The id is only set inside the resume effect, after the first
+    // render: a stale closure would send null here.
+    const hook = await mountRestored([turn('user', 'hello')])
+    expect(hook.result.current.conversationId).toBe(CONV)
+
+    act(() => {
+      hook.result.current.sendMessage('a lemon')
+    })
+    respondWith(liveResponse(A, [act1('lemon', 1)]))
+    act(() => {
+      hook.result.current.sendMessage('and a carrot')
+    })
+    respondWith(liveResponse(B, [act1('carrot', 1)]))
+
+    const owner = assistantOf(hook, 1)
+    mockApply.mockResolvedValueOnce(OK)
+    await act(async () => {
+      await hook.result.current.approveProposal(owner.id)
+    })
+    expect(mockApply).toHaveBeenCalledWith(B, [act1('lemon', 1), act1('carrot', 1)], {
+      conversationId: CONV,
+      turnRequestIds: [A, B],
+    })
+  })
+
+  it('F13: a brand-new chat mints an id on the first send and approve sends that id, not null', async () => {
+    const hook = renderHook(() => useChat(), { wrapper })
+    act(() => {
+      hook.result.current.sendMessage('a lemon')
+    })
+    respondWith(liveResponse(A, [act1('lemon', 1)]))
+    const minted = hook.result.current.conversationId
+    expect(minted).not.toBeNull()
+
+    mockApply.mockResolvedValueOnce(OK)
+    await act(async () => {
+      await hook.result.current.approveProposal(hook.result.current.messages[1].id)
+    })
+    expect(mockApply).toHaveBeenCalledWith(A, [act1('lemon', 1)], {
+      conversationId: minted,
+      turnRequestIds: [A],
+    })
+  })
+
+  it('F13: with a null conversation id the review argument is omitted', async () => {
+    const hook = renderHook(() => useChat(), { wrapper })
+    act(() => {
+      hook.result.current.sendMessage('a lemon')
+    })
+    // Starting a new chat nulls the id; the in-flight reply still lands.
+    act(() => {
+      hook.result.current.startNewChat()
+    })
+    expect(hook.result.current.conversationId).toBeNull()
+    respondWith(liveResponse(A, [act1('lemon', 1)]))
+    const msgId = Object.keys(hook.result.current.proposalStates)[0]
+
+    mockApply.mockResolvedValueOnce(OK)
+    await act(async () => {
+      await hook.result.current.approveProposal(msgId)
+    })
+    expect(mockApply).toHaveBeenCalledTimes(1)
+    expect(mockApply.mock.calls[0]).toHaveLength(2)
+  })
+
+  it('F14: rejecting calls the reject route with the conversation and chain; a rejected promise is swallowed', async () => {
+    const hook = await mountRestored([turn('user', 'lemons'), pantryTurn([act1('lemon', 2)], A)])
+    const msg = assistantOf(hook)
+    mockReject.mockRejectedValueOnce(new Error('network down'))
+
+    expect(() => {
+      act(() => {
+        hook.result.current.rejectProposal(msg.id)
+      })
+    }).not.toThrow()
+    await act(async () => {})
+
+    expect(mockReject).toHaveBeenCalledWith(CONV, [A])
+    expect(hook.result.current.proposalStates[msg.id]).toBe('rejected')
+  })
+
+  it('F17: a chain ending in a vague-only turn approves with valid ids only and ends approved', async () => {
+    const hook = await mountRestored([
+      turn('user', 'a lemon and veggies'),
+      pantryTurn([act1('lemon', 2)], A),
+      turn('user', 'some veggies'),
+      pantryTurn([], B, undefined, {
+        clarification_suggestions: [{ term: 'veggies', suggestions: ['carrot'] }],
+      }),
+    ])
+    const owner = assistantOf(hook, 1)
+    expect(hook.result.current.proposalStates[owner.id]).toBe('pending')
+
+    // Mirror the backend's UUID validation of turn_request_ids.
+    mockApply.mockImplementation(async (_rid, _actions, rev) => {
+      if (rev?.turnRequestIds.some((id) => !UUID_RE.test(id))) throw new Error('422')
+      return OK
+    })
+    await act(async () => {
+      await hook.result.current.approveProposal(owner.id)
+    })
+    expect(mockApply).toHaveBeenCalledWith(B, [act1('lemon', 2)], {
+      conversationId: CONV,
+      turnRequestIds: [A, B],
+    })
+    expect(hook.result.current.proposalStates[owner.id]).toBe('approved')
+  })
+
+  // Regression guard: main already survives these turns (it never reads a
+  // pantry proposal); this guards the new mapper against clearing the thread.
+  it('F18 (regression guard): malformed pantry turns never clear the stored conversation', async () => {
+    window.localStorage.setItem(STORAGE_KEY, CONV)
+    mockFetchChatHistory.mockResolvedValueOnce([
+      turn('user', 'hi'),
+      {
+        role: 'assistant',
+        content: 'oops one',
+        intent: 'pantry_update',
+        proposal: { actions: 'oops' } as unknown as PantryProposalData,
+        metadata: null,
+        created_at: new Date().toISOString(),
+      },
+      {
+        role: 'assistant',
+        content: 'oops two',
+        intent: 'pantry_update',
+        proposal: { actions: [{ item: null }] } as unknown as PantryProposalData,
+        metadata: { request_id: B },
+        created_at: new Date().toISOString(),
+      },
+      pantryTurn([act1('lemon', 2)], A),
+    ])
+    const hook = renderHook(() => useChat(), { wrapper })
+    await waitFor(() => expect(hook.result.current.messages).toHaveLength(4))
+
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(CONV)
+    expect(hook.result.current.conversationId).toBe(CONV)
+    expect(hook.result.current.proposalStates[assistantOf(hook, 2).id]).toBe('pending')
   })
 })

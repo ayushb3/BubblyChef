@@ -253,6 +253,12 @@ export async function checkAIHealth(): Promise<AIHealthStatus> {
 /**
  * Result of applying a chat-proposed pantry update.
  */
+/** Where an apply is recorded (issue #444): the conversation and the chain of turns the card spans. */
+export interface ProposalReviewArgs {
+  conversationId: string
+  turnRequestIds: string[]
+}
+
 export interface ApplyProposalResult {
   success: boolean
   appliedCount: number
@@ -316,6 +322,7 @@ function applyErrorMessage(body: unknown): string {
 export async function applyPantryProposal(
   requestId: string,
   actions: PantryProposalAction[],
+  review?: ProposalReviewArgs,
 ): Promise<ApplyProposalResult> {
   const res = await fetch('/api/ai/workflows/apply', {
     method: 'POST',
@@ -323,6 +330,11 @@ export async function applyPantryProposal(
     body: JSON.stringify({
       request_id: requestId,
       intent: 'pantry_update',
+      // Issue #444: lets the AI service record the outcome on the persisted
+      // turns (and drop rows it already applied). Omitted for scan-style callers.
+      ...(review
+        ? { conversation_id: review.conversationId, turn_request_ids: review.turnRequestIds }
+        : {}),
       proposal: {
         actions: actions.map((action) => ({
           action: action.action_type,
@@ -345,12 +357,27 @@ export async function applyPantryProposal(
   const errors: string[] = Array.isArray(data.errors) ? data.errors : []
   const failedCount: number = typeof data.failed_count === 'number' ? data.failed_count : 0
 
+  // Prefer `failed_names` (the failed rows' keys, computed server side from row
+  // indices, issue #444). Older backends don't send it, and some errors carry no
+  // parseable name, so fall back to reading names out of the error strings.
+  let failedActions: PantryProposalAction[] | undefined
+  const serverNames = Array.isArray(data.failed_names)
+    ? new Set(
+        (data.failed_names as unknown[])
+          .filter((n): n is string => typeof n === 'string')
+          .map((n) => n.trim().toLowerCase()),
+      )
+    : null
+  if (failedCount > 0 && serverNames && serverNames.size > 0) {
+    const matched = actions.filter((a) => serverNames.has(proposalActionKey(a)))
+    if (matched.length > 0) failedActions = matched
+  }
+
   // Derive the failed action objects from error strings so the retry path can
   // resend only what failed. The backend emits "Item not found: <name>" and
   // similar patterns — extract the name after ": " and match against the
   // original action list (case-insensitive).
-  let failedActions: PantryProposalAction[] | undefined
-  if (failedCount > 0 && errors.length > 0) {
+  if (!failedActions && failedCount > 0 && errors.length > 0) {
     const failedNames = new Set(
       errors
         .map((e) => {
@@ -374,4 +401,25 @@ export async function applyPantryProposal(
     errors,
     failedActions,
   }
+}
+
+/**
+ * Record that the user dismissed a pantry proposal (issue #444), against every
+ * persisted turn the card spans. Goes straight to the AI service, like history.
+ * The service answers 200 for ids it doesn't know. Throws on a non-2xx; callers
+ * treat the record as best effort.
+ */
+export async function rejectPantryProposal(
+  conversationId: string,
+  turnRequestIds: string[],
+): Promise<void> {
+  const res = await aiFetch('/v1/workflows/reject', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      turn_request_ids: turnRequestIds,
+    }),
+  })
+  if (!res.ok) throw new Error(`Failed to record dismissal: ${res.status}`)
 }

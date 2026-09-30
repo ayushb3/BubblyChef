@@ -48,6 +48,42 @@ export interface PantryProposalData {
   source_text?: string | null
 }
 
+/**
+ * Everything needed to apply a pantry proposal once the user approves it.
+ * A card's identity is the ordered list of persisted turn request ids it spans
+ * (issue #444): a merged card covers every turn folded into it.
+ */
+export interface PendingProposal {
+  /** The owning (latest) turn's persisted request_id; sent as `request_id`. */
+  requestId: string
+  actions: PantryProposalAction[]
+  /** Every chain turn, oldest first; sent as `turn_request_ids`. */
+  turnRequestIds: string[]
+}
+
+/** One row that failed on the latest apply attempt, with the values as sent. */
+export interface ProposalReviewFailedRow {
+  key: string
+  name: string
+  quantity?: number | null
+  unit?: string | null
+}
+
+/**
+ * The outcome the AI service records on a persisted pantry turn
+ * (`metadata.proposal_review`, issue #444). Server side, so it survives a
+ * reload and a second device.
+ */
+export interface ProposalReview {
+  status: 'applied' | 'failed' | 'rejected'
+  /** Keys (`proposalActionKey`) of THIS turn's rows that applied; never shrinks. */
+  applied_keys: string[]
+  failed: ProposalReviewFailedRow[]
+  error: string | null
+  chain_request_ids: string[]
+  updated_at: string
+}
+
 // ─── Recipe Data ──────────────────────────────────────────────────────────────
 
 export interface IngredientAvailability {
@@ -370,6 +406,71 @@ export type StreamEvent =
 
 // ─── Conversation History ─────────────────────────────────────────────────────
 
+// Tolerant readers for persisted pantry turns (issue #444). Persisted rows can
+// hold anything (older builds, hand edits), and a bad row must degrade to a
+// legacy text bubble, never throw and never clear the conversation.
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/** `metadata.request_id` of a persisted turn, or null when absent or not a string. */
+export function readTurnRequestId(metadata: unknown): string | null {
+  if (!isRecord(metadata)) return null
+  const id = metadata.request_id
+  return typeof id === 'string' && id.length > 0 ? id : null
+}
+
+/**
+ * `metadata.proposal_review` of a persisted turn, or null when absent or
+ * malformed in any way (a malformed review is read as absent).
+ */
+export function readProposalReview(metadata: unknown): ProposalReview | null {
+  if (!isRecord(metadata)) return null
+  const raw = metadata.proposal_review
+  if (!isRecord(raw)) return null
+  const { status, applied_keys, failed, error, chain_request_ids, updated_at } = raw
+  if (status !== 'applied' && status !== 'failed' && status !== 'rejected') return null
+  const isStrings = (v: unknown): v is string[] =>
+    Array.isArray(v) && v.every((x) => typeof x === 'string')
+  if (!isStrings(applied_keys)) return null
+  if (chain_request_ids !== undefined && !isStrings(chain_request_ids)) return null
+  if (error !== undefined && error !== null && typeof error !== 'string') return null
+  if (!Array.isArray(failed)) return null
+  const rows: ProposalReviewFailedRow[] = []
+  for (const f of failed) {
+    if (!isRecord(f) || typeof f.key !== 'string' || f.key.length === 0) return null
+    rows.push({
+      key: f.key,
+      name: typeof f.name === 'string' ? f.name : f.key,
+      quantity: typeof f.quantity === 'number' ? f.quantity : null,
+      unit: typeof f.unit === 'string' ? f.unit : null,
+    })
+  }
+  return {
+    status,
+    applied_keys,
+    failed: rows,
+    error: typeof error === 'string' ? error : null,
+    chain_request_ids: chain_request_ids ?? [],
+    updated_at: typeof updated_at === 'string' ? updated_at : '',
+  }
+}
+
+/**
+ * The actions of a persisted pantry proposal, or null unless the whole shape is
+ * sound: an object whose `actions` is an array of entries that each have a
+ * string `action_type` and an `item` with a non-empty string `name`. An empty
+ * list is valid (a vague-only turn) and returns `[]`.
+ */
+export function readPantryActions(proposal: unknown): PantryProposalAction[] | null {
+  if (!isRecord(proposal) || !Array.isArray(proposal.actions)) return null
+  for (const a of proposal.actions) {
+    if (!isRecord(a) || typeof a.action_type !== 'string') return null
+    if (!isRecord(a.item) || typeof a.item.name !== 'string' || a.item.name.length === 0) return null
+  }
+  return proposal.actions as PantryProposalAction[]
+}
+
 export interface ConversationHistoryTurn {
   role: 'user' | 'assistant'
   content: string
@@ -537,8 +638,8 @@ export function proposalActionKey(action: PantryProposalAction): string {
 }
 
 /**
- * Merge new proposal actions onto existing ones, deduping by item name
- * (case-insensitive). Incoming actions for an already-present item replace
+ * Merge new proposal actions onto existing ones, deduping by `proposalActionKey`
+ * (trimmed, case-insensitive). Incoming actions for an already-present item replace
  * the existing one (the newer turn has fresher confidence/quantity info).
  */
 export function mergeActions(
@@ -547,9 +648,8 @@ export function mergeActions(
 ): PantryProposalAction[] {
   const merged = [...existing]
   for (const next of incoming) {
-    const i = merged.findIndex(
-      (a) => a.item.name.toLowerCase() === next.item.name.toLowerCase()
-    )
+    const nextKey = proposalActionKey(next)
+    const i = merged.findIndex((a) => proposalActionKey(a) === nextKey)
     if (i >= 0) {
       merged[i] = next
     } else {
@@ -577,9 +677,9 @@ export function filterResolvedTerms(
   actions: PantryProposalAction[],
 ): TermSuggestion[] {
   if (actions.length === 0) return terms
-  const actionNames = new Set(actions.map((a) => a.item.name.toLowerCase()))
+  const actionNames = new Set(actions.map(proposalActionKey))
   return terms.filter(
-    ({ suggestions }) => !suggestions.some((s) => actionNames.has(s.toLowerCase())),
+    ({ suggestions }) => !suggestions.some((s) => actionNames.has(s.trim().toLowerCase())),
   )
 }
 

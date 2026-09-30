@@ -21,11 +21,11 @@
 // header), so we only need to silence the import-time module resolution.
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
-    auth: { getSession: jest.fn(async () => ({ data: { session: null } })) },
+    auth: { getSession: jest.fn(async () => ({ data: { session: { access_token: 'test-token' } } })) },
   }),
 }))
 
-import { applyPantryProposal } from '@/lib/api/chat'
+import { applyPantryProposal, rejectPantryProposal } from '@/lib/api/chat'
 import type { PantryProposalAction } from '@/types/chat'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -261,5 +261,91 @@ describe('non-2xx error bodies become readable messages', () => {
     await expect(applyPantryProposal('req-6', makeActions())).rejects.toThrow(
       new Error(expected),
     )
+  })
+})
+
+// ─── 10. Issue #444: the review fields ride along only when given (F15) ───────
+
+describe('server-side proposal review fields (#444)', () => {
+  const OK_BODY = { success: true, applied_count: 1, failed_count: 0, errors: [] }
+  const A = '11111111-1111-4111-8111-111111111111'
+  const B = '22222222-2222-4222-8222-222222222222'
+
+  it('F15: the body carries conversation_id and turn_request_ids when a review is given', async () => {
+    const mock = mockFetch(true, OK_BODY)
+    await applyPantryProposal('req-7', makeActions(), { conversationId: 'conv-1', turnRequestIds: [A, B] })
+    const body = JSON.parse(mock.mock.calls[0][1].body as string)
+    expect(body.request_id).toBe('req-7')
+    expect(body.conversation_id).toBe('conv-1')
+    expect(body.turn_request_ids).toEqual([A, B])
+  })
+
+  it('F15: the body omits both fields when no review is given (scan-style and old callers)', async () => {
+    const mock = mockFetch(true, OK_BODY)
+    await applyPantryProposal('req-8', makeActions())
+    const body = JSON.parse(mock.mock.calls[0][1].body as string)
+    expect(body).not.toHaveProperty('conversation_id')
+    expect(body).not.toHaveProperty('turn_request_ids')
+  })
+
+  it('F16: failed_names takes precedence over the error-string regex', async () => {
+    // "Error processing {…}" carries no parseable ": name" tail that matches a
+    // row, so the regex path would leave failedActions undefined.
+    mockFetch(true, {
+      success: false,
+      applied_count: 1,
+      failed_count: 1,
+      errors: ["Error processing {'action': 'use'}: boom"],
+      failed_names: ['spinach'],
+    })
+    const eggs: PantryProposalAction = {
+      action_type: 'use',
+      item: { name: 'eggs', quantity: 2, unit: 'item' },
+      confidence: 0.9,
+    }
+    const spinach: PantryProposalAction = {
+      action_type: 'use',
+      item: { name: ' Spinach ', quantity: 1, unit: 'handful' },
+      confidence: 0.9,
+    }
+    const result = await applyPantryProposal('req-9', [eggs, spinach])
+    expect(result.failedActions).toEqual([spinach])
+  })
+
+  it('F16: with an older backend (no failed_names) the regex path still narrows', async () => {
+    mockFetch(true, {
+      success: false,
+      applied_count: 1,
+      failed_count: 1,
+      errors: ['Item not found: spinach'],
+    })
+    const eggs = makeActions()[0]
+    const spinach: PantryProposalAction = { ...eggs, item: { name: 'spinach', quantity: 1 } }
+    const result = await applyPantryProposal('req-10', [eggs, spinach])
+    expect(result.failedActions).toEqual([spinach])
+  })
+})
+
+// ─── 11. Issue #444: the reject route ────────────────────────────────────────
+
+describe('rejectPantryProposal (#444)', () => {
+  const A = '11111111-1111-4111-8111-111111111111'
+
+  it('POSTs {conversation_id, turn_request_ids} to the AI service reject route with a Bearer token', async () => {
+    const mock = mockFetch(true, { recorded_turn_request_ids: [A] })
+    await rejectPantryProposal('conv-1', [A])
+    const [url, init] = mock.mock.calls[0]
+    expect(String(url)).toMatch(/\/v1\/workflows\/reject$/)
+    expect(init.method).toBe('POST')
+    expect(init.headers.Authorization).toBe('Bearer test-token')
+    expect(JSON.parse(init.body as string)).toEqual({
+      conversation_id: 'conv-1',
+      turn_request_ids: [A],
+    })
+  })
+
+  it('throws on a non-2xx response', async () => {
+    mockFetch(false, { detail: 'nope' })
+    await expect(rejectPantryProposal('conv-1', [A])).rejects.toThrow()
   })
 })

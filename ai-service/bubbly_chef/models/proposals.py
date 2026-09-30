@@ -123,6 +123,41 @@ class ReviewEvent(BaseModel):
     })
 
 
+class FailedRow(BaseModel):
+    """One pantry row that failed on the latest apply attempt, with the values
+    that were SENT (edits included), so a restored card shows what a retry sends."""
+
+    key: str = Field(description="proposal_action_key of the row's name")
+    name: str
+    quantity: float | None = None
+    unit: str | None = None
+
+
+class ProposalReview(BaseModel):
+    """The recorded outcome of a pantry proposal turn (issue #444).
+
+    Stored at `conversation_history.metadata.proposal_review` on the assistant
+    `pantry_update` turn; `proposal` itself stays the pristine original offer.
+    """
+
+    status: Literal["applied", "failed", "rejected"]
+    applied_keys: list[str] = Field(
+        default_factory=list,
+        description="Cumulative, never shrinks: keys of THIS turn's rows that applied",
+    )
+    failed: list[FailedRow] = Field(
+        default_factory=list, description="This turn's rows that failed on the LATEST attempt"
+    )
+    error: str | None = Field(
+        default=None, description="First error of the latest attempt, or null"
+    )
+    chain_request_ids: list[str] = Field(
+        default_factory=list,
+        description="turn_request_ids of the LATEST apply or reject, oldest first",
+    )
+    updated_at: datetime
+
+
 class IntentClassification(BaseModel):
     """
     Result of LLM intent classification.

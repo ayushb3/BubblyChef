@@ -2,6 +2,7 @@
 
 Exposes:
 - POST /v1/workflows/apply — apply a reviewed proposal (pantry or recipe)
+- POST /v1/workflows/reject — record that a pantry proposal card was dismissed (#444)
 """
 
 import logging
@@ -9,8 +10,14 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from bubbly_chef.api.auth import get_current_user_id
-from bubbly_chef.models.requests import ApplyRequest, ApplyResponse
+from bubbly_chef.models.requests import (
+    ApplyRequest,
+    ApplyResponse,
+    RejectRequest,
+    RejectResponse,
+)
 from bubbly_chef.repository.supabase_repo import get_repository
+from bubbly_chef.services.proposal_review import apply_pantry_with_review, reject_with_review
 
 logger = logging.getLogger(__name__)
 
@@ -39,40 +46,7 @@ async def apply_proposal(
     repo = await get_repository()
 
     if request.intent == "pantry_update":
-        actions = request.proposal.get("actions", [])
-        if not actions:
-            return ApplyResponse(
-                request_id=request.request_id,
-                success=True,
-                applied_count=0,
-            )
-
-        applied, failed, errors, affected_item_ids = await repo.apply_pantry_proposal(
-            user_id=user_id,
-            actions=actions,
-        )
-
-        # Log the ingestion
-        try:
-            await repo.log_ingestion(
-                user_id=user_id,
-                request_id=str(request.request_id),
-                intent="pantry_update",
-                input_payload={"actions_count": len(actions)},
-                proposal=request.proposal,
-                errors=errors,
-            )
-        except Exception as log_err:
-            logger.warning(f"Failed to log ingestion: {log_err}")
-
-        return ApplyResponse(
-            request_id=request.request_id,
-            success=failed == 0,
-            applied_count=applied,
-            failed_count=failed,
-            errors=errors,
-            affected_item_ids=affected_item_ids,
-        )
+        return await apply_pantry_with_review(repo, user_id, request)
 
     elif request.intent == "recipe_card":
         try:
@@ -100,3 +74,29 @@ async def apply_proposal(
             status_code=400,
             detail=f"Unsupported intent: {request.intent}",
         )
+
+
+@router.post(
+    "/reject",
+    summary="Record that a pantry proposal card was dismissed",
+    response_model=RejectResponse,
+    responses={
+        200: {"description": "Recorded (ids that match nothing are ignored)"},
+        401: {"description": "Missing or invalid JWT"},
+    },
+)
+async def reject_proposal(
+    request: RejectRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> RejectResponse:
+    """Mark the named chat turns `rejected`. No pantry write, no bubbles.
+
+    Another user's conversation or request ids match zero rows, so nothing is
+    recorded and nothing is revealed: the response just omits them.
+    """
+    logger.info(
+        f"Reject proposal: user={user_id}, conversation_id={request.conversation_id}, "
+        f"turns={len(request.turn_request_ids)}"
+    )
+    repo = await get_repository()
+    return await reject_with_review(repo, user_id, request)
