@@ -1268,3 +1268,128 @@ describe('MealCookPage — Ask Bubbles (issue #654 PR B, §3/§6)', () => {
     expect(streamChatMessageMock).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('MealCookPage — Start now only when nothing it follows is running (issue #663)', () => {
+  // The :312-style fixture: Simmer sauce runs on timer-1, and Plate up (its
+  // dependent) is the upcoming card, "after Simmer sauce".
+  function seedSimmerRunning() {
+    seedSession(Date.now() - 8 * 60_000, {
+      'r-main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
+      'r-main:1': { status: 'running', started_at_minutes: 5, extra_minutes: 0, timer_id: 'timer-1' },
+    })
+    mockTimers = [
+      { id: 'timer-1', label: 'Simmer sauce', durationSeconds: 480, remainingSeconds: 120, status: 'running' },
+    ]
+  }
+
+  it('shows the waiting-on line, no Start now, and Skip while the dependency runs', async () => {
+    seedSimmerRunning()
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('meal-now-card-waiting-on')).toHaveTextContent('Simmer sauce'))
+
+    expect(screen.queryByRole('button', { name: 'Start now' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument()
+  })
+
+  it('once the dependency completes, the waiting-on line is gone and Start now is offered', async () => {
+    jest.useFakeTimers()
+    seedSimmerRunning()
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('meal-now-card-waiting-on')).toBeInTheDocument())
+
+    mockTimers = [{ id: 'timer-1', label: 'Simmer sauce', durationSeconds: 480, remainingSeconds: 0, status: 'completed' }]
+    act(() => {
+      jest.advanceTimersByTime(65_000)
+    })
+    act(() => {
+      window.dispatchEvent(new CustomEvent(TIMER_COMPLETED_EVENT, { detail: { id: 'timer-1', label: 'Simmer sauce' } }))
+    })
+
+    await waitFor(() => expect(screen.queryByTestId('meal-now-card-waiting-on')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Start now' })).toBeInTheDocument()
+  })
+})
+
+describe('MealCookPage — deductions the server skipped (issue #621)', () => {
+  async function openSheetAndConfirm() {
+    requestMealCookProposal.mockResolvedValue(baseProposal())
+    await renderFinishedLive(Date.now() - 20 * 60_000)
+    act(() => {
+      screen.getByRole('button', { name: 'Mark meal as cooked' }).click()
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update pantry' })).toBeInTheDocument())
+    act(() => {
+      screen.getByRole('button', { name: 'Update pantry' }).click()
+    })
+    await waitFor(() => expect(confirmMealCook).toHaveBeenCalledTimes(1))
+  }
+
+  it('shows the notice with the skipped item name and does not redirect after 1200ms', async () => {
+    jest.useFakeTimers()
+    confirmMealCook.mockResolvedValue({ ...CONFIRM_RESPONSE, deductions_skipped: ['pantry-1'] })
+    await openSheetAndConfirm()
+
+    await waitFor(() => expect(screen.getByTestId('skipped-deductions-notice')).toHaveTextContent('Pasta'))
+    expect(isMealCookSessionEnded('meal-1')).toBe(true)
+    act(() => {
+      jest.advanceTimersByTime(1200)
+    })
+    expect(pushMock).not.toHaveBeenCalled()
+  })
+
+  it('an id the proposal cannot name still shows the notice', async () => {
+    jest.useFakeTimers()
+    confirmMealCook.mockResolvedValue({ ...CONFIRM_RESPONSE, deductions_skipped: ['pantry-ghost'] })
+    await openSheetAndConfirm()
+
+    await waitFor(() => expect(screen.getByTestId('skipped-deductions-notice')).toBeInTheDocument())
+    act(() => {
+      jest.advanceTimersByTime(1200)
+    })
+    expect(pushMock).not.toHaveBeenCalled()
+  })
+
+  it('Back to meal pushes /meals/meal-1', async () => {
+    confirmMealCook.mockResolvedValue({ ...CONFIRM_RESPONSE, deductions_skipped: ['pantry-1'] })
+    await openSheetAndConfirm()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Back to meal' })).toBeInTheDocument())
+
+    act(() => {
+      screen.getByRole('button', { name: 'Back to meal' }).click()
+    })
+    expect(pushMock).toHaveBeenCalledWith('/meals/meal-1')
+  })
+
+  it('the sheet X leaves the same way', async () => {
+    confirmMealCook.mockResolvedValue({ ...CONFIRM_RESPONSE, deductions_skipped: ['pantry-1'] })
+    await openSheetAndConfirm()
+    await waitFor(() => expect(screen.getByTestId('skipped-deductions-notice')).toBeInTheDocument())
+
+    act(() => {
+      screen.getByRole('button', { name: 'Close' }).click()
+    })
+    expect(pushMock).toHaveBeenCalledWith('/meals/meal-1')
+  })
+
+  it('Escape leaves the same way', async () => {
+    confirmMealCook.mockResolvedValue({ ...CONFIRM_RESPONSE, deductions_skipped: ['pantry-1'] })
+    await openSheetAndConfirm()
+    await waitFor(() => expect(screen.getByTestId('skipped-deductions-notice')).toBeInTheDocument())
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(pushMock).toHaveBeenCalledWith('/meals/meal-1')
+  })
+
+  it('an empty list keeps the redirect and shows no notice', async () => {
+    jest.useFakeTimers()
+    confirmMealCook.mockResolvedValue({ ...CONFIRM_RESPONSE, deductions_skipped: [] })
+    await openSheetAndConfirm()
+
+    await waitFor(() => expect(isMealCookSessionEnded('meal-1')).toBe(true))
+    expect(screen.queryByTestId('skipped-deductions-notice')).not.toBeInTheDocument()
+    act(() => {
+      jest.advanceTimersByTime(1200)
+    })
+    expect(pushMock).toHaveBeenCalledWith('/meals/meal-1')
+  })
+})

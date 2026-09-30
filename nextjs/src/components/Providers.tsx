@@ -8,6 +8,7 @@ import { TourOverlay } from './onboarding/TourOverlay'
 import BubblePop from './ui/BubblePop'
 import { CookingTimersProvider } from '@/lib/useCookingTimers'
 import TimerDock from './timers/TimerDock'
+import { TimerDockLayerProvider } from './timers/TimerDockLayer'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -25,14 +26,17 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <CookingTimersProvider>
-          <TourProvider>
-            {children}
-            <TourOverlay />
-          </TourProvider>
-          {/* Mounted alongside routed content (not inside it) so timers
-              survive navigation and the dock stays visible on every route
-              (issue #495). */}
-          <TimerDock />
+          {/* Lets guided cook hold the dock above itself (issue #657). */}
+          <TimerDockLayerProvider>
+            <TourProvider>
+              {children}
+              <TourOverlay />
+            </TourProvider>
+            {/* Mounted alongside routed content (not inside it) so timers
+                survive navigation and the dock stays visible on every route
+                (issue #495). */}
+            <TimerDock />
+          </TimerDockLayerProvider>
         </CookingTimersProvider>
       </ThemeProvider>
       <BubblePop />

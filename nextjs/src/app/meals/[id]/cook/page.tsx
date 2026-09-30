@@ -38,6 +38,7 @@ import {
   findTimerCompletedSteps,
   timerIdsToDismiss,
   isMealCookFinished,
+  canStartEarly,
 } from '@/lib/meal-cook-stream'
 import {
   getActiveMealCookSession,
@@ -48,6 +49,7 @@ import {
   withDishAmendment,
   type MealCookSession,
 } from '@/lib/meal-cook-session'
+import { skippedDeductionNames } from '@/lib/cook-skipped'
 import { useCookingTimers } from '@/lib/useCookingTimers'
 import type { MealCookErrorKind, MealCookProposal, MealDishFull } from '@/types/meals'
 import type { DeductionItem } from '@/types/recipes'
@@ -120,6 +122,10 @@ export default function MealCookPage() {
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined)
   const [errorKind, setErrorKind] = useState<MealCookErrorKind | undefined>(undefined)
   const [errorStage, setErrorStage] = useState<'load' | 'confirm'>('load')
+  // Issue #621 — pantry items the server refused to deduct, resolved to names.
+  // Non-empty holds the sheet on its success state (no redirect) until the
+  // cook taps Back to meal.
+  const [skipped, setSkipped] = useState<{ names: string[]; unnamed: number }>({ names: [], unnamed: 0 })
   // Set before the first await of a confirm, cleared only on the error path
   // (§5 "Confirm" step 0) — success navigates away, so there is nothing left
   // to guard by the time it would otherwise clear.
@@ -408,7 +414,8 @@ export default function MealCookPage() {
   }
 
   function handleStartEarly() {
-    if (!session || !stream || stream.now.kind !== 'upcoming') return
+    // Issue #663 — not while a step this one follows is still running.
+    if (!session || !stream || !canStartEarly(stream.now)) return
     if (tapGuarded()) return
     const step = stream.now.step
     if (step.hands_on) {
@@ -544,7 +551,7 @@ export default function MealCookPage() {
   async function doConfirm(deductions: DeductionItem[], isRetryOfInProgress: boolean) {
     if (!session) return
     try {
-      await confirmMealCook({
+      const res = await confirmMealCook({
         meal_id: id,
         cook_ref: session.cook_id ?? '',
         recipe_ids: cookedIds,
@@ -555,11 +562,22 @@ export default function MealCookPage() {
       // decided nothing double-deducts; end the session and invalidate.
       endMealCookSession(id)
       invalidateAfterConfirm()
+      // Issue #621 — the server may have refused some rows. `?.` because the
+      // page tests' mocks resolve `undefined`.
+      const skippedNames = skippedDeductionNames(
+        proposal ?? { matches: [] },
+        res?.deductions_skipped ?? [],
+      )
+      const hasSkipped = skippedNames.names.length + skippedNames.unnamed > 0
+      setSkipped(skippedNames)
+      setErrorKind(undefined)
       setSheetState('success')
       // Review N2 — a confirm that resolves after this page has unmounted
       // (the user navigated away another way while it was in flight) must
-      // not schedule a redirect against it.
-      if (mountedRef.current) {
+      // not schedule a redirect against it. Issue #621: with a skipped
+      // notice showing, no redirect at all — the sheet's Back to meal
+      // (`handleSheetBackToMeal`) is the way on.
+      if (mountedRef.current && !hasSkipped) {
         redirectTimerRef.current = setTimeout(() => {
           router.push(`/meals/${id}`)
         }, 1200)
@@ -614,6 +632,7 @@ export default function MealCookPage() {
     }
     confirmingRef.current = true
     lastDeductionsRef.current = deductions
+    setSkipped({ names: [], unnamed: 0 })
     setErrorStage('confirm')
     setSheetState('confirming')
     doConfirm(deductions, false)
@@ -804,6 +823,7 @@ export default function MealCookPage() {
         onRetry={handleRetry}
         onBackToMeal={handleSheetBackToMeal}
         onClose={handleSheetClose}
+        skipped={skipped}
       />
 
       {/* Issue #654 PR B (§3) — the per-dish Ask Bubbles overlay, mounted
