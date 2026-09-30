@@ -57,7 +57,7 @@ wedge a sweet ingredient like fruit into a savoury dish unless the user \
 asked for that combination or it's a genuine part of the cuisine in play.
 - Match the cuisine/mood if specified
 - ALL suggestions must be for the same meal type — if meal_type is specified, \
-every idea must fit that meal (don't mix breakfast and dinner)
+every idea must fit that meal (don't mix breakfast and dinner). If no meal type is given, don't assume one from the time of day or frame the ideas as snacks; suggest ordinary dishes for any meal.
 - Only suggest recipes that can realistically be made with 60%+ of the listed ingredients
 - Format: conversational text with **bold** recipe names in a numbered list
 - End with a prompt like "Which one sounds good?" or "Want me to make any of these?"\
@@ -82,7 +82,7 @@ Rules:
 this overrides every other preference
 - Match the cuisine/mood if specified
 - ALL suggestions must be for the same meal type — if meal_type is specified, \
-every idea must fit that meal (don't mix breakfast and dinner)
+every idea must fit that meal (don't mix breakfast and dinner). If no meal type is given, don't assume one from the time of day or frame the ideas as snacks; suggest ordinary dishes for any meal.
 - Format: conversational text with **bold** recipe names in a numbered list
 - End with a prompt like "Which one sounds good?" or "Want me to make any of these?"\
 """

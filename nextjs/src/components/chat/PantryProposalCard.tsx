@@ -292,7 +292,7 @@ export default function PantryProposalCard({
                       key={item}
                       tone={isSelected ? 'fresh' : 'accent'}
                       onClick={() => togglePill(term, item)}
-                      ariaLabel={`${isSelected ? 'Deselect' : 'Select'} ${item}`}
+                      pressed={isSelected}
                     >
                       {titleCase(item)}
                     </Chip>

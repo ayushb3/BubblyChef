@@ -123,7 +123,10 @@ class _FakeQuery:
         filtered = [
             row
             for row in self._rows
-            if all(row.get(k) == v for k, v in self._filters.items())
+            if all(
+                row.get(k, False if k == "is_draft" else None) == v
+                for k, v in self._filters.items()
+            )
         ]
         return type("Result", (), {"data": filtered})()
 

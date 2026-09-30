@@ -528,7 +528,11 @@ class SupabaseRepository:
     async def get_user_recipes(
         self, user_id: str, limit: int = 100
     ) -> list[dict[str, Any]]:
-        """Return raw rows for all of a user's saved recipes, newest first.
+        """Return raw rows for a user's non-draft (saved) recipes, newest first.
+
+        The same set the recipe library shows: `is_draft = false` rows only, so
+        a generated-but-never-saved recipe can't surface in the saved lookup or
+        the dashboard suggestion (#662).
 
         Raw dicts, like `get_recipe` — callers that need `RecipeCard` shape
         construct it themselves. Used by the dashboard daily endpoint
@@ -540,6 +544,7 @@ class SupabaseRepository:
             self.client.table("recipes")
             .select("*")
             .eq("user_id", user_id)
+            .eq("is_draft", False)
             .order("created_at", desc=True)
             .limit(limit)
             .execute()

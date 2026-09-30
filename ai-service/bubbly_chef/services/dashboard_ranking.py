@@ -32,9 +32,8 @@ _DEFAULT_EXPIRY_SOON_DAYS = 7
 def dashboard_meal_time_bucket(now: datetime | None = None) -> str:
     """Return breakfast | lunch | dinner | snack for the given (or current) time.
 
-    Delegates to `domain/mealtime.py` — the same rule
-    `workflows/recipe/nodes.py::_default_meal_type` uses to default a recipe's
-    `meal_type` — folding its "late-night snack" output into "snack" to match
+    Delegates to `domain/mealtime.py` — `meal_time_bucket`, the shared
+    hour-to-bucket rule — folding its "late-night snack" output into "snack" to match
     the vocabulary `models/recipe.py` documents (breakfast|lunch|dinner|snack).
     This is a *matching* rule (compared against a stored tag), not a wording
     rule, so it deliberately does NOT follow `HeroHome.tsx`'s greeting clock;

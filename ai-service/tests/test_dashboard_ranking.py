@@ -91,8 +91,8 @@ def test_meal_time_bucket_late_night_is_snack() -> None:
 def test_meal_time_bucket_matches_recipe_tagger_rule_not_the_greeting() -> None:
     """15:00 is the disagreement window a review pass measured (#225/#168):
     HeroHome.tsx's greeting boundaries (5/12/18/22) call this "afternoon" ->
-    would map to "lunch", but `_default_meal_type`'s boundaries (5/10/14/17/21)
-    — the rule that actually tags `recipe.meal_type` — call it "snack".
+    would map to "lunch", but `meal_time_bucket`'s boundaries (5/10/14/17/21)
+    — the rule the recipe tagger uses — call it "snack".
     Ranking must agree with the tagger, since it compares against the tag.
     """
     assert dashboard_meal_time_bucket(datetime(2026, 1, 1, 15, 0)) == "snack"

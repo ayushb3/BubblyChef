@@ -25,6 +25,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { useReducedMotion } from 'framer-motion'
 import { streamChatMessage } from '@/lib/api/chat'
 import { isRecipeAmendmentProposal, type ChatRequest } from '@/types/chat'
 import type { MealCookIngredient } from '@/types/meals'
@@ -211,6 +212,18 @@ export default function AskBubblesOverlay({
     inputRef.current?.focus()
   }, [])
 
+  // Issue #672: keep the newest turn (and a fresh amendment card's buttons) in
+  // view. Scrolls the thread only, never the page behind the fixed overlay.
+  // Deliberately not keyed on `streamingText`: token growth must not yank a
+  // user who is reading back. It fires when a message is sent, when the typing
+  // bubble appears, and when the assistant turn settles.
+  const threadRef = useRef<HTMLDivElement>(null)
+  const reduced = useReducedMotion()
+  useEffect(() => {
+    const el = threadRef.current
+    el?.scrollTo?.({ top: el.scrollHeight, behavior: reduced ? 'auto' : 'smooth' })
+  }, [messages.length, streaming, reduced])
+
   // Cleanup abort on unmount
   useEffect(() => {
     return () => {
@@ -365,7 +378,11 @@ export default function AskBubblesOverlay({
         </p>
 
         {/* Message thread */}
-        <div className="flex-1 overflow-y-auto space-y-2 mb-4 min-h-0">
+        <div
+          ref={threadRef}
+          data-testid="ask-bubbles-thread"
+          className="flex-1 overflow-y-auto space-y-2 mb-4 min-h-0"
+        >
           {messages.length === 0 && !streaming && (
             <p
               className="text-sm text-center py-4"

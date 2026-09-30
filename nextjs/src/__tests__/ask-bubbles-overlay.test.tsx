@@ -18,20 +18,30 @@
  */
 
 import React from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import type { ChatResponse } from '@/types/chat'
 
 jest.mock('@/lib/api/chat', () => ({
   streamChatMessage: jest.fn(),
 }))
 
+// Only `useReducedMotion` is faked (issue #672's scroll behaviour); the rest of
+// framer-motion stays real.
+jest.mock('framer-motion', () => ({
+  ...jest.requireActual('framer-motion'),
+  useReducedMotion: jest.fn(() => false),
+}))
+
+import { useReducedMotion } from 'framer-motion'
 import AskBubblesOverlay, { type AskBubblesPin } from '@/components/cook/AskBubblesOverlay'
 import { streamChatMessage } from '@/lib/api/chat'
 
 const streamChatMessageMock = streamChatMessage as jest.Mock
+const useReducedMotionMock = useReducedMotion as jest.Mock
 
 beforeEach(() => {
   streamChatMessageMock.mockReset()
+  useReducedMotionMock.mockReturnValue(false)
 })
 
 function baseResponse(overrides: Partial<ChatResponse> = {}): ChatResponse {
@@ -295,6 +305,85 @@ describe('AskBubblesOverlay — pinned mode', () => {
     sendMessage('can I use yoghurt instead of cream?')
 
     expect(screen.queryByTestId('ask-bubbles-amendment-card')).not.toBeInTheDocument()
+  })
+})
+
+// Issue #672: a new turn scrolls the thread (only the thread) to the bottom.
+describe('AskBubblesOverlay — scrolls a new turn into view', () => {
+  interface ScrollCall {
+    target: HTMLElement
+    options: ScrollToOptions
+    useThisChangeInDom: boolean
+  }
+  let calls: ScrollCall[]
+  let original: PropertyDescriptor | undefined
+
+  beforeEach(() => {
+    calls = []
+    original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo')
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+      configurable: true,
+      writable: true,
+      value: jest.fn(function (this: HTMLElement, options: ScrollToOptions) {
+        calls.push({
+          target: this,
+          options,
+          // Recorded at call time: the card must already be mounted, or the
+          // scroll would land short of its buttons.
+          useThisChangeInDom: screen.queryByText('Use this change') !== null,
+        })
+      }),
+    })
+  })
+
+  afterEach(() => {
+    if (original) Object.defineProperty(HTMLElement.prototype, 'scrollTo', original)
+    else delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo
+  })
+
+  function renderPinned() {
+    render(
+      <AskBubblesOverlay stepN={3} stepText="Stir in the cream" recipeTitle="Creamy pasta" onClose={jest.fn()} pinned={PIN} />,
+    )
+  }
+
+  it('the last scrollTo is on the thread, smooth, with the amendment card already in the DOM', () => {
+    queueResponse(baseResponse({ proposal: AMENDMENT_PROPOSAL, requires_review: true, next_action: 'review_proposal' }))
+    renderPinned()
+    sendMessage('can I use yoghurt instead of cream?')
+
+    expect(screen.getByText('Use this change')).toBeInTheDocument()
+    expect(calls.length).toBeGreaterThan(0)
+    const last = calls[calls.length - 1]
+    expect(last.target).toBe(screen.getByTestId('ask-bubbles-thread'))
+    expect(last.options.behavior).toBe('smooth')
+    expect(last.useThisChangeInDom).toBe(true)
+  })
+
+  it('uses behavior "auto" when the user prefers reduced motion', () => {
+    useReducedMotionMock.mockReturnValue(true)
+    queueResponse(baseResponse({ proposal: AMENDMENT_PROPOSAL, requires_review: true, next_action: 'review_proposal' }))
+    renderPinned()
+    sendMessage('can I use yoghurt instead of cream?')
+
+    const last = calls[calls.length - 1]
+    expect(last.target).toBe(screen.getByTestId('ask-bubbles-thread'))
+    expect(last.options.behavior).toBe('auto')
+  })
+
+  it('does not scroll while streamed tokens arrive', () => {
+    let emitToken: (t: string) => void = () => {}
+    streamChatMessageMock.mockImplementationOnce(async (_req, onToken) => {
+      emitToken = onToken
+      await new Promise(() => {})
+    })
+    renderPinned()
+    sendMessage('why al dente?')
+    const before = calls.length
+    act(() => emitToken('Because '))
+    act(() => emitToken('it holds its bite.'))
+    expect(screen.getByText('Because it holds its bite.')).toBeInTheDocument()
+    expect(calls.length).toBe(before)
   })
 })
 

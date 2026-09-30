@@ -73,7 +73,7 @@ export default function ClarificationCard({ terms, onStagePick, disabled = false
                     key={item}
                     tone={isSelected ? 'fresh' : 'accent'}
                     onClick={() => togglePill(term, item)}
-                    ariaLabel={`${isSelected ? 'Deselect' : 'Select'} ${item}`}
+                    pressed={isSelected}
                   >
                     {titleCase(item)}
                   </Chip>

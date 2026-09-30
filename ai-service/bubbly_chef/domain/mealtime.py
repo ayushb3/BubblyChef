@@ -1,20 +1,21 @@
 """Single source of truth for mapping a clock hour to a meal-type bucket.
 
-Two callers need "what meal is it right now, given this hour":
+The caller that needs "what meal is it right now, given this hour":
 
-- `workflows/recipe/nodes.py::_default_meal_type` — defaults `meal_type` for a
-  chat/brainstorm request when the user didn't say one.
 - `services/dashboard_ranking.py::dashboard_meal_time_bucket` — compares
   against the stored `recipe.meal_type` tag when ranking dashboard
   suggestions (#225, #168).
 
-Both are *matching* operations: they produce (or compare against) a value
+(Chat/brainstorm no longer defaults `meal_type` from the clock: no meal type
+named means any dish, #408.)
+
+It is a *matching* operation: it produces (or compares against) a value
 from the same vocabulary `models/recipe.py` documents for `meal_type`
 (breakfast, lunch, dinner, snack, plus this module's own "late-night snack").
-They must use one rule, not two independently-hand-rolled ones — a second
-review pass on the dashboard endpoint found the dashboard's original
-hand-rolled boundaries disagreed with this one for 7 hours out of 24, which
-silently promoted mistagged recipes in ranking.
+It must stay one shared rule, not independently-hand-rolled copies — a
+review pass on the dashboard endpoint once found hand-rolled boundaries that
+disagreed with this one for 7 hours out of 24, which silently promoted
+mistagged recipes in ranking.
 
 This is deliberately NOT the same rule `HeroHome.tsx`'s `getGreeting()` uses
 (5/12/18/22 vs. 5/10/14/17/21 here). The greeting is *wording* — a decision

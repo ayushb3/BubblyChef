@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
+import { normalizeBaseUnit } from '@/lib/api/ai-proxy'
 import { enrichPantryItem } from '@/lib/pantry-helpers'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
 
@@ -56,6 +57,47 @@ export async function PUT(
   // bug this fix exists to close.
   if (body.expiry_date !== undefined) {
     updates.estimated_expiry = false
+  }
+
+  // An amount edit must re-derive the base (#669): a stale quantity_base is the
+  // one wrong state, because the next cook deducts from it. A null base is
+  // safe (cook time derives one from quantity + unit), so a failed or
+  // impossible normalisation just writes nulls, same as POST /api/pantry.
+  if (body.quantity !== undefined || body.unit !== undefined) {
+    let current: { name?: string; quantity?: number; unit?: string; category?: string | null } = {
+      name: body.name,
+      quantity: body.quantity,
+      unit: body.unit,
+      category: body.category,
+    }
+    if (
+      body.name === undefined ||
+      body.quantity === undefined ||
+      body.unit === undefined ||
+      body.category === undefined
+    ) {
+      const { data: row, error: readError } = await supabase
+        .from('pantry_items')
+        .select('name, quantity, unit, category')
+        .eq('id', id)
+        .eq('user_id', user.id)
+        .single()
+      if (readError || !row) return notFound('Pantry item')
+      current = {
+        name: body.name ?? row.name,
+        quantity: body.quantity ?? row.quantity,
+        unit: body.unit ?? row.unit,
+        category: body.category ?? row.category,
+      }
+    }
+    const { quantity_base, unit_base } = await normalizeBaseUnit({
+      name: current.name as string,
+      quantity: current.quantity as number,
+      unit: current.unit as string,
+      category: current.category,
+    })
+    updates.quantity_base = quantity_base ?? null
+    updates.unit_base = unit_base ?? null
   }
 
   const { data, error } = await supabase
