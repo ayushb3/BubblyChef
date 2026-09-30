@@ -24,7 +24,7 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'quick-actions',
     selector: '[data-tour="quick-actions"]',
-    copy: 'Quick actions: see what to use soon, scan a receipt, or ask me anything.',
+    copy: 'Quick actions: plan dinner, see what to use soon, scan a receipt, or ask me anything.',
     placement: 'below',
   },
   {

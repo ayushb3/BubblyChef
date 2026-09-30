@@ -267,6 +267,11 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
     2. context.meal_option_id — deterministic meal_plan pick shortcut (#650), no LLM
        call. The pick turn's message is just the option's title, which alone would
        misclassify as recipe_generation.
+    2b. context.meal_followup — deterministic meal_plan follow-up shortcut (#651),
+       no LLM call. A tap on a predicted pill under a meal reply; routes to the
+       option stage (never the pick) with the retained meal's constraints carried
+       forward. context.meal_option_id, checked just above, always wins when both
+       are present.
     3. Empty input — short-circuit to general_chat.
     4. Exit phrase — breaks out of any active mode.
     5. URL shortcut — unambiguous recipe_ingest (no LLM).
@@ -336,6 +341,25 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "intent": Intent.MEAL_PLAN.value,
             "intent_confidence": 1.0,
             "intent_reasoning": "Meal option pick — context.meal_option_id present",
+            "detected_entities": [],
+        }
+
+    # ── Priority 2b: meal follow-up pill (#651) — deterministic, no LLM call ──
+    # A tap on a predicted pill under a meal reply. Stamped by the client as
+    # context.meal_followup exactly `true` (JSON boolean) — a string "true"
+    # doesn't qualify, so a hand-built request can't spoof it by accident.
+    # Routes to meal_options_stage (route_by_intent sends meal_plan there
+    # whenever meal_option_id is absent), never the pick — the option stage
+    # is what inherits the retained constraints and re-asks. Comes ahead of
+    # the mode-aware routing and the picked-recipe bias below: the pill is as
+    # trusted a UI signal as the option-card tap just above.
+    if context.get("meal_followup") is True:
+        logger.info("classify_intent: meal_followup present — meal_plan follow-up shortcut")
+        return {
+            **state,
+            "intent": Intent.MEAL_PLAN.value,
+            "intent_confidence": 1.0,
+            "intent_reasoning": "Meal follow-up pill — context.meal_followup present",
             "detected_entities": [],
         }
 
@@ -1787,7 +1811,7 @@ async def run_chat_workflow(
     elif intent == Intent.MEAL_PLAN.value:
         proposal = final_state.get("proposal")
         if isinstance(proposal, MealOptionsProposal):
-            return create_meal_options_envelope(
+            options_env = create_meal_options_envelope(
                 proposal=proposal,
                 assistant_message=final_state.get("assistant_message", ""),
                 confidence=final_state.get("confidence", 1.0),
@@ -1797,8 +1821,10 @@ async def run_chat_workflow(
                 workflow_id=final_state.get("workflow_id"),
                 conversation_id=final_state.get("conversation_id"),
             )
+            options_env.metadata["follow_up_suggestions"] = final_state.get("meal_follow_ups") or []
+            return options_env
         if isinstance(proposal, MealProposal):
-            return create_meal_proposal_envelope(
+            meal_env = create_meal_proposal_envelope(
                 proposal=proposal,
                 assistant_message=final_state.get("assistant_message", ""),
                 confidence=final_state.get("confidence", 0.9),
@@ -1808,6 +1834,8 @@ async def run_chat_workflow(
                 workflow_id=final_state.get("workflow_id"),
                 conversation_id=final_state.get("conversation_id"),
             )
+            meal_env.metadata["follow_up_suggestions"] = final_state.get("meal_follow_ups") or []
+            return meal_env
         # Model-unavailable / unknown-option-id paths degrade intent to
         # general_chat before returning (see meal.nodes), so this is
         # defensive only -- mirrors the RECIPE_CARD fallback above.
@@ -1962,6 +1990,9 @@ def _build_envelope_from_state(
                 workflow_id=final_state.get("workflow_id"),
                 conversation_id=final_state.get("conversation_id"),
             )
+            meal_options_env.metadata["follow_up_suggestions"] = (
+                final_state.get("meal_follow_ups") or []
+            )
             return meal_options_env
         if isinstance(proposal, MealProposal):
             meal_env: ProposalEnvelope[Any] = create_meal_proposal_envelope(
@@ -1974,6 +2005,7 @@ def _build_envelope_from_state(
                 workflow_id=final_state.get("workflow_id"),
                 conversation_id=final_state.get("conversation_id"),
             )
+            meal_env.metadata["follow_up_suggestions"] = final_state.get("meal_follow_ups") or []
             return meal_env
         # Model-unavailable / unknown-option-id paths degrade intent to
         # general_chat before returning (see meal.nodes), so this is

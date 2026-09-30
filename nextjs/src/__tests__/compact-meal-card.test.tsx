@@ -23,6 +23,19 @@ const PROPOSAL: MealProposal = {
 }
 
 describe('CompactMealCard', () => {
+  beforeAll(() => {
+    // jsdom has no layout engine, so scrollIntoView isn't implemented —
+    // matches the stub other chat suites use (chat-meal-card-actions.test.tsx).
+    Element.prototype.scrollIntoView = jest.fn()
+  })
+
+  // The stub above is one shared mock on the prototype (not per-element), so
+  // clear its call count between tests — otherwise the focusSaveToken tests'
+  // "called once" assertions pick up calls left over from earlier tests.
+  beforeEach(() => {
+    ;(Element.prototype.scrollIntoView as jest.Mock).mockClear()
+  })
+
   it('renders the title and every dish with its role', () => {
     render(<CompactMealCard proposal={PROPOSAL} onOpenMeal={jest.fn()} onSaveMeal={jest.fn()} />)
     expect(screen.getByText('Lemon chicken dinner')).toBeInTheDocument()
@@ -83,5 +96,75 @@ describe('CompactMealCard', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: '✓ Saved!' }))
     expect(onSaveMeal).not.toHaveBeenCalled()
+  })
+
+  describe('focusSaveToken (issue #651 — the "Save this meal" pill)', () => {
+    it('bumping it focuses the Save meal button, scrolls it into view, and highlights it', () => {
+      const { rerender } = render(
+        <CompactMealCard
+          proposal={PROPOSAL}
+          onOpenMeal={jest.fn()}
+          onSaveMeal={jest.fn()}
+          focusSaveToken={0}
+        />,
+      )
+      const button = screen.getByRole('button', { name: 'Save meal' })
+      expect(button).not.toHaveFocus()
+
+      rerender(
+        <CompactMealCard
+          proposal={PROPOSAL}
+          onOpenMeal={jest.fn()}
+          onSaveMeal={jest.fn()}
+          focusSaveToken={1}
+        />,
+      )
+
+      expect(button).toHaveFocus()
+      expect(button.scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(button.className).toMatch(/ring-2/)
+    })
+
+    it('re-rendering with the same token does nothing further', () => {
+      const { rerender } = render(
+        <CompactMealCard
+          proposal={PROPOSAL}
+          onOpenMeal={jest.fn()}
+          onSaveMeal={jest.fn()}
+          focusSaveToken={1}
+        />,
+      )
+      const button = screen.getByRole('button', { name: 'Save meal' })
+      const scrollSpy = button.scrollIntoView as jest.Mock
+      const callsAfterFirstMount = scrollSpy.mock.calls.length
+
+      button.blur()
+      rerender(
+        <CompactMealCard
+          proposal={PROPOSAL}
+          onOpenMeal={jest.fn()}
+          onSaveMeal={jest.fn()}
+          focusSaveToken={1}
+        />,
+      )
+
+      expect(scrollSpy).toHaveBeenCalledTimes(callsAfterFirstMount)
+      expect(button).not.toHaveFocus()
+    })
+
+    it('is a no-op while the Save meal button is disabled (saveState saved)', () => {
+      render(
+        <CompactMealCard
+          proposal={PROPOSAL}
+          onOpenMeal={jest.fn()}
+          onSaveMeal={jest.fn()}
+          saveState="saved"
+          focusSaveToken={1}
+        />,
+      )
+      const button = screen.getByRole('button', { name: '✓ Saved!' })
+      expect(button).not.toHaveFocus()
+      expect(button.scrollIntoView).not.toHaveBeenCalled()
+    })
   })
 })

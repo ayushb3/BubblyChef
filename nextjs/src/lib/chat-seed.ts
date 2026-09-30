@@ -9,14 +9,22 @@
  * Both mirror the existing `?cooking=` handoff: read the param, show a
  * dismissible context card above the thread, and prime the conversation.
  *
- * IMPORTANT — the seed lives in the *message text*, not in a context payload.
- * The AI service recognises two client-supplied context keys — `cooking_recipe`
- * and `cooking_recipe_id` (the cook handoff, see `cookingContextForId` below);
- * anything else is ignored, and the must-use ingredient is recovered by an LLM
- * structured-output call over the message itself. So the ingredient name and
- * the tip text have to appear verbatim in `message`, and the `"with my <name>"`
- * phrasing below is the one the backend prompt was tuned against. Don't reword
- * it without re-tuning `recipe/nodes.py`.
+ * A third param, `/chat?plan=dinner` (issue #651), seeds a "plan dinner"
+ * request instead: home screen's Plan card → `planDinnerHref()`. Precedence
+ * across every seed source is cooking > (meal, PR B) > plan > tip > use — the
+ * cooking handoff is excluded before `deriveChatSeed` is ever called
+ * (`page.tsx`), and `plan` is checked ahead of `tip`/`use` inside it.
+ *
+ * IMPORTANT — the seed lives in the *message text*, not in a context payload,
+ * for `tip` and `use`. The AI service recognises a short list of
+ * client-supplied `context` keys: `cooking_recipe_id`/`cooking_recipe` (the
+ * cook handoff, see `cookingContextForId` below), `meal_option_id` (a pick on
+ * a meal-options card) and `meal_followup` (a meal-stage pill tap, issue
+ * #651) — anything else is ignored, and for `tip`/`use` the must-use
+ * ingredient is recovered by an LLM structured-output call over the message
+ * itself. So the ingredient name and the tip text have to appear verbatim in
+ * `message`, and the `"with my <name>"` phrasing below is the one the backend
+ * prompt was tuned against. Don't reword it without re-tuning `recipe/nodes.py`.
  */
 
 import { parseLocalDate } from '@/lib/pantry-helpers'
@@ -40,7 +48,8 @@ export interface ReadableSearchParams {
   get(name: string): string | null
 }
 
-export type ChatSeedKind = 'tip' | 'use'
+/** PR B adds 'meal'. */
+export type ChatSeedKind = 'tip' | 'use' | 'plan'
 
 export interface ChatSeedCard {
   emoji: string
@@ -57,6 +66,11 @@ export interface ChatSeed {
   /** Auto-sent as the conversation's first message. */
   message: string
   card: ChatSeedCard
+  /**
+   * Forwarded as the auto-send's context (issue #651). Unset for `plan` —
+   * the default servings apply server-side; PR B's `meal` seed uses it.
+   */
+  context?: Record<string, unknown>
 }
 
 /** Trimmed param value, or null when absent/blank. */
@@ -81,7 +95,15 @@ export function cookThisHref(name: string, expiryDate?: string | null): string {
   return `/chat?${params.toString()}`
 }
 
+/** Home screen "Plan" card → chat primed to plan dinner (issue #651). */
+export function planDinnerHref(): string {
+  return '/chat?plan=dinner'
+}
+
 // ─── Message builders ─────────────────────────────────────────────────────────
+
+/** Auto-sent message for the `?plan=dinner` seed (issue #651). */
+export const PLAN_DINNER_MESSAGE = 'Plan dinner for tonight'
 
 export function tipSeedMessage(tip: string): string {
   return `Tell me more about this kitchen tip: "${tip}" — why does it work, and when should I use it?`
@@ -149,6 +171,25 @@ export function deriveChatSeed(
   params: ReadableSearchParams,
   now: Date = new Date(),
 ): ChatSeed | null {
+  // Checked ahead of tip/use (issue #651, §8) — only the exact value
+  // "dinner" (case-insensitive after trim) qualifies; anything else falls
+  // through to the seeds below rather than erroring.
+  const plan = param(params, 'plan')
+  if (plan && plan.toLowerCase() === 'dinner') {
+    return {
+      key: 'plan:dinner',
+      kind: 'plan',
+      message: PLAN_DINNER_MESSAGE,
+      card: {
+        emoji: '🍽️',
+        label: 'Plan dinner',
+        title: 'Planning dinner',
+        subtitle: 'Bubbles will suggest a few meals',
+        dismissLabel: 'Dismiss dinner planning context',
+      },
+    }
+  }
+
   const tip = param(params, 'tip')
   if (tip) {
     return {

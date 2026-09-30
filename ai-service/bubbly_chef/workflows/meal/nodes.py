@@ -1,4 +1,6 @@
 """The `meal_plan` intent: option stage and pick stage (issue #650).
+Predicted follow-up pills and the `meal_followup` inheritance turn are
+issue #651.
 
 Two LangGraph nodes, wired in `workflows/router.py`:
 
@@ -7,10 +9,13 @@ Two LangGraph nodes, wired in `workflows/router.py`:
   are computed deterministically in code (the cook matcher's synonym-table
   path, never the LLM-substitution tier), the to-buy cap is applied, and the
   options are retained in the session next to `brainstorm_ideas` for the
-  pick turn.
+  pick turn. The same call also returns 2-4 `follow_ups` pills (#651),
+  cleaned by `_clean_meal_follow_ups`.
 - `meal_pick_stage` — resolves `context.meal_option_id` against the retained
   options (never fuzzy-matched), then expands every dish concurrently via
-  `asyncio.gather`, one grounded, meal-aware recipe generation per dish.
+  `asyncio.gather`, one grounded, meal-aware recipe generation per dish. The
+  main dish's call also carries `follow_ups` (#651), via
+  `MealDishLLMResult` -- the pick stage's only pill-carrying schema.
 
 Both stages reuse the brainstorm/grounded-generation building blocks from
 `workflows/recipe/nodes.py` (constraint extraction, pantry scoring,
@@ -21,11 +26,12 @@ than re-implementing them.
 import asyncio
 import json
 import logging
+import re
 from collections import Counter
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.ai.provider import user_message_for_failure
@@ -51,12 +57,17 @@ from bubbly_chef.prompts.meal import (
     MEAL_DISH_EXPANSION_SYSTEM_PROMPT,
     MEAL_DISH_PANTRY_BLOCK,
     MEAL_DISH_PANTRY_BLOCK_NO_PANTRY,
+    MEAL_FOLLOW_UPS_NO_PANTRY_RULE,
+    MEAL_OPTIONS_FOLLOW_UPS_RULES,
+    MEAL_OPTIONS_PREVIOUS_BLOCK,
     MEAL_OPTIONS_SYSTEM_PROMPT,
     MEAL_OPTIONS_SYSTEM_PROMPT_NO_PANTRY,
+    MEAL_READY_FOLLOW_UPS_RULES,
 )
 from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.services.cook_matcher import match_ingredients
 from bubbly_chef.workflows.recipe.nodes import (
+    _combine_dietary_preferences,
     _days_until_expiry,
     _format_pantry_item_for_prompt,
     extract_recipe_constraints,
@@ -91,6 +102,159 @@ def _shoppable(names: list[str]) -> list[str]:
 # last) to sample for the recent-cuisine soft preference (spec Q18). Small
 # and cheap: one extra DB read, no LLM call.
 _RECENT_CUISINE_SAMPLE = 5
+
+# Predicted follow-up pills (issue #651). The non-meal cap,
+# `workflows/chat/nodes.py:53 MAX_FOLLOW_UP_SUGGESTIONS = 3`, is unchanged --
+# this is a separate cap for the meal stages' own pills.
+MAX_MEAL_FOLLOW_UPS = 4
+
+# `_clean_meal_follow_ups`'s drop rules (spec §5d). Case-insensitive; word
+# boundaries so "stock" alone (as in "chicken stock") never matches the
+# pantry rule -- only "in stock" does.
+_MEAL_FOLLOW_UP_APP_ACTION_RE = re.compile(
+    r"\b(save|saved|saving|start cooking|grocery|groceries|shopping list|open|scan)\b",
+    re.IGNORECASE,
+)
+_MEAL_FOLLOW_UP_PANTRY_RE = re.compile(
+    r"\b(pantry|fridge|in stock|on hand|expir\w*)\b", re.IGNORECASE
+)
+
+
+def _clean_meal_follow_ups(raw: list[str], *, pantry_grounded: bool) -> list[str]:
+    """Filter, dedupe and cap a meal stage's raw model `follow_ups` (#651 §5d).
+
+    Kept: strings only, whitespace-collapsed and stripped, 1-60 characters,
+    with no app-action wording (save, open, start cooking, a grocery/
+    shopping list, scan) and -- only when the pantry opt-out is in effect --
+    no pantry/stock/fridge/expiry wording either. Survivors are deduped
+    case-insensitively (keeping the first) and capped at
+    `MAX_MEAL_FOLLOW_UPS`. Fewer than 2 survivors ship as they are; the
+    client tops the row up from its own fixed set.
+    """
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        text = " ".join(item.split())
+        if not (1 <= len(text) <= 60):
+            continue
+        if _MEAL_FOLLOW_UP_APP_ACTION_RE.search(text):
+            continue
+        if not pantry_grounded and _MEAL_FOLLOW_UP_PANTRY_RE.search(text):
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(text)
+        if len(cleaned) >= MAX_MEAL_FOLLOW_UPS:
+            break
+    return cleaned
+
+
+def _case_insensitive_union(retained: list[str], fresh: list[str]) -> list[str]:
+    """`retained` plus any `fresh` entries not already present case-
+    insensitively, order preserved (retained first) -- the union rule a
+    `meal_followup` turn needs for dietary/excluded_ingredients, where the
+    plain `_merge_constraints` "fresh wins when non-empty" rule would drop a
+    retained value (#651 §5e)."""
+    seen = {s.strip().lower() for s in retained if s.strip()}
+    result = list(retained)
+    for item in fresh:
+        key = item.strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            result.append(item)
+    return result
+
+
+def _finish_meal_followup_constraints(
+    retained: dict[str, Any], merged: dict[str, Any], input_text: str
+) -> dict[str, Any]:
+    """Post-process `extract_recipe_constraints`'s own inherit+override merge
+    (#651 §5e review fix): that merge already ran with `retained` as the
+    *prior*, via `_state_with_recipe_constraints` below, so every scalar
+    field (including `meal_type` -- the default-from-time-of-day fill-in
+    inside `extract_recipe_constraints` only fires when neither side set
+    one, so a retained "dinner" now survives) and every plain list field is
+    already correct. Only `dietary` and `excluded_ingredients` need fixing
+    here, because the plain list rule ("fresh wins when non-empty") is an
+    *override*, not the union these two fields need:
+
+    - `dietary` reuses `_combine_dietary_preferences` -- the exact #394
+      logic ("a stored preference stays in force unless the message names
+      an ingredient it forbids") -- treating `retained` as the stored side
+      and `merged`'s already-computed dietary as the requested side. This
+      is what makes a retained `vegetarian` get set aside for a reply that
+      asks for "chicken in the pasta", rather than the plain union
+      re-adding a diet the fresh request just contradicted.
+    - `excluded_ingredients` has no such contradiction concept, so it stays
+      a plain case-insensitive union.
+    """
+    result = dict(merged)
+    result["dietary"] = _combine_dietary_preferences(
+        retained.get("dietary") or [], merged.get("dietary") or [], merged, input_text
+    )
+    result["excluded_ingredients"] = _case_insensitive_union(
+        retained.get("excluded_ingredients") or [], merged.get("excluded_ingredients") or []
+    )
+    return result
+
+
+def _retained_meal_plan_state(state: WorkflowState) -> MealPlanSessionState | None:
+    """The option stage's retained state from `session.metadata.meal_plan`,
+    or `None` when absent or invalid. Shared by the option stage's
+    `meal_followup` inheritance (#651) and (inline) the pick stage's option
+    resolution."""
+    session = state.get("session") or {}
+    meal_plan_raw = (session.get("metadata") or {}).get("meal_plan")
+    if not isinstance(meal_plan_raw, dict):
+        return None
+    try:
+        return MealPlanSessionState.model_validate(meal_plan_raw)
+    except ValidationError:
+        return None
+
+
+def _state_with_recipe_constraints(state: WorkflowState, constraints: dict[str, Any]) -> WorkflowState:
+    """A state copy whose `session.metadata.recipe_constraints` is set to
+    `constraints` (#651 §5e review fix).
+
+    `extract_recipe_constraints` merges its fresh extraction with whatever
+    that key holds (`_prior_constraints_from_state` + `_merge_constraints`)
+    *before* its own default-meal_type fill-in runs -- so pointing it at the
+    retained meal's own constraints, rather than clearing it, is what lets a
+    retained `meal_type: "dinner"` survive a followup turn that doesn't
+    restate it: without this, the fill-in sees no meal_type yet (a pure
+    fresh extraction), defaults to the time-of-day bucket, and that default
+    then wins the scalar merge against the retained value. The meal branch
+    of `update_session_node` never writes this key itself, so on a
+    `meal_followup` turn it could otherwise still hold leftovers from an
+    earlier, unrelated recipe conversation.
+    """
+    session = state.get("session") or {}
+    metadata = session.get("metadata") if isinstance(session, dict) else None
+    new_metadata = {**metadata, "recipe_constraints": constraints} if isinstance(metadata, dict) else {
+        "recipe_constraints": constraints
+    }
+    return {**state, "session": {**session, "metadata": new_metadata}}
+
+
+class MealDishLLMResult(LLMRecipeResult):
+    """The pick stage's one pill-carrying dish call (issue #651).
+
+    Used only for the main dish's `_expand_dish_result(..., with_follow_ups=
+    True)` call -- internal to this module: never on `RecipeCard`, `MealDish`
+    or the saved recipe. Subclassing `LLMRecipeResult` (rather than a
+    standalone model) means the pick stage's dish-generation prompt and
+    ingredient/step parsing need no branching between the two schemas.
+    """
+
+    follow_ups: list[str] = Field(
+        default_factory=list,
+        description="2-4 short next asks in the user's voice, each under 60 characters, no emoji",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -143,22 +307,28 @@ async def _default_servings(user_id: str) -> int:
 
 async def _recent_cuisine_hint(user_id: str) -> str:
     """A soft, non-binding recent-cuisine preference line for the option
-    prompt (spec Q18). Best-effort: any failure or empty result yields "".
+    prompt (spec Q18; issue #651 §6 moves the ranking itself into
+    `repo.get_recent_cuisines`, shared with the Next.js starter-pill ranker).
+    Best-effort: any failure or empty/non-list result yields "".
+
+    `repo.get_recent_cuisines` never raises, but this keeps its own broad
+    try/except anyway: the #650 test suite's repo mock is a bare `MagicMock`
+    with no `get_recent_cuisines` configured, so calling (and awaiting) the
+    auto-created attribute raises `TypeError` there -- caught here the same
+    as any other failure, degrading to no hint rather than breaking those
+    tests.
     """
     try:
         repo = await get_repository()
-        rows = await repo.get_user_recipes(user_id, limit=_RECENT_CUISINE_SAMPLE)
+        cuisines = await repo.get_recent_cuisines(user_id, sample=_RECENT_CUISINE_SAMPLE)
     except Exception as e:
-        logger.debug("Could not fetch recent recipes for cuisine hint: %s", e)
+        logger.debug("Could not fetch recent cuisines for hint: %s", e)
         return ""
-    cuisines = [
-        c.strip().lower()
-        for r in rows
-        if isinstance(c := r.get("cuisine"), str) and c.strip()
-    ]
-    if not cuisines:
+    if not isinstance(cuisines, list):
+        cuisines = []
+    top = [c for c in cuisines if isinstance(c, str) and c.strip()][:2]
+    if not top:
         return ""
-    top = [c for c, _ in Counter(cuisines).most_common(2)]
     return (
         "\nThe user has recently cooked or saved recipes in these cuisines: "
         + ", ".join(top)
@@ -478,13 +648,52 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     """Node: propose 3 meal options and compute their pantry coverage.
 
     One structured `AIManager` call for the outlines; coverage/to-buy/rescue
-    are computed in code afterward, never by the model.
+    are computed in code afterward, never by the model. The same call also
+    returns `follow_ups` (issue #651).
+
+    On a `context.meal_followup` turn (a tap on a predicted pill under a
+    meal reply) with a valid retained option set, the fresh extraction is
+    merged with that meal's own constraints and servings rather than
+    whatever an unrelated earlier recipe conversation left in the session,
+    and the prompt names the options already offered (#651 §5e).
     """
     input_text = state.get("input_text", "")
     user_id = state.get("user_id") or ""
+    context = state.get("context") or {}
+    is_followup = context.get("meal_followup") is True
+    retained_state = _retained_meal_plan_state(state) if is_followup else None
 
-    constraints_state = await extract_recipe_constraints(state)
-    constraints: dict[str, Any] = constraints_state.get("recipe_constraints") or {}
+    if retained_state is not None:
+        retained_constraints = retained_state.constraints.recipe_constraints
+        # Pointing session.metadata.recipe_constraints at the retained meal's
+        # own constraints (rather than clearing it) makes extract_recipe_
+        # constraints run its own prior-merge against them BEFORE its
+        # default-meal_type fill-in -- see _state_with_recipe_constraints.
+        # dietary/excluded_ingredients are blanked in that prior: the plain
+        # merge's list rule ("fresh wins when non-empty, else inherit prior")
+        # would otherwise make merged["dietary"] just echo the retained value
+        # back whenever this turn doesn't restate a diet -- indistinguishable
+        # from a genuine fresh request for the same diet, which would defeat
+        # _finish_meal_followup_constraints's contradiction check below by
+        # having it "re-request" a diet it just dropped. Blanking them here
+        # means merged["dietary"]/["excluded_ingredients"] are exactly what
+        # *this turn* asked for, nothing inherited.
+        constraints_state = await extract_recipe_constraints(
+            _state_with_recipe_constraints(
+                state, {**retained_constraints, "dietary": [], "excluded_ingredients": []}
+            )
+        )
+        merged_constraints: dict[str, Any] = constraints_state.get("recipe_constraints") or {}
+        constraints = _finish_meal_followup_constraints(
+            retained_constraints, merged_constraints, input_text
+        )
+        # score_pantry_ingredients (next) reads state["recipe_constraints"] --
+        # overwrite it with the fixed-up dict so dietary/exclusion filtering
+        # sees the union/contradiction-checked result, not the plain merge.
+        constraints_state = {**constraints_state, "recipe_constraints": constraints}
+    else:
+        constraints_state = await extract_recipe_constraints(state)
+        constraints = constraints_state.get("recipe_constraints") or {}
     kitchen_limit_phrases = [str(p) for p in (constraints.get("kitchen_limits") or [])]
     exclusive_tags = map_kitchen_limits_to_tags(kitchen_limit_phrases)
 
@@ -493,7 +702,12 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     scored_items: list[dict[str, Any]] = scored_state.get("scored_pantry_items") or []
 
     explicit_servings = constraints.get("servings")
-    servings = int(explicit_servings) if explicit_servings else await _default_servings(user_id)
+    if explicit_servings:
+        servings = int(explicit_servings)
+    elif retained_state is not None:
+        servings = retained_state.servings
+    else:
+        servings = await _default_servings(user_id)
 
     cuisine_hint = await _recent_cuisine_hint(user_id) if user_id else ""
     constraints_str = _format_meal_constraints(constraints, kitchen_limit_phrases)
@@ -502,11 +716,26 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         MEAL_OPTIONS_SYSTEM_PROMPT if pantry_grounded else MEAL_OPTIONS_SYSTEM_PROMPT_NO_PANTRY
     )
 
+    previous_block = ""
+    if retained_state is not None and retained_state.options:
+        previous_block = MEAL_OPTIONS_PREVIOUS_BLOCK.format(
+            options="; ".join(
+                f"{o.title} ({', '.join(d.name for d in o.dishes)})"
+                for o in retained_state.options
+            )
+        )
+
+    follow_ups_rules = MEAL_OPTIONS_FOLLOW_UPS_RULES + (
+        "" if pantry_grounded else MEAL_FOLLOW_UPS_NO_PANTRY_RULE
+    )
+
     prompt = (
         system_prompt
         + pantry_context
         + constraints_str
         + cuisine_hint
+        + previous_block
+        + follow_ups_rules
         + f"\n\nUser: {input_text}\n\nPropose 3 meal options:"
     )
 
@@ -568,6 +797,7 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     session_state = MealPlanSessionState(
         options=options, servings=servings, constraints=constraints_echo
     )
+    meal_follow_ups = _clean_meal_follow_ups(result.follow_ups, pantry_grounded=pantry_grounded)
 
     return {
         **state,
@@ -579,6 +809,7 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         "confidence": 1.0,
         "recipe_constraints": constraints,
         "meal_plan_session_state": session_state,
+        "meal_follow_ups": meal_follow_ups,
         "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
     }
 
@@ -595,7 +826,7 @@ def _score_items_for_dish_prompt(
     return score_and_rank(rows, constraints)
 
 
-async def _expand_dish(
+async def _expand_dish_result(
     ai_manager: Any,
     dish: MealDishOutline,
     option: MealOption,
@@ -603,13 +834,21 @@ async def _expand_dish(
     constraints_echo: MealConstraintsEcho,
     scored_items: list[dict[str, Any]],
     pantry_grounded: bool = True,
-) -> RecipeCard:
+    *,
+    with_follow_ups: bool = False,
+) -> LLMRecipeResult:
     """One grounded, meal-aware recipe generation for a single dish.
 
     The prompt names the meal's other dishes (so sides complement rather
     than duplicate the main) and the exclusive-equipment tags in play, and
     asks for the meal's servings exactly. With `pantry_grounded` false (the
     user opted out, issue #287) no pantry item reaches the prompt.
+
+    `with_follow_ups=True` (issue #651) uses `MealDishLLMResult` instead of
+    plain `LLMRecipeResult` and appends `MEAL_READY_FOLLOW_UPS_RULES` (plus
+    the no-pantry rule when `pantry_grounded` is false) so this one call also
+    returns 2-4 predicted pills -- no extra model call. The caller uses this
+    on exactly one dish per pick turn (the main).
     """
     other_dishes = [d for d in option.dishes if d is not dish]
     other_dishes_str = (
@@ -654,10 +893,36 @@ async def _expand_dish(
         pantry_block=pantry_block,
     )
 
-    result = await ai_manager.complete(prompt=prompt, response_schema=LLMRecipeResult, temperature=0.5)
+    response_schema: type[LLMRecipeResult] = LLMRecipeResult
+    if with_follow_ups:
+        response_schema = MealDishLLMResult
+        prompt += MEAL_READY_FOLLOW_UPS_RULES
+        if not pantry_grounded:
+            prompt += MEAL_FOLLOW_UPS_NO_PANTRY_RULE
+
+    result = await ai_manager.complete(prompt=prompt, response_schema=response_schema, temperature=0.5)
     if not isinstance(result, LLMRecipeResult):
         raise ValueError(f"Unexpected response type expanding dish {dish.name!r}")
 
+    return result
+
+
+async def _expand_dish(
+    ai_manager: Any,
+    dish: MealDishOutline,
+    option: MealOption,
+    servings: int,
+    constraints_echo: MealConstraintsEcho,
+    scored_items: list[dict[str, Any]],
+    pantry_grounded: bool = True,
+) -> RecipeCard:
+    """`_expand_dish_result`, built into a `RecipeCard` (issue #650's original
+    signature -- `workflows/meal/sides.py` needs a `RecipeCard`, never a
+    `follow_ups`-carrying result, so it keeps calling this rather than
+    `_expand_dish_result` directly)."""
+    result = await _expand_dish_result(
+        ai_manager, dish, option, servings, constraints_echo, scored_items, pantry_grounded
+    )
     return _recipe_card_from_llm_result(result, servings)
 
 
@@ -703,9 +968,14 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
 
     ai_manager = get_ai_manager()
     try:
+        # `with_follow_ups=True` on exactly one dish per turn -- the main, at
+        # position 0 (PR B moves it to side 1 when the main is fixed) -- so
+        # issue #651's predicted pills ride that one dish's own structured
+        # call rather than a separate model call. Dish count and call count
+        # are unchanged.
         expanded = await asyncio.gather(
             *(
-                _expand_dish(
+                _expand_dish_result(
                     ai_manager,
                     dish,
                     option,
@@ -713,8 +983,9 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
                     constraints_echo,
                     scored_items,
                     pantry_grounded,
+                    with_follow_ups=(position == 0),
                 )
-                for dish in option.dishes
+                for position, dish in enumerate(option.dishes)
             )
         )
     except NoProviderAvailableError as e:
@@ -723,11 +994,21 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
         return _meal_generation_failed_state(state, str(e))
 
     meal_dishes: list[MealDish] = []
+    dish_titles: list[str] = []
     missing_all: list[str] = []
-    for position, (dish_outline, recipe_card) in enumerate(zip(option.dishes, expanded)):
+    meal_follow_ups: list[str] = []
+    for position, (dish_outline, llm_result) in enumerate(zip(option.dishes, expanded)):
+        recipe_card = _recipe_card_from_llm_result(llm_result, servings)
         meal_dishes.append(MealDish(role=dish_outline.role, position=position, recipe=recipe_card))
+        dish_titles.append(recipe_card.title)
         if pantry_grounded:
             missing_all.extend(_missing_ingredients_for_recipe(recipe_card, pantry_items))
+        # A stub or non-complying provider returns plain LLMRecipeResult even
+        # for the main -- degrades to no pills, and the meal still builds.
+        if position == 0 and isinstance(llm_result, MealDishLLMResult):
+            meal_follow_ups = _clean_meal_follow_ups(
+                llm_result.follow_ups, pantry_grounded=pantry_grounded
+            )
 
     missing = list(dict.fromkeys(missing_all))  # dedupe, preserve order
 
@@ -739,13 +1020,24 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
         missing_ingredients=missing,
     )
 
+    # Names the dishes so the meal-ready pills have something concrete to
+    # answer against (#651 §5b) -- replaces the old "Here's your {title}!".
+    main_title = dish_titles[0] if dish_titles else option.title
+    side_titles = dish_titles[1:]
+    assistant_message = (
+        f"Here's your {option.title}: {main_title} with {' and '.join(side_titles)}!"
+        if side_titles
+        else f"Here's your {option.title}: {main_title}!"
+    )
+
     return {
         **state,
         "intent": Intent.MEAL_PLAN.value,
-        "assistant_message": f"Here's your {option.title}!",
+        "assistant_message": assistant_message,
         "next_action": NextAction.REVIEW_PROPOSAL.value,
         "proposal": proposal,
         "requires_review": True,
         "confidence": 0.9,
+        "meal_follow_ups": meal_follow_ups,
         "workflow_status": WorkflowStatus.AWAITING_REVIEW.value,
     }

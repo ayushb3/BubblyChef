@@ -1,8 +1,14 @@
-"""LLM prompts for the `meal_plan` intent (issue #650).
+"""LLM prompts for the `meal_plan` intent (issue #650; predictive pills,
+issue #651).
 
 Feeds `bubbly_chef.workflows.meal.nodes` -- the option stage (three meal
 outlines from one structured call) and the pick stage (one grounded,
-meal-aware recipe generation per dish, run concurrently). Edits here are
+meal-aware recipe generation per dish, run concurrently). Issue #651 rides
+the *same* structured calls: `MEAL_OPTIONS_FOLLOW_UPS_RULES` is appended to
+the option-stage prompt so `MealOptionsLLMResult.follow_ups` comes back on
+the one call that already runs, and `MEAL_READY_FOLLOW_UPS_RULES` is
+appended to exactly one dish-expansion prompt per pick turn (the main) for
+the same reason -- no extra model call either way. Edits here are
 CODEOWNERS-gated: prompt wording changes model behavior even though the test
 suite can stay green.
 """
@@ -175,3 +181,51 @@ For each alternative, give:
 what they need
 - est_total_minutes, est_hands_on_minutes: whole minutes\
 """
+
+# Predictive pills (issue #651). Shared between the two follow-ups rules
+# below so "never an app action" only needs saying once.
+_MEAL_FOLLOW_UPS_COMMON_RULE = """\
+Never suggest an app action in follow_ups (saving, opening, starting to \
+cook, a grocery or shopping list, or scanning a receipt). Never ask about \
+past cooking, saved recipes, or the user's preferences.\
+"""
+
+# Appended to the option-stage prompt (`meal_options_stage`) so
+# `MealOptionsLLMResult.follow_ups` rides the same structured call that
+# already returns the 3 options -- no extra model call.
+MEAL_OPTIONS_FOLLOW_UPS_RULES = f"""\
+
+Also return follow_ups: 2-4 short next asks in the user's own voice that \
+would change or re-ask these options, e.g. "Something with less prep", \
+"Make the pasta one vegetarian", "Can the sides be lighter?". Each under \
+60 characters, no emoji, no numbering. {_MEAL_FOLLOW_UPS_COMMON_RULE}\
+"""
+
+# Appended to exactly one dish-expansion prompt per pick turn -- the main
+# dish's (`_expand_dish_result(..., with_follow_ups=True)`) -- so the pills
+# ride that one extra structured field rather than a separate call.
+MEAL_READY_FOLLOW_UPS_RULES = f"""\
+
+Also return follow_ups: 2-4 short cooking questions about this whole meal, \
+e.g. "Can I prep any of this ahead?", "What should I start first?". Never \
+ask to change a single dish (the meal screen owns swaps) and never re-ask \
+for meal options (a fixed pill already does that). Each under 60 \
+characters, no emoji, no numbering. {_MEAL_FOLLOW_UPS_COMMON_RULE}\
+"""
+
+# Appended to either follow-ups rule above when the user opted out of the
+# pantry (issue #287) -- mirrors MEAL_DISH_PANTRY_BLOCK_NO_PANTRY's approach
+# for the recipe body: the pills must stay pantry-blind too.
+MEAL_FOLLOW_UPS_NO_PANTRY_RULE = """\
+ Never mention the pantry, stock, the fridge, or expiring items in \
+follow_ups.\
+"""
+
+# Appended to the option-stage prompt on a `context.meal_followup` turn
+# (issue #651 §5e), naming the options already offered this conversation so
+# a "Make it vegetarian" tap builds on them instead of starting over blind.
+MEAL_OPTIONS_PREVIOUS_BLOCK = (
+    "\nAlready suggested in this conversation: {options}. If the user's "
+    "request refers to one of these, build on it; otherwise suggest "
+    "different meals."
+)

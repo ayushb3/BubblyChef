@@ -3,13 +3,13 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { Camera, Fire, Lightbulb, Sparkle } from '@phosphor-icons/react/dist/ssr'
+import { Camera, Fire, ForkKnife, Lightbulb, Sparkle } from '@phosphor-icons/react/dist/ssr'
 import type { ComponentType } from 'react'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import FadeInView from '@/components/ui/FadeInView'
 import { titleCase } from '@/lib/format'
 import { useMotionConfig } from '@/lib/motion'
-import { cookThisHref, tipChatHref } from '@/lib/chat-seed'
+import { cookThisHref, planDinnerHref, tipChatHref } from '@/lib/chat-seed'
 import { fetchDashboardDaily } from '@/lib/api/dashboard'
 import type { DashboardTip, DashboardSuggestion } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
@@ -422,9 +422,19 @@ export default function HeroHome({ displayName, initialKitchenTheme = null }: He
         </div>
       </FadeInView>
 
-      {/* 3 Action Cards */}
-      <div className="grid grid-cols-3 gap-3 w-full max-w-sm mb-6" data-tour="quick-actions">
+      {/* 4 Action Cards, 2x2 (issue #651 adds Plan dinner, first in the list —
+          grid-cols-4 was rejected because labels wrap at 375px). */}
+      <div className="grid grid-cols-2 gap-3 w-full max-w-sm mb-6" data-tour="quick-actions">
         {([
+          {
+            icon: ForkKnife,
+            label: 'Plan',
+            detail: 'Dinner',
+            pending: false,
+            href: planDinnerHref(),
+            ariaLabel: 'Plan dinner',
+            gradient: 'linear-gradient(135deg, var(--color-accent-dark) 0%, var(--color-primary) 100%)',
+          },
           {
             icon: Fire,
             label: 'Use Soon',
@@ -456,19 +466,21 @@ export default function HeroHome({ displayName, initialKitchenTheme = null }: He
           detail: string
           pending: boolean
           href: string
+          ariaLabel?: string
           gradient: string
         }>).map((card, i) => {
           const Icon = card.icon
           return (
           <FadeInView key={card.href} delay={0.35 + i * 0.08}>
-            <Link href={card.href}>
+            <Link href={card.href} aria-label={card.ariaLabel}>
               <motion.div
                 whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.97 }}
                 className="flex flex-col items-center rounded-2xl p-4 shadow-sm border border-white/30 text-white text-center"
                 style={{ background: card.gradient }}
               >
-                {/* Decorative: the card's label is the accessible name. */}
+                {/* Decorative: the card's label is the accessible name
+                    (or `card.ariaLabel`, when set, on the Link itself). */}
                 <Icon size={28} weight="fill" className="mb-1" aria-hidden="true" />
                 <span className="text-sm font-bold">{card.label}</span>
                 {card.pending ? (

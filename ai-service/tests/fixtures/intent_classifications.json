@@ -197,6 +197,52 @@
     ],
     "expected": "recipe_generation"
   },
+  "Plan dinner for tonight": {
+    "intent": "meal_plan",
+    "confidence": 1.0,
+    "reasoning": "The user is asking for a meal plan for a specific occasion ('dinner tonight') without naming a specific dish.",
+    "entities": [
+      "dinner"
+    ],
+    "expected": "meal_plan"
+  },
+  "Plan dinner for 2": {
+    "intent": "meal_plan",
+    "confidence": 1.0,
+    "reasoning": "The user is asking for a meal plan for a specific occasion (dinner) and number of people, without naming a specific dish.",
+    "entities": [
+      "dinner",
+      "2"
+    ],
+    "expected": "meal_plan"
+  },
+  "make a pasta dinner": {
+    "intent": "recipe_generation",
+    "confidence": 0.95,
+    "reasoning": "The user is requesting a specific dish ('pasta') to be made, which falls under recipe_generation even though it mentions a meal occasion.",
+    "entities": [
+      "pasta"
+    ],
+    "expected": "recipe_generation"
+  },
+  "make the lemon pasta again": {
+    "intent": "saved_recipe_lookup",
+    "confidence": 0.95,
+    "reasoning": "The user is referencing a specific recipe they have made before ('make... again'), which falls under the category of referencing an existing saved recipe rather than generating a new one.",
+    "entities": [
+      "lemon pasta"
+    ],
+    "expected": "saved_recipe_lookup"
+  },
+  "Show me my saved lemon pasta": {
+    "intent": "saved_recipe_lookup",
+    "confidence": 1.0,
+    "reasoning": "The user is explicitly asking to see a recipe they have previously saved ('Show me my saved...').",
+    "entities": [
+      "lemon pasta"
+    ],
+    "expected": "saved_recipe_lookup"
+  },
   "how do I caramelise onions?": {
     "intent": "cooking_help",
     "confidence": 1.0,

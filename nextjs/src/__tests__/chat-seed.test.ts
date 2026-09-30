@@ -15,6 +15,8 @@ import {
   tipChatHref,
   tipSeedMessage,
   ingredientSeedMessage,
+  planDinnerHref,
+  PLAN_DINNER_MESSAGE,
 } from '@/lib/chat-seed'
 import * as pantryHelpers from '@/lib/pantry-helpers'
 
@@ -84,6 +86,46 @@ describe('?use= seed (#138)', () => {
     const a = deriveChatSeed(paramsOf(cookThisHref('eggs')))
     const b = deriveChatSeed(paramsOf(cookThisHref('spinach')))
     expect(a?.key).not.toBe(b?.key)
+  })
+})
+
+describe('?plan= seed (#651)', () => {
+  it('planDinnerHref() builds /chat?plan=dinner', () => {
+    expect(planDinnerHref()).toBe('/chat?plan=dinner')
+  })
+
+  it('?plan=dinner gives the plan seed, with no context', () => {
+    const seed = deriveChatSeed(new URLSearchParams('plan=dinner'))
+    expect(seed?.kind).toBe('plan')
+    expect(seed?.key).toBe('plan:dinner')
+    expect(seed?.message).toBe(PLAN_DINNER_MESSAGE)
+    expect(seed?.message).toBe('Plan dinner for tonight')
+    expect(seed?.context).toBeUndefined()
+    expect(seed?.card).toEqual({
+      emoji: '🍽️',
+      label: 'Plan dinner',
+      title: 'Planning dinner',
+      subtitle: 'Bubbles will suggest a few meals',
+      dismissLabel: 'Dismiss dinner planning context',
+    })
+  })
+
+  it('?plan=DINNER (any case, trimmed) gives the same seed', () => {
+    const seed = deriveChatSeed(new URLSearchParams('plan=DINNER'))
+    expect(seed?.kind).toBe('plan')
+    expect(seed?.key).toBe('plan:dinner')
+  })
+
+  it('?plan=lunch does not qualify — falls through to no seed', () => {
+    expect(deriveChatSeed(new URLSearchParams('plan=lunch'))).toBeNull()
+  })
+
+  it('?plan=dinner&tip=x — plan wins (checked ahead of tip)', () => {
+    expect(deriveChatSeed(new URLSearchParams('plan=dinner&tip=x'))?.kind).toBe('plan')
+  })
+
+  it('?plan=lunch&use=eggs falls through past the unrecognised plan value to use', () => {
+    expect(deriveChatSeed(new URLSearchParams('plan=lunch&use=eggs'))?.kind).toBe('use')
   })
 })
 

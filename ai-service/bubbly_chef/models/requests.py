@@ -99,7 +99,15 @@ class ChatRequest(BaseModel):
             '"cooking_recipe_id" (<str>) — the recipe the user just started '
             "cooking; the recipe is resolved server-side from this id and the "
             "conversation is pinned to it. Legacy: \"cooking_recipe\" "
-            "({id, title, ingredients}) — still accepted, same effect."
+            "({id, title, ingredients}) — still accepted, same effect. "
+            '"meal_option_id" (<str>) — a tap on one of the meal_plan option '
+            "cards; resolves against the retained option set and routes to "
+            "the pick stage, never fuzzy-matched. "
+            '"meal_followup" (<bool>, must be exactly `true`) — a tap on a '
+            "predicted pill under a meal reply (issue #651); routes straight "
+            "to the option stage with the retained meal's constraints, "
+            "servings and previously-offered titles carried forward. Ignored "
+            "when \"meal_option_id\" is also present — that always wins."
         ),
     )
     # TODO(#416 chips): when [Edit this recipe] / [Start over] chips are wired in

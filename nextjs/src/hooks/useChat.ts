@@ -682,14 +682,18 @@ export function useChat(options?: UseChatOptions) {
   // Clarification pill taps need to send even while a prior response is
   // streaming — the user has already seen enough to respond. Abort the
   // current stream first so sendMessage's isStreaming guard doesn't block it.
+  //
+  // `context` (issue #651, §1c/§4) forwards a stamped pill's request context
+  // (e.g. `{ meal_followup: true }`) straight through to `sendMessage` — set
+  // only by the resolver, never from model output.
   const sendChipMessage = useCallback(
-    (text: string) => {
+    (text: string, context?: Record<string, unknown> | null) => {
       if (streamAbortRef.current) {
         streamAbortRef.current.abort()
         streamAbortRef.current = null
         setIsStreaming(false)
       }
-      sendMessage(text)
+      sendMessage(text, context)
     },
     [sendMessage],
   )

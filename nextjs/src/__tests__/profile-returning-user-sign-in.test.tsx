@@ -7,6 +7,7 @@
 
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const getUser = jest.fn()
 const onAuthStateChange = jest.fn()
@@ -94,7 +95,14 @@ describe('profile card: returning users (#588)', () => {
   it('/login prefills the handed-over email once', async () => {
     stashLoginEmail('me@example.com')
 
-    render(<LoginPage />)
+    // LoginPage reads useQueryClient() (issue #651 code review — clears the
+    // cache on a successful sign-in), so it needs a QueryClientProvider
+    // ancestor even here where the cache-clearing itself isn't under test.
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <LoginPage />
+      </QueryClientProvider>,
+    )
 
     await waitFor(() => expect(screen.getByPlaceholderText('you@email.com')).toHaveValue('me@example.com'))
     expect(takeLoginEmail()).toBeNull()
