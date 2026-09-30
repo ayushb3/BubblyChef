@@ -10,7 +10,7 @@ import json as _json
 import logging
 import re
 from datetime import date
-from typing import Any
+from typing import Any, NamedTuple
 
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.ai.provider import user_message_for_failure
@@ -46,7 +46,7 @@ from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.services.dietary_preferences import get_stored_dietary_preferences
 from bubbly_chef.services.recipe_generator import generate_recipe as _generate_recipe_followup
 from bubbly_chef.tools.web_search import search_recipe
-from bubbly_chef.workflows.recipe.refine_diet import added_text
+from bubbly_chef.workflows.recipe.refine_diet import added_text, negated_text
 from bubbly_chef.workflows.state import (
     LLMRecipeResult,
     WorkflowState,
@@ -868,8 +868,24 @@ def _dedupe_labels(labels: list[str]) -> list[str]:
     return result
 
 
+def _without_labels(labels: list[str], removed: list[str]) -> list[str]:
+    """`labels` minus `removed`, compared through `_norm_label`."""
+    gone = {_norm_label(x) for x in removed}
+    return [label for label in labels if _norm_label(label) not in gone]
+
+
 def _tag_key(tag: str) -> str:
     return re.sub(r"[\s_]+", "-", tag.strip().lower())
+
+
+class RefineDiet(NamedTuple):
+    """What `refine_dietary_constraints` decided for one refine turn (#544)."""
+
+    constraints: dict[str, Any]
+    diets_set_aside_now: list[str]
+    exclusions_set_aside_now: list[str]
+    diets_restored: list[str]
+    exclusions_restored: list[str]
 
 
 async def refine_dietary_constraints(
@@ -879,7 +895,7 @@ async def refine_dietary_constraints(
     previous_recipe: RecipeCard | None,
     *,
     library: bool = False,
-) -> tuple[dict[str, Any], list[str], list[str]]:
+) -> "RefineDiet":
     """The constraints a refine hands the generator, plus what this turn set aside (#544).
 
     A refine *remembers* the diet decision the first turn already made rather
@@ -897,9 +913,15 @@ async def refine_dietary_constraints(
     model ignoring "no peanuts" looks the same as a deliberate add, and letting
     that silently delete an allergen exclusion is the worse failure.
 
-    Returns `(constraints, diets_set_aside_now, exclusions_set_aside_now)`,
-    where `constraints` is `{"dietary": ..., "excluded_ingredients": ...}` with
-    empty keys omitted.
+    A set-aside is not permanent. A label the tweak names ("actually make it
+    vegetarian") is sent, and removed from the card's carried `diets_set_aside`
+    so the restore holds for the rest of the chat. Likewise a tweak that negates
+    a carried exclusion ("no peanuts" after "add peanuts") sends it again and
+    removes it from `exclusions_set_aside`.
+
+    Returns a `RefineDiet`: `constraints` is `{"dietary": ..., "excluded_ingredients": ...}`
+    with empty keys omitted; the other fields say what to add to, or remove
+    from, the refined card's carried lists.
     """
     stored = await get_stored_dietary_preferences(user_id)
     prior = prior or {}
@@ -920,6 +942,7 @@ async def refine_dietary_constraints(
 
     kept: list[str] = []
     set_aside_now: list[str] = []
+    diets_restored: list[str] = []
     for label in labels:
         key = _norm_label(label)
         if _tweak_names_label(label, tweak_lower):
@@ -927,6 +950,8 @@ async def refine_dietary_constraints(
             # even if the card carries it as set aside. "non-vegetarian" and
             # "not vegetarian" name it too, but to reject it.
             kept.append(label)
+            if not library and key in carried:
+                diets_restored.append(label)
             continue
         if not library and key in carried:
             continue
@@ -947,11 +972,24 @@ async def refine_dietary_constraints(
         str(x).strip().lower()
         for x in (previous_recipe.exclusions_set_aside if previous_recipe else [])
     }
+    negated = negated_text(input_text)
     excluded: list[str] = []
     exclusions_set_aside_now: list[str] = []
-    for entry in prior.get("excluded_ingredients") or []:
+    exclusions_restored: list[str] = []
+    prior_excluded = list(prior.get("excluded_ingredients") or [])
+    prior_keys = {str(e).strip().lower() for e in prior_excluded}
+    carried_only = [
+        x
+        for x in (previous_recipe.exclusions_set_aside if previous_recipe else [])
+        if str(x).strip().lower() not in prior_keys
+    ]
+    for entry in [*prior_excluded, *carried_only]:
         entry_key = str(entry).strip().lower()
         if entry_key in carried_exclusions:
+            if re.search(rf"\b{re.escape(entry_key)}\b", negated):
+                # The tweak negates it again ("no peanuts"): send it from now on.
+                exclusions_restored.append(entry)
+                excluded.append(entry)
             continue
         if re.search(rf"\b{re.escape(entry_key)}\b", added):
             exclusions_set_aside_now.append(entry)
@@ -963,7 +1001,9 @@ async def refine_dietary_constraints(
         constraints["dietary"] = kept
     if excluded:
         constraints["excluded_ingredients"] = excluded
-    return constraints, set_aside_now, exclusions_set_aside_now
+    return RefineDiet(
+        constraints, set_aside_now, exclusions_set_aside_now, diets_restored, exclusions_restored
+    )
 
 
 def carry_dietary_tags(
@@ -1684,16 +1724,13 @@ async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
     # Keep the diet through the tweak (#544). This never writes back to
     # `state["recipe_constraints"]`: a diet set aside for one reply must not be
     # persisted into the session by update_session_node.
-    (
-        refine_constraints,
-        set_aside_now,
-        exclusions_set_aside_now,
-    ) = await refine_dietary_constraints(
+    decision = await refine_dietary_constraints(
         state.get("user_id") or "",
         input_text,
         _prior_constraints_from_state(state),
         previous_recipe,
     )
+    refine_constraints = decision.constraints
 
     ai_manager = get_ai_manager()
     try:
@@ -1739,11 +1776,15 @@ async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
     refined_recipe = result.recipe.model_copy(
         update={
             "id": previous_recipe.id,
-            "diets_set_aside": _dedupe_labels(
-                [*previous_recipe.diets_set_aside, *set_aside_now]
+            "diets_set_aside": _without_labels(
+                _dedupe_labels([*previous_recipe.diets_set_aside, *decision.diets_set_aside_now]),
+                decision.diets_restored,
             ),
-            "exclusions_set_aside": _dedupe_labels(
-                [*previous_recipe.exclusions_set_aside, *exclusions_set_aside_now]
+            "exclusions_set_aside": _without_labels(
+                _dedupe_labels(
+                    [*previous_recipe.exclusions_set_aside, *decision.exclusions_set_aside_now]
+                ),
+                decision.exclusions_restored,
             ),
         }
     )

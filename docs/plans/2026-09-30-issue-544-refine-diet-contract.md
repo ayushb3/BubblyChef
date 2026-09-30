@@ -299,3 +299,9 @@ An explicit "add bacon" sticks: the card carries Vegetarian in `diets_set_aside`
 A first-turn model ignoring "no peanuts" looks the same as a deliberate add, and the two can't be told apart from the card. So the exclusion stays unless the user's own tweak adds it, and that decision is recorded on the card. *Rejected:* dropping the exclusion when the previous card contains it, which lets a model failure silently delete an allergen exclusion.
 
 Known gap (unchanged): the shared `_DIETARY_FORBIDDEN_INGREDIENTS` table has no pancetta or chorizo, so "add pancetta" or "add chorizo" doesn't set Vegetarian aside. Widening the table is out of scope for #544.
+
+## Revision R9 (PR review round 2)
+
+| Item | Change |
+|---|---|
+| Restore holds | A set-aside is removed when the user restores it, so the restore lasts for the rest of the chain. A label the tweak names ("actually make it vegetarian") is sent and removed from the refined card's carried `diets_set_aside`. A tweak that negates a carried exclusion ("no peanuts", "without peanuts", "leave out the peanuts", exact-word match on the negated spans, `refine_diet.negated_text`) sends it again and removes it from `exclusions_set_aside`. `refine_dietary_constraints` now returns a `RefineDiet` named tuple (constraints, the two set-asides made this turn, the two restores) |

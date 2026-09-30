@@ -47,7 +47,7 @@ from bubbly_chef.workflows.recipe.nodes import (
     research_recipe,
     score_pantry_ingredients,
 )
-from bubbly_chef.workflows.recipe.refine_diet import added_text
+from bubbly_chef.workflows.recipe.refine_diet import added_text, negated_text
 from bubbly_chef.workflows.router import update_session_node
 from bubbly_chef.workflows.state import LLMRecipeResult
 
@@ -279,8 +279,45 @@ async def test_a_diet_the_tweak_names_is_sent_even_though_the_card_carries_it_as
     )
 
     assert _sent(gen)["dietary"] == ["Vegetarian"]
-    # For that reply only: the card still records the first turn's decision.
-    assert _card_of(second).diets_set_aside == ["Vegetarian"]
+    # Naming the diet removes it from the carried set-aside, so the restore
+    # holds for the rest of the chain.
+    assert _card_of(second).diets_set_aside == []
+
+
+@pytest.mark.asyncio
+async def test_a_restored_diet_holds_on_the_next_tweak() -> None:
+    first, _ = await _direct_turn("chicken curry", ["Vegetarian"])
+    prior = first["recipe_constraints"]
+
+    second, _ = await _refine(
+        _card_of(first).model_dump(mode="json"), "actually make it vegetarian", ["Vegetarian"], prior
+    )
+    third, gen3 = await _refine(
+        _card_of(second).model_dump(mode="json"), "make it spicier", ["Vegetarian"], prior
+    )
+
+    assert _sent(gen3)["dietary"] == ["Vegetarian"]
+    assert _card_of(third).diets_set_aside == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("negation", ["no peanuts", "without peanuts", "leave out the peanuts"])
+async def test_a_negated_exclusion_is_restored_and_stays_sent(negation: str) -> None:
+    prior = {"excluded_ingredients": ["peanuts"]}
+    card = _card_dict("Noodles", ingredients=("noodles",))
+
+    first, _ = await _refine(card, "add peanuts", [], prior)
+    second, gen2 = await _refine(
+        _card_of(first).model_dump(mode="json"), negation, [], prior
+    )
+    assert _sent(gen2)["excluded_ingredients"] == ["peanuts"]
+    assert _card_of(second).exclusions_set_aside == []
+
+    third, gen3 = await _refine(
+        _card_of(second).model_dump(mode="json"), "make it spicier", [], prior
+    )
+    assert "Never use: peanuts" in format_followup_dietary(_sent(gen3))
+    assert _card_of(third).exclusions_set_aside == []
 
 
 # ---------------------------------------------------------------------------
@@ -612,10 +649,10 @@ async def test_negation_span_decides_whether_the_diet_survives_the_tweak(
 
 async def _exclusions(tweak: str, previous: RecipeCard | None = None) -> list[str]:
     with patch(STORED, AsyncMock(return_value=[])):
-        constraints, _, _ = await refine_dietary_constraints(
+        decision = await refine_dietary_constraints(
             USER, tweak, {"excluded_ingredients": ["peanuts"]}, previous
         )
-    excluded: list[str] = constraints.get("excluded_ingredients", [])
+    excluded: list[str] = decision.constraints.get("excluded_ingredients", [])
     return excluded
 
 
@@ -969,3 +1006,10 @@ def test_format_followup_dietary_omits_empty_lists() -> None:
 
 def test_followup_prompt_template_has_the_dietary_slot() -> None:
     assert "{dietary_requirements}" in RECIPE_FOLLOWUP_PROMPT
+
+
+def test_negated_text_returns_only_the_negated_spans() -> None:
+    assert "peanuts" in negated_text("no peanuts please")
+    assert "peanuts" in negated_text("leave out the peanuts")
+    assert "peanuts" not in negated_text("add peanuts")
+    assert "walnuts" not in negated_text("no peanuts and add walnuts")

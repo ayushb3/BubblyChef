@@ -157,7 +157,7 @@ async def refine_recipe(
 
         # No session and no carried field here, so keep the stored diet except
         # what the tweak adds or the saved recipe's ingredients contradict.
-        refine_constraints, set_aside_now, _ = await refine_dietary_constraints(
+        decision = await refine_dietary_constraints(
             user_id, request.prompt, None, previous_recipe, library=True
         )
 
@@ -165,7 +165,7 @@ async def refine_recipe(
             prompt=request.prompt,
             pantry_items=pantry_items,
             ai_manager=ai_manager,
-            constraints=refine_constraints,
+            constraints=decision.constraints,
             previous_recipe=previous_recipe,
         )
 
@@ -176,7 +176,7 @@ async def refine_recipe(
             result.recipe = result.recipe.model_copy(
                 update={
                     "dietary_tags": carry_dietary_tags(
-                        previous_recipe, request.prompt, set_aside_now
+                        previous_recipe, request.prompt, decision.diets_set_aside_now
                     )
                 }
             )

@@ -58,3 +58,16 @@ def added_text(tweak: str) -> str:
         if clause:
             kept.append(clause)
     return " ".join(kept)
+
+
+def negated_text(tweak: str) -> str:
+    """The negated spans of a refine tweak ("no peanuts", "leave out the peanuts").
+
+    The counterpart of `added_text`: what the user asked to keep out. Used to
+    put back an exclusion an earlier "add peanuts" had set aside.
+    """
+    text = tweak.lower().replace("’", "'")
+    spans: list[str] = []
+    for clause in _CLAUSE_SPLIT.split(text):
+        spans.extend(match.group(0) for match in _NEGATION.finditer(clause))
+    return " ".join(" ".join(spans).split())
