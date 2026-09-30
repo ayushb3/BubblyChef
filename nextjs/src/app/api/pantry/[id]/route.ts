@@ -82,12 +82,17 @@ export async function PUT(
         .eq('id', id)
         .eq('user_id', user.id)
         .single()
+      // `.single()` reports "no row" as PGRST116; anything else is a real
+      // failure and must not masquerade as a missing item.
+      if (readError && readError.code !== 'PGRST116') return errorResponse(readError.message)
       if (readError || !row) return notFound('Pantry item')
+      // `!== undefined`, not `??`: an explicit `category: null` in the body is
+      // the caller's value and must not be replaced by the row's old one.
       current = {
-        name: body.name ?? row.name,
-        quantity: body.quantity ?? row.quantity,
-        unit: body.unit ?? row.unit,
-        category: body.category ?? row.category,
+        name: body.name !== undefined ? body.name : row.name,
+        quantity: body.quantity !== undefined ? body.quantity : row.quantity,
+        unit: body.unit !== undefined ? body.unit : row.unit,
+        category: body.category !== undefined ? body.category : row.category,
       }
     }
     const { quantity_base, unit_base } = await normalizeBaseUnit({

@@ -160,6 +160,17 @@ class TestOptionHistoryAcrossTurns:
         # Set B is "just shown", never repeated under "Earlier".
         assert not any(t in earlier for t in ("Bravo One", "Bravo Two", "Bravo Three"))
 
+        # The substituted block reads as one sentence, with the new tail.
+        assert (
+            "Already suggested in this conversation: Just shown: Bravo One (Bravo One Main, "
+            "Bravo One Side); "
+        ) in prompts[2]
+        assert ". Earlier: Alpha One (Alpha One Main, Alpha One Side); " in prompts[2]
+        assert (
+            "Alpha Three Side). If the user's request refers to one of these (most likely one "
+            "just shown), build on it; otherwise suggest meals different from all of them."
+        ) in prompts[2]
+
     @pytest.mark.asyncio
     async def test_second_prompt_has_no_earlier_section(self) -> None:
         ai = _sequenced_ai([_set("Alpha One", "Alpha Two"), _set("Bravo One", "Bravo Two")])

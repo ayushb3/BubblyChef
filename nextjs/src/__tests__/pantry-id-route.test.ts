@@ -39,7 +39,15 @@ const STORED_ROW: Record<string, unknown> | null = {
 
 function makeSupabaseMock(
   storedUpdates: { current: Record<string, unknown> },
-  opts: { row?: Record<string, unknown> | null; selects?: string[] } = {},
+  opts: {
+    row?: Record<string, unknown> | null
+    selects?: string[]
+    // Every eq(column, value) on the read-first query, in call order.
+    eqs?: Array<[string, unknown]>
+    // Overrides the read's error; the default for a missing row is PGRST116,
+    // which is how PostgREST reports zero rows from `.single()`.
+    readError?: { code?: string; message: string }
+  } = {},
 ) {
   const row = opts.row === undefined ? STORED_ROW : opts.row
   return {
@@ -48,12 +56,25 @@ function makeSupabaseMock(
       select: (columns: string) => {
         opts.selects?.push(columns)
         return {
-          eq: () => ({
-            eq: () => ({
-              single: async () =>
-                row ? { data: row, error: null } : { data: null, error: { message: 'no rows' } },
-            }),
-          }),
+          eq: (column: string, value: unknown) => {
+            opts.eqs?.push([column, value])
+            return {
+              eq: (column2: string, value2: unknown) => {
+                opts.eqs?.push([column2, value2])
+                return {
+                  single: async () => {
+                    if (opts.readError) return { data: null, error: opts.readError }
+                    return row
+                      ? { data: row, error: null }
+                      : {
+                          data: null,
+                          error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' },
+                        }
+                  },
+                }
+              },
+            }
+          },
         }
       },
       update: (updates: Record<string, unknown>) => {
@@ -172,8 +193,9 @@ describe('PUT /api/pantry/[id] re-derives the base on an amount edit (#669)', ()
   it('a partial body reads the row and passes its name, unit and category to the normaliser', async () => {
     const storedUpdates = { current: {} as Record<string, unknown> }
     const selects: string[] = []
+    const eqs: Array<[string, unknown]> = []
     ;(requireAuth as jest.Mock).mockResolvedValue([
-      makeSupabaseMock(storedUpdates, { selects }),
+      makeSupabaseMock(storedUpdates, { selects, eqs }),
       mockUser,
     ])
     mockNormalize.mockResolvedValue({ quantity_base: 1000, unit_base: 'g' })
@@ -181,6 +203,9 @@ describe('PUT /api/pantry/[id] re-derives the base on an amount edit (#669)', ()
     await PUT(makeRequest({ quantity: 2 }), ctx)
 
     expect(selects).toEqual(['name, quantity, unit, category'])
+    // The read must be scoped to the caller's own row.
+    expect(eqs).toContainEqual(['id', 'item-1'])
+    expect(eqs).toContainEqual(['user_id', mockUser.id])
     expect(mockNormalize).toHaveBeenCalledWith({
       name: 'Flour',
       quantity: 2,
@@ -211,6 +236,31 @@ describe('PUT /api/pantry/[id] re-derives the base on an amount edit (#669)', ()
 
     expect(storedUpdates.current.quantity_base).toBeNull()
     expect(storedUpdates.current.unit_base).toBeNull()
+  })
+
+  it('an explicit category: null in the body is kept, not replaced by the stored category', async () => {
+    const storedUpdates = { current: {} as Record<string, unknown> }
+    ;(requireAuth as jest.Mock).mockResolvedValue([makeSupabaseMock(storedUpdates), mockUser])
+
+    await PUT(makeRequest({ quantity: 2, category: null }), ctx)
+
+    expect(mockNormalize).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Flour', quantity: 2, unit: 'g', category: null }),
+    )
+  })
+
+  it('a read error that is not "no rows" returns 500, not 404, and never normalises', async () => {
+    const storedUpdates = { current: {} as Record<string, unknown> }
+    ;(requireAuth as jest.Mock).mockResolvedValue([
+      makeSupabaseMock(storedUpdates, { readError: { code: '08006', message: 'connection failure' } }),
+      mockUser,
+    ])
+
+    const res = await PUT(makeRequest({ quantity: 2 }), ctx)
+
+    expect(res.status).toBe(500)
+    expect(mockNormalize).not.toHaveBeenCalled()
+    expect(storedUpdates.current).toEqual({})
   })
 
   it('returns not found when the partial body names a row that is not there', async () => {

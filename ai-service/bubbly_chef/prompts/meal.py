@@ -233,8 +233,8 @@ follow_ups.\
 # a "Make it vegetarian" tap builds on them instead of starting over blind.
 MEAL_OPTIONS_PREVIOUS_BLOCK = (
     "\nAlready suggested in this conversation: {options}. If the user's "
-    "request refers to one of these, build on it; otherwise suggest "
-    "different meals."
+    "request refers to one of these (most likely one just shown), build on "
+    "it; otherwise suggest meals different from all of them."
 )
 
 # Inserted after MEAL_OPTIONS_PREVIOUS_BLOCK when a "Make it a meal" flow fixes
