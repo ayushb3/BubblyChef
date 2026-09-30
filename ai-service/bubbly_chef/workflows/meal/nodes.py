@@ -42,6 +42,7 @@ from pydantic import Field, ValidationError
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.ai.provider import user_message_for_failure
 from bubbly_chef.api.deps import get_ai_manager
+from bubbly_chef.domain.diet_terms import join_fields
 from bubbly_chef.domain.kitchen_limits import map_kitchen_limits_to_tags
 from bubbly_chef.domain.stock import filter_usable_pantry_items, filter_usable_pantry_rows
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
@@ -240,7 +241,7 @@ def _drop_diets_the_main_contradicts(
     produced (a pill like "Make the sides vegetarian") is an explicit ask and
     always stays, even beside a chicken main: the ask beats the main's tags.
     """
-    haystack = f"{card.title} {' '.join(i.name for i in card.ingredients)}".lower()
+    haystack = join_fields(card.title, *(i.name for i in card.ingredients)).lower()
     tags = {t.strip().lower() for t in card.dietary_tags}
     carried_keys = {c.strip().lower() for c in carried}
     asked = input_text.lower()

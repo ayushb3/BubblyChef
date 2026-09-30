@@ -155,6 +155,16 @@ class WorkflowState(TypedDict, total=False):
     # onto the card as `diets_set_aside`. Both are per-turn, never persisted.
     constraints_extracted: bool
     dietary_set_aside: list[str]
+    # Issue #685, all per-turn and never persisted as such. Written by
+    # extract_recipe_constraints (research_recipe writes the first and last on
+    # the pick path): `session_dietary` is the conversation's diet before this
+    # turn's check, `fresh_dietary` the diet this turn's message named, and
+    # `stored_dietary` the profile diet read this turn. research_recipe uses them
+    # for `diets_set_aside`; `constraints_to_persist` uses them to decide what the
+    # session remembers.
+    session_dietary: list[str]
+    fresh_dietary: list[str]
+    stored_dietary: list[str]
     web_search_result: dict[str, Any] | None
     ingredient_availability: list[dict[str, Any]]
 
