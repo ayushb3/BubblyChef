@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
+import { isNoRowError } from '@/lib/supabase/errors'
 
 export async function PATCH(
   request: Request,
@@ -21,6 +22,8 @@ export async function PATCH(
     .select()
     .single()
 
+  // A missing (or another user's) row is PGRST116 from `.single()`: 404 (#682).
+  if (isNoRowError(error)) return notFound('Pantry item')
   if (error) return errorResponse(error.message)
   if (!data) return notFound('Pantry item')
 
