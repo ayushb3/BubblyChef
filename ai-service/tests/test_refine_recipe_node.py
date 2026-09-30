@@ -125,3 +125,17 @@ async def test_refine_recipe_node_without_pinned_recipe_falls_back_gracefully():
     gen_recipe_mock.assert_not_called()
     assert result["intent"] == Intent.GENERAL_CHAT.value
     assert result["proposal"] is None
+
+
+@pytest.fixture(autouse=True)
+def _no_stored_dietary_preferences():
+    """research_recipe/refine now read the stored diet on every call (#544).
+
+    Patch the single read seam so this suite stays hermetic (no repository
+    lookup) and its assertions are about what it was written for.
+    """
+    with patch(
+        "bubbly_chef.workflows.recipe.nodes.get_stored_dietary_preferences",
+        AsyncMock(return_value=[]),
+    ):
+        yield

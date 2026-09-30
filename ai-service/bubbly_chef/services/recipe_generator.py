@@ -149,6 +149,31 @@ def format_constraints(constraints: dict[str, Any] | None) -> str:
     return "\n".join(parts) if parts else "None specified."
 
 
+def format_followup_dietary(constraints: dict[str, Any] | None) -> str:
+    """Dietary block for the follow-up (refine) prompt (issue #544).
+
+    Empty when there is neither a diet nor an exclusion, in which case the
+    rendered prompt is identical to the one before #544.
+    """
+    constraints = constraints or {}
+    dietary = constraints.get("dietary") or []
+    excluded = constraints.get("excluded_ingredients") or []
+    if isinstance(dietary, str):
+        dietary = [dietary]
+    if not dietary and not excluded:
+        return ""
+
+    lines = ["", "## Dietary Requirements"]
+    if dietary:
+        lines.append(f"- Dietary requirements: {', '.join(dietary)}")
+    if excluded:
+        lines.append(f"- Never use: {', '.join(excluded)}")
+    lines.append(
+        "The modified recipe must still meet these, even if the request doesn't mention them."
+    )
+    return "\n".join(lines) + "\n"
+
+
 def format_recipe_for_context(recipe: RecipeCard) -> str:
     """Format a recipe for use as context in follow-up prompts."""
     lines = [
@@ -319,6 +344,7 @@ async def generate_recipe(
             previous_recipe=format_recipe_for_context(previous_recipe),
             pantry_items_formatted=pantry_formatted,
             user_prompt=prompt,
+            dietary_requirements=format_followup_dietary(constraints),
         )
     else:
         full_prompt = RECIPE_GENERATION_PROMPT.format(

@@ -148,6 +148,13 @@ class WorkflowState(TypedDict, total=False):
     # True only when classify_intent resolved a pinned-session turn to a DIFFERENT
     # already-offered idea; dispatch builds a new card instead of refining.
     repick_different_idea: bool
+    # Issue #544. `constraints_extracted` is set by extract_recipe_constraints
+    # (the direct card path) so research_recipe knows extract already combined
+    # the stored diet with this turn's message; `dietary_set_aside` is the
+    # stored diets research_recipe found not covered by the final diet, stamped
+    # onto the card as `diets_set_aside`. Both are per-turn, never persisted.
+    constraints_extracted: bool
+    dietary_set_aside: list[str]
     web_search_result: dict[str, Any] | None
     ingredient_availability: list[dict[str, Any]]
 
