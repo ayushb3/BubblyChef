@@ -259,8 +259,25 @@ The user wants to modify the previous recipe.
 {user_prompt}
 
 Modify the recipe according to the user's request.{dietary_requirements}
-Keep the same format but adjust ingredients, instructions,
-or other aspects as needed.
+
+This is an EDIT of the previous recipe, not a new recipe. Change only what the
+user asked for and leave everything else exactly as it is. Every ingredient the
+request does not mention keeps its exact name and amount: do not rename it
+(Pasta stays Pasta, it does not become Spaghetti), do not swap it for something
+similar (Butter stays Butter, it does not become Olive Oil), and do not rescale
+it. Do not regenerate the ingredient list from scratch.
+
+Report exactly which ingredients the request touched:
+- "added": ingredients the request introduces (full details).
+- "removed": names of previous-recipe ingredients the request takes out,
+  copied exactly as written in the previous recipe above.
+- "changed": previous-recipe ingredients whose amount, unit or preparation the
+  request changes -- the exact previous name plus the new values.
+A substitution ("swap the butter for olive oil") is a removal plus an addition:
+put the old one in "removed" and the new one in "added". Never report a
+different name under "changed"; it only ever updates an existing ingredient.
+Leave a list empty when the request did not touch anything in it. An
+ingredient you removed must not appear in the instructions or steps any more.
 
 IMPORTANT: You MUST return actual recipe data with real values,
 NOT a schema or template. Give each instruction a matching `steps` entry
@@ -305,7 +322,16 @@ crisp vegetables, and a spicy kick",
   ],
   "tips": ["Adjust red pepper flakes to taste", "Use a very hot wok for best results"],
   "cuisine": "Asian",
-  "difficulty": "easy"
+  "difficulty": "easy",
+  "added": [
+    {{"name": "red pepper flakes", "quantity": 1, "unit": "teaspoon",
+      "preparation": null, "optional": false}}
+  ],
+  "removed": [],
+  "changed": [
+    {{"name": "garlic", "quantity": 4, "unit": "cloves",
+      "preparation": "minced", "optional": false}}
+  ]
 }}
 
 Now generate YOUR modified recipe following this same structure with ACTUAL VALUES (not the schema).
