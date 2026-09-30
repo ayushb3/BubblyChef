@@ -3,7 +3,9 @@
 Manages AI provider selection and fallback logic.
 """
 
+import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from typing import Any, TypeVar
@@ -21,6 +23,15 @@ from .provider import (
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
+
+# Indirection so tests can drive the probe cache's clock.
+_monotonic = time.monotonic
+
+# /health/ai generation probe (#576): one tiny prompt, and a wall-clock bound
+# on the whole cascade so a hung provider can't hold the single-flight lock
+# (and every waiting health hit) for a provider's full ~60s request timeout.
+_PROBE_PROMPT = "Reply with the single word: ok"
+_PROBE_TIMEOUT_SECONDS = 20.0
 
 
 # Kinds that say nothing about *why* a call failed (#514).
@@ -93,6 +104,12 @@ class AIManager:
         # reports a failure that hasn't since been superseded by a success.
         self._last_failure_kind: str | None = None
         self._last_failure_at: datetime | None = None
+        # Generation-probe cache (#576): the last probe result, when it was
+        # taken (monotonic clock), and the lock that makes a cache miss
+        # single-flight so concurrent health hits share one provider call.
+        self._probe_result: dict[str, Any] | None = None
+        self._probe_taken_at: float | None = None
+        self._probe_lock = asyncio.Lock()
 
     def add_provider(self, provider: AIProvider) -> None:
         """Add a provider to the list."""
@@ -455,9 +472,120 @@ class AIManager:
         """The provider that handled the last successful request."""
         return self._current_provider
 
-    async def health_check(self) -> dict[str, Any]:
+    async def _run_generation_probe(self, max_output_tokens: int) -> dict[str, Any]:
+        """Run one tiny capped generation down the provider cascade (#576).
+
+        Same order and fallback semantics as ``complete()``: the first
+        provider that generates wins, and a failure is recorded with its
+        classified kind. Reports which provider served the probe and whether
+        that was a fallback (anything but the first registered provider), so
+        "healthy" on Ollama while Gemini is spend-capped reads as exactly that.
+        """
+        failures: list[dict[str, str]] = []
+        failure_kinds: list[str] = []
+        served_by: AIProvider | None = None
+        fallback = False
+
+        for index, provider in enumerate(self.providers):
+            try:
+                await provider.complete(
+                    prompt=_PROBE_PROMPT,
+                    temperature=0.0,
+                    max_output_tokens=max_output_tokens,
+                )
+            except ProviderUnavailableError as e:
+                self._record_failure(provider, e)
+                failures.append({"provider": provider.name, "kind": e.kind})
+                failure_kinds.append(e.kind)
+                continue
+            except StructuredOutputError:
+                # The provider answered 200 but the capped reply had no text
+                # (e.g. the token cap was spent before any output). The
+                # generation path itself is alive, which is all the probe asks.
+                pass
+            except Exception as e:
+                logger.error(
+                    f"AI probe [{provider.name}] unexpected {type(e).__name__}: {e}",
+                    exc_info=True,
+                )
+                failures.append({"provider": provider.name, "kind": "unknown"})
+                failure_kinds.append("unknown")
+                continue
+            served_by = provider
+            fallback = index > 0
+            break
+
+        failure_kind: str | None = None
+        if served_by is not None:
+            self._current_provider = served_by
+            self._clear_failure()
+        else:
+            failure_kind = self._finalize_failure(failure_kinds)
+
+        return {
+            "healthy": served_by is not None,
+            "provider": served_by.name if served_by is not None else None,
+            "fallback": fallback,
+            "failure_kind": failure_kind,
+            "failures": failures,
+            "checked_at": datetime.now().isoformat(),
+        }
+
+    def _probe_fresh(self, ttl_seconds: int) -> bool:
+        return (
+            self._probe_result is not None
+            and self._probe_taken_at is not None
+            and _monotonic() - self._probe_taken_at < ttl_seconds
+        )
+
+    async def _generation_probe(self, ttl_seconds: int, max_output_tokens: int) -> dict[str, Any]:
+        """Return the cached probe result, probing first on a cache miss.
+
+        Single-flight: the cache is re-checked after taking the lock, so N
+        concurrent health hits on a miss produce one probe and N-1 cache hits.
+        A failed probe is cached for the same TTL as a successful one — a
+        down provider must not be re-probed on every health hit either.
+        """
+        if not self._probe_fresh(ttl_seconds):
+            async with self._probe_lock:
+                if not self._probe_fresh(ttl_seconds):
+                    try:
+                        result = await asyncio.wait_for(
+                            self._run_generation_probe(max_output_tokens),
+                            timeout=_PROBE_TIMEOUT_SECONDS,
+                        )
+                    except TimeoutError:
+                        logger.warning(
+                            f"AI generation probe timed out after {_PROBE_TIMEOUT_SECONDS:.0f}s"
+                        )
+                        result = {
+                            "healthy": False,
+                            "provider": None,
+                            "fallback": False,
+                            "failure_kind": self._finalize_failure(["timeout"]),
+                            "failures": [],
+                            "checked_at": datetime.now().isoformat(),
+                        }
+                    self._probe_result = result
+                    self._probe_taken_at = _monotonic()
+                    return {**result, "cached": False}
+        assert self._probe_result is not None
+        return {**self._probe_result, "cached": True}
+
+    async def health_check(
+        self,
+        generation_probe_ttl_seconds: int = 0,
+        generation_probe_max_output_tokens: int = 4,
+    ) -> dict[str, Any]:
         """
         Check status of all providers.
+
+        ``is_available()`` only proves a provider is reachable with a valid
+        key, so a spend-capped Gemini still reads available (#576). With
+        ``generation_probe_ttl_seconds > 0`` this also runs a cached, capped,
+        single-flight generation probe and ``healthy`` reflects whether a
+        generation actually succeeded. With 0 (the default) nothing is
+        generated and ``healthy`` is the reachability-only answer, unchanged.
 
         Returns:
             Dict with provider status information
@@ -476,10 +604,19 @@ class AIManager:
             if available:
                 available_count += 1
 
+        probe: dict[str, Any] | None = None
+        healthy = available_count > 0
+        if generation_probe_ttl_seconds > 0:
+            probe = await self._generation_probe(
+                generation_probe_ttl_seconds, generation_probe_max_output_tokens
+            )
+            healthy = bool(probe["healthy"])
+
         return {
             "providers": providers_list,
             "available_count": available_count,
-            "healthy": available_count > 0,
+            "healthy": healthy,
+            "generation_probe": probe,
             "last_failure_kind": self._last_failure_kind,
             "last_failure_at": (
                 self._last_failure_at.isoformat() if self._last_failure_at is not None else None

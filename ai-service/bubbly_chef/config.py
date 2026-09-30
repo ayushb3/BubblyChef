@@ -59,6 +59,17 @@ class Settings(BaseSettings):
     # A fast OCR leaves the parse most of the 40s; only a slow OCR squeezes it.
     scan_request_budget_seconds: float = 40.0
 
+    # /health/ai generation probe — issue #576. Gemini's is_available() is a
+    # model-metadata GET: it still answers 200 when the key is spend-capped, so
+    # /health/ai read green through an outage where every generation 429'd. The
+    # probe runs one tiny real generation through AIManager and caches the
+    # result for this many seconds so health checks do not burn quota (each
+    # probe that isn't served from the cache is a real provider call; 900s is
+    # at most 96 a day). 0 disables the probe and keeps the old reachability-
+    # only behaviour. The token cap keeps each probe nearly free.
+    health_generation_probe_ttl_seconds: int = Field(default=900, ge=0)
+    health_generation_probe_max_output_tokens: int = Field(default=4, ge=1)
+
     # Anthropic / SAP proxy (dev only — leave use_anthropic_proxy=false in prod/CI)
     anthropic_base_url: str = "http://localhost:6655/anthropic"
     anthropic_api_key: str = ""
