@@ -167,6 +167,37 @@ class TestClaimMealCook:
         assert store.update_calls[-1]["last_cook_status"] == "claimed"
         assert store.update_calls[-1]["last_cook_ref"] == "new-ref"
 
+    async def test_claim_carries_the_instant_it_was_made_at(self) -> None:
+        """#550: the Next.js proxy keys the bubble awards on the account's LOCAL
+        date, which it can only compute from the claim's instant (a UTC date
+        alone can't say which local day the claim fell on)."""
+        store = _FakeMealsStore(_row(last_cook_ref="old-ref"))
+        repo = _repo_for(store)
+
+        claim = await repo.claim_meal_cook("user-1", "meal-1", "new-ref")
+
+        assert claim is not None
+        assert claim.cooked_at is not None
+        assert claim.cooked_at.isoformat() == store.update_calls[-1]["last_cooked_at"]
+
+    async def test_replay_returns_the_original_claim_instant(self) -> None:
+        """A replay must hand back the ORIGINAL instant, so a retry after local
+        midnight still lands on the first call's award key."""
+        store = _FakeMealsStore(
+            _row(
+                last_cook_ref="new-ref",
+                last_cook_status="applied",
+                last_cooked_at="2026-09-23T23:50:00+00:00",
+            )
+        )
+        repo = _repo_for(store)
+
+        claim = await repo.claim_meal_cook("user-1", "meal-1", "new-ref")
+
+        assert claim is not None
+        assert claim.outcome == "replay_applied"
+        assert claim.cooked_at == datetime(2026, 9, 23, 23, 50, tzinfo=UTC)
+
     async def test_zero_rows_then_replay_applied(self) -> None:
         """The update's own filter loses a race -- the concurrent request
         already stamped `last_cook_ref` to OUR ref with status 'applied' by

@@ -14,7 +14,14 @@
  *    confirm and today's on the next.
  */
 
-const mockUser = { id: 'user-1' }
+/** The account's stored ledger time zone (#550) - server-owned `app_metadata`. */
+function userInZone(timeZone: string | null, setAt = '2026-01-01T00:00:00.000Z') {
+  return {
+    id: 'user-1',
+    app_metadata: timeZone ? { ledger_tz: timeZone, ledger_tz_set_at: setAt } : {},
+  }
+}
+const mockUser = userInZone('UTC')
 
 const awardBubblesMock = jest.fn(async () => 10)
 jest.mock('@/lib/bubbles', () => ({
@@ -68,7 +75,7 @@ describe('cook/confirm cook_confirm award (#524 review)', () => {
     jest.useRealTimers()
   })
 
-  it('still awards cook_confirm, keyed on the server date, when the client sends no date at all', async () => {
+  it("still awards cook_confirm, keyed on the account's local date, when the client sends no date at all", async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-26T12:00:00.000Z'))
     mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])
 
@@ -78,7 +85,7 @@ describe('cook/confirm cook_confirm award (#524 review)', () => {
     expect(awardBubblesMock).toHaveBeenCalledWith(mockUser.id, 'cook_confirm', 'recipe-1:2026-08-26')
   })
 
-  it('keys two confirms of the same recipe (client dates yesterday, then today) to the same server-dated ref_key', async () => {
+  it('keys two confirms of the same recipe (client dates yesterday, then today) to the same ref_key', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-26T12:00:00.000Z'))
     mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])
 
@@ -93,28 +100,28 @@ describe('cook/confirm cook_confirm award (#524 review)', () => {
     expect(cookConfirmCalls[1][2]).toBe('recipe-1:2026-08-26')
   })
 
-  it("judges rescue eligibility on the client's local day, not the server's UTC day — but keys the award on the server day", async () => {
+  it("judges rescue eligibility, and keys the award, on the account's local day (#550), not the server's UTC day", async () => {
     // 18:00 at UTC-7 on 2026-09-23 is already 2026-09-24 01:00 UTC. The item
     // expires 2026-09-23: on the user's day it's the last day (0 left, a
     // rescue); on the server's day it would already be expired (no rescue).
-    // The eligibility judgement uses the client's date (2026-09-23), so the
-    // rescue still fires — but the ref_key uses the server's date
-    // (2026-09-24), same as cook_confirm, not the client's.
+    // The stored zone (not a client-sent date) puts the user on the 23rd, so
+    // the rescue fires AND its ref_key uses that same accepted date as
+    // cook_confirm, so all the keys agree.
     jest.useFakeTimers().setSystemTime(new Date('2026-09-24T01:00:00.000Z'))
     mockRequireAuth.mockResolvedValue([
       makeSupabase([{ id: 'item-1', expiry_date: '2026-09-23' }]),
-      mockUser,
+      userInZone('America/Los_Angeles'),
     ])
 
     await POST(
       makeRequest({
         recipe_id: 'recipe-1',
         deductions: [{ pantry_item_id: 'item-1', deduct_qty: 1 }],
-        date: '2026-09-23',
       }),
     )
 
-    expect(awardBubblesMock).toHaveBeenCalledWith(mockUser.id, 'rescue', 'item-1:2026-09-24')
+    expect(awardBubblesMock).toHaveBeenCalledWith(mockUser.id, 'rescue', 'item-1:2026-09-23')
+    expect(awardBubblesMock).toHaveBeenCalledWith(mockUser.id, 'cook_confirm', 'recipe-1:2026-09-23')
   })
 
   it('cannot mint two rescue awards for one deduction by replaying the confirm with a different client date (#570 review)', async () => {
@@ -149,6 +156,99 @@ describe('cook/confirm cook_confirm award (#524 review)', () => {
     expect(rescueCalls).toHaveLength(2)
     expect(rescueCalls[0][2]).toBe('item-1:2026-08-26')
     expect(rescueCalls[1][2]).toBe('item-1:2026-08-26')
+  })
+})
+
+/**
+ * Issue #550 - `cook_confirm` and `rescue` are keyed on ONE exact local date
+ * derived on the server from the account's stored zone and the server clock.
+ * The body's `date` / `tz` are never a per-request key.
+ */
+describe('cook/confirm keys on one exact local date (#550)', () => {
+  const LA = userInZone('America/Los_Angeles', '2026-09-20T00:00:00.000Z')
+
+  afterEach(() => {
+    jest.clearAllMocks()
+    jest.useRealTimers()
+  })
+
+  function cookConfirmRefs(): string[] {
+    return (awardBubblesMock.mock.calls as unknown as Array<[string, string, string]>)
+      .filter((call) => call[1] === 'cook_confirm')
+      .map((call) => call[2])
+  }
+
+  it('one recipe cooked at 23:50Z and 00:10Z on the same local day pays on one key', async () => {
+    // 16:50 and 17:10 in Los Angeles: same local day, either side of UTC midnight.
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-23T23:50:00.000Z'))
+    mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
+    await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [] }))
+
+    jest.setSystemTime(new Date('2026-09-24T00:10:00.000Z'))
+    mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
+    await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [] }))
+
+    expect(cookConfirmRefs()).toEqual(['recipe-1:2026-09-23', 'recipe-1:2026-09-23'])
+  })
+
+  it('the same recipe on two different local days pays on two keys', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-24T06:30:00.000Z')) // 23:30 on the 23rd
+    mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
+    await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [] }))
+
+    jest.setSystemTime(new Date('2026-09-24T07:30:00.000Z')) // 00:30 on the 24th
+    mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
+    await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [] }))
+
+    expect(cookConfirmRefs()).toEqual(['recipe-1:2026-09-23', 'recipe-1:2026-09-24'])
+  })
+
+  it("sending yesterday's date after today's does not open a second key", async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-24T01:00:00.000Z'))
+    mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
+
+    await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [], date: '2026-09-23' }))
+    await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [], date: '2026-09-22' }))
+    await POST(makeRequest({ recipe_id: 'recipe-1', deductions: [], date: '2026-09-24' }))
+
+    expect(new Set(cookConfirmRefs())).toEqual(new Set(['recipe-1:2026-09-23']))
+  })
+
+  it('a spoofed zone in the body cannot move the key a day forward', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-24T01:00:00.000Z'))
+    mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
+
+    await POST(
+      makeRequest({
+        recipe_id: 'recipe-1',
+        deductions: [],
+        tz: 'Pacific/Kiritimati',
+        date: '2026-09-24',
+        tz_offset_minutes: 840,
+      }),
+    )
+
+    expect(cookConfirmRefs()).toEqual(['recipe-1:2026-09-23'])
+  })
+
+  it('with no known zone it still deducts, and awards nothing on a date the client chose', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-24T01:00:00.000Z'))
+    mockRequireAuth.mockResolvedValue([
+      makeSupabase([{ id: 'item-1', expiry_date: '2026-09-24' }]),
+      userInZone(null),
+    ])
+
+    const res = await POST(
+      makeRequest({
+        recipe_id: 'recipe-1',
+        deductions: [{ pantry_item_id: 'item-1', deduct_qty: 1 }],
+        date: '2026-09-24',
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(aiProxyJsonMock).toHaveBeenCalledTimes(1)
+    expect(awardBubblesMock).not.toHaveBeenCalled()
   })
 })
 

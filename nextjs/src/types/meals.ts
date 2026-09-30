@@ -244,8 +244,11 @@ export interface MealCookConfirmRequest {
   /** The dishes actually cooked (cookedDishIds). */
   recipe_ids: string[]
   deductions: DeductionItem[]
-  /** The client's local date (localDateString()), for the proxy's rescue judgement. The AI service ignores it. */
-  date: string
+  /**
+   * Added by `confirmMealCook` (not the caller): the client's IANA zone (#550). The proxy stores the
+   * account's zone once and derives every award date itself; no client date is sent or trusted.
+   */
+  tz?: string
 }
 
 export interface MealCookConfirmResponse {
@@ -256,8 +259,14 @@ export interface MealCookConfirmResponse {
   deductions_skipped: string[]
   recipes_marked_cooked: string[]
   meal_times_cooked: number
-  /** YYYY-MM-DD: the UTC date of the claim's last_cooked_at. The award key date. */
+  /** YYYY-MM-DD: the UTC date of the claim's last_cooked_at. Fallback award key date only (#550). */
   cooked_on: string
+  /**
+   * ISO instant of the claim's last_cooked_at (#550), identical on every replay. The award
+   * keys are this instant's date in the account's zone, so one local day pays once. Absent
+   * from an AI service older than #550.
+   */
+  cooked_at?: string | null
 }
 
 export type MealCookErrorKind = 'dish_mismatch' | 'confirm_in_progress' | 'confirm_incomplete'

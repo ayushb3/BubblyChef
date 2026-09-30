@@ -1,6 +1,6 @@
 """Pydantic models for the cook-a-recipe / pantry-deduction workflow."""
 
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -365,3 +365,11 @@ class MealCookClaim(BaseModel):
     outcome: Literal["claimed", "replay_applied", "replay_in_progress", "replay_claimed"]
     times_cooked: int
     cooked_on: date = Field(description="The UTC date of the claim's last_cooked_at")
+    cooked_at: datetime | None = Field(
+        default=None,
+        description=(
+            "The claim's last_cooked_at instant (issue #550). A UTC date alone can't say which "
+            "LOCAL day a cook fell on, so the Next.js proxy keys bubble awards on this instant "
+            "in the account's zone. Identical on every replay of the same claim."
+        ),
+    )

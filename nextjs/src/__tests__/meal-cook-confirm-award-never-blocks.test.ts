@@ -12,7 +12,10 @@
  * anything this route does defensively.
  */
 
-const mockUser = { id: 'user-1' }
+const mockUser = {
+  id: 'user-1',
+  app_metadata: { ledger_tz: 'UTC', ledger_tz_set_at: '2026-01-01T00:00:00.000Z' },
+}
 
 const upsertMock = jest.fn(() => {
   throw new Error('bubble_events insert boom')
@@ -39,6 +42,7 @@ const upstreamBody = {
   recipes_marked_cooked: ['r1'],
   meal_times_cooked: 1,
   cooked_on: '2026-09-29',
+  cooked_at: '2026-09-29T12:00:00.000Z',
 }
 
 jest.mock('@/lib/api/ai-proxy', () => ({

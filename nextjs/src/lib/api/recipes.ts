@@ -15,7 +15,7 @@ import type {
   DeductionItem,
   EnsureStepsResponse,
 } from '@/types/recipes'
-import { localDateString } from '@/lib/date'
+import { clientTimeZone } from '@/lib/date'
 
 /**
  * Fetch a single saved recipe by id (Next.js CRUD route, not the AI service).
@@ -119,9 +119,9 @@ export async function confirmCook(
   const res = await fetch('/api/ai/recipes/cook/confirm', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    // The client's own local date, used server-side to key `rescue` bubbles
-    // awards for expiring-soon deducted items (#524).
-    body: JSON.stringify({ recipe_id: recipeId, deductions, date: localDateString() }),
+    // The client's IANA zone (#550), not a date: the server keys `rescue` bubbles
+    // awards for expiring-soon deducted items on its own clock (#524).
+    body: JSON.stringify({ recipe_id: recipeId, deductions, tz: clientTimeZone() }),
   })
 
   if (!res.ok) {
