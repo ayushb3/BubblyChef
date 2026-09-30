@@ -240,7 +240,20 @@ function restore(turns: ConversationHistoryTurn[], conversationId: string): Rest
   for (const n of nodes) {
     if (grouped.has(n)) continue
     if (n.cls === 'applied') proposalStates[n.msgId] = 'approved'
-    else if (n.cls === 'rejected') proposalStates[n.msgId] = 'rejected'
+    else if (n.cls === 'rejected') {
+      // Dismissing after a partial failure leaves the rows that applied in the
+      // pantry: show those as Added, not as Skipped. Nothing applied: Skipped.
+      const done = new Set(n.review!.applied_keys)
+      const applied = n.actions.filter((a) => done.has(proposalActionKey(a)))
+      if (applied.length > 0) {
+        proposalStates[n.msgId] = 'approved'
+        working.set(n.index, {
+          proposal: { ...(n.turn.proposal as PantryProposalData), actions: applied },
+        })
+      } else {
+        proposalStates[n.msgId] = 'rejected'
+      }
+    }
     else if (n.cls === 'zero' && n.review) {
       // A vague-only turn inside a handled chain has no rows of its own, but its
       // chain was handled: it takes that state and shows no live clarification

@@ -171,6 +171,51 @@ describe('buildRestoredThread — classes (§5)', () => {
     expect(actionsOf(msg)).toEqual([action('lemon', 1), action('Spinach', 3, 'cup')])
   })
 
+  it('a turn rejected after a partial failure restores as Added, showing only the rows that applied', () => {
+    const t = buildRestoredThread(
+      [
+        pantryTurn({
+          actions: [action('lemon', 2), action('dragonfruit', 1)],
+          requestId: A,
+          review: review({
+            status: 'rejected',
+            applied_keys: ['lemon'],
+            failed: [{ key: 'dragonfruit', name: 'dragonfruit', quantity: 1, unit: 'whole' }],
+            chain_request_ids: [A],
+          }),
+        }),
+      ],
+      CONV,
+    )
+    const msg = t.messages[0]
+    expect(t.proposalStates[msg.id]).toBe('approved')
+    expect(actionsOf(msg)).toEqual([action('lemon', 2)])
+    expect(t.pendingProposals).toEqual({})
+  })
+
+  it('a chain with A applied and B rejected with no applied rows shows Added then Skipped', () => {
+    const chain = [A, B]
+    const t = buildRestoredThread(
+      [
+        pantryTurn({
+          actions: [action('lemon', 2)],
+          requestId: A,
+          review: review({ status: 'applied', applied_keys: ['lemon'], chain_request_ids: chain }),
+        }),
+        pantryTurn({
+          actions: [action('carrot', 1)],
+          requestId: B,
+          review: review({ status: 'rejected', chain_request_ids: chain }),
+        }),
+      ],
+      CONV,
+    )
+    const [a, b] = t.messages
+    expect(t.proposalStates[a.id]).toBe('approved')
+    expect(t.proposalStates[b.id]).toBe('rejected')
+    expect(actionsOf(b)).toEqual([action('carrot', 1)])
+  })
+
   it('F4 partial: a null error falls back to the generic retry line', () => {
     const t = buildRestoredThread(
       [
