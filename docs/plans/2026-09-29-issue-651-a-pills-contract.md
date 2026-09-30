@@ -368,7 +368,7 @@ Every other intent's set is unchanged.
 
   Recent cooks may instead reuse the first 3 rows of the cooked-cuisine query, if that query selects `id, title` too.
 - **Expiring:** `name, expiry_date` where `expiry_date` is between the server's local date −1 and +7 and `.gt('quantity', 0)`, ordered by `expiry_date`, then `name`, limit 10.
-- **`pantry_count`:** `select('id', { count: 'exact', head: true })`.
+- **`pantry_count`:** `select('id', { count: 'exact', head: true })` with `.gt('quantity', 0)`, so rows deducted to 0 don't count (PR #666 review).
 - **Recent cooks:** `id, title, cuisine, last_cooked_at` where `is_draft = false` and `last_cooked_at` is not null, ordered by `last_cooked_at` desc, limit 3.
 - **Failures degrade field by field** and are logged with `console.warn`: `[]`, `pantry_count: null`, `default_servings: 2`. The response is still 200. Only auth is non-200.
 

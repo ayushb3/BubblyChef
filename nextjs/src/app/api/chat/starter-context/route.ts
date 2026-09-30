@@ -105,8 +105,14 @@ export async function GET() {
         .order('expiry_date')
         .order('name')
         .limit(10),
-      // 2. The pantry count.
-      supabase.from('pantry_items').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+      // 2. The pantry count, in-stock rows only: deductions floor at 0 and
+      // keep the row, so a cooked-through pantry still counts as empty
+      // (PR #666 review).
+      supabase
+        .from('pantry_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .gt('quantity', 0),
       // 3. Recent cooks.
       supabase
         .from('recipes')

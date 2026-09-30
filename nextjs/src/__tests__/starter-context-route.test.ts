@@ -145,6 +145,16 @@ describe('GET /api/chat/starter-context', () => {
     })
   })
 
+  it('the pantry count only counts in-stock rows (PR #666 review)', async () => {
+    const calls: Record<string, string[][]> = {}
+    mockRequireAuth.mockResolvedValue([supabaseWith(baseResults(), calls), mockUser])
+
+    const { GET } = await import('@/app/api/chat/starter-context/route')
+    await GET()
+
+    expect(calls.pantry_items[1]).toContain(`gt(${JSON.stringify('quantity')}, ${JSON.stringify(0)})`)
+  })
+
   it('the expiring query filters to [today-1, today+7], in-stock only, ordered expiry_date then name', async () => {
     const calls: Record<string, string[][]> = {}
     mockRequireAuth.mockResolvedValue([supabaseWith(baseResults(), calls), mockUser])
