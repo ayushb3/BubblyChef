@@ -9,6 +9,7 @@ import {
   fetchSideAlternatives,
   requestMealCookProposal,
   confirmMealCook,
+  deleteMeal,
   MealCookError,
 } from '@/lib/api/meals'
 import type { MealCookRequest, MealCookConfirmRequest } from '@/types/meals'
@@ -183,5 +184,21 @@ describe("aiErrorMessage's pre-#654 callers stay unchanged (S1)", () => {
     } catch (err) {
       expect(err).not.toBeInstanceOf(MealCookError)
     }
+  })
+})
+
+describe('deleteMeal (issue #675)', () => {
+  it('sends DELETE to the meal route and resolves on success', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ deleted: true }))
+
+    await expect(deleteMeal('meal 1')).resolves.toBeUndefined()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/meals/meal%201', { method: 'DELETE' })
+  })
+
+  it('throws the server message on a non-OK response (a missing meal is a 404)', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'Meal not found' }, false, 404))
+
+    await expect(deleteMeal('gone')).rejects.toThrow('Meal not found')
   })
 })

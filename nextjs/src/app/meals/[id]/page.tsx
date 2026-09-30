@@ -11,9 +11,11 @@ import MealDishCard from '@/components/meal/MealDishCard'
 import MealTimelineTable, { timelineNotes } from '@/components/meal/MealTimelineTable'
 import ServeAtControl, { type ServeAtMode } from '@/components/meal/ServeAtControl'
 import SideAlternativesRow from '@/components/meal/SideAlternativesRow'
+import RecipeDeleteConfirm from '@/components/recipes/RecipeDeleteConfirm'
 import {
   fetchMeal,
   updateMeal,
+  deleteMeal,
   fetchSideAlternatives,
   expandMealDish,
   toNewDishRecipePayload,
@@ -33,7 +35,7 @@ import {
 } from '@/lib/meal-cook-session'
 import { timerIdsToDismiss, isMealCookFinished } from '@/lib/meal-cook-stream'
 import { useCookingTimers } from '@/lib/useCookingTimers'
-import type { Meal, MealDishFull } from '@/types/meals'
+import type { Meal, MealDishFull, MealSummary } from '@/types/meals'
 
 /**
  * The full meal screen (issue #652 / spec #647 "The meal screen"), replacing
@@ -81,10 +83,15 @@ export default function MealDetailPage() {
   const { dismiss: dismissTimer } = useCookingTimers()
   const id = typeof params?.id === 'string' ? params.id : Array.isArray(params?.id) ? params.id[0] : ''
 
+  // Set the instant a delete succeeds (issue #675): switches the meal query
+  // off so the cache removal below can't trigger a refetch that 404s and
+  // flashes "Meal not found" on the way out to the library.
+  const [deleted, setDeleted] = useState(false)
+
   const { data: meal, isLoading, isError } = useQuery({
     queryKey: ['meal', id],
     queryFn: () => fetchMeal(id),
-    enabled: Boolean(id),
+    enabled: Boolean(id) && !deleted,
   })
 
   // Fixed for the life of this page load, like the #649 demo page — not
@@ -150,6 +157,34 @@ export default function MealDetailPage() {
     },
     onError: (err) => {
       setRemoveError(err instanceof Error ? err.message : 'Failed to remove that side.')
+    },
+  })
+
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  // Issue #675. Only after the server delete succeeds: a failed delete must
+  // leave the cook-along and its dock timers running. Then, in order — end
+  // this meal's cook-along (dismiss its running dock timers, clear the
+  // session; another meal's session is never touched), refresh the caches,
+  // and land on the library's Meals tab.
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteMeal(id),
+    onSuccess: () => {
+      const session = getActiveMealCookSession(id)
+      if (session) {
+        for (const timerId of timerIdsToDismiss(session)) dismissTimer(timerId)
+      }
+      clearActiveMealCookSession(id)
+      setDeleted(true)
+      queryClient.removeQueries({ queryKey: ['meal', id] })
+      // The library's list isn't mounted while this page is, so invalidating
+      // alone would still paint the cached list — deleted meal included —
+      // until the refetch lands. Drop the row from every cached list first.
+      queryClient.setQueriesData<MealSummary[]>({ queryKey: ['meals'] }, (old) =>
+        Array.isArray(old) ? old.filter((m) => m.id !== id) : old,
+      )
+      queryClient.invalidateQueries({ queryKey: ['meals'] })
+      router.replace('/recipes?tab=meals')
     },
   })
 
@@ -483,6 +518,11 @@ export default function MealDetailPage() {
     )
   }
 
+  // Deleted: the router is already taking us to the library.
+  if (deleted) {
+    return <main className="min-h-screen" style={{ background: 'var(--color-bg)' }} />
+  }
+
   // ── Error / 404 state ──────────────────────────────────────────────────────
   if (isError || !meal) {
     return (
@@ -813,6 +853,52 @@ export default function MealDetailPage() {
             </div>
           </FadeInView>
         )}
+
+        {/* Delete (issue #675) — confirm first; nothing is deleted on the first tap. */}
+        <div className="flex flex-col gap-2">
+          {confirmDelete ? (
+            <RecipeDeleteConfirm
+              recipeTitle={meal.title}
+              deleting={deleteMutation.isPending}
+              onConfirm={async () => {
+                await deleteMutation.mutateAsync().catch(() => undefined)
+              }}
+              onCancel={() => {
+                setConfirmDelete(false)
+                deleteMutation.reset()
+              }}
+              note={[
+                meal.is_draft
+                  ? 'Dishes you haven’t saved as recipes are removed too.'
+                  : 'Your saved recipes stay in your recipe book.',
+                activeCookSession ? 'Your cook-along for this meal will end.' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              disabled={dishOpInFlight}
+              className="self-start min-h-[44px] px-4 rounded-full text-sm font-bold disabled:opacity-40"
+              style={{
+                color: 'var(--color-coral, #ff9aa2)',
+                border: '1.5px solid var(--color-coral, #ff9aa2)',
+                background: 'transparent',
+              }}
+            >
+              Delete meal
+            </button>
+          )}
+          {deleteMutation.isError && (
+            <p role="alert" className="text-xs" style={{ color: 'var(--color-primary-dark)' }}>
+              {deleteMutation.error instanceof Error
+                ? deleteMutation.error.message
+                : 'Failed to delete that meal.'}
+            </p>
+          )}
+        </div>
       </div>
     </main>
   )
