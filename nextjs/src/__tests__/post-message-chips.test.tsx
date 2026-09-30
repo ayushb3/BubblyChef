@@ -133,4 +133,57 @@ describe('PostMessageChips', () => {
     expect(container.firstChild).not.toHaveClass('ml-11')
     expect(container.firstChild).toHaveClass('justify-center')
   })
+
+  describe('long labels at narrow widths (code review on PR #651A)', () => {
+    const LONG_CHIP: ChipConfig = {
+      label: 'Use up the shredded rotisserie chicken breast… before Wednesday',
+      message: 'What can I make with my shredded rotisserie chicken breast before they go bad?',
+      emoji: '⏳',
+      tone: 'expiring',
+    }
+
+    it('truncates a long label and keeps the ✎ present, outside the truncation', () => {
+      render(
+        <PostMessageChips chips={[LONG_CHIP]} onChipTap={jest.fn()} onEditChip={jest.fn()} />,
+      )
+
+      const pill = screen.getByRole('button', { name: LONG_CHIP.label })
+      // The pill itself is bounded so it can shrink in the flex-wrap row...
+      expect(pill.className).toMatch(/\bmin-w-0\b/)
+      expect(pill.className).toMatch(/\bmax-w-full\b/)
+      // ...and its label text is what actually ellipsizes.
+      const labelSpan = pill.querySelector('span:not([aria-hidden])')
+      expect(labelSpan?.className).toMatch(/\btruncate\b/)
+      // The full label survives as a tooltip for anyone who needs it.
+      expect(pill).toHaveAttribute('title', LONG_CHIP.label)
+
+      // The ✎ is a sibling with a fixed size — never truncated, never hidden
+      // by the long label.
+      const editButton = screen.getByRole('button', {
+        name: `Edit "${LONG_CHIP.label}" before sending`,
+      })
+      expect(editButton.className).toMatch(/flex-shrink-0/)
+    })
+
+    it('bounds an action chip the same way, with no wrapper to fall back on', () => {
+      render(
+        <PostMessageChips
+          chips={[{ ...LONG_CHIP, kind: 'action', action: 'save_meal' }]}
+          onChipTap={jest.fn()}
+          onChipAction={jest.fn()}
+        />,
+      )
+      const pill = screen.getByRole('button', { name: LONG_CHIP.label })
+      expect(pill.className).toMatch(/\bmin-w-0\b/)
+      expect(pill.className).toMatch(/\bmax-w-full\b/)
+      expect(pill).toHaveAttribute('title', LONG_CHIP.label)
+    })
+
+    it('the chip row itself is bounded to its container width', () => {
+      const { container } = render(
+        <PostMessageChips chips={[LONG_CHIP]} onChipTap={jest.fn()} />,
+      )
+      expect(container.firstChild).toHaveClass('max-w-full')
+    })
+  })
 })

@@ -149,6 +149,24 @@ describe('rankStarterPills — make again', () => {
     expect(pill?.label).toBe(`Make the ${'A'.repeat(28)}… again`)
     expect(pill?.message).toBe(`Show me my saved ${longTitle}`)
   })
+
+  it('truncates by Unicode code point, not UTF-16 code unit, so a surrogate pair at the boundary is never split (code review)', () => {
+    // 27 'A's + one emoji (a surrogate pair, 2 UTF-16 units) + 20 more chars:
+    // 48 code points total, but 49 UTF-16 units. A naive `.slice(0, 28)` on
+    // UTF-16 units would land inside the emoji's surrogate pair (unit 27 is
+    // its first half), producing a lone unpaired surrogate. The correct
+    // truncation takes 28 whole code points: the 27 'A's plus the emoji.
+    const title = `${'A'.repeat(27)}😀${'Z'.repeat(20)}`
+    const chips = rankStarterPills(
+      ctx({ recent_cooks: [{ recipe_id: 'r1', title, last_cooked_at: '2026-05-01', cuisine: null }] }),
+      now,
+    )
+    const pill = chips.find((c) => c.label.startsWith('Make the'))
+    expect(pill?.label).toBe(`Make the ${'A'.repeat(27)}😀… again`)
+    // No lone surrogate — every code unit in the emoji's pair survives together.
+    expect(Array.from(pill?.label ?? '')).not.toContain('\uD83D')
+    expect(Array.from(pill?.label ?? '')).not.toContain('\uDE00')
+  })
 })
 
 describe('rankStarterPills — cuisine', () => {

@@ -69,7 +69,7 @@ export default function PostMessageChips({
 
   return (
     <div
-      className={`flex flex-wrap gap-2 mt-2 ${align === 'center' ? 'justify-center' : 'ml-11'}`}
+      className={`flex flex-wrap gap-2 mt-2 max-w-full ${align === 'center' ? 'justify-center' : 'ml-11'}`}
     >
       {chips.map((chip) => {
         if (chip.kind === 'action') {
@@ -84,19 +84,32 @@ export default function PostMessageChips({
               emoji={chip.emoji}
               onClick={() => onChipAction(chip.action as ChipAction)}
               ariaLabel={chip.label}
+              title={chip.label}
+              className="min-w-0 max-w-full"
             >
               {chip.label}
             </Chip>
           )
         }
 
+        // `min-w-0 max-w-full` on this wrapper (not just the Chip inside it)
+        // matters because *this* span, not the Chip, is the actual flex
+        // item in the wrapping row above — without it the row treats the
+        // [pill + ✎] pair as one unshrinkable block at 375px (review finding
+        // on PR #651A: the worst-case "Use up the <28-char name>… before
+        // Wednesday" label alone runs ~370px, before the ✎ and padding).
         return (
-          <span key={chip.label} className="inline-flex items-center gap-0.5">
+          <span
+            key={chip.label}
+            className="inline-flex items-center gap-0.5 min-w-0 max-w-full"
+          >
             <Chip
               tone={chip.tone ?? 'muted'}
               emoji={chip.emoji}
               onClick={() => onChipTap(chip)}
               ariaLabel={chip.label}
+              title={chip.label}
+              className="min-w-0 max-w-full"
             >
               {chip.label}
             </Chip>

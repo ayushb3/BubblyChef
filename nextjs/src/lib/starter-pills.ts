@@ -21,9 +21,15 @@ import { ingredientSeedMessage } from '@/lib/chat-seed'
 
 const LABEL_MAX = 28
 
-/** Truncates for display only — callers keep the full string for `message`. */
+/**
+ * Truncates for display only — callers keep the full string for `message`.
+ * Splits on Unicode code points (`Array.from`), not UTF-16 code units
+ * (`.slice`), so a surrogate pair (an emoji, some accented/CJK characters)
+ * right at the boundary isn't cut in half into two unpaired halves.
+ */
 function truncateLabel(text: string, max: number = LABEL_MAX): string {
-  return text.length > max ? `${text.slice(0, max)}…` : text
+  const chars = Array.from(text)
+  return chars.length > max ? `${chars.slice(0, max).join('')}…` : text
 }
 
 function localMidnight(now: Date): Date {

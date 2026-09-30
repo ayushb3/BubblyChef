@@ -49,6 +49,8 @@ from bubbly_chef.models.session import ConversationSession, SessionContext, Sess
 from bubbly_chef.prompts.meal import (
     MEAL_FOLLOW_UPS_NO_PANTRY_RULE,
     MEAL_OPTIONS_PREVIOUS_BLOCK,
+    MEAL_OPTIONS_SYSTEM_PROMPT,
+    MEAL_OPTIONS_SYSTEM_PROMPT_NO_PANTRY,
 )
 from bubbly_chef.workflows.meal.nodes import (
     MAX_MEAL_FOLLOW_UPS,
@@ -995,6 +997,251 @@ class TestMealFollowupInheritance:
         # No explicit/retained servings signal without the stamp -- falls to
         # _default_servings (2, since get_recent_meal_servings is []).
         assert envelope.proposal.servings == 2
+
+    @pytest.mark.asyncio
+    async def test_retained_meal_type_survives_a_turn_that_doesnt_restate_it(self) -> None:
+        """Review blocker: a stamped turn must not let the default-from-
+        time-of-day meal_type win over a retained one just because this
+        turn's message didn't restate it -- the default fill-in inside
+        `extract_recipe_constraints` must run against the retained value as
+        its prior, not a pure fresh extraction."""
+        _reset_graphs()
+        retained = MealPlanSessionState(
+            options=[
+                MealOption(
+                    option_id="opt_1",
+                    title="Cozy Pasta Night",
+                    dishes=[
+                        MealDishOutline(role="main", name="Creamy Pasta", key_ingredients=["pasta"]),
+                        MealDishOutline(role="side", name="Garlic Bread", key_ingredients=["bread"]),
+                    ],
+                    coverage=None,
+                )
+            ],
+            servings=2,
+            constraints=MealConstraintsEcho(
+                recipe_constraints=RecipeConstraints(meal_type="dinner").model_dump()
+            ),
+        )
+        repo = _meal_repo(meal_plan_state=retained)
+
+        fresh_constraints = RecipeConstraints(max_time_minutes=30)  # no meal_type this turn
+        option_llm_result = MealOptionsLLMResult(
+            options=[
+                MealOptionLLM(
+                    title="Quick Pasta Night",
+                    dishes=[
+                        _dish_llm("main", "Quick Pasta", ["pasta"]),
+                        _dish_llm("side", "Side Salad", ["lettuce"]),
+                    ],
+                )
+            ]
+        )
+        ai = self._dispatching_ai(
+            {RecipeConstraints: fresh_constraints, MealOptionsLLMResult: option_llm_result}
+        )
+
+        with (
+            _raising_classifier_ai(),
+            patch(
+                "bubbly_chef.workflows.router.get_repository",
+                new_callable=AsyncMock,
+                return_value=repo,
+            ),
+            patch("bubbly_chef.workflows.meal.nodes.get_repository", new_callable=AsyncMock, return_value=repo),
+            patch("bubbly_chef.workflows.meal.nodes.get_ai_manager", MagicMock(return_value=ai)),
+            patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager", MagicMock(return_value=ai)),
+            patch(
+                "bubbly_chef.workflows.recipe.nodes.get_repository",
+                new_callable=AsyncMock,
+                return_value=repo,
+            ),
+            patch(
+                "bubbly_chef.workflows.recipe.nodes.get_stored_dietary_preferences",
+                AsyncMock(return_value=[]),
+            ),
+            # The time-of-day default the fill-in would reach for if it ran
+            # against a pure fresh extraction -- must never win here.
+            patch("bubbly_chef.workflows.recipe.nodes._default_meal_type", return_value="lunch"),
+        ):
+            envelope = await run_chat_workflow(
+                message="Something quicker, under 30 minutes",
+                conversation_id=_CONV_ID,
+                user_id="user-1",
+                context={"meal_followup": True},
+            )
+        _reset_graphs()
+
+        option_call = next(
+            c for c in ai.complete.await_args_list if c.kwargs["response_schema"] is MealOptionsLLMResult
+        )
+        prompt_used = option_call.kwargs["prompt"]
+        assert "Meal type: dinner" in prompt_used
+        assert "Meal type: lunch" not in prompt_used
+        assert isinstance(envelope.proposal, MealOptionsProposal)
+
+    @pytest.mark.asyncio
+    async def test_fresh_request_contradicting_retained_diet_sets_it_aside(self) -> None:
+        """Review should-fix: the union must not re-add a retained diet the
+        fresh request contradicts -- reuses #394's
+        `_combine_dietary_preferences` "set aside for this reply" logic."""
+        _reset_graphs()
+        retained = MealPlanSessionState(
+            options=[
+                MealOption(
+                    option_id="opt_1",
+                    title="Veggie Pasta Night",
+                    dishes=[
+                        MealDishOutline(role="main", name="Veggie Pasta", key_ingredients=["pasta"]),
+                        MealDishOutline(role="side", name="Side Salad", key_ingredients=["lettuce"]),
+                    ],
+                    coverage=None,
+                )
+            ],
+            servings=2,
+            constraints=MealConstraintsEcho(
+                recipe_constraints=RecipeConstraints(dietary=["vegetarian"]).model_dump()
+            ),
+        )
+        repo = _meal_repo(meal_plan_state=retained)
+
+        # The fresh extraction itself doesn't need to name a dietary change --
+        # the contradiction check also scans input_text (#394's own haystack).
+        fresh_constraints = RecipeConstraints()
+        option_llm_result = MealOptionsLLMResult(
+            options=[
+                MealOptionLLM(
+                    title="Chicken Pasta Night",
+                    dishes=[
+                        _dish_llm("main", "Chicken Pasta", ["pasta", "chicken"]),
+                        _dish_llm("side", "Side Salad", ["lettuce"]),
+                    ],
+                )
+            ]
+        )
+        ai = self._dispatching_ai(
+            {RecipeConstraints: fresh_constraints, MealOptionsLLMResult: option_llm_result}
+        )
+
+        with (
+            _raising_classifier_ai(),
+            patch(
+                "bubbly_chef.workflows.router.get_repository",
+                new_callable=AsyncMock,
+                return_value=repo,
+            ),
+            patch("bubbly_chef.workflows.meal.nodes.get_repository", new_callable=AsyncMock, return_value=repo),
+            patch("bubbly_chef.workflows.meal.nodes.get_ai_manager", MagicMock(return_value=ai)),
+            patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager", MagicMock(return_value=ai)),
+            patch(
+                "bubbly_chef.workflows.recipe.nodes.get_repository",
+                new_callable=AsyncMock,
+                return_value=repo,
+            ),
+            patch(
+                "bubbly_chef.workflows.recipe.nodes.get_stored_dietary_preferences",
+                AsyncMock(return_value=[]),
+            ),
+        ):
+            envelope = await run_chat_workflow(
+                message="Put chicken in the pasta one",
+                conversation_id=_CONV_ID,
+                user_id="user-1",
+                context={"meal_followup": True},
+            )
+        _reset_graphs()
+
+        option_call = next(
+            c for c in ai.complete.await_args_list if c.kwargs["response_schema"] is MealOptionsLLMResult
+        )
+        prompt_used = option_call.kwargs["prompt"]
+        # vegetarian is set aside for this reply -- no Dietary line at all,
+        # since the fresh side didn't ask for a diet either.
+        assert "Dietary:" not in prompt_used
+        assert isinstance(envelope.proposal, MealOptionsProposal)
+
+    @pytest.mark.asyncio
+    async def test_retained_pantry_optout_survives_a_followup_that_doesnt_restate_it(self) -> None:
+        """Test gap: a retained `use_pantry: False` must still be honoured
+        on a `meal_followup` turn whose own extraction says nothing about
+        the pantry either way (`use_pantry: None`) -- the no-pantry system
+        prompt and pill rule apply, and the pantry is never read."""
+        _reset_graphs()
+        retained = MealPlanSessionState(
+            options=[
+                MealOption(
+                    option_id="opt_1",
+                    title="Takeout-Style Stir Fry",
+                    dishes=[
+                        MealDishOutline(role="main", name="Stir Fry", key_ingredients=["tofu"]),
+                        MealDishOutline(role="side", name="Steamed Greens", key_ingredients=["broccoli"]),
+                    ],
+                    coverage=None,
+                )
+            ],
+            servings=2,
+            constraints=MealConstraintsEcho(
+                recipe_constraints=RecipeConstraints(use_pantry=False).model_dump()
+            ),
+        )
+        repo = _meal_repo(pantry_items=[_pantry_item("rice")], meal_plan_state=retained)
+
+        # "Make it vegetarian" -- the extraction says nothing about the
+        # pantry either way (use_pantry defaults to None).
+        fresh_constraints = RecipeConstraints(dietary=["vegetarian"])
+        assert fresh_constraints.use_pantry is None
+        option_llm_result = MealOptionsLLMResult(
+            options=[
+                MealOptionLLM(
+                    title="Veggie Stir Fry",
+                    dishes=[
+                        _dish_llm("main", "Veggie Stir Fry", ["tofu"]),
+                        _dish_llm("side", "Steamed Greens", ["broccoli"]),
+                    ],
+                )
+            ]
+        )
+        ai = self._dispatching_ai(
+            {RecipeConstraints: fresh_constraints, MealOptionsLLMResult: option_llm_result}
+        )
+
+        with (
+            _raising_classifier_ai(),
+            patch(
+                "bubbly_chef.workflows.router.get_repository",
+                new_callable=AsyncMock,
+                return_value=repo,
+            ),
+            patch("bubbly_chef.workflows.meal.nodes.get_repository", new_callable=AsyncMock, return_value=repo),
+            patch("bubbly_chef.workflows.meal.nodes.get_ai_manager", MagicMock(return_value=ai)),
+            patch("bubbly_chef.workflows.recipe.nodes.get_ai_manager", MagicMock(return_value=ai)),
+            patch(
+                "bubbly_chef.workflows.recipe.nodes.get_repository",
+                new_callable=AsyncMock,
+                return_value=repo,
+            ),
+            patch(
+                "bubbly_chef.workflows.recipe.nodes.get_stored_dietary_preferences",
+                AsyncMock(return_value=[]),
+            ),
+        ):
+            envelope = await run_chat_workflow(
+                message="Make it vegetarian",
+                conversation_id=_CONV_ID,
+                user_id="user-1",
+                context={"meal_followup": True},
+            )
+        _reset_graphs()
+
+        option_call = next(
+            c for c in ai.complete.await_args_list if c.kwargs["response_schema"] is MealOptionsLLMResult
+        )
+        prompt_used = option_call.kwargs["prompt"]
+        assert MEAL_OPTIONS_SYSTEM_PROMPT_NO_PANTRY in prompt_used
+        assert MEAL_FOLLOW_UPS_NO_PANTRY_RULE in prompt_used
+        assert MEAL_OPTIONS_SYSTEM_PROMPT not in prompt_used
+        repo.get_all_pantry_items.assert_not_awaited()
+        assert isinstance(envelope.proposal, MealOptionsProposal)
 
 
 def _mock_classifier_ai_recipe_generation_as_meal_plan() -> Any:

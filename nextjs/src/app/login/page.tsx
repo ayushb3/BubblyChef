@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { takeLoginEmail } from '@/lib/auth/login-prefill'
 import { useRouter } from 'next/navigation'
@@ -18,6 +19,7 @@ export default function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const router = useRouter()
   const supabase = createClient()
+  const queryClient = useQueryClient()
 
   // /auth/callback redirects failed OAuth attempts back here with
   // ?error=<message> (missing code, a failed exchange, or the provider's own
@@ -101,6 +103,14 @@ export default function LoginPage() {
         })
         if (error) throw error
       }
+      // A guest (or another user) may have populated React Query's cache in
+      // this same tab — e.g. the starter-context pills (issue #651), whose
+      // cache key isn't user-scoped and outlives sign-out only via the
+      // sign-out path's own clear. Without this, a guest who signs into a
+      // real account here can see the guest's cached data for up to the
+      // longest `staleTime` in play (5 min for starter context) before it
+      // naturally refetches.
+      queryClient.clear()
       router.push('/')
       router.refresh()
     } catch (err) {

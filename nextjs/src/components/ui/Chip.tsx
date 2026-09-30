@@ -21,6 +21,15 @@ export interface ChipProps {
   children: ReactNode
   ariaLabel?: string
   className?: string
+  /**
+   * Native tooltip carrying the untruncated label (issue #651). The label
+   * itself always renders with `truncate`, so a caller in a narrow flex row
+   * (e.g. `PostMessageChips`, at 375px) can also constrain this chip's own
+   * width via `className` (`min-w-0 max-w-full`) without losing the full
+   * text — it's one hover/long-press away instead of causing sideways
+   * scroll.
+   */
+  title?: string
 }
 
 const TONE_BG: Record<ChipTone, string> = {
@@ -55,9 +64,15 @@ export default function Chip({
   children,
   ariaLabel,
   className,
+  title,
 }: ChipProps) {
   const baseClass = `inline-flex items-center gap-1 ${SIZE_CLASS[size]} rounded-full font-semibold whitespace-nowrap transition-colors border border-[var(--color-border)]`
   const merged = className ? `${baseClass} ${className}` : baseClass
+  // `min-w-0` lets this shrink below its content's max-content width inside
+  // a constrained flex row (needed for `truncate` below to ever bite);
+  // `truncate` (overflow-hidden + text-ellipsis + whitespace-nowrap) clips
+  // long labels with an ellipsis instead of forcing the row to overflow.
+  const labelClass = 'min-w-0 truncate'
 
   const style = {
     background: selected ? 'var(--color-primary)' : TONE_BG[tone],
@@ -71,21 +86,22 @@ export default function Chip({
         onClick={onClick}
         aria-label={ariaLabel}
         aria-pressed={selected}
+        title={title}
         whileTap={{ scale: 0.95 }}
         transition={springs.snappy}
         className={merged}
         style={style}
       >
         {emoji && <span aria-hidden>{emoji}</span>}
-        <span>{children}</span>
+        <span className={labelClass}>{children}</span>
       </motion.button>
     )
   }
 
   return (
-    <span className={merged} style={style} aria-label={ariaLabel}>
+    <span className={merged} style={style} aria-label={ariaLabel} title={title}>
       {emoji && <span aria-hidden>{emoji}</span>}
-      <span>{children}</span>
+      <span className={labelClass}>{children}</span>
     </span>
   )
 }

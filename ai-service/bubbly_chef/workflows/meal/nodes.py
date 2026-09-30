@@ -67,10 +67,9 @@ from bubbly_chef.prompts.meal import (
 from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.services.cook_matcher import match_ingredients
 from bubbly_chef.workflows.recipe.nodes import (
+    _combine_dietary_preferences,
     _days_until_expiry,
-    _drop_redundant_dietary,
     _format_pantry_item_for_prompt,
-    _merge_constraints,
     extract_recipe_constraints,
     is_pantry_grounded,
     score_and_rank,
@@ -170,23 +169,37 @@ def _case_insensitive_union(retained: list[str], fresh: list[str]) -> list[str]:
     return result
 
 
-def _merge_meal_followup_constraints(
-    retained: dict[str, Any], fresh: dict[str, Any]
+def _finish_meal_followup_constraints(
+    retained: dict[str, Any], merged: dict[str, Any], input_text: str
 ) -> dict[str, Any]:
-    """The `context.meal_followup` merge (#651 §5e): the ordinary
-    `_merge_constraints` inherit+override rule for every field, except
-    `dietary` and `excluded_ingredients`, which union instead of override --
-    a retained `['gluten-free']` plus a fresh "Make it vegetarian" keeps
-    both, where the plain list rule would drop the retained diet.
+    """Post-process `extract_recipe_constraints`'s own inherit+override merge
+    (#651 §5e review fix): that merge already ran with `retained` as the
+    *prior*, via `_state_with_recipe_constraints` below, so every scalar
+    field (including `meal_type` -- the default-from-time-of-day fill-in
+    inside `extract_recipe_constraints` only fires when neither side set
+    one, so a retained "dinner" now survives) and every plain list field is
+    already correct. Only `dietary` and `excluded_ingredients` need fixing
+    here, because the plain list rule ("fresh wins when non-empty") is an
+    *override*, not the union these two fields need:
+
+    - `dietary` reuses `_combine_dietary_preferences` -- the exact #394
+      logic ("a stored preference stays in force unless the message names
+      an ingredient it forbids") -- treating `retained` as the stored side
+      and `merged`'s already-computed dietary as the requested side. This
+      is what makes a retained `vegetarian` get set aside for a reply that
+      asks for "chicken in the pasta", rather than the plain union
+      re-adding a diet the fresh request just contradicted.
+    - `excluded_ingredients` has no such contradiction concept, so it stays
+      a plain case-insensitive union.
     """
-    merged = _merge_constraints(retained, fresh)
-    merged["dietary"] = _drop_redundant_dietary(
-        _case_insensitive_union(retained.get("dietary") or [], fresh.get("dietary") or [])
+    result = dict(merged)
+    result["dietary"] = _combine_dietary_preferences(
+        retained.get("dietary") or [], merged.get("dietary") or [], merged, input_text
     )
-    merged["excluded_ingredients"] = _case_insensitive_union(
-        retained.get("excluded_ingredients") or [], fresh.get("excluded_ingredients") or []
+    result["excluded_ingredients"] = _case_insensitive_union(
+        retained.get("excluded_ingredients") or [], merged.get("excluded_ingredients") or []
     )
-    return merged
+    return result
 
 
 def _retained_meal_plan_state(state: WorkflowState) -> MealPlanSessionState | None:
@@ -204,24 +217,27 @@ def _retained_meal_plan_state(state: WorkflowState) -> MealPlanSessionState | No
         return None
 
 
-def _state_without_recipe_constraints(state: WorkflowState) -> WorkflowState:
-    """A state copy whose `session.metadata.recipe_constraints` is cleared.
+def _state_with_recipe_constraints(state: WorkflowState, constraints: dict[str, Any]) -> WorkflowState:
+    """A state copy whose `session.metadata.recipe_constraints` is set to
+    `constraints` (#651 §5e review fix).
 
     `extract_recipe_constraints` merges its fresh extraction with whatever
-    that key holds (`_prior_constraints_from_state`) -- but the meal branch
-    of `update_session_node` never writes it, so on a `meal_followup` turn it
-    could still hold leftovers from an earlier, unrelated recipe
-    conversation. Clearing it here forces a pure fresh extraction, which
-    `_merge_meal_followup_constraints` then merges with the *retained meal's*
-    constraints instead (#651 §5e).
+    that key holds (`_prior_constraints_from_state` + `_merge_constraints`)
+    *before* its own default-meal_type fill-in runs -- so pointing it at the
+    retained meal's own constraints, rather than clearing it, is what lets a
+    retained `meal_type: "dinner"` survive a followup turn that doesn't
+    restate it: without this, the fill-in sees no meal_type yet (a pure
+    fresh extraction), defaults to the time-of-day bucket, and that default
+    then wins the scalar merge against the retained value. The meal branch
+    of `update_session_node` never writes this key itself, so on a
+    `meal_followup` turn it could otherwise still hold leftovers from an
+    earlier, unrelated recipe conversation.
     """
-    session = state.get("session")
-    if not isinstance(session, dict):
-        return state
-    metadata = session.get("metadata")
-    if not isinstance(metadata, dict) or "recipe_constraints" not in metadata:
-        return state
-    new_metadata = {k: v for k, v in metadata.items() if k != "recipe_constraints"}
+    session = state.get("session") or {}
+    metadata = session.get("metadata") if isinstance(session, dict) else None
+    new_metadata = {**metadata, "recipe_constraints": constraints} if isinstance(metadata, dict) else {
+        "recipe_constraints": constraints
+    }
     return {**state, "session": {**session, "metadata": new_metadata}}
 
 
@@ -648,17 +664,32 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     retained_state = _retained_meal_plan_state(state) if is_followup else None
 
     if retained_state is not None:
+        retained_constraints = retained_state.constraints.recipe_constraints
+        # Pointing session.metadata.recipe_constraints at the retained meal's
+        # own constraints (rather than clearing it) makes extract_recipe_
+        # constraints run its own prior-merge against them BEFORE its
+        # default-meal_type fill-in -- see _state_with_recipe_constraints.
+        # dietary/excluded_ingredients are blanked in that prior: the plain
+        # merge's list rule ("fresh wins when non-empty, else inherit prior")
+        # would otherwise make merged["dietary"] just echo the retained value
+        # back whenever this turn doesn't restate a diet -- indistinguishable
+        # from a genuine fresh request for the same diet, which would defeat
+        # _finish_meal_followup_constraints's contradiction check below by
+        # having it "re-request" a diet it just dropped. Blanking them here
+        # means merged["dietary"]/["excluded_ingredients"] are exactly what
+        # *this turn* asked for, nothing inherited.
         constraints_state = await extract_recipe_constraints(
-            _state_without_recipe_constraints(state)
+            _state_with_recipe_constraints(
+                state, {**retained_constraints, "dietary": [], "excluded_ingredients": []}
+            )
         )
-        fresh_constraints: dict[str, Any] = constraints_state.get("recipe_constraints") or {}
-        constraints = _merge_meal_followup_constraints(
-            retained_state.constraints.recipe_constraints, fresh_constraints
+        merged_constraints: dict[str, Any] = constraints_state.get("recipe_constraints") or {}
+        constraints = _finish_meal_followup_constraints(
+            retained_constraints, merged_constraints, input_text
         )
         # score_pantry_ingredients (next) reads state["recipe_constraints"] --
-        # overwrite it with the merged dict so pantry grounding (use_pantry)
-        # and dietary/exclusion filtering see the retained meal's own
-        # constraints, not the pure fresh-only extraction above.
+        # overwrite it with the fixed-up dict so dietary/exclusion filtering
+        # sees the union/contradiction-checked result, not the plain merge.
         constraints_state = {**constraints_state, "recipe_constraints": constraints}
     else:
         constraints_state = await extract_recipe_constraints(state)

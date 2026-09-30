@@ -126,6 +126,25 @@ describe('GET /api/chat/starter-context', () => {
     })
   })
 
+  it('every one of the six queries is scoped to eq("user_id", <the caller>) — a query that loses its user scope fails this', async () => {
+    const calls: Record<string, string[][]> = {}
+    mockRequireAuth.mockResolvedValue([supabaseWith(baseResults(), calls), mockUser])
+
+    const { GET } = await import('@/app/api/chat/starter-context/route')
+    await GET()
+
+    const expectedUserScope = `eq(${JSON.stringify('user_id')}, ${JSON.stringify(mockUser.id)})`
+    const allCalls = [
+      ...calls.pantry_items, // [0] expiring, [1] pantry count
+      ...calls.recipes, // [0] recent cooks, [1] cooked-cuisine, [2] created-cuisine
+      ...calls.meals, // [0] meal servings
+    ]
+    expect(allCalls).toHaveLength(6)
+    allCalls.forEach((callArgs) => {
+      expect(callArgs).toContain(expectedUserScope)
+    })
+  })
+
   it('the expiring query filters to [today-1, today+7], in-stock only, ordered expiry_date then name', async () => {
     const calls: Record<string, string[][]> = {}
     mockRequireAuth.mockResolvedValue([supabaseWith(baseResults(), calls), mockUser])
@@ -299,5 +318,37 @@ describe('fetchStarterContext', () => {
     mockFetch({ expiring: [{ expiry_date: '2026-10-01' }, { name: 'milk', expiry_date: '2026-10-02' }] })
     const { fetchStarterContext } = await import('@/lib/api/starter-context')
     expect((await fetchStarterContext()).expiring).toEqual([{ name: 'milk', expiry_date: '2026-10-02' }])
+  })
+
+  // Code review, PR A: a blank/whitespace title would otherwise pass the
+  // `typeof === 'string'` check and reach the starter ranker, which renders
+  // it as "Make the  again".
+  it.each(['', '   '])('a recent_cooks entry with title %p is dropped', async (blankTitle) => {
+    mockFetch({
+      recent_cooks: [
+        { recipe_id: 'r1', title: blankTitle, last_cooked_at: '2026-05-01', cuisine: null },
+        { recipe_id: 'r2', title: 'Lemon pasta', last_cooked_at: '2026-05-02', cuisine: null },
+      ],
+    })
+    const { fetchStarterContext } = await import('@/lib/api/starter-context')
+    const { recent_cooks } = await fetchStarterContext()
+    expect(recent_cooks).toEqual([
+      { recipe_id: 'r2', title: 'Lemon pasta', last_cooked_at: '2026-05-02', cuisine: null },
+    ])
+  })
+
+  it('a recent_cooks entry missing recipe_id or title is still dropped (unaffected by the blank-title check)', async () => {
+    mockFetch({
+      recent_cooks: [
+        { title: 'No id' },
+        { recipe_id: 'r3' },
+        { recipe_id: 'r4', title: 'Real one', last_cooked_at: '2026-05-03', cuisine: 'thai' },
+      ],
+    })
+    const { fetchStarterContext } = await import('@/lib/api/starter-context')
+    const { recent_cooks } = await fetchStarterContext()
+    expect(recent_cooks).toEqual([
+      { recipe_id: 'r4', title: 'Real one', last_cooked_at: '2026-05-03', cuisine: 'thai' },
+    ])
   })
 })

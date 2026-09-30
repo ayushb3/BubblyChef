@@ -17,6 +17,13 @@ import type { StarterContext, StarterExpiringItem, StarterRecentCook } from '@/t
  * Sits under `['pantry']` so it rides the existing pantry invalidations
  * rather than needing new ones on every recipe/meal write — staleness of the
  * recipe-derived fields is bounded by the 5-minute `staleTime` below.
+ *
+ * This key is not user-scoped — the query cache itself is a single
+ * per-browser-tab store shared across whoever is signed in. Sign-out already
+ * clears it; the login page (`app/login/page.tsx`) also calls
+ * `queryClient.clear()` on a successful sign-in/sign-up, so a guest who signs
+ * into a real account in the same tab can't see the guest's cached pills for
+ * the remainder of this `staleTime`.
  */
 export const STARTER_CONTEXT_KEY = ['pantry', 'starter-context'] as const
 
@@ -39,7 +46,10 @@ function normaliseRecentCooks(raw: unknown): StarterRecentCook[] {
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue
     const r = item as Record<string, unknown>
-    if (typeof r.recipe_id !== 'string' || typeof r.title !== 'string') continue
+    // A blank/whitespace-only title would still pass the `typeof === 'string'`
+    // check below and reach the starter ranker, which renders it as
+    // "Make the  again" (code review, PR A) — drop it here instead.
+    if (typeof r.recipe_id !== 'string' || typeof r.title !== 'string' || r.title.trim().length === 0) continue
     out.push({
       recipe_id: r.recipe_id,
       title: r.title,
