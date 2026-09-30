@@ -8,6 +8,11 @@
  * link with one of the codes below, and /login then signs the guest in to that
  * existing account instead. Accounts are never merged; the guest's data is left
  * under the untouched anonymous user id.
+ *
+ * That automatic switch only runs for a link this browser started from /login
+ * (a short-lived sessionStorage marker). A collision from anywhere else, such as
+ * the profile banner's own Google link or a hand-made /login?error_code=... URL,
+ * never redirects on its own.
  */
 
 /**
@@ -59,6 +64,42 @@ export function markAccountSwitchTried(): boolean {
 export function clearAccountSwitchTried(): void {
   try {
     window.sessionStorage.removeItem(SWITCH_TRIED_KEY)
+  } catch {
+    // Nothing stored, nothing to clear.
+  }
+}
+
+// Marker: "this browser started a Google link from /login". Set just before
+// linkIdentity, consumed when the collision is handled, and expires so a
+// link that was abandoned at Google can't arm a much later, unrelated collision.
+const LINK_STARTED_KEY = 'bubblychef:login-link-started-at'
+const LINK_STARTED_TTL_MS = 10 * 60 * 1000
+
+export function markLoginLinkStarted(): boolean {
+  try {
+    window.sessionStorage.setItem(LINK_STARTED_KEY, String(Date.now()))
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** True once, and only while the marker is fresh. Always removes it. */
+export function consumeLoginLinkStarted(): boolean {
+  try {
+    const raw = window.sessionStorage.getItem(LINK_STARTED_KEY)
+    window.sessionStorage.removeItem(LINK_STARTED_KEY)
+    const startedAt = Number(raw)
+    if (!raw || !Number.isFinite(startedAt)) return false
+    return Date.now() - startedAt <= LINK_STARTED_TTL_MS
+  } catch {
+    return false
+  }
+}
+
+export function clearLoginLinkStarted(): void {
+  try {
+    window.sessionStorage.removeItem(LINK_STARTED_KEY)
   } catch {
     // Nothing stored, nothing to clear.
   }

@@ -7,6 +7,9 @@ import { takeLoginEmail } from '@/lib/auth/login-prefill'
 import { isGuestUser } from '@/lib/auth/guest'
 import {
   clearAccountSwitchTried,
+  clearLoginLinkStarted,
+  consumeLoginLinkStarted,
+  markLoginLinkStarted,
   hasTriedAccountSwitch,
   isLinkCollisionCode,
   isSessionMissingError,
@@ -69,6 +72,8 @@ export default function LoginPage() {
         void handleCollision()
       } else {
         clearAccountSwitchTried()
+        clearLoginLinkStarted()
+        // Deliberate: any error we don't recognise shows Supabase's own text.
         setError(oauthError)
       }
       const url = new URL(window.location.href)
@@ -78,6 +83,7 @@ export default function LoginPage() {
     } else {
       // A clean load of /login ends any earlier switch attempt.
       clearAccountSwitchTried()
+      clearLoginLinkStarted()
     }
     // Mount-only: read the redirect's params once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -109,10 +115,14 @@ export default function LoginPage() {
   }
 
   // The Google account already belongs to another BubblyChef user. Someone
-  // clicking Google wants into their account, so a guest is signed in to it
-  // directly rather than asked for a second click. Only once per attempt: a
-  // second collision, or a non-guest, gets the email/password hint instead.
+  // who clicked Google here wants into their account, so a guest is signed in
+  // to it directly rather than asked for a second click. Only when THIS browser
+  // started the link from /login (the marker) and only once per attempt: a
+  // collision from anywhere else (the profile banner, a hand-made URL) gets the
+  // message and the manual button, and a second collision or a non-guest gets
+  // the email/password hint.
   async function handleCollision() {
+    const startedHere = consumeLoginLinkStarted()
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       if (userError && !isSessionMissingError(userError)) {
@@ -125,6 +135,10 @@ export default function LoginPage() {
         setShowSignInInstead(false)
         setGoogleLoading(false)
         setError(EXISTING_EMAIL_MESSAGE)
+        return
+      }
+      if (!startedHere) {
+        showCollisionFallback()
         return
       }
       // Without the one-shot flag a deterministic collision could loop, so no
@@ -166,6 +180,8 @@ export default function LoginPage() {
       if (isGuestUser(user)) {
         // Attach Google to the guest's existing user id so their pantry,
         // recipes and chat carry over (same call as SaveAccountBanner, #382).
+        // The marker lets a collision on the way back auto-switch; see handleCollision.
+        markLoginLinkStarted()
         const { error } = await supabase.auth.linkIdentity({
           provider: 'google',
           options: { redirectTo: `${window.location.origin}/auth/callback` },

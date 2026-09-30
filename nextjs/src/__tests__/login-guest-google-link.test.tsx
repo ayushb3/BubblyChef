@@ -12,6 +12,15 @@ import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import LoginPage from '@/app/login/page'
+import SaveAccountBanner from '@/components/auth/SaveAccountBanner'
+import { markLoginLinkStarted } from '@/lib/auth/google-link'
+
+jest.mock('next/link', () => ({
+  __esModule: true,
+  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
+    <a href={href}>{children}</a>
+  ),
+}))
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn(), refresh: jest.fn() }),
@@ -28,6 +37,7 @@ jest.mock('@/lib/supabase/client', () => ({
       signInWithOAuth: (...args: unknown[]) => mockSignInWithOAuth(...args),
       linkIdentity: (...args: unknown[]) => mockLinkIdentity(...args),
       getUser: (...args: unknown[]) => mockGetUser(...args),
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: jest.fn() } } }),
     },
   }),
 }))
@@ -134,6 +144,7 @@ describe('Google account already belongs to another BubblyChef user (#389)', () 
   it.each(['identity_already_exists', 'email_exists'])(
     'a guest redirected back with error_code=%s is signed in to the existing account',
     async (code) => {
+      markLoginLinkStarted() // this browser started the link from /login
       setUrl(`?error=${encodeURIComponent('raw supabase text')}&error_code=${code}`)
       renderLogin()
 
@@ -146,6 +157,7 @@ describe('Google account already belongs to another BubblyChef user (#389)', () 
   )
 
   it('never merges: the switch is a plain sign-in and linkIdentity is not retried', async () => {
+    markLoginLinkStarted()
     setUrl('?error=x&error_code=identity_already_exists')
     renderLogin()
 
@@ -155,6 +167,7 @@ describe('Google account already belongs to another BubblyChef user (#389)', () 
 
   it('offers a manual button when the automatic switch cannot start', async () => {
     mockSignInWithOAuth.mockResolvedValueOnce({ error: new Error('popup blocked') })
+    markLoginLinkStarted()
     setUrl('?error=x&error_code=email_exists')
     renderLogin()
 
@@ -178,12 +191,14 @@ describe('Google account already belongs to another BubblyChef user (#389)', () 
   })
 
   it('does not loop: a second collision after a switch stops with the email hint', async () => {
+    markLoginLinkStarted()
     setUrl('?error=x&error_code=email_exists')
     const first = renderLogin()
     await waitFor(() => expect(mockSignInWithOAuth).toHaveBeenCalledTimes(1))
     first.unmount()
 
-    // The switch came back with the same collision.
+    // The switch came back with the same collision (even with a fresh marker).
+    markLoginLinkStarted()
     setUrl('?error=x&error_code=email_exists')
     renderLogin()
 
@@ -226,5 +241,86 @@ describe('Google account already belongs to another BubblyChef user (#389)', () 
     expect(await screen.findByText('Something odd')).toBeInTheDocument()
     expect(mockSignInWithOAuth).not.toHaveBeenCalled()
     expect(window.location.search).toBe('')
+  })
+})
+
+describe('the auto-switch only runs for a link this browser started from /login (#389 review)', () => {
+  it('consumes the marker: a second collision URL in the same tab does not auto-switch', async () => {
+    markLoginLinkStarted()
+    setUrl('?error=x&error_code=email_exists')
+    const first = renderLogin()
+    await waitFor(() => expect(mockSignInWithOAuth).toHaveBeenCalledTimes(1))
+    first.unmount()
+    window.sessionStorage.removeItem('bubblychef:collision-switch-tried')
+
+    setUrl('?error=x&error_code=email_exists')
+    renderLogin()
+
+    expect(await screen.findByRole('button', { name: MANUAL_BUTTON })).toBeInTheDocument()
+    expect(mockSignInWithOAuth).toHaveBeenCalledTimes(1)
+  })
+
+  it('a crafted collision URL with no marker shows the message and button, no redirect', async () => {
+    setUrl('?error=x&error_code=email_exists')
+    renderLogin()
+
+    expect(await screen.findByText(FALLBACK)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: MANUAL_BUTTON })).toBeInTheDocument()
+    expect(mockSignInWithOAuth).not.toHaveBeenCalled()
+    expect(screen.queryByText(SWITCHING)).not.toBeInTheDocument()
+  })
+
+  it('an expired marker does not auto-switch', async () => {
+    const start = Date.now()
+    markLoginLinkStarted()
+    const now = jest.spyOn(Date, 'now').mockReturnValue(start + 11 * 60 * 1000)
+    try {
+      setUrl('?error=x&error_code=email_exists')
+      renderLogin()
+
+      expect(await screen.findByRole('button', { name: MANUAL_BUTTON })).toBeInTheDocument()
+      expect(mockSignInWithOAuth).not.toHaveBeenCalled()
+    } finally {
+      now.mockRestore()
+    }
+  })
+
+  it('a still-fresh marker (inside the window) does auto-switch', async () => {
+    const start = Date.now()
+    markLoginLinkStarted()
+    const now = jest.spyOn(Date, 'now').mockReturnValue(start + 9 * 60 * 1000)
+    try {
+      setUrl('?error=x&error_code=email_exists')
+      renderLogin()
+
+      await waitFor(() => expect(mockSignInWithOAuth).toHaveBeenCalledWith(OAUTH_ARGS))
+    } finally {
+      now.mockRestore()
+    }
+  })
+
+  it('a collision from the profile banner link (SaveAccountBanner) does not auto-switch', async () => {
+    // The banner starts its own linkIdentity and never sets the /login marker.
+    mockLinkIdentity.mockResolvedValue({ error: null })
+    const banner = render(<SaveAccountBanner persistent />)
+    fireEvent.click(await screen.findByRole('button', { name: /Continue with Google/ }))
+    await waitFor(() => expect(mockLinkIdentity).toHaveBeenCalled())
+    banner.unmount()
+
+    // Google then bounces the collision back through /auth/callback to /login.
+    setUrl('?error=x&error_code=identity_already_exists')
+    renderLogin()
+
+    expect(await screen.findByRole('button', { name: MANUAL_BUTTON })).toBeInTheDocument()
+    expect(mockSignInWithOAuth).not.toHaveBeenCalled()
+  })
+
+  it('a link that started and collided synchronously on /login still auto-switches', async () => {
+    mockLinkIdentity.mockResolvedValue({ error: { code: 'email_exists', message: 'collision' } })
+    renderLogin()
+    clickGoogle()
+
+    await waitFor(() => expect(mockSignInWithOAuth).toHaveBeenCalledWith(OAUTH_ARGS))
+    expect(screen.getByText(SWITCHING)).toBeInTheDocument()
   })
 })
