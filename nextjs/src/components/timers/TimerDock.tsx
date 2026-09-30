@@ -26,6 +26,7 @@ import {
 } from '@/lib/useCookingTimers'
 import { formatDuration } from '@/lib/timers'
 import { useMotionConfig } from '@/lib/motion'
+import { useTimerDockRaised } from './TimerDockLayer'
 
 /** Best-effort completion beep — a short two-tone chime via WebAudio. Never
  * throws: browsers that block audio without a user gesture, or don't
@@ -65,6 +66,12 @@ function vibrateOnComplete() {
   }
 }
 
+/** Every tappable control inside the dock: never shrinks, never wraps its
+ * text (issue #664 — "+2 min" used to break onto two lines) and meets the
+ * 44px touch target. */
+const CONTROL_BASE =
+  'flex-shrink-0 whitespace-nowrap min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-2 text-xs font-bold active:scale-95 transition-transform rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1'
+
 function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolean }) {
   const { pause, resume, dismiss, extend } = useCookingTimers()
   const { reduced } = useMotionConfig()
@@ -77,7 +84,7 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
       initial={{ opacity: 0, y: 8, scale: 0.9 }}
       animate={
         isCompleted && !reduced
-          ? { opacity: 1, y: 0, scale: [1, 1.05, 1] }
+          ? { opacity: 1, y: 0, scale: [1, expanded ? 1.02 : 1.05, 1] }
           : { opacity: 1, y: 0, scale: 1 }
       }
       exit={{ opacity: 0, scale: 0.9 }}
@@ -86,7 +93,13 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
           ? { repeat: Infinity, duration: 1.1, ease: 'easeInOut' }
           : { type: 'spring', stiffness: 500, damping: 30 }
       }
-      className="flex items-center gap-2 rounded-full px-3 py-2 min-w-0"
+      // Collapsed: a compact pill in the dock's single scrolling row, which
+      // must not shrink (issue #664). Expanded: one full-width row per timer.
+      className={
+        expanded
+          ? 'flex items-center gap-2 rounded-full pl-3 pr-1 py-1 w-full min-w-0'
+          : 'flex flex-shrink-0 items-center gap-2 rounded-full px-3 py-2'
+      }
       style={{
         background: isCompleted ? 'var(--color-coral)' : 'var(--color-surface)',
         border: `1.5px solid ${isCompleted ? 'var(--color-coral)' : 'var(--color-border)'}`,
@@ -108,19 +121,19 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
       data-testid={`timer-badge-${timer.id}`}
       data-status={timer.status}
     >
-      <span aria-hidden="true" className="text-sm">
+      <span aria-hidden="true" className="flex-shrink-0 text-sm">
         {isCompleted ? '⏰' : isPaused ? '⏸️' : '⏱️'}
       </span>
       {expanded && (
         <span
-          className="text-xs font-bold truncate max-w-[90px]"
+          className="flex-1 min-w-0 truncate text-xs font-bold"
           style={{ color: isCompleted ? '#fff' : 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
         >
           {timer.label}
         </span>
       )}
       <span
-        className="text-xs font-extrabold tabular-nums"
+        className="flex-shrink-0 whitespace-nowrap text-xs font-extrabold tabular-nums"
         style={{ color: isCompleted ? '#fff' : 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
       >
         {isCompleted ? 'Done!' : formatDuration(timer.remainingSeconds)}
@@ -130,7 +143,7 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
           type="button"
           onClick={() => (isPaused ? resume(timer.id) : pause(timer.id))}
           aria-label={isPaused ? `Resume ${timer.label} timer` : `Pause ${timer.label} timer`}
-          className="text-xs font-bold active:scale-95 transition-transform"
+          className={CONTROL_BASE}
           style={{ color: 'var(--color-primary-dark)' }}
         >
           {isPaused ? '▶' : '⏸'}
@@ -141,7 +154,7 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
           type="button"
           onClick={() => extend?.(timer.id, 120)}
           aria-label={`Add 2 minutes to ${timer.label} timer`}
-          className="text-xs font-bold active:scale-95 transition-transform"
+          className={CONTROL_BASE}
           style={{ color: 'var(--color-primary-dark)' }}
           data-testid={`timer-extend-${timer.id}`}
         >
@@ -153,7 +166,7 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
           type="button"
           onClick={() => dismiss(timer.id)}
           aria-label={`Dismiss ${timer.label} timer`}
-          className="text-xs font-bold active:scale-95 transition-transform"
+          className={CONTROL_BASE}
           style={{ color: isCompleted ? '#fff' : 'var(--color-muted)' }}
         >
           ✕
@@ -175,6 +188,9 @@ const ANNOUNCE_RESET_DELAY_MS = 50
 export default function TimerDock() {
   const { timers } = useCookingTimers()
   const [expanded, setExpanded] = useState(false)
+  // Issue #657: a full-screen layer (guided cook) can hold the dock raised
+  // above itself. Default (no holder) is the normal z-40 above the nav.
+  const raised = useTimerDockRaised()
   // What the visually-hidden live region below currently says. Only ever
   // set from `announce()` below (via the `TIMER_STARTED_EVENT` /
   // `TIMER_COMPLETED_EVENT` listeners) — never from the per-tick `timers`
@@ -230,13 +246,25 @@ export default function TimerDock() {
       </div>
       {timers.length > 0 && (
         <div
-          className="fixed left-0 right-0 z-40 flex justify-center px-3 pointer-events-none"
-          style={{ bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
+          className={`fixed left-0 right-0 ${raised ? 'z-[9991]' : 'z-40'} flex justify-center px-3 pointer-events-none`}
+          // Raised: clears guided cook's ~76px Back/Next footer (no bottom nav
+          // there). z-[9991] sits above the guided root (9990) and below
+          // BubblePop (9999). Otherwise it sits above the bottom nav (64px).
+          style={{
+            bottom: `calc(${raised ? 96 : 64}px + env(safe-area-inset-bottom, 0px))`,
+          }}
           data-testid="timer-dock"
+          data-raised={raised ? 'true' : 'false'}
         >
           <motion.div
             layout
-            className="pointer-events-auto flex items-center gap-2 rounded-full px-2 py-2 max-w-full overflow-x-auto"
+            className={
+              expanded
+                ? 'pointer-events-auto flex flex-col items-stretch gap-2 rounded-3xl p-2 w-full max-w-md max-h-[50vh] overflow-y-auto'
+                : 'pointer-events-auto flex items-center gap-2 rounded-full px-2 py-2 max-w-full overflow-x-auto'
+            }
+            data-testid="timer-dock-list"
+            data-layout={expanded ? 'stack' : 'row'}
             style={{
               background: 'color-mix(in srgb, var(--color-surface) 92%, transparent)',
               backdropFilter: 'blur(6px)',
@@ -249,7 +277,7 @@ export default function TimerDock() {
               onClick={() => setExpanded((e) => !e)}
               aria-expanded={expanded}
               aria-label={expanded ? 'Collapse timers' : 'Expand timers'}
-              className="flex-shrink-0 text-sm active:scale-95 transition-transform"
+              className={`flex-shrink-0 min-h-[44px] min-w-[44px] inline-flex items-center justify-center text-sm rounded-full active:scale-95 transition-transform focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 ${expanded ? 'self-start' : ''}`}
             >
               {expanded ? '▾' : '▸'}
             </button>

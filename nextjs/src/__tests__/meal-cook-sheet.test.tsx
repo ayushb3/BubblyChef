@@ -517,3 +517,80 @@ describe('MealCookSheet — state machine', () => {
     expect(onClose).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('MealCookSheet — skipped deductions (issue #621)', () => {
+  const skipped = { names: ['Butter'], unnamed: 0 }
+
+  function renderSuccess(props: { skipped?: { names: string[]; unnamed: number } } = {}) {
+    const onClose = jest.fn()
+    const onBackToMeal = jest.fn()
+    render(
+      <MealCookSheet
+        open
+        mealTitle="Pasta night"
+        state="success"
+        proposal={baseProposal()}
+        onConfirm={jest.fn()}
+        onRetry={noop}
+        onBackToMeal={onBackToMeal}
+        onClose={onClose}
+        {...props}
+      />,
+    )
+    return { onClose, onBackToMeal }
+  }
+
+  it('shows the notice and a Back to meal pill that leaves via onBackToMeal', () => {
+    const { onBackToMeal, onClose } = renderSuccess({ skipped })
+    expect(screen.getByRole('status')).toHaveTextContent("Couldn't update 1 item: Butter. Check your pantry.")
+    fireEvent.click(screen.getByRole('button', { name: 'Back to meal' }))
+    expect(onBackToMeal).toHaveBeenCalledTimes(1)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('moves focus to Back to meal when the success-with-notice state appears', () => {
+    renderSuccess({ skipped })
+    expect(screen.getByRole('button', { name: 'Back to meal' })).toHaveFocus()
+  })
+
+  it('leaves through onBackToMeal from the close button, the backdrop and Escape', () => {
+    const { onBackToMeal, onClose } = renderSuccess({ skipped })
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(onBackToMeal).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('dialog').parentElement as HTMLElement)
+    expect(onBackToMeal).toHaveBeenCalledTimes(2)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onBackToMeal).toHaveBeenCalledTimes(3)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('shows no notice and keeps plain onClose when nothing was skipped', () => {
+    const { onBackToMeal, onClose } = renderSuccess({ skipped: { names: [], unnamed: 0 } })
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Back to meal' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onBackToMeal).not.toHaveBeenCalled()
+  })
+
+  it('only reroutes close to onBackToMeal in the success state', () => {
+    const onClose = jest.fn()
+    const onBackToMeal = jest.fn()
+    render(
+      <MealCookSheet
+        open
+        mealTitle="Pasta night"
+        state="review"
+        proposal={baseProposal()}
+        onConfirm={jest.fn()}
+        onRetry={noop}
+        onBackToMeal={onBackToMeal}
+        onClose={onClose}
+        skipped={skipped}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onBackToMeal).not.toHaveBeenCalled()
+  })
+})

@@ -7,6 +7,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
 import type { CookProposal } from '@/types/recipes'
+import { skippedDeductionNames, skippedTotal, type SkippedDeductionNames } from '@/lib/cook-skipped'
+import SkippedDeductionsNotice from '@/components/cook/SkippedDeductionsNotice'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 import { endCookSession, isCookSessionEnded } from '@/lib/cook-session'
 import {
@@ -106,9 +108,51 @@ export default function CookModal({
   const [overrides, setOverrides] = useState<Record<string, string>>({})
   const [loadingStage, setLoadingStage] = useState(0)
   const [expiredDismissed, setExpiredDismissed] = useState(false)
+  // Issue #621: pantry items the server refused to deduct. While any are
+  // shown the auto-redirect is paused (too short to read), so every exit runs
+  // the same continue path the timer would have.
+  const [skipped, setSkipped] = useState<SkippedDeductionNames>({ names: [], unnamed: 0, total: 0 })
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const continuedRef = useRef(false)
+  // False once the modal has unmounted: a confirm that resolves after the
+  // modal closed must not schedule a redirect the user never asked for (N4).
+  const mountedRef = useRef(true)
+  const continueRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
   const panelRef = useRef<HTMLDivElement>(null)
-  useModalFocusTrap(true, onClose, panelRef)
+
+  const skippedCount = skippedTotal(skipped)
+  const showSkippedNotice = state === 'success' && skippedCount > 0
+  // Non-draft only: a draft never auto-redirected, and its exits stay as-is.
+  const pausedForNotice = showSkippedNotice && !isDraft
+
+  // The hand-off to chat: what the redirect timer does, and what Continue,
+  // ✕, the backdrop and Escape do while the notice pauses it. Once only, so
+  // Continue then a quick Escape can't call `onCooked` twice.
+  const continueToChat = () => {
+    if (continuedRef.current) return
+    continuedRef.current = true
+    onCooked()
+    onClose()
+    router.push(`/chat?cooking=${encodeURIComponent(recipeId)}`)
+  }
+  const dismiss = () => {
+    if (pausedForNotice) continueToChat()
+    else onClose()
+  }
+  useModalFocusTrap(true, dismiss, panelRef)
+
+  // The notice pauses the redirect, so the Continue pill is what the cook acts
+  // on next: move focus to it as the state appears (keyboard and screen-reader
+  // users would otherwise stay on the now-unmounted Confirm button).
+  useEffect(() => {
+    if (pausedForNotice) continueRef.current?.focus()
+  }, [pausedForNotice])
 
   // Advance the loading copy while the match runs, stopping on the last stage
   // rather than looping — a cycling message would suggest repeated work.
@@ -167,7 +211,10 @@ export default function CookModal({
     const { deductions } = summary
 
     try {
-      await confirmCook(recipeId, deductions)
+      // `?.` is deliberate: a mock (or a future proxy) that resolves nothing
+      // must still land in the normal success flow.
+      const res = await confirmCook(recipeId, deductions)
+      const skippedNow = skippedDeductionNames(proposal, res?.deductions_skipped ?? [])
       queryClient.invalidateQueries({ queryKey: ['bubbles'] })
       // #440 — the deduction just landed, so this cook session is over
       // regardless of which page/flow confirmed it. Recorded outside React
@@ -175,13 +222,13 @@ export default function CookModal({
       // of /chat, which would otherwise have no way to know a deduction it
       // didn't witness already happened and re-offer "Finished cooking".
       endCookSession(recipeId)
+      // The deduction landed either way; if the modal is already gone there is
+      // nothing to show and nowhere to redirect from.
+      if (!mountedRef.current) return
+      setSkipped(skippedNow)
       setState('success')
-      if (!isDraft) {
-        redirectTimerRef.current = setTimeout(() => {
-          onCooked()
-          onClose()
-          router.push(`/chat?cooking=${encodeURIComponent(recipeId)}`)
-        }, 1200)
+      if (!isDraft && skippedTotal(skippedNow) === 0) {
+        redirectTimerRef.current = setTimeout(continueToChat, 1200)
       }
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to confirm cook')
@@ -199,7 +246,7 @@ export default function CookModal({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={(e: React.MouseEvent<HTMLDivElement>) => {
-          if (e.target === e.currentTarget) onClose()
+          if (e.target === e.currentTarget) dismiss()
         }}
       >
         {/* Sheet */}
@@ -241,8 +288,8 @@ export default function CookModal({
               </p>
             </div>
             <button
-              onClick={onClose}
-              className="text-[var(--color-muted)] hover:text-[var(--color-text)] text-xl leading-none px-1"
+              onClick={dismiss}
+              className="text-[var(--color-muted)] hover:text-[var(--color-text)] text-xl leading-none px-1 min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
               aria-label="Close"
             >
               ✕
@@ -311,6 +358,9 @@ export default function CookModal({
                 >
                   Pantry updated!
                 </p>
+                {showSkippedNotice && (
+                  <SkippedDeductionsNotice names={skipped.names} unnamed={skipped.unnamed} total={skipped.total} />
+                )}
                 {isDraft ? (
                   <>
                     <p
@@ -342,6 +392,17 @@ export default function CookModal({
                       </button>
                     </div>
                   </>
+                ) : pausedForNotice ? (
+                  <button
+                    type="button"
+                    ref={continueRef}
+                    onClick={continueToChat}
+                    className="min-h-[44px] px-6 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
+                    style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
+                    data-testid="cook-modal-continue"
+                  >
+                    Continue
+                  </button>
                 ) : (
                   <p
                     className="text-xs text-[var(--color-muted)] mt-1"

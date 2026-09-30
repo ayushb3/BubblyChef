@@ -22,7 +22,7 @@
 
 import { COLUMN_COLORS } from './MealTimelineTable'
 import MealRunningStrip from './MealRunningStrip'
-import type { NowCard, StreamStep } from '@/lib/meal-cook-stream'
+import { canStartEarly, type NowCard, type StreamStep } from '@/lib/meal-cook-stream'
 
 export type { NowCard }
 
@@ -141,16 +141,20 @@ export default function MealNowCard({
             {card.step.text}
           </p>
           <div className="flex flex-wrap gap-2 mt-4">
-            <button
-              type="button"
-              onClick={onStartEarly}
-              disabled={disabled}
-              className={PILL_BASE}
-              style={PILL_PRIMARY}
-              aria-label="Start now"
-            >
-              Start now
-            </button>
+            {/* Issue #663: no Start now while a step this one follows is
+                still running — the "after ‹label›" line above says why. */}
+            {canStartEarly(card) && (
+              <button
+                type="button"
+                onClick={onStartEarly}
+                disabled={disabled}
+                className={PILL_BASE}
+                style={PILL_PRIMARY}
+                aria-label="Start now"
+              >
+                Start now
+              </button>
+            )}
             <button
               type="button"
               onClick={onSkip}

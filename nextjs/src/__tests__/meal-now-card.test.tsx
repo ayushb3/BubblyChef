@@ -100,7 +100,7 @@ describe('MealNowCard', () => {
     expect(onDone).toHaveBeenCalledTimes(1)
   })
 
-  it('shows the upcoming preview with timing, waiting_on, and Start now/Skip', () => {
+  it('with waiting_on: shows the timing and the "after" line, but no Start now (issue #663); Skip still fires', () => {
     const onStartEarly = jest.fn()
     const onSkip = jest.fn()
     const card: NowCard = {
@@ -122,6 +122,28 @@ describe('MealNowCard', () => {
     expect(screen.getByTestId('meal-now-card-upcoming-timing')).toHaveTextContent('Next at +10 (in 6 min)')
     expect(screen.getByTestId('meal-now-card-waiting-on')).toHaveTextContent('after Boil the pasta')
 
+    // Encoded the bug before #663: Start now was offered while the step this
+    // one follows was still running.
+    expect(screen.queryByRole('button', { name: 'Start now' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Skip' }))
+    expect(onSkip).toHaveBeenCalledTimes(1)
+    expect(onStartEarly).not.toHaveBeenCalled()
+  })
+
+  it('without waiting_on: Start now fires onStartEarly and Skip fires onSkip', () => {
+    const onStartEarly = jest.fn()
+    const onSkip = jest.fn()
+    const card: NowCard = { kind: 'upcoming', step: HANDS_OFF_STEP, starts_in_minutes: 6 }
+    render(
+      <MealNowCard
+        card={card}
+        clockLabel={clockLabel}
+        onDone={jest.fn()}
+        onExtend={jest.fn()}
+        onSkip={onSkip}
+        onStartEarly={onStartEarly}
+      />,
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Start now' }))
     expect(onStartEarly).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: 'Skip' }))
