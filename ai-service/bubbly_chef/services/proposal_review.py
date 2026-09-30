@@ -35,6 +35,9 @@ from bubbly_chef.repository.supabase_repo import PantryApplyResult, SupabaseRepo
 
 logger = logging.getLogger(__name__)
 
+# Shown to the user when the already-applied check can't run; nothing was written.
+_GUARD_READ_FAILED = "Couldn't check what was already added — try again"
+
 
 def proposal_action_key(name: str) -> str:
     """Identity of a proposal row: its name, trimmed and lower-cased.
@@ -220,8 +223,23 @@ def review_after_apply(
 def review_after_reject(
     turn_row: dict[str, Any], chain_request_ids: list[str], now: datetime
 ) -> ProposalReview:
-    """The review to record on one chain turn when the card is dismissed."""
+    """The review to record on one chain turn when the card is dismissed.
+
+    A turn that already applied every row keeps `applied`: its items are in the
+    pantry, so a dismiss of the rest of the card must not relabel it "Skipped".
+    A `failed` (or never-attempted) turn becomes `rejected` and keeps its
+    `applied_keys`.
+    """
     previous = read_review(turn_row.get("metadata"))
+    if previous is not None and previous.status == "applied":
+        return ProposalReview(
+            status="applied",
+            applied_keys=list(previous.applied_keys),
+            failed=[],
+            error=None,
+            chain_request_ids=list(chain_request_ids),
+            updated_at=now,
+        )
     return ProposalReview(
         status="rejected",
         applied_keys=list(previous.applied_keys) if previous else [],
@@ -317,11 +335,22 @@ async def apply_pantry_with_review(
             affected_item_ids=affected_item_ids,
         )
 
-    turns: list[dict[str, Any]] = []
+    # Fail closed: the guard needs this read. Applying without it could re-write a
+    # row that already landed, and with no record made the card would restore armed
+    # for a second, duplicating tap. Nothing is written; the client's card stays
+    # retryable.
     try:
         turns = await repo.get_turns_by_request_ids(user_id, request.conversation_id, turn_ids)
     except Exception as read_err:
-        logger.warning(f"Could not load proposal turns; applying unguarded: {read_err}")
+        logger.warning(f"Could not load proposal turns; refusing to apply unguarded: {read_err}")
+        return ApplyResponse(
+            request_id=request.request_id,
+            success=False,
+            applied_count=0,
+            failed_count=len(actions),
+            errors=[_GUARD_READ_FAILED],
+            failed_names=[_sent_key(a) for a in actions],
+        )
     if len(turns) != len(turn_ids):
         logger.info(
             f"Apply named {len(turn_ids)} turns, found {len(turns)} "

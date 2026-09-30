@@ -376,6 +376,35 @@ def test_b6_reject_keeps_applied_keys_and_records_the_chain() -> None:
     assert rejected.chain_request_ids == [RID_A, RID_B]
 
 
+def test_reject_keeps_an_already_applied_turn_applied() -> None:
+    from bubbly_chef.services.proposal_review import review_after_apply, review_after_reject
+
+    turn_a = _turn_row(RID_A, ["lemon"])
+    applied = review_after_apply(turn_a, [_flat("lemon")], [], {}, [RID_A], NOW)
+    turn_a["metadata"]["proposal_review"] = applied.model_dump(mode="json")
+
+    after = review_after_reject(turn_a, [RID_A, RID_B], NOW)
+
+    assert after.status == "applied"
+    assert after.applied_keys == ["lemon"]
+    assert after.chain_request_ids == [RID_A, RID_B]
+
+
+def test_reject_of_a_failed_single_turn_keeps_its_applied_keys() -> None:
+    from bubbly_chef.services.proposal_review import review_after_apply, review_after_reject
+
+    turn = _turn_row(RID_A, ["lemon", "spinach"])
+    failed = review_after_apply(
+        turn, [_flat("lemon"), _flat("spinach")], [1], {1: "nf"}, [RID_A], NOW
+    )
+    turn["metadata"]["proposal_review"] = failed.model_dump(mode="json")
+
+    after = review_after_reject(turn, [RID_A], NOW)
+
+    assert after.status == "rejected"
+    assert after.applied_keys == ["lemon"]
+
+
 def test_own_keys_is_tolerant_of_malformed_turns() -> None:
     from bubbly_chef.services.proposal_review import own_keys
 
@@ -848,6 +877,37 @@ async def test_b11_reject_records_rejected(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_reject_after_a_partial_failure_leaves_the_applied_turn_applied(
+    client: AsyncClient,
+) -> None:
+    """Chain [A applied lemon, B failed dragonfruit]: Dismiss must not relabel A
+    "Skipped" -- its lemons are in the pantry."""
+    turn_a = _turn_row(RID_A, ["lemon"], review=_applied_review("lemon", chain=[RID_A, RID_B]))
+    failed_review = {
+        "status": "failed",
+        "applied_keys": [],
+        "failed": [{"key": "dragonfruit", "name": "dragonfruit", "quantity": 1, "unit": "whole"}],
+        "error": "Item not found: dragonfruit",
+        "chain_request_ids": [RID_A, RID_B],
+        "updated_at": "2026-09-30T12:00:00+00:00",
+    }
+    turn_b = _turn_row(RID_B, ["dragonfruit"], review=failed_review)
+    repo, _fake, _sent = _make_repo([turn_a, turn_b])
+
+    with _patch_repo(repo):
+        resp = await client.post(
+            "/v1/workflows/reject",
+            json={"conversation_id": CONV, "turn_request_ids": [RID_A, RID_B]},
+        )
+
+    assert resp.json()["recorded_turn_request_ids"] == [RID_A, RID_B]
+    review_a = turn_a["metadata"]["proposal_review"]
+    review_b = turn_b["metadata"]["proposal_review"]
+    assert review_a["status"] == "applied" and review_a["applied_keys"] == ["lemon"]
+    assert review_b["status"] == "rejected"
+
+
+@pytest.mark.asyncio
 async def test_b11_reject_requires_auth_and_a_nonempty_list(app: Any, client: AsyncClient) -> None:
     empty = await client.post(
         "/v1/workflows/reject", json={"conversation_id": CONV, "turn_request_ids": []}
@@ -955,25 +1015,30 @@ async def test_b14_malformed_turns_never_break_the_apply(client: AsyncClient) ->
 
 
 @pytest.mark.asyncio
-async def test_b14_a_failing_history_read_still_returns_the_pantry_result(
+async def test_a_failing_history_read_fails_closed_without_writing_the_pantry(
     client: AsyncClient,
 ) -> None:
+    """The guard needs the read. Without it a row that already landed could be
+    written twice, with nothing recorded, so apply refuses and the card stays
+    retryable."""
     row = _turn_row(RID_A, ["lemon"])
-    repo, fake, sent = _make_repo([row], failed_indices=[1], failed_errors={1: "nf"})
+    repo, fake, sent = _make_repo([row])
     fake.raise_on_select = True
 
     with _patch_repo(repo):
         resp = await client.post(
             "/v1/workflows/apply",
-            json=_apply_body([_flat("lemon"), _flat("spinach")], turn_ids=[RID_A]),
+            json=_apply_body([_flat("lemon"), _flat("Spinach")], turn_ids=[RID_A]),
         )
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["applied_count"] == 1 and data["failed_count"] == 1
-    assert data["failed_names"] == ["spinach"]
+    assert sent == [], "the pantry write path must not be entered"
+    assert data["success"] is False
+    assert data["applied_count"] == 0 and data["failed_count"] == 2
+    assert data["errors"] == ["Couldn't check what was already added — try again"]
+    assert data["failed_names"] == ["lemon", "spinach"]
     assert data["recorded_turn_request_ids"] == []
-    assert len(sent) == 1
     assert "proposal_review" not in row["metadata"]
 
 
