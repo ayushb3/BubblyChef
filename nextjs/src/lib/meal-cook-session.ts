@@ -14,9 +14,11 @@
  * completion (or a reload finding one already completed/dismissed) can mark
  * that exact step done — see `lib/meal-cook-stream.ts`.
  *
- * `ingredient_amendments` is reserved for issue #654 (the combined
- * deduction / amendments ticket) and is always `{}` here; this slice never
- * reads or writes into it beyond initializing it empty.
+ * `ingredient_amendments` was reserved for issue #654 (the combined
+ * deduction / amendments ticket) and stays `{}` on every session this slice
+ * (PR A) creates — PR B's `withDishAmendment` is the only writer. PR A adds
+ * the reader (`readDishAmendment`) so the deduction can already consume a
+ * slot PR B will start filling.
  *
  * **Stale session:** the meal's current dish recipe ids might no longer
  * equal `session.dish_ids` (a side was swapped after cooking started), or a
@@ -26,7 +28,15 @@
  * checks live — callers (the meal screen, the cook route) both need it and
  * must agree on what "stale" means, so it isn't duplicated at each call
  * site.
+ *
+ * **`cook_id`** (issue #654) is the idempotency key the confirm route claims
+ * (`cook_ref`, §2c of the issue #654 contract). `startMealCookSession` always
+ * sets one; `ensureCookId` derives a deterministic one for a session written
+ * before #654, so two tabs restoring the same pre-#654 session agree on the
+ * same ref and the server's claim still dedupes them (N5).
  */
+
+import type { MealCookIngredient } from '@/types/meals'
 
 export interface MealCookStepRecord {
   status: 'done' | 'skipped' | 'running'
@@ -41,6 +51,23 @@ export interface MealCookStepRecord {
    * `recordDone` / `recordSkip`; absent on a `running` record.
    */
   ended_at_minutes?: number
+}
+
+/**
+ * One dish's mid-cook amendment (issue #654 PR B writes this; PR A only
+ * reads it through `readDishAmendment`).
+ */
+export interface DishAmendment {
+  /** The FULL replacement list (`RecipeAmendmentProposal.amended_ingredients`), at `servings` scale. */
+  ingredients: MealCookIngredient[]
+  /**
+   * The servings the list is expressed at: the recipe's effective servings
+   * (`recipe.servings > 0 ? recipe.servings : meal.servings`) when it was
+   * written. `cookedIngredientsForDish` rescales by `mealServings / servings`.
+   */
+  servings: number
+  change_summary: string | null
+  applied_at_ms: number
 }
 
 export interface MealCookSession {
@@ -60,9 +87,22 @@ export interface MealCookSession {
    */
   dish_step_signatures: string[]
   steps: Record<string /* step key */, MealCookStepRecord>
-  /** Reserved for issue #654 / the amendments work: per-dish ingredient amendments. Always {} here. */
-  ingredient_amendments: Record<string /* dish_id */, unknown[]>
+  /**
+   * Idempotency key for the confirm (issue #654 §2c). Always set by
+   * `startMealCookSession`; optional only for a session written before
+   * #654 — `ensureCookId` derives one deterministically for those.
+   */
+  cook_id?: string
+  /**
+   * Per-dish amendment slot, keyed by dish id (= recipe id). Written only by
+   * PR B's `withDishAmendment`; read ONLY through `readDishAmendment`, which
+   * validates the shape. `{}` stays valid, so a #653 session restores.
+   */
+  ingredient_amendments: Record<string /* dish_id */, unknown>
 }
+
+/** The safe charset a `cook_id` (sent as `cook_ref`) must match — it goes into a PostgREST filter. */
+const COOK_ID_PATTERN = /^[A-Za-z0-9-]{1,64}$/
 
 const ACTIVE_KEY = 'bubblychef:mealcook:activeSession'
 const ENDED_KEY = 'bubblychef:mealcook:endedMealIds'
@@ -98,6 +138,7 @@ function isMealCookSession(v: unknown): v is MealCookSession {
   }
   if (!s.steps || typeof s.steps !== 'object') return false
   if (!Object.values(s.steps as Record<string, unknown>).every(isStepRecord)) return false
+  if (typeof s.cook_id !== 'undefined' && typeof s.cook_id !== 'string') return false
   if (!s.ingredient_amendments || typeof s.ingredient_amendments !== 'object') return false
   return true
 }
@@ -184,10 +225,71 @@ export function startMealCookSession(
     dish_ids: dishIds,
     dish_step_signatures: dishStepSignatures,
     steps: {},
+    cook_id: crypto.randomUUID(),
     ingredient_amendments: {},
   }
   writeActiveSession(session)
   return session
+}
+
+/**
+ * A `cook_id` to send as `cook_ref` (issue #654 §2c) — `session` unchanged
+ * when it already has one matching the confirm route's charset. Otherwise
+ * returns a copy with a deterministic `legacy-${started_at_ms}` id, for a
+ * session written before #654 (N5): deterministic so two tabs restoring the
+ * same pre-#654 session derive the same ref, and the server's claim still
+ * dedupes them rather than double-deducting. Callers save the result so the
+ * derived id persists across the rest of the cook.
+ */
+export function ensureCookId(session: MealCookSession): MealCookSession {
+  if (typeof session.cook_id === 'string' && COOK_ID_PATTERN.test(session.cook_id)) {
+    return session
+  }
+  return { ...session, cook_id: `legacy-${Math.trunc(session.started_at_ms)}` }
+}
+
+function isMealCookIngredient(v: unknown): v is MealCookIngredient {
+  if (!v || typeof v !== 'object') return false
+  const ing = v as Record<string, unknown>
+  if (typeof ing.name !== 'string' || ing.name.trim() === '') return false
+  if (
+    typeof ing.quantity !== 'undefined' &&
+    ing.quantity !== null &&
+    !(typeof ing.quantity === 'number' && Number.isFinite(ing.quantity))
+  ) {
+    return false
+  }
+  if (typeof ing.unit !== 'undefined' && ing.unit !== null && typeof ing.unit !== 'string') return false
+  return true
+}
+
+/**
+ * Reads `dishId`'s amendment out of the session's `ingredient_amendments`
+ * slot, validating its shape rather than trusting whatever's in storage
+ * (issue #654 §3) — PR B's `withDishAmendment` is the only writer, but this
+ * reader has to stay defensive on its own, the same discipline
+ * `isMealCookSession` already applies to the rest of the record. Anything
+ * that doesn't validate gives `null`, so the caller falls back to the dish's
+ * recipe list rather than treating a corrupt slot as a crash.
+ */
+export function readDishAmendment(session: MealCookSession, dishId: string): DishAmendment | null {
+  const raw = session.ingredient_amendments[dishId]
+  if (!raw || typeof raw !== 'object') return null
+  const a = raw as Record<string, unknown>
+
+  if (!Array.isArray(a.ingredients) || a.ingredients.length === 0) return null
+  if (!a.ingredients.every(isMealCookIngredient)) return null
+
+  if (typeof a.servings !== 'number' || !Number.isFinite(a.servings) || a.servings <= 0) return null
+  if (typeof a.change_summary !== 'string' && a.change_summary !== null) return null
+  if (typeof a.applied_at_ms !== 'number') return null
+
+  return {
+    ingredients: a.ingredients,
+    servings: a.servings,
+    change_summary: a.change_summary,
+    applied_at_ms: a.applied_at_ms,
+  }
 }
 
 /**

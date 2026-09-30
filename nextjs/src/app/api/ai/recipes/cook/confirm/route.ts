@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
 import { aiProxyJson } from '@/lib/api/ai-proxy'
 import { requireAuth } from '@/lib/response-helpers'
-import { awardBubbles, RESCUE_CAP_PER_COOK } from '@/lib/bubbles'
 import { validateClientDate } from '@/lib/date'
-import { isExpiringSoon, daysUntilExpiryOn } from '@/lib/pantry-helpers'
+import { cookAwardRefs, readExpiryByItemId, rescueCandidates, awardCookBubbles } from '@/lib/cook-awards'
 
 export async function POST(request: Request) {
   const auth = await requireAuth()
@@ -13,7 +12,7 @@ export async function POST(request: Request) {
   const body = await request.json()
 
   // Client's local date (#524) — same clock-skew tolerance as GET /api/bubbles.
-  // Only used to key the `cook_confirm`/`rescue` awards; a missing or
+  // Only used to key the `rescue` award's eligibility judgement; a missing or
   // out-of-range date must never block the cook deduction itself, matching
   // the never-block contract every other award call site follows (see
   // bubbles-award-call-sites.test.ts).
@@ -28,17 +27,7 @@ export async function POST(request: Request) {
   // be gone by the time the microservice's own deduction finishes, and the
   // rescue award needs "was this expiring soon at cook time", not whatever
   // is left afterward.
-  let expiryByItemId = new Map<string, string | null>()
-  if (pantryItemIds.length > 0) {
-    const { data: rows } = await supabase
-      .from('pantry_items')
-      .select('id, expiry_date')
-      .eq('user_id', user.id)
-      .in('id', pantryItemIds)
-    expiryByItemId = new Map(
-      (rows ?? []).map((row: { id: string; expiry_date: string | null }) => [row.id, row.expiry_date]),
-    )
-  }
+  const expiryByItemId = await readExpiryByItemId(supabase, user.id, pantryItemIds)
 
   const response = await aiProxyJson('/v1/recipes/cook/confirm', body)
 
@@ -51,9 +40,7 @@ export async function POST(request: Request) {
     // request and today's on the next — only the new rescue bonus below is
     // allowed to depend on `validDate`.
     const today = new Date().toISOString().slice(0, 10)
-    if (body.recipe_id) {
-      await awardBubbles(user.id, 'cook_confirm', `${body.recipe_id}:${today}`)
-    }
+    const refs = cookAwardRefs({ kind: 'recipe', recipeId: body.recipe_id ?? null }, today)
 
     // Rescue bonus (#524): only after the microservice confirms the cook
     // (2xx), one per expiring-soon deducted item, deduplicated and capped.
@@ -66,14 +53,11 @@ export async function POST(request: Request) {
     // so a client resending the same cook confirm with yesterday's date on
     // one call and today's on the next would otherwise mint two rescue
     // awards for what's really one deduction of the same item.
-    if (validDate) {
-      const expiringSoonItemIds = Array.from(new Set(pantryItemIds)).filter((id) =>
-        isExpiringSoon(daysUntilExpiryOn(expiryByItemId.get(id) ?? null, validDate)),
-      )
-      for (const pantryItemId of expiringSoonItemIds.slice(0, RESCUE_CAP_PER_COOK)) {
-        await awardBubbles(user.id, 'rescue', `${pantryItemId}:${today}`)
-      }
-    }
+    const rescueIds = validDate
+      ? rescueCandidates(pantryItemIds, expiryByItemId, validDate)
+      : []
+
+    await awardCookBubbles(user.id, refs, rescueIds)
   }
 
   return response

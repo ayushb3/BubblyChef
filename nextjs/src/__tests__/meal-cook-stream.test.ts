@@ -17,6 +17,7 @@ import {
   applyTimerState,
   findTimerCompletedSteps,
   timerIdsToDismiss,
+  isMealCookFinished,
   type StreamStep,
 } from '@/lib/meal-cook-stream'
 import { scheduleMeal, type SchedulerDish } from '@/lib/meal-scheduler'
@@ -328,6 +329,58 @@ describe('deriveStream', () => {
     }
     expect(result.next_up).toBeNull()
     expect(result.running.map((r) => r.key)).toEqual(['main:0'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// isMealCookFinished (issue #654 §3, S9)
+// ---------------------------------------------------------------------------
+
+describe("isMealCookFinished agrees with deriveStream's finished", () => {
+  it('true when every step across every dish is done or skipped', () => {
+    const main: SchedulerDish = {
+      dish_id: 'main',
+      column: 'main',
+      title: 'Main',
+      steps: [step({ text: 'Plate', label: 'Plate', duration_minutes: 2, hands_on: true })],
+    }
+    const side: SchedulerDish = {
+      dish_id: 'side',
+      column: 'side_1',
+      title: 'Side',
+      steps: [step({ text: 'Toss', label: 'Toss', duration_minutes: 1, hands_on: true })],
+    }
+    const s = session({
+      dish_ids: ['main', 'side'],
+      steps: {
+        'main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
+        'side:0': { status: 'skipped', started_at_minutes: 0, extra_minutes: 0 },
+      },
+    })
+
+    expect(isMealCookFinished(s, [main, side])).toBe(true)
+    const result = deriveStream({ dishes: [main, side], exclusive_tags: [], session: s, now_minutes: 5 })
+    expect(result.now).toEqual({ kind: 'finished' })
+  })
+
+  it('false while any step is still pending or running, agreeing with deriveStream', () => {
+    const main: SchedulerDish = {
+      dish_id: 'main',
+      column: 'main',
+      title: 'Main',
+      steps: [step({ text: 'Plate', label: 'Plate', duration_minutes: 2, hands_on: true })],
+    }
+    const s = session({ dish_ids: ['main'], steps: {} })
+
+    expect(isMealCookFinished(s, [main])).toBe(false)
+    const result = deriveStream({ dishes: [main], exclusive_tags: [], session: s, now_minutes: 0 })
+    expect(result.now).not.toEqual({ kind: 'finished' })
+  })
+
+  it('false when there are zero steps overall — a meal with nothing to cook is not "finished"', () => {
+    const empty: SchedulerDish = { dish_id: 'main', column: 'main', title: 'Main', steps: [] }
+    const s = session({ dish_ids: ['main'], steps: {} })
+    expect(isMealCookFinished(s, [empty])).toBe(false)
   })
 })
 

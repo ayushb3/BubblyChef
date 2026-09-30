@@ -8,7 +8,7 @@ import logging
 import re
 from collections import Counter
 from datetime import UTC, date, datetime
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from postgrest.types import JSON
@@ -16,6 +16,7 @@ from supabase import Client, create_client
 
 from bubbly_chef.config import settings
 from bubbly_chef.domain.normalizer import normalize_food_name, normalize_to_base_unit
+from bubbly_chef.models.cook import MealCookClaim
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.models.recipe import RecipeCard
 from bubbly_chef.models.session import (
@@ -182,6 +183,22 @@ def _as_rows(value: list[JSON]) -> list[dict[str, Any]]:
     on every pantry fetch for a condition PostgREST can't produce.
     """
     return cast("list[dict[str, Any]]", value)
+
+
+def _parse_meal_cook_timestamp(value: Any) -> datetime | None:
+    """Parse a `meals.last_cooked_at` TIMESTAMPTZ value, or `None`.
+
+    `None` when `value` is `None`, not a string, or not ISO-8601 -- the
+    30-second `claim_meal_cook` window then falls back to "now" (§2c),
+    which classifies a row with no timestamp as freshly claimed rather than
+    raising on a shape a real Postgres row should never produce.
+    """
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 class SupabaseRepository:
@@ -1089,13 +1106,17 @@ class SupabaseRepository:
         """Return `{"meal": <meals row>, "dishes": [...]}` for one meal, or
         `None` when it doesn't exist or isn't this user's.
 
-        Each dish dict is `{"role", "position", "recipe": <recipes row>}`,
-        ordered by `position` (0 = main, 1-2 = sides) -- `recipe` is the same
-        raw-dict shape `get_recipe` returns. Scoped to `user_id` on both the
-        `meals` row and its `meal_dishes` rows, so a meal (or a dish inside
-        it) belonging to someone else is indistinguishable from one that
-        doesn't exist at all. Feeds the meal-screen AI routes (issue #652:
-        side-alternatives, expand-dish) -- full meal CRUD itself lives in the
+        Each dish dict is `{"role", "position", "recipe_id", "recipe": <recipes
+        row>}`, ordered by `position` (0 = main, 1-2 = sides) -- `recipe` is the
+        same raw-dict shape `get_recipe` returns. `recipe_id` (issue #654 N1) is
+        the str form of `meal_dishes.recipe_id`, additive alongside `recipe` --
+        it's the only reliable way to test dish membership when `recipe` came
+        back `{}` because the recipe was deleted between the two reads. Scoped
+        to `user_id` on both the `meals` row and its `meal_dishes` rows, so a
+        meal (or a dish inside it) belonging to someone else is
+        indistinguishable from one that doesn't exist at all. Feeds the
+        meal-screen AI routes (issue #652: side-alternatives, expand-dish) and
+        the meal cook routes (issue #654) -- full meal CRUD itself lives in the
         Next.js API layer.
         """
         meal_result = (
@@ -1119,12 +1140,142 @@ class SupabaseRepository:
         )
         dishes: list[dict[str, Any]] = []
         for raw in _as_rows(dishes_result.data or []):
-            recipe_row = await self.get_recipe(user_id, str(raw["recipe_id"]))
+            recipe_id = str(raw["recipe_id"])
+            recipe_row = await self.get_recipe(user_id, recipe_id)
             dishes.append(
-                {"role": raw["role"], "position": raw["position"], "recipe": recipe_row or {}}
+                {
+                    "role": raw["role"],
+                    "position": raw["position"],
+                    "recipe_id": recipe_id,
+                    "recipe": recipe_row or {},
+                }
             )
 
         return {"meal": meal_row, "dishes": dishes}
+
+    # =========================================================================
+    # Meal cook (issue #654) -- server-side idempotency for
+    # POST /v1/meals/cook/confirm. See migration 00015_meals_last_cook_ref.sql
+    # and docs/plans/2026-09-29-issue-654-a-meal-deduction-contract.md §2c.
+    # =========================================================================
+
+    async def claim_meal_cook(
+        self, user_id: str, meal_id: str, cook_ref: str
+    ) -> MealCookClaim | None:
+        """Claim `cook_ref` as the meal's current cook, or classify a replay.
+
+        Claim first, write second (contract §2c) -- this never lets a lost
+        response or a second tab double-deduct. Returns `None` when the meal
+        row doesn't exist (or isn't this user's), which the route turns into
+        a 404.
+
+        Outcomes:
+        - `claimed`: this ref just became the meal's `last_cook_ref`.
+          `times_cooked` incremented, `last_cooked_at` set to `now(UTC)`,
+          `last_cook_status` set to `'claimed'`. `cooked_on` is that moment's
+          UTC date.
+        - `replay_applied`: `last_cook_ref == cook_ref` and the meal's
+          `last_cook_status` is already `'applied'` -- this cook fully
+          landed already. No write.
+        - `replay_in_progress`: `last_cook_ref == cook_ref`, status
+          `'claimed'`, and `last_cooked_at` is under 30s old -- the first
+          POST for this ref is probably still writing. No write.
+        - `replay_claimed`: same as above but `last_cooked_at` is 30s or
+          older -- a confirm that claimed but never finished. No write.
+
+        A null `last_cook_status` with a matching `last_cook_ref` is treated
+        as `'claimed'` (a row written by an older, pre-#654 code path could
+        have a ref with no status at all -- never happens once this ships,
+        but it's a cheap, safe default rather than an unhandled case).
+        """
+        read_result = (
+            self.client.table("meals")
+            .select("times_cooked,last_cook_ref,last_cook_status,last_cooked_at")
+            .eq("id", meal_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        if not read_result.data:
+            return None
+        row = _as_row(read_result.data[0])
+
+        existing_ref = row.get("last_cook_ref")
+        if existing_ref == cook_ref:
+            return self._classify_meal_cook_replay(row)
+
+        now = datetime.now(UTC)
+        update_result = (
+            self.client.table("meals")
+            .update(
+                {
+                    "times_cooked": int(row.get("times_cooked") or 0) + 1,
+                    "last_cooked_at": now.isoformat(),
+                    "last_cook_ref": cook_ref,
+                    "last_cook_status": "claimed",
+                }
+            )
+            .eq("id", meal_id)
+            .eq("user_id", user_id)
+            .or_(f"last_cook_ref.is.null,last_cook_ref.neq.{cook_ref}")
+            .execute()
+        )
+        if update_result.data:
+            updated = _as_row(update_result.data[0])
+            return MealCookClaim(
+                outcome="claimed",
+                times_cooked=int(updated.get("times_cooked") or 0),
+                cooked_on=now.date(),
+            )
+
+        # Zero rows updated: either a racing post with the SAME ref just won
+        # the update (re-read and classify the replay), or the meal is gone.
+        reread_result = (
+            self.client.table("meals")
+            .select("times_cooked,last_cook_ref,last_cook_status,last_cooked_at")
+            .eq("id", meal_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        if not reread_result.data:
+            return None
+        return self._classify_meal_cook_replay(_as_row(reread_result.data[0]))
+
+    def _classify_meal_cook_replay(self, row: dict[str, Any]) -> MealCookClaim:
+        """Classify a meal row whose `last_cook_ref` already matches the
+        confirm's `cook_ref` -- shared by both the fast path and the
+        zero-rows-updated re-read in `claim_meal_cook`."""
+        status = row.get("last_cook_status") or "claimed"
+        times_cooked = int(row.get("times_cooked") or 0)
+        last_cooked_at = _parse_meal_cook_timestamp(row.get("last_cooked_at")) or datetime.now(UTC)
+        cooked_on = last_cooked_at.date()
+
+        if status == "applied":
+            return MealCookClaim(outcome="replay_applied", times_cooked=times_cooked, cooked_on=cooked_on)
+
+        age = (datetime.now(UTC) - last_cooked_at).total_seconds()
+        outcome: Literal["replay_in_progress", "replay_claimed"] = (
+            "replay_in_progress" if age < 30 else "replay_claimed"
+        )
+        return MealCookClaim(outcome=outcome, times_cooked=times_cooked, cooked_on=cooked_on)
+
+    async def mark_meal_cook_applied(self, user_id: str, meal_id: str, cook_ref: str) -> None:
+        """Stamp `last_cook_status = 'applied'` after a claimed cook's
+        deductions and recipe marks finish.
+
+        Filtered on `last_cook_ref == cook_ref` (not just `id`/`user_id`) so
+        this can never stamp a NEWER cook's claim -- if a second cook of this
+        meal claimed a different ref between this confirm's claim and this
+        call, that ref's own row stays `'claimed'` until its own confirm
+        stamps it.
+        """
+        (
+            self.client.table("meals")
+            .update({"last_cook_status": "applied"})
+            .eq("id", meal_id)
+            .eq("user_id", user_id)
+            .eq("last_cook_ref", cook_ref)
+            .execute()
+        )
 
 
 # Singleton

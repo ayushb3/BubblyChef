@@ -2,17 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import MealNowCard from '@/components/meal/MealNowCard'
 import MealNextUp from '@/components/meal/MealNextUp'
 import MealRunningStrip from '@/components/meal/MealRunningStrip'
 import MealCookFinished from '@/components/meal/MealCookFinished'
+import MealCookSheet, { type MealCookSheetState } from '@/components/meal/MealCookSheet'
 import MealTimelineSheet from '@/components/meal/MealTimelineSheet'
 import MealTimelineTable from '@/components/meal/MealTimelineTable'
-import { fetchMeal } from '@/lib/api/meals'
+import { fetchMeal, requestMealCookProposal, confirmMealCook, MealCookError } from '@/lib/api/meals'
 import { dishStepSignaturesForMeal, schedulerDishesForMeal } from '@/lib/meal-dishes'
 import { formatClockTime } from '@/lib/meal-anchor'
+import { localDateString } from '@/lib/date'
+import { cookedDishIds, buildMealCookRequest } from '@/lib/meal-cook-deduction'
 import type { Column } from '@/lib/meal-scheduler'
 import {
   deriveStream,
@@ -26,15 +29,21 @@ import {
   applyOverdueRunningSteps,
   applyTimerState,
   findTimerCompletedSteps,
+  timerIdsToDismiss,
+  isMealCookFinished,
 } from '@/lib/meal-cook-stream'
 import {
   getActiveMealCookSession,
   saveMealCookProgress,
   endMealCookSession,
+  isMealCookSessionEnded,
   isStaleMealCookSession,
+  ensureCookId,
   type MealCookSession,
 } from '@/lib/meal-cook-session'
 import { useCookingTimers } from '@/lib/useCookingTimers'
+import type { MealCookErrorKind, MealCookProposal } from '@/types/meals'
+import type { DeductionItem } from '@/types/recipes'
 
 /**
  * Issue #653 — the full-screen cook-along (contract §5). Schedules the same
@@ -51,6 +60,7 @@ import { useCookingTimers } from '@/lib/useCookingTimers'
 export default function MealCookPage() {
   const params = useParams()
   const router = useRouter()
+  const queryClient = useQueryClient()
   const id = typeof params?.id === 'string' ? params.id : Array.isArray(params?.id) ? params.id[0] : ''
 
   // `refetchOnWindowFocus: false` — the visibility-driven clock tick below
@@ -68,7 +78,7 @@ export default function MealCookPage() {
     refetchOnReconnect: false,
   })
 
-  const { timers, start: startTimer } = useCookingTimers()
+  const { timers, start: startTimer, dismiss: dismissTimer } = useCookingTimers()
 
   const [session, setSession] = useState<MealCookSession | null>(null)
   const [redirecting, setRedirecting] = useState(false)
@@ -79,6 +89,31 @@ export default function MealCookPage() {
   // `attemptedStepsRef` (issue #652): a ref persists across that remount,
   // where a `useState` guard or a `cancelled` flag set in cleanup would not.
   const restoredRef = useRef(false)
+
+  // Issue #654 §5 — the combined deduction sheet's own state, entirely
+  // separate from the cook-along session/stream above. `errorStage`
+  // disambiguates what Retry means: a proposal fetch failure retries the
+  // fetch, a confirm failure resends the same confirm.
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [sheetState, setSheetState] = useState<MealCookSheetState>('loading')
+  const [proposal, setProposal] = useState<MealCookProposal | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined)
+  const [errorKind, setErrorKind] = useState<MealCookErrorKind | undefined>(undefined)
+  const [errorStage, setErrorStage] = useState<'load' | 'confirm'>('load')
+  // Set before the first await of a confirm, cleared only on the error path
+  // (§5 "Confirm" step 0) — success navigates away, so there is nothing left
+  // to guard by the time it would otherwise clear.
+  const confirmingRef = useRef(false)
+  const lastDeductionsRef = useRef<DeductionItem[]>([])
+  const waitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // True once, the first time this mount evaluates the restored session as
+  // already finished — set once, in the restore effect, from the session as
+  // it was AT RESTORE, not from any later live transition. Nit 6: a cook that
+  // *becomes* finished live on this mount (the last Done tapped here) must
+  // not auto-open the sheet.
+  const wasFinishedAtRestoreRef = useRef(false)
+  const autoOpenedRef = useRef(false)
 
   const schedulerDishes = useMemo(() => (meal ? schedulerDishesForMeal(meal) : []), [meal])
   const dishIds = useMemo(() => schedulerDishes.map((d) => d.dish_id), [schedulerDishes])
@@ -110,8 +145,14 @@ export default function MealCookPage() {
         router.replace(`/meals/${id}`)
         return
       }
-      setSession(active)
-      setNowMinutes(Math.floor((Date.now() - active.started_at_ms) / 60_000))
+      // Issue #654 §3/§5: `ensureCookId`, then save when it changed — a
+      // pre-#654 session gets a deterministic `legacy-<started_at_ms>` id,
+      // persisted so a later reload (or another tab) derives the same one.
+      const ensured = ensureCookId(active)
+      if (ensured !== active) saveMealCookProgress(ensured)
+      wasFinishedAtRestoreRef.current = isMealCookFinished(ensured, schedulerDishes)
+      setSession(ensured)
+      setNowMinutes(Math.floor((Date.now() - ensured.started_at_ms) / 60_000))
       return
     }
     // Already restored: re-check the *current* session (not necessarily
@@ -200,6 +241,19 @@ export default function MealCookPage() {
     [stream, schedulerDishes],
   )
   const stepByKey = useMemo(() => new Map(allStreamSteps.map((s) => [s.key, s])), [allStreamSteps])
+
+  // Issue #654 §3 (S9) — the finish flow's own view of the same session:
+  // which dishes actually count as cooked, and (the complement) which
+  // dish titles the finished screen names as skipped.
+  const cookedIds = useMemo(
+    () => (session ? cookedDishIds(schedulerDishes, session) : []),
+    [schedulerDishes, session],
+  )
+  const canDeduct = cookedIds.length > 0
+  const skippedDishTitles = useMemo(
+    () => schedulerDishes.filter((d) => !cookedIds.includes(d.dish_id)).map((d) => d.title),
+    [schedulerDishes, cookedIds],
+  )
 
   // A hands-on step becoming the active Now card records it as running, the
   // instant it becomes current — a no-op (via `recordBecomingActive` itself)
@@ -333,10 +387,197 @@ export default function MealCookPage() {
     router.push(`/meals/${id}`)
   }
 
-  function handleBackToMeal() {
+  // Issue #654 §5 — "Skip pantry update" (canDeduct) and "Back to meal"
+  // (!canDeduct) on the finished screen both mean the same thing: no write,
+  // no bubbles, nothing marked cooked. Dismisses any still-running dock
+  // timers first (defensive — a finished session has no running records in
+  // practice) before ending the session.
+  function handleFinishWithoutPantry() {
+    if (session) {
+      for (const timerId of timerIdsToDismiss(session)) dismissTimer(timerId)
+    }
     endMealCookSession(id)
     router.push(`/meals/${id}`)
   }
+
+  function invalidateAfterConfirm() {
+    queryClient.invalidateQueries({ queryKey: ['bubbles'] })
+    queryClient.invalidateQueries({ queryKey: ['pantry'] })
+    queryClient.invalidateQueries({ queryKey: ['meal', id] })
+    queryClient.invalidateQueries({ queryKey: ['meals'] })
+    queryClient.invalidateQueries({ queryKey: ['inbox-entries'] })
+  }
+
+  /** The copy the sheet's error state shows for each `MealCookErrorKind` (§5). */
+  function copyForErrorKind(kind: MealCookErrorKind, fallback: string): string {
+    if (kind === 'dish_mismatch') {
+      return "This meal changed while you were cooking, so it can't be taken from your pantry as it was."
+    }
+    if (kind === 'confirm_incomplete') {
+      return 'Your pantry may be partly updated — check it.'
+    }
+    return fallback
+  }
+
+  /**
+   * `POST /api/ai/meals/cook` — opens the sheet and requests a fresh
+   * proposal. Retried verbatim (same request) by `handleRetry` when
+   * `errorStage === 'load'`.
+   */
+  const handleMarkCooked = useCallback(async () => {
+    if (!meal || !session) return
+    const req = buildMealCookRequest(meal, session, schedulerDishes)
+    setSheetOpen(true)
+    setErrorStage('load')
+    setSheetState('loading')
+    setProposal(null)
+    if (!req) {
+      // Defensive: Mark meal as cooked is only rendered when `canDeduct`,
+      // which is exactly "some dish was cooked" — buildMealCookRequest
+      // returning null means the same thing, so there is nothing to show.
+      setSheetOpen(false)
+      return
+    }
+    try {
+      const p = await requestMealCookProposal(req)
+      setProposal(p)
+      setSheetState('review')
+    } catch (err) {
+      if (err instanceof MealCookError && err.kind) {
+        setErrorKind(err.kind)
+        setErrorMessage(copyForErrorKind(err.kind, err.message))
+      } else {
+        setErrorKind(undefined)
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to build the meal cook proposal')
+      }
+      setSheetState('error')
+    }
+  }, [meal, session, schedulerDishes])
+
+  /**
+   * `POST /api/ai/meals/cook/confirm` (§5 "Confirm"). `isRetryOfInProgress`
+   * is only ever true for the ONE automatic retry after a `confirm_in_progress`
+   * — a second `confirm_in_progress` on that retry is treated exactly like
+   * `confirm_incomplete`, never retried again.
+   */
+  async function doConfirm(deductions: DeductionItem[], isRetryOfInProgress: boolean) {
+    if (!session) return
+    try {
+      await confirmMealCook({
+        meal_id: id,
+        cook_ref: session.cook_id ?? '',
+        recipe_ids: cookedIds,
+        deductions,
+        date: localDateString(),
+      })
+      // Success, `already_confirmed` included — the server's claim already
+      // decided nothing double-deducts; end the session and invalidate.
+      endMealCookSession(id)
+      invalidateAfterConfirm()
+      setSheetState('success')
+      redirectTimerRef.current = setTimeout(() => {
+        router.push(`/meals/${id}`)
+      }, 1200)
+    } catch (err) {
+      if (err instanceof MealCookError && err.kind === 'confirm_in_progress') {
+        if (isRetryOfInProgress) {
+          confirmingRef.current = false
+          setErrorKind('confirm_incomplete')
+          setErrorMessage(copyForErrorKind('confirm_incomplete', ''))
+          setSheetState('error')
+          return
+        }
+        waitTimerRef.current = setTimeout(() => {
+          doConfirm(deductions, true)
+        }, 2000)
+        return
+      }
+      confirmingRef.current = false
+      if (err instanceof MealCookError && err.kind) {
+        setErrorKind(err.kind)
+        setErrorMessage(copyForErrorKind(err.kind, err.message))
+      } else {
+        setErrorKind(undefined)
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to confirm the meal cook')
+      }
+      setSheetState('error')
+    }
+  }
+
+  function handleConfirm(deductions: DeductionItem[]) {
+    if (confirmingRef.current) return
+    // The two-tab checkpoint (mirrors CookModal.tsx): re-check right before
+    // the network call that actually deducts, not just when the sheet opened.
+    if (isMealCookSessionEnded(id)) {
+      setSheetOpen(false)
+      router.push(`/meals/${id}`)
+      return
+    }
+    confirmingRef.current = true
+    lastDeductionsRef.current = deductions
+    setErrorStage('confirm')
+    setSheetState('confirming')
+    doConfirm(deductions, false)
+  }
+
+  function handleRetry() {
+    if (errorStage === 'load') {
+      handleMarkCooked()
+    } else {
+      handleConfirm(lastDeductionsRef.current)
+    }
+  }
+
+  /**
+   * The sheet's "Back to meal" — only shown for `dish_mismatch` /
+   * `confirm_incomplete` (never `confirm_in_progress`, §5). A `dish_mismatch`
+   * leaves the session active, so the meal screen's stale notice can explain
+   * it; `confirm_incomplete` ends it, since the confirm may have partly
+   * landed.
+   */
+  function handleSheetBackToMeal() {
+    if (errorKind === 'dish_mismatch') {
+      queryClient.invalidateQueries({ queryKey: ['meal', id] })
+      router.push(`/meals/${id}`)
+      return
+    }
+    endMealCookSession(id)
+    queryClient.invalidateQueries({ queryKey: ['pantry'] })
+    queryClient.invalidateQueries({ queryKey: ['meal', id] })
+    queryClient.invalidateQueries({ queryKey: ['meals'] })
+    queryClient.invalidateQueries({ queryKey: ['inbox-entries'] })
+    router.push(`/meals/${id}`)
+  }
+
+  function handleSheetClose() {
+    setSheetOpen(false)
+  }
+
+  // Nit 6 — auto-open the sheet the first time this mount's stream evaluates
+  // as finished, but ONLY when the session was already finished at restore
+  // (returning to a finished cook means "finish up"). A live finish this
+  // mount (the last Done tapped here) leaves the sheet closed — the user
+  // taps Mark meal as cooked.
+  useEffect(() => {
+    if (autoOpenedRef.current) return
+    if (!stream || stream.now.kind !== 'finished') return
+    if (!wasFinishedAtRestoreRef.current) return
+    autoOpenedRef.current = true
+    if (canDeduct) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      handleMarkCooked()
+    }
+  }, [stream, canDeduct, handleMarkCooked])
+
+  // Both timers are one-shots owned entirely by this page's confirm flow —
+  // cleared on unmount so a stale wait/redirect never fires against an
+  // unmounted component (e.g. the user navigated away by another route).
+  useEffect(() => {
+    return () => {
+      if (waitTimerRef.current) clearTimeout(waitTimerRef.current)
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current)
+    }
+  }, [])
 
   // ── Loading / redirecting states ────────────────────────────────────────
   if (isLoading || redirecting || (meal && !session)) {
@@ -408,7 +649,13 @@ export default function MealCookPage() {
         </div>
 
         {stream.now.kind === 'finished' ? (
-          <MealCookFinished mealTitle={meal.title} onBackToMeal={handleBackToMeal} />
+          <MealCookFinished
+            mealTitle={meal.title}
+            skippedDishTitles={skippedDishTitles}
+            canDeduct={canDeduct}
+            onMarkCooked={handleMarkCooked}
+            onFinishWithoutPantry={handleFinishWithoutPantry}
+          />
         ) : (
           <div className="flex flex-col gap-4">
             <MealNowCard
@@ -439,6 +686,19 @@ export default function MealCookPage() {
           progress={timelineProgress}
         />
       </MealTimelineSheet>
+
+      <MealCookSheet
+        open={sheetOpen}
+        mealTitle={meal.title}
+        state={sheetState}
+        proposal={proposal}
+        errorMessage={errorMessage}
+        errorKind={errorKind}
+        onConfirm={handleConfirm}
+        onRetry={handleRetry}
+        onBackToMeal={handleSheetBackToMeal}
+        onClose={handleSheetClose}
+      />
     </main>
   )
 }

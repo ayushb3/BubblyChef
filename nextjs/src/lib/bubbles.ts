@@ -29,6 +29,8 @@ export const BUBBLE_AMOUNTS = {
   rescue: 8,
   /** A completed Mon-Sun week with at least one bubble_event and no waste — issue #524. */
   weekly_streak: 20,
+  /** Finishing a whole meal — issue #654. PROVISIONAL: tuned once the flow is playable (spec #647, "Further Notes"). */
+  meal_bonus: 10,
 } as const
 
 /**

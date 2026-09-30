@@ -1,9 +1,17 @@
 """Pydantic models for the cook-a-recipe / pantry-deduction workflow."""
 
+from datetime import date
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# Shared with IngredientMatch below and MealCookSource (issue #654) so both
+# sides of a merge speak the exact same vocabulary.
+IngredientMatchStatus = Literal[
+    "ready", "substitute", "shortfall", "imprecise", "unit_conflict", "missing", "assumed"
+]
+IngredientMatchType = Literal["exact", "substitute", "none"]
 
 
 class IngredientMatch(BaseModel):
@@ -24,9 +32,7 @@ class IngredientMatch(BaseModel):
     )
     base_unit: str | None = Field(default=None, description="Base unit used for comparison")
 
-    status: Literal[
-        "ready", "substitute", "shortfall", "imprecise", "unit_conflict", "missing", "assumed"
-    ] = Field(
+    status: IngredientMatchStatus = Field(
         description=(
             "ready=have enough, substitute=covered by a suggested stand-in, "
             "shortfall=not enough, imprecise=have it but can't quantify how much "
@@ -44,7 +50,7 @@ class IngredientMatch(BaseModel):
     # How the pantry item was found, recorded separately from status. A substitute
     # with too little stock is status="shortfall" but still match_type="substitute",
     # so the UI can show the stand-in note alongside the shortfall.
-    match_type: Literal["exact", "substitute", "none"] = Field(
+    match_type: IngredientMatchType = Field(
         default="exact",
         description="exact=name/synonym match, substitute=LLM-suggested stand-in, none=no match",
     )
@@ -207,3 +213,155 @@ class CookConfirmRequest(BaseModel):
     deductions: list[DeductionItem] = Field(
         description="Pantry deductions the user approved"
     )
+
+
+# ---------------------------------------------------------------------------
+# Meal cook (issue #654): one combined deduction sheet for a whole meal cook.
+# ---------------------------------------------------------------------------
+
+
+def _reject_duplicates(values: list[UUID], field_name: str) -> list[UUID]:
+    """Shared field_validator body for `MealCookRequest.dishes` /
+    `MealCookConfirmRequest.recipe_ids` -- both must name each recipe once."""
+    seen: set[UUID] = set()
+    for value in values:
+        if value in seen:
+            raise ValueError(f"Duplicate recipe id in {field_name}: {value}")
+        seen.add(value)
+    return values
+
+
+class MealCookIngredient(BaseModel):
+    """One ingredient object on a meal cook request.
+
+    RecipeIngredient's fields as the frontend's `cookedIngredientsForDish`
+    sends them, minus `preparation` (dropped -- pydantic ignores extra keys),
+    plus `notes`, which an amendment's objects carry (PR B). A blank `name`
+    is dropped server-side, not here -- an empty string is still a valid str.
+    """
+
+    name: str = Field(description="Ingredient name, as sent by the client")
+    quantity: float | None = Field(default=None)
+    unit: str | None = Field(default=None)
+    optional: bool = Field(default=False)
+    notes: str | None = Field(default=None)
+
+
+class MealCookDishRequest(BaseModel):
+    """One dish's contribution to POST /v1/meals/cook."""
+
+    recipe_id: UUID
+    # The list as cooked (contract §3). Objects are at MEAL scale and used
+    # verbatim. Strings are at RECIPE scale: the server parses each and
+    # scales it by `string_scale`. None means "read the recipe row and scale
+    # everything by servings / recipe servings" -- the server derives its
+    # own factor in that case, and `string_scale` is ignored.
+    ingredients: list[str | MealCookIngredient] | None = Field(
+        default=None, max_length=100
+    )
+    # meal servings / recipe servings, set by the client. Applied to string
+    # elements only -- see MealCookIngredient's docstring for why objects
+    # never get this treatment.
+    string_scale: float = Field(default=1.0, gt=0, le=100)
+
+
+class MealCookRequest(BaseModel):
+    """Request body for POST /v1/meals/cook (no writes)."""
+
+    meal_id: UUID
+    servings: int = Field(ge=1, le=100)
+    dishes: list[MealCookDishRequest] = Field(min_length=1, max_length=3)
+
+    @field_validator("dishes")
+    @classmethod
+    def _unique_recipe_ids(
+        cls, dishes: list[MealCookDishRequest]
+    ) -> list[MealCookDishRequest]:
+        _reject_duplicates([d.recipe_id for d in dishes], "dishes")
+        return dishes
+
+
+class MealCookSource(BaseModel):
+    """One dish's contribution to a merged meal-cook line."""
+
+    recipe_id: UUID
+    dish_title: str
+    ingredient_name: str = Field(description="That dish's own spelling")
+    ingredient_qty: float | None = None
+    ingredient_unit: str | None = None
+    # ready/substitute: deduct_qty; shortfall: deduct_qty + shortfall;
+    # everything else (unit_conflict, imprecise, assumed, no-quantity
+    # ready/substitute): None.
+    required_base_qty: float | None = None
+    status: IngredientMatchStatus = Field(description="This dish's own status, before merging")
+    match_type: IngredientMatchType = "exact"
+    substitution_note: str | None = None
+
+
+class MealIngredientMatch(IngredientMatch):
+    """A merged line: every `IngredientMatch` field keeps its meaning, plus
+    the per-dish sources that were merged into it (contract §2b)."""
+
+    sources: list[MealCookSource] = Field(min_length=1)
+
+
+class MealCookProposalDish(BaseModel):
+    """One requested dish, echoed back on the proposal."""
+
+    recipe_id: UUID
+    title: str
+    role: Literal["main", "side"]
+    position: int
+    ingredients_source: Literal["supplied", "recipe"]
+
+
+class MealCookProposal(BaseModel):
+    """Proposal returned to the user before confirming a whole-meal cook.
+
+    Deliberately NOT added to `models.proposals.ProposalUnion`/`AnyProposal`
+    (contract §1) -- it never travels in a chat envelope.
+    """
+
+    proposal_type: Literal["meal_cook"] = "meal_cook"
+    meal_id: UUID
+    meal_title: str
+    servings: int
+    dishes: list[MealCookProposalDish] = Field(description="Only the requested dishes, by position")
+    matches: list[MealIngredientMatch]
+    missing: list[str] = Field(default_factory=list)
+    missing_sources: dict[str, list[UUID]] = Field(
+        default_factory=dict, description="Key: the exact string in `missing`"
+    )
+    missing_notes: dict[str, str] = Field(default_factory=dict)
+    unit_conflicts: list[dict[str, str]] = Field(
+        default_factory=list, description="The existing keys, plus `recipe_id`"
+    )
+    compound_suggestions: list[CompoundSuggestion] = Field(default_factory=list)
+    expired_items: list[ExpiredMatchedItem] = Field(default_factory=list)
+
+
+class MealCookConfirmRequest(BaseModel):
+    """Request body for POST /v1/meals/cook/confirm (the writes)."""
+
+    meal_id: UUID
+    # MealCookSession.cook_id (frontend). A safe charset, because it goes
+    # into a PostgREST filter (repo.claim_meal_cook's `.or_`).
+    cook_ref: str = Field(pattern=r"^[A-Za-z0-9-]{1,64}$")
+    recipe_ids: list[UUID] = Field(
+        min_length=1, max_length=3, description="The dishes actually cooked"
+    )
+    deductions: list[DeductionItem]
+
+    @field_validator("recipe_ids")
+    @classmethod
+    def _unique_recipe_ids(cls, recipe_ids: list[UUID]) -> list[UUID]:
+        _reject_duplicates(recipe_ids, "recipe_ids")
+        return recipe_ids
+
+
+class MealCookClaim(BaseModel):
+    """What `SupabaseRepository.claim_meal_cook` returns (contract §2c)."""
+
+    outcome: Literal["claimed", "replay_applied", "replay_in_progress", "replay_claimed"]
+    times_cooked: int
+    cooked_on: date = Field(description="The UTC date of the claim's last_cooked_at")
