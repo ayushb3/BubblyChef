@@ -61,7 +61,7 @@ BubblyChef/
 │   │   │   ├── pantry-helpers.ts    # Computed fields (expiry, etc.)
 │   │   │   └── response-helpers.ts  # requireAuth(), error responses
 │   │   ├── types/index.ts           # TypeScript types (API contract)
-│   │   └── middleware.ts            # Next.js middleware (auth guard)
+│   │   └── proxy.ts                 # Next.js proxy (auth guard; was middleware.ts)
 │   ├── .env.local                   # Supabase keys, AI service URL
 │   └── package.json
 │
@@ -145,7 +145,7 @@ Browser → direct fetch to AI Service /v1/chat/stream
 
 ## Auth Flow
 
-1. User visits any page → Next.js middleware checks session
+1. User visits any page → Next.js proxy (src/proxy.ts) checks session
 2. No session → redirect to `/login`
 3. User signs up/in → Supabase issues JWT in HTTP-only cookie
 4. Postgres trigger auto-creates `user_profiles` row
@@ -242,7 +242,7 @@ uvicorn bubbly_chef.main:app --reload --port 8888
 | Pantry CRUD | `nextjs/src/app/api/pantry/` | Simple DB ops, no AI needed |
 | Recipe CRUD | `nextjs/src/app/api/recipes/` | Same |
 | User profiles | `nextjs/src/app/api/profile/` | Same |
-| Auth | `nextjs/src/lib/supabase/` + middleware | Cookie-based, SSR |
+| Auth | `nextjs/src/lib/supabase/` + `src/proxy.ts` | Cookie-based, SSR |
 | Chat (AI) | `ai-service/` | LangGraph + Gemini |
 | Receipt OCR | `ai-service/` | Tesseract binary dependency |
 | Recipe generation | `ai-service/` | LangGraph grounding workflow |
