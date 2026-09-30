@@ -254,7 +254,10 @@ Because nobody reads the diff, **the PR body carries the review** (§4).
 
 **Guard the context window:** agents post *summaries* to the issue/PR, not full
 transcripts or diffs. Detail lives in linked artifacts (a demo doc, a decisions log,
-screenshots under `docs/media/`) — link to it, don't paste it inline.
+screenshots under `docs/media/`) — link to it, don't paste it inline. An image in a PR
+body uses an absolute URL pinned to a commit
+(`https://github.com/ayushb3/BubblyChef/blob/<sha>/docs/media/...?raw=true`), never a
+relative path (GitHub doesn't render it) or a branch URL (it breaks after merge).
 
 **PR bodies stay reviewable at a glance.** The human reviews from whatever device is
 at hand, including a phone browser — a PR body padded with pasted logs, full diffs,
