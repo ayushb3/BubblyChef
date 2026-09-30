@@ -835,7 +835,7 @@ Open the PR for issue #${ISSUE}: "${pre.title}".
      Otherwise a first line: "> ${SHADOW ? 'Shadow mode: no protected paths — would auto-merge once checks pass. Ayush merges during the shadow period.' : 'No protected paths: eligible for auto-merge.'}"
    - Summary in behavioural terms: ${impl.summary}
    - Verified: ${verify.evidence}
-     Embed the screenshots (${verify.screenshots.concat(repro ? repro.beforeScreenshots : []).join(', ') || 'none'}), before/after side by side where both exist.
+     Embed the screenshots (${verify.screenshots.concat(repro ? repro.beforeScreenshots : []).join(', ') || 'none'}), before/after side by side where both exist. Every image uses an absolute URL pinned to the pushed commit: https://github.com/ayushb3/BubblyChef/blob/<full sha>/docs/media/issue-<n>/<file>.png?raw=true. Never a relative docs/media path, which GitHub doesn't render in a PR body, and never a blob/<branch>/ URL, which breaks after merge.
    ${repro ? `- Fail-to-pass: ${repro.testFiles.join(', ')} failed on the unfixed code:\n     ${repro.failureOutput.slice(0, 600)}` : ''}
    - Decisions made during the run: ${settled.length ? settled.map(d => `${d.question} → ${d.decision} (${d.reasoning})`).join('; ') : 'none needed'}
    - Loop tier: ${tier.tier} (${tier.why}).${tier.tier === 'small' && verdictGateOn ? ` If the final diff is still small, the loop does NOT wait for or answer the GitHub review on this PR (it passed the in-loop review). The required "${VERDICT_GATE}" check holds the merge until that review says "looks mergeable" for the final commit, or Ayush approves it.` : ''}

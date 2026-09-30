@@ -272,11 +272,11 @@ class TestApplyPantryProposalReturnsAffectedIds:
         assert applied == 1 and failed == 0 and errors == []
         assert affected_ids == [UUID(ROW_ID_1)]
 
-    async def test_add_merge_into_existing_returns_the_existing_row_id(self) -> None:
-        """add, WITH an existing match (find_similar_item hits) -- merges
-        quantity into the existing row via update_pantry_item instead of
-        inserting."""
-        repo = _repo(existing_by_name={"carrot": dict(_EXISTING_ROW)})
+    async def test_add_of_an_existing_food_inserts_its_own_lot_and_returns_that_id(self) -> None:
+        """add, WITH an existing row of the same food -- no merge (#356): the add
+        is its own lot, so the affected id is the new row's and the existing row
+        is left alone."""
+        repo = _repo(row_ids=[ROW_ID_1], existing_by_name={"carrot": dict(_EXISTING_ROW)})
 
         applied, failed, errors, affected_ids = await repo.apply_pantry_proposal(
             user_id="u1",
@@ -286,9 +286,9 @@ class TestApplyPantryProposalReturnsAffectedIds:
         )
 
         assert applied == 1 and failed == 0 and errors == []
-        assert affected_ids == [UUID(EXISTING_ROW_ID)]
-        assert len(repo.client.store["updates"]) == 1  # type: ignore[attr-defined]
-        assert len(repo.client.store["inserts"]) == 0  # type: ignore[attr-defined]
+        assert affected_ids == [UUID(ROW_ID_1)]
+        assert len(repo.client.store["updates"]) == 0  # type: ignore[attr-defined]
+        assert len(repo.client.store["inserts"]) == 1  # type: ignore[attr-defined]
 
     async def test_use_full_consumption_deletes_and_returns_the_id(self) -> None:
         """use, quantity >= what's on hand -- deletes the row. Deletions
