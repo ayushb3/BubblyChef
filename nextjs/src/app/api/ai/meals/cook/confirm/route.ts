@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { aiProxyFetch } from '@/lib/api/ai-proxy'
 import { requireAuth } from '@/lib/response-helpers'
-import { resolveLedgerDate } from '@/lib/ledger-date'
+import { localDateInZone, resolveLedgerDate } from '@/lib/ledger-date'
 import { cookAwardRefs, readExpiryByItemId, rescueCandidates, awardCookBubbles } from '@/lib/cook-awards'
 
 const COOKED_ON_PATTERN = /^\d{4}-\d{2}-\d{2}$/
@@ -11,9 +11,11 @@ const COOKED_ON_PATTERN = /^\d{4}-\d{2}-\d{2}$/
  * #647 §4 S7) and awards this cook's bubbles once the microservice's claim
  * has actually landed.
  *
- * Every award is keyed on `cooked_on`, which the server fixes at the claim
- * (§2c) and returns identically on a replay — so an `already_confirmed`
- * replay awards again with the *same* refs, and the ledger's unique
+ * Every award is keyed on the account's LOCAL date (#550) of `cooked_at`, the
+ * instant the server fixes at the claim (§2c) and returns identically on a
+ * replay — so an `already_confirmed` replay awards again with the *same*
+ * refs, one meal cooked either side of UTC midnight on one local day pays
+ * once, and the ledger's unique
  * `(user_id, event_type, ref_key)` constraint dedupes it for free. That's why
  * this route, unlike the plain success/failure split elsewhere, awards on
  * every 2xx rather than skipping `already_confirmed` — skipping it would lose
@@ -34,13 +36,12 @@ export async function POST(request: Request) {
   }
   const body = rawBody as Record<string, unknown>
 
-  // The account's local date (#524, #550): the server's clock in the stored
-  // time zone, NOT a date the client sends — `body.tz` can only propose a zone
-  // the first time or move it after the cooldown. Only used to judge rescue
-  // eligibility here (every award key below is the claim's own `cooked_on`);
-  // no trustworthy date must never block the deduction, matching the
-  // never-block contract every other award call site follows.
-  const validDate = (await resolveLedgerDate(user, body.tz))?.date ?? null
+  // The account's stored IANA zone (#524, #550), NOT anything the client sends
+  // per request — `body.tz` can only propose a zone the first time or move it
+  // after the cooldown. Below it turns the claim's instant into the one local
+  // date every award keys on. No known zone must never block the deduction,
+  // matching the never-block contract every other award call site follows.
+  const ledger = await resolveLedgerDate(user, body.tz)
 
   const deductions = Array.isArray(body.deductions) ? body.deductions : []
   const pantryItemIds: string[] = deductions
@@ -68,9 +69,27 @@ export async function POST(request: Request) {
   if (res.status >= 200 && res.status < 300) {
     const mealId = body.meal_id
     const cookedOn = (data as { cooked_on?: unknown })?.cooked_on
+    const cookedAt = (data as { cooked_at?: unknown })?.cooked_at
 
-    if (typeof mealId === 'string' && typeof cookedOn === 'string' && COOKED_ON_PATTERN.test(cookedOn)) {
-      const refs = cookAwardRefs({ kind: 'meal', mealId }, cookedOn)
+    // The award date (#550): the LOCAL date, in the account's stored zone, of
+    // the instant the claim was made — NOT the claim's UTC `cooked_on`, and
+    // NOT "now". The claim returns `cooked_at` identically on a replay, so a
+    // retry after local midnight lands on the first call's key (the ledger
+    // dedupes it), while two separate cooks either side of UTC midnight on one
+    // local day share a key and pay once. An AI service older than #550 sends
+    // no `cooked_at`; it falls back to `cooked_on` so the award isn't lost in
+    // the deploy window. With no known zone nothing is awarded (same rule as
+    // the recipe proxy); the cook itself is never blocked.
+    const claimInstant = typeof cookedAt === 'string' ? new Date(cookedAt) : null
+    const claimDate =
+      ledger && claimInstant && !Number.isNaN(claimInstant.getTime())
+        ? localDateInZone(claimInstant, ledger.timeZone)
+        : typeof cookedOn === 'string' && COOKED_ON_PATTERN.test(cookedOn)
+          ? cookedOn
+          : null
+
+    if (ledger && typeof mealId === 'string' && claimDate) {
+      const refs = cookAwardRefs({ kind: 'meal', mealId }, claimDate)
 
       // N4: exclude rows the confirm itself refused to deduct — they never
       // left the pantry, so they haven't been rescued from anything.
@@ -79,17 +98,19 @@ export async function POST(request: Request) {
         ? rawSkipped.filter((id): id is string => typeof id === 'string')
         : []
 
-      const rescueIds = validDate
-        ? rescueCandidates(pantryItemIds, expiryByItemId, validDate, skipped)
-        : []
+      // Eligibility is judged on the same date the keys use, so all of a
+      // cook's awards agree (rule 6 of #550).
+      const rescueIds = rescueCandidates(pantryItemIds, expiryByItemId, claimDate, skipped)
 
       await awardCookBubbles(user.id, refs, rescueIds)
     } else {
-      // Never fall back to the proxy's own date — that would let a replay
+      // Never fall back to the proxy's own "now" — that would let a replay
       // across midnight mint a second day's worth of awards.
-      console.error('[meals/cook/confirm] no award: missing/invalid meal_id or cooked_on', {
+      console.error('[meals/cook/confirm] no award: no known zone, or missing/invalid meal_id or claim date', {
         mealId,
         cookedOn,
+        cookedAt,
+        hasZone: Boolean(ledger),
       })
     }
   }

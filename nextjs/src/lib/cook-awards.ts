@@ -10,7 +10,8 @@
  * Issue #550: the recipe proxy passes `keyDate` = the ONE accepted local date
  * from `resolveLedgerDate` (`lib/ledger-date.ts`) — the server's clock in the
  * account's stored zone — so `cook_confirm` and `rescue` agree with
- * `daily_visit`. The meal proxy still passes the claim's own `cooked_on`.
+ * `daily_visit`. The meal proxy passes the local date, in that same zone, of
+ * the claim's own instant (`cooked_at`), so a replay still lands on one key.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'

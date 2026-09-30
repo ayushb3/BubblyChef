@@ -256,8 +256,14 @@ export interface MealCookConfirmResponse {
   deductions_skipped: string[]
   recipes_marked_cooked: string[]
   meal_times_cooked: number
-  /** YYYY-MM-DD: the UTC date of the claim's last_cooked_at. The award key date. */
+  /** YYYY-MM-DD: the UTC date of the claim's last_cooked_at. Fallback award key date only (#550). */
   cooked_on: string
+  /**
+   * ISO instant of the claim's last_cooked_at (#550), identical on every replay. The award
+   * keys are this instant's date in the account's zone, so one local day pays once. Absent
+   * from an AI service older than #550.
+   */
+  cooked_at?: string | null
 }
 
 export type MealCookErrorKind = 'dish_mismatch' | 'confirm_in_progress' | 'confirm_incomplete'

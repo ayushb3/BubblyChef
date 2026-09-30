@@ -906,6 +906,36 @@ class TestMealCookConfirmRoute:
         assert data["cooked_on"] == claim.cooked_on.isoformat()
 
     @pytest.mark.asyncio
+    async def test_response_carries_the_claim_instant_for_local_date_keying(
+        self, client: AsyncClient
+    ) -> None:
+        """#550: `cooked_at` (ISO instant) rides along with `cooked_on` so the
+        Next.js proxy can key awards on the account's local date."""
+        meal_data = _meal_with_dishes(
+            [_dish_row("main", 0, RECIPE_MAIN, _recipe_row(RECIPE_MAIN, "Pasta"))]
+        )
+        cooked_at = datetime(2026, 9, 23, 23, 50, tzinfo=UTC)
+        claim = MealCookClaim(
+            outcome="claimed", times_cooked=1, cooked_on=cooked_at.date(), cooked_at=cooked_at
+        )
+        repo = _confirm_repo(meal_data, claim)
+
+        with patch(f"{_ROUTE_MODULE}.get_repository", return_value=repo):
+            response = await client.post(
+                "/v1/meals/cook/confirm",
+                json={
+                    "meal_id": MEAL_ID,
+                    "cook_ref": COOK_REF,
+                    "recipe_ids": [RECIPE_MAIN],
+                    "deductions": [],
+                },
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["cooked_on"] == "2026-09-23"
+        assert data["cooked_at"] == cooked_at.isoformat()
+
+    @pytest.mark.asyncio
     async def test_replay_applied(self, client: AsyncClient) -> None:
         meal_data = _meal_with_dishes(
             [_dish_row("main", 0, RECIPE_MAIN, _recipe_row(RECIPE_MAIN, "Pasta"))]
