@@ -145,4 +145,15 @@ describe('KitchenScene (#521)', () => {
       )
     }
   })
+
+  it('shows no streak indicator for a null streak (#550: not computed) and renders it for a real one', () => {
+    const { rerender } = render(<KitchenScene unlocked={[]} balance={3} streakWeeks={null} />)
+    expect(screen.queryByTestId('kitchen-streak')).not.toBeInTheDocument()
+
+    rerender(<KitchenScene unlocked={[]} balance={3} streakWeeks={0} />)
+    expect(screen.queryByTestId('kitchen-streak')).not.toBeInTheDocument()
+
+    rerender(<KitchenScene unlocked={[]} balance={3} streakWeeks={2} />)
+    expect(screen.getByTestId('kitchen-streak')).toHaveTextContent('🔥 2')
+  })
 })

@@ -155,14 +155,21 @@ describe('GET /api/bubbles', () => {
     expect(data.recent).toEqual(recentEvents)
   })
 
-  it('rejects a date that is not the local date for the account, and does not award', async () => {
-    mockRequireAuth.mockResolvedValue([{}, mockUser])
+  it('ignores a client date that is not the local date, returning the balance and keying on the server date (#550)', async () => {
+    mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])
 
     const { GET } = await import('@/app/api/bubbles/route')
     const res = await GET(new Request('http://localhost/api/bubbles?date=2020-01-01'))
 
-    expect(res.status).toBe(400)
-    expect(upsertMock).not.toHaveBeenCalled()
+    expect(res.status).toBe(200)
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'daily_visit', ref_key: today }),
+      expect.anything(),
+    )
+    expect(upsertMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ ref_key: '2020-01-01' }),
+      expect.anything(),
+    )
   })
 
   it('awards the daily_visit event keyed on the date for a valid date', async () => {
@@ -508,31 +515,52 @@ describe('GET /api/bubbles', () => {
       expect(dailyVisitRefs()).toEqual(['2026-09-23'])
     })
 
-    it("refuses tomorrow's date: a visit cannot be claimed ahead", async () => {
+    it("ignores tomorrow's date: a visit cannot be claimed ahead, and the tab still gets a 200", async () => {
       jest.useFakeTimers().setSystemTime(new Date(NOW))
       mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
 
       const { GET } = await import('@/app/api/bubbles/route')
       const res = await GET(new Request('http://localhost/api/bubbles?date=2026-09-24'))
 
-      expect(res.status).toBe(400)
-      expect(upsertMock).not.toHaveBeenCalled()
+      expect(res.status).toBe(200)
+      expect(dailyVisitRefs()).toEqual(['2026-09-23'])
     })
 
-    it("refuses yesterday's date too: exactly one date is accepted, no +-1 window", async () => {
+    it("ignores yesterday's date too: there is no client date to key on, so no +-1 window", async () => {
       jest.useFakeTimers().setSystemTime(new Date(NOW))
       mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
 
       const { GET } = await import('@/app/api/bubbles/route')
       const res = await GET(new Request('http://localhost/api/bubbles?date=2026-09-22'))
 
-      expect(res.status).toBe(400)
-      expect(upsertMock).not.toHaveBeenCalled()
+      expect(res.status).toBe(200)
+      expect(dailyVisitRefs()).toEqual(['2026-09-23'])
+    })
+
+    it('a pre-deploy tab whose clock is skewed past local midnight still gets today\'s balance, not a 400', async () => {
+      jest.useFakeTimers().setSystemTime(new Date(NOW))
+      const supabase = {
+        from: (table: string) => {
+          if (table === 'bubble_balances') {
+            return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { balance: 42 } }) }) }) }
+          }
+          return chain([])
+        },
+      }
+      mockRequireAuth.mockResolvedValue([supabase, LA])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request('http://localhost/api/bubbles?date=2026-09-25&tz_offset_minutes=840'))
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.balance).toBe(42)
+      expect(dailyVisitRefs()).toEqual(['2026-09-23'])
     })
 
     it('a spoofed time zone cannot claim the next day: the stored zone wins', async () => {
       // Kiritimati (UTC+14) is already on the 24th. Claiming it, and sending
-      // the 24th, must neither 400-then-award nor award the 24th.
+      // the 24th, must not award the 24th.
       jest.useFakeTimers().setSystemTime(new Date(NOW))
       mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
 
@@ -541,8 +569,8 @@ describe('GET /api/bubbles', () => {
         new Request('http://localhost/api/bubbles?tz=Pacific%2FKiritimati&date=2026-09-24'),
       )
 
-      expect(res.status).toBe(400)
-      expect(dailyVisitRefs()).toEqual([])
+      expect(res.status).toBe(200)
+      expect(dailyVisitRefs()).toEqual(['2026-09-23'])
     })
 
     it('a spoofed tz_offset_minutes is ignored entirely', async () => {
@@ -595,6 +623,27 @@ describe('GET /api/bubbles', () => {
       expect(res.status).toBe(200)
       expect(data.balance).toBe(0)
       expect(upsertMock).not.toHaveBeenCalled()
+    })
+
+    it('reports streak_weeks as null (not 0) when there is no trustworthy date: not computed is not a lost streak', async () => {
+      mockRequireAuth.mockResolvedValue([makeSupabase(), userInZone(null)])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request('http://localhost/api/bubbles'))
+      const data = await res.json()
+
+      expect(data.streak_weeks).toBeNull()
+      expect(data.wasted_this_week).toBe(false)
+    })
+
+    it('reports a real number (0 for an idle account) when the zone is known', async () => {
+      mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request('http://localhost/api/bubbles'))
+      const data = await res.json()
+
+      expect(data.streak_weeks).toBe(0)
     })
   })
 })

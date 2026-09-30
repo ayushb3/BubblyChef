@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireAuth, errorResponse } from '@/lib/response-helpers'
+import { requireAuth } from '@/lib/response-helpers'
 import { awardBubbles } from '@/lib/bubbles'
 import { resolveLedgerDate } from '@/lib/ledger-date'
 import { settleWeeklyStreak } from '@/lib/streak-settlement'
@@ -19,15 +19,16 @@ export async function GET(request: Request) {
   // stale tab that sends no `tz`) just means no date-keyed award this call.
   const ledger = await resolveLedgerDate(user, searchParams.get('tz'))
 
-  // `date` is optional and only ever CHECKED, never used: a caller that does
-  // send one must have sent the account's local date — tomorrow's and
-  // yesterday's are refused, there is no ±1 window.
-  const date = searchParams.get('date')
-  if (ledger && date !== null && date !== ledger.date) {
-    return errorResponse('date must be the account\'s current local date (YYYY-MM-DD)', 400)
-  }
+  // A `date` query param (sent by a pre-#550 tab still running old JS) is
+  // IGNORED, not checked: the server's date wins, so a stale or skewed client
+  // clock gets today's balance rather than a 400, and a future date claims
+  // nothing because it is never read. There is no +-1 window because there is
+  // no client date at all.
 
-  let streakWeeks = 0
+  // `null` (not 0) when there is no trustworthy date: the streak could not be
+  // computed, which is different from "no streak". The UI shows no streak
+  // indicator for null and must not read it as a lost streak.
+  let streakWeeks: number | null = null
   let wastedThisWeek = false
 
   if (ledger) {

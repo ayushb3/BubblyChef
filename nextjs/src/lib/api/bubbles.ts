@@ -22,8 +22,12 @@ export interface BubbleEvent {
 export interface BubblesResult {
   balance: number
   recent: BubbleEvent[]
-  /** Consecutive clean (active + no waste) Mon-Sun weeks, most recent completed week counting back (#524). */
-  streak_weeks: number
+  /**
+   * Consecutive clean (active + no waste) Mon-Sun weeks, most recent completed week counting back (#524).
+   * `null` when the server had no trustworthy local date (no stored zone yet, #550): the streak was not
+   * computed, which is not the same as a streak of 0 — show no indicator.
+   */
+  streak_weeks: number | null
   /** Whether the current, still-in-progress week has already seen waste (#524). */
   wasted_this_week: boolean
 }

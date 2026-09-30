@@ -16,6 +16,14 @@ const mockUser = {
   app_metadata: { ledger_tz: 'UTC', ledger_tz_set_at: '2026-01-01T00:00:00.000Z' },
 }
 
+// `resolveLedgerDate` stores a zone through the auth admin API. Mocked so a
+// test can prove whether a zone change was (or was not) actually written,
+// instead of passing only because the real client throws in jest.
+const mockUpdateUserById = jest.fn(async () => ({ error: null }))
+jest.mock('@supabase/supabase-js', () => ({
+  createClient: () => ({ auth: { admin: { updateUserById: mockUpdateUserById } } }),
+}))
+
 const awardBubblesMock = jest.fn(async () => 10)
 jest.mock('@/lib/bubbles', () => ({
   awardBubbles: awardBubblesMock,
@@ -281,13 +289,40 @@ describe('POST /api/ai/meals/cook/confirm', () => {
       expect(refs('cook_confirm')).toEqual(['meal:meal-1:2026-09-24'])
     })
 
-    it('a spoofed tz in the body cannot move the key', async () => {
-      await confirm('2026-09-24T01:00:00.000Z', LA)
+    it('a tz in the body inside the 7-day cooldown cannot move the key, and is not stored', async () => {
+      // Zone set on the 20th, now the 24th: genuinely inside the cooldown.
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-24T01:00:00.000Z'))
       mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
       aiProxyFetchMock.mockResolvedValue(upstream(claimBody('2026-09-24T01:00:00.000Z')))
-      await POST(makeRequest({ meal_id: 'meal-1', cook_ref: 'ref', deductions: [], tz: 'Pacific/Kiritimati' }))
 
-      expect(new Set(refs('cook_confirm'))).toEqual(new Set(['meal:meal-1:2026-09-23']))
+      await POST(
+        makeRequest({ meal_id: 'meal-1', cook_ref: 'ref', deductions: [], tz: 'Pacific/Kiritimati' }),
+      )
+
+      expect(mockUpdateUserById).not.toHaveBeenCalled()
+      expect(refs('cook_confirm')).toEqual(['meal:meal-1:2026-09-23']) // LA, not Kiritimati's 24th
+    })
+
+    it('after the cooldown the claimed zone IS adopted and stored, and the key follows it', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-24T01:00:00.000Z'))
+      const longSettled = {
+        id: 'user-1',
+        app_metadata: { ledger_tz: 'America/Los_Angeles', ledger_tz_set_at: '2026-09-01T00:00:00.000Z' },
+      }
+      mockRequireAuth.mockResolvedValue([makeSupabase(), longSettled])
+      aiProxyFetchMock.mockResolvedValue(upstream(claimBody('2026-09-24T01:00:00.000Z')))
+
+      await POST(
+        makeRequest({ meal_id: 'meal-1', cook_ref: 'ref', deductions: [], tz: 'Pacific/Kiritimati' }),
+      )
+
+      expect(mockUpdateUserById).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({
+          app_metadata: expect.objectContaining({ ledger_tz: 'Pacific/Kiritimati' }),
+        }),
+      )
+      expect(refs('cook_confirm')).toEqual(['meal:meal-1:2026-09-24']) // 15:00 on the 24th in Kiritimati
     })
 
     it('an older AI service that returns no cooked_at falls back to cooked_on, never blocking the award', async () => {

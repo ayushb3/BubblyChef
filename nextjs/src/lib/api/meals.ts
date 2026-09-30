@@ -17,6 +17,7 @@ import type {
   MealCookErrorKind,
 } from '@/types/meals'
 import type { ChatRecipeData } from '@/types/chat'
+import { clientTimeZone } from '@/lib/date'
 
 /**
  * One side-alternatives outline — the shape both `POST /v1/meals/
@@ -275,7 +276,9 @@ export async function confirmMealCook(req: MealCookConfirmRequest): Promise<Meal
   const res = await fetch('/api/ai/meals/cook/confirm', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req),
+    // The client's IANA zone (#550), not a date: the proxy keys every award on
+    // its own clock in the account's stored zone.
+    body: JSON.stringify({ ...req, tz: clientTimeZone() }),
   })
   if (!res.ok) {
     const detail = await aiErrorDetail(res, 'Failed to confirm the meal cook')

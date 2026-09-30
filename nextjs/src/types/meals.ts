@@ -244,8 +244,11 @@ export interface MealCookConfirmRequest {
   /** The dishes actually cooked (cookedDishIds). */
   recipe_ids: string[]
   deductions: DeductionItem[]
-  /** The client's local date (localDateString()), for the proxy's rescue judgement. The AI service ignores it. */
-  date: string
+  /**
+   * Added by `confirmMealCook` (not the caller): the client's IANA zone (#550). The proxy stores the
+   * account's zone once and derives every award date itself; no client date is sent or trusted.
+   */
+  tz?: string
 }
 
 export interface MealCookConfirmResponse {
