@@ -189,6 +189,11 @@ def _as_rows(value: list[JSON]) -> list[dict[str, Any]]:
     return cast("list[dict[str, Any]]", value)
 
 
+# A base amount below this (a thousandth of a gram/ml/piece) is rounding residue,
+# not stock: the row is treated as used up.
+_USED_UP_BASE_EPSILON = 1e-3
+
+
 class _PantryUsePlan:
     """What one chat `use` action does to a pantry row (#677).
 
@@ -243,8 +248,20 @@ def _plan_pantry_use(
     row_base, row_unit = normalize_to_base_unit(
         name=name, quantity=float(existing.quantity), unit=existing.unit, category=category
     )
-    if row_base is None and existing.quantity_base is not None and existing.unit_base:
-        row_base, row_unit = float(existing.quantity_base), existing.unit_base
+    stored_base = float(existing.quantity_base) if existing.quantity_base is not None else None
+    if row_base is not None and stored_base is not None and existing.unit_base == row_unit:
+        # The displayed quantity is stored rounded to 4 places, so re-deriving the
+        # base from it drifts a little on every use (twelve "used 1 egg" calls would
+        # leave 0.0004 dozen and never delete the row). A stored base that agrees with
+        # the display within that rounding is the exact one -- keep it. One that
+        # disagrees by more is stale drift from the old `use` path, and the display
+        # (what the user sees) wins.
+        quantity = float(existing.quantity)
+        rel_tol = max(1e-3, 5.1e-5 / quantity) if quantity > 0 else 1e-3
+        if abs(stored_base - row_base) <= row_base * rel_tol:
+            row_base = stored_base
+    elif row_base is None and stored_base is not None and existing.unit_base:
+        row_base, row_unit = stored_base, existing.unit_base
     used_base: float | None = None
     if row_unit:
         used_base, _ = normalize_to_base_unit(
@@ -253,14 +270,13 @@ def _plan_pantry_use(
 
     if row_base is not None and row_unit and used_base is not None:
         new_base = max(0.0, row_base - used_base)
-        if new_base <= 0:
+        new_qty = round(float(existing.quantity) * new_base / row_base, 4)
+        # Used up: nothing left in the base, a sliver below any real amount, or a
+        # display quantity that rounds to zero.
+        if new_base < _USED_UP_BASE_EPSILON or new_qty <= 0:
             return _PantryUsePlan()
         return _PantryUsePlan(
-            updates={
-                "quantity": round(float(existing.quantity) * new_base / row_base, 4),
-                "quantity_base": new_base,
-                "unit_base": row_unit,
-            }
+            updates={"quantity": new_qty, "quantity_base": new_base, "unit_base": row_unit}
         )
 
     if normalize_unit(str(action.get("unit") or "")) in {"item", "count"}:
@@ -899,7 +915,8 @@ class SupabaseRepository:
         """Increment times_cooked and set last_cooked_at to now.
 
         Returns True when the recipe was marked, False when it no longer exists
-        for this user (nothing is written). A miss never raises: a dish recipe
+        for this user (at the read: nothing is written; or at the write: the
+        update matched no row). A miss never raises: a dish recipe
         deleted after the deductions landed must not strand the meal claim (#676).
         """
         # Read current times_cooked first
@@ -921,7 +938,7 @@ class SupabaseRepository:
             return False
         current = rows[0]
         times_cooked = int(current.get("times_cooked", 0)) + 1
-        (
+        update_result = (
             self.client.table("recipes")
             .update(
                 {
@@ -933,7 +950,9 @@ class SupabaseRepository:
             .eq("user_id", user_id)
             .execute()
         )
-        return True
+        # An update that matched no row (the recipe was deleted between the read
+        # and the write) marked nothing.
+        return bool(_as_rows(update_result.data))
 
     async def deduct_pantry_item(
         self, user_id: str, item_id: str, deduct_qty: float

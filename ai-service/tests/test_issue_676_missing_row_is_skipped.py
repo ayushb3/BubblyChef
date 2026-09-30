@@ -257,6 +257,15 @@ class TestRepositoryMissingRows:
         (payload,) = client.updates_to("recipes")
         assert payload["times_cooked"] == 3
 
+    async def test_update_recipe_cooked_whose_row_vanishes_before_the_write_returns_false(
+        self,
+    ) -> None:
+        (rid,) = _ids(1)
+        client = _PostgrestLikeClient({"recipes": [_recipe_row(rid)]})
+        client.vanish_before_update("recipes", rid)
+
+        assert await _real_repo(client).update_recipe_cooked(USER, rid) is False
+
     async def test_meal_with_a_dish_whose_recipe_is_gone_gives_empty_recipe(self) -> None:
         meal_id, gone_id = _ids(2)
         client = _PostgrestLikeClient(

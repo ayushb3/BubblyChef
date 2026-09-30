@@ -131,6 +131,68 @@ class TestUseDifferentUnits:
         assert payload["quantity_base"] == pytest.approx(4.0)
         assert payload["quantity"] == pytest.approx(0.3333, abs=1e-4)
 
+    async def test_one_then_eleven_from_a_dozen_deletes_the_row(self) -> None:
+        """The display is stored rounded to 4 places; re-deriving the base from it
+        must not leave 0.0004 dozen behind."""
+        row = _row(
+            name="eggs",
+            category="dairy",
+            quantity=1.0,
+            unit="dozen",
+            quantity_base=12.0,
+            unit_base="count",
+        )
+        action = {"action": "use", "name": "eggs", "unit": "item", "category": "dairy"}
+
+        _a, _f, _e, store = await _apply(row, dict(action, quantity=1))
+        (payload,) = store["updates"]
+        row.update(payload)
+        assert row["quantity_base"] == pytest.approx(11.0)
+
+        applied, failed, _errors, store = await _apply(row, dict(action, quantity=11))
+
+        assert (applied, failed) == (1, 0)
+        assert store["deletes"] == [row["id"]]
+        assert store["updates"] == []
+
+    async def test_twelve_single_uses_delete_the_row(self) -> None:
+        row = _row(
+            name="eggs",
+            category="dairy",
+            quantity=1.0,
+            unit="dozen",
+            quantity_base=12.0,
+            unit_base="count",
+        )
+        action = {"action": "use", "name": "eggs", "quantity": 1, "unit": "item", "category": "dairy"}
+
+        for i in range(11):
+            applied, failed, _errors, store = await _apply(row, action)
+            assert (applied, failed) == (1, 0)
+            assert store["deletes"] == [], f"deleted early on use {i + 1}"
+            row.update(store["updates"][0])
+            assert row["quantity_base"] == pytest.approx(11 - i)
+
+        applied, failed, _errors, store = await _apply(row, action)
+        assert (applied, failed) == (1, 0)
+        assert store["deletes"] == [row["id"]]
+
+    async def test_a_sliver_of_base_left_is_treated_as_used_up(self) -> None:
+        row = _row(
+            name="eggs",
+            category="dairy",
+            quantity=0.0001,
+            unit="dozen",
+            quantity_base=0.0012,
+            unit_base="count",
+        )
+        applied, failed, _errors, store = await _apply(
+            row, {"action": "use", "name": "eggs", "quantity": 0.0005, "unit": "item"}
+        )
+
+        assert (applied, failed) == (1, 0)
+        assert store["deletes"] == [row["id"]]
+
     async def test_using_the_whole_dozen_deletes_the_row(self) -> None:
         """Guard: main deletes here too."""
         existing = _row(
