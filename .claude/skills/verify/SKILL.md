@@ -92,7 +92,11 @@ A **Verified** section, written for someone who will not open the diff:
 - The commit verified (`sha` from `/api/health`).
 - What you did, as user steps: "Opened the add sheet, scanned the fixture receipt,
   unchecked Bananas, footer went from *Add 8 Items* to *Add 7 Items*."
-- The screenshots, embedded from `docs/media/issue-<n>/`, before and after.
+- The screenshots, embedded from `docs/media/issue-<n>/`, before and after. Use an
+  **absolute URL pinned to a commit**:
+  `https://github.com/ayushb3/BubblyChef/blob/<full-commit-sha>/docs/media/issue-<n>/x.png?raw=true`.
+  GitHub doesn't resolve relative paths (`docs/media/...`, `../docs/media/...`) in a PR
+  description, and a `blob/<branch>/` URL breaks once the branch is deleted after merge.
 - The neighbouring flows you walked, and that they still work.
 - Smoke suite result.
 - **What you could not verify, and why.** An unstated gap reads as a claim it was

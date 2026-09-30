@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import RecipeBook from '@/components/recipes/RecipeBook'
 import MealsList from '@/components/recipes/MealsList'
 import { type Recipe } from '@/components/recipes/RecipePage'
@@ -15,7 +16,10 @@ export default function RecipeBookLoader() {
   // than folded into RecipeBook's own page-turn/sidebar UI, so meals get
   // their own simple list without touching RecipeBook's already-intricate
   // paging state.
-  const [tab, setTab] = useState<LibraryTab>('recipes')
+  // `?tab=meals` opens on the Meals tab — where deleting a meal lands the user
+  // (issue #675). Anything else keeps the default.
+  const initialTab: LibraryTab = useSearchParams().get('tab') === 'meals' ? 'meals' : 'recipes'
+  const [tab, setTab] = useState<LibraryTab>(initialTab)
 
   useEffect(() => {
     fetch('/api/recipes')
