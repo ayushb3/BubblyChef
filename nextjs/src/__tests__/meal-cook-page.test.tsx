@@ -1132,6 +1132,44 @@ describe('MealCookPage — Ask Bubbles (issue #654 PR B, §3/§6)', () => {
     ])
   })
 
+  it('drops a blank-named ingredient line before applying, keeping the rest (issue #654 review, S1)', async () => {
+    // The overlay itself now also filters a blank-named line before it ever
+    // calls `onApplyAmendment` (its own S1 fix) — this is still worth
+    // covering end to end, since the page's own filter in `handleApplyAmendment`
+    // is a defence-in-depth backstop that must produce the same result.
+    // `meal-cook-page-apply-guards.test.tsx` exercises the page's filter in
+    // isolation, bypassing the overlay, for the case the overlay can't cover
+    // (all lines blank — no card is ever rendered to click).
+    const meal = baseMeal({ dishes: [{ role: 'main', position: 0, recipe: PASTA_WITH_INGREDIENTS }] })
+    fetchMeal.mockResolvedValue(meal)
+    seedSession(Date.now())
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Boil pasta')).toBeInTheDocument())
+    act(() => {
+      screen.getByTestId('meal-now-card-ask-bubbles').click()
+    })
+
+    const mixedProposal = {
+      ...AMENDMENT_PROPOSAL,
+      amended_ingredients: [
+        { name: '  ', quantity: 1, unit: 'g', optional: false, notes: null },
+        { name: 'Greek yoghurt', quantity: 150, unit: 'ml', optional: false, notes: null },
+      ],
+    }
+    queueChatResponse(baseChatResponse({ proposal: mixedProposal, requires_review: true, next_action: 'review_proposal' }))
+    act(() => {
+      sendOverlayMessage('can I use yoghurt instead of cream?')
+    })
+    act(() => {
+      screen.getByTestId('ask-bubbles-amendment-use').click()
+    })
+
+    const persisted = getActiveMealCookSession('meal-1')
+    expect(persisted?.ingredient_amendments['r-main']).toMatchObject({
+      ingredients: [{ name: 'Greek yoghurt', quantity: 150, unit: 'ml', optional: false, notes: null }],
+    })
+  })
+
   it('an amendment for another dish is ignored — no card, no session mutation', async () => {
     const SIDE_WITH_INGREDIENTS: Recipe = { ...SIDE_RECIPE, ingredients: [{ name: 'Garlic', quantity: 1, unit: 'clove' }] }
     const meal = mealWithSide()
@@ -1209,9 +1247,20 @@ describe('MealCookPage — Ask Bubbles (issue #654 PR B, §3/§6)', () => {
     act(() => {
       sendOverlayMessage('can I use yoghurt instead of cream?')
     })
+
+    // Review N2 — `streamChatMessage` is mocked above the API layer, so this
+    // also spies on `fetch` itself: applying the amendment must not reach the
+    // network through any path other than that mocked chat call (in
+    // particular, never a direct write to the saved recipe).
+    const fetchSpy = jest.spyOn(global, 'fetch')
     act(() => {
       screen.getByTestId('ask-bubbles-amendment-use').click()
     })
+    const nonChatFetches = fetchSpy.mock.calls.filter(
+      ([input]) => !String(input).includes('/v1/chat'),
+    )
+    expect(nonChatFetches).toEqual([])
+    fetchSpy.mockRestore()
 
     expect(fetchMeal).toHaveBeenCalledTimes(1)
     expect(requestMealCookProposal).not.toHaveBeenCalled()

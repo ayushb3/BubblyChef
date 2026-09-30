@@ -189,6 +189,98 @@ describe('AskBubblesOverlay — pinned mode', () => {
     expect(screen.getByText('Halved the pasta.')).toBeInTheDocument()
   })
 
+  it('drops amended lines with a blank name, and keeps the rest usable', () => {
+    const onApplyAmendment = jest.fn()
+    queueResponse(
+      baseResponse({
+        proposal: {
+          ...AMENDMENT_PROPOSAL,
+          amended_ingredients: [
+            { name: '  ', quantity: 1, unit: 'item', optional: false, notes: null },
+            { name: 'greek yoghurt', quantity: 150, unit: 'ml', optional: false, notes: null },
+          ],
+        },
+        requires_review: true,
+        next_action: 'review_proposal',
+      }),
+    )
+    render(
+      <AskBubblesOverlay
+        stepN={3}
+        stepText="Stir in the cream"
+        recipeTitle="Creamy pasta"
+        onClose={jest.fn()}
+        pinned={PIN}
+        onApplyAmendment={onApplyAmendment}
+      />,
+    )
+    sendMessage('can I use yoghurt instead of cream?')
+
+    expect(screen.getByTestId('ask-bubbles-amendment-card')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('ask-bubbles-amendment-use'))
+    expect(onApplyAmendment).toHaveBeenCalledWith({
+      recipe_id: 'dish-1',
+      ingredients: [{ name: 'greek yoghurt', quantity: 150, unit: 'ml', optional: false, notes: null }],
+      change_summary: 'Swapped the cream for Greek yoghurt.',
+    })
+  })
+
+  it('renders no card at all when every amended line has a blank name', () => {
+    queueResponse(
+      baseResponse({
+        proposal: {
+          ...AMENDMENT_PROPOSAL,
+          amended_ingredients: [{ name: '   ', quantity: 1, unit: 'item', optional: false, notes: null }],
+        },
+        requires_review: true,
+        next_action: 'review_proposal',
+      }),
+    )
+    render(
+      <AskBubblesOverlay stepN={3} stepText="Stir in the cream" recipeTitle="Creamy pasta" onClose={jest.fn()} pinned={PIN} />,
+    )
+    sendMessage('can I use yoghurt instead of cream?')
+
+    expect(screen.queryByTestId('ask-bubbles-amendment-card')).not.toBeInTheDocument()
+  })
+
+  it('disables the amendment card buttons while a later question is streaming', () => {
+    queueResponse(baseResponse({ proposal: AMENDMENT_PROPOSAL, requires_review: true, next_action: 'review_proposal' }))
+    render(
+      <AskBubblesOverlay stepN={3} stepText="Stir in the cream" recipeTitle="Creamy pasta" onClose={jest.fn()} pinned={PIN} />,
+    )
+    sendMessage('can I use yoghurt instead of cream?')
+    expect(screen.getByTestId('ask-bubbles-amendment-use')).not.toBeDisabled()
+
+    // A second question that never resolves — still streaming.
+    streamChatMessageMock.mockImplementationOnce(() => new Promise(() => {}))
+    sendMessage('and what about the pasta amount?')
+
+    expect(screen.getByTestId('ask-bubbles-amendment-use')).toBeDisabled()
+    expect(screen.getByTestId('ask-bubbles-amendment-keep')).toBeDisabled()
+  })
+
+  it('moves focus onto the resolved card, never dropping to body', () => {
+    queueResponse(baseResponse({ proposal: AMENDMENT_PROPOSAL, requires_review: true, next_action: 'review_proposal' }))
+    render(
+      <AskBubblesOverlay stepN={3} stepText="Stir in the cream" recipeTitle="Creamy pasta" onClose={jest.fn()} pinned={PIN} />,
+    )
+    sendMessage('can I use yoghurt instead of cream?')
+
+    fireEvent.click(screen.getByTestId('ask-bubbles-amendment-use'))
+    expect(document.activeElement).toBe(screen.getByTestId('ask-bubbles-amendment-resolved'))
+    expect(document.activeElement).not.toBe(document.body)
+  })
+
+  it('the amendment card is announced via role="status"', () => {
+    queueResponse(baseResponse({ proposal: AMENDMENT_PROPOSAL, requires_review: true, next_action: 'review_proposal' }))
+    render(
+      <AskBubblesOverlay stepN={3} stepText="Stir in the cream" recipeTitle="Creamy pasta" onClose={jest.fn()} pinned={PIN} />,
+    )
+    sendMessage('can I use yoghurt instead of cream?')
+    expect(screen.getByTestId('ask-bubbles-amendment-card')).toHaveAttribute('role', 'status')
+  })
+
   it('renders no card for a proposal whose recipe_id does not match the pin', () => {
     queueResponse(
       baseResponse({
@@ -207,6 +299,15 @@ describe('AskBubblesOverlay — pinned mode', () => {
 })
 
 describe('AskBubblesOverlay — unpinned mode (unchanged)', () => {
+  it('never mints a conversation id when unpinned', () => {
+    const spy = jest.spyOn(crypto, 'randomUUID')
+    queueResponse(baseResponse())
+    render(<AskBubblesOverlay stepN={1} stepText="Boil the pasta" recipeTitle="Creamy pasta" onClose={jest.fn()} />)
+    sendMessage('why al dente?')
+    expect(spy).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
+
   it('sends conversation_id: null, no context, and follow_up_chips: false — no card ever renders', () => {
     queueResponse(baseResponse({ proposal: AMENDMENT_PROPOSAL, requires_review: true, next_action: 'review_proposal' }))
     render(<AskBubblesOverlay stepN={1} stepText="Boil the pasta" recipeTitle="Creamy pasta" onClose={jest.fn()} />)

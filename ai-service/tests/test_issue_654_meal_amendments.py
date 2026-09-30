@@ -29,7 +29,8 @@ from bubbly_chef.models.base import Intent
 from bubbly_chef.models.proposals import RecipeAmendmentDetection, RecipeIngredientAmendment
 from bubbly_chef.models.session import ConversationSession, SessionMode
 from bubbly_chef.workflows import router as router_mod
-from bubbly_chef.workflows.router import _request_cook_pin, load_session
+from bubbly_chef.workflows.router import _request_cook_pin, classify_intent, load_session
+from bubbly_chef.workflows.state import LLMIntentResult
 
 # ---------------------------------------------------------------------------
 # Fixtures shared by both router changes
@@ -183,6 +184,42 @@ class TestRouterChange1PinnedFirstTurn:
             await load_session(_state(context=FULL_PIN))
         repo.update_session.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_pinned_first_turn_brainstorm_is_coerced_to_cooking_help(self):
+        """End-to-end through classify_intent: the COOKING gate fires on turn one."""
+        repo = _repo_with_session(SessionMode.DEFAULT)
+        brainstorm = LLMIntentResult(
+            intent="recipe_brainstorm", confidence=0.9, reasoning="test", entities=[]
+        )
+        ai = MagicMock()
+        ai.complete = AsyncMock(return_value=brainstorm)
+        with (
+            _patch_repo(repo),
+            patch.object(router_mod, "get_ai_manager", return_value=ai),
+        ):
+            session_state = await load_session(_state(context=FULL_PIN))
+            result = await classify_intent(session_state)
+        assert session_state["session_mode"] == "cooking"
+        assert result["intent"] == Intent.COOKING_HELP.value
+
+    @pytest.mark.asyncio
+    async def test_id_only_pin_first_turn_leaves_brainstorm_uncoerced(self):
+        """The id-only pin never sets session_mode='cooking', so the gate doesn't fire."""
+        repo = _repo_with_session(SessionMode.DEFAULT)
+        brainstorm = LLMIntentResult(
+            intent="recipe_brainstorm", confidence=0.9, reasoning="test", entities=[]
+        )
+        ai = MagicMock()
+        ai.complete = AsyncMock(return_value=brainstorm)
+        with (
+            _patch_repo(repo),
+            patch.object(router_mod, "get_ai_manager", return_value=ai),
+        ):
+            session_state = await load_session(_state(context=ID_ONLY_PIN))
+            result = await classify_intent(session_state)
+        assert session_state["session_mode"] == SessionMode.DEFAULT.value
+        assert result["intent"] == Intent.RECIPE_BRAINSTORM.value
+
 
 # ---------------------------------------------------------------------------
 # Router change 2 (B1): stream-path amendment detection
@@ -262,6 +299,7 @@ class TestRouterChange2StreamAmendmentDetection:
         )
         detect_mock.assert_awaited_once()
         types = [e["type"] for e in events]
+        assert max(i for i, t in enumerate(types) if t == "token") < types.index("done")
         assert types.index("done") < types.index("envelope")
 
         envelope = next(e for e in events if e["type"] == "envelope")["data"]

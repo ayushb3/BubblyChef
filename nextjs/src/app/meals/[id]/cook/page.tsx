@@ -445,14 +445,22 @@ export default function MealCookPage() {
   // (a stale card from a since-superseded pin) or names a dish no longer in
   // the meal. No request beyond the chat stream is made here — the saved
   // recipe is never written.
+  //
+  // Review S1 (defence in depth) — a blank-named line is dropped before it
+  // ever reaches `withDishAmendment`: `readDishAmendment` rejects the WHOLE
+  // amendment if any ingredient has a blank name, so letting one through
+  // here would silently discard a real change the model made alongside it.
+  // If nothing usable is left, nothing is applied at all.
   function handleApplyAmendment(a: AskBubblesAmendment) {
     if (!askPin || !session || !meal) return
     if (a.recipe_id !== askPin.dishId) return
     const dish = dishByRecipeId.get(a.recipe_id)
     if (!dish) return
+    const ingredients = a.ingredients.filter((ing) => ing.name.trim() !== '')
+    if (ingredients.length === 0) return
     updateSession(
       withDishAmendment(session, a.recipe_id, {
-        ingredients: a.ingredients,
+        ingredients,
         servings: recipeServingsFor(dish, meal.servings),
         change_summary: a.change_summary,
         applied_at_ms: Date.now(),

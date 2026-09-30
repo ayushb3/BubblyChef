@@ -554,4 +554,16 @@ describe('meal-cook-session — withDishAmendment (issue #654 PR B)', () => {
     const resumed = getActiveMealCookSession('meal-1')!
     expect(readDishAmendment(resumed, 'r-main')).toEqual(amendment)
   })
+
+  it('an ended meal ignores an amendment save (issue #654 review, S3)', () => {
+    const started = startMealCookSession('meal-1', ['r-main'], 1000, ['1:boil'])
+    endMealCookSession('meal-1')
+
+    const updated = withDishAmendment(started, 'r-main', amendment)
+    saveMealCookProgress(updated)
+
+    expect(getActiveMealCookSession('meal-1')).toBeNull()
+    const resumed = getActiveMealCookSession('meal-1')
+    expect(resumed ? readDishAmendment(resumed, 'r-main') : null).toBeNull()
+  })
 })

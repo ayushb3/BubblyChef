@@ -78,12 +78,18 @@ function AmendmentCard({
   amendment,
   pinnedTitle,
   isLatest,
+  streaming,
+  autoFocusResolved,
   onUse,
   onKeep,
 }: {
   amendment: AmendmentState
   pinnedTitle: string
   isLatest: boolean
+  /** While a later question is streaming, a still-pending card's buttons must not fire (S2). */
+  streaming: boolean
+  /** True for the turn just resolved by the user — moves focus onto the resolved text (N4), never to `body`. */
+  autoFocusResolved: boolean
   onUse: () => void
   onKeep: () => void
 }) {
@@ -93,11 +99,19 @@ function AmendmentCard({
     fontFamily: 'Nunito, sans-serif',
   } as const
 
+  const resolvedRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (autoFocusResolved) resolvedRef.current?.focus()
+  }, [autoFocusResolved])
+
   if (amendment.resolution === 'applied') {
     return (
       <div className="flex justify-start">
         <div
-          className="rounded-2xl px-3.5 py-2.5 text-xs max-w-[80%] mt-1"
+          ref={resolvedRef}
+          tabIndex={-1}
+          role="status"
+          className="rounded-2xl px-3.5 py-2.5 text-xs max-w-[80%] mt-1 outline-none"
           style={{ ...cardStyle, color: 'var(--color-text)' }}
           data-testid="ask-bubbles-amendment-resolved"
         >
@@ -111,7 +125,10 @@ function AmendmentCard({
     return (
       <div className="flex justify-start">
         <div
-          className="rounded-2xl px-3.5 py-2.5 text-xs max-w-[80%] mt-1"
+          ref={resolvedRef}
+          tabIndex={-1}
+          role="status"
+          className="rounded-2xl px-3.5 py-2.5 text-xs max-w-[80%] mt-1 outline-none"
           style={{ ...cardStyle, color: 'var(--color-muted)' }}
           data-testid="ask-bubbles-amendment-resolved"
         >
@@ -126,6 +143,7 @@ function AmendmentCard({
       <div
         className="rounded-2xl px-3.5 py-3 text-sm max-w-[85%] mt-1"
         style={cardStyle}
+        role="status"
         data-testid="ask-bubbles-amendment-card"
       >
         <p className="font-semibold mb-2" style={{ color: 'var(--color-text)' }}>
@@ -136,7 +154,8 @@ function AmendmentCard({
             <button
               type="button"
               onClick={onUse}
-              className="min-h-[44px] rounded-full px-3.5 font-bold text-xs active:scale-95 transition-transform"
+              disabled={streaming}
+              className="min-h-[44px] rounded-full px-3.5 font-bold text-xs active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
               data-testid="ask-bubbles-amendment-use"
             >
@@ -145,7 +164,8 @@ function AmendmentCard({
             <button
               type="button"
               onClick={onKeep}
-              className="min-h-[44px] rounded-full px-3.5 font-bold text-xs active:scale-95 transition-transform"
+              disabled={streaming}
+              className="min-h-[44px] rounded-full px-3.5 font-bold text-xs active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
               data-testid="ask-bubbles-amendment-keep"
             >
@@ -177,14 +197,14 @@ export default function AskBubblesOverlay({
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // The turn most recently resolved (Use this change / Keep original), so its
+  // card can claim focus once — never left to drop back to `body` (N4).
+  const [justResolvedIndex, setJustResolvedIndex] = useState<number | null>(null)
 
-  // Minted once per mount (a ref, not state — nothing needs to re-render off
-  // it), and reused on every turn while pinned so the backend threads the
-  // whole conversation against one session.
-  const conversationIdRef = useRef<string | null>(null)
-  if (conversationIdRef.current === null) {
-    conversationIdRef.current = crypto.randomUUID()
-  }
+  // Minted once per mount, only when pinned (only the pinned mode ever sends
+  // it) — a lazy `useState` initializer, not a ref read during render (which
+  // `react-hooks/refs` disallows even for a guarded once-only assignment).
+  const [conversationId] = useState<string | null>(() => (pinned ? crypto.randomUUID() : null))
 
   // Focus input on mount
   useEffect(() => {
@@ -222,7 +242,7 @@ export default function AskBubblesOverlay({
 
     const request: ChatRequest = {
       message: framedMessage,
-      conversation_id: pinned ? conversationIdRef.current : null,
+      conversation_id: pinned ? conversationId : null,
       // The cook overlay shows no follow-up chips, so don't pay for them (#498).
       follow_up_chips: false,
     }
@@ -252,13 +272,21 @@ export default function AskBubblesOverlay({
           isRecipeAmendmentProposal(response.proposal) &&
           response.proposal.recipe_id === pinned.recipe_id
         ) {
-          assistantMsg.amendment = {
-            changeSummary: response.proposal.change_summary,
-            recipeId: response.proposal.recipe_id,
-            amendedIngredients: response.proposal.amended_ingredients.map(
-              ({ name, quantity, unit, optional, notes }) => ({ name, quantity, unit, optional, notes }),
-            ),
-            resolution: 'pending',
+          // S1: the backend allows a blank `name` on an amended line (it's
+          // `readDishAmendment` that rejects the whole amendment for one).
+          // Drop those lines here instead, and skip the card entirely if
+          // nothing usable survives — never claim "Updated…" over a change
+          // that couldn't actually be applied.
+          const amendedIngredients = response.proposal.amended_ingredients
+            .map(({ name, quantity, unit, optional, notes }) => ({ name, quantity, unit, optional, notes }))
+            .filter((ing) => ing.name.trim() !== '')
+          if (amendedIngredients.length > 0) {
+            assistantMsg.amendment = {
+              changeSummary: response.proposal.change_summary,
+              recipeId: response.proposal.recipe_id,
+              amendedIngredients,
+              resolution: 'pending',
+            }
           }
         }
         setMessages((prev) => [...prev, assistantMsg])
@@ -272,7 +300,7 @@ export default function AskBubblesOverlay({
       },
       abortRef.current.signal,
     )
-  }, [input, streaming, stepN, stepBodyText, recipeTitle, pinned])
+  }, [input, streaming, stepN, stepBodyText, recipeTitle, pinned, conversationId])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -296,10 +324,12 @@ export default function AskBubblesOverlay({
       })
     }
     resolveAmendment(index, 'applied')
+    setJustResolvedIndex(index)
   }
 
   const handleKeepOriginal = (index: number) => {
     resolveAmendment(index, 'kept')
+    setJustResolvedIndex(index)
   }
 
   // Only the latest amendment card is actionable — a newer one supersedes it.
@@ -352,6 +382,8 @@ export default function AskBubblesOverlay({
                   amendment={m.amendment}
                   pinnedTitle={pinned?.title ?? recipeTitle}
                   isLatest={i === latestAmendmentIndex}
+                  streaming={streaming}
+                  autoFocusResolved={i === justResolvedIndex}
                   onUse={() => handleUseChange(i, m.amendment!)}
                   onKeep={() => handleKeepOriginal(i)}
                 />
