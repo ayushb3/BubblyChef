@@ -216,7 +216,13 @@ def test_tp_nut_free(text: str) -> None:
 
 @pytest.mark.parametrize(
     "text",
-    ["vegetarian but chicken curry", "vegan then chicken wings", "veggie, also chicken wings"],
+    [
+        "vegetarian but chicken curry",
+        "vegan then chicken wings",
+        "veggie also chicken wings",
+        "vegan except chicken",
+        "tofu plus chicken",
+    ],
 )
 def test_tp_r5_the_marker_window_stops_at_but_then_also(text: str) -> None:
     assert names_forbidden_food(VEG, text)
@@ -237,6 +243,9 @@ _BOTH = [
     "meat and dairy free", "egg and dairy free", "egg, dairy and nut free",
     "chicken of the woods", "duck sauce", "cream soda", "butter lettuce", "chia egg",
     "cocoa butter", "shea butter", "non-dairy milk", "non-dairy creamer",
+    "salad with beef steak tomatoes", "beef-steak tomato salad",
+    "texas caviar", "cowboy caviar", "meat substitute", "meat alternatives",
+    "rice paper bacon",
 ]
 # Foods that are only plant-based for a diet that doesn't forbid the base
 # ("duck eggs" and "quail eggs" are eggs, so a Vegan still hits `egg`).
@@ -319,6 +328,7 @@ def test_f1_chicken_is_not_a_free_list_item(text: str) -> None:
         (VEG, "meat- and dairy-free"),
         (VEGAN, "egg, dairy and tree nut free"),
         (NUT_FREE, "tree-nut and peanut free"),
+        (VEG, "meat-and-dairy-free lasagne"),
     ],
 )
 def test_f1_a_coordinated_free_list_names_nothing(label: str, text: str) -> None:
@@ -332,6 +342,12 @@ def test_f1_a_bare_two_item_comma_is_not_a_list(text: str) -> None:
 
 def test_f1_the_dairy_half_of_a_free_list_is_still_free() -> None:
     assert not names_forbidden_food(DAIRY_FREE, "meat, dairy and gluten free")
+
+
+def test_mentions_and_term_pattern_ignore_an_empty_term() -> None:
+    assert not mentions("", "anything at all")
+    assert not mentions("   ", "anything at all")
+    assert not re.search(term_pattern(""), "anything at all")
 
 
 def test_f1_mentions_normalises_itself() -> None:

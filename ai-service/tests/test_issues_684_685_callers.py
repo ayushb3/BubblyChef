@@ -593,6 +593,28 @@ def test_c7_separator_tofu_chicken_thighs_main_drops_the_diet() -> None:
     assert out["dietary"] == []
 
 
+def test_c7_a_dairy_free_tag_rescues_a_carried_dairy_free_spelling() -> None:
+    # fails on main: the tag and the label are compared with strip().lower()
+    card = _main("Cheesy Bake", "pasta", "cheese", tags=["dairy-free"])
+
+    out = _drop_diets_the_main_contradicts(
+        {"dietary": ["Dairy Free"]}, card, carried=["Dairy Free"], input_text="quicker"
+    )
+
+    assert out["dietary"] == ["Dairy Free"]
+
+
+def test_c7_naming_the_diet_this_turn_keeps_a_differently_spelled_label() -> None:
+    # fails on main: "dairy-free" isn't a substring of "make it dairy free"
+    card = _main("Cheesy Bake", "pasta", "cheese")
+
+    out = _drop_diets_the_main_contradicts(
+        {"dietary": ["Dairy-free"]}, card, carried=["Dairy-free"], input_text="make it dairy free"
+    )
+
+    assert out["dietary"] == ["Dairy-free"]
+
+
 # ---------------------------------------------------------------------------
 # C8: _finish_meal_followup_constraints
 # ---------------------------------------------------------------------------

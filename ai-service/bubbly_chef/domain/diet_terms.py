@@ -113,6 +113,8 @@ def term_pattern(term: str) -> str:
     that makes "cod" match "codes" and "ham" match "hames".
     """
     words = term.split()
+    if not words:
+        return "(?!)"  # an empty term never matches
     head = "".join(re.escape(w) + r"[\s-]+" for w in words[:-1])
     last = words[-1]
     tail = re.escape(last) if term in NO_PLURAL else _plural_tail(last)
@@ -169,7 +171,7 @@ IMITATED_TERMS = (
 IMITATION_BASES = (
     "cauliflower", "mushroom", "portobello", "eggplant", "aubergine", "cabbage", "celeriac",
     "beet", "beetroot", "squash", "jackfruit", "carrot", "coconut", "watermelon", "lentil",
-    "bean", "chickpea",
+    "bean", "chickpea", r"rice[\s-]+paper",
 )
 
 # Guard 1(b): the closed set a coordinated `-free` list may hold. regex fragments.
@@ -188,7 +190,13 @@ _FALSE_FRIENDS: dict[str, tuple[str, ...]] = {
     "oyster": (r"oyster[\s-]+(?:mushrooms?|crackers?)",),
     "lobster": (r"lobster[\s-]+mushrooms?",),
     "beef": (r"beef[\s-]*(?:steak[\s-]+)?tomato(?:e?s)?",),
-    "steak": (r"steak[\s-]+(?:cut[\s-]+)?fries", r"steak-cut[\s-]+fries"),
+    "steak": (
+        r"steak[\s-]+(?:cut[\s-]+)?fries",
+        r"steak-cut[\s-]+fries",
+        r"beef[\s-]*steak[\s-]+tomato(?:e?s)?",
+    ),
+    "caviar": (r"(?:texas|cowboy)[\s-]+caviar",),
+    "meat": (r"meats?[\s-]+(?:substitute|alternative|replacer)s?",),
     "crab": (r"crab[\s-]?apples?",),
     "lamb": (r"lamb'?s?[\s-]+lettuce",),
     "chicken": (r"chicken[\s-]+of[\s-]+the[\s-]+woods",),
@@ -208,9 +216,9 @@ _FALSE_FRIEND_RES = {
 }
 
 _ITEM = rf"(?:{_alt(FREE_LIST_ITEMS)})s?-?"
-_SEP = r"(?:\s*,\s*(?:(?:and|or|&)\s+)?|\s+(?:and|or|&)\s+|\s*/\s*)"
+_SEP = r"(?:\s*,\s*(?:(?:and|or|&)\s+)?|[\s-]+(?:and|or|&)[\s-]+|\s*/\s*)"
 # A coordinating separator or a slash, never a bare comma: "fish, dairy free" isn't a list.
-_LAST = r"(?:\s*,\s*(?:and|or|&)\s+|\s+(?:and|or|&)\s+|\s*/\s*)"
+_LAST = r"(?:\s*,\s*(?:and|or|&)\s+|[\s-]+(?:and|or|&)[\s-]+|\s*/\s*)"
 _FREE_DIRECT = re.compile(r"[\s-]?free\b")
 _FREE_LIST = re.compile(rf"-?(?:{_SEP}{_ITEM})*{_LAST}{_ITEM}[\s-]?free\b")
 _FREE_ITEM_TERM = re.compile(rf"(?:{_alt(FREE_LIST_ITEMS)})")
@@ -288,6 +296,8 @@ def _mentions(term: str, text: str, plant_markers: bool) -> bool:
 
 def mentions(term: str, text: str, *, plant_markers: bool = True) -> bool:
     """True if `text` asks for `term` (or its plural) and no guard rejects every occurrence."""
+    if not term.split():
+        return False
     return _mentions(term.strip().lower(), _normalise(text), plant_markers)
 
 

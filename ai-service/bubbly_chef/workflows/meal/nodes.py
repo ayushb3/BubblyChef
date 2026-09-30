@@ -42,7 +42,7 @@ from pydantic import Field, ValidationError
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.ai.provider import user_message_for_failure
 from bubbly_chef.api.deps import get_ai_manager
-from bubbly_chef.domain.diet_terms import join_fields
+from bubbly_chef.domain.diet_terms import join_fields, norm_label
 from bubbly_chef.domain.kitchen_limits import map_kitchen_limits_to_tags
 from bubbly_chef.domain.stock import filter_usable_pantry_items, filter_usable_pantry_rows
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
@@ -242,15 +242,20 @@ def _drop_diets_the_main_contradicts(
     always stays, even beside a chicken main: the ask beats the main's tags.
     """
     haystack = join_fields(card.title, *(i.name for i in card.ingredients)).lower()
-    tags = {t.strip().lower() for t in card.dietary_tags}
-    carried_keys = {c.strip().lower() for c in carried}
-    asked = input_text.lower()
+    tags = {norm_label(t) for t in card.dietary_tags}
+    carried_keys = {norm_label(c) for c in carried}
+    # Spaces, underscores and hyphens are one separator on both sides, so "dairy
+    # free" in the text asks for the label "Dairy-free".
+    asked = re.sub(r"[\s_-]+", " ", input_text.lower())
+
+    def _asked_for(key: str) -> bool:
+        return re.search(rf"(?<!\w){re.escape(key.replace('-', ' '))}(?!\w)", asked) is not None
 
     def _keep(label: str) -> bool:
-        key = label.strip().lower()
+        key = norm_label(label)
         if key not in carried_keys:
             return True  # this turn's extraction, not an inherited label
-        if key in tags or key in asked:
+        if key in tags or _asked_for(key):
             return True
         return not _dietary_contradicted(label, haystack)
 
