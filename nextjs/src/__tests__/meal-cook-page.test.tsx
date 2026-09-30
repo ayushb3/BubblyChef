@@ -1337,6 +1337,33 @@ describe('MealCookPage — deductions the server skipped (issue #621)', () => {
     expect(pushMock).not.toHaveBeenCalled()
   })
 
+  it('two refused rows that are both named Butter read as 2 items, naming Butter once', async () => {
+    jest.useFakeTimers()
+    const [pasta] = baseProposal().matches
+    const butter = (id: string) => ({ ...pasta, ingredient_name: 'Butter', pantry_item_id: id, pantry_item_name: 'Butter' })
+    requestMealCookProposal.mockResolvedValue(baseProposal({ matches: [butter('pantry-b1'), butter('pantry-b2')] }))
+    confirmMealCook.mockResolvedValue({ ...CONFIRM_RESPONSE, deductions_skipped: ['pantry-b1', 'pantry-b2'] })
+
+    await renderFinishedLive(Date.now() - 20 * 60_000)
+    act(() => {
+      screen.getByRole('button', { name: 'Mark meal as cooked' }).click()
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update pantry' })).toBeInTheDocument())
+    act(() => {
+      screen.getByRole('button', { name: 'Update pantry' }).click()
+    })
+
+    await waitFor(() =>
+      expect(screen.getByTestId('skipped-deductions-notice')).toHaveTextContent(
+        "Couldn't update 2 items: Butter. Check your pantry.",
+      ),
+    )
+    act(() => {
+      jest.advanceTimersByTime(1200)
+    })
+    expect(pushMock).not.toHaveBeenCalled()
+  })
+
   it('an id the proposal cannot name still shows the notice', async () => {
     jest.useFakeTimers()
     confirmMealCook.mockResolvedValue({ ...CONFIRM_RESPONSE, deductions_skipped: ['pantry-ghost'] })

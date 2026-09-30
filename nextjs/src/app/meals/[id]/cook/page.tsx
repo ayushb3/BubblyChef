@@ -49,7 +49,7 @@ import {
   withDishAmendment,
   type MealCookSession,
 } from '@/lib/meal-cook-session'
-import { skippedDeductionNames } from '@/lib/cook-skipped'
+import { skippedDeductionNames, type SkippedDeductionNames } from '@/lib/cook-skipped'
 import { useCookingTimers } from '@/lib/useCookingTimers'
 import type { MealCookErrorKind, MealCookProposal, MealDishFull } from '@/types/meals'
 import type { DeductionItem } from '@/types/recipes'
@@ -125,7 +125,7 @@ export default function MealCookPage() {
   // Issue #621 — pantry items the server refused to deduct, resolved to names.
   // Non-empty holds the sheet on its success state (no redirect) until the
   // cook taps Back to meal.
-  const [skipped, setSkipped] = useState<{ names: string[]; unnamed: number }>({ names: [], unnamed: 0 })
+  const [skipped, setSkipped] = useState<SkippedDeductionNames>({ names: [], unnamed: 0, total: 0 })
   // Set before the first await of a confirm, cleared only on the error path
   // (§5 "Confirm" step 0) — success navigates away, so there is nothing left
   // to guard by the time it would otherwise clear.
@@ -632,7 +632,7 @@ export default function MealCookPage() {
     }
     confirmingRef.current = true
     lastDeductionsRef.current = deductions
-    setSkipped({ names: [], unnamed: 0 })
+    setSkipped({ names: [], unnamed: 0, total: 0 })
     setErrorStage('confirm')
     setSheetState('confirming')
     doConfirm(deductions, false)
