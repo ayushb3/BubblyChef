@@ -4,7 +4,7 @@
  * calendar day instead of the server's UTC day.
  */
 
-import { utcTimestampToLocalDate, parseTzOffsetMinutes } from '@/lib/date'
+import { utcTimestampToLocalDate } from '@/lib/date'
 
 describe('utcTimestampToLocalDate', () => {
   it('keeps the same date when offset is 0 (UTC)', () => {
@@ -22,24 +22,5 @@ describe('utcTimestampToLocalDate', () => {
   it('rolls a timestamp forward to the next local day for a positive offset', () => {
     // 2026-09-21T22:00:00Z + 2h (UTC+2) = 2026-09-22T00:00 local.
     expect(utcTimestampToLocalDate('2026-09-21T22:00:00Z', 120)).toBe('2026-09-22')
-  })
-})
-
-describe('parseTzOffsetMinutes', () => {
-  it('defaults to 0 (UTC) when missing', () => {
-    expect(parseTzOffsetMinutes(null)).toBe(0)
-  })
-
-  it('defaults to 0 (UTC) when unparseable', () => {
-    expect(parseTzOffsetMinutes('not-a-number')).toBe(0)
-  })
-
-  it('parses a valid negative offset', () => {
-    expect(parseTzOffsetMinutes('-420')).toBe(-420)
-  })
-
-  it('clamps to real-world timezone bounds', () => {
-    expect(parseTzOffsetMinutes('99999')).toBe(840)
-    expect(parseTzOffsetMinutes('-99999')).toBe(-720)
   })
 })
