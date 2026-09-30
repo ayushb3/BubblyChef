@@ -240,4 +240,55 @@ describe('SavedRecipeMatches', () => {
     render(<SavedRecipeMatches matches={MANY} onSelect={jest.fn()} disabled />)
     expect(screen.queryByText(/Tap to view/)).not.toBeInTheDocument()
   })
+
+  // ── Make it a meal (issue #651 PR B) ───────────────────────────────────
+  describe('Make it a meal', () => {
+    it('shows no button when onMakeMeal is not set', () => {
+      render(<SavedRecipeMatches matches={ONE} onSelect={jest.fn()} />)
+      expect(screen.queryByRole('button', { name: /make it a meal/i })).not.toBeInTheDocument()
+    })
+
+    it('renders on the single card, names the dish, and calls onMakeMeal with the match', () => {
+      const onMakeMeal = jest.fn()
+      const onSelect = jest.fn()
+      render(<SavedRecipeMatches matches={ONE} onSelect={onSelect} onMakeMeal={onMakeMeal} />)
+      const button = screen.getByRole('button', { name: 'Make it a meal: Butter Chicken' })
+      expect(button).toHaveTextContent('Make it a meal')
+      expect(button.className).toContain('min-h-[44px]')
+      fireEvent.click(button)
+      expect(onMakeMeal).toHaveBeenCalledTimes(1)
+      expect(onMakeMeal).toHaveBeenCalledWith(ONE[0])
+      expect(onSelect).not.toHaveBeenCalled()
+    })
+
+    it('sits below the Open recipe / Cook this row', () => {
+      render(<SavedRecipeMatches matches={ONE} onSelect={jest.fn()} onMakeMeal={jest.fn()} />)
+      const cook = screen.getByRole('button', { name: 'Cook this' })
+      const meal = screen.getByRole('button', { name: /make it a meal/i })
+      expect(cook.compareDocumentPosition(meal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('is not on mini cards, only on the expanded card', () => {
+      const onMakeMeal = jest.fn()
+      render(<SavedRecipeMatches matches={MANY} onSelect={jest.fn()} onMakeMeal={onMakeMeal} />)
+      expect(screen.queryByRole('button', { name: /make it a meal/i })).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: `Show options for ${MANY[1].title}` }))
+      // Exactly one, on the expanded card, and focus still lands on Open recipe.
+      expect(screen.getAllByRole('button', { name: /make it a meal/i })).toHaveLength(1)
+      expect(screen.getByRole('link', { name: 'Open recipe' })).toHaveFocus()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Make it a meal: Chicken Tikka Masala' }))
+      expect(onMakeMeal).toHaveBeenCalledWith(MANY[1])
+    })
+
+    it('is disabled, and a click does nothing, when the card is disabled', () => {
+      const onMakeMeal = jest.fn()
+      render(<SavedRecipeMatches matches={ONE} onSelect={jest.fn()} onMakeMeal={onMakeMeal} disabled />)
+      const button = screen.getByRole('button', { name: /make it a meal/i })
+      expect(button).toBeDisabled()
+      fireEvent.click(button)
+      expect(onMakeMeal).not.toHaveBeenCalled()
+    })
+  })
 })

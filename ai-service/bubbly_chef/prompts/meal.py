@@ -11,6 +11,13 @@ appended to exactly one dish-expansion prompt per pick turn (the main) for
 the same reason -- no extra model call either way. Edits here are
 CODEOWNERS-gated: prompt wording changes model behavior even though the test
 suite can stay green.
+
+Issue #651 PR B ("Make it a meal") adds two constants used only when a fixed
+main is in play: `MEAL_OPTIONS_FIXED_MAIN_BLOCK` (inserted into the option-stage
+prompt after the previous-options block; it overrides the system prompt's
+"different mains" rule) and `MEAL_OPTIONS_FIXED_MAIN_FOLLOW_UPS_RULE` (the pill
+rule that keeps predicted pills off the main). A prompt without a fixed main is
+byte-identical to before.
 """
 
 MEAL_OPTIONS_SYSTEM_PROMPT = """\
@@ -228,4 +235,28 @@ MEAL_OPTIONS_PREVIOUS_BLOCK = (
     "\nAlready suggested in this conversation: {options}. If the user's "
     "request refers to one of these, build on it; otherwise suggest "
     "different meals."
+)
+
+# Inserted after MEAL_OPTIONS_PREVIOUS_BLOCK when a "Make it a meal" flow fixes
+# the main dish (issue #651 PR B). `{title}` is the outline name with `"`
+# replaced by `'` so a title can't close the quotes; `{cuisine_part}` is
+# ` ({cuisine})` or ""; `{ingredients}` is the first 20 names or "not listed".
+# The server overwrites every option's main with the fixed one regardless, so
+# this only steers the model toward good, distinct sides.
+MEAL_OPTIONS_FIXED_MAIN_BLOCK = (
+    "\nThe main dish is fixed: \"{title}\"{cuisine_part}. Its ingredients: "
+    "{ingredients}. Every option must use exactly this main, unchanged, as its "
+    "one main dish, named \"{title}\". The options differ ONLY in their sides: "
+    "give each option 1-2 sides that complement this main (don't repeat its main "
+    "ingredient or its starch), and make each option's sides genuinely different "
+    "from the other options' sides. This overrides the rule about different "
+    "mains. The constraints above apply to the sides; never change the main."
+)
+
+# Appended right after MEAL_OPTIONS_FOLLOW_UPS_RULES (and before the no-pantry
+# rule) when the main is fixed: the pills must not offer to change it.
+MEAL_OPTIONS_FIXED_MAIN_FOLLOW_UPS_RULE = (
+    " The main is fixed, so follow_ups may only change the sides or the whole "
+    "meal's timing, e.g. \"Make the sides lighter\", \"Something green on the "
+    "side\" — never ask to change or replace the main."
 )

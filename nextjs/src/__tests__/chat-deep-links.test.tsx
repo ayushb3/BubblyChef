@@ -226,6 +226,51 @@ describe('/chat?plan=dinner — home screen handoff (#651)', () => {
   })
 })
 
+describe('/chat?meal= — recipe page make-it-a-meal handoff (#651 PR B)', () => {
+  const ID = '0b6e2f1a-1111-4222-8333-444455556666'
+
+  it('auto-sends once under a StrictMode double mount, with the fixed-main context; the card shows', async () => {
+    withParams(new URLSearchParams({ meal: ID, title: 'Lemon pasta' }).toString())
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <StrictMode>
+        <QueryClientProvider client={client}>
+          <ThemeProvider>
+            <ChatPage />
+          </ThemeProvider>
+        </QueryClientProvider>
+      </StrictMode>,
+    )
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1))
+    expect(sendMessage).toHaveBeenCalledWith('Make Lemon pasta into a meal', {
+      meal_fixed_main: { recipe_id: ID },
+    })
+    expect(screen.getByText('Making it a meal')).toBeInTheDocument()
+    expect(screen.getByText('Lemon pasta')).toBeInTheDocument()
+    expect(fetchRecipe).not.toHaveBeenCalled()
+  })
+
+  it('a non-UUID meal param sends nothing', async () => {
+    withParams('meal=nope')
+    renderChat()
+
+    await waitFor(() => expect(screen.getByText('Chat with Bubbles')).toBeInTheDocument())
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('dismissing the card drops the param', async () => {
+    withParams(new URLSearchParams({ meal: ID, title: 'Lemon pasta' }).toString())
+    renderChat()
+
+    await waitFor(() => expect(screen.getByText('Making it a meal')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /dismiss make-it-a-meal context/i }))
+
+    await waitFor(() => expect(screen.queryByText('Making it a meal')).toBeNull())
+    expect(replace).toHaveBeenCalledWith('/chat', { scroll: false })
+  })
+})
+
 describe('cook handoff still wins', () => {
   it('does not auto-send when ?cooking= is present', async () => {
     fetchRecipe.mockResolvedValue({ id: 'r1', title: 'Carbonara', ingredients: [] })

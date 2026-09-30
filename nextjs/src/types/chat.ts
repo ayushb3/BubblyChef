@@ -69,6 +69,9 @@ export interface ChatRecipeData {
     name: string
     quantity?: number | null
     unit?: string | null
+    /** Prep note, e.g. "diced" (issue #651 PR B; the wire already carries it). */
+    preparation?: string | null
+    optional?: boolean
   }>
   instructions?: string[]
   /** Structured steps alongside `instructions` (issue #648) — `null`/absent means not yet structured. */
@@ -78,6 +81,36 @@ export interface ChatRecipeData {
   dietary_tags?: string[]
   ingredient_availability?: IngredientAvailability[]
 }
+
+/**
+ * The in-chat recipe fields sent as `context.meal_fixed_main.recipe` (issue
+ * #651 PR B). Built by `fixedMainPayload`, never the raw proposal: no
+ * `ingredient_availability`, no `id`.
+ */
+export interface MealFixedMainRecipe {
+  title: string
+  description?: string | null
+  ingredients: Array<{
+    name: string
+    quantity?: number | null
+    unit?: string | null
+    preparation?: string | null
+    optional?: boolean
+  }>
+  instructions: string[]
+  steps?: Step[] | null
+  prep_time_minutes?: number | null
+  cook_time_minutes?: number | null
+  total_time_minutes?: number | null
+  servings?: number | null
+  cuisine?: string | null
+  meal_type?: string | null
+  difficulty?: string | null
+  dietary_tags?: string[]
+}
+
+/** `context.meal_fixed_main`: a saved recipe by id, or an in-chat recipe as a payload. */
+export type MealFixedMainContext = { recipe_id: string } | { recipe: MealFixedMainRecipe }
 
 // ─── Meal proposals (issue #650 / spec #647) ───────────────────────────────────
 //
@@ -129,11 +162,18 @@ export interface MealOptionsProposal {
   options: MealOption[]
   servings: number
   constraints: MealProposalConstraints
+  /**
+   * Set on a make-it-a-meal turn (issue #651 PR B): the main every option
+   * shares. `recipe_id` is null for an in-chat (or draft-copy) main.
+   */
+  fixed_main?: { recipe_id: string | null; title: string } | null
 }
 
 export interface MealProposalDish {
   role: 'main' | 'side'
   position: number
+  /** Set only on a fixed saved main (issue #651 PR B): the id `POST /api/meals` links. */
+  recipe_id?: string | null
   /** The existing RecipeCard shape, including `steps`, at the meal's servings. */
   recipe: ChatRecipeData
 }
@@ -261,7 +301,13 @@ export interface ChatRequest {
    * fuzzy-matched from the message text. `meal_followup` (`true` only) —
    * stamped on a tap of a meal-stage pill (issue #651); routes the turn back
    * to `meal_plan` without the classifier and inherits the retained meal's
-   * constraints, servings and option titles.
+   * constraints, servings and option titles. `meal_fixed_main` (object) —
+   * stamped by a "Make it a meal" tap or the `?meal=` seed (issue #651 PR B):
+   * `{ recipe_id }` for a saved recipe or `{ recipe }` for an in-chat one
+   * (`MealFixedMainContext`). Routes to `meal_plan` without the classifier;
+   * every option keeps that dish as its main. The recipe payload is capped at
+   * 32 KB serialised, the id is resolved scoped to the caller, and
+   * `meal_option_id` wins if both are present. Built per tap, never stored.
    */
   context?: Record<string, unknown> | null
   /**

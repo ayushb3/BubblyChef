@@ -107,7 +107,18 @@ class ChatRequest(BaseModel):
             "predicted pill under a meal reply (issue #651); routes straight "
             "to the option stage with the retained meal's constraints, "
             "servings and previously-offered titles carried forward. Ignored "
-            "when \"meal_option_id\" is also present — that always wins."
+            "when \"meal_option_id\" is also present — that always wins. "
+            '"meal_fixed_main" (<object>) — "Make it a meal" (issue #651 PR B): '
+            "starts the meal flow with one dish as the fixed main. Exactly one of "
+            '{"recipe_id": <uuid str>} (a saved recipe, resolved server-side and '
+            "scoped to the caller -- another user's id is \"not found\") or "
+            '{"recipe": {title, ingredients, instructions, ...}} (an in-chat '
+            "recipe; the serialised payload is capped at 32 KB). Any object routes "
+            "to the meal option stage, a malformed one gets a friendly refusal; "
+            "any non-object value is ignored. Every option then keeps that main and "
+            "differs only in its sides. \"meal_option_id\" wins when both are "
+            "present, and it beats \"meal_followup\" (a fresh fixed-main turn never "
+            "inherits a retained meal)."
         ),
     )
     # TODO(#416 chips): when [Edit this recipe] / [Start over] chips are wired in

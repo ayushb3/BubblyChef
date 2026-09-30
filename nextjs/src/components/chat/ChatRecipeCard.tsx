@@ -30,6 +30,13 @@ interface ChatRecipeCardProps {
    *   does not reopen the card, because the deduction risk outlives the banner.
    */
   cookState?: 'idle' | 'pending' | 'started'
+  /**
+   * Shows the "Make it a meal" button when set. The page omits it while a cook
+   * is pinned in chat or this card's cook has started.
+   */
+  onMakeMeal?: () => void
+  /** Disables that button (the page passes `isStreaming`). */
+  makeMealDisabled?: boolean
 }
 
 const CHIP_COLORS: string[] = [
@@ -81,6 +88,8 @@ export default function ChatRecipeCard({
   onCookWithMe,
   onAlreadyMade,
   cookState = 'idle',
+  onMakeMeal,
+  makeMealDisabled = false,
 }: ChatRecipeCardProps) {
   const totalTime =
     recipe.total_time_minutes
@@ -255,6 +264,24 @@ export default function ChatRecipeCard({
               Try Another
             </SpringButton>
           </div>
+          {/* Make it a meal (issue #651 PR B): starts the meal flow with this
+              dish as the fixed main. Sits between the Save / Try Another row
+              and the tertiary link. min-h keeps the 44px touch target that
+              py-2 alone (~36px) would miss. The accessible name keeps the
+              visible words first (label-in-name) and adds the dish, so
+              several cards in one thread are told apart. */}
+          {onMakeMeal && (
+            <SpringButton
+              onClick={onMakeMeal}
+              disabled={makeMealDisabled || cookState !== 'idle'}
+              aria-label={
+                recipe.title?.trim() ? `Make it a meal: ${recipe.title.trim()}` : undefined
+              }
+              className="w-full min-h-[44px] py-2 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-bg)] disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <span aria-hidden="true">🍽️</span> Make it a meal
+            </SpringButton>
+          )}
           {/* Tertiary: already cooked. Disabled while a draft POST is in flight,
               and permanently once cooking has started — tapping it then would
               deduct the same ingredients a second time (#269). */}

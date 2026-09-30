@@ -48,6 +48,13 @@ One of the three lightweight outlines shown as tappable cards before the user pi
 - **Pick**: a tap sends the option's `option_id` in `context.meal_option_id`, never fuzzy-matched from the visible message text. The backend resolves it from the three options retained in the session (next to `brainstorm_ideas`). The response is then a `meal` proposal — one full RecipeCard with Structured steps per Dish.
 - **Related**: Meal (what picking an option expands into), Dish
 
+### Fixed main
+The dish a make-it-a-meal flow keeps as the Meal's main (issue #651 PR B). The user starts from one existing dish ("Make it a meal" on a chat recipe card, a saved-recipe lookup card, or the recipe page); every Meal option then carries that dish unchanged as its main and differs only in its sides.
+
+- **Reference**: a saved Recipe is referenced by id (`context.meal_fixed_main.recipe_id`); an in-chat recipe is sent as a payload (`context.meal_fixed_main.recipe`). A draft row is never referenced by id.
+- **Pick**: the main is not regenerated. A saved main carries its `recipe_id` through to `POST /api/meals`, which links it without copying, so the Meal's main is the same Recipe the user started from.
+- **Related**: Meal option, Dish, Pill (the `meal_followup` pills keep the main; sides-only wording when a main is fixed)
+
 ### Meal timeline
 The deterministic meal scheduler's output for a set of 1-3 dishes (a main plus one or two sides) — placements, display rows and cues for cooking them together. Produced by `scheduleMeal()` in `nextjs/src/lib/meal-scheduler.ts` (issue #649).
 

@@ -17,8 +17,9 @@
  * fixed `messages` array, render the real page tree).
  */
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { ThemeProvider } from '@/components/ThemeProvider'
+import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
 import type { ChatMessage, ChatResponse } from '@/types/chat'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -166,5 +167,62 @@ describe('recipe_card renders through the real page (issue #513)', () => {
     // The assistant intro bubble is not left empty either — it renders
     // alongside the card.
     expect(screen.getByText(RECIPE_CARD_RESPONSE.assistant_message)).toBeInTheDocument()
+  })
+})
+
+describe('ChatRecipeCard "Make it a meal" button (issue #651 PR B)', () => {
+  const recipe = RECIPE_CARD_ENVELOPE.recipe
+  const mealButton = () => screen.queryByRole('button', { name: /make it a meal/i })
+
+  it('renders no button without onMakeMeal', () => {
+    render(<ChatRecipeCard recipe={recipe} onTryAnother={jest.fn()} onAlreadyMade={jest.fn()} />)
+    expect(mealButton()).not.toBeInTheDocument()
+  })
+
+  it('renders a 44px button that names the dish and calls onMakeMeal once', () => {
+    const onMakeMeal = jest.fn()
+    render(<ChatRecipeCard recipe={recipe} onMakeMeal={onMakeMeal} />)
+    const button = screen.getByRole('button', { name: 'Make it a meal: Garlic Butter Pasta' })
+    expect(button).toHaveTextContent('Make it a meal')
+    expect(button).toBeEnabled()
+    expect(button.className).toContain('min-h-[44px]')
+    fireEvent.click(button)
+    expect(onMakeMeal).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to the plain visible name when the recipe has no title', () => {
+    render(<ChatRecipeCard recipe={{ ...recipe, title: undefined }} onMakeMeal={jest.fn()} />)
+    expect(screen.getByRole('button', { name: /make it a meal/i })).toBeInTheDocument()
+  })
+
+  it('is disabled when makeMealDisabled is set', () => {
+    const onMakeMeal = jest.fn()
+    render(<ChatRecipeCard recipe={recipe} onMakeMeal={onMakeMeal} makeMealDisabled />)
+    expect(mealButton()).toBeDisabled()
+    fireEvent.click(mealButton()!)
+    expect(onMakeMeal).not.toHaveBeenCalled()
+  })
+
+  it.each(['pending', 'started'] as const)('is disabled while cookState is %s', (cookState) => {
+    render(<ChatRecipeCard recipe={recipe} onMakeMeal={jest.fn()} cookState={cookState} />)
+    expect(mealButton()).toBeDisabled()
+  })
+
+  it('sits between Try Another and "I already made this"', () => {
+    render(
+      <ChatRecipeCard
+        recipe={recipe}
+        onTryAnother={jest.fn()}
+        onAlreadyMade={jest.fn()}
+        onMakeMeal={jest.fn()}
+      />,
+    )
+    const tryAnother = screen.getByRole('button', { name: 'Try Another' })
+    const meal = mealButton()!
+    const already = screen.getByRole('button', { name: 'I already made this' })
+    const follows = (a: Element, b: Element) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(follows(tryAnother, meal)).toBe(true)
+    expect(follows(meal, already)).toBe(true)
   })
 })

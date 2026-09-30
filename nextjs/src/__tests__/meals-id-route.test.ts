@@ -250,6 +250,19 @@ describe('DELETE /api/meals/[id] — keeps saved dish recipes, removes draft one
     expect(deletes.recipes).toHaveLength(0)
   })
 
+  it('never deletes a linked saved main (issue #651 PR B), only the draft sides', async () => {
+    const { supabase, deletes } = makeSupabase([
+      { recipe_id: 'linked-main', recipes: { is_draft: false } }, // the user's own saved recipe
+      { recipe_id: 'side-1', recipes: { is_draft: true } },
+    ])
+    ;(requireAuth as jest.Mock).mockResolvedValue([supabase, mockUser])
+
+    const res = await DELETE(new Request('http://localhost/api/meals/m1'), params())
+
+    expect(res.status).toBe(200)
+    expect(deletes.recipes).toEqual([['side-1']])
+  })
+
   it('returns 401 without touching Supabase when unauthenticated', async () => {
     const unauthorized = NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     ;(requireAuth as jest.Mock).mockResolvedValue(unauthorized)
