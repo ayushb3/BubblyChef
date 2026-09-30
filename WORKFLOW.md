@@ -89,7 +89,11 @@ So the body must let someone approve or reject **without opening the diff**:
   pantry proposal now writes to the pantry" beats "updated `useChat.ts`".
 - **Evidence it works.** For anything visual, attach before/after screenshots or a
   short clip — drive the app and capture it; Chromium and Playwright are available
-  in cloud sessions, so "I couldn't run it" is rarely true. For anything else, name
+  in cloud sessions, so "I couldn't run it" is rarely true. Embed each image with an
+  absolute URL pinned to a commit,
+  `https://github.com/ayushb3/BubblyChef/blob/<full-sha>/docs/media/...?raw=true`:
+  GitHub doesn't render a relative path in a PR description, and a
+  `blob/<branch>/` URL breaks once the branch is deleted. For anything else, name
   the tests that cover it and show the relevant output.
 - **What you verified, and how.** Distinguish "tests pass" from "I reproduced the
   original bug and watched it stop happening" — only the second is evidence the
