@@ -173,6 +173,23 @@ export default function SaveAccountBanner({ persistent = false }: SaveAccountBan
         </p>
       ) : (
         <>
+          {/* Up-front retention notice (#519): never-linked guests are deleted
+              after 30 days without a visit (pg_cron, migration 00017). */}
+          <p
+            data-testid="guest-expiry-notice"
+            className="mb-3 text-xs text-[var(--color-text)] bg-[var(--color-accent)]/10 px-3 py-2 rounded-2xl"
+          >
+            ⏳ Guest accounts are removed after 30 days without a visit. Save yours below to
+            keep it, or{' '}
+            <Link
+              href="/login"
+              onClick={() => stashLoginEmail(email)}
+              className="font-semibold text-[var(--color-primary)] underline"
+            >
+              sign in to an existing account
+            </Link>
+            .
+          </p>
           <form onSubmit={handleSubmit} className="space-y-3">
             <p className="text-xs text-[var(--color-muted)]">
               Add an email + password and your guest pantry stays exactly as it is —
