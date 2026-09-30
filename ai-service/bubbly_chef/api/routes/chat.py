@@ -18,6 +18,7 @@ from fastapi.responses import StreamingResponse
 from bubbly_chef.api.auth import get_current_user_id
 from bubbly_chef.models.requests import ChatRequest
 from bubbly_chef.repository.supabase_repo import get_repository
+from bubbly_chef.services.proposal_review import is_pantry_proposal_turn, metadata_for_save
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,31 @@ async def chat_stream(
 
         assistant_message = ""
         envelope_data: dict[str, Any] | None = None
+        saved_assistant = False
+
+        async def persist_assistant(content: str, envelope: dict[str, Any] | None) -> bool:
+            """Save the assistant turn; a failure is a logged warning, never an error."""
+            if not conversation_id or not content:
+                return False
+            try:
+                repo = await get_repository()
+                intent_str = envelope.get("intent", "general_chat") if envelope else "general_chat"
+                await repo.save_message(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=content,
+                    intent=intent_str,
+                    proposal=envelope.get("proposal") if envelope else None,
+                    metadata=metadata_for_save(envelope),
+                )
+                logger.info(
+                    f"Saved assistant message: intent={intent_str}, length={len(content)}"
+                )
+                return True
+            except Exception as save_err:
+                logger.warning(f"Failed to save assistant message: {save_err}")
+                return False
 
         try:
             async for chunk_json in run_chat_workflow_streaming(
@@ -106,6 +132,15 @@ async def chat_stream(
 
                 if event_type == "envelope":
                     envelope_data = parsed.get("data", {})
+                    # Issue #444: a pantry proposal turn is saved (and stamped with its
+                    # request_id) BEFORE its envelope is yielded, so a fast tap on Add
+                    # can't reach /v1/workflows/apply ahead of the row it records onto.
+                    # These turns get no follow-up chips, so nothing arrives after.
+                    if is_pantry_proposal_turn(envelope_data):
+                        saved_assistant = await persist_assistant(
+                            assistant_message or envelope_data.get("assistant_message", ""),
+                            envelope_data,
+                        )
 
                 if event_type == "follow_ups" and envelope_data is not None:
                     merge_follow_ups_into_envelope(envelope_data, parsed.get("data", {}))
@@ -118,33 +153,16 @@ async def chat_stream(
             yield f"event: error\ndata: {error_payload}\n\n"
             return
 
-        # Persist assistant message after stream completes.
+        # Persist assistant message after stream completes (unless a pantry proposal
+        # turn was already saved before its envelope, above).
         # Fall back to envelope message for non-streaming intents (recipe_card, brainstorm)
         # so they are still saved to history.
-        save_content = assistant_message or (
-            envelope_data.get("assistant_message", "") if envelope_data else ""
-        )
-        if conversation_id and save_content:
-            try:
-                repo = await get_repository()
-                intent_str = (
-                    envelope_data.get("intent", "general_chat") if envelope_data else "general_chat"
-                )
-                await repo.save_message(
-                    user_id=user_id,
-                    conversation_id=conversation_id,
-                    role="assistant",
-                    content=save_content,
-                    intent=intent_str,
-                    proposal=envelope_data.get("proposal") if envelope_data else None,
-                    metadata=envelope_data.get("metadata") if envelope_data else None,
-                )
-                logger.info(
-                    f"Saved assistant message: intent={intent_str}, "
-                    f"length={len(save_content)}"
-                )
-            except Exception as save_err:
-                logger.warning(f"Failed to save assistant message: {save_err}")
+        if not saved_assistant:
+            await persist_assistant(
+                assistant_message
+                or (envelope_data.get("assistant_message", "") if envelope_data else ""),
+                envelope_data,
+            )
 
     return StreamingResponse(
         event_generator(),
@@ -242,7 +260,7 @@ async def chat_non_streaming(
                     content=save_content,
                     intent=envelope_data.get("intent", "general_chat"),
                     proposal=envelope_data.get("proposal"),
-                    metadata=envelope_data.get("metadata"),
+                    metadata=metadata_for_save(envelope_data),
                 )
         except Exception as save_err:
             logger.warning(f"Failed to persist messages: {save_err}")
