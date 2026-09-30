@@ -300,7 +300,7 @@ class RecipeConstraints(BaseModel):
     """Extracted from user message via small structured LLM call."""
 
     cuisine: str | None = None
-    meal_type: str | None = None  # breakfast, lunch, dinner, snack — defaulted from time of day
+    meal_type: str | None = None  # breakfast, lunch, dinner, snack — None means any dish (#408)
     mood: str | None = None
     dietary: list[str] = Field(default_factory=list)
     max_time_minutes: int | None = None

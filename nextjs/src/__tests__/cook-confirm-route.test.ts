@@ -151,3 +151,80 @@ describe('cook/confirm cook_confirm award (#524 review)', () => {
     expect(rescueCalls[1][2]).toBe('item-1:2026-08-26')
   })
 })
+
+/**
+ * Refused rows earn no rescue (#671). The microservice lists rows it refused to
+ * deduct in `deductions_skipped`; they never left the pantry, so they haven't
+ * been rescued from anything. The meal proxy already excludes them.
+ */
+describe('cook/confirm excludes refused rows from the rescue bonus (#671)', () => {
+  const twoExpiring = [
+    { id: 'item-1', expiry_date: '2026-08-27' },
+    { id: 'item-2', expiry_date: '2026-08-27' },
+  ]
+  const twoDeductions = [
+    { pantry_item_id: 'item-1', deduct_qty: 1 },
+    { pantry_item_id: 'item-2', deduct_qty: 1 },
+  ]
+
+  function rescueRefs(): string[] {
+    return (awardBubblesMock.mock.calls as unknown as Array<[string, string, string]>)
+      .filter((call) => call[1] === 'rescue')
+      .map((call) => call[2])
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-26T12:00:00.000Z'))
+    mockRequireAuth.mockResolvedValue([makeSupabase(twoExpiring), mockUser])
+  })
+
+  afterEach(() => {
+    jest.clearAllMocks()
+    jest.useRealTimers()
+  })
+
+  it('awards a rescue only for the row the server did not refuse', async () => {
+    aiProxyJsonMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true, deductions_skipped: ['item-1'] }), {
+        status: 200,
+      }),
+    )
+
+    await POST(
+      makeRequest({ recipe_id: 'recipe-1', deductions: twoDeductions, date: '2026-08-26' }),
+    )
+
+    expect(rescueRefs()).toEqual(['item-2:2026-08-26'])
+  })
+
+  it('a body with no deductions_skipped awards a rescue for every expiring row (guard)', async () => {
+    await POST(
+      makeRequest({ recipe_id: 'recipe-1', deductions: twoDeductions, date: '2026-08-26' }),
+    )
+
+    expect(rescueRefs().sort()).toEqual(['item-1:2026-08-26', 'item-2:2026-08-26'])
+  })
+
+  it('a non-JSON upstream body does not break the award or the response', async () => {
+    aiProxyJsonMock.mockResolvedValueOnce(new Response('not json', { status: 200 }))
+
+    const res = await POST(
+      makeRequest({ recipe_id: 'recipe-1', deductions: twoDeductions, date: '2026-08-26' }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('not json')
+    expect(rescueRefs()).toHaveLength(2)
+  })
+
+  it('forwards the upstream body byte-identical, still readable by the caller', async () => {
+    const upstream = JSON.stringify({ success: true, deductions_skipped: ['item-1'], extra: [1, 2] })
+    aiProxyJsonMock.mockResolvedValueOnce(new Response(upstream, { status: 200 }))
+
+    const res = await POST(
+      makeRequest({ recipe_id: 'recipe-1', deductions: twoDeductions, date: '2026-08-26' }),
+    )
+
+    expect(await res.text()).toBe(upstream)
+  })
+})

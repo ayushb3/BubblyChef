@@ -86,6 +86,7 @@ export default function ChipDemo() {
               key={tone}
               tone={tone}
               selected={selectedTone === tone}
+              pressed={selectedTone === tone}
               onClick={() => setSelectedTone(prev => prev === tone ? null : tone)}
             >
               {tone}
@@ -125,6 +126,7 @@ export default function ChipDemo() {
                 tone={tone}
                 emoji={emoji || undefined}
                 selected={selectedTag === tag}
+                pressed={selectedTag === tag}
                 onClick={() => setSelectedTag(prev => prev === tag ? null : tag)}
               >
                 {tag}

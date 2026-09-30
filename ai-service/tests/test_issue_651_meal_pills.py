@@ -1000,11 +1000,10 @@ class TestMealFollowupInheritance:
 
     @pytest.mark.asyncio
     async def test_retained_meal_type_survives_a_turn_that_doesnt_restate_it(self) -> None:
-        """Review blocker: a stamped turn must not let the default-from-
-        time-of-day meal_type win over a retained one just because this
-        turn's message didn't restate it -- the default fill-in inside
-        `extract_recipe_constraints` must run against the retained value as
-        its prior, not a pure fresh extraction."""
+        """Review blocker: a stamped turn must keep a retained meal_type just
+        because this turn's message didn't restate it -- `extract_recipe_
+        constraints` must run against the retained value as its prior, not a
+        pure fresh extraction."""
         _reset_graphs()
         retained = MealPlanSessionState(
             options=[
@@ -1060,9 +1059,6 @@ class TestMealFollowupInheritance:
                 "bubbly_chef.workflows.recipe.nodes.get_stored_dietary_preferences",
                 AsyncMock(return_value=[]),
             ),
-            # The time-of-day default the fill-in would reach for if it ran
-            # against a pure fresh extraction -- must never win here.
-            patch("bubbly_chef.workflows.recipe.nodes._default_meal_type", return_value="lunch"),
         ):
             envelope = await run_chat_workflow(
                 message="Something quicker, under 30 minutes",

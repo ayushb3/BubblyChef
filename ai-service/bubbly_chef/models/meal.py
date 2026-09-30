@@ -301,6 +301,11 @@ class MealPlanSessionState(BaseModel):
     servings: int = 2
     constraints: MealConstraintsEcho = Field(default_factory=MealConstraintsEcho)
     fixed_main: MealFixedMain | None = None
+    # Every option shown in this conversation's meal flow, oldest first, as
+    # `Title (Dish, Dish)`, capped at 9 (issue #667). `options` holds only the
+    # latest three, so without this a third "Different ideas" tap could bring
+    # back the first set. Defaults empty so an old retained session validates.
+    shown_options: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

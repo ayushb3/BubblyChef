@@ -546,6 +546,21 @@ describe('resolveChips / resolveStaticChips — fixedMain (#651 PR B, §8a)', ()
     chips.forEach((c) => expect(c.context).toEqual({ meal_followup: true }))
   })
 
+  it('Different ideas asks for different sides under a fixed main, keeping its label (item a)', () => {
+    const chips = resolveChips('meal_plan', undefined, 'meal_options', { fixedMain: true })
+    const different = chips.find((c) => c.label === 'Different ideas')
+    expect(different?.message).toBe('Show me different sides for this main')
+  })
+
+  it('Different ideas still asks for different meal options without a fixed main (guard)', () => {
+    for (const opts of [undefined, { fixedMain: false }]) {
+      const chips = resolveChips('meal_plan', undefined, 'meal_options', opts)
+      expect(chips.find((c) => c.label === 'Different ideas')?.message).toBe(
+        'Show me different meal options',
+      )
+    }
+  })
+
   it('also applies when the proposalType is absent (the stage has not resolved)', () => {
     const chips = resolveChips('meal_plan', undefined, undefined, { fixedMain: true })
     expect(chips.map((c) => c.label)).toEqual(FIXED_LABELS)

@@ -196,10 +196,8 @@ def _finish_meal_followup_constraints(
     """Post-process `extract_recipe_constraints`'s own inherit+override merge
     (#651 §5e review fix): that merge already ran with `retained` as the
     *prior*, via `_state_with_recipe_constraints` below, so every scalar
-    field (including `meal_type` -- the default-from-time-of-day fill-in
-    inside `extract_recipe_constraints` only fires when neither side set
-    one, so a retained "dinner" now survives) and every plain list field is
-    already correct. Only `dietary` and `excluded_ingredients` need fixing
+    field (including `meal_type`, so a retained "dinner" survives a turn that
+    doesn't restate it) and every plain list field is already correct. Only `dietary` and `excluded_ingredients` need fixing
     here, because the plain list rule ("fresh wins when non-empty") is an
     *override*, not the union these two fields need:
 
@@ -258,6 +256,36 @@ def _drop_diets_the_main_contradicts(
     return {**constraints, "dietary": [x for x in constraints.get("dietary") or [] if _keep(x)]}
 
 
+MAX_SHOWN_OPTIONS = 9
+
+
+def _option_descriptor(option: MealOption) -> str:
+    """`Title (Dish, Dish)` -- how an option is named in the "already
+    suggested" prompt block and in `MealPlanSessionState.shown_options`."""
+    return f"{option.title} ({', '.join(d.name for d in option.dishes)})"
+
+
+def _descriptor_key(descriptor: str) -> str:
+    """The whole descriptor, case-folded with whitespace collapsed. Not just
+    the title: under a fixed main every title is near-identical ("Lemon Pasta
+    with ..."), so only the sides tell two options apart (#667)."""
+    return " ".join(descriptor.casefold().split())
+
+
+def _roll_shown_options(
+    prior: list[str], new: list[str], cap: int = MAX_SHOWN_OPTIONS
+) -> list[str]:
+    """`new` appended after `prior`, oldest first. A repeated descriptor (by
+    `_descriptor_key`) keeps the newer entry in the newer position; the last
+    `cap` entries are returned (#667)."""
+    rolled: list[str] = []
+    for descriptor in [*prior, *new]:
+        key = _descriptor_key(descriptor)
+        rolled = [d for d in rolled if _descriptor_key(d) != key]
+        rolled.append(descriptor)
+    return rolled[-cap:]
+
+
 def _retained_meal_plan_state(state: WorkflowState) -> MealPlanSessionState | None:
     """The option stage's retained state from `session.metadata.meal_plan`,
     or `None` when absent or invalid. Shared by the option stage's
@@ -279,12 +307,11 @@ def _state_with_recipe_constraints(state: WorkflowState, constraints: dict[str, 
 
     `extract_recipe_constraints` merges its fresh extraction with whatever
     that key holds (`_prior_constraints_from_state` + `_merge_constraints`)
-    *before* its own default-meal_type fill-in runs -- so pointing it at the
-    retained meal's own constraints, rather than clearing it, is what lets a
-    retained `meal_type: "dinner"` survive a followup turn that doesn't
-    restate it: without this, the fill-in sees no meal_type yet (a pure
-    fresh extraction), defaults to the time-of-day bucket, and that default
-    then wins the scalar merge against the retained value. The meal branch
+    -- so pointing it at the retained meal's own constraints, rather than
+    clearing it, is what lets a retained `meal_type: "dinner"` survive a
+    followup turn that doesn't restate it: a pure fresh extraction has no
+    meal_type of its own, and the retained value is inherited through the
+    merge (a meal type is only ever one the user named, #408). The meal branch
     of `update_session_node` never writes this key itself, so on a
     `meal_followup` turn it could otherwise still hold leftovers from an
     earlier, unrelated recipe conversation.
@@ -826,8 +853,8 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         retained_constraints = retained_state.constraints.recipe_constraints
         # Pointing session.metadata.recipe_constraints at the retained meal's
         # own constraints (rather than clearing it) makes extract_recipe_
-        # constraints run its own prior-merge against them BEFORE its
-        # default-meal_type fill-in -- see _state_with_recipe_constraints.
+        # constraints run its own prior-merge against them, so a retained
+        # meal_type survives -- see _state_with_recipe_constraints.
         # dietary/excluded_ingredients are blanked in that prior: the plain
         # merge's list rule ("fresh wins when non-empty, else inherit prior")
         # would otherwise make merged["dietary"] just echo the retained value
@@ -890,13 +917,19 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     )
 
     previous_block = ""
-    if retained_state is not None and retained_state.options:
-        previous_block = MEAL_OPTIONS_PREVIOUS_BLOCK.format(
-            options="; ".join(
-                f"{o.title} ({', '.join(d.name for d in o.dishes)})"
-                for o in retained_state.options
-            )
-        )
+    shown: list[str] = []
+    if retained_state is not None:
+        latest = [_option_descriptor(o) for o in retained_state.options]
+        # A session saved before `shown_options` existed falls back to the
+        # last set alone.
+        shown = retained_state.shown_options or latest
+        if latest:
+            latest_keys = {_descriptor_key(d) for d in latest}
+            earlier = [d for d in shown if _descriptor_key(d) not in latest_keys]
+            options_text = "Just shown: " + "; ".join(latest)
+            if earlier:
+                options_text += ". Earlier: " + "; ".join(earlier)
+            previous_block = MEAL_OPTIONS_PREVIOUS_BLOCK.format(options=options_text)
 
     outline: MealDishOutline | None = None
     fixed_block = ""
@@ -1015,6 +1048,7 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         servings=servings,
         constraints=constraints_echo,
         fixed_main=fixed_resolved.fixed if fixed_resolved is not None else None,
+        shown_options=_roll_shown_options(shown, [_option_descriptor(o) for o in options]),
     )
     meal_follow_ups = _clean_meal_follow_ups(result.follow_ups, pantry_grounded=pantry_grounded)
 

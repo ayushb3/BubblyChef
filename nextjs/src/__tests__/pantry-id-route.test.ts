@@ -20,11 +20,63 @@ jest.mock('@/lib/response-helpers', () => ({
     new Response(JSON.stringify({ error: `${entity} not found` }), { status: 404 }),
 }))
 
-import { requireAuth } from '@/lib/response-helpers'
+jest.mock('@/lib/api/ai-proxy', () => ({
+  normalizeBaseUnit: jest.fn(),
+}))
 
-function makeSupabaseMock(storedUpdates: { current: Record<string, unknown> }) {
+import { requireAuth } from '@/lib/response-helpers'
+import { normalizeBaseUnit } from '@/lib/api/ai-proxy'
+
+const mockNormalize = normalizeBaseUnit as jest.Mock
+
+// The stored row the read-first branch of PUT sees (#669).
+const STORED_ROW: Record<string, unknown> | null = {
+  name: 'Flour',
+  quantity: 500,
+  unit: 'g',
+  category: 'pantry',
+}
+
+function makeSupabaseMock(
+  storedUpdates: { current: Record<string, unknown> },
+  opts: {
+    row?: Record<string, unknown> | null
+    selects?: string[]
+    // Every eq(column, value) on the read-first query, in call order.
+    eqs?: Array<[string, unknown]>
+    // Overrides the read's error; the default for a missing row is PGRST116,
+    // which is how PostgREST reports zero rows from `.single()`.
+    readError?: { code?: string; message: string }
+  } = {},
+) {
+  const row = opts.row === undefined ? STORED_ROW : opts.row
   return {
     from: () => ({
+      // Plumbing for the read-first branch: select().eq().eq().single().
+      select: (columns: string) => {
+        opts.selects?.push(columns)
+        return {
+          eq: (column: string, value: unknown) => {
+            opts.eqs?.push([column, value])
+            return {
+              eq: (column2: string, value2: unknown) => {
+                opts.eqs?.push([column2, value2])
+                return {
+                  single: async () => {
+                    if (opts.readError) return { data: null, error: opts.readError }
+                    return row
+                      ? { data: row, error: null }
+                      : {
+                          data: null,
+                          error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' },
+                        }
+                  },
+                }
+              },
+            }
+          },
+        }
+      },
       update: (updates: Record<string, unknown>) => {
         storedUpdates.current = updates
         return {
@@ -60,6 +112,10 @@ function makeRequest(body: Record<string, unknown>): Request {
     body: JSON.stringify(body),
   })
 }
+
+beforeEach(() => {
+  mockNormalize.mockResolvedValue({ quantity_base: null, unit_base: null })
+})
 
 afterEach(() => {
   jest.clearAllMocks()
@@ -98,6 +154,142 @@ describe('PUT /api/pantry/[id] estimated_expiry clearing (#380)', () => {
     await PUT(request, { params: Promise.resolve({ id: 'item-1' }) })
 
     expect(storedUpdates.current.estimated_expiry).toBeUndefined()
+  })
+})
+
+/**
+ * An amount edit re-derives quantity_base / unit_base (#669). A stale base is
+ * the one wrong state — the next cook deducts from it; null is safe because
+ * cook time derives a missing base from (quantity, unit).
+ */
+describe('PUT /api/pantry/[id] re-derives the base on an amount edit (#669)', () => {
+  const ctx = { params: Promise.resolve({ id: 'item-1' }) }
+
+  it('stores the normalised base when a full body edits 500 g to 1 kg, with no read', async () => {
+    const storedUpdates = { current: {} as Record<string, unknown> }
+    const selects: string[] = []
+    ;(requireAuth as jest.Mock).mockResolvedValue([
+      makeSupabaseMock(storedUpdates, { selects }),
+      mockUser,
+    ])
+    mockNormalize.mockResolvedValue({ quantity_base: 1000, unit_base: 'g' })
+
+    await PUT(
+      makeRequest({ name: 'Flour', quantity: 1, unit: 'kg', category: 'pantry' }),
+      ctx,
+    )
+
+    expect(mockNormalize).toHaveBeenCalledWith({
+      name: 'Flour',
+      quantity: 1,
+      unit: 'kg',
+      category: 'pantry',
+    })
+    expect(storedUpdates.current.quantity_base).toBe(1000)
+    expect(storedUpdates.current.unit_base).toBe('g')
+    expect(selects).toEqual([])
+  })
+
+  it('a partial body reads the row and passes its name, unit and category to the normaliser', async () => {
+    const storedUpdates = { current: {} as Record<string, unknown> }
+    const selects: string[] = []
+    const eqs: Array<[string, unknown]> = []
+    ;(requireAuth as jest.Mock).mockResolvedValue([
+      makeSupabaseMock(storedUpdates, { selects, eqs }),
+      mockUser,
+    ])
+    mockNormalize.mockResolvedValue({ quantity_base: 1000, unit_base: 'g' })
+
+    await PUT(makeRequest({ quantity: 2 }), ctx)
+
+    expect(selects).toEqual(['name, quantity, unit, category'])
+    // The read must be scoped to the caller's own row.
+    expect(eqs).toContainEqual(['id', 'item-1'])
+    expect(eqs).toContainEqual(['user_id', mockUser.id])
+    expect(mockNormalize).toHaveBeenCalledWith({
+      name: 'Flour',
+      quantity: 2,
+      unit: 'g',
+      category: 'pantry',
+    })
+    expect(storedUpdates.current.quantity_base).toBe(1000)
+    expect(storedUpdates.current.unit_base).toBe('g')
+  })
+
+  it('body values win over the stored row', async () => {
+    const storedUpdates = { current: {} as Record<string, unknown> }
+    ;(requireAuth as jest.Mock).mockResolvedValue([makeSupabaseMock(storedUpdates), mockUser])
+
+    await PUT(makeRequest({ unit: 'kg' }), ctx)
+
+    expect(mockNormalize).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Flour', quantity: 500, unit: 'kg' }),
+    )
+  })
+
+  it('stores nulls when the normaliser cannot derive a base', async () => {
+    const storedUpdates = { current: {} as Record<string, unknown> }
+    ;(requireAuth as jest.Mock).mockResolvedValue([makeSupabaseMock(storedUpdates), mockUser])
+    mockNormalize.mockResolvedValue({ quantity_base: null, unit_base: null })
+
+    await PUT(makeRequest({ quantity: 3, unit: 'bag' }), ctx)
+
+    expect(storedUpdates.current.quantity_base).toBeNull()
+    expect(storedUpdates.current.unit_base).toBeNull()
+  })
+
+  it('an explicit category: null in the body is kept, not replaced by the stored category', async () => {
+    const storedUpdates = { current: {} as Record<string, unknown> }
+    ;(requireAuth as jest.Mock).mockResolvedValue([makeSupabaseMock(storedUpdates), mockUser])
+
+    await PUT(makeRequest({ quantity: 2, category: null }), ctx)
+
+    expect(mockNormalize).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Flour', quantity: 2, unit: 'g', category: null }),
+    )
+  })
+
+  it('a read error that is not "no rows" returns 500, not 404, and never normalises', async () => {
+    const storedUpdates = { current: {} as Record<string, unknown> }
+    ;(requireAuth as jest.Mock).mockResolvedValue([
+      makeSupabaseMock(storedUpdates, { readError: { code: '08006', message: 'connection failure' } }),
+      mockUser,
+    ])
+
+    const res = await PUT(makeRequest({ quantity: 2 }), ctx)
+
+    expect(res.status).toBe(500)
+    expect(mockNormalize).not.toHaveBeenCalled()
+    expect(storedUpdates.current).toEqual({})
+  })
+
+  it('returns not found when the partial body names a row that is not there', async () => {
+    const storedUpdates = { current: {} as Record<string, unknown> }
+    ;(requireAuth as jest.Mock).mockResolvedValue([
+      makeSupabaseMock(storedUpdates, { row: null }),
+      mockUser,
+    ])
+
+    const res = await PUT(makeRequest({ quantity: 2 }), ctx)
+
+    expect(res.status).toBe(404)
+    expect(mockNormalize).not.toHaveBeenCalled()
+  })
+
+  it('an expiry_date-only body never calls the normaliser or touches the bases (guard)', async () => {
+    const storedUpdates = { current: {} as Record<string, unknown> }
+    const selects: string[] = []
+    ;(requireAuth as jest.Mock).mockResolvedValue([
+      makeSupabaseMock(storedUpdates, { selects }),
+      mockUser,
+    ])
+
+    await PUT(makeRequest({ expiry_date: '2026-10-01' }), ctx)
+
+    expect(mockNormalize).not.toHaveBeenCalled()
+    expect(selects).toEqual([])
+    expect(storedUpdates.current).not.toHaveProperty('quantity_base')
+    expect(storedUpdates.current).not.toHaveProperty('unit_base')
   })
 })
 

@@ -92,7 +92,7 @@ async def test_extraction_failure_still_yields_usable_constraints() -> None:
         result = await extract_recipe_constraints({"input_text": "use up my eggs"})
     # Constraints collapse to {} on failure — downstream reads must stay safe
     assert result["recipe_constraints"].get("must_use_ingredients", []) == []
-    assert result["recipe_constraints"]["meal_type"]  # defaulted from time of day
+    assert result["recipe_constraints"].get("meal_type") is None  # no clock default (#408)
     assert score_and_rank([_item("eggs")], result["recipe_constraints"])
 
 
@@ -323,15 +323,12 @@ async def test_brainstorm_keeps_expired_item_when_must_use() -> None:
 
 
 @pytest.mark.asyncio
-async def test_brainstorm_defaults_meal_type_when_unset() -> None:
-    """Without a meal_type the prompt would let the model pick freely, yielding
-    breakfast at midnight (#248). The node falls back to the time of day."""
-    from bubbly_chef.workflows.recipe.nodes import _default_meal_type
-
+async def test_brainstorm_has_no_meal_type_when_unset() -> None:
+    """No meal type named means any dish (#408): the prompt carries no
+    `Meal type:` line, and the neutral rule tells the model not to lean on the
+    clock (the #248 guard: breakfast at midnight)."""
     # Provide a non-empty pantry so the #243 empty-pantry ingest-prompt guard
-    # doesn't short-circuit before the LLM is called. The meal-type fallback
-    # being tested is independent of pantry state, but the guard fires when
-    # scored_pantry_items=[] + no must_use, which would bypass the LLM entirely.
+    # doesn't short-circuit before the LLM is called.
     scored = score_and_rank([_item("flour"), _item("milk", days_until_expiry=3)], {})
     with _mock_ai("**Dinner Idea**") as mock_mgr:
         await brainstorm_recipe_ideas(
@@ -342,7 +339,8 @@ async def test_brainstorm_defaults_meal_type_when_unset() -> None:
             }
         )
     prompt = mock_mgr.return_value.complete.call_args.kwargs["prompt"]
-    assert _default_meal_type() in prompt
+    assert "Meal type:" not in prompt
+    assert "If no meal type is given, don't assume one from the time of day" in prompt
 
 
 # ---------------------------------------------------------------------------

@@ -9,13 +9,12 @@ and grounded recipe generation.
 import json as _json
 import logging
 import re
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.ai.provider import user_message_for_failure
 from bubbly_chef.api.deps import get_ai_manager
-from bubbly_chef.domain.mealtime import meal_time_bucket
 from bubbly_chef.domain.normalizer import normalize_food_name
 from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.domain.stock import filter_usable_pantry_rows
@@ -655,16 +654,6 @@ def is_pantry_grounded(constraints: dict[str, Any] | None) -> bool:
     return (constraints or {}).get("use_pantry") is not False
 
 
-def _default_meal_type() -> str:
-    """Infer meal type from current time of day.
-
-    Delegates to `domain/mealtime.py` — the single shared hour-to-bucket rule,
-    also used by the dashboard suggestion ranking. See that module's docstring
-    for why there must be exactly one such rule.
-    """
-    return meal_time_bucket(datetime.now().hour)
-
-
 def _merge_constraints(
     prior: dict[str, Any],
     fresh: dict[str, Any],
@@ -875,10 +864,9 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
             constraints.get("use_pantry"),
         )
 
-    # Default meal_type from time of day when user didn't specify
-    if not constraints.get("meal_type"):
-        constraints["meal_type"] = _default_meal_type()
-        logger.info("Defaulted meal_type=%s from time of day", constraints["meal_type"])
+    # No meal_type fill-in from the clock (#408): a meal type is only one the
+    # user named this turn or an earlier one (inherited through the merge
+    # above). Unset means any dish -- see the brainstorm prompts' neutral rule.
 
     # Stored profile default (#394). A stored preference stays in force and
     # *combines* with whatever this message (or an earlier turn in the same
@@ -979,13 +967,6 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
     scored_items: list[dict[str, Any]] = state.get("scored_pantry_items") or []
     constraints: dict[str, Any] = state.get("recipe_constraints") or {}
     pantry_grounded = is_pantry_grounded(constraints)
-
-    # Fall back to the time of day, same as the recipe-generate path does at
-    # `extract_recipe_constraints`. Without this the brainstorm prompt says only
-    # "if meal_type is specified" and the model picks freely — which produced
-    # breakfast suggestions at midnight (#248).
-    if not constraints.get("meal_type"):
-        constraints = {**constraints, "meal_type": _default_meal_type()}
 
     # Build ingredient summary for the prompt
     if not pantry_grounded:

@@ -206,7 +206,11 @@ export function resolveStaticChips(
             },
         {
           label: DIFFERENT_IDEAS_LABEL,
-          message: 'Show me different meal options',
+          // Under a fixed main the main can't change, so only the sides can be
+          // different — say so, or the model may reshuffle whole meals.
+          message: opts?.fixedMain
+            ? 'Show me different sides for this main'
+            : 'Show me different meal options',
           tone: 'primary',
           emoji: '🔄',
           context: MEAL_FOLLOWUP_CONTEXT,

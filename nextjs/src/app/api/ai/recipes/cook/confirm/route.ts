@@ -53,8 +53,19 @@ export async function POST(request: Request) {
     // so a client resending the same cook confirm with yesterday's date on
     // one call and today's on the next would otherwise mint two rescue
     // awards for what's really one deduction of the same item.
+    //
+    // Rows the confirm itself refused to deduct (`deductions_skipped`, #671)
+    // never left the pantry, so they haven't been rescued from anything —
+    // same exclusion as the meal proxy. Read a clone: the caller (confirmCook)
+    // parses `deductions_skipped` from the very body we return untouched.
+    const data = await response.clone().json().catch(() => ({}))
+    const rawSkipped = (data as { deductions_skipped?: unknown } | null)?.deductions_skipped
+    const skipped = Array.isArray(rawSkipped)
+      ? rawSkipped.filter((id): id is string => typeof id === 'string')
+      : []
+
     const rescueIds = validDate
-      ? rescueCandidates(pantryItemIds, expiryByItemId, validDate)
+      ? rescueCandidates(pantryItemIds, expiryByItemId, validDate, skipped)
       : []
 
     await awardCookBubbles(user.id, refs, rescueIds)

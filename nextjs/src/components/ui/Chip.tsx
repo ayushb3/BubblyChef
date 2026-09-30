@@ -15,7 +15,14 @@ export type ChipTone =
 export interface ChipProps {
   tone?: ChipTone
   size?: 'sm' | 'md'
+  /** Visual only (filled primary). Not announced to assistive tech; see `pressed`. */
   selected?: boolean
+  /**
+   * ARIA toggle state (issue #665). Set it only on chips that really are
+   * toggles; `aria-pressed` renders only when this is defined, so one-shot
+   * chips are announced as plain buttons.
+   */
+  pressed?: boolean
   emoji?: string
   onClick?: () => void
   children: ReactNode
@@ -59,6 +66,7 @@ export default function Chip({
   tone = 'muted',
   size = 'md',
   selected = false,
+  pressed,
   emoji,
   onClick,
   children,
@@ -85,7 +93,7 @@ export default function Chip({
         type="button"
         onClick={onClick}
         aria-label={ariaLabel}
-        aria-pressed={selected}
+        aria-pressed={pressed}
         title={title}
         whileTap={{ scale: 0.95 }}
         transition={springs.snappy}
