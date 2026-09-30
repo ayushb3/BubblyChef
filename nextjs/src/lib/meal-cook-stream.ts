@@ -388,6 +388,26 @@ export function recordSkip(session: MealCookSession, step: StreamStep, nowMinute
   })
 }
 
+/**
+ * True when every step across every dish (keyed `${dish_id}:${step_index}`,
+ * over every dish's own `steps` — not the live timeline) is `done` or
+ * `skipped`, and there's at least one step: a meal with no steps at all
+ * isn't "finished" (issue #653's own non-empty guard, kept). The one
+ * definition of "is this cook-along finished" (issue #654 §3, S9) —
+ * `deriveStream`'s own check below delegates to it, and
+ * `lib/meal-cook-deduction.ts` calls it too, so a page that needs to know
+ * "is this session finished" without building a full timeline can ask
+ * without duplicating the rule.
+ */
+export function isMealCookFinished(session: MealCookSession, dishes: SchedulerDish[]): boolean {
+  const stepKeys = dishes.flatMap((d) => d.steps.map((_, i) => `${d.dish_id}:${i}`))
+  if (stepKeys.length === 0) return false
+  return stepKeys.every((key) => {
+    const status = session.steps[key]?.status
+    return status === 'done' || status === 'skipped'
+  })
+}
+
 // ---------------------------------------------------------------------------
 // deriveStream
 // ---------------------------------------------------------------------------
@@ -441,10 +461,7 @@ export function deriveStream(input: {
   // (a session with nothing pending and nothing hands-on running, but a
   // hands-off step still ticking in the dock, fell through to `finished`
   // even though the cook wasn't done).
-  if (
-    streamSteps.length > 0 &&
-    streamSteps.every((s) => statusOf(s) === 'done' || statusOf(s) === 'skipped')
-  ) {
+  if (streamSteps.length > 0 && isMealCookFinished(session, dishes)) {
     return { timeline, now: { kind: 'finished' }, next_up: null, running: [] }
   }
 

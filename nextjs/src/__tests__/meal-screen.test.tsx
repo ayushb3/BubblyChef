@@ -41,9 +41,14 @@ jest.mock('@/lib/useCookingTimers', () => {
   }
 })
 
+// Stable references (not a fresh `jest.fn()` per render) — issue #654's S5
+// tests below assert on `push` across a render whose own `useRouter()` call
+// happens well after the click that triggers it.
+const pushMock = jest.fn()
+const replaceMock = jest.fn()
 jest.mock('next/navigation', () => ({
   useParams: () => ({ id: 'meal-1' }),
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn(), refresh: jest.fn() }),
+  useRouter: () => ({ push: pushMock, replace: replaceMock, refresh: jest.fn() }),
 }))
 
 const fetchMeal = jest.fn()
@@ -697,5 +702,151 @@ describe('meal screen — cook-along entry (issue #653)', () => {
       resolveRefetch(baseMeal())
     })
     await waitFor(() => expect(startButton()).not.toBeDisabled())
+  })
+})
+
+describe('meal screen — finish banner (issue #654 §5)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  it('a finished session shows the finish banner (Update pantry), not Resume', async () => {
+    fetchMeal.mockResolvedValue(baseMeal())
+    const session = startMealCookSession(
+      'meal-1',
+      ['r-main', 'r-side1', 'r-side2'],
+      Date.now(),
+      dishStepSignaturesForMeal(baseMeal()),
+    )
+    saveMealCookProgress({
+      ...session,
+      steps: {
+        'r-main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
+        'r-side1:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
+        'r-side2:0': { status: 'skipped', started_at_minutes: 0, extra_minutes: 0 },
+      },
+    })
+
+    renderPage()
+    await screen.findByTestId('meal-cook-finish-banner')
+    expect(screen.queryByTestId('meal-cook-resume-banner')).not.toBeInTheDocument()
+    expect(screen.getByTestId('meal-cook-finish-banner')).toHaveTextContent("Dinner's done")
+    expect(screen.getByRole('button', { name: 'Update pantry' })).toBeInTheDocument()
+  })
+
+  it('Skip ends the session and brings back Start cooking', async () => {
+    fetchMeal.mockResolvedValue(baseMeal())
+    const session = startMealCookSession(
+      'meal-1',
+      ['r-main', 'r-side1', 'r-side2'],
+      Date.now(),
+      dishStepSignaturesForMeal(baseMeal()),
+    )
+    saveMealCookProgress({
+      ...session,
+      steps: {
+        'r-main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
+        'r-side1:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
+        'r-side2:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
+      },
+    })
+
+    renderPage()
+    await screen.findByTestId('meal-cook-finish-banner')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skip' }))
+
+    await waitFor(() => expect(screen.queryByTestId('meal-cook-finish-banner')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /Start cooking/ })).toBeInTheDocument()
+    expect(getActiveMealCookSession('meal-1')).toBeNull()
+  })
+
+  it('stale wins over finished, and the stale notice explains the pantry was not updated', async () => {
+    fetchMeal.mockResolvedValue(baseMeal())
+    // Same dish ids as the current meal (so the step keys still line up and
+    // every one can be recorded done), but a mismatched step-signature list —
+    // stale on its own terms, entirely independent of whether every step is
+    // done or skipped.
+    const session = startMealCookSession('meal-1', ['r-main', 'r-side1', 'r-side2'], Date.now(), [
+      'stale-signature',
+    ])
+    saveMealCookProgress({
+      ...session,
+      steps: {
+        'r-main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
+        'r-side1:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
+        'r-side2:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
+      },
+    })
+
+    renderPage()
+    await screen.findByTestId('meal-cook-stale-banner')
+    expect(screen.queryByTestId('meal-cook-finish-banner')).not.toBeInTheDocument()
+    expect(screen.getByTestId('meal-cook-stale-banner')).toHaveTextContent(/wasn.t updated for that cook/i)
+  })
+})
+
+describe('meal screen — another meal\'s cook (S5, issue #654 §5)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  it('shows an inline confirm on Start cooking when a DIFFERENT meal has the active cook', async () => {
+    fetchMeal.mockResolvedValue(baseMeal())
+    startMealCookSession('meal-2', ['r-other'], Date.now(), ['1:x'])
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Green salad', level: 3 })
+    expect(screen.queryByTestId('meal-cook-other-session-confirm')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Start cooking/ }))
+
+    expect(screen.getByTestId('meal-cook-other-session-confirm')).toBeInTheDocument()
+    // Nothing started for THIS meal yet — only the inline confirm shows.
+    expect(getActiveMealCookSession('meal-1')).toBeNull()
+  })
+
+  it('Start anyway dismisses the other meal\'s running dock timer, then starts + navigates into this one', async () => {
+    fetchMeal.mockResolvedValue(baseMeal())
+    const other = startMealCookSession('meal-2', ['r-other'], Date.now(), ['1:x'])
+    // A running step with a linked dock timer — starting a new session always
+    // overwrites storage regardless of whether the timer was actually
+    // dismissed, so without this the test can't distinguish "dismissed" from
+    // "never even tried" (review S3).
+    saveMealCookProgress({
+      ...other,
+      steps: {
+        'r-other:0': {
+          status: 'running',
+          started_at_minutes: 0,
+          extra_minutes: 0,
+          timer_id: 'timer-other-1',
+        },
+      },
+    })
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Green salad', level: 3 })
+    fireEvent.click(screen.getByRole('button', { name: /Start cooking/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Start anyway' }))
+
+    expect(mockDismiss).toHaveBeenCalledWith('timer-other-1')
+    expect(getActiveMealCookSession('meal-2')).toBeNull()
+    expect(getActiveMealCookSession('meal-1')).not.toBeNull()
+    expect(pushMock).toHaveBeenCalledWith('/meals/meal-1/cook')
+  })
+
+  it('Go to that meal navigates to the other meal and starts nothing', async () => {
+    fetchMeal.mockResolvedValue(baseMeal())
+    startMealCookSession('meal-2', ['r-other'], Date.now(), ['1:x'])
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Green salad', level: 3 })
+    fireEvent.click(screen.getByRole('button', { name: /Start cooking/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Go to that meal' }))
+
+    expect(pushMock).toHaveBeenCalledWith('/meals/meal-2')
+    expect(getActiveMealCookSession('meal-1')).toBeNull()
+    expect(getActiveMealCookSession('meal-2')).not.toBeNull()
   })
 })

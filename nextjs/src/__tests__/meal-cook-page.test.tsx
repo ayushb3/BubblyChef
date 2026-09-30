@@ -14,7 +14,7 @@
 import React from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { Meal } from '@/types/meals'
+import type { Meal, MealCookProposal } from '@/types/meals'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import type { Step } from '@/types/recipes'
 import {
@@ -28,6 +28,9 @@ import {
 import { formatClockTime } from '@/lib/meal-anchor'
 import { dishStepSignaturesForMeal } from '@/lib/meal-dishes'
 import { TIMER_COMPLETED_EVENT, type CookingTimer } from '@/lib/useCookingTimers'
+// The real class, re-exported from the mock factory below — `err instanceof
+// MealCookError` in the page needs the real constructor.
+import { MealCookError } from '@/lib/api/meals'
 
 const pushMock = jest.fn()
 const replaceMock = jest.fn()
@@ -37,9 +40,19 @@ jest.mock('next/navigation', () => ({
 }))
 
 const fetchMeal = jest.fn()
-jest.mock('@/lib/api/meals', () => ({
-  fetchMeal: (...args: unknown[]) => fetchMeal(...args),
-}))
+const requestMealCookProposal = jest.fn()
+const confirmMealCook = jest.fn()
+jest.mock('@/lib/api/meals', () => {
+  const actual = jest.requireActual('@/lib/api/meals')
+  return {
+    fetchMeal: (...args: unknown[]) => fetchMeal(...args),
+    requestMealCookProposal: (...args: unknown[]) => requestMealCookProposal(...args),
+    confirmMealCook: (...args: unknown[]) => confirmMealCook(...args),
+    // The real class — the page's `err instanceof MealCookError` checks need
+    // the real constructor, not a mock stub.
+    MealCookError: actual.MealCookError,
+  }
+})
 
 let mockTimers: CookingTimer[] = []
 const mockStart = jest.fn((label: string, seconds: number) => {
@@ -140,13 +153,15 @@ function baseMeal(overrides: Partial<Meal> = {}): Meal {
   }
 }
 
-function renderPage() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
-    <QueryClientProvider client={client}>
-      <MealCookPage />
-    </QueryClientProvider>,
-  )
+function renderPage(client: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
+  return {
+    ...render(
+      <QueryClientProvider client={client}>
+        <MealCookPage />
+      </QueryClientProvider>,
+    ),
+    client,
+  }
 }
 
 // Issue #653 review round 1 (S4) — computed from the real `dishStepSignaturesForMeal`
@@ -432,22 +447,440 @@ describe('MealCookPage — reload', () => {
   })
 })
 
-describe('MealCookPage — finished', () => {
-  it('shows the finished screen once every step is done, and Back to meal ends the session', async () => {
+// A second dish (a side) with a single step — used by the tests below that
+// need "one dish cooked, one dish entirely skipped" (S9's exclusion rule).
+const SIDE_RECIPE: Recipe = {
+  id: 'r-side',
+  user_id: 'user-1',
+  title: 'Garlic bread',
+  ingredients: [],
+  instructions: ['Toast the bread'],
+  steps: [
+    step({ text: 'Toast the bread', label: 'Toast bread', duration_minutes: 2, hands_on: true, depends_on: [] }),
+  ],
+  servings: 2,
+}
+
+function mealWithSide(): Meal {
+  return baseMeal({
+    dishes: [
+      { role: 'main', position: 0, recipe: MAIN_RECIPE },
+      { role: 'side', position: 1, recipe: SIDE_RECIPE },
+    ],
+  })
+}
+
+/** A minimal `MealCookProposal` — one ready match, so `summariseDeductions` has exactly one deduction to confirm. */
+function baseProposal(overrides: Partial<MealCookProposal> = {}): MealCookProposal {
+  return {
+    proposal_type: 'meal_cook',
+    meal_id: 'meal-1',
+    meal_title: 'Weeknight dinner',
+    servings: 2,
+    dishes: [{ recipe_id: 'r-main', title: 'Pasta dinner', role: 'main', position: 0, ingredients_source: 'recipe' }],
+    matches: [
+      {
+        ingredient_name: 'Pasta',
+        ingredient_qty: 200,
+        ingredient_unit: 'g',
+        pantry_item_id: 'pantry-1',
+        pantry_item_name: 'Pasta',
+        pantry_qty_available: 500,
+        deduct_qty: 200,
+        base_unit: 'g',
+        status: 'ready',
+        shortfall: null,
+        match_type: 'exact',
+        substitution_note: null,
+        sources: [
+          {
+            recipe_id: 'r-main',
+            dish_title: 'Pasta dinner',
+            ingredient_name: 'Pasta',
+            ingredient_qty: 200,
+            ingredient_unit: 'g',
+            required_base_qty: 200,
+            status: 'ready',
+            match_type: 'exact',
+            substitution_note: null,
+          },
+        ],
+      },
+    ],
+    missing: [],
+    missing_sources: {},
+    missing_notes: {},
+    unit_conflicts: [],
+    compound_suggestions: [],
+    expired_items: [],
+    ...overrides,
+  }
+}
+
+const CONFIRM_RESPONSE = {
+  success: true as const,
+  already_confirmed: false,
+  deductions_applied: 1,
+  deductions_requested: 1,
+  deductions_skipped: [],
+  recipes_marked_cooked: ['r-main'],
+  meal_times_cooked: 1,
+  cooked_on: '2026-09-29',
+}
+
+/** Seeds a session with the last (hands-on) step still pending, renders, and taps Done to finish it live on this mount. */
+async function renderFinishedLive(startedAtMs: number, client?: QueryClient) {
+  seedSession(startedAtMs, {
+    'r-main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
+    'r-main:1': { status: 'done', started_at_minutes: 5, extra_minutes: 0 },
+  })
+  const result = renderPage(client)
+  await waitFor(() => expect(screen.getByText('Plate up')).toBeInTheDocument())
+  act(() => {
+    screen.getByRole('button', { name: 'Done' }).click()
+  })
+  await waitFor(() => expect(screen.getByTestId('meal-cook-finished')).toBeInTheDocument())
+  return result
+}
+
+describe('MealCookPage — finished: Mark meal as cooked (proposal request)', () => {
+  it('requests a proposal with each cooked dish, and without an all-skipped dish', async () => {
+    const meal = mealWithSide()
+    fetchMeal.mockResolvedValue(meal)
+    const signatures = dishStepSignaturesForMeal(meal)
+    const session = startMealCookSession('meal-1', ['r-main', 'r-side'], Date.now() - 20 * 60_000, signatures)
+    saveMealCookProgress({
+      ...session,
+      steps: {
+        'r-main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
+        'r-main:1': { status: 'done', started_at_minutes: 5, extra_minutes: 0 },
+        'r-side:0': { status: 'skipped', started_at_minutes: 0, extra_minutes: 0, ended_at_minutes: 0 },
+      },
+    })
+    requestMealCookProposal.mockResolvedValue(baseProposal())
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Plate up')).toBeInTheDocument())
+
+    act(() => {
+      screen.getByRole('button', { name: 'Done' }).click()
+    })
+    await waitFor(() => expect(screen.getByTestId('meal-cook-finished')).toBeInTheDocument())
+    expect(screen.getByTestId('meal-cook-finished-skipped-note')).toHaveTextContent('Garlic bread')
+
+    act(() => {
+      screen.getByRole('button', { name: 'Mark meal as cooked' }).click()
+    })
+
+    await waitFor(() =>
+      expect(requestMealCookProposal).toHaveBeenCalledWith({
+        meal_id: 'meal-1',
+        servings: 2,
+        dishes: [{ recipe_id: 'r-main', ingredients: [], string_scale: 1 }],
+      }),
+    )
+  })
+
+  it('sanitizes a malformed ingredient list before sending it (S5): a nameless object dropped, a NaN quantity as null, and a 120-element list capped at 100', async () => {
+    const malformedIngredients: unknown[] = [
+      { quantity: 5 },
+      { name: 'Salt', quantity: Number.NaN },
+      ...Array.from({ length: 120 }, (_, i) => `Item ${i}`),
+    ]
+    const malformedRecipe: Recipe = {
+      id: 'r-malformed',
+      user_id: 'user-1',
+      title: 'Malformed dish',
+      ingredients: malformedIngredients as Recipe['ingredients'],
+      instructions: ['Do the thing'],
+      steps: [step({ text: 'Do the thing', label: 'Do the thing', duration_minutes: 3, hands_on: true, depends_on: [] })],
+      servings: 2,
+    }
+    const meal = baseMeal({ dishes: [{ role: 'main', position: 0, recipe: malformedRecipe }] })
+    fetchMeal.mockResolvedValue(meal)
+    requestMealCookProposal.mockResolvedValue(baseProposal())
+    startMealCookSession('meal-1', ['r-malformed'], Date.now(), dishStepSignaturesForMeal(meal))
+    renderPage()
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument())
+    act(() => {
+      screen.getByRole('button', { name: 'Done' }).click()
+    })
+    await waitFor(() => expect(screen.getByTestId('meal-cook-finished')).toBeInTheDocument())
+
+    act(() => {
+      screen.getByRole('button', { name: 'Mark meal as cooked' }).click()
+    })
+
+    await waitFor(() => expect(requestMealCookProposal).toHaveBeenCalledTimes(1))
+    const req = requestMealCookProposal.mock.calls[0][0] as { dishes: Array<{ ingredients: unknown[] }> }
+    const ingredients = req.dishes[0].ingredients
+    expect(ingredients).toHaveLength(100)
+    expect(ingredients[0]).toEqual({ name: 'Salt', quantity: null, unit: null })
+    expect(ingredients).not.toContainEqual(expect.objectContaining({ quantity: 5 }))
+    expect(ingredients[99]).toBe('Item 98')
+  })
+})
+
+describe('MealCookPage — finished: confirm', () => {
+  it('ends the session, invalidates the query keys, navigates after 1200ms, and a remount then redirects', async () => {
+    jest.useFakeTimers()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidateSpy = jest.spyOn(client, 'invalidateQueries')
+    requestMealCookProposal.mockResolvedValue(baseProposal())
+    confirmMealCook.mockResolvedValue(CONFIRM_RESPONSE)
+
+    const { unmount } = await renderFinishedLive(Date.now() - 20 * 60_000, client)
+    act(() => {
+      screen.getByRole('button', { name: 'Mark meal as cooked' }).click()
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update pantry' })).toBeInTheDocument())
+
+    act(() => {
+      screen.getByRole('button', { name: 'Update pantry' }).click()
+    })
+
+    await waitFor(() => expect(confirmMealCook).toHaveBeenCalledTimes(1))
+    expect(isMealCookSessionEnded('meal-1')).toBe(true)
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bubbles'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['pantry'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['meal', 'meal-1'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['meals'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inbox-entries'] })
+    expect(pushMock).not.toHaveBeenCalled()
+
+    act(() => {
+      jest.advanceTimersByTime(1200)
+    })
+    expect(pushMock).toHaveBeenCalledWith('/meals/meal-1')
+
+    unmount()
+    renderPage(client)
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/meals/meal-1'))
+  })
+
+  it('a double tap on Update pantry sends exactly one confirm (confirmingRef)', async () => {
+    requestMealCookProposal.mockResolvedValue(baseProposal())
+    let resolveConfirm: (v: typeof CONFIRM_RESPONSE) => void = () => {}
+    confirmMealCook.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveConfirm = resolve
+        }),
+    )
+
+    await renderFinishedLive(Date.now() - 20 * 60_000)
+    act(() => {
+      screen.getByRole('button', { name: 'Mark meal as cooked' }).click()
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update pantry' })).toBeInTheDocument())
+
+    act(() => {
+      const btn = screen.getByRole('button', { name: 'Update pantry' })
+      btn.click()
+      btn.click()
+    })
+
+    await waitFor(() => expect(confirmMealCook).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      resolveConfirm(CONFIRM_RESPONSE)
+    })
+    await waitFor(() => expect(screen.getByText('Pantry updated!')).toBeInTheDocument())
+    expect(confirmMealCook).toHaveBeenCalledTimes(1)
+  })
+
+  it('the two-tab checkpoint closes the sheet when the meal was ended elsewhere', async () => {
+    requestMealCookProposal.mockResolvedValue(baseProposal())
+
+    await renderFinishedLive(Date.now() - 20 * 60_000)
+    act(() => {
+      screen.getByRole('button', { name: 'Mark meal as cooked' }).click()
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update pantry' })).toBeInTheDocument())
+
+    // Another tab already confirmed (and ended) this same cook while the sheet was open here.
+    endMealCookSession('meal-1')
+
+    act(() => {
+      screen.getByRole('button', { name: 'Update pantry' }).click()
+    })
+
+    expect(confirmMealCook).not.toHaveBeenCalled()
+    expect(pushMock).toHaveBeenCalledWith('/meals/meal-1')
+    await waitFor(() => expect(screen.queryByTestId('meal-cook-sheet')).not.toBeInTheDocument())
+  })
+
+  it('a different cook of the same meal (mismatched cook_id) is also treated as ended elsewhere (review S1)', async () => {
+    requestMealCookProposal.mockResolvedValue(baseProposal())
+
+    await renderFinishedLive(Date.now() - 20 * 60_000)
+    act(() => {
+      screen.getByRole('button', { name: 'Mark meal as cooked' }).click()
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update pantry' })).toBeInTheDocument())
+
+    // Another tab ended THIS cook and started a fresh one for the same meal
+    // (a different `cook_id`) — this tab's held session is now stale, even
+    // though a session for meal-1 is active again by the time it confirms.
+    const before = getActiveMealCookSession('meal-1')
+    endMealCookSession('meal-1')
+    startMealCookSession('meal-1', ['r-main'], Date.now(), MAIN_STEP_SIGNATURES)
+    const after = getActiveMealCookSession('meal-1')
+    expect(after?.cook_id).not.toBe(before?.cook_id)
+
+    act(() => {
+      screen.getByRole('button', { name: 'Update pantry' }).click()
+    })
+
+    expect(confirmMealCook).not.toHaveBeenCalled()
+    expect(pushMock).toHaveBeenCalledWith('/meals/meal-1')
+    await waitFor(() => expect(screen.queryByTestId('meal-cook-sheet')).not.toBeInTheDocument())
+    // The fresh cook (the other tab's) must survive untouched — this tab's
+    // stale confirm must not have ended it.
+    expect(getActiveMealCookSession('meal-1')?.cook_id).toBe(after?.cook_id)
+  })
+})
+
+describe('MealCookPage — finished: confirm_in_progress', () => {
+  it('waits 2s and retries once with the same cook_ref, then succeeds', async () => {
+    jest.useFakeTimers()
+    requestMealCookProposal.mockResolvedValue(baseProposal())
+    confirmMealCook
+      .mockRejectedValueOnce(new MealCookError('still saving', 'confirm_in_progress'))
+      .mockResolvedValueOnce(CONFIRM_RESPONSE)
+
+    await renderFinishedLive(Date.now() - 20 * 60_000)
+    act(() => {
+      screen.getByRole('button', { name: 'Mark meal as cooked' }).click()
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update pantry' })).toBeInTheDocument())
+
+    act(() => {
+      screen.getByRole('button', { name: 'Update pantry' }).click()
+    })
+
+    await waitFor(() => expect(confirmMealCook).toHaveBeenCalledTimes(1))
+    // Still waiting on the automatic retry — no error surfaced, so no Retry/Back to meal yet.
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Back to meal' })).not.toBeInTheDocument()
+
+    act(() => {
+      jest.advanceTimersByTime(2000)
+    })
+    await waitFor(() => expect(confirmMealCook).toHaveBeenCalledTimes(2))
+
+    const calls = confirmMealCook.mock.calls as Array<[{ cook_ref: string }]>
+    expect(calls[0][0].cook_ref).toBe(calls[1][0].cook_ref)
+
+    await waitFor(() => expect(screen.getByText('Pantry updated!')).toBeInTheDocument())
+    act(() => {
+      jest.advanceTimersByTime(1200)
+    })
+    expect(pushMock).toHaveBeenCalledWith('/meals/meal-1')
+  })
+
+  it('twice in a row surfaces confirm_incomplete: Back to meal with no Retry, and exactly two confirm calls total', async () => {
+    jest.useFakeTimers()
+    requestMealCookProposal.mockResolvedValue(baseProposal())
+    confirmMealCook.mockRejectedValue(new MealCookError('still saving', 'confirm_in_progress'))
+
+    await renderFinishedLive(Date.now() - 20 * 60_000)
+    act(() => {
+      screen.getByRole('button', { name: 'Mark meal as cooked' }).click()
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update pantry' })).toBeInTheDocument())
+
+    act(() => {
+      screen.getByRole('button', { name: 'Update pantry' }).click()
+    })
+
+    await waitFor(() => expect(confirmMealCook).toHaveBeenCalledTimes(1))
+    act(() => {
+      jest.advanceTimersByTime(2000)
+    })
+    await waitFor(() => expect(confirmMealCook).toHaveBeenCalledTimes(2))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Back to meal' })).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+
+    act(() => {
+      screen.getByRole('button', { name: 'Back to meal' }).click()
+    })
+
+    expect(confirmMealCook).toHaveBeenCalledTimes(2)
+    expect(isMealCookSessionEnded('meal-1')).toBe(true)
+    expect(pushMock).toHaveBeenCalledWith('/meals/meal-1')
+  })
+})
+
+describe('MealCookPage — finished: sheet error kinds', () => {
+  it('dish_mismatch shows Back to meal, which does not end the session', async () => {
+    requestMealCookProposal.mockRejectedValue(new MealCookError('This meal changed', 'dish_mismatch'))
+
+    await renderFinishedLive(Date.now() - 20 * 60_000)
+    act(() => {
+      screen.getByRole('button', { name: 'Mark meal as cooked' }).click()
+    })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Back to meal' })).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+
+    act(() => {
+      screen.getByRole('button', { name: 'Back to meal' }).click()
+    })
+
+    expect(isMealCookSessionEnded('meal-1')).toBe(false)
+    expect(pushMock).toHaveBeenCalledWith('/meals/meal-1')
+  })
+})
+
+describe('MealCookPage — finished: closing without acting', () => {
+  it('X Close on the finished screen does not end the session', async () => {
+    await renderFinishedLive(Date.now() - 20 * 60_000)
+
+    act(() => {
+      screen.getByRole('button', { name: 'Close cook-along' }).click()
+    })
+
+    expect(pushMock).toHaveBeenCalledWith('/meals/meal-1')
+    expect(isMealCookSessionEnded('meal-1')).toBe(false)
+  })
+
+  it('Skip pantry update ends the session with no network call', async () => {
+    await renderFinishedLive(Date.now() - 20 * 60_000)
+
+    act(() => {
+      screen.getByRole('button', { name: 'Skip pantry update' }).click()
+    })
+
+    expect(isMealCookSessionEnded('meal-1')).toBe(true)
+    expect(pushMock).toHaveBeenCalledWith('/meals/meal-1')
+    expect(requestMealCookProposal).not.toHaveBeenCalled()
+    expect(confirmMealCook).not.toHaveBeenCalled()
+  })
+})
+
+describe('MealCookPage — finished: auto-open on restore vs live finish (Nit 6)', () => {
+  it('restoring an already-finished session shows the finished screen with the sheet auto-opened, and no Now card', async () => {
+    requestMealCookProposal.mockResolvedValue(baseProposal())
     seedSession(Date.now() - 20 * 60_000, {
       'r-main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
       'r-main:1': { status: 'done', started_at_minutes: 5, extra_minutes: 0 },
       'r-main:2': { status: 'done', started_at_minutes: 13, extra_minutes: 0 },
     })
     renderPage()
+
     await waitFor(() => expect(screen.getByTestId('meal-cook-finished')).toBeInTheDocument())
+    expect(screen.queryByTestId('meal-now-card-badge')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('meal-cook-sheet')).toBeInTheDocument())
+    await waitFor(() => expect(requestMealCookProposal).toHaveBeenCalledTimes(1))
+  })
 
-    act(() => {
-      screen.getByRole('button', { name: 'Back to meal' }).click()
-    })
+  it('finishing live on this mount shows the finished screen with the sheet closed', async () => {
+    await renderFinishedLive(Date.now() - 20 * 60_000)
 
-    expect(isMealCookSessionEnded('meal-1')).toBe(true)
-    expect(pushMock).toHaveBeenCalledWith('/meals/meal-1')
+    expect(screen.queryByTestId('meal-cook-sheet')).not.toBeInTheDocument()
+    expect(requestMealCookProposal).not.toHaveBeenCalled()
   })
 })
 

@@ -10,6 +10,11 @@ import type {
   CreateMealRequest,
   UpdateMealRequest,
   NewDishRecipePayload,
+  MealCookRequest,
+  MealCookProposal,
+  MealCookConfirmRequest,
+  MealCookConfirmResponse,
+  MealCookErrorKind,
 } from '@/types/meals'
 import type { ChatRecipeData } from '@/types/chat'
 
@@ -104,19 +109,67 @@ export async function deleteMeal(mealId: string): Promise<void> {
   }
 }
 
+const MEAL_COOK_ERROR_KINDS: readonly MealCookErrorKind[] = [
+  'dish_mismatch',
+  'confirm_in_progress',
+  'confirm_incomplete',
+]
+
 /**
- * Reads a message off a proxied AI-service error body, same shape
- * `ensureSteps` reads: usually `detail.message` (the 502 structured-error
- * shape), but FastAPI's own 404s send `detail` as a plain string
- * (`{"detail": "Not Found"}`) rather than an object — that string is the
- * message directly when it isn't the object shape.
+ * Reads a message (and, for the meal cook routes, an `error_kind`) off a
+ * proxied AI-service error body. The body is parsed exactly once — a
+ * `Response` whose body has already been consumed (e.g. by a caller that
+ * peeked at it) can't be re-read, so every caller here and below goes
+ * through this one parse.
+ *
+ * Usually `detail.message` (the 502 structured-error shape), but FastAPI's
+ * own 404s send `detail` as a plain string (`{"detail": "Not Found"}`)
+ * rather than an object — that string is the message directly when it isn't
+ * the object shape. `kind` is `detail.error_kind` when it's one of the three
+ * `MealCookErrorKind` values, else `undefined` — a network error, a thrown
+ * fetch, an unparseable body, or an unrecognized `error_kind` all fall back
+ * to no kind, so the meal cook sheet shows Retry rather than treating them
+ * as one of the three known failure modes.
  */
-async function aiErrorMessage(res: Response, fallback: string): Promise<string> {
+async function aiErrorDetail(
+  res: Response,
+  fallback: string,
+): Promise<{ message: string; kind?: MealCookErrorKind }> {
   const err = (await res.json().catch(() => null)) as
     | { detail?: { error_kind?: string; message?: string } | string; error?: string }
     | null
-  if (typeof err?.detail === 'string') return err.detail
-  return err?.detail?.message ?? err?.error ?? `${fallback}: ${res.status}`
+
+  if (typeof err?.detail === 'string') return { message: err.detail }
+
+  const message = err?.detail?.message ?? err?.error ?? `${fallback}: ${res.status}`
+  const rawKind = err?.detail?.error_kind
+  const kind = MEAL_COOK_ERROR_KINDS.includes(rawKind as MealCookErrorKind)
+    ? (rawKind as MealCookErrorKind)
+    : undefined
+  return { message, kind }
+}
+
+/** `aiErrorDetail`'s message alone — every pre-#654 caller's shape, unchanged. */
+async function aiErrorMessage(res: Response, fallback: string): Promise<string> {
+  return (await aiErrorDetail(res, fallback)).message
+}
+
+/**
+ * Thrown by `requestMealCookProposal` / `confirmMealCook` on a non-OK
+ * response (issue #654 §4 S1). `kind` is set only for the three
+ * `MealCookErrorKind`s the AI service actually sends — a network error, a
+ * thrown `fetch`, or an unrecognized/absent `error_kind` all throw with no
+ * `kind`, so the meal cook sheet's error state shows Retry rather than
+ * treating an unknown failure as one it knows how to route.
+ */
+export class MealCookError extends Error {
+  readonly kind?: MealCookErrorKind
+
+  constructor(message: string, kind?: MealCookErrorKind) {
+    super(message)
+    this.name = 'MealCookError'
+    this.kind = kind
+  }
 }
 
 /**
@@ -192,4 +245,41 @@ export function toNewDishRecipePayload(
     total_time_minutes: recipe.total_time_minutes ?? null,
     servings: recipe.servings ?? null,
   }
+}
+
+/**
+ * `POST /api/ai/meals/cook` (issue #654 / spec #647) — the combined
+ * deduction proposal for however many of the meal's dishes were cooked.
+ * Writes nothing.
+ */
+export async function requestMealCookProposal(req: MealCookRequest): Promise<MealCookProposal> {
+  const res = await fetch('/api/ai/meals/cook', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+  if (!res.ok) {
+    const detail = await aiErrorDetail(res, 'Failed to build the meal cook proposal')
+    throw new MealCookError(detail.message, detail.kind)
+  }
+  return res.json()
+}
+
+/**
+ * `POST /api/ai/meals/cook/confirm` — applies the reviewed deductions and
+ * marks the cooked dishes and the meal. Idempotent on `cook_ref`
+ * (`MealCookSession.cook_id`): a retry with the same ref never double-deducts
+ * (§2c).
+ */
+export async function confirmMealCook(req: MealCookConfirmRequest): Promise<MealCookConfirmResponse> {
+  const res = await fetch('/api/ai/meals/cook/confirm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+  if (!res.ok) {
+    const detail = await aiErrorDetail(res, 'Failed to confirm the meal cook')
+    throw new MealCookError(detail.message, detail.kind)
+  }
+  return res.json()
 }

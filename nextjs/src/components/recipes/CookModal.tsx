@@ -6,9 +6,32 @@ import { useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
-import type { CookProposal, CompoundSuggestion, CompoundComponent, IngredientMatch, DeductionItem, ExpiredMatchedItem } from '@/types/recipes'
+import type { CookProposal } from '@/types/recipes'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 import { endCookSession, isCookSessionEnded } from '@/lib/cook-session'
+import {
+  CookReviewBody,
+  CookDeductionSummary,
+  summariseDeductions,
+  MissingItemsList,
+  compoundOverrideKey,
+  effectiveCompoundOverride,
+  ExpiredIngredientsBanner,
+  dedupeByPantryItemId,
+} from '@/components/recipes/CookReviewBody'
+
+// Issue #654 PR A: CookReviewBody.tsx now owns these — re-exported so every
+// existing import path (`assumed-staples.test.tsx`, `cook-flow-redesign.test.tsx`,
+// `cook-session-teardown.test.tsx`, and any other caller) keeps working
+// unchanged.
+export {
+  summariseDeductions,
+  MissingItemsList,
+  compoundOverrideKey,
+  effectiveCompoundOverride,
+  ExpiredIngredientsBanner,
+  dedupeByPantryItemId,
+}
 
 interface CookModalProps {
   recipeId: string
@@ -63,478 +86,6 @@ const LOADING_STAGES = [
 
 /** Rough duration of the first two stages; the last one holds until the response. */
 const STAGE_MS = 1400
-
-function statusColor(status: IngredientMatch['status']): string {
-  switch (status) {
-    case 'ready':
-      return 'var(--color-fresh)'
-    case 'substitute':
-      return 'var(--color-expiring)'
-    case 'shortfall':
-      return 'var(--color-expiring)'
-    case 'imprecise':
-      return 'var(--color-accent)'
-    case 'unit_conflict':
-      return 'var(--color-expiring)'
-    case 'missing':
-      return 'var(--color-border)'
-    case 'assumed':
-      return 'var(--color-border)'
-    default:
-      return 'var(--color-border)'
-  }
-}
-
-function statusLabel(status: IngredientMatch['status']): string {
-  switch (status) {
-    case 'ready':
-      return 'Ready'
-    case 'substitute':
-      return 'Substitute'
-    case 'shortfall':
-      return 'Not enough'
-    case 'imprecise':
-      return 'Have it'
-    case 'unit_conflict':
-      return 'Unit conflict'
-    case 'missing':
-      return 'Missing'
-    case 'assumed':
-      return 'Assumed'
-    default:
-      return status
-  }
-}
-
-function formatQty(qty: number | null, unit: string | null): string {
-  if (qty == null) return '—'
-  const rounded = Math.round(qty * 100) / 100
-  return unit ? `${rounded} ${unit}` : String(rounded)
-}
-
-/**
- * Pre-review warning banner for matched ingredients that come from expired
- * pantry rows.  Non-blocking — the user can dismiss and proceed.
- *
- * Exported for unit testing.
- */
-export function ExpiredIngredientsBanner({
-  expiredItems,
-  onDismiss,
-}: {
-  expiredItems: ExpiredMatchedItem[]
-  onDismiss: () => void
-}) {
-  if (expiredItems.length === 0) return null
-  return (
-    <div
-      role="alert"
-      className="flex flex-col gap-1.5 rounded-xl px-3 py-2.5 border border-[var(--color-expired)]"
-      style={{
-        background: 'color-mix(in srgb, var(--color-expired) 12%, var(--color-surface))',
-        fontFamily: 'Nunito, sans-serif',
-      }}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-bold text-[var(--color-text)]">
-          Expired ingredients in this recipe
-        </p>
-        <button
-          onClick={onDismiss}
-          className="text-[var(--color-muted)] hover:text-[var(--color-text)] text-xs leading-none shrink-0 px-1"
-          aria-label="Dismiss expired ingredients warning"
-        >
-          ✕
-        </button>
-      </div>
-      <ul className="flex flex-col gap-0.5">
-        {expiredItems.map((item) => (
-          <li key={`${item.ingredient_name}-${item.pantry_item_name}`} className="text-[11px] text-[var(--color-text)]">
-            <span className="font-semibold">{item.ingredient_name}</span>
-            <span className="text-[var(--color-muted)]">
-              {' '}— {item.pantry_item_name} expired {item.days_expired} day
-              {item.days_expired === 1 ? '' : 's'} ago
-            </span>
-          </li>
-        ))}
-      </ul>
-      <a
-        href="/pantry"
-        className="text-[11px] font-bold underline"
-        style={{ color: 'var(--color-primary-dark)' }}
-        aria-label="Go to pantry to clear expired items"
-      >
-        Go to Pantry to clear them →
-      </a>
-    </div>
-  )
-}
-
-/**
- * Stable key for a compound-substitution component's override input, distinct
- * from the numeric row-index keys unit_conflict rows use in the same
- * `overrides` map (#284).
- */
-export function compoundOverrideKey(ingredientName: string, pantryItemId: string): string {
-  return `compound:${ingredientName}:${pantryItemId}`
-}
-
-/**
- * Defensive dedupe by `pantry_item_id`, keeping the first occurrence.
- *
- * The backend already dedupes `resolved_component_items` before it ever
- * reaches the wire (issue #284 follow-up), but two component_items sharing a
- * pantry_item_id would otherwise render mirrored inputs with the same React
- * key and the same override key, and double-deduct whatever quantity the
- * user types. Applied everywhere component_items is consumed, not just where
- * it renders.
- */
-export function dedupeByPantryItemId(items: CompoundComponent[]): CompoundComponent[] {
-  const seen = new Set<string>()
-  const deduped: CompoundComponent[] = []
-  for (const item of items) {
-    if (seen.has(item.pantry_item_id)) continue
-    seen.add(item.pantry_item_id)
-    deduped.push(item)
-  }
-  return deduped
-}
-
-/**
- * The quantity string that a compound component's input actually shows, and
- * that its deduction is actually computed from (#284 Option B, 2026-09-27) —
- * the user's typed override if one exists (including an explicit empty
- * string, meaning "cleared"), else the model's `suggested_quantity` pre-fill,
- * else blank.
- *
- * One function used by both `MissingItemsList` (what to render) and
- * `summariseDeductions` (what to deduct) so the two can never disagree — the
- * exact failure shape of the round-2 review finding on PR #616, where the
- * input's key and the deduction's key were derived separately and drifted
- * apart. A non-positive `suggested_quantity` is treated the same as absent:
- * the backend already validates it away, but this stays defensive in case a
- * stale/cached proposal ever carries one.
- */
-export function effectiveCompoundOverride(
-  overrides: Record<string, string>,
-  key: string,
-  suggestedQuantity: number | null | undefined,
-): string {
-  if (key in overrides) return overrides[key]
-  return suggestedQuantity != null && suggestedQuantity > 0 ? String(suggestedQuantity) : ''
-}
-
-/**
- * "Not in pantry" list — exported for unit testing.
- *
- * Items with a note render as a small vertical block (name + muted note below).
- * Items with a compound suggestion show the suggestion beneath the chip.
- * An ingredient can have BOTH a note and a compound suggestion — they are
- * complementary: the note explains why no single item works; the suggestion
- * shows what to combine instead. Both are shown when present.
- * Items without either render as plain chips, identical to the previous design.
- *
- * When a compound suggestion carries `component_items` (#284), each component
- * gets its own editable quantity input — nothing deducts until the user
- * confirms. Since Option B (2026-09-27) that input starts pre-filled with the
- * model's `suggested_quantity` where it gave a valid one (via
- * `effectiveCompoundOverride`); otherwise it starts blank, same as before.
- * Either way the user can edit or clear it before confirming. Suggestions
- * without component_items (e.g. older cached proposals) render exactly as
- * before, with no inputs.
- */
-export function MissingItemsList({
-  missing,
-  missingNotes = {},
-  compoundSuggestions = [],
-  overrides = {},
-  onOverrideChange,
-}: {
-  missing: string[]
-  missingNotes?: Record<string, string>
-  compoundSuggestions?: CompoundSuggestion[]
-  overrides?: Record<string, string>
-  onOverrideChange?: (key: string, value: string) => void
-}) {
-  if (missing.length === 0) return null
-  return (
-    <div className="flex flex-col gap-1.5">
-      {missing.map((name: string) => {
-        const note = missingNotes[name]
-        const suggestion = compoundSuggestions.find(
-          (s: CompoundSuggestion) => s.ingredient_name.toLowerCase() === name.toLowerCase(),
-        )
-        // Defensive dedupe: the backend keys resolved_component_items by
-        // pantry_item_id (issue #284 follow-up), but an older cached proposal
-        // or a future regression could still hand us two component_items for
-        // the same row. Rendering both would give two inputs sharing one
-        // React key and one override key, silently mirroring whatever the
-        // user types into either — so collapse to the first here too.
-        const componentItems = dedupeByPantryItemId(suggestion?.component_items ?? [])
-        return (
-          <div key={name} className="flex flex-col gap-0.5">
-            {note ? (
-              <div style={{ fontFamily: 'Nunito, sans-serif' }}>
-                <span className="font-semibold text-xs text-[var(--color-text)]">⚠️ {name}</span>
-                <span
-                  className="block font-normal leading-snug text-[var(--color-muted)] mt-0.5 break-words"
-                  style={{ fontSize: '10px' }}
-                >
-                  {note}
-                </span>
-              </div>
-            ) : (
-              <span
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border border-[var(--color-border)] text-[var(--color-muted)] self-start"
-                style={{ fontFamily: 'Nunito, sans-serif' }}
-              >
-                ⚠️ {name}
-              </span>
-            )}
-            {suggestion && (
-              <div
-                className="ml-2 text-[10px] leading-snug text-[var(--color-muted)]"
-                style={{ fontFamily: 'Nunito, sans-serif' }}
-                aria-label={`Compound substitution suggestion for ${name}`}
-              >
-                <span className="font-semibold">Try combining: </span>
-                {suggestion.components.join(' + ')}
-                <span className="block italic mt-0.5">{suggestion.note}</span>
-                {componentItems.length > 0 && (
-                  <div className="flex flex-col gap-1 mt-1.5" aria-label={`Use how much of each for ${name}`}>
-                    {/* Only shown when at least one component actually has an
-                        input to explain (#284 round 7, round-6 leftover) — a
-                        suggestion where every component has a null base_unit
-                        renders only "can't deduct" notes below, and a heading
-                        about typing quantities over a list with no typable
-                        input is worse than no heading at all. */}
-                    {componentItems.some((c) => c.base_unit) && (
-                      <span className="not-italic text-[9px] text-[var(--color-muted)]">
-                        Used this swap? These amounts come out of your pantry — clear any you
-                        didn&apos;t use.
-                      </span>
-                    )}
-                    {componentItems.map((component) => {
-                      const key = compoundOverrideKey(suggestion.ingredient_name, component.pantry_item_id)
-                      // A component with no derivable base_unit can never
-                      // actually be deducted — repo.deduct_pantry_item
-                      // refuses a row with no recorded or derivable base
-                      // unit — so there is no unit the typed number could be
-                      // interpreted in. Render no input for it at all rather
-                      // than one whose value silently goes nowhere (claude[bot]
-                      // round-5 review on PR #616, CookModal.tsx:302).
-                      if (!component.base_unit) {
-                        return (
-                          <div key={key} className="flex items-center gap-1.5">
-                            <span className="flex-1 not-italic text-[var(--color-text)] font-semibold">
-                              {component.name}
-                            </span>
-                            <span className="italic text-[var(--color-muted)] text-right">
-                              can&apos;t deduct {component.name} automatically (no unit on that
-                              pantry item)
-                            </span>
-                          </div>
-                        )
-                      }
-                      return (
-                        <div key={key} className="flex items-center gap-1.5">
-                          <span className="flex-1 not-italic text-[var(--color-text)] font-semibold">
-                            {component.name}
-                          </span>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={effectiveCompoundOverride(overrides, key, component.suggested_quantity)}
-                            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                              onOverrideChange?.(key, e.target.value)
-                            }
-                            className="w-14 text-right border border-[var(--color-border)] rounded px-1 py-0.5 text-xs not-italic"
-                            placeholder="qty"
-                            aria-label={`Deduct quantity for ${component.name} (${name} substitution)`}
-                          />
-                          <span className="not-italic w-8">{component.base_unit}</span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-/**
- * Adds `deductQty` to `map`'s entry for `pantryItemId`, creating it with
- * `fallbackUnit` if this is the first deduction to touch that row. Shared by
- * both the matched-ingredient pass and the compound-component pass in
- * `summariseDeductions` — several recipe lines, or a recipe line and an
- * opted-in compound component, can all resolve to the same pantry row, and
- * each must land as one summed entry rather than two competing writes.
- */
-function mergeDeduction(
-  map: Map<string, DeductionItem>,
-  pantryItemId: string,
-  deductQty: number,
-  fallbackUnit: string | null,
-): void {
-  const existing = map.get(pantryItemId)
-  if (existing) {
-    existing.deduct_qty += deductQty
-  } else {
-    map.set(pantryItemId, {
-      pantry_item_id: pantryItemId,
-      deduct_qty: deductQty,
-      base_unit: fallbackUnit ?? 'item',
-    })
-  }
-}
-
-/**
- * Splits the proposal into what will actually be deducted and what will not.
- *
- * The two are derived together on purpose: the confirm payload and the summary
- * shown above the button must never disagree. Previously the payload was built
- * inline at confirm time and rows that fell out (`deductQty <= 0`) simply
- * vanished, so the user was told nothing about ingredients their pantry never
- * gave up (#245).
- *
- * Compound-substitution components (#284) are folded into the same deductions
- * list, keyed the same way `overrides` keys them (`compoundOverrideKey`), via
- * `effectiveCompoundOverride` — which also lets a model-suggested quantity
- * (Option B, 2026-09-27) count as a real deduction even before the user
- * types anything, as long as they haven't cleared or edited that input. They
- * are deliberately excluded from `matchedCount`/`skipped` — those track
- * recipe ingredient lines from `proposal.matches`, and a compound component is
- * neither: it is an opt-in the user reaches through the "Not in pantry"
- * section, not a recipe line the model already matched. `compoundDeductions`
- * reports just the compound half so the UI can describe it separately from
- * the ingredient-line summary.
- */
-export function summariseDeductions(
-  proposal: CookProposal,
-  overrides: Record<string, string>,
-): {
-  deductions: DeductionItem[]
-  /** Matched rows that will NOT be deducted, and why. */
-  skipped: Array<{ name: string; reason: 'needs_quantity' | 'imprecise' | 'no_quantity' }>
-  /** Count of matched (non-missing) rows considered. */
-  matchedCount: number
-  /** Compound-substitution component deductions the user opted into, with display names. */
-  compoundDeductions: Array<{ ingredientName: string; componentName: string; deductQty: number }>
-  /** Distinct pantry rows deducted by matched ingredients alone (excludes compound components). */
-  matchesDeductionCount: number
-} {
-  const byPantryItem = new Map<string, DeductionItem>()
-  const skipped: Array<{ name: string; reason: 'needs_quantity' | 'imprecise' | 'no_quantity' }> =
-    []
-  let matchedCount = 0
-
-  proposal.matches.forEach((m: IngredientMatch, i: number) => {
-    if (m.pantry_item_id == null || m.status === 'missing') return
-    matchedCount += 1
-
-    // For unit_conflict rows, use the user's override qty (or 0 if not set).
-    // Keyed by row index, not pantry item — two rows sharing an item still
-    // need their own input.
-    const isConflict = m.status === 'unit_conflict'
-    const deductQty = isConflict
-      ? parseFloat(overrides[String(i)] ?? '0') || 0
-      : (m.deduct_qty ?? 0)
-
-    if (deductQty <= 0) {
-      // 'imprecise' is not a gap the user can close by typing a number — the
-      // recipe's pieces cannot be measured against a package row, so it is
-      // reported separately from rows that are merely awaiting a quantity.
-      skipped.push({
-        name: m.ingredient_name,
-        reason: isConflict
-          ? 'needs_quantity'
-          : m.status === 'imprecise'
-            ? 'imprecise'
-            : 'no_quantity',
-      })
-      return
-    }
-
-    // Several recipe lines can resolve to one pantry row — literal duplicates,
-    // or names the backend collapses onto the same item (cheddar and parmesan
-    // both normalize to "cheese"). Emitting one entry per match would then send
-    // two deductions for one row, and the server applies each as a
-    // read-modify-write. The backend sums defensively too; doing it here keeps
-    // the payload honest about what is actually being deducted.
-    mergeDeduction(byPantryItem, m.pantry_item_id, deductQty, m.base_unit)
-  })
-
-  // Captured before compound components are folded in, so the primary
-  // "X of Y ingredients" sentence stays about recipe lines even when a
-  // compound component happens to land on a pantry row no matched
-  // ingredient touched (#284) — otherwise X could exceed Y.
-  const matchesDeductionCount = byPantryItem.size
-
-  // Compound substitution components (#284): only a positive effective
-  // quantity — the user's typed override, or the model's pre-filled
-  // suggested_quantity if the user hasn't touched the input (Option B,
-  // 2026-09-27; see effectiveCompoundOverride) — turns a suggested component
-  // into a real deduction. A component can share a pantry row with a matched
-  // ingredient (or another component), so it merges into the same map by
-  // pantry_item_id rather than always appending a fresh entry.
-  const compoundDeductions: Array<{ ingredientName: string; componentName: string; deductQty: number }> = []
-  // Tracks every compoundOverrideKey already applied across ALL suggestions,
-  // not just within one. The backend can emit two CompoundSuggestion entries
-  // for the same ingredient_name (resolve_aliases_with_llm appends one per
-  // LLM result entry with no dedup — round-4 review on PR #616); both share
-  // one compoundOverrideKey, so without this guard the second suggestion's
-  // loop would read the same override and merge it a second time, doubling
-  // whatever the user typed even though only one input is ever rendered.
-  const appliedCompoundKeys = new Set<string>()
-  for (const suggestion of proposal.compound_suggestions ?? []) {
-    // Defensive dedupe (see dedupeByPantryItemId): guards against a proposal
-    // that somehow still carries two component_items for the same pantry
-    // row, which would otherwise merge (and double-deduct) twice here.
-    for (const component of dedupeByPantryItemId(suggestion.component_items ?? [])) {
-      // No input is ever rendered for a null-base_unit component (see
-      // MissingItemsList above), so no override should exist for its key in
-      // practice — but this guards defensively against a stale overrides
-      // entry (e.g. a suggestion re-resolving to a different component
-      // shape between renders) still reaching repo.deduct_pantry_item, which
-      // refuses the row and silently drops the write anyway.
-      if (!component.base_unit) continue
-
-      const key = compoundOverrideKey(suggestion.ingredient_name, component.pantry_item_id)
-      if (appliedCompoundKeys.has(key)) continue
-      appliedCompoundKeys.add(key)
-
-      // Reads the same value effectiveCompoundOverride would render into the
-      // input (typed override, else the model's pre-fill, else blank) — see
-      // that function's docstring for why this must share logic with
-      // rendering rather than re-deriving it here (#284 Option B).
-      const deductQty =
-        parseFloat(effectiveCompoundOverride(overrides, key, component.suggested_quantity) || '0') || 0
-      if (deductQty <= 0) continue
-
-      compoundDeductions.push({
-        ingredientName: suggestion.ingredient_name,
-        componentName: component.name,
-        deductQty,
-      })
-
-      mergeDeduction(byPantryItem, component.pantry_item_id, deductQty, component.base_unit)
-    }
-  }
-
-  return {
-    deductions: Array.from(byPantryItem.values()),
-    skipped,
-    matchedCount,
-    compoundDeductions,
-    matchesDeductionCount,
-  }
-}
 
 export default function CookModal({
   recipeId,
@@ -593,14 +144,10 @@ export default function CookModal({
 
   // Recomputed as the user fills in override quantities, so the summary above
   // the button always describes the payload the button will actually send.
+  // The footer text itself now lives in CookDeductionSummary (issue #654);
+  // this stays only for the confirm button's "Cook anyway" demotion below.
   const summary = proposal ? summariseDeductions(proposal, overrides) : null
-  /** Rows the user could still resolve by typing a quantity. */
-  const needsQuantity = summary?.skipped.filter((s) => s.reason === 'needs_quantity') ?? []
-  /** Rows satisfied by a package we cannot measure against — nothing to fix. */
-  const imprecise = summary?.skipped.filter((s) => s.reason === 'imprecise') ?? []
-  /** Everything else that will not be deducted, reported as before. */
-  const notDeducted = summary?.skipped.filter((s) => s.reason !== 'imprecise') ?? []
-  const hasUnresolved = needsQuantity.length > 0
+  const hasUnresolved = summary?.skipped.some((s) => s.reason === 'needs_quantity') ?? false
 
   const handleConfirm = async () => {
     if (!proposal || !summary) return
@@ -807,122 +354,15 @@ export default function CookModal({
             )}
 
             {(state === 'review' || state === 'confirming') && proposal && (
-              <div className="flex flex-col gap-4">
-                {/* Expired-ingredient pre-cook warning — non-blocking */}
-                {!expiredDismissed && (proposal.expired_items ?? []).length > 0 && (
-                  <ExpiredIngredientsBanner
-                    expiredItems={proposal.expired_items ?? []}
-                    onDismiss={() => setExpiredDismissed(true)}
-                  />
-                )}
-
-                {/* Ingredient table — assumed staples are collapsed into a summary line below */}
-                {proposal.matches.filter((m: IngredientMatch) => m.status !== 'assumed').length > 0 && (
-                  <table className="w-full text-xs" style={{ fontFamily: 'Nunito, sans-serif' }}>
-                    <thead>
-                      <tr className="text-[var(--color-muted)] text-left">
-                        <th className="pb-1 font-semibold">Ingredient</th>
-                        <th className="pb-1 font-semibold">Pantry match</th>
-                        <th className="pb-1 font-semibold text-right">Deduct</th>
-                        <th className="pb-1 font-semibold text-right">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {proposal.matches
-                        .map((m: IngredientMatch, origIdx: number) => ({ m, origIdx }))
-                        .filter(({ m }) => m.status !== 'assumed')
-                        .map(({ m, origIdx }) => (
-                        <tr key={origIdx} className="border-t border-[var(--color-border)]">
-                          <td className="py-1.5 pr-2 font-semibold text-[var(--color-text)]">
-                            {m.ingredient_name}
-                            {m.match_type === 'substitute' && m.substitution_note && (
-                              <span className="block font-normal text-[10px] leading-snug text-[var(--color-muted)] mt-0.5">
-                                {m.substitution_note}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-1.5 pr-2 text-[var(--color-muted)]">
-                            {m.pantry_item_name ?? '—'}
-                            {m.match_type === 'substitute' && (
-                              <span className="block text-[10px] italic mt-0.5">substituted</span>
-                            )}
-                          </td>
-                          <td className="py-1.5 pr-2 text-right text-[var(--color-muted)]">
-                            {m.status === 'unit_conflict' ? (
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.1"
-                                value={overrides[String(origIdx)] ?? ''}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                                  setOverrides((prev: Record<string, string>) => ({
-                                    ...prev,
-                                    [String(origIdx)]: e.target.value,
-                                  }))
-                                }
-                                className="w-16 text-right border border-[var(--color-border)] rounded px-1 py-0.5 text-xs"
-                                placeholder="qty"
-                                aria-label={`Deduct quantity for ${m.ingredient_name}`}
-                              />
-                            ) : (
-                              formatQty(m.deduct_qty, m.base_unit)
-                            )}
-                          </td>
-                          <td className="py-1.5 text-right">
-                            <span
-                              className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold"
-                              style={{
-                                background: statusColor(m.status),
-                                color: '#4a4a4a',
-                              }}
-                            >
-                              {statusLabel(m.status)}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-
-                {/* Assumed staples — collapsed into one unobtrusive line (#305) */}
-                {(() => {
-                  const assumedNames = proposal.matches
-                    .filter((m: IngredientMatch) => m.status === 'assumed')
-                    .map((m: IngredientMatch) => m.ingredient_name)
-                  if (assumedNames.length === 0) return null
-                  return (
-                    <p
-                      className="text-[10px] text-[var(--color-muted)] italic"
-                      style={{ fontFamily: 'Nunito, sans-serif' }}
-                      aria-label="Assumed culinary staples"
-                    >
-                      Basics assumed: {assumedNames.join(', ')}
-                    </p>
-                  )
-                })()}
-
-                {/* Missing items */}
-                {proposal.missing.length > 0 && (
-                  <div>
-                    <p
-                      className="text-xs font-bold text-[var(--color-muted)] mb-1"
-                      style={{ fontFamily: 'Nunito, sans-serif' }}
-                    >
-                      Not in pantry
-                    </p>
-                    <MissingItemsList
-                      missing={proposal.missing}
-                      missingNotes={proposal.missing_notes}
-                      compoundSuggestions={proposal.compound_suggestions}
-                      overrides={overrides}
-                      onOverrideChange={(key, value) =>
-                        setOverrides((prev: Record<string, string>) => ({ ...prev, [key]: value }))
-                      }
-                    />
-                  </div>
-                )}
-              </div>
+              <CookReviewBody
+                proposal={proposal}
+                overrides={overrides}
+                onOverrideChange={(key, value) =>
+                  setOverrides((prev: Record<string, string>) => ({ ...prev, [key]: value }))
+                }
+                expiredDismissed={expiredDismissed}
+                onDismissExpired={() => setExpiredDismissed(true)}
+              />
             )}
           </div>
 
@@ -935,48 +375,7 @@ export default function CookModal({
               {/* What will actually happen, stated before the button that does it.
                   In confirm mode a partial deduction is a warning; in preview
                   nothing is being written, so the same numbers are just a plan. */}
-              {summary && (summary.matchedCount > 0 || summary.compoundDeductions.length > 0) && (
-                <div
-                  className="text-xs leading-snug"
-                  style={{ fontFamily: 'Nunito, sans-serif' }}
-                >
-                  {summary.matchedCount > 0 && (
-                    <p
-                      className={
-                        notDeducted.length > 0 && mode === 'confirm'
-                          ? 'font-bold text-[var(--color-text)]'
-                          : 'text-[var(--color-muted)]'
-                      }
-                    >
-                      {notDeducted.length > 0 && mode === 'confirm' && '⚠️ '}
-                      {summary.matchesDeductionCount} of {summary.matchedCount} ingredient
-                      {summary.matchedCount === 1 ? '' : 's'}{' '}
-                      {mode === 'preview' ? 'will come from your pantry' : 'will be deducted'}
-                      {needsQuantity.length > 0 && ` — ${needsQuantity.length} need${
-                        needsQuantity.length === 1 ? 's' : ''
-                      } a quantity`}
-                    </p>
-                  )}
-                  {notDeducted.length > 0 && (
-                    <p className="text-[var(--color-muted)] mt-0.5">
-                      Not {mode === 'preview' ? 'counted' : 'deducted'}:{' '}
-                      {notDeducted.map((s) => s.name).join(', ')}
-                    </p>
-                  )}
-                  {imprecise.length > 0 && (
-                    <p className="text-[var(--color-muted)] mt-0.5">
-                      You have {imprecise.map((s) => s.name).join(', ')} — we can&apos;t tell how
-                      much of a pack the recipe uses, so the quantity is left as it is.
-                    </p>
-                  )}
-                  {summary.compoundDeductions.length > 0 && (
-                    <p className="text-[var(--color-muted)] mt-0.5">
-                      Also {mode === 'preview' ? 'using' : 'deducting'} from your substitution:{' '}
-                      {summary.compoundDeductions.map((d) => d.componentName).join(', ')}
-                    </p>
-                  )}
-                </div>
-              )}
+              {summary && <CookDeductionSummary summary={summary} mode={mode} />}
 
               <div className="flex gap-2">
                 <button

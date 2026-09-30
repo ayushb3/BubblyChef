@@ -28,9 +28,10 @@ import {
   getActiveMealCookSession,
   startMealCookSession,
   clearActiveMealCookSession,
+  endMealCookSession,
   isStaleMealCookSession,
 } from '@/lib/meal-cook-session'
-import { timerIdsToDismiss } from '@/lib/meal-cook-stream'
+import { timerIdsToDismiss, isMealCookFinished } from '@/lib/meal-cook-stream'
 import { useCookingTimers } from '@/lib/useCookingTimers'
 import type { Meal, MealDishFull } from '@/types/meals'
 
@@ -94,6 +95,14 @@ export default function MealDetailPage() {
   const [row, setRow] = useState<RowUiState | null>(null)
   const [confirmRemovePosition, setConfirmRemovePosition] = useState<number | null>(null)
   const [removeError, setRemoveError] = useState<string | null>(null)
+  // Issue #654 §5 — bumped after the finish banner's Skip ends the session, so
+  // `activeCookSession` / `otherMealCookSession` (both read localStorage, an
+  // external system `useMemo` wouldn't otherwise re-poll) recompute without a
+  // reload.
+  const [sessionTick, setSessionTick] = useState(0)
+  // S5 "another meal's cook" — Start cooking shows this inline instead of
+  // starting straight away when a DIFFERENT meal's cook-along is active.
+  const [showOtherMealConfirm, setShowOtherMealConfirm] = useState(false)
   // True only while a swap/add's expand-then-PUT is actually persisting —
   // browsing alternatives (loadAlternatives) doesn't set this. Combined with
   // `removeMutation.isPending` below, this is the single "a dish op is in
@@ -225,12 +234,31 @@ export default function MealDetailPage() {
   // Recomputed from `meal` (not "checked once on mount"): a swap/remove on
   // *this* page can turn a previously-resumable session stale while it's
   // still open, and the banner should reflect that without a reload.
-  const activeCookSession = useMemo(() => (meal ? getActiveMealCookSession(meal.id) : null), [meal])
+  const activeCookSession = useMemo(
+    () => (meal ? getActiveMealCookSession(meal.id) : null),
+    // sessionTick: Skip on the finish banner ends the session without a
+    // reload — this needs to re-read localStorage when that happens.
+    [meal, sessionTick],
+  )
   const cookSessionIsStale = useMemo(
     () =>
       activeCookSession ? isStaleMealCookSession(activeCookSession, dishIds, dishStepSignatures) : false,
     [activeCookSession, dishIds, dishStepSignatures],
   )
+  // Issue #654 §5 (S9's contract) — every step across every dish done or
+  // skipped. The finish banner replaces the Resume banner exactly here;
+  // stale still wins over both (checked first in the render below).
+  const cookSessionFinished = useMemo(
+    () => (activeCookSession ? isMealCookFinished(activeCookSession, schedulerDishes) : false),
+    [activeCookSession, schedulerDishes],
+  )
+  // S5 "another meal's cook" — a DIFFERENT meal's active session. A session
+  // for THIS meal is `activeCookSession` above, not this.
+  const otherMealCookSession = useMemo(() => {
+    if (!meal) return null
+    const active = getActiveMealCookSession()
+    return active && active.meal_id !== meal.id ? active : null
+  }, [meal, sessionTick])
 
   const serveAt = useMemo(() => {
     if (mode !== 'serve-at') return undefined
@@ -275,6 +303,47 @@ export default function MealDetailPage() {
   function handleResumeCooking() {
     if (!meal) return
     router.push(`/meals/${meal.id}/cook`)
+  }
+
+  /**
+   * The finish banner's Skip (issue #654 §5) — no write, no deduction,
+   * nothing marked cooked, mirroring the cook page's own "Skip pantry
+   * update"/"Back to meal". Dismisses any leftover linked dock timers first
+   * (defensive — a finished session has none in practice), ends the session,
+   * and bumps `sessionTick` so the banner disappears without a reload.
+   */
+  function handleFinishBannerSkip() {
+    if (!meal || !activeCookSession) return
+    for (const timerId of timerIdsToDismiss(activeCookSession)) dismissTimer(timerId)
+    endMealCookSession(meal.id)
+    setSessionTick((t) => t + 1)
+  }
+
+  /**
+   * S5 "another meal's cook" — Start cooking, when a DIFFERENT meal's
+   * cook-along is active, shows the inline confirm instead of starting
+   * straight away.
+   */
+  function handleStartCookingClick() {
+    if (otherMealCookSession) {
+      setShowOtherMealConfirm(true)
+      return
+    }
+    handleStartCooking()
+  }
+
+  /** "Start anyway" — drops the other meal's session's dock timers, then starts this one (which replaces it). */
+  function handleStartAnyway() {
+    if (otherMealCookSession) {
+      for (const timerId of timerIdsToDismiss(otherMealCookSession)) dismissTimer(timerId)
+    }
+    handleStartCooking()
+  }
+
+  /** "Go to that meal" — starts nothing here. */
+  function handleGoToOtherMeal() {
+    if (!otherMealCookSession) return
+    router.push(`/meals/${otherMealCookSession.meal_id}`)
   }
 
   /**
@@ -567,20 +636,101 @@ export default function MealDetailPage() {
           </div>
         </FadeInView>
 
-        {/* Cook-along entry (issue #653) */}
+        {/* Cook-along entry (issue #653; finish banner + S5 issue #654 §5) */}
         <FadeInView delay={0.14}>
           {!activeCookSession && (
-            <SpringButton
-              className="w-full py-3 rounded-full text-sm font-bold text-white active:scale-95 disabled:opacity-60"
-              style={{ background: 'var(--color-primary)' } as React.CSSProperties}
-              onClick={handleStartCooking}
-              disabled={dishOpInFlight || stepsUpgrading}
-              title="Start cooking"
-            >
-              🍳 Start cooking
-            </SpringButton>
+            <div className="flex flex-col gap-2">
+              <SpringButton
+                className="w-full py-3 rounded-full text-sm font-bold text-white active:scale-95 disabled:opacity-60"
+                style={{ background: 'var(--color-primary)' } as React.CSSProperties}
+                onClick={handleStartCookingClick}
+                disabled={dishOpInFlight || stepsUpgrading}
+                title="Start cooking"
+              >
+                🍳 Start cooking
+              </SpringButton>
+              {showOtherMealConfirm && otherMealCookSession && (
+                <div
+                  className="rounded-2xl p-3 flex flex-col gap-2"
+                  style={{ background: 'var(--color-surface)', border: '1.5px solid var(--color-border)' }}
+                  role="alertdialog"
+                  data-testid="meal-cook-other-session-confirm"
+                >
+                  <p className="text-sm" style={{ color: 'var(--color-text)' }}>
+                    You haven&apos;t finished another meal&apos;s cook — starting this one drops it.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleGoToOtherMeal}
+                      className="min-h-[44px] px-3 rounded-full text-sm font-bold"
+                      style={{ color: 'var(--color-muted)' }}
+                    >
+                      Go to that meal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleStartAnyway}
+                      className="min-h-[44px] px-4 rounded-full text-sm font-bold text-white"
+                      style={{ background: 'var(--color-primary-dark)' }}
+                    >
+                      Start anyway
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
-          {activeCookSession && !cookSessionIsStale && (
+          {activeCookSession && cookSessionIsStale && (
+            <div
+              className="rounded-2xl p-4 flex items-center justify-between gap-3"
+              style={{ background: 'var(--color-surface)', border: '1.5px solid var(--color-border)' }}
+              role="status"
+              data-testid="meal-cook-stale-banner"
+            >
+              <p className="text-sm" style={{ color: 'var(--color-text)' }}>
+                This meal changed since you started cooking. Your pantry wasn&apos;t updated for that cook.
+              </p>
+              <button
+                type="button"
+                onClick={handleStartOverCooking}
+                className="min-h-[44px] px-4 rounded-full text-sm font-bold"
+                style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
+              >
+                Start over
+              </button>
+            </div>
+          )}
+          {activeCookSession && !cookSessionIsStale && cookSessionFinished && (
+            <div
+              className="rounded-2xl p-4 flex items-center justify-between gap-3"
+              style={{ background: 'var(--color-surface)', border: '1.5px solid var(--color-border)' }}
+              data-testid="meal-cook-finish-banner"
+            >
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                Dinner&apos;s done! Update your pantry?
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResumeCooking}
+                  className="min-h-[44px] px-4 rounded-full text-sm font-bold"
+                  style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
+                >
+                  Update pantry
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFinishBannerSkip}
+                  className="min-h-[44px] px-3 rounded-full text-sm font-bold"
+                  style={{ color: 'var(--color-muted)' }}
+                >
+                  Skip
+                </button>
+              </div>
+            </div>
+          )}
+          {activeCookSession && !cookSessionIsStale && !cookSessionFinished && (
             <div
               className="rounded-2xl p-4 flex items-center justify-between gap-3"
               style={{ background: 'var(--color-surface)', border: '1.5px solid var(--color-border)' }}
@@ -607,26 +757,6 @@ export default function MealDetailPage() {
                   Start over
                 </button>
               </div>
-            </div>
-          )}
-          {activeCookSession && cookSessionIsStale && (
-            <div
-              className="rounded-2xl p-4 flex items-center justify-between gap-3"
-              style={{ background: 'var(--color-surface)', border: '1.5px solid var(--color-border)' }}
-              role="status"
-              data-testid="meal-cook-stale-banner"
-            >
-              <p className="text-sm" style={{ color: 'var(--color-text)' }}>
-                This meal changed since you started cooking.
-              </p>
-              <button
-                type="button"
-                onClick={handleStartOverCooking}
-                className="min-h-[44px] px-4 rounded-full text-sm font-bold"
-                style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
-              >
-                Start over
-              </button>
             </div>
           )}
         </FadeInView>

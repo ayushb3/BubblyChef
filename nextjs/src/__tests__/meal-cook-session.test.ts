@@ -16,6 +16,8 @@ import {
   endMealCookSession,
   isMealCookSessionEnded,
   isStaleMealCookSession,
+  ensureCookId,
+  readDishAmendment,
   type MealCookSession,
 } from '@/lib/meal-cook-session'
 
@@ -29,7 +31,7 @@ describe('meal-cook-session — save and restore', () => {
     expect(getActiveMealCookSession('meal-1')).toBeNull()
   })
 
-  it('starting a session writes an active record with empty steps and amendments', () => {
+  it('starting a session writes an active record with empty steps and amendments, and a UUID cook_id', () => {
     const session = startMealCookSession('meal-1', ['r-main', 'r-side1'], 1000, ['1:boil', '1:chop'])
     expect(session).toEqual({
       meal_id: 'meal-1',
@@ -37,6 +39,7 @@ describe('meal-cook-session — save and restore', () => {
       dish_ids: ['r-main', 'r-side1'],
       dish_step_signatures: ['1:boil', '1:chop'],
       steps: {},
+      cook_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
       ingredient_amendments: {},
     })
     expect(getActiveMealCookSession('meal-1')).toEqual(session)
@@ -331,4 +334,123 @@ describe('meal-cook-session — a stale step-signature mismatch (issue #653 revi
   it('is stale when the signature count differs even if dish ids match', () => {
     expect(isStaleMealCookSession(session, ['r-main', 'r-side1'], ['2:boil|drain'])).toBe(true)
   })
+})
+
+describe('meal-cook-session — ensureCookId (issue #654, N5)', () => {
+  it('a #653-shaped session with no cook_id gets a deterministic legacy id', () => {
+    const legacySession: MealCookSession = {
+      meal_id: 'meal-1',
+      started_at_ms: 12345,
+      dish_ids: ['r-main'],
+      dish_step_signatures: ['1:boil'],
+      steps: {},
+      ingredient_amendments: {},
+    }
+    const first = ensureCookId(legacySession)
+    const second = ensureCookId(legacySession)
+    expect(first.cook_id).toBe('legacy-12345')
+    // Two tabs restoring the same pre-#654 session must derive the same ref
+    // so the server's claim still dedupes them.
+    expect(second.cook_id).toBe(first.cook_id)
+  })
+
+  it('leaves a well-formed cook_id untouched', () => {
+    const session: MealCookSession = {
+      meal_id: 'meal-1',
+      started_at_ms: 1000,
+      dish_ids: ['r-main'],
+      dish_step_signatures: ['1:boil'],
+      steps: {},
+      cook_id: 'a1b2c3',
+      ingredient_amendments: {},
+    }
+    expect(ensureCookId(session)).toBe(session)
+  })
+
+  it('replaces a cook_id outside the safe charset', () => {
+    const session: MealCookSession = {
+      meal_id: 'meal-1',
+      started_at_ms: 42,
+      dish_ids: ['r-main'],
+      dish_step_signatures: ['1:boil'],
+      steps: {},
+      cook_id: 'not a valid ref!',
+      ingredient_amendments: {},
+    }
+    expect(ensureCookId(session).cook_id).toBe('legacy-42')
+  })
+})
+
+describe('meal-cook-session — readDishAmendment (issue #654 §3)', () => {
+  const baseSession: MealCookSession = {
+    meal_id: 'meal-1',
+    started_at_ms: 1000,
+    dish_ids: ['r-main'],
+    dish_step_signatures: ['1:boil'],
+    steps: {},
+    ingredient_amendments: {},
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  it('a well-formed amendment seeded into storage is returned after a fresh read', () => {
+    startMealCookSession('meal-1', ['r-main'], 1000, ['1:boil'])
+    saveMealCookProgress({
+      ...baseSession,
+      ingredient_amendments: {
+        'r-main': {
+          ingredients: [{ name: 'Flour', quantity: 2, unit: 'cups' }],
+          servings: 4,
+          change_summary: 'Doubled the flour',
+          applied_at_ms: 5000,
+        },
+      },
+    })
+
+    const resumed = getActiveMealCookSession('meal-1')!
+    expect(readDishAmendment(resumed, 'r-main')).toEqual({
+      ingredients: [{ name: 'Flour', quantity: 2, unit: 'cups' }],
+      servings: 4,
+      change_summary: 'Doubled the flour',
+      applied_at_ms: 5000,
+    })
+  })
+
+  it('returns null for a dish with no amendment', () => {
+    expect(readDishAmendment(baseSession, 'r-main')).toBeNull()
+  })
+
+  const malformedCases: Array<[string, unknown]> = [
+    ['a string instead of the amendment object', 'not an object'],
+    ['an empty ingredients list', { ingredients: [], servings: 4, change_summary: null, applied_at_ms: 1 }],
+    [
+      'an ingredient object with no name',
+      { ingredients: [{ quantity: 2 }], servings: 4, change_summary: null, applied_at_ms: 1 },
+    ],
+    [
+      'an ingredient object with a blank name',
+      { ingredients: [{ name: '  ' }], servings: 4, change_summary: null, applied_at_ms: 1 },
+    ],
+    [
+      'a non-positive servings value',
+      { ingredients: [{ name: 'Salt' }], servings: 0, change_summary: null, applied_at_ms: 1 },
+    ],
+    [
+      'a non-string, non-null change_summary',
+      { ingredients: [{ name: 'Salt' }], servings: 4, change_summary: 7, applied_at_ms: 1 },
+    ],
+  ]
+
+  for (const [description, malformed] of malformedCases) {
+    it(`gives null for a malformed amendment (${description}), and the session still restores`, () => {
+      startMealCookSession('meal-1', ['r-main'], 1000, ['1:boil'])
+      saveMealCookProgress({ ...baseSession, ingredient_amendments: { 'r-main': malformed } })
+
+      const resumed = getActiveMealCookSession('meal-1')
+      expect(resumed).not.toBeNull()
+      expect(readDishAmendment(resumed!, 'r-main')).toBeNull()
+    })
+  }
 })

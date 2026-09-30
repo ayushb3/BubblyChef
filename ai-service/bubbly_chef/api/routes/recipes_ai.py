@@ -14,9 +14,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from bubbly_chef.api.auth import get_current_user_id
-from bubbly_chef.models.cook import CookConfirmRequest, CookProposal, ExpiredMatchedItem
-from bubbly_chef.models.pantry import PantryItem
+from bubbly_chef.models.cook import CookConfirmRequest, CookProposal
 from bubbly_chef.repository.supabase_repo import get_repository
+from bubbly_chef.services.meal_cook import apply_collapsed_deductions, correlate_expired
 
 logger = logging.getLogger(__name__)
 
@@ -225,26 +225,9 @@ async def cook_recipe(
         )
 
         # Post-hoc expiry correlation: identify which matched ingredients
-        # are backed by an expired pantry row.  We do this in the route
-        # rather than inside cook_matcher so the matcher stays untouched.
-        expired_by_id: dict[str, PantryItem] = {
-            str(item.id): item for item in pantry_items if item.is_expired
-        }
-        expired_items: list[ExpiredMatchedItem] = []
-        for match in proposal.matches:
-            if match.pantry_item_id is None:
-                continue
-            expired_row = expired_by_id.get(str(match.pantry_item_id))
-            if expired_row is None:
-                continue
-            days_expired = abs(expired_row.days_until_expiry or 0)
-            expired_items.append(
-                ExpiredMatchedItem(
-                    ingredient_name=match.ingredient_name,
-                    pantry_item_name=expired_row.name,
-                    days_expired=max(1, days_expired),
-                )
-            )
+        # are backed by an expired pantry row. Shared with the meal cook
+        # route (issue #654) -- see services/meal_cook.correlate_expired.
+        expired_items = correlate_expired(proposal.matches, pantry_items)
         proposal = proposal.model_copy(update={"expired_items": expired_items})
 
         return proposal
@@ -335,34 +318,13 @@ async def cook_confirm(
         if recipe_data is None:
             raise HTTPException(status_code=404, detail="Recipe not found")
 
-        # Collapse deductions per pantry item before touching the DB.
-        #
-        # deduct_pantry_item is a read-modify-write, so two deductions naming the
-        # same item would each read the pre-deduction quantity's successor and
-        # apply separately — correct only by luck of ordering. Summing first means
-        # one write per item and a total that cannot depend on iteration order.
-        # The matcher already avoids emitting duplicates, but this endpoint is
-        # reachable with any payload a client cares to send.
-        totals: dict[str, float] = {}
-        for deduction in request.deductions:
-            item_id = str(deduction.pantry_item_id)
-            totals[item_id] = totals.get(item_id, 0.0) + deduction.deduct_qty
-
-        # deduct_pantry_item refuses a row whose base unit is unknown rather than
-        # guessing at it. Count what it actually applied — reporting the
-        # requested total would tell the user their pantry changed when those
-        # rows were deliberately left alone.
-        applied = 0
-        skipped: list[str] = []
-        for item_id, deduct_qty in totals.items():
-            if await repo.deduct_pantry_item(
-                user_id=user_id,
-                item_id=item_id,
-                deduct_qty=deduct_qty,
-            ):
-                applied += 1
-            else:
-                skipped.append(item_id)
+        # Collapse deductions per pantry item before touching the DB, then
+        # apply. Shared with the meal cook confirm route (issue #654) -- see
+        # services/meal_cook.apply_collapsed_deductions for why the collapse
+        # has to happen before any write.
+        applied, requested, skipped = await apply_collapsed_deductions(
+            repo, user_id, request.deductions
+        )
 
         # Mark recipe as cooked
         await repo.update_recipe_cooked(user_id=user_id, recipe_id=str(request.recipe_id))
@@ -370,7 +332,7 @@ async def cook_confirm(
         return {
             "success": True,
             "deductions_applied": applied,
-            "deductions_requested": len(totals),
+            "deductions_requested": requested,
             "deductions_skipped": skipped,
         }
 
