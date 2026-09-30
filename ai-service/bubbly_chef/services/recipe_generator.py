@@ -152,8 +152,8 @@ def format_constraints(constraints: dict[str, Any] | None) -> str:
 def format_followup_dietary(constraints: dict[str, Any] | None) -> str:
     """Dietary block for the follow-up (refine) prompt (issue #544).
 
-    Empty when there is neither a diet nor an exclusion, so the prompt is
-    unchanged for a user with no stored preferences.
+    Empty when there is neither a diet nor an exclusion, in which case the
+    rendered prompt is identical to the one before #544.
     """
     constraints = constraints or {}
     dietary = constraints.get("dietary") or []

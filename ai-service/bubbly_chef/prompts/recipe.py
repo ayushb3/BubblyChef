@@ -258,8 +258,7 @@ The user wants to modify the previous recipe.
 ## User's Modification Request
 {user_prompt}
 
-Modify the recipe according to the user's request.
-{dietary_requirements}
+Modify the recipe according to the user's request.{dietary_requirements}
 Keep the same format but adjust ingredients, instructions,
 or other aspects as needed.
 

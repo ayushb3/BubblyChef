@@ -827,11 +827,33 @@ def _diets_set_aside(stored: list[str], final: list[str]) -> list[str]:
     by an equal final label, or by a final label that subsumes it (a final Vegan
     covers a stored Vegetarian).
     """
-    covered = {_norm_label(label) for label in final}
+    covered = _covered_keys(final)
+    return [label for label in stored if _norm_label(label) not in covered]
+
+
+def _covered_keys(labels: list[str]) -> set[str]:
+    """Normalised `labels` plus every label they subsume (a Vegan covers a Vegetarian)."""
+    covered = {_norm_label(label) for label in labels}
     for broad, narrower in _DIETARY_SUBSUMES.items():
         if _norm_label(broad) in covered:
             covered |= {_norm_label(n) for n in narrower}
-    return [label for label in stored if _norm_label(label) not in covered]
+    return covered
+
+
+_NEGATED_NAME_PREFIXES = ("non-", "non ", "not ", "no longer ")
+
+
+def _tweak_names_label(label: str, tweak_lower: str) -> bool:
+    """True if the tweak names `label` as a whole word, and not as "non-X"/"not X" (#544)."""
+    words = [re.escape(w) for w in _norm_label(label).split("-") if w]
+    if not words:
+        return False
+    body = r"[\s_-]+".join(words)
+    for match in re.finditer(rf"(?<!\w){body}(?!\w)", tweak_lower):
+        before = tweak_lower[: match.start()]
+        if not before.endswith(_NEGATED_NAME_PREFIXES):
+            return True
+    return False
 
 
 def _dedupe_labels(labels: list[str]) -> list[str]:
@@ -877,22 +899,26 @@ async def refine_dietary_constraints(
     labels = _dedupe_labels([*stored, *(prior.get("dietary") or [])])
 
     tweak_lower = input_text.lower()
-    tweak_norm = _norm_label(tweak_lower)
     added = added_text(input_text)
 
     carried = {_norm_label(x) for x in (previous_recipe.diets_set_aside if previous_recipe else [])}
     ingredient_names = " ".join(
         ing.name for ing in (previous_recipe.ingredients if previous_recipe else [])
     ).lower()
-    tag_keys = {_tag_key(t) for t in (previous_recipe.dietary_tags if previous_recipe else [])}
+    # A tag keeps its label, and a stricter tag keeps the looser labels it
+    # subsumes (a "vegan" tag keeps a stored Vegetarian).
+    tag_keys = _covered_keys(
+        [_tag_key(t) for t in (previous_recipe.dietary_tags if previous_recipe else [])]
+    )
 
     kept: list[str] = []
     set_aside_now: list[str] = []
     for label in labels:
         key = _norm_label(label)
-        if key in tweak_norm:
+        if _tweak_names_label(label, tweak_lower):
             # The tweak names the label ("make it dairy free"): never set aside,
-            # even if the card carries it as set aside.
+            # even if the card carries it as set aside. "non-vegetarian" and
+            # "not vegetarian" name it too, but to reject it.
             kept.append(label)
             continue
         if not library and key in carried:
@@ -923,6 +949,26 @@ async def refine_dietary_constraints(
     if excluded:
         constraints["excluded_ingredients"] = excluded
     return constraints, set_aside_now
+
+
+def carry_dietary_tags(
+    previous_recipe: RecipeCard | None, tweak: str, set_aside_now: list[str]
+) -> list[str]:
+    """The `dietary_tags` a library refine carries onto the card it returns (#544).
+
+    The generator never emits tags, so without this a second refine of the same
+    recipe would lose the tag that rescued its diet the first time. A tag is
+    dropped when the tweak set its label aside, or adds a food the tag forbids.
+    """
+    if previous_recipe is None:
+        return []
+    added = added_text(tweak)
+    dropped = {_norm_label(label) for label in set_aside_now}
+    return [
+        tag
+        for tag in previous_recipe.dietary_tags
+        if _norm_label(tag) not in dropped and not _dietary_contradicted(tag, added)
+    ]
 
 
 def _prior_constraints_from_state(state: WorkflowState) -> dict[str, Any] | None:

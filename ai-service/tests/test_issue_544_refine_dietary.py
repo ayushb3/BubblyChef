@@ -39,6 +39,7 @@ from bubbly_chef.services.recipe_generator import (
     generate_recipe,
 )
 from bubbly_chef.workflows.recipe.nodes import (
+    _diets_set_aside,
     extract_recipe_constraints,
     generate_grounded_recipe,
     refine_dietary_constraints,
@@ -422,6 +423,24 @@ async def test_bacon_stays_allowed_on_the_next_tweak() -> None:
         ("skip the chicken", ["Vegetarian"], True),
         ("make it dairy free", ["Dairy-free"], True),
         ("add a little cheese", ["Dairy-free"], False),
+        ("do not add meat", ["Vegetarian"], True),
+        ("make it heartier, not with meat", ["Vegetarian"], True),
+        ("never add chicken", ["Vegetarian"], True),
+        ("dont add chicken", ["Vegetarian"], True),
+        ("exclude the chicken", ["Vegetarian"], True),
+        ("omit the bacon", ["Vegetarian"], True),
+        ("get rid of the chicken", ["Vegetarian"], True),
+        # Plant-based phrases are not added forbidden food.
+        ("add coconut milk", ["Vegan"], True),
+        ("add oat milk", ["Vegan"], True),
+        ("finish with cashew cream", ["Vegan"], True),
+        ("add vegan cheese", ["Vegan"], True),
+        ("add tempeh bacon", ["Vegetarian"], True),
+        ("add bacon", ["Vegetarian"], False),
+        # "non-vegetarian" / "not vegetarian" name the label to reject it.
+        ("make it non-vegetarian, add chicken", ["Vegetarian"], False),
+        ("make it not vegetarian, add chicken", ["Vegetarian"], False),
+        ("make it vegetarian", ["Vegetarian"], True),
     ],
 )
 async def test_tweak_adds_a_forbidden_food_only_when_it_really_adds_it(
@@ -434,6 +453,25 @@ async def test_tweak_adds_a_forbidden_food_only_when_it_really_adds_it(
         assert sent["dietary"] == stored
     else:
         assert "dietary" not in sent
+
+
+# ---------------------------------------------------------------------------
+# _diets_set_aside: the one definition
+# ---------------------------------------------------------------------------
+
+
+def test_diets_set_aside_a_final_vegan_covers_a_stored_vegetarian() -> None:
+    assert _diets_set_aside(["Vegetarian"], ["Vegan"]) == []
+    assert _diets_set_aside(["Vegetarian", "Nut-free"], ["Vegan"]) == ["Nut-free"]
+    # Not the other way round: a final Vegetarian doesn't cover a stored Vegan.
+    assert _diets_set_aside(["Vegan"], ["Vegetarian"]) == ["Vegan"]
+
+
+def test_diets_set_aside_ignores_case_spaces_and_hyphens() -> None:
+    assert _diets_set_aside(["gluten free"], ["Gluten-Free"]) == []
+    assert _diets_set_aside(["Gluten-Free"], ["gluten_free"]) == []
+    assert _diets_set_aside(["Dairy-free"], ["Vegetarian"]) == ["Dairy-free"]
+    assert _diets_set_aside(["Vegetarian"], []) == ["Vegetarian"]
 
 
 # ---------------------------------------------------------------------------
@@ -475,6 +513,25 @@ async def test_tweak_adds_a_forbidden_food_only_when_it_really_adds_it(
         ("don't add chicken", None, "chicken"),
         ("remove the chicken", None, "chicken"),
         ("avoid nuts", None, "nuts"),
+        ("do not add meat", None, "meat"),
+        ("make it heartier, not with meat", "heartier", "meat"),
+        ("never add chicken", None, "chicken"),
+        ("dont add chicken", None, "chicken"),
+        ("exclude the chicken", None, "chicken"),
+        ("omit the bacon", None, "bacon"),
+        ("get rid of the chicken", None, "chicken"),
+        ("take away the ham", None, "ham"),
+        # Plant-based foods are not the food they're named after (refine-only).
+        ("add coconut milk", None, "milk"),
+        ("add oat milk", None, "milk"),
+        ("finish with cashew cream", None, "cream"),
+        ("add vegan cheese", None, "cheese"),
+        ("add dairy free cheese", None, "cheese"),
+        ("add tempeh bacon", None, "bacon"),
+        ("add veggie sausage", None, "sausage"),
+        ("add bacon", "bacon", None),
+        ("add cheese and oat milk", "cheese", "milk"),
+        ("add tofu and chicken", "chicken", "tofu"),
     ],
 )
 def test_added_text(tweak: str, present: str | None, absent: str | None) -> None:
@@ -591,20 +648,14 @@ async def client(app: Any) -> Any:
         yield ac
 
 
-def _route_result() -> MagicMock:
-    result = MagicMock()
-    result.recipe.model_dump.return_value = {"title": "Refined", "ingredients": []}
-    result.ingredients_status = []
-    result.missing_count = 0
-    result.have_count = 0
-    result.pantry_match_score = 1.0
-    return result
+def _route_result() -> GenerateRecipeResponse:
+    """A real generator response: a refined card with no tags, as the model builds it."""
+    return _followup_response()
 
 
-async def _library_refine(
-    client: Any, recipe: dict[str, Any], prompt: str, stored: list[str]
-) -> AsyncMock:
-    gen = AsyncMock(return_value=_route_result())
+async def _post_refine(
+    client: Any, recipe: dict[str, Any], prompt: str, stored: list[str], gen: AsyncMock
+) -> Any:
     repo = MagicMock()
     repo.get_all_pantry_items = AsyncMock(return_value=[])
     with (
@@ -617,7 +668,16 @@ async def _library_refine(
             "/v1/recipes/refine", json={"recipe": recipe, "prompt": prompt}
         )
     assert response.status_code == 200, response.text
-    assert "diets_set_aside" not in response.text
+    return response
+
+
+async def _library_refine(
+    client: Any, recipe: dict[str, Any], prompt: str, stored: list[str]
+) -> AsyncMock:
+    gen = AsyncMock(side_effect=lambda **_: _route_result())
+    response = await _post_refine(client, recipe, prompt, stored, gen)
+    # The real serialisation of a real RecipeCard: the chat-only field is excluded.
+    assert "diets_set_aside" not in response.json()["recipe"]
     return gen
 
 
@@ -646,7 +706,7 @@ async def test_library_refine_with_no_recipe_still_sends_the_stored_diet(client:
         patch("bubbly_chef.api.deps.get_ai_manager", MagicMock(return_value=ai)),
     ):
         response = await client.post(
-            "/v1/recipes/refine", json={"recipe": {}, "prompt": "make it vegetarian-friendly"}
+            "/v1/recipes/refine", json={"recipe": {}, "prompt": "make it quicker"}
         )
 
     assert response.status_code == 200, response.text
@@ -688,6 +748,54 @@ async def test_library_refine_without_the_tag_drops_the_misfiring_diet(client: A
     gen = await _library_refine(client, row, "make it quicker", ["Vegetarian"])
 
     assert "dietary" not in _library_constraints(gen)
+
+
+@pytest.mark.asyncio
+async def test_a_stricter_tag_keeps_the_looser_stored_diet(client: Any) -> None:
+    # A "vegan" tag rescues a stored Vegetarian (_DIETARY_SUBSUMES).
+    row = _card_dict("Tempeh BLT", ingredients=("tempeh bacon", "lettuce"))
+    row["tags"] = ["vegan"]
+    gen = await _library_refine(client, row, "make it quicker", ["Vegetarian"])
+
+    assert _library_constraints(gen)["dietary"] == ["Vegetarian"]
+
+
+@pytest.mark.asyncio
+async def test_chained_library_refines_keep_the_diet_through_the_carried_tag(
+    client: Any,
+) -> None:
+    row = _card_dict("Tempeh BLT", ingredients=("tempeh bacon", "lettuce"))
+    row["tags"] = ["vegetarian"]
+
+    gen1 = AsyncMock(side_effect=lambda **_: _route_result())
+    first = await _post_refine(client, row, "make it quicker", ["Vegetarian"], gen1)
+    assert _library_constraints(gen1)["dietary"] == ["Vegetarian"]
+
+    # The generator returned a card with no tags; the route carried the row's.
+    refined = first.json()["recipe"]
+    assert refined["dietary_tags"] == ["vegetarian"]
+    assert "diets_set_aside" not in refined
+
+    # Feed the refined card back in: the tag still protects the diet.
+    refined["ingredients"] = row["ingredients"]  # the stub generator returns none
+    gen2 = AsyncMock(side_effect=lambda **_: _route_result())
+    second = await _post_refine(client, refined, "make it heartier", ["Vegetarian"], gen2)
+    assert _library_constraints(gen2)["dietary"] == ["Vegetarian"]
+    assert second.json()["recipe"]["dietary_tags"] == ["vegetarian"]
+
+
+@pytest.mark.asyncio
+async def test_a_library_tweak_that_sets_the_diet_aside_drops_the_carried_tag(
+    client: Any,
+) -> None:
+    row = _card_dict("Tempeh BLT", ingredients=("tempeh bacon", "lettuce"))
+    row["tags"] = ["vegetarian"]
+    gen = AsyncMock(side_effect=lambda **_: _route_result())
+
+    response = await _post_refine(client, row, "add bacon", ["Vegetarian"], gen)
+
+    assert "dietary" not in _library_constraints(gen)
+    assert response.json()["recipe"]["dietary_tags"] == []
 
 
 # ---------------------------------------------------------------------------

@@ -269,3 +269,18 @@ None. It's a reversible v1 bug fix with no cost beyond the verify steps' model c
 | Note on 2(b) | `_combine_dietary_preferences` puts surviving stored labels first, so the list is `["Vegan", "Gluten-free"]`, not `["Gluten-free", "Vegan"]`. The test asserts a set, or that order |
 | 3 | The "vegan mac and cheese" test states its extraction stub (`dietary: ["Vegan"]`), so it tests "covered by the final diet" |
 | 4 | `research_recipe` reads the stored diet on every call. `test_constraint_inheritance.py`, `test_issue_336_recipe_card_expiry_coherence.py`, `test_classify_intent_416.py` and `test_issue_650_meal_from_chat.py` gain the patch target, with assertions unchanged |
+
+## Revision R7 (code-review fix round)
+
+| Item | Change |
+|---|---|
+| Negations | `added_text` also treats `not`, `never`, `dont`, `do not`, `exclude`, `omit`, `get rid of` and `take away` as negations |
+| Plant-based (product call, §7.9) | `added_text` strips plant-based phrases before matching: `(coconut\|oat\|almond\|soy\|cashew\|rice\|hemp\|pea\|plant-based\|vegan\|dairy-free\|non-dairy)` + `(milk\|cream\|butter\|cheese\|yogurt\|yoghurt\|mayo\|mayonnaise)` (before the `-free` strip), and `(vegan\|veggie\|vegetarian\|plant-based\|meatless\|mock\|faux\|tofu\|tempeh\|seitan)` + the next word (per clause, after the swap/substitute/instead-of/negation rules so "substitute tofu for chicken" still parses). Refine-only: `_DIETARY_FORBIDDEN_INGREDIENTS`, `_dietary_contradicted` and the #394 first-turn path are unchanged |
+| Library tags | The refined card gets the saved recipe's `dietary_tags` when the generator returns none (minus tags the tweak set aside or contradicts), so a second library refine still finds the tag. The route's response excludes `diets_set_aside` |
+| Tag rescue | A stricter tag keeps the looser labels it subsumes (`_DIETARY_SUBSUMES`): a "vegan" tag keeps a stored Vegetarian |
+| Names the label | The "tweak names the label" check is a whole-word match and ignores a preceding `non-`, `non `, `not ` or `no longer `: "make it non-vegetarian, add chicken" sets Vegetarian aside |
+| Prompt | The follow-up template is `request.{dietary_requirements}`, so an empty block renders the pre-#544 prompt exactly |
+
+### §7.9 Tweak set-asides are carried on the card (product call)
+
+An explicit "add bacon" sticks: the card carries Vegetarian in `diets_set_aside`, so later tweaks don't push the diet back onto a dish the user deliberately made off-diet. Plant-based phrases ("oat milk", "tempeh bacon") don't count as adding the food they imitate. *Rejected:* not carrying tweak set-asides, where a later tweak would force the diet back onto a dish the user deliberately made off-diet.

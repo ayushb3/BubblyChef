@@ -135,7 +135,10 @@ async def refine_recipe(
         from bubbly_chef.api.deps import get_ai_manager
         from bubbly_chef.services.recipe_generator import generate_recipe as gen_recipe
         from bubbly_chef.models.recipe import RecipeCard
-        from bubbly_chef.workflows.recipe.nodes import refine_dietary_constraints
+        from bubbly_chef.workflows.recipe.nodes import (
+            carry_dietary_tags,
+            refine_dietary_constraints,
+        )
 
         ai_manager = get_ai_manager()
 
@@ -154,7 +157,7 @@ async def refine_recipe(
 
         # No session and no carried field here, so keep the stored diet except
         # what the tweak adds or the saved recipe's ingredients contradict.
-        refine_constraints, _ = await refine_dietary_constraints(
+        refine_constraints, set_aside_now = await refine_dietary_constraints(
             user_id, request.prompt, None, previous_recipe, library=True
         )
 
@@ -166,8 +169,25 @@ async def refine_recipe(
             previous_recipe=previous_recipe,
         )
 
+        # The generator never emits tags. Carry the saved recipe's own onto the
+        # refined card (minus any the tweak set aside) so the library's next
+        # refine of it still finds the tag that protects its diet (#544).
+        if isinstance(result.recipe, RecipeCard) and not result.recipe.dietary_tags:
+            result.recipe = result.recipe.model_copy(
+                update={
+                    "dietary_tags": carry_dietary_tags(
+                        previous_recipe, request.prompt, set_aside_now
+                    )
+                }
+            )
+
         return {
-            "recipe": result.recipe.model_dump(mode="json") if hasattr(result.recipe, "model_dump") else result.recipe,
+            # `diets_set_aside` is chat-session state; the library has no session.
+            "recipe": (
+                result.recipe.model_dump(mode="json", exclude={"diets_set_aside"})
+                if hasattr(result.recipe, "model_dump")
+                else result.recipe
+            ),
             "ingredients_status": [
                 s.model_dump(mode="json") if hasattr(s, "model_dump") else s
                 for s in (result.ingredients_status or [])
