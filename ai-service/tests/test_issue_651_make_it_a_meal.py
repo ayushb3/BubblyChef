@@ -67,6 +67,7 @@ from bubbly_chef.workflows.meal.fixed_main import (
 )
 from bubbly_chef.workflows.meal.nodes import (
     MealDishLLMResult,
+    _fixed_main_option_dishes,
     _retained_meal_plan_state,
     meal_options_stage,
     meal_pick_stage,
@@ -982,6 +983,47 @@ class TestInheritance:
         assert "Dietary: vegetarian" not in _option_prompt(ai)
 
     @pytest.mark.asyncio
+    async def test_followup_keeps_a_diet_this_turns_own_ask_produced(self) -> None:
+        """S2: "Make the sides vegetarian" beside a chicken main is an explicit
+        ask, so it beats the main's own tags (product call)."""
+        chat_main = RecipeCard(title="Chicken Curry", ingredients=[Ingredient(name="chicken")])
+        retained = _retained(
+            fixed=MealFixedMain(source="chat", title="Chicken Curry", recipe=chat_main),
+            recipe_constraints={"dietary": []},
+        )
+        repo = _repo({}, meal_plan_state=retained)
+        ai = _option_ai(extraction=RecipeConstraints(dietary=["vegetarian"]))
+        with _env(repo, ai):
+            out = await meal_options_stage(
+                _state(
+                    {"meal_followup": True},
+                    input_text="Make the sides vegetarian",
+                    session=_session_state_dump(retained),
+                )
+            )
+        assert "vegetarian" in out["recipe_constraints"]["dietary"]
+        assert "Dietary: vegetarian" in _option_prompt(ai)
+
+    @pytest.mark.asyncio
+    async def test_followup_keeps_a_stored_diet_when_this_turn_names_it(self) -> None:
+        chat_main = RecipeCard(title="Chicken Curry", ingredients=[Ingredient(name="chicken")])
+        retained = _retained(
+            fixed=MealFixedMain(source="chat", title="Chicken Curry", recipe=chat_main),
+            recipe_constraints={"dietary": []},
+        )
+        repo = _repo({}, meal_plan_state=retained)
+        ai = _option_ai(extraction=RecipeConstraints())
+        with _env(repo, ai, stored_diet=["vegetarian"]):
+            out = await meal_options_stage(
+                _state(
+                    {"meal_followup": True},
+                    input_text="Sides that are vegetarian please",
+                    session=_session_state_dump(retained),
+                )
+            )
+        assert "vegetarian" in out["recipe_constraints"]["dietary"]
+
+    @pytest.mark.asyncio
     async def test_followup_keeps_a_diet_the_main_is_tagged_with(self) -> None:
         chat_main = RecipeCard(
             title="Veggie Curry",
@@ -1152,6 +1194,31 @@ class TestOwnershipAndEdges:
         ai.complete.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_postgrest_zero_rows_error_is_not_found(self) -> None:
+        class _ZeroRows(Exception):
+            code = "PGRST116"
+
+        repo = _repo({})
+        repo.get_recipe = AsyncMock(side_effect=_ZeroRows("The result contains 0 rows"))
+        with _env(repo, _option_ai()):
+            result = await resolve_fixed_main(_USER_A, {"recipe_id": _RID})
+        assert result == FixedMainRefusal(kind="not_found")
+
+    @pytest.mark.asyncio
+    async def test_other_repository_errors_are_invalid_and_logged_at_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        repo = _repo({(_USER_A, _RID): _row()})
+        repo.get_recipe = AsyncMock(side_effect=ConnectionError("connection reset by peer"))
+        ai = _option_ai()
+        with _env(repo, ai), caplog.at_level("WARNING", logger="bubbly_chef.workflows.meal.fixed_main"):
+            out = await meal_options_stage(_state({"meal_fixed_main": {"recipe_id": _RID}}))
+        _assert_refused(out, _INVALID_TEXT)
+        ai.complete.assert_not_awaited()
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert any("connection reset" in r.getMessage() for r in warnings)
+
+    @pytest.mark.asyncio
     async def test_a_repository_returning_none_is_not_found(self) -> None:
         repo = _repo({})
         repo.get_recipe = AsyncMock(return_value=None)
@@ -1194,10 +1261,8 @@ class TestOwnershipAndEdges:
             {"recipe": []},
             {"recipe": _payload(title="   ")},
             {"recipe": _payload(title="")},
-            {"recipe": _payload(servings=0)},
-            {"recipe": _payload(servings="four")},
             {"recipe": _payload(ingredients="eggs")},
-            {"recipe": _payload(instructions=["x" * 2001])},
+            {"recipe": _payload(title="t" * 201)},
         ],
     )
     @pytest.mark.asyncio
@@ -1243,6 +1308,87 @@ class TestOwnershipAndEdges:
 # ---------------------------------------------------------------------------
 # resolve_fixed_main / load_fixed_main_card / helpers
 # ---------------------------------------------------------------------------
+
+
+class TestLenientPayload:
+    """S1: one out-of-range optional field must not refuse the whole recipe."""
+
+    @pytest.mark.asyncio
+    async def test_out_of_range_times_become_none(self) -> None:
+        payload = _payload(
+            total_time_minutes=2880, prep_time_minutes=-5, cook_time_minutes=1441
+        )
+        result = await resolve_fixed_main(_USER_A, {"recipe": payload})
+        assert isinstance(result, ResolvedFixedMain)
+        card = result.card
+        assert (card.total_time_minutes, card.prep_time_minutes, card.cook_time_minutes) == (
+            None,
+            None,
+            None,
+        )
+        assert card.title == "Chat Curry"  # everything else survives
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", [0, -2, 101, "four", 4.5, True])
+    async def test_out_of_range_or_wrong_typed_servings_become_none(self, bad: Any) -> None:
+        result = await resolve_fixed_main(_USER_A, {"recipe": _payload(servings=bad)})
+        assert isinstance(result, ResolvedFixedMain)
+        assert result.card.servings is None
+
+    @pytest.mark.asyncio
+    async def test_in_range_values_are_kept(self) -> None:
+        payload = _payload(servings=100, total_time_minutes=1440, prep_time_minutes=0)
+        result = await resolve_fixed_main(_USER_A, {"recipe": payload})
+        assert isinstance(result, ResolvedFixedMain)
+        assert (result.card.servings, result.card.total_time_minutes) == (100, 1440)
+        assert result.card.prep_time_minutes == 0
+
+    @pytest.mark.asyncio
+    async def test_over_long_text_fields_are_truncated(self) -> None:
+        payload = _payload(
+            description="d" * 5000,
+            cuisine="c" * 100,
+            meal_type="m" * 50,
+            difficulty="h" * 50,
+            instructions=["i" * 3000, "short"],
+            dietary_tags=["t" * 90] + [f"tag{n}" for n in range(30)],
+        )
+        result = await resolve_fixed_main(_USER_A, {"recipe": payload})
+        assert isinstance(result, ResolvedFixedMain)
+        card = result.card
+        assert card.description == "d" * 2000
+        assert card.cuisine == "c" * 60
+        assert (card.meal_type, card.difficulty) == ("m" * 30, "h" * 30)
+        assert card.instructions == ["i" * 2000, "short"]
+        assert card.dietary_tags[0] == "t" * 40
+        assert len(card.dietary_tags) == 20
+
+    @pytest.mark.asyncio
+    async def test_a_brisket_style_import_makes_a_meal(self) -> None:
+        payload = _payload(
+            title="Smoked Brisket",
+            total_time_minutes=2880,
+            servings=0,
+            description="story " * 1000,
+        )
+        repo = _repo()
+        with _env(repo, _option_ai()):
+            out = await meal_options_stage(_state({"meal_fixed_main": {"recipe": payload}}))
+        assert isinstance(out["proposal"], MealOptionsProposal)
+        assert out["proposal"].options[0].dishes[0].name == "Smoked Brisket"
+
+    @pytest.mark.asyncio
+    async def test_size_gate_counts_utf8_bytes_not_escaped_characters(self) -> None:
+        # 60 x 200 "é": 2 bytes each in UTF-8 (24 KB, under the cap) but 6 bytes
+        # each as \\uXXXX escapes (72 KB), so an escaped count would wrongly refuse it.
+        under = _payload(ingredients=[{"name": "é" * 200} for _ in range(60)])
+        result = await resolve_fixed_main(_USER_A, {"recipe": under})
+        assert isinstance(result, ResolvedFixedMain)
+        # 60 x 200 "€": 3 bytes each (36 KB, over the cap) though only 12k characters.
+        over = _payload(ingredients=[{"name": "€" * 200} for _ in range(60)])
+        assert await resolve_fixed_main(_USER_A, {"recipe": over}) == FixedMainRefusal(
+            kind="invalid"
+        )
 
 
 class TestResolve:
@@ -1348,6 +1494,26 @@ class TestMealFixedMainModel:
 
 
 class TestOutlineAndRows:
+    def test_punctuation_and_hyphens_do_not_hide_a_repeat_of_the_main(self) -> None:
+        outline = fixed_main_outline(RecipeCard(title="Lemon Butter Pasta"))
+        raw = [
+            _dish_llm("main", "Garlic Prawns"),
+            _dish_llm("side", "Lemon-Butter Pasta"),
+            _dish_llm("side", "Lemon Butter Pasta."),
+            _dish_llm("side", "  LEMON,  butter   pasta! "),
+            _dish_llm("side", "Green salad"),
+        ]
+        result = _fixed_main_option_dishes(raw, outline)
+        assert result is not None
+        dishes, discarded_other_main = result
+        assert [d.name for d in dishes] == ["Lemon Butter Pasta", "Green salad"]
+        assert discarded_other_main is True
+        # "Lemon-Butter Pasta" as the model's own main is the same dish, not a foreign one.
+        same = _fixed_main_option_dishes(
+            [_dish_llm("main", "Lemon-Butter Pasta"), _dish_llm("side", "Green salad")], outline
+        )
+        assert same is not None and same[1] is False
+
     def test_caps(self) -> None:
         card = RecipeCard(
             title="x" * 300, ingredients=[Ingredient(name="y" * 120), Ingredient(name="Y" * 120)]

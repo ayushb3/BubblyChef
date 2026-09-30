@@ -84,6 +84,7 @@ from bubbly_chef.workflows.meal.fixed_main import (
     has_fixed_main,
     load_fixed_main_card,
     resolve_fixed_main,
+    stored_dietary_preferences,
 )
 from bubbly_chef.workflows.recipe.nodes import (
     _combine_dietary_preferences,
@@ -222,21 +223,39 @@ def _finish_meal_followup_constraints(
     return result
 
 
-def _drop_diets_the_main_contradicts(constraints: dict[str, Any], card: RecipeCard) -> dict[str, Any]:
-    """On a `meal_followup` turn under a fixed main (#651 PR B): drop every
-    `dietary` label the main itself contradicts, unless the main carries that
-    tag. `_finish_meal_followup_constraints` re-runs the #394 check against the
-    pill text only, so without this pass a stored "vegetarian" that the fresh
-    turn set aside for a chicken main would return on the first "Something
-    quicker" tap."""
+def _drop_diets_the_main_contradicts(
+    constraints: dict[str, Any],
+    card: RecipeCard,
+    *,
+    carried: list[str],
+    input_text: str,
+) -> dict[str, Any]:
+    """On a `meal_followup` turn under a fixed main (#651 PR B): drop a `dietary`
+    label the main itself contradicts, unless the main carries that tag.
+
+    Only labels that were CARRIED IN (`carried`: the user's stored diet and the
+    retained meal's own) are candidates, and only when this turn's own text
+    doesn't ask for them. `_finish_meal_followup_constraints` re-runs the #394
+    check against the pill text alone, so without this pass a stored
+    "vegetarian" that the fresh turn set aside for a chicken main would return
+    on the first "Something quicker" tap. A label this turn's extraction
+    produced (a pill like "Make the sides vegetarian") is an explicit ask and
+    always stays, even beside a chicken main: the ask beats the main's tags.
+    """
     haystack = f"{card.title} {' '.join(i.name for i in card.ingredients)}".lower()
     tags = {t.strip().lower() for t in card.dietary_tags}
-    kept = [
-        label
-        for label in constraints.get("dietary") or []
-        if label.strip().lower() in tags or not _dietary_contradicted(label, haystack)
-    ]
-    return {**constraints, "dietary": kept}
+    carried_keys = {c.strip().lower() for c in carried}
+    asked = input_text.lower()
+
+    def _keep(label: str) -> bool:
+        key = label.strip().lower()
+        if key not in carried_keys:
+            return True  # this turn's extraction, not an inherited label
+        if key in tags or key in asked:
+            return True
+        return not _dietary_contradicted(label, haystack)
+
+    return {**constraints, "dietary": [x for x in constraints.get("dietary") or [] if _keep(x)]}
 
 
 def _retained_meal_plan_state(state: WorkflowState) -> MealPlanSessionState | None:
@@ -707,9 +726,16 @@ def _fixed_main_refused_state(state: WorkflowState, kind: Literal["invalid", "no
     }
 
 
+def _dish_name_key(name: str) -> str:
+    """A name reduced to its words: casefolded, with punctuation and hyphens
+    treated as spaces, and whitespace collapsed."""
+    return " ".join(re.sub(r"[\W_]+", " ", name.casefold()).split())
+
+
 def _same_dish_name(a: str, b: str) -> bool:
-    """Names are equal after whitespace-collapse and casefold."""
-    return " ".join(a.split()).casefold() == " ".join(b.split()).casefold()
+    """Names are equal ignoring case, punctuation, hyphens and spacing, so a
+    model's "Lemon-Butter Pasta" or "Lemon Butter Pasta." is the fixed main."""
+    return _dish_name_key(a) == _dish_name_key(b)
 
 
 def _fixed_main_option_dishes(
@@ -821,7 +847,15 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
             retained_constraints, merged_constraints, input_text
         )
         if fixed_resolved is not None:
-            constraints = _drop_diets_the_main_contradicts(constraints, fixed_resolved.card)
+            constraints = _drop_diets_the_main_contradicts(
+                constraints,
+                fixed_resolved.card,
+                carried=[
+                    *(retained_constraints.get("dietary") or []),
+                    *await stored_dietary_preferences(user_id),
+                ],
+                input_text=input_text,
+            )
         # score_pantry_ingredients (next) reads state["recipe_constraints"] --
         # overwrite it with the fixed-up dict so dietary/exclusion filtering
         # sees the union/contradiction-checked result, not the plain merge.

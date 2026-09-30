@@ -81,6 +81,16 @@ export interface ChatSeed {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+/** One-line, control-free, at most 120 characters; null when nothing is left. */
+function cleanSeedTitle(raw: string | null): string | null {
+  if (raw === null) return null
+  const cleaned = raw
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return cleaned.slice(0, 120).trim() || null
+}
+
 /** Trimmed param value, or null when absent/blank. */
 function param(params: ReadableSearchParams, name: string): string | null {
   const raw = params.get(name)
@@ -203,7 +213,10 @@ export function deriveChatSeed(
   // absent. No fetch: the title rides in the URL so the auto-send never waits.
   const mealId = param(params, 'meal')
   if (mealId && UUID_RE.test(mealId)) {
-    const title = param(params, 'title')?.slice(0, 120) ?? null
+    // The title becomes the user's message and the card subtitle, and a crafted
+    // link controls it: turn control characters and newlines into spaces and
+    // collapse whitespace so it can't smuggle in extra lines.
+    const title = cleanSeedTitle(param(params, 'title'))
     return {
       key: `meal:${mealId.toLowerCase()}`,
       kind: 'meal',

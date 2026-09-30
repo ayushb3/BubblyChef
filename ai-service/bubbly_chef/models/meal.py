@@ -14,14 +14,13 @@ change to an existing model is additive with a default, so an older retained
 session still validates.
 """
 
-from typing import Annotated, Any, Literal, Self
+from typing import Any, Literal, Self
 from uuid import uuid4
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StringConstraints,
     field_validator,
     model_validator,
 )
@@ -164,6 +163,18 @@ class MealFixedMainIngredient(Ingredient):
     quantity: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
+def _int_in_range_or_none(value: object, low: int, high: int) -> int | None:
+    """`value` as an int within [low, high], else None (never an error). An
+    integral float is accepted; a bool, a string or anything else is not."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if isinstance(value, int) and low <= value <= high:
+        return value
+    return None
+
+
 class MealFixedMainRecipePayload(BaseModel):
     """An in-chat recipe sent as `context.meal_fixed_main.recipe` (issue #651 PR B).
 
@@ -175,22 +186,63 @@ class MealFixedMainRecipePayload(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     title: str = Field(min_length=1, max_length=200)
-    description: str | None = Field(default=None, max_length=2000)
+    # The fields below the title and ingredients are COERCED, never rejected:
+    # a URL-imported recipe can carry a 2880-minute brisket, `servings: 0` or a
+    # 5000-character description, and one odd field must not turn the whole tap
+    # into "I couldn't read that recipe". Out-of-range numbers become None and
+    # over-long text is truncated (the before-validators below); the 32 KB
+    # size gate and the title / ingredient checks still reject.
+    description: str | None = None
     ingredients: list[MealFixedMainIngredient] = Field(default_factory=list, max_length=60)
-    instructions: list[Annotated[str, StringConstraints(max_length=2000)]] = Field(
-        default_factory=list, max_length=60
-    )
+    instructions: list[str] = Field(default_factory=list, max_length=60)
     steps: list[dict[str, Any]] | None = None
-    prep_time_minutes: int | None = Field(default=None, ge=0, le=1440)
-    cook_time_minutes: int | None = Field(default=None, ge=0, le=1440)
-    total_time_minutes: int | None = Field(default=None, ge=0, le=1440)
-    servings: int | None = Field(default=None, ge=1, le=100)
-    cuisine: str | None = Field(default=None, max_length=60)
-    meal_type: str | None = Field(default=None, max_length=30)
-    difficulty: str | None = Field(default=None, max_length=30)
-    dietary_tags: list[Annotated[str, StringConstraints(max_length=40)]] = Field(
-        default_factory=list, max_length=20
-    )
+    prep_time_minutes: int | None = None
+    cook_time_minutes: int | None = None
+    total_time_minutes: int | None = None
+    servings: int | None = None
+    cuisine: str | None = None
+    meal_type: str | None = None
+    difficulty: str | None = None
+    dietary_tags: list[str] = Field(default_factory=list)
+
+    @field_validator("prep_time_minutes", "cook_time_minutes", "total_time_minutes", mode="before")
+    @classmethod
+    def _coerce_minutes(cls, value: object) -> object:
+        return _int_in_range_or_none(value, 0, 1440)
+
+    @field_validator("servings", mode="before")
+    @classmethod
+    def _coerce_servings(cls, value: object) -> object:
+        return _int_in_range_or_none(value, 1, 100)
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def _truncate_description(cls, value: object) -> object:
+        return value[:2000] if isinstance(value, str) else value
+
+    @field_validator("cuisine", mode="before")
+    @classmethod
+    def _truncate_cuisine(cls, value: object) -> object:
+        return value[:60] if isinstance(value, str) else value
+
+    @field_validator("meal_type", "difficulty", mode="before")
+    @classmethod
+    def _truncate_short_labels(cls, value: object) -> object:
+        return value[:30] if isinstance(value, str) else value
+
+    @field_validator("instructions", mode="before")
+    @classmethod
+    def _truncate_instructions(cls, value: object) -> object:
+        if isinstance(value, list):
+            return [v[:2000] if isinstance(v, str) else v for v in value]
+        return value
+
+    @field_validator("dietary_tags", mode="before")
+    @classmethod
+    def _truncate_tags(cls, value: object) -> object:
+        if isinstance(value, list):
+            return [v[:40] if isinstance(v, str) else v for v in value[:20]]
+        return value
 
     @field_validator("ingredients", mode="before")
     @classmethod

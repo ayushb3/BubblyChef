@@ -47,7 +47,7 @@ from bubbly_chef.workflows.state import WorkflowState
 logger = logging.getLogger(__name__)
 
 MEAL_FIXED_MAIN_KEY = "meal_fixed_main"
-MAX_FIXED_MAIN_PAYLOAD_CHARS = 32_768
+MAX_FIXED_MAIN_PAYLOAD_CHARS = 32_768  # UTF-8 bytes of the serialised payload
 
 # Diet tags a fixed main passes on to its sides. Other tags ("quick",
 # "comfort food") are never inherited as dietary constraints.
@@ -223,23 +223,50 @@ def _card_from_payload(payload: MealFixedMainRecipePayload) -> RecipeCard:
 # ---------------------------------------------------------------------------
 
 
+def _is_zero_rows_error(error: Exception) -> bool:
+    """True when `error` is what `.single()` raises for zero matching rows
+    (PostgREST code PGRST116, "JSON object requested, multiple (or no) rows
+    returned" / "The result contains 0 rows") -- i.e. a plain miss."""
+    if getattr(error, "code", None) == "PGRST116":
+        return True
+    text = str(error).lower()
+    return "0 rows" in text or "(or no) rows" in text or "no rows" in text
+
+
+async def stored_dietary_preferences(user_id: str) -> list[str]:
+    """The user's stored diet, or `[]`. Never raises."""
+    try:
+        return await get_stored_dietary_preferences(user_id)
+    except Exception as e:  # noqa: BLE001 -- must degrade to "no stored diet", never raise
+        logger.warning("meal fixed main: stored dietary preferences unreadable: %s", e)
+        return []
+
+
 async def _read_saved_recipe(
     user_id: str, recipe_id: str
 ) -> tuple[RecipeCard, bool] | FixedMainRefusal:
     """Read the caller's own recipe row (`get_recipe` filters on user_id -- the
-    only ownership check) as `(card, is_draft)`. A miss, someone else's id and a
-    repository error are all `not_found`."""
+    only ownership check) as `(card, is_draft)`. A miss (including someone else's
+    id and the zero-row error `.single()` raises) is `not_found`. Any OTHER
+    repository failure is logged at warning and is `invalid` ("try again"): it
+    says nothing about whether the recipe exists, so it must not read as deleted."""
     try:
         repo = await get_repository()
         row = await repo.get_recipe(user_id, recipe_id)
-    except Exception as e:  # noqa: BLE001 -- .single() raises on zero rows; a read failure must not raise
-        logger.info(
-            "meal fixed main: recipe not readable (recipe_id=%s user_id=%s): %s",
+    except Exception as e:  # noqa: BLE001 -- a read failure must never raise out of the stage
+        if _is_zero_rows_error(e):
+            logger.info(
+                "meal fixed main: recipe not found (recipe_id=%s user_id=%s)", recipe_id, user_id
+            )
+            return FixedMainRefusal(kind="not_found")
+        logger.warning(
+            "meal fixed main: recipe read failed (recipe_id=%s user_id=%s): %s: %s",
             recipe_id,
             user_id,
             type(e).__name__,
+            e,
         )
-        return FixedMainRefusal(kind="not_found")
+        return FixedMainRefusal(kind="invalid")
     if not row:
         logger.info("meal fixed main: recipe not found (recipe_id=%s user_id=%s)", recipe_id, user_id)
         return FixedMainRefusal(kind="not_found")
@@ -290,7 +317,10 @@ async def resolve_fixed_main(user_id: str, raw: object) -> ResolvedFixedMain | F
     if not isinstance(raw_recipe, dict):
         return FixedMainRefusal(kind="invalid")
     try:
-        if len(json.dumps(raw_recipe)) > MAX_FIXED_MAIN_PAYLOAD_CHARS:
+        # Measured in UTF-8 bytes of the un-escaped JSON, so a non-ASCII recipe
+        # isn't counted as \uXXXX escapes (6 bytes a character) nor under-counted.
+        size = len(json.dumps(raw_recipe, ensure_ascii=False).encode("utf-8"))
+        if size > MAX_FIXED_MAIN_PAYLOAD_CHARS:
             return FixedMainRefusal(kind="invalid")
         payload = MealFixedMainRecipePayload.model_validate(raw_recipe)
         if not payload.title.strip():
@@ -361,11 +391,7 @@ async def fixed_main_constraints(state: WorkflowState, card: RecipeCard) -> dict
     from bubbly_chef.workflows.meal.nodes import _case_insensitive_union
 
     user_id = state.get("user_id") or ""
-    try:
-        stored = await get_stored_dietary_preferences(user_id)
-    except Exception as e:  # noqa: BLE001 -- must degrade to "no stored diet", never raise
-        logger.warning("meal fixed main: stored dietary preferences unreadable: %s", e)
-        stored = []
+    stored = await stored_dietary_preferences(user_id)
 
     inherited = [t for t in card.dietary_tags if t.strip().lower() in INHERITABLE_DIETS]
     dietary = _combine_dietary_preferences(
