@@ -33,6 +33,7 @@ from bubbly_chef.prompts.pantry import (
     SUGGEST_SPECIFICS_SYSTEM_PROMPT,
     SUGGEST_SPECIFICS_USER_PROMPT,
 )
+from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 from bubbly_chef.workflows.state import (
     LLMClarificationResult,
@@ -709,7 +710,39 @@ async def suggest_specifics(state: WorkflowState) -> WorkflowState:
         return {**state, "clarification_suggestions": []}
 
 
-def finalize_pantry_proposal(state: WorkflowState) -> WorkflowState:
+async def _remove_lot_notes(user_id: str, actions: list[PantryUpsertAction]) -> list[str]:
+    """One sentence per `remove` action whose food is held as several lots (#711).
+
+    Applying a remove clears every lot of the food, so the card says how many go
+    and what they are. Best effort: a lookup that fails or finds one lot (or
+    none) adds nothing, and never blocks the proposal.
+    """
+    names = [a.item.name for a in actions if a.action_type == ActionType.REMOVE]
+    if not names or not user_id:
+        return []
+    notes: list[str] = []
+    try:
+        repo = await get_repository()
+        for name in names:
+            lots = await repo.find_food_lots(user_id, name)
+            if len(lots) < 2:
+                continue
+            described = "; ".join(
+                f"{lot.quantity:g} {lot.unit}"
+                + (f", expires {lot.expiry_date.isoformat()}" if lot.expiry_date else "")
+                for lot in lots
+            )
+            notes.append(
+                f"You have {len(lots)} lots of {name} ({described}); removing it clears all "
+                f"{len(lots)} lots."
+            )
+    except Exception as e:
+        logger.warning(f"Could not look up lots for a remove proposal: {e}")
+        return []
+    return notes
+
+
+async def finalize_pantry_proposal(state: WorkflowState) -> WorkflowState:
     """
     Node: Create final PantryProposal from state.
     """
@@ -722,6 +755,15 @@ def finalize_pantry_proposal(state: WorkflowState) -> WorkflowState:
         dedup_applied=bool(state.get("pantry_snapshot")),
         normalization_applied=True,
     )
+
+    notes = await _remove_lot_notes(state.get("user_id") or "", actions)
+    if notes:
+        message = state.get("assistant_message", "")
+        return {
+            **state,
+            "proposal": proposal,
+            "assistant_message": " ".join([message, *notes]).strip(),
+        }
 
     return {
         **state,

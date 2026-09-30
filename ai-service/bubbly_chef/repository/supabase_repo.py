@@ -321,6 +321,78 @@ def _plan_pantry_use(
     )
 
 
+def _use_capacity(item: PantryItem, name: str, used_unit: str) -> float | None:
+    """How much of `used_unit` this lot holds, or None when it can't be told.
+
+    Same unit: the lot's displayed amount. Otherwise its base amount (stored, or
+    derived from the row) divided by the base worth of one `used_unit`. A lot
+    with no base is measured by its display amount only when the user just counts
+    ("item"/"count"), the same fallback `_plan_pantry_use` makes.
+    """
+    if normalize_unit(used_unit) == normalize_unit(item.unit):
+        return float(item.quantity)
+    counts = normalize_unit(used_unit) in {"item", "count"}
+    base_qty, base_unit = lot_base(item)
+    if base_qty is None or base_unit is None or base_qty <= 0:
+        return float(item.quantity) if counts else None
+    per_unit, _ = normalize_to_base_unit(
+        name=name,
+        quantity=1.0,
+        unit=used_unit,
+        category=item.category.value,
+        target_unit=base_unit,
+    )
+    if per_unit is None or per_unit <= 0:
+        return float(item.quantity) if counts else None
+    return base_qty / per_unit
+
+
+def _plan_use_across_lots(
+    lots: list[PantryItem], name: str, action: dict[str, Any]
+) -> tuple[list[tuple[PantryItem, _PantryUsePlan]], str | None]:
+    """Plan a chat `use` over every lot of a food, soonest expiry first (#711).
+
+    `lots` arrive soonest-first with empty rows last. Each stocked lot is used
+    up in turn until the amount is covered, and the lot where it runs out keeps
+    the rest (`_plan_pantry_use`, so the display amount and base stay in step).
+    Using more than every lot holds clears them all, as it does for one lot.
+    Nothing is written here: a lot whose unit can't be reconciled with the
+    action's is skipped, and when none can absorb it the first refusal comes back
+    with no plans, so a refused use changes nothing.
+    """
+    stocked = [lot for lot in lots if lot.quantity > 0]
+    if len(stocked) <= 1:
+        target = stocked[0] if stocked else lots[0]
+        plan = _plan_pantry_use(target, name, action)
+        return ([] if plan.refusal else [(target, plan)]), plan.refusal
+
+    used_unit = str(action.get("unit") or stocked[0].unit)
+    remaining = float(action.get("quantity", 1))
+    planned: list[tuple[PantryItem, _PantryUsePlan]] = []
+    refusal: str | None = None
+    for index, lot in enumerate(stocked):
+        if remaining <= _LOT_EPSILON:
+            break
+        step = {**action, "quantity": remaining, "unit": used_unit}
+        capacity = _use_capacity(lot, name, used_unit)
+        is_last = index == len(stocked) - 1
+        if capacity is not None and capacity <= remaining + _LOT_EPSILON and not is_last:
+            planned.append((lot, _PantryUsePlan()))  # used up; the rest carries on
+            remaining -= capacity
+            continue
+        plan = _plan_pantry_use(lot, name, step)
+        if plan.refusal is not None:
+            refusal = refusal or plan.refusal
+            continue
+        planned.append((lot, plan))
+        remaining = 0.0
+        break
+    if not planned and refusal is None:
+        plan = _plan_pantry_use(stocked[0], name, action)
+        return ([] if plan.refusal else [(stocked[0], plan)]), plan.refusal
+    return planned, refusal
+
+
 def _parse_meal_cook_timestamp(value: Any) -> datetime | None:
     """Parse a `meals.last_cooked_at` TIMESTAMPTZ value, or `None`.
 
@@ -431,6 +503,27 @@ class SupabaseRepository:
         if not lots:
             return None
         return min(lots, key=soonest_first_key)
+
+    async def find_food_lots(self, user_id: str, name: str) -> list[PantryItem]:
+        """Every lot of the food `name` names, soonest expiry first (#711).
+
+        Starts from the row `find_similar_item` finds and adds the user's other
+        rows of the same food (same synonym-normalised name, as the cook matcher
+        and deduction define it). Empty leftover rows sort last. `[]` when the
+        pantry has no such food.
+        """
+        anchor = await self.find_similar_item(user_id, name)
+        if anchor is None:
+            return []
+        food = lot_food_key(anchor.name)
+        result = self.client.table("pantry_items").select("*").eq("user_id", user_id).execute()
+        lots = {
+            item.id: item
+            for item in (self._row_to_pantry_item(r) for r in _as_rows(result.data))
+            if lot_food_key(item.name) == food
+        }
+        lots.setdefault(anchor.id, anchor)
+        return sorted(lots.values(), key=soonest_first_key)
 
     async def add_pantry_item(self, user_id: str, item: PantryItem) -> PantryItem:
         data = {
@@ -663,54 +756,66 @@ class SupabaseRepository:
                     affected_item_ids.append(created.id)
                     applied += 1
 
-                elif action_type in ("update", "use"):
+                elif action_type == "use":
+                    # #711: a food can sit in several lots, so a use is spread over
+                    # them (soonest expiry first) instead of acting on one row.
+                    lots = await self.find_food_lots(user_id, name)
+                    if not lots:
+                        _record_failure(index, f"Item not found: {name}")
+                        continue
+                    planned, refusal = _plan_use_across_lots(lots, name, action)
+                    if not planned:
+                        _record_failure(index, refusal or f"Item not found: {name}")
+                        continue
+                    for lot, plan in planned:
+                        if plan.updates is None:
+                            await self.delete_pantry_item(user_id, str(lot.id))
+                            affected_item_ids.append(lot.id)
+                        else:
+                            updated = await self.update_pantry_item(
+                                user_id, str(lot.id), plan.updates
+                            )
+                            affected_item_ids.append(updated.id if updated else lot.id)
+                    applied += 1
+
+                elif action_type == "update":
+                    # An update edits one lot, the soonest stocked one (#711): it can
+                    # carry lot-specific fields (expiry_date), and "how much do I have
+                    # now" has no lot to land the difference on.
                     existing = await self.find_similar_item(user_id, name)
                     if not existing:
                         _record_failure(index, f"Item not found: {name}")
                         continue
-                    if action_type == "use":
-                        plan = _plan_pantry_use(existing, name, action)
-                        if plan.refusal is not None:
-                            _record_failure(index, plan.refusal)
-                            continue
-                        if plan.updates is None:
-                            await self.delete_pantry_item(user_id, str(existing.id))
-                            affected_item_ids.append(existing.id)
-                        else:
-                            updated = await self.update_pantry_item(
-                                user_id, str(existing.id), plan.updates
-                            )
-                            affected_item_ids.append(updated.id if updated else existing.id)
-                    else:
-                        updates = {
-                            k: v
-                            for k, v in action.items()
-                            if k not in ("action", "name") and v is not None
-                        }
-                        # #677: a new amount or unit must carry a current base, or the
-                        # next cook deducts from the stale one. An update with neither
-                        # key (a location-only edit) stays base-neutral. None is written
-                        # explicitly when the base can't be derived.
-                        if "quantity" in updates or "unit" in updates:
-                            qb, ub = normalize_to_base_unit(
-                                name=str(updates.get("name", name)),
-                                quantity=float(updates.get("quantity", existing.quantity)),
-                                unit=str(updates.get("unit", existing.unit)),
-                                category=str(updates.get("category", existing.category.value)),
-                            )
-                            updates["quantity_base"] = qb
-                            updates["unit_base"] = ub
-                        updated = await self.update_pantry_item(
-                            user_id, str(existing.id), updates
+                    updates = {
+                        k: v
+                        for k, v in action.items()
+                        if k not in ("action", "name") and v is not None
+                    }
+                    # #677: a new amount or unit must carry a current base, or the
+                    # next cook deducts from the stale one. An update with neither
+                    # key (a location-only edit) stays base-neutral. None is written
+                    # explicitly when the base can't be derived.
+                    if "quantity" in updates or "unit" in updates:
+                        qb, ub = normalize_to_base_unit(
+                            name=str(updates.get("name", name)),
+                            quantity=float(updates.get("quantity", existing.quantity)),
+                            unit=str(updates.get("unit", existing.unit)),
+                            category=str(updates.get("category", existing.category.value)),
                         )
-                        affected_item_ids.append(updated.id if updated else existing.id)
+                        updates["quantity_base"] = qb
+                        updates["unit_base"] = ub
+                    updated = await self.update_pantry_item(user_id, str(existing.id), updates)
+                    affected_item_ids.append(updated.id if updated else existing.id)
                     applied += 1
 
                 elif action_type == "remove":
-                    existing = await self.find_similar_item(user_id, name)
-                    if existing:
-                        await self.delete_pantry_item(user_id, str(existing.id))
-                        affected_item_ids.append(existing.id)
+                    # #711: removing a food clears every lot of it, empty leftovers
+                    # included. One action, so it counts once however many rows go.
+                    lots = await self.find_food_lots(user_id, name)
+                    if lots:
+                        for lot in lots:
+                            await self.delete_pantry_item(user_id, str(lot.id))
+                            affected_item_ids.append(lot.id)
                         applied += 1
                     else:
                         _record_failure(index, f"Item not found for removal: {name}")
