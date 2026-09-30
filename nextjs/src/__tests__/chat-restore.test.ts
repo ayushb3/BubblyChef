@@ -425,6 +425,44 @@ describe('buildRestoredThread — failed chains (R2/R3)', () => {
   })
 })
 
+describe('buildRestoredThread — a handled chain ending in a vague-only turn', () => {
+  const pills = { clarification_suggestions: [{ term: 'veggies', suggestions: ['carrot'] }] }
+
+  it.each([['applied'], ['rejected']] as const)(
+    'chain [A, Z] %s: Z shows no live clarification pills and takes the handled state',
+    (status) => {
+      const chain = [A, Z]
+      const t = buildRestoredThread(
+        [
+          pantryTurn({
+            actions: [action('lemon', 2)],
+            requestId: A,
+            review: review({
+              status,
+              applied_keys: status === 'applied' ? ['lemon'] : [],
+              chain_request_ids: chain,
+            }),
+          }),
+          pantryTurn({
+            actions: [],
+            requestId: Z,
+            extraMetadata: pills,
+            review: review({ status, chain_request_ids: chain }),
+          }),
+        ],
+        CONV,
+      )
+      const [a, z] = t.messages
+      const state = status === 'applied' ? 'approved' : 'rejected'
+      expect(t.proposalStates[a.id]).toBe(state)
+      expect(t.proposalStates[z.id]).toBe(state)
+      expect(z.response?.proposal ?? null).toBeNull()
+      expect(z.response?.metadata?.clarification_suggestions ?? []).toEqual([])
+      expect(t.pendingProposals).toEqual({})
+    },
+  )
+})
+
 describe('buildRestoredThread — malformed data never throws (R2)', () => {
   const badTurns = (): ConversationHistoryTurn[] => [
     user(),

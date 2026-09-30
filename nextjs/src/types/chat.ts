@@ -638,8 +638,8 @@ export function proposalActionKey(action: PantryProposalAction): string {
 }
 
 /**
- * Merge new proposal actions onto existing ones, deduping by item name
- * (case-insensitive). Incoming actions for an already-present item replace
+ * Merge new proposal actions onto existing ones, deduping by `proposalActionKey`
+ * (trimmed, case-insensitive). Incoming actions for an already-present item replace
  * the existing one (the newer turn has fresher confidence/quantity info).
  */
 export function mergeActions(
@@ -648,9 +648,8 @@ export function mergeActions(
 ): PantryProposalAction[] {
   const merged = [...existing]
   for (const next of incoming) {
-    const i = merged.findIndex(
-      (a) => a.item.name.toLowerCase() === next.item.name.toLowerCase()
-    )
+    const nextKey = proposalActionKey(next)
+    const i = merged.findIndex((a) => proposalActionKey(a) === nextKey)
     if (i >= 0) {
       merged[i] = next
     } else {
@@ -678,9 +677,9 @@ export function filterResolvedTerms(
   actions: PantryProposalAction[],
 ): TermSuggestion[] {
   if (actions.length === 0) return terms
-  const actionNames = new Set(actions.map((a) => a.item.name.toLowerCase()))
+  const actionNames = new Set(actions.map(proposalActionKey))
   return terms.filter(
-    ({ suggestions }) => !suggestions.some((s) => actionNames.has(s.toLowerCase())),
+    ({ suggestions }) => !suggestions.some((s) => actionNames.has(s.trim().toLowerCase())),
   )
 }
 

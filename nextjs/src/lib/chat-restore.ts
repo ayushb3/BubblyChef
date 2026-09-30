@@ -241,6 +241,13 @@ function restore(turns: ConversationHistoryTurn[], conversationId: string): Rest
     if (grouped.has(n)) continue
     if (n.cls === 'applied') proposalStates[n.msgId] = 'approved'
     else if (n.cls === 'rejected') proposalStates[n.msgId] = 'rejected'
+    else if (n.cls === 'zero' && n.review) {
+      // A vague-only turn inside a handled chain has no rows of its own, but its
+      // chain was handled: it takes that state and shows no live clarification
+      // pills under the read-only card above it.
+      proposalStates[n.msgId] = n.review.status === 'rejected' ? 'rejected' : 'approved'
+      working.set(n.index, { proposal: null, clarifications: [] })
+    }
     else if (n.cls === 'failed') {
       const displayed = overlayFailed(n.actions, n.review)
       const done = new Set(n.review!.applied_keys)
