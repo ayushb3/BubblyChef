@@ -806,15 +806,31 @@ describe('meal screen — another meal\'s cook (S5, issue #654 §5)', () => {
     expect(getActiveMealCookSession('meal-1')).toBeNull()
   })
 
-  it('Start anyway drops the other meal\'s session and starts + navigates into this one', async () => {
+  it('Start anyway dismisses the other meal\'s running dock timer, then starts + navigates into this one', async () => {
     fetchMeal.mockResolvedValue(baseMeal())
-    startMealCookSession('meal-2', ['r-other'], Date.now(), ['1:x'])
+    const other = startMealCookSession('meal-2', ['r-other'], Date.now(), ['1:x'])
+    // A running step with a linked dock timer — starting a new session always
+    // overwrites storage regardless of whether the timer was actually
+    // dismissed, so without this the test can't distinguish "dismissed" from
+    // "never even tried" (review S3).
+    saveMealCookProgress({
+      ...other,
+      steps: {
+        'r-other:0': {
+          status: 'running',
+          started_at_minutes: 0,
+          extra_minutes: 0,
+          timer_id: 'timer-other-1',
+        },
+      },
+    })
 
     renderPage()
     await screen.findByRole('heading', { name: 'Green salad', level: 3 })
     fireEvent.click(screen.getByRole('button', { name: /Start cooking/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Start anyway' }))
 
+    expect(mockDismiss).toHaveBeenCalledWith('timer-other-1')
     expect(getActiveMealCookSession('meal-2')).toBeNull()
     expect(getActiveMealCookSession('meal-1')).not.toBeNull()
     expect(pushMock).toHaveBeenCalledWith('/meals/meal-1/cook')

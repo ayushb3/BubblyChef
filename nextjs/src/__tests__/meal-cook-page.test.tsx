@@ -709,6 +709,36 @@ describe('MealCookPage — finished: confirm', () => {
     expect(pushMock).toHaveBeenCalledWith('/meals/meal-1')
     await waitFor(() => expect(screen.queryByTestId('meal-cook-sheet')).not.toBeInTheDocument())
   })
+
+  it('a different cook of the same meal (mismatched cook_id) is also treated as ended elsewhere (review S1)', async () => {
+    requestMealCookProposal.mockResolvedValue(baseProposal())
+
+    await renderFinishedLive(Date.now() - 20 * 60_000)
+    act(() => {
+      screen.getByRole('button', { name: 'Mark meal as cooked' }).click()
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update pantry' })).toBeInTheDocument())
+
+    // Another tab ended THIS cook and started a fresh one for the same meal
+    // (a different `cook_id`) — this tab's held session is now stale, even
+    // though a session for meal-1 is active again by the time it confirms.
+    const before = getActiveMealCookSession('meal-1')
+    endMealCookSession('meal-1')
+    startMealCookSession('meal-1', ['r-main'], Date.now(), MAIN_STEP_SIGNATURES)
+    const after = getActiveMealCookSession('meal-1')
+    expect(after?.cook_id).not.toBe(before?.cook_id)
+
+    act(() => {
+      screen.getByRole('button', { name: 'Update pantry' }).click()
+    })
+
+    expect(confirmMealCook).not.toHaveBeenCalled()
+    expect(pushMock).toHaveBeenCalledWith('/meals/meal-1')
+    await waitFor(() => expect(screen.queryByTestId('meal-cook-sheet')).not.toBeInTheDocument())
+    // The fresh cook (the other tab's) must survive untouched — this tab's
+    // stale confirm must not have ended it.
+    expect(getActiveMealCookSession('meal-1')?.cook_id).toBe(after?.cook_id)
+  })
 })
 
 describe('MealCookPage — finished: confirm_in_progress', () => {

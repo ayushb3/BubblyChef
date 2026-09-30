@@ -235,6 +235,16 @@ class TestMergeMealMatches:
         assert set(result.missing_sources["Truffle Oil"]) == {RECIPE_A, RECIPE_B}
         assert result.missing_sources["basil"] == [RECIPE_B]
 
+    def test_missing_sources_names_one_dish_only_once(self) -> None:
+        """One dish's own `missing` list repeating a normalized name (two
+        recipe lines spelled "Truffle Oil" and "truffle oil") must not name
+        that dish twice in `missing_sources` (issue #654, code review N4)."""
+        proposal_a = _proposal(RECIPE_A, "Pasta", missing=["Truffle Oil", "truffle oil"])
+
+        result = merge_meal_matches([(DISH_A, proposal_a)])
+
+        assert result.missing_sources["Truffle Oil"] == [RECIPE_A]
+
     def test_missing_notes_rekeyed_to_kept_spelling(self) -> None:
         proposal_a = _proposal(RECIPE_A, "Pasta", missing=["Heavy cream"])
         proposal_b = _proposal(
@@ -758,6 +768,61 @@ class TestMealCookRoute:
         data = response.json()
         assert len(data["expired_items"]) == 1
 
+    @pytest.mark.asyncio
+    async def test_expired_row_split_across_measured_and_unit_conflict_lines_gives_one_entry(
+        self, client: AsyncClient
+    ) -> None:
+        """One expired pantry row can back TWO merged lines of different
+        kinds (a measured line from one dish, a unit_conflict line from
+        another) -- correlate_expired's `dedupe=True` on the meal route still
+        reports it once (issue #654, code review S2)."""
+        from datetime import date, timedelta as _td
+
+        expired = PantryItem(
+            id=uuid.UUID(PANTRY_A),
+            name="eggs",
+            category=FoodCategory.OTHER,
+            storage_location=StorageLocation.PANTRY,
+            quantity=12.0,
+            unit="count",
+            quantity_base=12.0,
+            unit_base="count",
+            expiry_date=date.today() - _td(days=2),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        meal_data = _meal_with_dishes(
+            [
+                _dish_row(
+                    "main", 0, RECIPE_MAIN,
+                    _recipe_row(RECIPE_MAIN, "Omelette", ingredients=[{"name": "eggs", "quantity": 3.0, "unit": "count"}]),
+                ),
+                _dish_row(
+                    "side", 1, RECIPE_SIDE,
+                    # A genuinely mismatched dimension (volume vs the pantry
+                    # row's count base) -- a real unit_conflict, not a soft
+                    # "imprecise" fallback.
+                    _recipe_row(RECIPE_SIDE, "Custard", ingredients=[{"name": "eggs", "quantity": 50.0, "unit": "ml"}]),
+                ),
+            ]
+        )
+        repo = _repo_for_cook(meal_data, [expired])
+        with patch(f"{_ROUTE_MODULE}.get_repository", return_value=repo):
+            response = await client.post(
+                "/v1/meals/cook",
+                json={
+                    "meal_id": MEAL_ID,
+                    "servings": 2,
+                    "dishes": [{"recipe_id": RECIPE_MAIN}, {"recipe_id": RECIPE_SIDE}],
+                },
+            )
+        assert response.status_code == 200
+        data = response.json()
+        statuses = {m["status"] for m in data["matches"]}
+        assert "unit_conflict" in statuses  # confirms the two-line-kinds premise
+        assert len(data["matches"]) == 2
+        assert len(data["expired_items"]) == 1
+
 
 # ---------------------------------------------------------------------------
 # POST /v1/meals/cook/confirm
@@ -1055,3 +1120,42 @@ class TestMealCookConfirmRoute:
         assert data["already_confirmed"] is False
         assert data["deductions_applied"] == 1
         repo.claim_meal_cook.assert_called_once_with(TEST_USER_ID, MEAL_ID, "brand-new-ref")
+
+    @pytest.mark.asyncio
+    async def test_membership_rechecked_when_stale_read_looked_like_a_replay(
+        self, client: AsyncClient
+    ) -> None:
+        """The first read's `last_cook_ref` matched our `cook_ref` (so the
+        membership check was skipped as a presumed replay), but between that
+        read and `claim_meal_cook`'s own read, another device already moved
+        `last_cook_ref` on to a different ref -- so THIS call's claim comes
+        back `claimed` (a fresh claim), not a replay outcome. The membership
+        check we skipped must still run, against a recipe_id that never was
+        one of this meal's dishes (issue #654, code review N1)."""
+        meal_data = _meal_with_dishes(
+            [_dish_row("main", 0, RECIPE_MAIN, _recipe_row(RECIPE_MAIN, "Pasta"))],
+            last_cook_ref=COOK_REF,
+            last_cook_status="applied",
+        )
+        not_a_dish = str(uuid.uuid4())
+        # claim_meal_cook itself resolves "claimed" -- simulating that its own
+        # (later) read no longer saw last_cook_ref == COOK_REF.
+        claim = MealCookClaim(outcome="claimed", times_cooked=4, cooked_on=datetime.now(UTC).date())
+        repo = _confirm_repo(meal_data, claim)
+
+        with patch(f"{_ROUTE_MODULE}.get_repository", return_value=repo):
+            response = await client.post(
+                "/v1/meals/cook/confirm",
+                json={
+                    "meal_id": MEAL_ID,
+                    "cook_ref": COOK_REF,
+                    "recipe_ids": [not_a_dish],
+                    "deductions": [],
+                },
+            )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["error_kind"] == "dish_mismatch"
+        repo.deduct_pantry_item.assert_not_called()
+        repo.update_recipe_cooked.assert_not_called()
+        repo.mark_meal_cook_applied.assert_not_called()

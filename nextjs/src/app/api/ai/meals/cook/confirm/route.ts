@@ -25,7 +25,14 @@ export async function POST(request: Request) {
   if (auth instanceof NextResponse) return auth
   const [supabase, user] = auth
 
-  const body = await request.json().catch(() => ({}))
+  const rawBody = await request.json().catch(() => null)
+  // Review N5 — a JSON body of `null` (valid JSON, so the `.catch` above
+  // never fires) reached `body.date` below as a `TypeError`. Any non-object
+  // body (null, a bare string/number/boolean) is rejected the same way.
+  if (!(typeof rawBody === 'object' && rawBody)) {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
+  const body = rawBody as Record<string, unknown>
 
   // Client's local date (#524) — only used to judge rescue eligibility;
   // a missing or out-of-range date must never block the deduction, matching

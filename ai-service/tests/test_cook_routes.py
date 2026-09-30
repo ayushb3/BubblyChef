@@ -418,3 +418,54 @@ class TestCookProposalExpiredItems:
         assert data.get("expired_items", []) == []
         assert "dragon fruit" in data["missing"]
 
+    @pytest.mark.asyncio
+    async def test_two_lines_on_one_expired_row_give_two_entries(
+        self, client: AsyncClient
+    ) -> None:
+        """Two recipe lines resolving to the SAME expired pantry row (via
+        synonym collapsing: "cheddar" and "parmesan" both normalize to
+        "cheese") each get their own banner entry -- correlate_expired's
+        `dedupe` defaults to False here, unlike the meal route (issue #654,
+        code review S2)."""
+        from datetime import date, timedelta
+
+        expired_item = PantryItem(
+            id=uuid.UUID(PANTRY_ITEM_ID),
+            name="cheese",
+            category=FoodCategory.DAIRY,
+            storage_location=StorageLocation.FRIDGE,
+            quantity=500.0,
+            unit="g",
+            quantity_base=500.0,
+            unit_base="g",
+            expiry_date=date.today() - timedelta(days=2),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        recipe_dict: dict[str, Any] = {
+            "id": RECIPE_ID,
+            "title": "Cheese Bake",
+            "ingredients": [
+                {"name": "cheddar", "quantity": 100.0, "unit": "g"},
+                {"name": "parmesan", "quantity": 50.0, "unit": "g"},
+            ],
+        }
+
+        mock_repo = AsyncMock()
+        mock_repo.get_recipe.return_value = recipe_dict
+        mock_repo.get_all_pantry_items.return_value = [expired_item]
+
+        with patch(
+            "bubbly_chef.api.routes.recipes_ai.get_repository",
+            return_value=mock_repo,
+        ):
+            response = await client.post(
+                "/v1/recipes/cook", json={"recipe_id": RECIPE_ID}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        expired = data.get("expired_items", [])
+        assert len(expired) == 2, f"expected 2 expired items, got {expired}"
+        assert {e["ingredient_name"] for e in expired} == {"cheddar", "parmesan"}
+

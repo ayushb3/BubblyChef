@@ -36,7 +36,6 @@ import {
   getActiveMealCookSession,
   saveMealCookProgress,
   endMealCookSession,
-  isMealCookSessionEnded,
   isStaleMealCookSession,
   ensureCookId,
   type MealCookSession,
@@ -114,6 +113,16 @@ export default function MealCookPage() {
   // not auto-open the sheet.
   const wasFinishedAtRestoreRef = useRef(false)
   const autoOpenedRef = useRef(false)
+  // Review N2 — `confirmMealCook` resolving/rejecting after this page has
+  // unmounted (the user navigated away by another route while a confirm was
+  // in flight) must not schedule a redirect or a retry against it.
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   const schedulerDishes = useMemo(() => (meal ? schedulerDishesForMeal(meal) : []), [meal])
   const dishIds = useMemo(() => schedulerDishes.map((d) => d.dish_id), [schedulerDishes])
@@ -475,9 +484,14 @@ export default function MealCookPage() {
       endMealCookSession(id)
       invalidateAfterConfirm()
       setSheetState('success')
-      redirectTimerRef.current = setTimeout(() => {
-        router.push(`/meals/${id}`)
-      }, 1200)
+      // Review N2 — a confirm that resolves after this page has unmounted
+      // (the user navigated away another way while it was in flight) must
+      // not schedule a redirect against it.
+      if (mountedRef.current) {
+        redirectTimerRef.current = setTimeout(() => {
+          router.push(`/meals/${id}`)
+        }, 1200)
+      }
     } catch (err) {
       if (err instanceof MealCookError && err.kind === 'confirm_in_progress') {
         if (isRetryOfInProgress) {
@@ -487,9 +501,13 @@ export default function MealCookPage() {
           setSheetState('error')
           return
         }
-        waitTimerRef.current = setTimeout(() => {
-          doConfirm(deductions, true)
-        }, 2000)
+        // Review N2 — same guard for the retry: an unmounted page must not
+        // schedule the automatic retry either.
+        if (mountedRef.current) {
+          waitTimerRef.current = setTimeout(() => {
+            doConfirm(deductions, true)
+          }, 2000)
+        }
         return
       }
       confirmingRef.current = false
@@ -506,9 +524,18 @@ export default function MealCookPage() {
 
   function handleConfirm(deductions: DeductionItem[]) {
     if (confirmingRef.current) return
+    if (!session) return
     // The two-tab checkpoint (mirrors CookModal.tsx): re-check right before
-    // the network call that actually deducts, not just when the sheet opened.
-    if (isMealCookSessionEnded(id)) {
+    // the network call that actually deducts, not just when the sheet
+    // opened — and compare `cook_id`, not just the meal id (review S1). A
+    // same-meal re-cook (this cook was ended, then a fresh one started
+    // elsewhere) is "ended elsewhere" too: sending this tab's stale
+    // `cook_ref` would either `replay_applied`-end the new cook mid-way (if
+    // it hasn't confirmed yet) or double-deduct (if it already has).
+    // `getActiveMealCookSession` already returns `null` for a genuinely
+    // ended session, so this one comparison covers both cases.
+    const active = getActiveMealCookSession(id)
+    if (active?.cook_id !== session.cook_id) {
       setSheetOpen(false)
       router.push(`/meals/${id}`)
       return

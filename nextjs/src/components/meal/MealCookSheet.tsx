@@ -68,15 +68,21 @@ function meaLineSourceNote(m: IngredientMatch): string | null {
   return `From ${parts.join(' + ')}`
 }
 
-/** "Needed for Pasta + Salad" — only when 2+ dishes lack this ingredient. */
+/**
+ * "Needed for Pasta + Salad" — only when 2+ DISTINCT dishes lack this
+ * ingredient. The backend already de-dupes `missing_sources`, but this
+ * counts distinct `recipe_id`s (not raw list length) as a belt-and-braces
+ * guard against a repeated id inflating the count or the note (code review,
+ * round 1).
+ */
 function missingSourceNoteFor(
   name: string,
   missingSources: Record<string, string[]>,
   dishTitleByRecipeId: Map<string, string>,
 ): string | null {
-  const ids = missingSources[name] ?? []
-  if (ids.length < 2) return null
-  const titles = ids.map((id) => dishTitleByRecipeId.get(id) ?? id)
+  const distinctIds = Array.from(new Set(missingSources[name] ?? []))
+  if (distinctIds.length < 2) return null
+  const titles = distinctIds.map((id) => dishTitleByRecipeId.get(id) ?? id)
   return `Needed for ${titles.join(' + ')}`
 }
 
@@ -95,7 +101,19 @@ export default function MealCookSheet({
   const [overrides, setOverrides] = useState<Record<string, string>>({})
   const [expiredDismissed, setExpiredDismissed] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
-  useModalFocusTrap(open, onClose, panelRef)
+
+  // Code review, round 1: while a confirm is in flight, ✕/backdrop/Escape
+  // must not close the sheet — closing re-arms `open`, so a re-opened sheet
+  // (or a fresh "Mark meal as cooked") could start a second request while the
+  // first is still in flight and race it. Cancel is already disabled during
+  // `confirming` (below); this guard is the one place `onClose` itself is
+  // called, so every other dismiss path (✕, backdrop, Escape via
+  // `useModalFocusTrap`) is covered by construction rather than needing its
+  // own disabled check.
+  const guardedClose = () => {
+    if (state !== 'confirming') onClose()
+  }
+  useModalFocusTrap(open, guardedClose, panelRef)
 
   // A fresh proposal (a re-open, or a Retry after a plain error) starts from
   // a clean slate — stale unit_conflict/compound overrides from a previous
@@ -136,7 +154,7 @@ export default function MealCookSheet({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={(e: MouseEvent<HTMLDivElement>) => {
-            if (e.target === e.currentTarget) onClose()
+            if (e.target === e.currentTarget) guardedClose()
           }}
         >
           <motion.div
@@ -178,8 +196,9 @@ export default function MealCookSheet({
                 </p>
               </div>
               <button
-                onClick={onClose}
-                className="text-[var(--color-muted)] hover:text-[var(--color-text)] text-xl leading-none px-1 min-h-[44px] min-w-[44px]"
+                onClick={guardedClose}
+                disabled={state === 'confirming'}
+                className="text-[var(--color-muted)] hover:text-[var(--color-text)] text-xl leading-none px-1 min-h-[44px] min-w-[44px] disabled:opacity-50"
                 aria-label="Close"
               >
                 ✕
@@ -249,7 +268,7 @@ export default function MealCookSheet({
 
                 <div className="flex gap-2">
                   <button
-                    onClick={onClose}
+                    onClick={guardedClose}
                     disabled={state === 'confirming'}
                     className="flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform disabled:opacity-50"
                     style={{ fontFamily: 'Nunito, sans-serif' }}

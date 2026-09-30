@@ -186,6 +186,37 @@ describe('POST /api/ai/meals/cook/confirm', () => {
     expect(awardBubblesMock).not.toHaveBeenCalledWith(mockUser.id, 'rescue', expect.anything())
   })
 
+  it('a JSON null body (review N5) is rejected with 400, and the upstream is never called', async () => {
+    mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])
+
+    const res = await POST(
+      new Request('http://localhost/api/ai/meals/cook/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: 'null',
+      }),
+    )
+
+    expect(res.status).toBe(400)
+    expect(aiProxyFetchMock).not.toHaveBeenCalled()
+    expect(awardBubblesMock).not.toHaveBeenCalled()
+  })
+
+  it('a non-object JSON body (a bare string) is also rejected with 400', async () => {
+    mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])
+
+    const res = await POST(
+      new Request('http://localhost/api/ai/meals/cook/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '"just a string"',
+      }),
+    )
+
+    expect(res.status).toBe(400)
+    expect(aiProxyFetchMock).not.toHaveBeenCalled()
+  })
+
   it('reads the upstream body exactly once', async () => {
     let calls = 0
     mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])

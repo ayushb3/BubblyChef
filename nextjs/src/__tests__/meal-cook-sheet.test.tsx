@@ -248,6 +248,25 @@ describe('MealCookSheet — shared missing items', () => {
     )
     expect(screen.queryByText(/Needed for/)).not.toBeInTheDocument()
   })
+
+  // Code review, round 1: the gate must count DISTINCT recipe ids, not raw
+  // list length — a repeated id (the backend already de-dupes, but this is
+  // belt-and-braces) must not inflate a single dish into a shared note.
+  it('shows no "Needed for" note when the same dish id is repeated in missing_sources', () => {
+    render(
+      <MealCookSheet
+        open
+        mealTitle="Pasta night"
+        state="review"
+        proposal={baseProposal({ missing: ['parmesan'], missing_sources: { parmesan: ['r1', 'r1'] } })}
+        onConfirm={jest.fn()}
+        onRetry={noop}
+        onBackToMeal={noop}
+        onClose={noop}
+      />,
+    )
+    expect(screen.queryByText(/Needed for/)).not.toBeInTheDocument()
+  })
 })
 
 describe('MealCookSheet — assumed staples collapsed', () => {
@@ -397,5 +416,83 @@ describe('MealCookSheet — state machine', () => {
       />,
     )
     expect(screen.getByRole('button', { name: /saving/i })).toBeDisabled()
+  })
+
+  // Code review, round 1: while a confirm is in flight, every dismiss path
+  // (✕, backdrop, Escape) must be a no-op — otherwise closing and reopening
+  // (or a second "Mark meal as cooked") could start a second request that
+  // races the first.
+  it('ignores the close (✕) button while confirming', () => {
+    const onClose = jest.fn()
+    render(
+      <MealCookSheet
+        open
+        mealTitle="Pasta night"
+        state="confirming"
+        proposal={baseProposal()}
+        onConfirm={jest.fn()}
+        onRetry={noop}
+        onBackToMeal={noop}
+        onClose={onClose}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('ignores Escape while confirming', () => {
+    const onClose = jest.fn()
+    render(
+      <MealCookSheet
+        open
+        mealTitle="Pasta night"
+        state="confirming"
+        proposal={baseProposal()}
+        onConfirm={jest.fn()}
+        onRetry={noop}
+        onBackToMeal={noop}
+        onClose={onClose}
+      />,
+    )
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('ignores a backdrop click while confirming', () => {
+    const onClose = jest.fn()
+    render(
+      <MealCookSheet
+        open
+        mealTitle="Pasta night"
+        state="confirming"
+        proposal={baseProposal()}
+        onConfirm={jest.fn()}
+        onRetry={noop}
+        onBackToMeal={noop}
+        onClose={onClose}
+      />,
+    )
+    fireEvent.click(screen.getByRole('dialog').parentElement as HTMLElement)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('still calls onClose via ✕ and Escape when not confirming', () => {
+    const onClose = jest.fn()
+    render(
+      <MealCookSheet
+        open
+        mealTitle="Pasta night"
+        state="review"
+        proposal={baseProposal()}
+        onConfirm={jest.fn()}
+        onRetry={noop}
+        onBackToMeal={noop}
+        onClose={onClose}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(2)
   })
 })

@@ -254,7 +254,7 @@ async def meal_cook(
             pantry_items=pantry_items,
             ai_manager=get_ai_manager(),
         )
-        expired_items = correlate_expired(result.matches, pantry_items)
+        expired_items = correlate_expired(result.matches, pantry_items, dedupe=True)
 
         return MealCookProposal(
             meal_id=request.meal_id,
@@ -358,6 +358,20 @@ async def meal_cook_confirm(
                     ),
                 },
             )
+
+        # claim.outcome == "claimed", but the FIRST read's last_cook_ref
+        # looked like our own ref (is_own_replay), so the membership check
+        # above was skipped. The claim not classifying this as a replay
+        # means another device already moved last_cook_ref on between our
+        # two reads -- this is actually a fresh claim over that newer state,
+        # not a replay, so the membership check we skipped still has to run,
+        # against the `meal_data` we already read, before any deduction
+        # write (issue #654, code review N1).
+        if is_own_replay:
+            member_ids = _member_recipe_ids(meal_data["dishes"])
+            for recipe_id in request.recipe_ids:
+                if str(recipe_id) not in member_ids:
+                    raise _dish_mismatch(recipe_id)
 
         # claim.outcome == "claimed": apply the writes. A failure here leaves
         # the meal row's status at 'claimed' -- a retry within 30s of the

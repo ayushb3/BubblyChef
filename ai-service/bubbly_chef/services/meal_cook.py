@@ -9,8 +9,10 @@ per-dish `CookProposal`s into one set of merged lines with `merge_meal_matches`
 -- the only piece that is pure and directly unit-tested.
 
 `correlate_expired` and `apply_collapsed_deductions` are shared with the
-single-recipe routes (`api/routes/recipes_ai.py`) so both cook flows apply
-the exact same rules.
+single-recipe routes (`api/routes/recipes_ai.py`). `apply_collapsed_deductions`
+applies identically to both; `correlate_expired` takes a `dedupe` flag because
+the two routes deliberately disagree on whether one expired pantry row can
+back more than one banner entry (see its own docstring).
 """
 
 from __future__ import annotations
@@ -418,7 +420,13 @@ def merge_meal_matches(
                 missing_norm_to_kept[norm] = name
                 missing.append(name)
             kept = missing_norm_to_kept[norm]
-            missing_sources.setdefault(kept, []).append(dish.recipe_id)
+            sources_for_kept = missing_sources.setdefault(kept, [])
+            # A single dish's own `missing` list can repeat one normalized
+            # name (e.g. two recipe lines spelled "Truffle Oil" and "truffle
+            # oil") -- without this guard the same dish.recipe_id would be
+            # appended once per repeated line (issue #654, code review N4).
+            if dish.recipe_id not in sources_for_kept:
+                sources_for_kept.append(dish.recipe_id)
             if kept not in missing_notes:
                 note = proposal.missing_notes.get(name)
                 if note:
@@ -566,17 +574,25 @@ async def match_meal_with_llm(
 
 
 def correlate_expired(
-    matches: Sequence[IngredientMatch], pantry_items: list[PantryItem]
+    matches: Sequence[IngredientMatch],
+    pantry_items: list[PantryItem],
+    *,
+    dedupe: bool = False,
 ) -> list[ExpiredMatchedItem]:
     """Which matched ingredients are backed by an expired pantry row.
 
     Moved out of `api/routes/recipes_ai.py` (formerly inline, :228-248) so
-    both cook routes share it. De-duplicates by `pantry_item_id`: a meal's
-    merged matches emit at most one measured, one unit_conflict and one
-    imprecise line per pantry item, and this must still report that item
-    exactly once (contract §8, "expired_items is emitted once per pantry
-    item"). A single recipe's matches practically never repeat a pantry item
-    across lines either, so this is a no-op there.
+    both cook routes share it. `/v1/recipes/cook` calls this with
+    `dedupe=False` (the default) -- ITS behaviour is unchanged: two recipe
+    lines resolving to the same expired pantry row (e.g. "cheddar" and
+    "parmesan" both landing on one `cheese` row) each get their own banner
+    entry, as on `main`.
+
+    The meal route passes `dedupe=True`: a meal's merged matches emit at
+    most one measured, one unit_conflict and one imprecise line per pantry
+    item, and this must still report that item exactly once (contract §8,
+    "expired_items is emitted once per pantry item") -- de-duplicating by
+    `pantry_item_id` there, first occurrence kept.
     """
     expired_by_id: dict[str, PantryItem] = {
         str(item.id): item for item in pantry_items if item.is_expired
@@ -587,7 +603,7 @@ def correlate_expired(
         if match.pantry_item_id is None:
             continue
         item_id = str(match.pantry_item_id)
-        if item_id in seen_ids:
+        if dedupe and item_id in seen_ids:
             continue
         expired_row = expired_by_id.get(item_id)
         if expired_row is None:
