@@ -27,6 +27,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ValidationError
 
+from bubbly_chef.domain.diet_terms import norm_label
 from bubbly_chef.models.meal import (
     MealDishOutline,
     MealFixedMain,
@@ -393,7 +394,7 @@ async def fixed_main_constraints(state: WorkflowState, card: RecipeCard) -> dict
     user_id = state.get("user_id") or ""
     stored = await stored_dietary_preferences(user_id)
 
-    inherited = [t for t in card.dietary_tags if t.strip().lower() in INHERITABLE_DIETS]
+    inherited = [t for t in card.dietary_tags if norm_label(t) in INHERITABLE_DIETS]
     dietary = _combine_dietary_preferences(
         stored,
         inherited,
