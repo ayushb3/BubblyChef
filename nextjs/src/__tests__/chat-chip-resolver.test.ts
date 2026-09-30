@@ -325,17 +325,27 @@ describe('resolveChips — meal_plan pill sets (#651, §2)', () => {
     expect(chips.map((c) => c.label)).not.toContain('Just one dish')
   })
 
-  it('options stage, 1 model pill → [m1, Something quicker], both stamped', () => {
+  it('options stage, 1 model pill → [m1, Different ideas], both stamped (PR #666)', () => {
     const chips = resolveChips('meal_plan', ['Something with less prep'], 'meal_options')
-    expect(chips.map((c) => c.label)).toEqual(['Something with less prep', 'Something quicker'])
+    expect(chips.map((c) => c.label)).toEqual(['Something with less prep', 'Different ideas'])
     chips.forEach((c) => expect(c.context).toEqual({ meal_followup: true }))
   })
 
-  it('options stage, 5 model pills → m1-m4, capped at MAX_FOLLOW_UP_CHIPS and stamped', () => {
+  it('options stage, 2 model pills → [m1, m2, Different ideas] (PR #666)', () => {
+    const chips = resolveChips('meal_plan', ['Something with salmon', 'Make it spicier'], 'meal_options')
+    expect(chips.map((c) => c.label)).toEqual(['Something with salmon', 'Make it spicier', 'Different ideas'])
+  })
+
+  it('options stage, 5 model pills → m1-m3 then Different ideas, capped at MAX_FOLLOW_UP_CHIPS and stamped (PR #666)', () => {
     const many = ['A?', 'B?', 'C?', 'D?', 'E?']
     const chips = resolveChips('meal_plan', many, 'meal_options')
-    expect(chips.map((c) => c.label)).toEqual(many.slice(0, 4))
+    expect(chips.map((c) => c.label)).toEqual([...many.slice(0, 3), 'Different ideas'])
     chips.forEach((c) => expect(c.context).toEqual({ meal_followup: true }))
+  })
+
+  it('options stage drops a model pill that echoes "Different ideas" (PR #666)', () => {
+    const chips = resolveChips('meal_plan', ['different ideas', 'Something with salmon'], 'meal_options')
+    expect(chips.map((c) => c.label)).toEqual(['Something with salmon', 'Different ideas'])
   })
 
   it('meal stage, unsaved, no model pills → the fixed set in order; only "Different options" is stamped', () => {

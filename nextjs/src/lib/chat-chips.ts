@@ -91,6 +91,9 @@ export function sanitiseFollowUps(raw: unknown): string[] {
   return out
 }
 
+/** The options stage's way back to new options; always reserved a slot (PR #666 review). */
+const DIFFERENT_IDEAS_LABEL = 'Different ideas'
+
 /**
  * Today's fixed per-intent chip set — the safety net when the backend sends
  * no usable suggestions. Never returns an empty array.
@@ -172,7 +175,7 @@ export function resolveStaticChips(
           context: MEAL_FOLLOWUP_CONTEXT,
         },
         {
-          label: 'Different ideas',
+          label: DIFFERENT_IDEAS_LABEL,
           message: 'Show me different meal options',
           tone: 'primary',
           emoji: '🔄',
@@ -211,26 +214,21 @@ export function resolveStaticChips(
  * Issue #651, §2 — the algorithm:
  *  1. Split the fixed set into action chips and send chips.
  *  2. Sanitise the model's suggestions, drop any that duplicate a fixed
- *     action's label (the action wins), and cap at
- *     `MAX_FOLLOW_UP_CHIPS − actions.length` (options stage and every other
- *     intent) or `MAX_FOLLOW_UP_CHIPS − actions.length − fixedSends.length`
- *     (meal *pick* stage — see below).
+ *     action's or reserved send's label, and cap at
+ *     `MAX_FOLLOW_UP_CHIPS − actions − reserved sends` (see below).
  *  3. No usable model chips → the fixed set, unchanged (today's full
  *     fallback — `cooking_help` still gets all 3 `COOKING_CHIPS`).
  *  4. Otherwise, options stage and every other intent: model chips, then
  *     fixed send chips topped up (skipping label duplicates) until the row
  *     reaches `MIN_FOLLOW_UP_CHIPS`, then the action chips appended last.
  *
- * Issue #666 code review — the meal *pick* stage (`proposalType === 'meal'`)
- * does not use the top-up rule above. With `Swap a side` gone (dropped in the
- * same fix — it duplicated `Start cooking`'s `open_meal` action), the pick
- * stage's only send chip is `Different options`, and the `MIN_FOLLOW_UP_CHIPS`
- * top-up counted actions, so a single model pill (1 model + 2-3 actions) already
- * cleared the threshold and `Different options` never appeared — a picked meal
- * had no way back to other options. So for the pick stage: model chips are
- * capped to leave room for *both* the actions and the fixed sends, and once
- * there is at least one model chip, `fixedSends` (`Different options`) is
- * always appended in full, never subject to the `MIN_FOLLOW_UP_CHIPS` top-up.
+ * PR #666 review — both meal_plan stages reserve a slot for their way back
+ * to new options, so model pills can't crowd it out: the pick stage
+ * (`proposalType === 'meal'`) always ends with `Different options` after its
+ * actions (`Swap a side` was dropped; it duplicated `Start cooking`), and the
+ * options stage always includes `Different ideas`. Model chips are capped at
+ * `MAX_FOLLOW_UP_CHIPS − actions − reserved`, and a model chip echoing a
+ * reserved label is dropped.
  *
  * The `meal_followup` stamp (`context: { meal_followup: true }`) is applied
  * to every send chip — model and fixed — under the `meal_plan` *options*
@@ -255,17 +253,22 @@ export function resolveChips(
   const stampModel = intent === 'meal_plan' && proposalType !== 'meal'
   const isMealPickStage = intent === 'meal_plan' && proposalType === 'meal'
 
-  // At the pick stage the fixed sends are always appended, so a model pill
-  // echoing one ("Different options") would render twice (PR #666 review).
-  const reservedLabels = new Set(
-    (isMealPickStage ? [...actions, ...fixedSends] : actions).map((c) => c.label.toLowerCase()),
-  )
+  // The way back to other options is never crowded out by model pills
+  // (PR #666 review): at the pick stage that's every fixed send
+  // ("Different options"); at the options stage it's "Different ideas".
+  // Both get a reserved slot, and a model pill echoing one is dropped so it
+  // can't render twice.
+  const isMealOptionsStage = intent === 'meal_plan' && !isMealPickStage
+  const alwaysSends = isMealPickStage
+    ? fixedSends
+    : isMealOptionsStage
+      ? fixedSends.filter((c) => c.label === DIFFERENT_IDEAS_LABEL)
+      : []
+  const reservedLabels = new Set([...actions, ...alwaysSends].map((c) => c.label.toLowerCase()))
   const cleaned = sanitiseFollowUps(suggestions).filter(
     (text) => !reservedLabels.has(text.toLowerCase()),
   )
-  const cap = isMealPickStage
-    ? Math.max(0, MAX_FOLLOW_UP_CHIPS - actions.length - fixedSends.length)
-    : Math.max(0, MAX_FOLLOW_UP_CHIPS - actions.length)
+  const cap = Math.max(0, MAX_FOLLOW_UP_CHIPS - actions.length - alwaysSends.length)
   const modelChips: ChipConfig[] = cleaned.slice(0, cap).map((text, i) => ({
     label: text,
     message: text,
@@ -277,19 +280,17 @@ export function resolveChips(
   if (modelChips.length === 0) return fixed
 
   if (isMealPickStage) {
-    // Always keep the way back to other options once a meal is picked —
-    // no MIN_FOLLOW_UP_CHIPS top-up gate here (issue #666).
-    return [...modelChips, ...actions, ...fixedSends]
+    return [...modelChips, ...actions, ...alwaysSends]
   }
 
-  const labels = new Set(modelChips.map((c) => c.label.toLowerCase()))
+  const labels = new Set([...modelChips, ...alwaysSends].map((c) => c.label.toLowerCase()))
   const added: ChipConfig[] = []
   for (const chip of fixedSends) {
-    if (modelChips.length + added.length + actions.length >= MIN_FOLLOW_UP_CHIPS) break
+    if (modelChips.length + added.length + alwaysSends.length + actions.length >= MIN_FOLLOW_UP_CHIPS) break
     if (labels.has(chip.label.toLowerCase())) continue
     added.push(chip)
     labels.add(chip.label.toLowerCase())
   }
 
-  return [...modelChips, ...added, ...actions]
+  return [...modelChips, ...added, ...alwaysSends, ...actions]
 }

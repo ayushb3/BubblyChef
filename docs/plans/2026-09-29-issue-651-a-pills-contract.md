@@ -203,8 +203,9 @@ Every other intent's set is unchanged.
 | Stage | Model pills | Row |
 |---|---|---|
 | options | 0 | Something quicker, Make it vegetarian, Different ideas |
-| options | 1 | m1, Something quicker |
-| options | 5 | m1–m4 |
+| options | 1 | m1, Different ideas |
+| options | 2 | m1, m2, Different ideas |
+| options | 5 | m1–m3, Different ideas |
 | meal, unsaved | 0 | Save this meal, Start cooking, Different options |
 | meal, saved | 0 | Start cooking, Different options |
 | meal, unsaved | 1 | m1, Save this meal, Start cooking, Different options |
@@ -585,6 +586,7 @@ Stub at the `AIManager` boundary, dispatching on the `response_schema` kwarg rat
 
 | Call | Rejected alternative |
 |---|---|
+| Different ideas always keeps a slot under meal options (model pills cap at 3), like Different options under a picked meal (PR #666 review). | Only topping up to 2 pills, which hid every fixed pill whenever the model wrote two. |
 | Serve at 7:00 is dropped from the meal-ready fixed set; the meal screen owns serve-at. | A send pill the chat can't act on. |
 | `save_meal` scrolls to, focuses and highlights the same message's Save meal button. The card is the confirm. | A second confirm sheet for one action, or writing on the tap. |
 | `open_meal` (Start cooking) is exactly the card's Open meal: a draft, then `/meals/[id]`, with no confirm because it writes only the draft the button already writes. | Start cooking deep-linking to `/meals/[id]/cook`, which skips the meal screen's `ensureSteps` gate and needs a session start. |
