@@ -272,3 +272,60 @@ describe('makeMealMessage / makeMealHref (issue #651 PR B)', () => {
     expect(makeMealHref(id, null)).toBe(`/chat?meal=${id}`)
   })
 })
+
+describe('deriveChatSeed — the meal seed (issue #651 PR B)', () => {
+  const ID = '0b6e2f1a-1111-4222-8333-444455556666'
+
+  it('builds the meal seed from ?meal=<uuid>&title=', () => {
+    const seed = deriveChatSeed(new URLSearchParams(`meal=${ID}&title=Lemon%20pasta`))
+    expect(seed).toEqual({
+      key: `meal:${ID}`,
+      kind: 'meal',
+      message: 'Make Lemon pasta into a meal',
+      context: { meal_fixed_main: { recipe_id: ID } },
+      card: {
+        emoji: '🍽️',
+        label: 'Make it a meal',
+        title: 'Making it a meal',
+        subtitle: 'Lemon pasta',
+        dismissLabel: 'Dismiss make-it-a-meal context',
+      },
+    })
+  })
+
+  it('with no title, uses the generic message and subtitle', () => {
+    const seed = deriveChatSeed(new URLSearchParams(`meal=${ID}`))
+    expect(seed?.message).toBe('Make a meal around your recipe')
+    expect(seed?.card.subtitle).toBe('Your saved recipe')
+  })
+
+  it('a meal value that is not a UUID falls through to the plan seed', () => {
+    expect(deriveChatSeed(new URLSearchParams('meal=nope&plan=dinner'))?.kind).toBe('plan')
+    expect(deriveChatSeed(new URLSearchParams('meal=nope'))).toBeNull()
+  })
+
+  it('meal wins over plan, tip and use', () => {
+    expect(deriveChatSeed(new URLSearchParams(`meal=${ID}&plan=dinner`))?.kind).toBe('meal')
+    expect(deriveChatSeed(new URLSearchParams(`meal=${ID}&tip=x&use=eggs`))?.kind).toBe('meal')
+  })
+
+  it('caps a very long title at 120 characters', () => {
+    const seed = deriveChatSeed(new URLSearchParams({ meal: ID, title: 'x'.repeat(300) }))
+    expect(seed?.card.subtitle).toHaveLength(120)
+    expect(seed?.message).toBe(`Make ${'x'.repeat(120)} into a meal`)
+  })
+
+  it('lower-cases the key but sends the id as given', () => {
+    const upper = ID.toUpperCase()
+    const seed = deriveChatSeed(new URLSearchParams({ meal: upper }))
+    expect(seed?.key).toBe(`meal:${ID}`)
+    expect(seed?.context).toEqual({ meal_fixed_main: { recipe_id: upper } })
+  })
+
+  it('makeMealHref round-trips through deriveChatSeed', () => {
+    const seed = deriveChatSeed(paramsOf(makeMealHref(ID, 'Mac & Cheese')))
+    expect(seed?.kind).toBe('meal')
+    expect(seed?.card.subtitle).toBe('Mac & Cheese')
+    expect(seed?.message).toBe('Make Mac & Cheese into a meal')
+  })
+})

@@ -29,8 +29,8 @@ import { useChat } from '@/hooks/useChat'
 import { checkAIHealth } from '@/lib/api/chat'
 import { fetchRecipe, promoteRecipeDraft } from '@/lib/api/recipes'
 import { createMeal, updateMeal } from '@/lib/api/meals'
-import { buildCreateMealPayload } from '@/lib/meal-chat-helpers'
-import { cookingContextForId, deriveChatSeed } from '@/lib/chat-seed'
+import { buildCreateMealPayload, fixedMainForCard } from '@/lib/meal-chat-helpers'
+import { cookingContextForId, deriveChatSeed, makeMealMessage } from '@/lib/chat-seed'
 import { startCookSession, isCookSessionEnded } from '@/lib/cook-session'
 import { useStarterContext } from '@/lib/api/starter-context'
 import { rankStarterPills } from '@/lib/starter-pills'
@@ -280,9 +280,8 @@ function ChatSurface() {
     seedSentRef.current = true
     // The seed *is* the first message, so the cook-context slot is spent.
     contextSentRef.current = true
-    // `seed.context` (issue #651, §8) is unset for `tip`/`use`/`plan` today —
-    // only PR B's `meal` seed sets it — so this is a no-op for every seed
-    // that currently exists.
+    // `seed.context` (issue #651, §8) is unset for `tip`/`use`/`plan`; the
+    // `meal` seed sets it (`meal_fixed_main`), and it rides along here.
     if (seed.context) {
       sendMessage(seed.message, seed.context)
     } else {
@@ -472,6 +471,27 @@ function ChatSurface() {
    */
   const handlePickMealOption = (option: MealOption) => {
     sendMessage(option.title, { meal_option_id: option.option_id })
+  }
+
+  /**
+   * "Make it a meal" on a chat recipe card (issue #651 PR B). Uses
+   * `sendMessage`, never `sendChipMessage`: the latter aborts a live stream,
+   * which would defeat the double-tap guard (the card's button is disabled
+   * while `isStreaming`, and `sendMessage` returns early while streaming).
+   * The main is referenced by id only when THIS card's own Save succeeded
+   * (that row is non-draft by construction); a cook-with-me draft or an
+   * unknown id sends the recipe as a payload, so a draft is never linked.
+   */
+  const handleMakeMealFromCard = (msgId: string, recipe: ChatRecipeData) => {
+    const savedId = saveStates[msgId] === 'saved' ? savedRecipeIds[msgId] : undefined
+    sendMessage(makeMealMessage(recipe.title), {
+      meal_fixed_main: fixedMainForCard(recipe, savedId),
+    })
+  }
+
+  /** "Make it a meal" on a saved-recipe lookup card — the saved row, by id. */
+  const handleMakeMealFromMatch = (match: SavedRecipeMatch) => {
+    sendMessage(makeMealMessage(match.title), { meal_fixed_main: { recipe_id: match.id } })
   }
 
   /**
@@ -789,6 +809,9 @@ function ChatSurface() {
                 }}
                 onPickIdea={handlePickIdea}
                 onPickSavedRecipe={handlePickSavedRecipe}
+                onMakeMealFromRecipe={(recipe) => handleMakeMealFromCard(msg.id, recipe)}
+                onMakeMealFromMatch={handleMakeMealFromMatch}
+                makeMealAvailable={!cookingRecipe}
                 onConfirmChoice={handleConfirmChoice}
                 onStageText={handleStageText}
                 onPickMealOption={handlePickMealOption}
@@ -968,6 +991,12 @@ interface MessageRendererProps {
   onChipAction: (action: ChipAction) => void
   onPickIdea: (idea: string) => void
   onPickSavedRecipe: (match: SavedRecipeMatch) => void
+  /** "Make it a meal" on a chat recipe card (issue #651 PR B). */
+  onMakeMealFromRecipe: (recipe: ChatRecipeData) => void
+  /** "Make it a meal" on a saved-recipe lookup card. */
+  onMakeMealFromMatch: (match: SavedRecipeMatch) => void
+  /** False while a cook is pinned in chat: no make-it-a-meal buttons then. */
+  makeMealAvailable: boolean
   /** Called when the user taps a confirm-band button (#416 AC3). */
   onConfirmChoice: (
     forcedIntent: 'recipe_card' | 'recipe_brainstorm',
@@ -1009,6 +1038,9 @@ function MessageRenderer({
   onChipAction,
   onPickIdea,
   onPickSavedRecipe,
+  onMakeMealFromRecipe,
+  onMakeMealFromMatch,
+  makeMealAvailable,
   onConfirmChoice,
   onStageText,
   onPickMealOption,
@@ -1115,6 +1147,7 @@ function MessageRenderer({
               <SavedRecipeMatches
                 matches={matches}
                 onSelect={onPickSavedRecipe}
+                onMakeMeal={makeMealAvailable ? onMakeMealFromMatch : undefined}
                 disabled={!isLastSettledAssistant}
               />
             </div>
@@ -1160,7 +1193,9 @@ function MessageRenderer({
           </div>
           {isLastSettledAssistant && !isFollowUpsPending(message.response) && (
             <PostMessageChips
-              chips={resolveChips(intent, getFollowUpSuggestions(message.response), proposal.proposal_type)}
+              chips={resolveChips(intent, getFollowUpSuggestions(message.response), proposal.proposal_type, {
+                fixedMain: Boolean(proposal.fixed_main),
+              })}
               onChipTap={onChipTap}
               onEditChip={onStageText}
               onChipAction={onChipAction}
@@ -1235,6 +1270,12 @@ function MessageRenderer({
               cookState={cookState}
               onCookWithMe={() => onCookWithMe(recipe)}
               onAlreadyMade={() => onAlreadyMade(recipe)}
+              onMakeMeal={
+                makeMealAvailable && cookState !== 'started'
+                  ? () => onMakeMealFromRecipe(recipe)
+                  : undefined
+              }
+              makeMealDisabled={isStreaming}
             />
           </div>
         </div>

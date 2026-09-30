@@ -531,3 +531,66 @@ describe('getFollowUpSuggestions (#498)', () => {
     expect(chips.map((c) => c.label)).toEqual(CHICKEN_SUGGESTIONS)
   })
 })
+
+// ─── Issue #651 PR B — fixed-main pill swap ──────────────────────────────────
+
+describe('resolveChips / resolveStaticChips — fixedMain (#651 PR B, §8a)', () => {
+  const FIXED_LABELS = ['Quicker sides', 'Lighter sides', 'Different ideas']
+  const ORDINARY_LABELS = ['Something quicker', 'Make it vegetarian', 'Different ideas']
+
+  it('swaps the two main-changing pills in place, both stamped', () => {
+    const chips = resolveChips('meal_plan', undefined, 'meal_options', { fixedMain: true })
+    expect(chips.map((c) => c.label)).toEqual(FIXED_LABELS)
+    expect(chips[0]).toMatchObject({ message: 'Quicker sides, under 20 minutes', emoji: '⚡', tone: 'fresh' })
+    expect(chips[1]).toMatchObject({ message: 'Make the sides lighter', emoji: '🥗', tone: 'accent' })
+    chips.forEach((c) => expect(c.context).toEqual({ meal_followup: true }))
+  })
+
+  it('also applies when the proposalType is absent (the stage has not resolved)', () => {
+    const chips = resolveChips('meal_plan', undefined, undefined, { fixedMain: true })
+    expect(chips.map((c) => c.label)).toEqual(FIXED_LABELS)
+  })
+
+  it('leaves the set unchanged without fixedMain', () => {
+    expect(resolveChips('meal_plan', undefined, 'meal_options').map((c) => c.label)).toEqual(
+      ORDINARY_LABELS,
+    )
+    expect(
+      resolveChips('meal_plan', undefined, 'meal_options', { fixedMain: false }).map((c) => c.label),
+    ).toEqual(ORDINARY_LABELS)
+  })
+
+  it('a model pill still fills the row, with the reserved "Different ideas" kept', () => {
+    const chips = resolveChips('meal_plan', ['Add a green side'], 'meal_options', { fixedMain: true })
+    expect(chips.map((c) => c.label)).toEqual(['Add a green side', 'Different ideas'])
+  })
+
+  it('has no effect on the meal stage', () => {
+    expect(resolveChips('meal_plan', undefined, 'meal', { fixedMain: true })).toEqual(
+      resolveChips('meal_plan', undefined, 'meal'),
+    )
+  })
+
+  it('has no effect on other intents', () => {
+    for (const intent of ['recipe_card', 'cooking_help', 'pantry_update', 'saved_recipe_lookup', undefined]) {
+      expect(resolveChips(intent, undefined, undefined, { fixedMain: true })).toEqual(
+        resolveChips(intent),
+      )
+    }
+  })
+
+  it('keeps mealSaved working alongside fixedMain', () => {
+    const chips = resolveChips('meal_plan', undefined, 'meal', { fixedMain: true, mealSaved: true })
+    expect(chips.map((c) => c.label)).not.toContain('Save this meal')
+  })
+
+  it('resolveStaticChips equals resolveChips with no suggestions, for the fixedMain cases too', () => {
+    for (const proposalType of ['meal_options', 'meal', undefined]) {
+      for (const opts of [{ fixedMain: true }, { fixedMain: true, mealSaved: true }, { fixedMain: false }]) {
+        expect(resolveStaticChips('meal_plan', proposalType, opts)).toEqual(
+          resolveChips('meal_plan', undefined, proposalType, opts),
+        )
+      }
+    }
+  })
+})

@@ -1,9 +1,13 @@
 /**
- * Issue #651 PR B — the pure helpers that build `context.meal_fixed_main`.
- * `buildCreateMealPayload`'s linked-main tests land with the page wiring.
+ * Issue #651 PR B — the pure helpers that build `context.meal_fixed_main`,
+ * and `buildCreateMealPayload` linking a fixed saved main by id.
  */
-import { fixedMainForCard, fixedMainPayload } from '@/lib/meal-chat-helpers'
-import type { ChatRecipeData } from '@/types/chat'
+import {
+  buildCreateMealPayload,
+  fixedMainForCard,
+  fixedMainPayload,
+} from '@/lib/meal-chat-helpers'
+import type { ChatRecipeData, MealProposal } from '@/types/chat'
 
 const recipe: ChatRecipeData = {
   title: '  Lemon Butter Pasta  ',
@@ -78,5 +82,58 @@ describe('fixedMainForCard', () => {
     const ctx = fixedMainForCard(recipe, savedId)
     expect(ctx).toEqual({ recipe: fixedMainPayload(recipe) })
     expect(ctx).not.toHaveProperty('recipe_id')
+  })
+})
+
+describe('buildCreateMealPayload', () => {
+  const proposal = (mainId?: string | null): MealProposal => ({
+    proposal_type: 'meal',
+    meal_ref: 'ref-1',
+    title: 'Pasta night',
+    servings: 4,
+    constraints: { kitchen_limits: [], exclusive_tags: [], recipe_constraints: {} },
+    missing_ingredients: [],
+    dishes: [
+      {
+        role: 'main',
+        position: 0,
+        ...(mainId !== undefined ? { recipe_id: mainId } : {}),
+        recipe: { title: 'Lemon Butter Pasta', instructions: ['Boil.'], servings: 4 },
+      },
+      {
+        role: 'side',
+        position: 1,
+        recipe: { title: 'Green salad', instructions: ['Toss.'] },
+      },
+    ],
+  })
+
+  it('sends a fixed saved main as a reference with no recipe payload', () => {
+    const { dishes } = buildCreateMealPayload(proposal('recipe-1'), true)
+    expect(dishes[0]).toEqual({ role: 'main', position: 0, recipe_id: 'recipe-1' })
+    expect(dishes[0]).not.toHaveProperty('recipe')
+  })
+
+  it('keeps the sides as new recipe payloads, at the meal servings', () => {
+    const { dishes } = buildCreateMealPayload(proposal('recipe-1'), true)
+    expect(dishes[1].recipe).toMatchObject({ title: 'Green salad', servings: 4 })
+    expect(dishes[1]).not.toHaveProperty('recipe_id')
+  })
+
+  it.each([undefined, null, ''])('sends every dish as a payload when the main id is %p', (id) => {
+    const { dishes } = buildCreateMealPayload(proposal(id), false)
+    expect(dishes[0].recipe).toMatchObject({ title: 'Lemon Butter Pasta', servings: 4 })
+    expect(dishes[0]).not.toHaveProperty('recipe_id')
+    expect(dishes[1].recipe).toBeDefined()
+  })
+
+  it('carries the meal-level fields as before', () => {
+    expect(buildCreateMealPayload(proposal('recipe-1'), true)).toMatchObject({
+      title: 'Pasta night',
+      servings: 4,
+      is_draft: true,
+      source_type: 'chat',
+      source_ref: 'ref-1',
+    })
   })
 })

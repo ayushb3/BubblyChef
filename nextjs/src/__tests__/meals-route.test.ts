@@ -169,6 +169,69 @@ describe('POST /api/meals', () => {
     expect(inserts.meal_dishes[1]).toMatchObject({ recipe_id: 'existing-r2', role: 'side', position: 1 })
   })
 
+  // Issue #651 PR B: a make-it-a-meal main is a saved recipe referenced by id.
+  function supabaseWithRecipeLookup(found: boolean) {
+    const { supabase, inserts } = makeCreateSupabase()
+    const wrapped = {
+      ...supabase,
+      from(table: string) {
+        if (table === 'recipes') {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: found ? { id: 'saved-main' } : null, error: null }),
+                }),
+              }),
+            }),
+            insert: (values: Record<string, unknown>) => {
+              inserts.recipes.push(values)
+              return { select: () => ({ single: async () => ({ data: { id: 'rNew' }, error: null }) }) }
+            },
+          }
+        }
+        if (table === 'meals') {
+          // A failed dish write rolls the just-created meal back with a delete.
+          return {
+            ...supabase.from(table),
+            delete: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
+          }
+        }
+        return supabase.from(table)
+      },
+    }
+    return { wrapped, inserts }
+  }
+
+  const LINKED_MAIN_DISHES = [
+    { role: 'main', position: 0, recipe_id: 'saved-main' },
+    { role: 'side', position: 1, recipe: { title: 'Buttered orzo', instructions: ['Boil it'] } },
+  ]
+
+  it('links a saved main by id without inserting it into recipes', async () => {
+    const { wrapped, inserts } = supabaseWithRecipeLookup(true)
+    ;(requireAuth as jest.Mock).mockResolvedValue([wrapped, mockUser])
+
+    const res = await POST(makeRequest({ title: 'Pasta night', dishes: LINKED_MAIN_DISHES }))
+
+    expect(res.status).toBe(201)
+    // Only the side was a new recipe; the linked main was never copied.
+    expect(inserts.recipes).toHaveLength(1)
+    expect(inserts.recipes[0]).toMatchObject({ title: 'Buttered orzo' })
+    expect(inserts.meal_dishes[0]).toMatchObject({ recipe_id: 'saved-main', role: 'main', position: 0 })
+  })
+
+  it("rejects a main id the user doesn't own (400) and writes no dish", async () => {
+    const { wrapped, inserts } = supabaseWithRecipeLookup(false)
+    ;(requireAuth as jest.Mock).mockResolvedValue([wrapped, mockUser])
+
+    const res = await POST(makeRequest({ title: 'Pasta night', dishes: LINKED_MAIN_DISHES }))
+
+    expect(res.status).toBe(400)
+    expect(inserts.meal_dishes).toHaveLength(0)
+    expect(inserts.recipes).toHaveLength(0)
+  })
+
   it('rejects a meal with zero sides (the side-count rule)', async () => {
     const { supabase, inserts } = makeCreateSupabase()
     ;(requireAuth as jest.Mock).mockResolvedValue([supabase, mockUser])

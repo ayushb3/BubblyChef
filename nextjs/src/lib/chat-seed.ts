@@ -10,17 +10,22 @@
  * dismissible context card above the thread, and prime the conversation.
  *
  * A third param, `/chat?plan=dinner` (issue #651), seeds a "plan dinner"
- * request instead: home screen's Plan card → `planDinnerHref()`. Precedence
- * across every seed source is cooking > (meal, PR B) > plan > tip > use — the
+ * request instead: home screen's Plan card → `planDinnerHref()`. A fourth,
+ * `/chat?meal=<recipe id>&title=<title>` (issue #651 PR B), seeds "make this
+ * saved recipe into a meal": recipe page → `makeMealHref()`. Precedence
+ * across every seed source is cooking > meal > plan > tip > use — the
  * cooking handoff is excluded before `deriveChatSeed` is ever called
- * (`page.tsx`), and `plan` is checked ahead of `tip`/`use` inside it.
+ * (`page.tsx`), `meal` is checked first inside it, and `plan` ahead of
+ * `tip`/`use`. A `meal` value that isn't a UUID is ignored.
  *
  * IMPORTANT — the seed lives in the *message text*, not in a context payload,
- * for `tip` and `use`. The AI service recognises a short list of
- * client-supplied `context` keys: `cooking_recipe_id`/`cooking_recipe` (the
- * cook handoff, see `cookingContextForId` below), `meal_option_id` (a pick on
- * a meal-options card) and `meal_followup` (a meal-stage pill tap, issue
- * #651) — anything else is ignored, and for `tip`/`use` the must-use
+ * for `tip` and `use` (`meal` sets `ChatSeed.context` instead). The AI
+ * service recognises a short list of client-supplied `context` keys:
+ * `cooking_recipe_id`/`cooking_recipe` (the cook handoff, see
+ * `cookingContextForId` below), `meal_option_id` (a pick on a meal-options
+ * card), `meal_followup` (a meal-stage pill tap, issue #651) and
+ * `meal_fixed_main` (a make-it-a-meal tap, issue #651 PR B) —
+ * anything else is ignored, and for `tip`/`use` the must-use
  * ingredient is recovered by an LLM structured-output call over the message
  * itself. So the ingredient name and the tip text have to appear verbatim in
  * `message`, and the `"with my <name>"` phrasing below is the one the backend
@@ -68,10 +73,13 @@ export interface ChatSeed {
   card: ChatSeedCard
   /**
    * Forwarded as the auto-send's context (issue #651). Unset for `plan` —
-   * the default servings apply server-side; PR B's `meal` seed uses it.
+   * the default servings apply server-side; the `meal` seed sends
+   * `{ meal_fixed_main: { recipe_id } }`.
    */
   context?: Record<string, unknown>
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** Trimmed param value, or null when absent/blank. */
 function param(params: ReadableSearchParams, name: string): string | null {
@@ -190,6 +198,27 @@ export function deriveChatSeed(
   params: ReadableSearchParams,
   now: Date = new Date(),
 ): ChatSeed | null {
+  // Make it a meal (issue #651 PR B) — checked first. The recipe id must be
+  // a UUID; anything else falls through to plan/tip/use as if `meal` were
+  // absent. No fetch: the title rides in the URL so the auto-send never waits.
+  const mealId = param(params, 'meal')
+  if (mealId && UUID_RE.test(mealId)) {
+    const title = param(params, 'title')?.slice(0, 120) ?? null
+    return {
+      key: `meal:${mealId.toLowerCase()}`,
+      kind: 'meal',
+      message: makeMealMessage(title),
+      context: { meal_fixed_main: { recipe_id: mealId } },
+      card: {
+        emoji: '🍽️',
+        label: 'Make it a meal',
+        title: 'Making it a meal',
+        subtitle: title ?? 'Your saved recipe',
+        dismissLabel: 'Dismiss make-it-a-meal context',
+      },
+    }
+  }
+
   // Checked ahead of tip/use (issue #651, §8) — only the exact value
   // "dinner" (case-insensitive after trim) qualifies; anything else falls
   // through to the seeds below rather than erroring.

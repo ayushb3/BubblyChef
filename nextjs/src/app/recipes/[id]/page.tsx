@@ -9,6 +9,7 @@ import FadeInView from '@/components/ui/FadeInView'
 import SpringButton from '@/components/ui/SpringButton'
 import RecipeRefinementModal from '@/components/recipes/RecipeRefinementModal'
 import { ingredientParts } from '@/lib/recipe-helpers'
+import { makeMealHref } from '@/lib/chat-seed'
 import type { GeneratedRecipe } from '@/types/recipes'
 
 // ─── Meta badge ──────────────────────────────────────────────────────────────
@@ -249,6 +250,24 @@ export default function RecipeDetailPage() {
               {recipe.cuisine && <MetaBadge icon="🌍" label={recipe.cuisine} />}
               {recipe.meal_type && <MetaBadge icon="🕐" label={recipe.meal_type} />}
             </div>
+          </FadeInView>
+
+          {/* Make it a meal (issue #651 PR B) — a link, so the chat's seed does the
+              work and two taps give the same URL. Not in the header, where a
+              third button would wrap at 375px beside Edit with AI and Delete. */}
+          <FadeInView delay={0.09}>
+            <Link
+              href={makeMealHref(id, recipe.title)}
+              className="flex items-center justify-center gap-1.5 w-full py-2 px-3 rounded-full text-sm font-semibold border mb-4 transition-colors hover:opacity-80 active:scale-95"
+              style={{
+                background: 'var(--color-surface)',
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-muted)',
+              }}
+            >
+              <span aria-hidden>🍽️</span>
+              <span>Make it a meal</span>
+            </Link>
           </FadeInView>
 
           {/* Description */}

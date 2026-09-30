@@ -1,6 +1,7 @@
 """The `meal_plan` intent: option stage and pick stage (issue #650).
 Predicted follow-up pills and the `meal_followup` inheritance turn are
-issue #651.
+issue #651, and so is "Make it a meal" (PR B): a fixed main that every option
+keeps, resolved and validated in `workflows/meal/fixed_main.py`.
 
 Two LangGraph nodes, wired in `workflows/router.py`:
 
@@ -10,12 +11,17 @@ Two LangGraph nodes, wired in `workflows/router.py`:
   path, never the LLM-substitution tier), the to-buy cap is applied, and the
   options are retained in the session next to `brainstorm_ideas` for the
   pick turn. The same call also returns 2-4 `follow_ups` pills (#651),
-  cleaned by `_clean_meal_follow_ups`.
+  cleaned by `_clean_meal_follow_ups`. With a fixed main (#651 PR B) the model's
+  own mains are discarded server-side: every option is the given main plus the
+  model's sides (`_fixed_main_option_dishes`).
 - `meal_pick_stage` — resolves `context.meal_option_id` against the retained
   options (never fuzzy-matched), then expands every dish concurrently via
   `asyncio.gather`, one grounded, meal-aware recipe generation per dish. The
   main dish's call also carries `follow_ups` (#651), via
-  `MealDishLLMResult` -- the pick stage's only pill-carrying schema.
+  `MealDishLLMResult` -- the pick stage's only pill-carrying schema. With a
+  fixed main the main is NOT regenerated (its card comes from
+  `load_fixed_main_card`, re-read at this stage), and the pills ride the first
+  side's call instead.
 
 Both stages reuse the brainstorm/grounded-generation building blocks from
 `workflows/recipe/nodes.py` (constraint extraction, pantry scoring,
@@ -45,6 +51,7 @@ from bubbly_chef.models.meal import (
     MealDish,
     MealDishOutline,
     MealDishOutlineLLM,
+    MealFixedMainEcho,
     MealOption,
     MealOptionsLLMResult,
     MealOptionsProposal,
@@ -58,6 +65,8 @@ from bubbly_chef.prompts.meal import (
     MEAL_DISH_PANTRY_BLOCK,
     MEAL_DISH_PANTRY_BLOCK_NO_PANTRY,
     MEAL_FOLLOW_UPS_NO_PANTRY_RULE,
+    MEAL_OPTIONS_FIXED_MAIN_BLOCK,
+    MEAL_OPTIONS_FIXED_MAIN_FOLLOW_UPS_RULE,
     MEAL_OPTIONS_FOLLOW_UPS_RULES,
     MEAL_OPTIONS_PREVIOUS_BLOCK,
     MEAL_OPTIONS_SYSTEM_PROMPT,
@@ -66,9 +75,20 @@ from bubbly_chef.prompts.meal import (
 )
 from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.services.cook_matcher import match_ingredients
+from bubbly_chef.workflows.meal.fixed_main import (
+    MEAL_FIXED_MAIN_KEY,
+    FixedMainRefusal,
+    ResolvedFixedMain,
+    fixed_main_constraints,
+    fixed_main_outline,
+    has_fixed_main,
+    load_fixed_main_card,
+    resolve_fixed_main,
+)
 from bubbly_chef.workflows.recipe.nodes import (
     _combine_dietary_preferences,
     _days_until_expiry,
+    _dietary_contradicted,
     _format_pantry_item_for_prompt,
     extract_recipe_constraints,
     is_pantry_grounded,
@@ -200,6 +220,23 @@ def _finish_meal_followup_constraints(
         retained.get("excluded_ingredients") or [], merged.get("excluded_ingredients") or []
     )
     return result
+
+
+def _drop_diets_the_main_contradicts(constraints: dict[str, Any], card: RecipeCard) -> dict[str, Any]:
+    """On a `meal_followup` turn under a fixed main (#651 PR B): drop every
+    `dietary` label the main itself contradicts, unless the main carries that
+    tag. `_finish_meal_followup_constraints` re-runs the #394 check against the
+    pill text only, so without this pass a stored "vegetarian" that the fresh
+    turn set aside for a chicken main would return on the first "Something
+    quicker" tap."""
+    haystack = f"{card.title} {' '.join(i.name for i in card.ingredients)}".lower()
+    tags = {t.strip().lower() for t in card.dietary_tags}
+    kept = [
+        label
+        for label in constraints.get("dietary") or []
+        if label.strip().lower() in tags or not _dietary_contradicted(label, haystack)
+    ]
+    return {**constraints, "dietary": kept}
 
 
 def _retained_meal_plan_state(state: WorkflowState) -> MealPlanSessionState | None:
@@ -639,6 +676,73 @@ def _unknown_option_state(state: WorkflowState, option_id: Any) -> WorkflowState
     }
 
 
+_FIXED_MAIN_NOT_FOUND_TEXT = (
+    "I couldn't find that recipe in your library — it may have been deleted. "
+    "Pick another recipe, or ask me to plan a meal."
+)
+_FIXED_MAIN_INVALID_TEXT = (
+    "I couldn't read that recipe. Try again from the recipe card, or ask me to plan a meal."
+)
+
+
+def _fixed_main_refused_state(state: WorkflowState, kind: Literal["invalid", "not_found"]) -> WorkflowState:
+    """A fixed main that is malformed (`invalid`) or isn't one of the caller's
+    recipes (`not_found`, which also covers a deleted or another user's id).
+
+    A friendly `general_chat` reply with no proposal, returned before any model
+    call in the stage. `meal_plan_session_state` is deliberately not set, so
+    `update_session_node` leaves `session.metadata.meal_plan` untouched."""
+    logger.info("meal fixed main refused: %s", kind)
+    return {
+        **state,
+        "intent": Intent.GENERAL_CHAT.value,
+        "assistant_message": (
+            _FIXED_MAIN_NOT_FOUND_TEXT if kind == "not_found" else _FIXED_MAIN_INVALID_TEXT
+        ),
+        "next_action": NextAction.NONE.value,
+        "proposal": None,
+        "requires_review": False,
+        "confidence": 0.5,
+        "workflow_status": WorkflowStatus.COMPLETED.value,
+    }
+
+
+def _same_dish_name(a: str, b: str) -> bool:
+    """Names are equal after whitespace-collapse and casefold."""
+    return " ".join(a.split()).casefold() == " ".join(b.split()).casefold()
+
+
+def _fixed_main_option_dishes(
+    raw_dishes: list[MealDishOutlineLLM], outline: MealDishOutline
+) -> tuple[list[MealDishOutline], bool] | None:
+    """Every option keeps the given main: `[outline, *sides]`.
+
+    The model's own `main` is ALWAYS discarded, whatever it's called, and so is a
+    side that repeats the main's name; only `side`-role dishes are kept, up to 2.
+    Returns `None` (the caller drops the option) when no side is left. The bool
+    is True when the option was built around a *different* main the model named
+    -- the caller retitles it, since its title and blurb describe a dish that is
+    no longer there.
+    """
+    sides = [
+        MealDishOutline(
+            role="side",
+            name=d.name,
+            key_ingredients=list(d.key_ingredients),
+            est_total_minutes=d.est_total_minutes,
+            est_hands_on_minutes=d.est_hands_on_minutes,
+        )
+        for d in raw_dishes
+        if d.role == "side" and not _same_dish_name(d.name, outline.name)
+    ][:2]
+    if not sides:
+        return None
+    discarded_other_main = any(
+        d.role == "main" and not _same_dish_name(d.name, outline.name) for d in raw_dishes
+    )
+    return [outline, *sides], discarded_other_main
+
+
 # ---------------------------------------------------------------------------
 # Option stage
 # ---------------------------------------------------------------------------
@@ -656,14 +760,43 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     merged with that meal's own constraints and servings rather than
     whatever an unrelated earlier recipe conversation left in the session,
     and the prompt names the options already offered (#651 §5e).
+
+    "Make it a meal" (#651 PR B): `context.meal_fixed_main` on a fresh turn, or
+    a retained fixed main on a `meal_followup` turn, fixes the main dish -- see
+    `_fixed_main_option_dishes`. A fresh fixed-main turn never runs constraint
+    extraction (the message is client-canned); its constraints come from the
+    recipe itself (`fixed_main_constraints`). Any other turn clears a retained
+    fixed main, since it writes a new session state without one.
     """
     input_text = state.get("input_text", "")
     user_id = state.get("user_id") or ""
     context = state.get("context") or {}
     is_followup = context.get("meal_followup") is True
-    retained_state = _retained_meal_plan_state(state) if is_followup else None
+    fresh_fixed = has_fixed_main(context)
+    # A fresh fixed-main turn never inherits a retained meal, even with
+    # meal_followup also set.
+    retained_state = _retained_meal_plan_state(state) if is_followup and not fresh_fixed else None
 
-    if retained_state is not None:
+    fixed_resolved: ResolvedFixedMain | None = None
+    if fresh_fixed:
+        fixed_or_refusal = await resolve_fixed_main(user_id, context[MEAL_FIXED_MAIN_KEY])
+        if isinstance(fixed_or_refusal, FixedMainRefusal):
+            return _fixed_main_refused_state(state, fixed_or_refusal.kind)
+        fixed_resolved = fixed_or_refusal
+    elif retained_state is not None and retained_state.fixed_main is not None:
+        # Re-read at every stage: a deletion between turns is caught here,
+        # before any constraint extraction or model call.
+        fixed_or_refusal = await load_fixed_main_card(user_id, retained_state.fixed_main)
+        if isinstance(fixed_or_refusal, FixedMainRefusal):
+            return _fixed_main_refused_state(state, fixed_or_refusal.kind)
+        fixed_resolved = fixed_or_refusal
+
+    if fixed_resolved is not None and fresh_fixed:
+        # No extraction call: extraction over "Make Lemon Butter Pasta into a
+        # meal" would turn the dish title into must_use_ingredients.
+        constraints = await fixed_main_constraints(state, fixed_resolved.card)
+        constraints_state: WorkflowState = {**state, "recipe_constraints": constraints}
+    elif retained_state is not None:
         retained_constraints = retained_state.constraints.recipe_constraints
         # Pointing session.metadata.recipe_constraints at the retained meal's
         # own constraints (rather than clearing it) makes extract_recipe_
@@ -687,6 +820,8 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         constraints = _finish_meal_followup_constraints(
             retained_constraints, merged_constraints, input_text
         )
+        if fixed_resolved is not None:
+            constraints = _drop_diets_the_main_contradicts(constraints, fixed_resolved.card)
         # score_pantry_ingredients (next) reads state["recipe_constraints"] --
         # overwrite it with the fixed-up dict so dietary/exclusion filtering
         # sees the union/contradiction-checked result, not the plain merge.
@@ -709,7 +844,11 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     else:
         servings = await _default_servings(user_id)
 
-    cuisine_hint = await _recent_cuisine_hint(user_id) if user_id else ""
+    # The fixed main has already decided the cuisine, so the recent-cuisine
+    # weighting is skipped (the one exception to PR A's cuisine-hint behaviour).
+    cuisine_hint = (
+        await _recent_cuisine_hint(user_id) if user_id and fixed_resolved is None else ""
+    )
     constraints_str = _format_meal_constraints(constraints, kitchen_limit_phrases)
     pantry_context = _meal_pantry_context(scored_items) if pantry_grounded else ""
     system_prompt = (
@@ -725,8 +864,28 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
             )
         )
 
-    follow_ups_rules = MEAL_OPTIONS_FOLLOW_UPS_RULES + (
-        "" if pantry_grounded else MEAL_FOLLOW_UPS_NO_PANTRY_RULE
+    outline: MealDishOutline | None = None
+    fixed_block = ""
+    user_line = input_text
+    if fixed_resolved is not None:
+        outline = fixed_main_outline(fixed_resolved.card)
+        # A title can't close the prompt's quotes.
+        prompt_title = outline.name.replace('"', "'")
+        cuisine = " ".join((fixed_resolved.card.cuisine or "").split())[:60].replace('"', "'")
+        fixed_block = MEAL_OPTIONS_FIXED_MAIN_BLOCK.format(
+            title=prompt_title,
+            cuisine_part=f" ({cuisine})" if cuisine else "",
+            ingredients=", ".join(outline.key_ingredients[:20]) or "not listed",
+        )
+        if fresh_fixed:
+            # Built from the card, never from input_text: a deep link's
+            # ?title= controls that text.
+            user_line = f"Make {prompt_title} into a meal"
+
+    follow_ups_rules = (
+        MEAL_OPTIONS_FOLLOW_UPS_RULES
+        + (MEAL_OPTIONS_FIXED_MAIN_FOLLOW_UPS_RULE if fixed_resolved is not None else "")
+        + ("" if pantry_grounded else MEAL_FOLLOW_UPS_NO_PANTRY_RULE)
     )
 
     prompt = (
@@ -735,8 +894,9 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         + constraints_str
         + cuisine_hint
         + previous_block
+        + fixed_block
         + follow_ups_rules
-        + f"\n\nUser: {input_text}\n\nPropose 3 meal options:"
+        + f"\n\nUser: {user_line}\n\nPropose 3 meal options:"
     )
 
     ai_manager = get_ai_manager()
@@ -760,7 +920,20 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
 
     options: list[MealOption] = []
     for idx, raw_option in enumerate(result.options[:3], start=1):
-        dishes = _normalize_option_dishes(raw_option.dishes)
+        option_title: str = raw_option.title
+        option_blurb: str | None = raw_option.blurb
+        dishes: list[MealDishOutline] | None
+        if outline is not None:
+            fixed_dishes = _fixed_main_option_dishes(raw_option.dishes, outline)
+            dishes = fixed_dishes[0] if fixed_dishes is not None else None
+            if fixed_dishes is not None and fixed_dishes[1]:
+                # Built around a main the card no longer has: its title and
+                # blurb would describe a dish that isn't there.
+                side_names = " & ".join(d.name for d in fixed_dishes[0][1:])
+                option_title = f"{outline.name} with {side_names}"
+                option_blurb = None
+        else:
+            dishes = _normalize_option_dishes(raw_option.dishes)
         if dishes is None:
             logger.info("meal_options_stage: dropping option %r -- no valid side", raw_option.title)
             continue
@@ -772,8 +945,8 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         options.append(
             MealOption(
                 option_id=f"opt_{idx}",
-                title=raw_option.title,
-                blurb=raw_option.blurb,
+                title=option_title,
+                blurb=option_blurb,
                 dishes=dishes,
                 est_total_minutes=est_total,
                 est_hands_on_minutes=est_hands_on,
@@ -793,16 +966,28 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         exclusive_tags=exclusive_tags,
         recipe_constraints=constraints,
     )
-    proposal = MealOptionsProposal(options=options, servings=servings, constraints=constraints_echo)
+    fixed_echo: MealFixedMainEcho | None = None
+    assistant_message = "Here are three meal ideas!"
+    if fixed_resolved is not None and outline is not None:
+        fixed_echo = MealFixedMainEcho(
+            recipe_id=fixed_resolved.linked_recipe_id, title=outline.name
+        )
+        assistant_message = f"Here's how I'd make {outline.name} a meal — pick your sides!"
+    proposal = MealOptionsProposal(
+        options=options, servings=servings, constraints=constraints_echo, fixed_main=fixed_echo
+    )
     session_state = MealPlanSessionState(
-        options=options, servings=servings, constraints=constraints_echo
+        options=options,
+        servings=servings,
+        constraints=constraints_echo,
+        fixed_main=fixed_resolved.fixed if fixed_resolved is not None else None,
     )
     meal_follow_ups = _clean_meal_follow_ups(result.follow_ups, pantry_grounded=pantry_grounded)
 
     return {
         **state,
         "intent": Intent.MEAL_PLAN.value,
-        "assistant_message": "Here are three meal ideas!",
+        "assistant_message": assistant_message,
         "next_action": NextAction.PICK_MEAL.value,
         "proposal": proposal,
         "requires_review": True,
@@ -954,6 +1139,16 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
     constraints_echo = session_state.constraints
     user_id = state.get("user_id") or ""
 
+    # A fixed main (#651 PR B) is never regenerated: a saved one is re-read here,
+    # so a deletion between the option and pick turns is caught before any model
+    # call (or pantry read). A draft by now becomes a copy with no recipe id.
+    fixed_resolved: ResolvedFixedMain | None = None
+    if session_state.fixed_main is not None:
+        fixed_or_refusal = await load_fixed_main_card(user_id, session_state.fixed_main)
+        if isinstance(fixed_or_refusal, FixedMainRefusal):
+            return _fixed_main_refused_state(state, fixed_or_refusal.kind)
+        fixed_resolved = fixed_or_refusal
+
     # The same opt-out gate the option stage applies (PR #659 review): after
     # "don't use my pantry" the pantry is neither read, nor fed to the dish
     # prompts, nor used for missing_ingredients (which is [] then -- there is
@@ -966,13 +1161,15 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
         else []
     )
 
+    first_generated = 1 if fixed_resolved is not None else 0
+    pill_position = first_generated
+
     ai_manager = get_ai_manager()
     try:
         # `with_follow_ups=True` on exactly one dish per turn -- the main, at
-        # position 0 (PR B moves it to side 1 when the main is fixed) -- so
-        # issue #651's predicted pills ride that one dish's own structured
-        # call rather than a separate model call. Dish count and call count
-        # are unchanged.
+        # position 0, or the first side (position 1) when the main is fixed and
+        # so isn't generated at all -- so issue #651's predicted pills ride that
+        # one dish's own structured call rather than a separate model call.
         expanded = await asyncio.gather(
             *(
                 _expand_dish_result(
@@ -983,9 +1180,10 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
                     constraints_echo,
                     scored_items,
                     pantry_grounded,
-                    with_follow_ups=(position == 0),
+                    with_follow_ups=(position == pill_position),
                 )
                 for position, dish in enumerate(option.dishes)
+                if position >= first_generated
             )
         )
     except NoProviderAvailableError as e:
@@ -997,15 +1195,34 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
     dish_titles: list[str] = []
     missing_all: list[str] = []
     meal_follow_ups: list[str] = []
-    for position, (dish_outline, llm_result) in enumerate(zip(option.dishes, expanded)):
+    if fixed_resolved is not None:
+        # The fixed main: the recipe's own card (its own servings -- the meal
+        # screen scales each dish to the meal's), and its id only when it's a
+        # saved, non-draft row that `POST /api/meals` links without copying.
+        main_card = fixed_resolved.card
+        meal_dishes.append(
+            MealDish(
+                role="main",
+                position=0,
+                recipe=main_card,
+                recipe_id=fixed_resolved.linked_recipe_id,
+            )
+        )
+        dish_titles.append(main_card.title)
+        if pantry_grounded:
+            missing_all.extend(_missing_ingredients_for_recipe(main_card, pantry_items))
+    for position, (dish_outline, llm_result) in enumerate(
+        zip(option.dishes[first_generated:], expanded), start=first_generated
+    ):
         recipe_card = _recipe_card_from_llm_result(llm_result, servings)
         meal_dishes.append(MealDish(role=dish_outline.role, position=position, recipe=recipe_card))
         dish_titles.append(recipe_card.title)
         if pantry_grounded:
             missing_all.extend(_missing_ingredients_for_recipe(recipe_card, pantry_items))
         # A stub or non-complying provider returns plain LLMRecipeResult even
-        # for the main -- degrades to no pills, and the meal still builds.
-        if position == 0 and isinstance(llm_result, MealDishLLMResult):
+        # for the pill-carrying dish -- degrades to no pills, and the meal
+        # still builds.
+        if position == pill_position and isinstance(llm_result, MealDishLLMResult):
             meal_follow_ups = _clean_meal_follow_ups(
                 llm_result.follow_ups, pantry_grounded=pantry_grounded
             )

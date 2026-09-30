@@ -5,14 +5,28 @@ wire contract pinned at `docs/plans/2026-09-29-issue-650-meal-contract.md`,
 which both halves (ai-service and Next.js) build against. Field names here
 are the exact wire shape (snake_case on the wire, matched field-for-field by
 these Python names) -- do not rename without updating that doc.
+
+Issue #651 PR B ("Make it a meal", pinned at
+`docs/plans/2026-09-30-issue-651-b-make-it-a-meal-contract.md`) adds the
+fixed-main shapes: the request payload (`MealFixedMainRecipePayload`), the
+retained `MealFixedMain`, and the wire echo (`MealFixedMainEcho`). Every
+change to an existing model is additive with a default, so an older retained
+session still validates.
 """
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, Self
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
-from bubbly_chef.models.recipe import RecipeCard
+from bubbly_chef.models.recipe import Ingredient, RecipeCard
 
 # ---------------------------------------------------------------------------
 # Wire models -- option stage (`proposal_type: "meal_options"`)
@@ -85,6 +99,15 @@ class MealOption(BaseModel):
     rescues: list[str] = Field(default_factory=list)
 
 
+class MealFixedMainEcho(BaseModel):
+    """Wire echo of a make-it-a-meal flow's fixed main on the option-stage
+    proposal, so the client can adapt its fixed pills (issue #651 PR B).
+    `recipe_id` is set only when the main is a saved recipe that gets linked."""
+
+    recipe_id: str | None = None
+    title: str
+
+
 class MealOptionsProposal(BaseModel):
     """Proposal for the meal_plan option stage. `next_action: pick_meal`."""
 
@@ -92,6 +115,7 @@ class MealOptionsProposal(BaseModel):
     options: list[MealOption]
     servings: int
     constraints: MealConstraintsEcho
+    fixed_main: MealFixedMainEcho | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +129,10 @@ class MealDish(BaseModel):
     role: Literal["main", "side"]
     position: int
     recipe: RecipeCard
+    # Set ONLY on a fixed saved main (issue #651 PR B): `recipe` is then filled
+    # from that saved row, never regenerated, and `POST /api/meals` links the
+    # id without copying the recipe.
+    recipe_id: str | None = None
 
 
 class MealProposal(BaseModel):
@@ -128,17 +156,99 @@ class MealProposal(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class MealFixedMainIngredient(Ingredient):
+    """An `Ingredient` with payload limits (issue #651 PR B). An over-long name,
+    a negative quantity, or NaN/inf rejects the whole payload (invalid)."""
+
+    name: str = Field(max_length=200)
+    quantity: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+
+class MealFixedMainRecipePayload(BaseModel):
+    """An in-chat recipe sent as `context.meal_fixed_main.recipe` (issue #651 PR B).
+
+    The size gate (32 KB serialised) runs before this model. Extra keys
+    (`ingredient_availability`, `id`, ...) are ignored. The card's `steps` are
+    rebuilt server-side with `build_structured_steps(steps, instructions)`.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    ingredients: list[MealFixedMainIngredient] = Field(default_factory=list, max_length=60)
+    instructions: list[Annotated[str, StringConstraints(max_length=2000)]] = Field(
+        default_factory=list, max_length=60
+    )
+    steps: list[dict[str, Any]] | None = None
+    prep_time_minutes: int | None = Field(default=None, ge=0, le=1440)
+    cook_time_minutes: int | None = Field(default=None, ge=0, le=1440)
+    total_time_minutes: int | None = Field(default=None, ge=0, le=1440)
+    servings: int | None = Field(default=None, ge=1, le=100)
+    cuisine: str | None = Field(default=None, max_length=60)
+    meal_type: str | None = Field(default=None, max_length=30)
+    difficulty: str | None = Field(default=None, max_length=30)
+    dietary_tags: list[Annotated[str, StringConstraints(max_length=40)]] = Field(
+        default_factory=list, max_length=20
+    )
+
+    @field_validator("ingredients", mode="before")
+    @classmethod
+    def _drop_blank_named_ingredients(cls, value: object) -> object:
+        """Drop dict entries whose name is missing or blank after trimming,
+        before the ingredient model runs."""
+        if not isinstance(value, list):
+            return value
+        kept: list[object] = []
+        for entry in value:
+            if isinstance(entry, dict):
+                name = entry.get("name")
+                if not isinstance(name, str) or not name.strip():
+                    continue
+            kept.append(entry)
+        return kept
+
+
+class MealFixedMain(BaseModel):
+    """The fixed main of a make-it-a-meal flow, retained in `MealPlanSessionState`.
+
+    `source == "saved"`: `recipe_id` is a NON-draft row the user owns, and no
+    card is kept (it is re-read at every stage). `source == "chat"`: `recipe`
+    is the payload (or a draft row's contents) as a `RecipeCard` with a FRESH id.
+    """
+
+    source: Literal["saved", "chat"]
+    recipe_id: str | None = None
+    title: str
+    recipe: RecipeCard | None = None
+
+    @model_validator(mode="after")
+    def _source_matches_fields(self) -> Self:
+        # recipe_id iff saved, recipe iff chat. A retained state that breaks
+        # this fails validation, which `_retained_meal_plan_state` already
+        # treats as absent.
+        if (self.source == "saved") != (self.recipe_id is not None):
+            raise ValueError("recipe_id must be set exactly when source == 'saved'")
+        if (self.source == "chat") != (self.recipe is not None):
+            raise ValueError("recipe must be set exactly when source == 'chat'")
+        return self
+
+
 class MealPlanSessionState(BaseModel):
     """The option stage's output, retained in the session for the pick turn.
 
     `context.meal_option_id` on the pick request resolves against `options`
     by `option_id` -- never fuzzy-matched. `servings` and `constraints` ride
     along so the pick turn doesn't need to re-extract or re-default them.
+    `fixed_main` (issue #651 PR B) is set when every option keeps one given
+    main; `None` (the default, so an old retained session still validates)
+    for an ordinary meal.
     """
 
     options: list[MealOption] = Field(default_factory=list)
     servings: int = 2
     constraints: MealConstraintsEcho = Field(default_factory=MealConstraintsEcho)
+    fixed_main: MealFixedMain | None = None
 
 
 # ---------------------------------------------------------------------------

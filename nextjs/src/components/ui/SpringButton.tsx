@@ -12,6 +12,8 @@ interface SpringButtonProps {
   disabled?: boolean
   /** Native tooltip / accessibility hint. */
   title?: string
+  /** Accessible name override, e.g. to name the dish a generic label acts on. */
+  'aria-label'?: string
   /**
    * React 19 ref-as-prop, forwarded to the underlying `<button>`. Added for
    * issue #651 so `CompactMealCard` can scroll/focus its own Save meal
@@ -28,6 +30,7 @@ export default function SpringButton({
   type = 'button',
   disabled,
   title,
+  'aria-label': ariaLabel,
   ref,
 }: SpringButtonProps) {
   return (
@@ -37,6 +40,7 @@ export default function SpringButton({
       onClick={onClick}
       disabled={disabled}
       title={title}
+      aria-label={ariaLabel}
       style={style}
       whileHover={{ scale: disabled ? 1 : 1.03 }}
       whileTap={{ scale: disabled ? 1 : 0.95 }}

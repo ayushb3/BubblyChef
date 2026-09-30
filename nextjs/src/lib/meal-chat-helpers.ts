@@ -68,34 +68,38 @@ export function fixedMainForCard(
 
 /**
  * Build the `POST /api/meals` payload from a `meal` proposal's dishes. Every
- * dish at pick time is a freshly generated recipe (issue #650's contract:
- * "Dishes are expanded concurrently... a full RecipeCard... per dish") —
- * none carries an existing recipe id yet, so every dish is sent as a new
- * recipe payload, never a `recipe_id` reference.
+ * generated dish is sent as a new recipe payload. A fixed saved main (issue
+ * #651 PR B) carries `recipe_id` and is sent as a reference, which
+ * `POST /api/meals` links without copying.
  */
 export function buildCreateMealPayload(
   proposal: MealProposal,
   isDraft: boolean,
 ): CreateMealRequest {
-  const dishes: CreateMealDish[] = proposal.dishes.map((dish) => ({
-    role: dish.role,
-    position: dish.position,
-    recipe: {
-      title: dish.recipe.title ?? 'Untitled dish',
-      description: dish.recipe.description,
-      ingredients: dish.recipe.ingredients,
-      instructions: dish.recipe.instructions,
-      steps: dish.recipe.steps,
-      cuisine: dish.recipe.cuisine,
-      meal_type: dish.recipe.meal_type,
-      dietary_tags: dish.recipe.dietary_tags,
-      difficulty: dish.recipe.difficulty,
-      prep_time_minutes: dish.recipe.prep_time_minutes,
-      cook_time_minutes: dish.recipe.cook_time_minutes,
-      total_time_minutes: dish.recipe.total_time_minutes,
-      servings: dish.recipe.servings ?? proposal.servings,
-    },
-  }))
+  const dishes: CreateMealDish[] = proposal.dishes.map((dish) => {
+    if (dish.recipe_id) {
+      return { role: dish.role, position: dish.position, recipe_id: dish.recipe_id }
+    }
+    return {
+      role: dish.role,
+      position: dish.position,
+      recipe: {
+        title: dish.recipe.title ?? 'Untitled dish',
+        description: dish.recipe.description,
+        ingredients: dish.recipe.ingredients,
+        instructions: dish.recipe.instructions,
+        steps: dish.recipe.steps,
+        cuisine: dish.recipe.cuisine,
+        meal_type: dish.recipe.meal_type,
+        dietary_tags: dish.recipe.dietary_tags,
+        difficulty: dish.recipe.difficulty,
+        prep_time_minutes: dish.recipe.prep_time_minutes,
+        cook_time_minutes: dish.recipe.cook_time_minutes,
+        total_time_minutes: dish.recipe.total_time_minutes,
+        servings: dish.recipe.servings ?? proposal.servings,
+      },
+    }
+  })
 
   return {
     title: proposal.title,

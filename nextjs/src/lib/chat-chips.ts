@@ -91,6 +91,18 @@ export function sanitiseFollowUps(raw: unknown): string[] {
   return out
 }
 
+/**
+ * Options for the meal-stage chip sets. `mealSaved` drops "Save this meal"
+ * once saved; `fixedMain` (issue #651 PR B) is true on an options reply that
+ * carries `fixed_main`, swapping the two main-changing pills for side-only
+ * ones. Both are ignored outside `meal_plan`; `fixedMain` is also ignored at
+ * the pick stage (`proposalType === 'meal'`).
+ */
+export interface MealChipOpts {
+  mealSaved?: boolean
+  fixedMain?: boolean
+}
+
 /** The options stage's way back to new options; always reserved a slot (PR #666 review). */
 const DIFFERENT_IDEAS_LABEL = 'Different ideas'
 
@@ -98,16 +110,17 @@ const DIFFERENT_IDEAS_LABEL = 'Different ideas'
  * Today's fixed per-intent chip set — the safety net when the backend sends
  * no usable suggestions. Never returns an empty array.
  *
- * `proposalType` and `opts.mealSaved` only affect `meal_plan` (issue #651,
- * §2): the option stage (`meal_options`, or no `proposalType` yet) gets one
- * fixed set, the pick stage (`meal`) another, and the meal set's "Save this
- * meal" action is omitted once `opts.mealSaved` is true. Every other intent
- * ignores both.
+ * `proposalType`, `opts.mealSaved` and `opts.fixedMain` only affect `meal_plan`
+ * (issue #651, §2): the option stage (`meal_options`, or no `proposalType`
+ * yet) gets one fixed set (with `fixedMain`, "Quicker sides" and "Lighter
+ * sides" replace "Something quicker" and "Make it vegetarian"), the pick
+ * stage (`meal`) another, and the meal set's "Save this meal" action is
+ * omitted once `opts.mealSaved` is true. Every other intent ignores all three.
  */
 export function resolveStaticChips(
   intent: string | undefined,
   proposalType?: string,
-  opts?: { mealSaved?: boolean },
+  opts?: MealChipOpts,
 ): ChipConfig[] {
   switch (intent) {
     case 'recipe_generation':
@@ -160,20 +173,37 @@ export function resolveStaticChips(
       }
       // meal_options, or no proposalType yet (the stage hasn't resolved).
       return [
-        {
-          label: 'Something quicker',
-          message: 'Something quicker, under 30 minutes',
-          tone: 'fresh',
-          emoji: '⚡',
-          context: MEAL_FOLLOWUP_CONTEXT,
-        },
-        {
-          label: 'Make it vegetarian',
-          message: 'Make it vegetarian',
-          tone: 'accent',
-          emoji: '🥦',
-          context: MEAL_FOLLOWUP_CONTEXT,
-        },
+        opts?.fixedMain
+          ? {
+              // The main's own time is fixed, so only the sides can get quicker.
+              label: 'Quicker sides',
+              message: 'Quicker sides, under 20 minutes',
+              tone: 'fresh',
+              emoji: '⚡',
+              context: MEAL_FOLLOWUP_CONTEXT,
+            }
+          : {
+              label: 'Something quicker',
+              message: 'Something quicker, under 30 minutes',
+              tone: 'fresh',
+              emoji: '⚡',
+              context: MEAL_FOLLOWUP_CONTEXT,
+            },
+        opts?.fixedMain
+          ? {
+              label: 'Lighter sides',
+              message: 'Make the sides lighter',
+              tone: 'accent',
+              emoji: '🥗',
+              context: MEAL_FOLLOWUP_CONTEXT,
+            }
+          : {
+              label: 'Make it vegetarian',
+              message: 'Make it vegetarian',
+              tone: 'accent',
+              emoji: '🥦',
+              context: MEAL_FOLLOWUP_CONTEXT,
+            },
         {
           label: DIFFERENT_IDEAS_LABEL,
           message: 'Show me different meal options',
@@ -241,7 +271,7 @@ export function resolveChips(
   intent: string | undefined,
   suggestions?: unknown,
   proposalType?: string,
-  opts?: { mealSaved?: boolean },
+  opts?: MealChipOpts,
 ): ChipConfig[] {
   const fixed = resolveStaticChips(intent, proposalType, opts)
   const actions = fixed.filter((c) => c.kind === 'action')

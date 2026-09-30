@@ -74,6 +74,7 @@ from bubbly_chef.workflows.chat.nodes import (
     saved_recipe_lookup_response,
     suggest_follow_ups,
 )
+from bubbly_chef.workflows.meal.fixed_main import has_fixed_main
 from bubbly_chef.workflows.meal.nodes import meal_options_stage, meal_pick_stage
 from bubbly_chef.workflows.pantry.nodes import (
     apply_expiry_heuristics,
@@ -283,6 +284,11 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
     2. context.meal_option_id — deterministic meal_plan pick shortcut (#650), no LLM
        call. The pick turn's message is just the option's title, which alone would
        misclassify as recipe_generation.
+    2a. context.meal_fixed_main — deterministic meal_plan make-it-a-meal shortcut
+       (#651 PR B), no LLM call. Fires on any dict value (a malformed one gets the
+       option stage's friendly refusal, never an unpredictable classification of the
+       canned text); any other type is ignored. context.meal_option_id, checked just
+       above, wins. Beats meal_followup when both are present.
     2b. context.meal_followup — deterministic meal_plan follow-up shortcut (#651),
        no LLM call. A tap on a predicted pill under a meal reply; routes to the
        option stage (never the pick) with the retained meal's constraints carried
@@ -357,6 +363,25 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "intent": Intent.MEAL_PLAN.value,
             "intent_confidence": 1.0,
             "intent_reasoning": "Meal option pick — context.meal_option_id present",
+            "detected_entities": [],
+        }
+
+    # ── Priority 2a: make it a meal (#651 PR B) — deterministic, no LLM call ──
+    # A tap on a recipe card's "Make it a meal" button (or the `meal` deep-link
+    # seed's one auto-send) stamps context.meal_fixed_main as an object. The
+    # visible message is client-canned ("Make Lemon Butter Pasta into a meal"),
+    # so it must never reach the classifier. Only a dict counts (has_fixed_main):
+    # a string, list, null or number is ignored, as if the key were absent. A
+    # malformed dict still routes here so the option stage can refuse it with a
+    # friendly reply. Comes after meal_option_id (which wins) and before the
+    # meal_followup shortcut (a fresh fixed main never inherits a retained meal).
+    if has_fixed_main(context):
+        logger.info("classify_intent: meal_fixed_main present — meal_plan fixed-main shortcut")
+        return {
+            **state,
+            "intent": Intent.MEAL_PLAN.value,
+            "intent_confidence": 1.0,
+            "intent_reasoning": "Make it a meal — context.meal_fixed_main present",
             "detected_entities": [],
         }
 

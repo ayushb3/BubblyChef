@@ -53,8 +53,7 @@ export default function SavedRecipeMatches({
   matches,
   onSelect,
   disabled = false,
-  // Accepted but unused until ui-ux renders the button (issue #651 PR B seam).
-  onMakeMeal: _onMakeMeal,
+  onMakeMeal,
 }: SavedRecipeMatchesProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const expandedCardRef = useRef<HTMLDivElement>(null)
@@ -74,7 +73,12 @@ export default function SavedRecipeMatches({
   if (matches.length === 0) return null
 
   if (matches.length === 1) {
-    return <SingleMatchCard match={matches[0]} onSelect={onSelect} disabled={disabled} />
+    return <SingleMatchCard
+        match={matches[0]}
+        onSelect={onSelect}
+        onMakeMeal={onMakeMeal}
+        disabled={disabled}
+      />
   }
 
   return (
@@ -87,7 +91,13 @@ export default function SavedRecipeMatches({
         if (match.id === expandedId) {
           return (
             <div key={match.id} ref={expandedCardRef} role="listitem" aria-label={match.title}>
-              <SingleMatchCard match={match} onSelect={onSelect} disabled={disabled} nested />
+              <SingleMatchCard
+                match={match}
+                onSelect={onSelect}
+                onMakeMeal={onMakeMeal}
+                disabled={disabled}
+                nested
+              />
             </div>
           )
         }
@@ -157,11 +167,14 @@ export default function SavedRecipeMatches({
 function SingleMatchCard({
   match,
   onSelect,
+  onMakeMeal,
   disabled,
   nested = false,
 }: {
   match: SavedRecipeMatch
   onSelect: (match: SavedRecipeMatch) => void
+  /** Renders the "Make it a meal" button below the action row when set. */
+  onMakeMeal?: (match: SavedRecipeMatch) => void
   disabled: boolean
   /**
    * True when this card is the many-match list's expanded card, i.e.
@@ -182,9 +195,12 @@ function SingleMatchCard({
         : 'border border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-bg)]',
       disabled ? 'pointer-events-none opacity-60' : 'cursor-pointer',
     ].join(' ')
-  const buttonClass = (variant: 'primary' | 'secondary') =>
+  const buttonClass = (variant: 'primary' | 'secondary', fullWidth = false) =>
     [
-      'flex-1 text-center py-2.5 px-3 rounded-full text-sm font-semibold transition-colors',
+      // fullWidth: its own row under Open recipe / Cook this, with the 44px
+      // touch target (the row buttons above are py-2.5, ~40px).
+      fullWidth ? 'w-full min-h-[44px]' : 'flex-1',
+      'text-center py-2.5 px-3 rounded-full text-sm font-semibold transition-colors',
       variant === 'primary'
         ? 'bg-[var(--color-primary)] text-white'
         : 'border border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-bg)]',
@@ -217,34 +233,50 @@ function SingleMatchCard({
         {match.description && (
           <p className="text-sm text-[var(--color-text)] line-clamp-3">{match.description}</p>
         )}
-        <div className="flex gap-2 mx-0.5">
-          <Link
-            href={`/recipes/${encodeURIComponent(match.id)}`}
-            aria-disabled={disabled}
-            tabIndex={disabled ? -1 : undefined}
-            onClick={(e) => disabled && e.preventDefault()}
-            className={linkClass('secondary')}
-          >
-            Open recipe
-          </Link>
-          <button
-            type="button"
-            disabled={disabled}
-            // A plain <button> that defers entirely to the shared onSelect
-            // handler (`handlePickSavedRecipe` in app/chat/page.tsx), the
-            // same one the many-match tap uses — not a <Link>, so there is
-            // no second, independent place that decides what "cook this
-            // saved recipe" means. Round 2 fixed the ended-cook-record gap
-            // only in the many-match path and had to fix this Link
-            // separately; round 3 fixed the dismissed-banner gap only in
-            // handlePickSavedRecipe and missed this Link entirely. Routing
-            // both through one function removes the seam that kept letting
-            // the two drift out of sync (PR #614 round 4).
-            onClick={() => !disabled && onSelect(match)}
-            className={buttonClass('primary')}
-          >
-            Cook this
-          </button>
+        <div className="flex flex-col gap-2 mx-0.5">
+          <div className="flex gap-2">
+            <Link
+              href={`/recipes/${encodeURIComponent(match.id)}`}
+              aria-disabled={disabled}
+              tabIndex={disabled ? -1 : undefined}
+              onClick={(e) => disabled && e.preventDefault()}
+              className={linkClass('secondary')}
+            >
+              Open recipe
+            </Link>
+            <button
+              type="button"
+              disabled={disabled}
+              // A plain <button> that defers entirely to the shared onSelect
+              // handler (`handlePickSavedRecipe` in app/chat/page.tsx), the
+              // same one the many-match tap uses — not a <Link>, so there is
+              // no second, independent place that decides what "cook this
+              // saved recipe" means. Round 2 fixed the ended-cook-record gap
+              // only in the many-match path and had to fix this Link
+              // separately; round 3 fixed the dismissed-banner gap only in
+              // handlePickSavedRecipe and missed this Link entirely. Routing
+              // both through one function removes the seam that kept letting
+              // the two drift out of sync (PR #614 round 4).
+              onClick={() => !disabled && onSelect(match)}
+              className={buttonClass('primary')}
+            >
+              Cook this
+            </button>
+          </div>
+          {/* Make it a meal (issue #651 PR B). Comes after Open recipe in the
+              markup so focus-on-expand still lands on Open recipe. The
+              accessible name keeps the visible words first and adds the dish. */}
+          {onMakeMeal && (
+            <button
+              type="button"
+              disabled={disabled}
+              aria-label={`Make it a meal: ${match.title}`}
+              onClick={() => !disabled && onMakeMeal(match)}
+              className={buttonClass('secondary', true)}
+            >
+              <span aria-hidden="true">🍽️</span> Make it a meal
+            </button>
+          )}
         </div>
       </div>
     </motion.div>
