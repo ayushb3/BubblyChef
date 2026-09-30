@@ -282,8 +282,8 @@ describe('meal-ready pills (issue #651)', () => {
   it('shows the fixed meal-ready pills under the card', async () => {
     renderChat()
     expect(await screen.findByRole('button', { name: 'Save this meal' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Swap a side' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Start cooking' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Different options' })).toBeInTheDocument()
   })
 
   it('tapping "Save this meal" writes nothing and focuses the card\'s own Save meal button', async () => {

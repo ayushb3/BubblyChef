@@ -552,10 +552,15 @@ function ChatSurface() {
    *
    * `save_meal` writes nothing — the pill only bumps the focus token so
    * `CompactMealCard` scrolls to, focuses and highlights its own Save meal
-   * button, which is the one confirm. `open_meal` (Swap a side, Start
-   * cooking) is exactly the card's Open meal action; `proposal` is only
-   * passed for a meal-ready message, so this is a no-op if it's somehow
-   * absent. `open_scan` matches the starter row's scan pill.
+   * button, which is the one confirm. `open_meal` (Start cooking) is exactly
+   * the card's Open meal action; `proposal` is only passed for a meal-ready
+   * message, so this is a no-op if it's somehow absent. `open_scan` matches
+   * the starter row's scan pill.
+   *
+   * "Swap a side" was dropped from the pick-stage pills (issue #666 code
+   * review) — it duplicated Start cooking's `open_meal` action, and the slot
+   * it took is needed for "Different options" to always show once the model
+   * returns a pill.
    */
   const handleChipAction = (action: ChipAction, msgId: string, proposal?: MealProposal) => {
     switch (action) {

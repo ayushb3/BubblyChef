@@ -308,7 +308,7 @@ describe('sanitiseFollowUps (#498)', () => {
 
 describe('resolveChips — meal_plan pill sets (#651, §2)', () => {
   const OPTIONS_FIXED_LABELS = ['Something quicker', 'Make it vegetarian', 'Different ideas']
-  const MEAL_UNSAVED_LABELS = ['Save this meal', 'Swap a side', 'Start cooking', 'Different options']
+  const MEAL_UNSAVED_LABELS = ['Save this meal', 'Start cooking', 'Different options']
 
   it('options stage (proposalType "meal_options"), no model pills → the fixed set, all stamped', () => {
     const chips = resolveChips('meal_plan', undefined, 'meal_options')
@@ -341,37 +341,59 @@ describe('resolveChips — meal_plan pill sets (#651, §2)', () => {
   it('meal stage, unsaved, no model pills → the fixed set in order; only "Different options" is stamped', () => {
     const chips = resolveChips('meal_plan', undefined, 'meal')
     expect(chips.map((c) => c.label)).toEqual(MEAL_UNSAVED_LABELS)
-    expect(chips.map((c) => c.context?.meal_followup)).toEqual([undefined, undefined, undefined, true])
+    expect(chips.map((c) => c.context?.meal_followup)).toEqual([undefined, undefined, true])
     expect(chips[0]).toMatchObject({ kind: 'action', action: 'save_meal' })
     expect(chips[1]).toMatchObject({ kind: 'action', action: 'open_meal' })
-    expect(chips[2]).toMatchObject({ kind: 'action', action: 'open_meal' })
   })
 
-  it('meal stage, unsaved, 2 model pills → [m1, Save this meal, Swap a side, Start cooking]; m1 unstamped', () => {
-    const chips = resolveChips('meal_plan', ['Can I prep ahead?', 'What should I start first?'], 'meal')
+  it('meal stage, saved, no model pills → [Start cooking, Different options]', () => {
+    const chips = resolveChips('meal_plan', undefined, 'meal', { mealSaved: true })
+    expect(chips.map((c) => c.label)).toEqual(['Start cooking', 'Different options'])
+    expect(chips.some((c) => c.action === 'save_meal')).toBe(false)
+  })
+
+  it('meal stage, unsaved, 1 model pill → [m1, Save this meal, Start cooking, Different options]; m1 unstamped (#666)', () => {
+    const chips = resolveChips('meal_plan', ['Can I prep ahead?'], 'meal')
     expect(chips.map((c) => c.label)).toEqual([
       'Can I prep ahead?',
       'Save this meal',
-      'Swap a side',
       'Start cooking',
+      'Different options',
     ])
     expect(chips[0].context).toBeUndefined()
+    expect(chips[chips.length - 1].context).toEqual({ meal_followup: true })
   })
 
-  it('meal stage, saved, 3 model pills → [m1, m2, Swap a side, Start cooking]; "Save this meal" omitted', () => {
+  it('meal stage, saved, 2 model pills → [m1, m2, Start cooking, Different options] (#666)', () => {
     const chips = resolveChips(
       'meal_plan',
-      ['Can I prep ahead?', 'What should I start first?', 'How do I store leftovers?'],
+      ['Can I prep ahead?', 'What should I start first?'],
       'meal',
       { mealSaved: true },
     )
     expect(chips.map((c) => c.label)).toEqual([
       'Can I prep ahead?',
       'What should I start first?',
-      'Swap a side',
       'Start cooking',
+      'Different options',
     ])
     expect(chips.some((c) => c.action === 'save_meal')).toBe(false)
+  })
+
+  it('meal stage, unsaved, model pills capped to leave room for both actions and fixed sends (#666)', () => {
+    // 2 actions (Save this meal, Start cooking) + 1 fixed send (Different
+    // options) leaves only 1 slot for model pills, even though 3 were sent.
+    const chips = resolveChips(
+      'meal_plan',
+      ['Can I prep ahead?', 'What should I start first?', 'How do I store leftovers?'],
+      'meal',
+    )
+    expect(chips.map((c) => c.label)).toEqual([
+      'Can I prep ahead?',
+      'Save this meal',
+      'Start cooking',
+      'Different options',
+    ])
   })
 })
 

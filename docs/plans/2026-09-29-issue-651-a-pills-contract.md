@@ -179,17 +179,18 @@ meal_follow_ups: list[str]
 | `proposalType` | Fixed pills, in this order |
 |---|---|
 | `meal_options`, or absent | **Something quicker** (send, message "Something quicker, under 30 minutes") · **Make it vegetarian** (send, "Make it vegetarian") · **Different ideas** (send, "Show me different meal options") |
-| `meal` | **Save this meal** (action `save_meal`, **omitted when `opts.mealSaved`**) · **Swap a side** (action `open_meal`) · **Start cooking** (action `open_meal`) · **Different options** (send, "Show me different meal options") |
+| `meal` | **Save this meal** (action `save_meal`, **omitted when `opts.mealSaved`**) · **Start cooking** (action `open_meal`) · **Different options** (send, "Show me different meal options") |
 
 Every other intent's set is unchanged.
 
 **`resolveChips` algorithm:**
 
 1. `fixed = resolveStaticChips(intent, proposalType, opts)`. Split it into `actions` (kind `action`) and `sends`.
-2. `model = sanitiseFollowUps(suggestions)`, mapped to send pills (the rotating tones and emoji as today). Drop any model pill whose label equals a fixed **action** label, case-insensitively: the action wins. Cap at `MAX_FOLLOW_UP_CHIPS − actions.length`.
+2. `model = sanitiseFollowUps(suggestions)`, mapped to send pills (the rotating tones and emoji as today). Drop any model pill whose label equals a fixed **action** label, case-insensitively: the action wins. Cap at `MAX_FOLLOW_UP_CHIPS − actions.length` — except at the **meal pick stage** (`proposalType === 'meal'`), which caps at `MAX_FOLLOW_UP_CHIPS − actions.length − sends.length` instead (see below).
 3. If `model` is empty, return `fixed` as is (today's full fallback, so `cooking_help` still gets all 3 `COOKING_CHIPS`).
-4. Otherwise: `model`, then `sends` topped up, skipping label duplicates, until `model + added + actions ≥ MIN_FOLLOW_UP_CHIPS`. Then append `actions`.
-5. Never empty. Never more than 4.
+4. Otherwise, options stage and every other intent: `model`, then `sends` topped up, skipping label duplicates, until `model + added + actions ≥ MIN_FOLLOW_UP_CHIPS`. Then append `actions`.
+5. Otherwise, meal pick stage: `model`, then `actions`, then `sends` in full — no `MIN_FOLLOW_UP_CHIPS` top-up gate. `sends` at this stage is only "Different options", and it always shows once there's at least one model pill (issue #666 code review: with the old top-up rule, a single model pill plus 2-3 actions already cleared `MIN_FOLLOW_UP_CHIPS`, so "Different options" — the only way back to other options once a meal is picked — never appeared).
+6. Never empty. Never more than 4.
 
 **The `meal_followup` stamp** (`context: { meal_followup: true }`), applied in both `resolveStaticChips` and `resolveChips`, so the two agree when there are no suggestions:
 - Under `meal_plan` + `meal_options` (or absent): **every** send pill, model and fixed.
@@ -204,9 +205,10 @@ Every other intent's set is unchanged.
 | options | 0 | Something quicker, Make it vegetarian, Different ideas |
 | options | 1 | m1, Something quicker |
 | options | 5 | m1–m4 |
-| meal, unsaved | 0 | Save this meal, Swap a side, Start cooking, Different options |
-| meal, unsaved | 2 | m1, Save this meal, Swap a side, Start cooking |
-| meal, saved | 3 | m1, m2, Swap a side, Start cooking |
+| meal, unsaved | 0 | Save this meal, Start cooking, Different options |
+| meal, saved | 0 | Start cooking, Different options |
+| meal, unsaved | 1 | m1, Save this meal, Start cooking, Different options |
+| meal, saved | 2 | m1, m2, Start cooking, Different options |
 
 ## 3. Components (ui-ux)
 
@@ -585,9 +587,10 @@ Stub at the `AIManager` boundary, dispatching on the `response_schema` kwarg rat
 |---|---|
 | Serve at 7:00 is dropped from the meal-ready fixed set; the meal screen owns serve-at. | A send pill the chat can't act on. |
 | `save_meal` scrolls to, focuses and highlights the same message's Save meal button. The card is the confirm. | A second confirm sheet for one action, or writing on the tap. |
-| `open_meal` (Swap a side, Start cooking) is exactly the card's Open meal: a draft, then `/meals/[id]`, with no confirm because it writes only the draft the button already writes. | Start cooking deep-linking to `/meals/[id]/cook`, which skips the meal screen's `ensureSteps` gate and needs a session start. |
+| `open_meal` (Start cooking) is exactly the card's Open meal: a draft, then `/meals/[id]`, with no confirm because it writes only the draft the button already writes. | Start cooking deep-linking to `/meals/[id]/cook`, which skips the meal screen's `ensureSteps` gate and needs a session start. |
 | "Just one dish" leaves the `meal_plan` fallbacks, per the spec's set. | Keeping it: stamped, it would be forced back into `meal_plan`. |
 | Under meal-ready, only the fixed send pill is stamped, and the model pills are cooking questions routed by the classifier. | Stamping every send pill, which sends "Can I prep this ahead?" into a new option set. |
+| Swap a side dropped from the pick-stage pills; Start cooking opens the same meal screen. | Rejected: keeping both and losing the options re-ask. |
 | Action pills keep their slots (S1), so an unsaved meal-ready row shows one model pill. | Dropping a fixed action to fit two model pills. |
 | `meal_followup` turns inherit the retained meal's constraints and servings, and the prompt lists the previous titles. | A fresh extraction only, where a tap on "Make it vegetarian" loses "for 4, one pan", and "Different ideas" can return the same three. |
 | The scan pill appears only at `pantry_count === 0`, and `null` (unknown) never triggers it. | "Nearly empty" (≤ 2 items), or treating a failed count as 0. |
