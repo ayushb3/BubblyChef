@@ -9,7 +9,11 @@
  * style for the recipe confirm proxy.
  */
 
-const mockUser = { id: 'user-1' }
+/** Stored ledger zone (#550) - server-owned `app_metadata`. UTC keeps these fixtures' dates as written. */
+const mockUser = {
+  id: 'user-1',
+  app_metadata: { ledger_tz: 'UTC', ledger_tz_set_at: '2026-01-01T00:00:00.000Z' },
+}
 
 const awardBubblesMock = jest.fn(async () => 10)
 jest.mock('@/lib/bubbles', () => ({
@@ -165,10 +169,10 @@ describe('POST /api/ai/meals/cook/confirm', () => {
     expect(awardBubblesMock).not.toHaveBeenCalled()
   })
 
-  it('a missing date still awards cook_confirm and meal_bonus, with no rescue', async () => {
+  it('an account with no known time zone still awards cook_confirm and meal_bonus (claim-keyed), with no rescue (#550)', async () => {
     mockRequireAuth.mockResolvedValue([
       makeSupabase([{ id: 'item-1', expiry_date: '2026-09-29' }]),
-      mockUser,
+      { id: 'user-1', app_metadata: {} },
     ])
     aiProxyFetchMock.mockResolvedValue(upstream(successBody))
 
@@ -184,6 +188,31 @@ describe('POST /api/ai/meals/cook/confirm', () => {
     expect(awardBubblesMock).toHaveBeenCalledWith(mockUser.id, 'cook_confirm', 'meal:meal-1:2026-09-28')
     expect(awardBubblesMock).toHaveBeenCalledWith(mockUser.id, 'meal_bonus', 'meal:meal-1:2026-09-28')
     expect(awardBubblesMock).not.toHaveBeenCalledWith(mockUser.id, 'rescue', expect.anything())
+  })
+
+  it("judges rescue eligibility on the account's local day, not the server's or a client-sent one (#550)", async () => {
+    // 01:00Z on the 29th is still 18:00 on the 28th in Los Angeles. The item
+    // expires on the 28th: a rescue on the user's day, already expired on the server's.
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-29T01:00:00.000Z'))
+    mockRequireAuth.mockResolvedValue([
+      makeSupabase([{ id: 'item-1', expiry_date: '2026-09-28' }]),
+      {
+        id: 'user-1',
+        app_metadata: { ledger_tz: 'America/Los_Angeles', ledger_tz_set_at: '2026-09-20T00:00:00.000Z' },
+      },
+    ])
+    aiProxyFetchMock.mockResolvedValue(upstream(successBody))
+
+    await POST(
+      makeRequest({
+        meal_id: 'meal-1',
+        cook_ref: 'ref-1',
+        deductions: [{ pantry_item_id: 'item-1', deduct_qty: 1, base_unit: 'g' }],
+        date: '2026-09-29', // a client claiming the server's day must not turn the rescue off
+      }),
+    )
+
+    expect(awardBubblesMock).toHaveBeenCalledWith(mockUser.id, 'rescue', 'item-1:2026-09-28')
   })
 
   it('a JSON null body (review N5) is rejected with 400, and the upstream is never called', async () => {

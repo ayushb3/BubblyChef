@@ -8,8 +8,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { localDateString } from '@/lib/date'
-import { tzOffsetMinutes } from '@/lib/api/dashboard'
+import { clientTimeZone } from '@/lib/date'
 
 export interface BubbleEvent {
   id: string
@@ -50,13 +49,13 @@ function is401(error: unknown): boolean {
 
 /** Fetch the caller's bubble balance and recent events, awarding today's daily visit. */
 export async function getBubbles(): Promise<BubblesResult> {
-  // `tz_offset_minutes` lets the route bucket `created_at` timestamps into
-  // this client's local calendar day rather than the server's UTC day
-  // (issue #524 review) — same convention/helper as the dashboard client.
-  const params = new URLSearchParams({
-    date: localDateString(),
-    tz_offset_minutes: String(tzOffsetMinutes()),
-  })
+  // Send the IANA zone, not a date or a UTC offset (issue #550): the server
+  // stores the account's zone once and derives the one accepted local date
+  // from its own clock, so nothing the client sends per request can move the
+  // `daily_visit` key a day forward or back.
+  const params = new URLSearchParams()
+  const tz = clientTimeZone()
+  if (tz) params.set('tz', tz)
   const res = await fetch(`/api/bubbles?${params}`)
 
   if (!res.ok) {

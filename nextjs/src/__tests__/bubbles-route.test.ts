@@ -13,7 +13,18 @@
  * hand-wire each new method call.
  */
 
-const mockUser = { id: 'user-1' }
+/**
+ * The account's stored ledger time zone (#550) — server-owned `app_metadata`,
+ * not a per-request client value. UTC here so `today` below is also the
+ * local date.
+ */
+function userInZone(timeZone: string | null, setAt = '2026-01-01T00:00:00.000Z') {
+  return {
+    id: 'user-1',
+    app_metadata: timeZone ? { ledger_tz: timeZone, ledger_tz_set_at: setAt } : {},
+  }
+}
+const mockUser = userInZone('UTC')
 
 /** Today's UTC date as YYYY-MM-DD — the route accepts anything within a day of this. */
 const today = new Date().toISOString().slice(0, 10)
@@ -84,13 +95,17 @@ describe('GET /api/bubbles', () => {
     }))
   })
 
-  it('requires a date query param', async () => {
-    mockRequireAuth.mockResolvedValue([{}, mockUser])
+  it('does not need a date query param: the server owns the local date (#550)', async () => {
+    mockRequireAuth.mockResolvedValue([makeSupabase(), mockUser])
 
     const { GET } = await import('@/app/api/bubbles/route')
     const res = await GET(new Request('http://localhost/api/bubbles'))
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(200)
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'daily_visit', ref_key: today }),
+      expect.anything(),
+    )
   })
 
   it('returns balance 0 when the user has no bubble_balances row', async () => {
@@ -140,7 +155,7 @@ describe('GET /api/bubbles', () => {
     expect(data.recent).toEqual(recentEvents)
   })
 
-  it('rejects a date far outside the server clock skew window and does not award', async () => {
+  it('rejects a date that is not the local date for the account, and does not award', async () => {
     mockRequireAuth.mockResolvedValue([{}, mockUser])
 
     const { GET } = await import('@/app/api/bubbles/route')
@@ -235,12 +250,16 @@ describe('GET /api/bubbles', () => {
         bubble_events: [{ event_type: 'pantry_add', ref_key: 'item-1', created_at: lastWeekTimestamp }],
         pantry_events: [{ item_name: 'Milk', created_at: boundaryTimestamp }],
       })
-      mockRequireAuth.mockResolvedValue([supabase, mockUser])
+      // The offset now comes from the account's stored zone (#550), not a
+      // query param: a fixed UTC-7 zone, no `date` sent (the server derives it).
+      mockRequireAuth.mockResolvedValue([supabase, userInZone('Etc/GMT+7')])
+      // Midday UTC, so the UTC-7 local date is also `today` whatever time of
+      // day the suite happens to run.
+      jest.useFakeTimers().setSystemTime(new Date(`${today}T12:00:00Z`))
 
       const { GET } = await import('@/app/api/bubbles/route')
-      const res = await GET(
-        new Request(`http://localhost/api/bubbles?date=${today}&tz_offset_minutes=-420`),
-      )
+      const res = await GET(new Request('http://localhost/api/bubbles'))
+      jest.useRealTimers()
       const data = await res.json()
 
       expect(data.streak_weeks).toBe(0)
@@ -455,6 +474,127 @@ describe('GET /api/bubbles', () => {
         expect.objectContaining({ event_type: 'weekly_streak' }),
         expect.anything(),
       )
+    })
+  })
+  /**
+   * Issue #550: `daily_visit` is keyed on ONE exact local date the server
+   * derives from the account's stored zone and its own clock. A `date` the
+   * client supplies is only ever checked against it.
+   */
+  describe('one exact local date (#550)', () => {
+    // 01:00Z on the 24th is 18:00 on the 23rd in Los Angeles (UTC-7).
+    const NOW = '2026-09-24T01:00:00.000Z'
+    // Set the day before: a claimed different zone is still inside the change cooldown.
+    const LA = userInZone('America/Los_Angeles', '2026-09-22T12:00:00.000Z')
+
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    function dailyVisitRefs(): string[] {
+      return (upsertMock.mock.calls as unknown as Array<[{ event_type: string; ref_key: string }]>)
+        .filter((call) => call[0].event_type === 'daily_visit')
+        .map((call) => call[0].ref_key)
+    }
+
+    it("keys daily_visit on the account's local date, not the server UTC date", async () => {
+      jest.useFakeTimers().setSystemTime(new Date(NOW))
+      mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request('http://localhost/api/bubbles?date=2026-09-23'))
+
+      expect(res.status).toBe(200)
+      expect(dailyVisitRefs()).toEqual(['2026-09-23'])
+    })
+
+    it("refuses tomorrow's date: a visit cannot be claimed ahead", async () => {
+      jest.useFakeTimers().setSystemTime(new Date(NOW))
+      mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request('http://localhost/api/bubbles?date=2026-09-24'))
+
+      expect(res.status).toBe(400)
+      expect(upsertMock).not.toHaveBeenCalled()
+    })
+
+    it("refuses yesterday's date too: exactly one date is accepted, no +-1 window", async () => {
+      jest.useFakeTimers().setSystemTime(new Date(NOW))
+      mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request('http://localhost/api/bubbles?date=2026-09-22'))
+
+      expect(res.status).toBe(400)
+      expect(upsertMock).not.toHaveBeenCalled()
+    })
+
+    it('a spoofed time zone cannot claim the next day: the stored zone wins', async () => {
+      // Kiritimati (UTC+14) is already on the 24th. Claiming it, and sending
+      // the 24th, must neither 400-then-award nor award the 24th.
+      jest.useFakeTimers().setSystemTime(new Date(NOW))
+      mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(
+        new Request('http://localhost/api/bubbles?tz=Pacific%2FKiritimati&date=2026-09-24'),
+      )
+
+      expect(res.status).toBe(400)
+      expect(dailyVisitRefs()).toEqual([])
+    })
+
+    it('a spoofed tz_offset_minutes is ignored entirely', async () => {
+      jest.useFakeTimers().setSystemTime(new Date(NOW))
+      mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request('http://localhost/api/bubbles?tz_offset_minutes=840'))
+
+      expect(res.status).toBe(200)
+      expect(dailyVisitRefs()).toEqual(['2026-09-23'])
+    })
+
+    it('two visits either side of UTC midnight on one local day award one daily_visit', async () => {
+      const { GET } = await import('@/app/api/bubbles/route')
+
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-23T23:50:00.000Z'))
+      mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
+      await GET(new Request('http://localhost/api/bubbles'))
+
+      jest.setSystemTime(new Date('2026-09-24T00:10:00.000Z'))
+      mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
+      await GET(new Request('http://localhost/api/bubbles'))
+
+      // Same ref_key both times: the ledger's unique constraint makes it one award.
+      expect(dailyVisitRefs()).toEqual(['2026-09-23', '2026-09-23'])
+    })
+
+    it('the next real local day is a new key', async () => {
+      const { GET } = await import('@/app/api/bubbles/route')
+
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-24T06:30:00.000Z'))
+      mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
+      await GET(new Request('http://localhost/api/bubbles'))
+
+      jest.setSystemTime(new Date('2026-09-24T07:30:00.000Z'))
+      mockRequireAuth.mockResolvedValue([makeSupabase(), LA])
+      await GET(new Request('http://localhost/api/bubbles'))
+
+      expect(dailyVisitRefs()).toEqual(['2026-09-23', '2026-09-24'])
+    })
+
+    it('with no stored zone and none sent (a stale tab), returns the balance but awards nothing', async () => {
+      mockRequireAuth.mockResolvedValue([makeSupabase(), userInZone(null)])
+
+      const { GET } = await import('@/app/api/bubbles/route')
+      const res = await GET(new Request(`http://localhost/api/bubbles?date=${today}`))
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.balance).toBe(0)
+      expect(upsertMock).not.toHaveBeenCalled()
     })
   })
 })

@@ -13,7 +13,11 @@
 
 process.env.TZ = 'UTC'
 
-const mockUser = { id: 'user-1' }
+/** Stored ledger zone (#550): a fixed UTC-7 zone, the "client" the 01:00Z fixtures below describe. */
+const mockUser = {
+  id: 'user-1',
+  app_metadata: { ledger_tz: 'Etc/GMT+7', ledger_tz_set_at: '2026-01-01T00:00:00.000Z' },
+}
 
 const awardBubblesMock = jest.fn(async () => 8)
 jest.mock('@/lib/bubbles', () => ({

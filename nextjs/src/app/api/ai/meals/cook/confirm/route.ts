@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { aiProxyFetch } from '@/lib/api/ai-proxy'
 import { requireAuth } from '@/lib/response-helpers'
-import { validateClientDate } from '@/lib/date'
+import { resolveLedgerDate } from '@/lib/ledger-date'
 import { cookAwardRefs, readExpiryByItemId, rescueCandidates, awardCookBubbles } from '@/lib/cook-awards'
 
 const COOKED_ON_PATTERN = /^\d{4}-\d{2}-\d{2}$/
@@ -34,10 +34,13 @@ export async function POST(request: Request) {
   }
   const body = rawBody as Record<string, unknown>
 
-  // Client's local date (#524) — only used to judge rescue eligibility;
-  // a missing or out-of-range date must never block the deduction, matching
-  // the never-block contract every other award call site follows.
-  const validDate = validateClientDate(body.date, 'date') ? null : (body.date as string)
+  // The account's local date (#524, #550): the server's clock in the stored
+  // time zone, NOT a date the client sends — `body.tz` can only propose a zone
+  // the first time or move it after the cooldown. Only used to judge rescue
+  // eligibility here (every award key below is the claim's own `cooked_on`);
+  // no trustworthy date must never block the deduction, matching the
+  // never-block contract every other award call site follows.
+  const validDate = (await resolveLedgerDate(user, body.tz))?.date ?? null
 
   const deductions = Array.isArray(body.deductions) ? body.deductions : []
   const pantryItemIds: string[] = deductions
