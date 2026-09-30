@@ -92,6 +92,7 @@ describe('approving a high-confidence (requires_review: false) pantry proposal',
     expect(applyPantryProposal).toHaveBeenCalledWith(
       'req-high-confidence',
       (HIGH_CONFIDENCE_RESPONSE.proposal as PantryProposalData).actions,
+      { conversationId: expect.any(String), turnRequestIds: ['req-high-confidence'] },
     )
     expect(result.current.proposalStates[assistantMsgId]).toBe('approved')
   })
