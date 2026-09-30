@@ -395,6 +395,20 @@ describe('resolveChips — meal_plan pill sets (#651, §2)', () => {
       'Different options',
     ])
   })
+
+  it('meal stage drops a model pill that echoes the fixed "Different options" send (PR #666 review)', () => {
+    const chips = resolveChips(
+      'meal_plan',
+      ['different options', 'Can I prep ahead?'],
+      'meal',
+      { mealSaved: true },
+    )
+    expect(chips.map((c) => c.label)).toEqual([
+      'Can I prep ahead?',
+      'Start cooking',
+      'Different options',
+    ])
+  })
 })
 
 describe('resolveChips — meal_followup stamp matrix (#651, §2)', () => {

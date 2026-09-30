@@ -255,9 +255,13 @@ export function resolveChips(
   const stampModel = intent === 'meal_plan' && proposalType !== 'meal'
   const isMealPickStage = intent === 'meal_plan' && proposalType === 'meal'
 
-  const actionLabels = new Set(actions.map((c) => c.label.toLowerCase()))
+  // At the pick stage the fixed sends are always appended, so a model pill
+  // echoing one ("Different options") would render twice (PR #666 review).
+  const reservedLabels = new Set(
+    (isMealPickStage ? [...actions, ...fixedSends] : actions).map((c) => c.label.toLowerCase()),
+  )
   const cleaned = sanitiseFollowUps(suggestions).filter(
-    (text) => !actionLabels.has(text.toLowerCase()),
+    (text) => !reservedLabels.has(text.toLowerCase()),
   )
   const cap = isMealPickStage
     ? Math.max(0, MAX_FOLLOW_UP_CHIPS - actions.length - fixedSends.length)
