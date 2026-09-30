@@ -16,6 +16,8 @@ from pydantic import BaseModel, Field
 from bubbly_chef.api.auth import get_current_user_id
 from bubbly_chef.models.cook import CookConfirmRequest, CookProposal, MealCookIngredient
 from bubbly_chef.repository.supabase_repo import get_repository
+from bubbly_chef.services.allergen_guard import AllergenViolation, allergen_refusal_message
+from bubbly_chef.services.food_exclusions import get_stored_food_exclusions
 from bubbly_chef.services.meal_cook import (
     apply_collapsed_deductions,
     correlate_expired,
@@ -75,6 +77,7 @@ async def generate_recipe(
     try:
         from bubbly_chef.api.deps import get_ai_manager
         from bubbly_chef.services.recipe_generator import generate_recipe as gen_recipe
+        from bubbly_chef.workflows.recipe.exclusions import apply_food_exclusions
 
         ai_manager = get_ai_manager()
 
@@ -96,11 +99,18 @@ async def generate_recipe(
         if request.servings:
             constraints["servings"] = request.servings
 
+        # Profile allergies (a hard "never") and dislikes (#500): the prompt is the
+        # first line of defence, `gen_recipe`'s allergen guard the second.
+        applied = apply_food_exclusions(
+            constraints, await get_stored_food_exclusions(user_id), request.prompt
+        )
+
         result = await gen_recipe(
             prompt=request.prompt,
             pantry_items=pantry_items,
             ai_manager=ai_manager,
-            constraints=constraints if constraints else None,
+            constraints=applied.constraints if applied.constraints else None,
+            allergies=applied.allergies,
         )
 
         return {
@@ -115,6 +125,11 @@ async def generate_recipe(
             "pantry_match_score": result.pantry_match_score,
         }
 
+    except AllergenViolation as e:
+        raise HTTPException(
+            status_code=422,
+            detail=allergen_refusal_message(e.allergens, "that recipe"),
+        ) from e
     except Exception as e:
         logger.error(f"Recipe generation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Recipe generation failed: {str(e)}") from e
@@ -171,6 +186,7 @@ async def refine_recipe(
             ai_manager=ai_manager,
             constraints=decision.constraints,
             previous_recipe=previous_recipe,
+            allergies=list(decision.allergies),
         )
 
         # The generator never emits tags. Carry the saved recipe's own onto the
@@ -204,6 +220,11 @@ async def refine_recipe(
             "pantry_match_score": result.pantry_match_score,
         }
 
+    except AllergenViolation as e:
+        raise HTTPException(
+            status_code=422,
+            detail=allergen_refusal_message(e.allergens, "that change"),
+        ) from e
     except Exception as e:
         logger.error(f"Recipe refinement failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Recipe refinement failed: {str(e)}") from e

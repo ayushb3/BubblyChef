@@ -13,6 +13,8 @@ from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.models.recipe import Ingredient, RecipeCard, StepMetadata, build_structured_steps
 from bubbly_chef.prompts.recipe import RECIPE_FOLLOWUP_PROMPT, RECIPE_GENERATION_PROMPT
+from bubbly_chef.services.allergen_guard import card_allergens, generate_allergen_safe
+from bubbly_chef.services.food_exclusions import allergy_never_block
 
 # Maximum retry attempts for AI generation
 MAX_RETRIES = 2
@@ -141,6 +143,9 @@ def format_constraints(constraints: dict[str, Any] | None) -> str:
             parts.append(f"- Dietary requirements: {', '.join(dietary)}")
         else:
             parts.append(f"- Dietary requirements: {dietary}")
+    excluded = constraints.get("excluded_ingredients")
+    if excluded:
+        parts.append(f"- Leave out: {', '.join(excluded)}")
     if constraints.get("use_expiring"):
         parts.append("- Prioritize using expiring ingredients")
     if constraints.get("servings"):
@@ -307,6 +312,7 @@ async def generate_recipe(
     ai_manager: AIManager,
     constraints: dict[str, Any] | None = None,
     previous_recipe: RecipeCard | None = None,
+    allergies: list[str] | None = None,
 ) -> GenerateRecipeResponse:
     """
     Generate a recipe using AI based on prompt and pantry context.
@@ -319,12 +325,16 @@ async def generate_recipe(
         ai_manager: AI manager for LLM calls
         constraints: Optional constraints (max_time, cuisine, dietary)
         previous_recipe: Previous recipe for follow-up modifications
+        allergies: The user's profile allergies (#500). Named in the prompt as a hard
+            "NEVER include", and enforced after generation: a card that names one is
+            regenerated once, then `AllergenViolation` is raised.
 
     Returns:
         Generated recipe with ingredient availability status
 
     Raises:
         StructuredOutputError: If AI fails after all retries
+        AllergenViolation: If the card still names an allergen after one regeneration
     """
     # Expired and zero-quantity rows are not stock. This is the engine behind
     # /v1/recipes/refine and the chat refine node, where a refinement offered
@@ -354,33 +364,43 @@ async def generate_recipe(
             constraints=constraints_formatted,
         )
 
-    # Retry logic for AI generation
-    last_error = None
-    for attempt in range(MAX_RETRIES + 1):
-        try:
-            # Call AI to generate recipe
-            result = await ai_manager.complete(
-                prompt=full_prompt,
-                response_schema=AIRecipeOutput,
-                temperature=0.8,  # Higher temperature for creativity
-            )
+    allergy_list = list(allergies or [])
+    full_prompt += allergy_never_block(allergy_list)
 
-            # Success! Break out of retry loop
-            break
-
-        except StructuredOutputError as e:
-            last_error = e
-            if attempt < MAX_RETRIES:
-                # Wait briefly before retry (exponential backoff)
-                wait_time = 2**attempt  # 1s, 2s, 4s
-                await asyncio.sleep(wait_time)
-                continue
-            else:
+    async def _complete(extra: str) -> Any:
+        # Retry logic for AI generation
+        last_error = None
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                # Call AI to generate recipe
+                return await ai_manager.complete(
+                    prompt=full_prompt + extra,
+                    response_schema=AIRecipeOutput,
+                    temperature=0.8,  # Higher temperature for creativity
+                )
+            except StructuredOutputError as e:
+                last_error = e
+                if attempt < MAX_RETRIES:
+                    # Wait briefly before retry (exponential backoff)
+                    wait_time = 2**attempt  # 1s, 2s, 4s
+                    await asyncio.sleep(wait_time)
+                    continue
                 # All retries exhausted
                 raise StructuredOutputError(
                     f"Failed to generate recipe after {MAX_RETRIES + 1} attempts. "
                     f"Last error: {str(last_error)}"
                 ) from e
+        raise AssertionError("unreachable: the retry loop returns or raises")
+
+    def _named_allergens(candidate: Any) -> list[str]:
+        if not isinstance(candidate, AIRecipeOutput):
+            return []
+        return card_allergens(
+            allergy_list, candidate.title, [ing.name for ing in candidate.ingredients]
+        )
+
+    # The model is not the only line of defence against an allergen (#500).
+    result = await generate_allergen_safe(_complete, _named_allergens, allergy_list)
 
     # Convert AI output to RecipeCard
     if isinstance(result, str):

@@ -29,6 +29,7 @@ from typing import Any, Literal, NamedTuple
 from bubbly_chef.ai import AIManager
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.ai.provider import user_message_for_failure
+from bubbly_chef.domain.allergens import allergens_named
 from bubbly_chef.models.meal import (
     MealConstraintsEcho,
     MealDishOutline,
@@ -42,6 +43,12 @@ from bubbly_chef.prompts.meal import (
     MEAL_SIDE_ALTERNATIVES_SYSTEM_PROMPT,
 )
 from bubbly_chef.repository.supabase_repo import SupabaseRepository
+from bubbly_chef.services.allergen_guard import (
+    AllergenViolation,
+    allergen_refusal_message,
+    generate_allergen_safe,
+)
+from bubbly_chef.services.food_exclusions import allergy_never_block, get_stored_food_exclusions
 from bubbly_chef.workflows.meal.nodes import (
     _expand_dish,
     _pantry_items_for_matching,
@@ -164,7 +171,9 @@ def _constraints_json(constraints_echo: MealConstraintsEcho) -> str:
 
 
 async def _pantry_grounding(
-    user_id: str, constraints_echo: MealConstraintsEcho
+    user_id: str,
+    constraints_echo: MealConstraintsEcho,
+    allergies: list[str] | None = None,
 ) -> tuple[bool, list[dict[str, Any]]]:
     """`(pantry_grounded, scored_items)` for one dish prompt.
 
@@ -176,7 +185,9 @@ async def _pantry_grounding(
     if not pantry_grounded:
         return False, []
     pantry_items = await _pantry_items_for_matching(user_id)
-    scored_items = _score_items_for_dish_prompt(pantry_items, constraints_echo.recipe_constraints)
+    scored_items = _score_items_for_dish_prompt(
+        pantry_items, constraints_echo.recipe_constraints, allergies
+    )
     return True, scored_items
 
 
@@ -236,7 +247,9 @@ async def generate_side_alternatives(
     current_titles = [_dish_title(d) for d in loaded.dishes if _dish_title(d)]
 
     constraints_echo = loaded.constraints_echo
-    pantry_grounded, scored_items = await _pantry_grounding(user_id, constraints_echo)
+    # Read from the profile on every call (#500), never from the meal's stored echo.
+    allergies = list((await get_stored_food_exclusions(user_id)).allergies)
+    pantry_grounded, scored_items = await _pantry_grounding(user_id, constraints_echo, allergies)
     pantry_block = _pantry_block_text(pantry_grounded, scored_items)
 
     avoid_line = ""
@@ -255,13 +268,37 @@ async def generate_side_alternatives(
         constraints_json=_constraints_json(constraints_echo),
         pantry_block=pantry_block,
     )
+    prompt += allergy_never_block(allergies)
 
-    try:
-        result = await ai_manager.complete(
-            prompt=prompt,
+    async def _propose(extra: str) -> Any:
+        return await ai_manager.complete(
+            prompt=prompt + extra,
             response_schema=MealSideAlternativesLLMResult,
             temperature=0.7,
         )
+
+    def _alternative_allergens(alt: Any) -> list[str]:
+        return allergens_named(allergies, alt.name, alt.blurb or "", *alt.key_ingredients)
+
+    def _named_allergens(candidate: Any) -> list[str]:
+        if not isinstance(candidate, MealSideAlternativesLLMResult):
+            return []
+        return list(dict.fromkeys(a for alt in candidate.alternatives for a in _alternative_allergens(alt)))
+
+    def _without_allergen_alternatives(candidate: Any) -> Any:
+        # Still dirty after one regeneration: keep the clean alternatives, refuse when none is.
+        clean = [alt for alt in candidate.alternatives if not _alternative_allergens(alt)]
+        return candidate.model_copy(update={"alternatives": clean}) if clean else None
+
+    try:
+        # The model is not the only line of defence against an allergen (#500).
+        result = await generate_allergen_safe(
+            _propose, _named_allergens, allergies, salvage=_without_allergen_alternatives
+        )
+    except AllergenViolation as e:
+        raise MealGenerationUnavailableError(
+            "invalid_output", allergen_refusal_message(e.allergens, "a side for that")
+        ) from e
     except NoProviderAvailableError as e:
         raise MealGenerationUnavailableError(
             "model_unavailable", user_message_for_failure(e.kind, e.configured)
@@ -346,7 +383,10 @@ async def expand_meal_dish(
         dishes=[outline, *other_outlines],
     )
 
-    pantry_grounded, scored_items = await _pantry_grounding(user_id, loaded.constraints_echo)
+    allergies = list((await get_stored_food_exclusions(user_id)).allergies)
+    pantry_grounded, scored_items = await _pantry_grounding(
+        user_id, loaded.constraints_echo, allergies
+    )
 
     try:
         return await _expand_dish(
@@ -357,7 +397,12 @@ async def expand_meal_dish(
             loaded.constraints_echo,
             scored_items,
             pantry_grounded,
+            allergies,
         )
+    except AllergenViolation as e:
+        raise MealGenerationUnavailableError(
+            "invalid_output", allergen_refusal_message(e.allergens, f"'{outline.name}'")
+        ) from e
     except NoProviderAvailableError as e:
         raise MealGenerationUnavailableError(
             "model_unavailable", user_message_for_failure(e.kind, e.configured)

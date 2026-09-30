@@ -42,6 +42,7 @@ from pydantic import Field, ValidationError
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.ai.provider import user_message_for_failure
 from bubbly_chef.api.deps import get_ai_manager
+from bubbly_chef.domain.allergens import allergens_named
 from bubbly_chef.domain.diet_terms import join_fields, norm_label
 from bubbly_chef.domain.kitchen_limits import map_kitchen_limits_to_tags
 from bubbly_chef.domain.staples import NEVER_TO_BUY, shoppable
@@ -76,7 +77,14 @@ from bubbly_chef.prompts.meal import (
     MEAL_READY_FOLLOW_UPS_RULES,
 )
 from bubbly_chef.repository.supabase_repo import get_repository
+from bubbly_chef.services.allergen_guard import (
+    AllergenViolation,
+    allergen_refusal_message,
+    card_allergens,
+    generate_allergen_safe,
+)
 from bubbly_chef.services.cook_matcher import match_ingredients
+from bubbly_chef.services.food_exclusions import allergy_never_block, get_stored_food_exclusions
 from bubbly_chef.workflows.meal.fixed_main import (
     MEAL_FIXED_MAIN_KEY,
     FixedMainRefusal,
@@ -88,11 +96,13 @@ from bubbly_chef.workflows.meal.fixed_main import (
     resolve_fixed_main,
     stored_dietary_preferences,
 )
+from bubbly_chef.workflows.recipe.exclusions import apply_food_exclusions
 from bubbly_chef.workflows.recipe.nodes import (
     _combine_dietary_preferences,
     _days_until_expiry,
     _dietary_contradicted,
     _format_pantry_item_for_prompt,
+    _llm_ingredient_names,
     extract_recipe_constraints,
     is_pantry_grounded,
     score_and_rank,
@@ -704,6 +714,38 @@ def _meal_generation_failed_state(state: WorkflowState, reason: str) -> Workflow
     }
 
 
+def _meal_allergen_refusal_state(state: WorkflowState, violation: AllergenViolation) -> WorkflowState:
+    """Generation still names an allergen after one regeneration (#500): say so, propose nothing."""
+    logger.warning("Meal generation refused by the allergen guard: %s", violation)
+    return {
+        **state,
+        "intent": Intent.GENERAL_CHAT.value,
+        "assistant_message": allergen_refusal_message(violation.allergens, "that meal"),
+        "next_action": NextAction.NONE.value,
+        "proposal": None,
+        "requires_review": False,
+        "confidence": 1.0,
+        "errors": state.get("errors", []) + [f"Allergen guard: {violation}"],
+        "workflow_status": WorkflowStatus.COMPLETED.value,
+    }
+
+
+def option_allergens(
+    option: Any, allergies: list[str], *, skip_main: bool = False
+) -> list[str]:
+    """The allergies a raw meal option names in its title, blurb, dish names or key ingredients.
+
+    `skip_main` leaves the main dish out: a fixed main (#651 PR B) is the user's own
+    recipe, kept exactly as it is, so its ingredients are not the model's to answer for.
+    """
+    fields = [option.title, option.blurb or ""]
+    for dish in option.dishes:
+        if skip_main and dish.role == "main":
+            continue
+        fields.extend([dish.name, *dish.key_ingredients])
+    return allergens_named(allergies, *fields)
+
+
 def _unknown_option_state(state: WorkflowState, option_id: Any) -> WorkflowState:
     """`context.meal_option_id` didn't resolve against the retained options."""
     logger.info("meal_pick_stage: unresolved option id=%r", option_id)
@@ -890,6 +932,20 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     else:
         constraints_state = await extract_recipe_constraints(state)
         constraints = constraints_state.get("recipe_constraints") or {}
+
+    # Profile allergies and dislikes (#500) on every branch above, not just the one
+    # that ran extraction: a fixed-main or follow-up turn builds its constraints
+    # elsewhere. Idempotent where extraction already folded them in.
+    applied = apply_food_exclusions(
+        constraints, await get_stored_food_exclusions(user_id), input_text
+    )
+    constraints = applied.constraints
+    allergies = applied.allergies
+    constraints_state = {
+        **constraints_state,
+        "recipe_constraints": constraints,
+        "profile_allergies": allergies,
+    }
     kitchen_limit_phrases = [str(p) for p in (constraints.get("kitchen_limits") or [])]
     exclusive_tags = map_kitchen_limits_to_tags(kitchen_limit_phrases)
 
@@ -910,7 +966,9 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     cuisine_hint = (
         await _recent_cuisine_hint(user_id) if user_id and fixed_resolved is None else ""
     )
-    constraints_str = _format_meal_constraints(constraints, kitchen_limit_phrases)
+    constraints_str = _format_meal_constraints(
+        constraints, kitchen_limit_phrases
+    ) + allergy_never_block(allergies)
     pantry_context = _meal_pantry_context(scored_items) if pantry_grounded else ""
     system_prompt = (
         MEAL_OPTIONS_SYSTEM_PROMPT if pantry_grounded else MEAL_OPTIONS_SYSTEM_PROMPT_NO_PANTRY
@@ -967,12 +1025,39 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     )
 
     ai_manager = get_ai_manager()
-    try:
-        result = await ai_manager.complete(
-            prompt=prompt,
+    skip_main = fixed_resolved is not None
+
+    async def _propose(extra: str) -> Any:
+        return await ai_manager.complete(
+            prompt=prompt + extra,
             response_schema=MealOptionsLLMResult,
             temperature=0.7,
         )
+
+    def _named_allergens(candidate: Any) -> list[str]:
+        if not isinstance(candidate, MealOptionsLLMResult):
+            return []
+        named: list[str] = []
+        for raw in candidate.options[:3]:
+            named.extend(option_allergens(raw, allergies, skip_main=skip_main))
+        return list(dict.fromkeys(named))
+
+    def _without_allergen_options(candidate: Any) -> Any:
+        # Still dirty after one regeneration: keep the clean options, refuse when none is.
+        clean = [
+            o
+            for o in candidate.options
+            if not option_allergens(o, allergies, skip_main=skip_main)
+        ]
+        return candidate.model_copy(update={"options": clean}) if clean else None
+
+    try:
+        # The model is not the only line of defence against an allergen (#500).
+        result = await generate_allergen_safe(
+            _propose, _named_allergens, allergies, salvage=_without_allergen_options
+        )
+    except AllergenViolation as e:
+        return _meal_allergen_refusal_state(state, e)
     except NoProviderAvailableError as e:
         return _meal_unavailable_state(state, e)
     except Exception as e:
@@ -1073,10 +1158,12 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
 
 
 def _score_items_for_dish_prompt(
-    pantry_items: list[PantryItem], constraints: dict[str, Any]
+    pantry_items: list[PantryItem],
+    constraints: dict[str, Any],
+    allergies: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     rows = [it.model_dump(mode="json") for it in pantry_items]
-    return score_and_rank(rows, constraints)
+    return score_and_rank(rows, constraints, allergies)
 
 
 async def _expand_dish_result(
@@ -1089,6 +1176,7 @@ async def _expand_dish_result(
     pantry_grounded: bool = True,
     *,
     with_follow_ups: bool = False,
+    allergies: list[str] | None = None,
 ) -> LLMRecipeResult:
     """One grounded, meal-aware recipe generation for a single dish.
 
@@ -1153,11 +1241,23 @@ async def _expand_dish_result(
         if not pantry_grounded:
             prompt += MEAL_FOLLOW_UPS_NO_PANTRY_RULE
 
-    result = await ai_manager.complete(prompt=prompt, response_schema=response_schema, temperature=0.5)
-    if not isinstance(result, LLMRecipeResult):
-        raise ValueError(f"Unexpected response type expanding dish {dish.name!r}")
+    allergy_list = list(allergies or [])
+    prompt += allergy_never_block(allergy_list)
 
-    return result
+    async def _expand(extra: str) -> LLMRecipeResult:
+        result = await ai_manager.complete(
+            prompt=prompt + extra, response_schema=response_schema, temperature=0.5
+        )
+        if not isinstance(result, LLMRecipeResult):
+            raise ValueError(f"Unexpected response type expanding dish {dish.name!r}")
+        return result
+
+    # A dish that names an allergen is regenerated once, then refused (#500).
+    return await generate_allergen_safe(
+        _expand,
+        lambda r: card_allergens(allergy_list, r.title, _llm_ingredient_names(r)),
+        allergy_list,
+    )
 
 
 async def _expand_dish(
@@ -1168,13 +1268,21 @@ async def _expand_dish(
     constraints_echo: MealConstraintsEcho,
     scored_items: list[dict[str, Any]],
     pantry_grounded: bool = True,
+    allergies: list[str] | None = None,
 ) -> RecipeCard:
     """`_expand_dish_result`, built into a `RecipeCard` (issue #650's original
     signature -- `workflows/meal/sides.py` needs a `RecipeCard`, never a
     `follow_ups`-carrying result, so it keeps calling this rather than
     `_expand_dish_result` directly)."""
     result = await _expand_dish_result(
-        ai_manager, dish, option, servings, constraints_echo, scored_items, pantry_grounded
+        ai_manager,
+        dish,
+        option,
+        servings,
+        constraints_echo,
+        scored_items,
+        pantry_grounded,
+        allergies=allergies,
     )
     return _recipe_card_from_llm_result(result, servings)
 
@@ -1223,8 +1331,11 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
     # no stock to be missing from).
     pantry_grounded = is_pantry_grounded(constraints_echo.recipe_constraints)
     pantry_items = await _pantry_items_for_matching(user_id) if pantry_grounded else []
+    # Re-read from the profile, never trusted from the retained echo (#500): an allergy
+    # added after the options were shown still binds the dishes built from them.
+    allergies = list((await get_stored_food_exclusions(user_id)).allergies)
     scored_items = (
-        _score_items_for_dish_prompt(pantry_items, constraints_echo.recipe_constraints)
+        _score_items_for_dish_prompt(pantry_items, constraints_echo.recipe_constraints, allergies)
         if pantry_grounded
         else []
     )
@@ -1249,11 +1360,14 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
                     scored_items,
                     pantry_grounded,
                     with_follow_ups=(position == pill_position),
+                    allergies=allergies,
                 )
                 for position, dish in enumerate(option.dishes)
                 if position >= first_generated
             )
         )
+    except AllergenViolation as e:
+        return _meal_allergen_refusal_state(state, e)
     except NoProviderAvailableError as e:
         return _meal_unavailable_state(state, e)
     except Exception as e:

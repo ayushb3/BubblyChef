@@ -165,6 +165,15 @@ class WorkflowState(TypedDict, total=False):
     session_dietary: list[str]
     fresh_dietary: list[str]
     stored_dietary: list[str]
+    # Issue #500, per-turn and never persisted. Written by extract_recipe_constraints
+    # (research_recipe writes them on the pick path): `profile_allergies` is what the
+    # post-generation guard enforces, `dislikes_set_aside` the profile dislikes this
+    # message explicitly asked for (stamped onto the card as `exclusions_set_aside`),
+    # `profile_excluded` the `excluded_ingredients` entries that came from the profile
+    # so `constraints_to_persist` doesn't write them into the session.
+    profile_allergies: list[str]
+    dislikes_set_aside: list[str]
+    profile_excluded: list[str]
     web_search_result: dict[str, Any] | None
     ingredient_availability: list[dict[str, Any]]
 
