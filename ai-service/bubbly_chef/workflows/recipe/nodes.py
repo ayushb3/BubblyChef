@@ -757,20 +757,6 @@ def _drop_redundant_dietary(labels: list[str]) -> list[str]:
     return result
 
 
-def _dietary_haystack(input_text: str, constraints: dict[str, Any]) -> str:
-    """The text a stored diet is checked against: the message plus the extracted ingredients.
-
-    Fields are joined with `FIELD_SEP` so a guard can't read across two of them
-    (issue #684). `fixed_main.py` passes a card's ingredient names as
-    `preferred_ingredients`, so it gets the separator through here too.
-    """
-    return join_fields(
-        input_text,
-        *(constraints.get("must_use_ingredients") or []),
-        *(constraints.get("preferred_ingredients") or []),
-    ).lower()
-
-
 def _combine_dietary_preferences(
     stored: list[str],
     requested: list[str],
@@ -780,17 +766,17 @@ def _combine_dietary_preferences(
     """Union a stored dietary default with what this message asks for (#394).
 
     A stored preference stays in force unless the message names an ingredient
-    it forbids — checked against both the raw message text and the extracted
+    it forbids — checked against both the message text and the extracted
     ingredient fields, since the constraint extractor may fold a request like
     "chicken curry" into a dish name rather than into `must_use_ingredients`.
+    The message half is the two-part test of `_inherited_diet_contradicted`
+    (issue #690): "pizza without pepperoni" names pepperoni but doesn't ask for it.
     A requested label already implied by a surviving stricter label (see
     `_DIETARY_SUBSUMES`) is dropped as redundant rather than appended.
     """
-    haystack = _dietary_haystack(input_text, constraints)
-
     survivors: list[str] = []
     for label in stored:
-        if _dietary_contradicted(label, haystack):
+        if _inherited_diet_contradicted(label, input_text, constraints):
             logger.info(
                 "Stored dietary preference %r set aside for this reply "
                 "(message names a forbidden ingredient)",
@@ -886,7 +872,10 @@ def _message_sets_label_aside(label: str, text: str) -> bool:
 
 
 def _inherited_diet_contradicted(label: str, input_text: str, fresh: dict[str, Any]) -> bool:
-    """True when this turn asks for a food the conversation's inherited `label` forbids.
+    """True when this turn asks for a food the diet `label` forbids (inherited or stored).
+
+    Used for the conversation's inherited diet (#685) and, since #690, for a stored
+    profile diet in `_combine_dietary_preferences`.
 
     Reads this turn's message and this turn's FRESHLY extracted ingredients, never
     the ones a session carried over, so an inherited "use up my chicken" can't
