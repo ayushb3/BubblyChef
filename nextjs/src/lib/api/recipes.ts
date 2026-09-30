@@ -11,6 +11,7 @@ import type {
   GenerateRecipeResponse,
   RefineRecipeRequest,
   CookProposal,
+  CookConfirmResponse,
   DeductionItem,
   EnsureStepsResponse,
 } from '@/types/recipes'
@@ -104,10 +105,17 @@ export async function promoteRecipeDraft(recipeId: string): Promise<void> {
     throw new Error(err.error ?? `Failed to add recipe to library: ${res.status}`)
   }
 }
+
+/**
+ * Confirm a cook and return the server's response, including
+ * `deductions_skipped` (pantry item ids the server refused, #621). A 2xx with
+ * an unreadable body never throws: the deduction already landed, and an error
+ * state would invite a double-deduct retry.
+ */
 export async function confirmCook(
   recipeId: string,
   deductions: DeductionItem[],
-): Promise<void> {
+): Promise<CookConfirmResponse> {
   const res = await fetch('/api/ai/recipes/cook/confirm', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -119,6 +127,17 @@ export async function confirmCook(
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Cook confirmation failed' }))
     throw new Error(err.error ?? `Cook confirmation failed: ${res.status}`)
+  }
+
+  const body = (await res.json().catch(() => ({}))) as Partial<CookConfirmResponse> | null
+  const skipped = Array.isArray(body?.deductions_skipped)
+    ? body.deductions_skipped.filter((id): id is string => typeof id === 'string')
+    : []
+  return {
+    success: true,
+    deductions_applied: Number(body?.deductions_applied) || 0,
+    deductions_requested: Number(body?.deductions_requested) || 0,
+    deductions_skipped: skipped,
   }
 }
 

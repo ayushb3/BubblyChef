@@ -231,6 +231,18 @@ export interface DeductionItem {
 }
 
 /**
+ * Response from `POST /v1/recipes/cook/confirm` (proxied via
+ * `/api/ai/recipes/cook/confirm`). `deductions_skipped` lists the pantry item
+ * ids the server refused to deduct (row gone, no base unit) — issue #621.
+ */
+export interface CookConfirmResponse {
+  success: true
+  deductions_applied: number
+  deductions_requested: number
+  deductions_skipped: string[]
+}
+
+/**
  * Response from `POST /v1/recipes/{recipe_id}/steps/ensure` (proxied via
  * `/api/ai/recipes/[id]/steps/ensure`). `derived` is true the first time the
  * model actually supplied step metadata for this recipe; false when the

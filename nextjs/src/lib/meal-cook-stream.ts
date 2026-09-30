@@ -408,6 +408,49 @@ export function isMealCookFinished(session: MealCookSession, dishes: SchedulerDi
   })
 }
 
+/**
+ * Issue #663 — the first `running` step among a step's dependencies, looking
+ * through `skipped` ones: a skipped dependency is finished, but the steps it
+ * itself depended on may still be in flight, and the dependent must not start
+ * ahead of them. `done` dependencies end the walk on that branch; `visited`
+ * guards against a cyclic `depends_on`.
+ */
+function firstRunningAncestor(
+  dishes: SchedulerDish[],
+  dishId: string,
+  stepIndex: number,
+  session: MealCookSession,
+  visited: Set<string>,
+): string | undefined {
+  for (const depKey of sanitizedDependencyKeys(dishes, dishId, stepIndex)) {
+    if (visited.has(depKey)) continue
+    visited.add(depKey)
+    const status = session.steps[depKey]?.status
+    if (status === 'running') return depKey
+    if (status === 'skipped') {
+      const sep = depKey.lastIndexOf(':')
+      const found = firstRunningAncestor(
+        dishes,
+        depKey.slice(0, sep),
+        Number(depKey.slice(sep + 1)),
+        session,
+        visited,
+      )
+      if (found) return found
+    }
+  }
+  return undefined
+}
+
+/**
+ * Issue #663 — Start now is offered only when nothing the step follows is
+ * still running: `waiting_on` set means a dependency (through skipped steps)
+ * is in flight. A type guard, so callers can read `card.step` afterwards.
+ */
+export function canStartEarly(card: NowCard): card is Extract<NowCard, { kind: 'upcoming' }> {
+  return card.kind === 'upcoming' && !card.waiting_on
+}
+
 // ---------------------------------------------------------------------------
 // deriveStream
 // ---------------------------------------------------------------------------
@@ -510,8 +553,16 @@ export function deriveStream(input: {
       // Issue #653 review round 1 (nit) — sanitized deps, so a degraded dish
       // (its `depends_on` fell back to running strictly in order) still shows
       // the real "after X" reason instead of none at all.
-      const waitingOnKey = sanitizedDependencyKeys(dishes, first.dish_id, first.step_index).find(
-        (depKey) => session.steps[depKey]?.status === 'running',
+      //
+      // Issue #663 — walk *through* skipped dependencies (a skipped step counts
+      // as finished, but its own predecessor may still be running), to the
+      // first unfinished non-skipped ancestors, and take the first that runs.
+      const waitingOnKey = firstRunningAncestor(
+        dishes,
+        first.dish_id,
+        first.step_index,
+        session,
+        new Set<string>(),
       )
       const waitingOn = waitingOnKey ? streamSteps.find((s) => s.key === waitingOnKey) : undefined
       now = {

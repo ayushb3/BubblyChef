@@ -18,6 +18,8 @@ import {
   findTimerCompletedSteps,
   timerIdsToDismiss,
   isMealCookFinished,
+  canStartEarly,
+  type NowCard,
   type StreamStep,
 } from '@/lib/meal-cook-stream'
 import { scheduleMeal, type SchedulerDish } from '@/lib/meal-scheduler'
@@ -850,6 +852,152 @@ describe('deriveStream — waiting_on for a degraded dish', () => {
     if (result.now.kind === 'upcoming') {
       expect(result.now.step.key).toBe('main:1')
       expect(result.now.waiting_on?.key).toBe('main:0')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Issue #663 — canStartEarly / waiting_on through skipped steps
+// ---------------------------------------------------------------------------
+
+describe('canStartEarly (issue #663)', () => {
+  const stepA: StreamStep = {
+    key: 'main:0',
+    dish_id: 'main',
+    column: 'main',
+    dish_title: 'Main',
+    step_index: 0,
+    label: 'Simmer',
+    ongoing_label: null,
+    text: 'Simmer',
+    duration_minutes: 10,
+    hands_on: false,
+    start: 0,
+    end: 10,
+  }
+  const stepB: StreamStep = { ...stepA, key: 'main:1', step_index: 1, label: 'Serve', start: 10, end: 12 }
+
+  it('is false for an upcoming card with waiting_on, true without', () => {
+    const waiting: NowCard = { kind: 'upcoming', step: stepB, starts_in_minutes: 5, waiting_on: stepA }
+    const free: NowCard = { kind: 'upcoming', step: stepB, starts_in_minutes: 5 }
+    expect(canStartEarly(waiting)).toBe(false)
+    expect(canStartEarly(free)).toBe(true)
+    expect(canStartEarly({ ...free, waiting_on: undefined })).toBe(true)
+  })
+
+  it('is false for active, waiting and finished cards', () => {
+    expect(canStartEarly({ kind: 'active', step: stepA })).toBe(false)
+    expect(canStartEarly({ kind: 'waiting', running: [stepA] })).toBe(false)
+    expect(canStartEarly({ kind: 'finished' })).toBe(false)
+  })
+
+  it('narrows to the upcoming variant', () => {
+    const card: NowCard = { kind: 'upcoming', step: stepB, starts_in_minutes: 5 }
+    if (canStartEarly(card)) {
+      expect(card.step.key).toBe('main:1')
+    } else {
+      throw new Error('expected canStartEarly to be true')
+    }
+  })
+
+  it("is per-dish: another dish's running hands-off step does not block a later first step", () => {
+    const main: SchedulerDish = {
+      dish_id: 'main',
+      column: 'main',
+      title: 'Main',
+      steps: [step({ text: 'Simmer', label: 'Simmer', duration_minutes: 20, hands_on: false })],
+    }
+    const side: SchedulerDish = {
+      dish_id: 'side',
+      column: 'side_1',
+      title: 'Side',
+      steps: [
+        step({ text: 'Prep', label: 'Prep', duration_minutes: 5, hands_on: true }),
+        step({ text: 'Toss', label: 'Toss', duration_minutes: 3, hands_on: true, depends_on: [0] }),
+      ],
+    }
+    // Live plan: `side:0` (Prep) is done, `side:1` isn't yet due.
+    const result = deriveStream({
+      dishes: [main, side],
+      exclusive_tags: [],
+      session: session({
+        steps: {
+          'main:0': { status: 'running', started_at_minutes: 0, extra_minutes: 0 },
+          'side:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0, ended_at_minutes: 1 },
+        },
+      }),
+      now_minutes: 1,
+    })
+    // side:1's own dish deps are all finished, so main's running step
+    // doesn't block it.
+    expect(result.now.kind).toBe('upcoming')
+    if (result.now.kind === 'upcoming') {
+      expect(result.now.step.key).toBe('side:1')
+      expect(result.now.waiting_on).toBeUndefined()
+      expect(canStartEarly(result.now)).toBe(true)
+    }
+    expect(result.running.map((r) => r.key)).toEqual(['main:0'])
+  })
+
+  it('skip chain: simmers (running) -> rests (skipped) -> fluff is waiting on simmers', () => {
+    const main: SchedulerDish = {
+      dish_id: 'main',
+      column: 'main',
+      title: 'Rice',
+      steps: [
+        step({ text: 'Simmer the rice', label: 'Simmer', ongoing_label: 'the rice simmers', duration_minutes: 15, hands_on: false }),
+        step({ text: 'Rest the rice', label: 'Rest', duration_minutes: 10, hands_on: false, depends_on: [0] }),
+        step({ text: 'Fluff the rice', label: 'Fluff', duration_minutes: 2, hands_on: true, depends_on: [1] }),
+      ],
+    }
+    const result = deriveStream({
+      dishes: [main],
+      exclusive_tags: [],
+      session: session({
+        dish_ids: ['main'],
+        steps: {
+          'main:0': { status: 'running', started_at_minutes: 0, extra_minutes: 0 },
+          'main:1': { status: 'skipped', started_at_minutes: 0, extra_minutes: 0, ended_at_minutes: 0 },
+        },
+      }),
+      now_minutes: 1,
+    })
+
+    expect(result.now.kind).toBe('upcoming')
+    if (result.now.kind === 'upcoming') {
+      expect(result.now.step.key).toBe('main:2')
+      expect(result.now.waiting_on?.key).toBe('main:0')
+      expect(canStartEarly(result.now)).toBe(false)
+    }
+  })
+
+  it('skip chain clears once the simmer is done', () => {
+    const main: SchedulerDish = {
+      dish_id: 'main',
+      column: 'main',
+      title: 'Rice',
+      steps: [
+        step({ text: 'Simmer the rice', label: 'Simmer', duration_minutes: 15, hands_on: false }),
+        step({ text: 'Rest the rice', label: 'Rest', duration_minutes: 10, hands_on: false, depends_on: [0] }),
+        step({ text: 'Fluff the rice', label: 'Fluff', duration_minutes: 2, hands_on: true, depends_on: [1] }),
+      ],
+    }
+    const result = deriveStream({
+      dishes: [main],
+      exclusive_tags: [],
+      session: session({
+        dish_ids: ['main'],
+        steps: {
+          'main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0, ended_at_minutes: 15 },
+          'main:1': { status: 'skipped', started_at_minutes: 15, extra_minutes: 0, ended_at_minutes: 15 },
+        },
+      }),
+      now_minutes: 15,
+    })
+    expect(result.now.kind).toBe('upcoming')
+    if (result.now.kind === 'upcoming') {
+      expect(result.now.step.key).toBe('main:2')
+      expect(result.now.waiting_on).toBeUndefined()
     }
   })
 })
