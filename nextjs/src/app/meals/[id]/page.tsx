@@ -35,7 +35,7 @@ import {
 } from '@/lib/meal-cook-session'
 import { timerIdsToDismiss, isMealCookFinished } from '@/lib/meal-cook-stream'
 import { useCookingTimers } from '@/lib/useCookingTimers'
-import type { Meal, MealDishFull } from '@/types/meals'
+import type { Meal, MealDishFull, MealSummary } from '@/types/meals'
 
 /**
  * The full meal screen (issue #652 / spec #647 "The meal screen"), replacing
@@ -177,6 +177,12 @@ export default function MealDetailPage() {
       clearActiveMealCookSession(id)
       setDeleted(true)
       queryClient.removeQueries({ queryKey: ['meal', id] })
+      // The library's list isn't mounted while this page is, so invalidating
+      // alone would still paint the cached list — deleted meal included —
+      // until the refetch lands. Drop the row from every cached list first.
+      queryClient.setQueriesData<MealSummary[]>({ queryKey: ['meals'] }, (old) =>
+        Array.isArray(old) ? old.filter((m) => m.id !== id) : old,
+      )
       queryClient.invalidateQueries({ queryKey: ['meals'] })
       router.replace('/recipes?tab=meals')
     },

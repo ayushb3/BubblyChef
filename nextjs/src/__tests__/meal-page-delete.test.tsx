@@ -172,6 +172,20 @@ describe('meal page — delete (issue #675)', () => {
     expect(remove).toHaveBeenCalledWith({ queryKey: ['meal', 'meal-1'] })
   })
 
+  it('drops the deleted meal from already-cached meal lists at once, leaving the others', async () => {
+    const { client } = renderPage()
+    const row = (id: string) => ({ id, title: id, servings: 2, dishes: [] })
+    client.setQueryData(['meals', { drafts: false }], [row('meal-1'), row('meal-2')])
+    client.setQueryData(['meals', { drafts: true }], [row('meal-1')])
+    const dialog = await openConfirm()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(replaceMock).toHaveBeenCalled())
+    expect(client.getQueryData<{ id: string }[]>(['meals', { drafts: false }])?.map((m) => m.id)).toEqual(['meal-2'])
+    expect(client.getQueryData(['meals', { drafts: true }])).toEqual([])
+  })
+
   it('says the saved recipes stay, for a saved meal', async () => {
     renderPage()
     const dialog = await openConfirm()
