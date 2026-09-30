@@ -10,9 +10,14 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 import ReviewSurface from '@/components/scan/ReviewSurface'
 import { useFileDropzone } from '@/hooks/useFileDropzone'
 import { uploadReceipt, ScanError } from '@/lib/api/scan'
-import { scanErrorCopy } from '@/lib/scan-error-copy'
+import { scanErrorCopy, SCAN_NO_ITEMS_CODE } from '@/lib/scan-error-copy'
 import { bulkAddPantryItems } from '@/lib/api/pantry'
-import { scannedToBulkAddItem, assignScanIds, type ScannedItemWithId } from '@/lib/scan-helpers'
+import {
+  scannedToBulkAddItem,
+  assignScanIds,
+  isEmptyScan,
+  type ScannedItemWithId,
+} from '@/lib/scan-helpers'
 import type { ScanResult } from '@/types/scan'
 
 /**
@@ -50,27 +55,58 @@ export default function ScanPage() {
   // for any other reason — otherwise the stale timer still calls
   // `router.push('/pantry')` afterwards and yanks the user off wherever
   // they just navigated to.
+  //
+  // The same unmount also tears down a scan still in flight (issue #642):
+  // the request is aborted so a vision call nobody is waiting for stops
+  // billing, and `unmountedRef` keeps its late settle from touching state.
+  const scanTokenRef = useRef(0)
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const inFlightRef = useRef(false)
+  const unmountedRef = useRef(false)
+
   useEffect(() => {
+    unmountedRef.current = false
     return () => {
+      unmountedRef.current = true
+      abortControllerRef.current?.abort()
       if (celebrateTimerRef.current) clearTimeout(celebrateTimerRef.current)
     }
   }, [])
 
   async function handleFileSelect(file: File) {
+    // A second pick/drop while a scan is in flight (double tap, a drop during
+    // the exit animation) must not start a second billed request.
+    if (inFlightRef.current) return
+    inFlightRef.current = true
+    const token = ++scanTokenRef.current
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+    const isStale = () => unmountedRef.current || scanTokenRef.current !== token
+
     setError(null)
     const objectUrl = URL.createObjectURL(file)
     setPreview(objectUrl)
     setState('processing')
 
     try {
-      const result: ScanResult = await uploadReceipt(file)
+      const result: ScanResult = await uploadReceipt(file, { signal: controller.signal })
+      if (isStale()) return
       const withIds = assignScanIds(result)
+      if (isEmptyScan(withIds)) {
+        // The scan worked but found nothing: say so, rather than showing
+        // "Found 0 items" over an empty review list (#642).
+        setError(scanErrorCopy(SCAN_NO_ITEMS_CODE))
+        setState('upload')
+        if (inputRef.current) inputRef.current.value = ''
+        return
+      }
       setReadyToAdd(withIds.ready_to_add)
       setNeedsReview(withIds.needs_review)
       setSkipped(withIds.skipped)
       setWarnings(result.warnings ?? [])
       setState('review')
     } catch (err) {
+      if (isStale()) return
       // #396 — never render a raw error at the user. ScanTab had this fixed;
       // this route builds its own state machine and was missed, so a network
       // TypeError or a proxy 502 still leaked raw text here.
@@ -81,8 +117,23 @@ export default function ScanPage() {
       // without this the same file simply does nothing (#246).
       if (inputRef.current) inputRef.current.value = ''
     } finally {
+      // Only the scan that is still current may release the in-flight flag —
+      // a cancelled scan settling late must not free a newer one's slot.
+      if (scanTokenRef.current === token) inFlightRef.current = false
       setTimeout(() => URL.revokeObjectURL(objectUrl), 500)
     }
+  }
+
+  /** Abandon the scan in flight and go back to the upload step, no error. */
+  function handleCancelScan() {
+    scanTokenRef.current++ // the in-flight scan is now stale; its settle is ignored
+    inFlightRef.current = false
+    abortControllerRef.current?.abort()
+    abortControllerRef.current = null
+    setState('upload')
+    setPreview(null)
+    setError(null)
+    if (inputRef.current) inputRef.current.value = ''
   }
 
   function handleReset() {
@@ -211,6 +262,13 @@ export default function ScanPage() {
                 <p className="font-semibold text-[var(--color-text)]">Scanning receipt…</p>
               </div>
               <p className="text-sm text-[var(--color-muted)] mt-2">Bubbles is reading your items</p>
+              <button
+                type="button"
+                onClick={handleCancelScan}
+                className="mt-4 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] underline transition-colors"
+              >
+                Cancel scan
+              </button>
             </motion.div>
           )}
 
