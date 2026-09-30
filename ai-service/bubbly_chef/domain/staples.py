@@ -76,3 +76,17 @@ def is_staple(normalized_name: str) -> bool:
     same contract the rest of the cook-matcher stack uses.
     """
     return normalized_name.lower().strip() in CULINARY_STAPLES
+
+
+# Never on a shopping list. Water isn't a culinary staple for the cook matcher
+# (issue #305 keeps it "missing", since a measured amount may need readying),
+# but nobody shops for tap water, so "To buy: water" is noise on the meal card
+# and the grocery list (#497). Exact names only: "coconut water" still counts.
+NEVER_TO_BUY: frozenset[str] = frozenset(
+    {"water", "tap water", "cold water", "warm water", "hot water", "boiling water", "ice"}
+)
+
+
+def shoppable(names: list[str]) -> list[str]:
+    """`names` without the ones nobody buys (`NEVER_TO_BUY`)."""
+    return [n for n in names if n.strip().lower() not in NEVER_TO_BUY]

@@ -1,0 +1,63 @@
+'use client'
+
+/**
+ * `useGroceryCount()` — how many items are on the user's grocery list (issue
+ * #497 / Spec B.5). Exposed for Spec B.4's inbox ("N items on your list → view
+ * list"); nothing wires it in yet because the `/grocery` page it would link to
+ * is held for the redesign.
+ *
+ * The count is what the list shows after a Regenerate: the saved list (checked
+ * and manual lines kept) merged with what the pantry says is depleted or
+ * expiring, counting the unchecked lines. It is a preview; it never writes
+ * storage. If the pantry can't be read it falls back to the saved list alone.
+ *
+ * Server state (who the user is, the pantry) goes through React Query; the list
+ * itself is per-browser (`lib/grocery-store.ts`) and read with
+ * `useSyncExternalStore`, so an "Add to list" elsewhere in the app, or a change
+ * in another tab, updates the count without a refetch.
+ */
+
+import { useCallback, useMemo, useSyncExternalStore } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { createClient } from '@/lib/supabase/client'
+import { fetchPantryItems } from '@/lib/api/pantry'
+import { countToBuy, regenerateGroceryList } from '@/lib/grocery'
+import { parseGroceryLines, readGroceryRaw, subscribeGrocery } from '@/lib/grocery-store'
+
+async function fetchUserId(): Promise<string | null> {
+  const {
+    data: { user },
+  } = await createClient().auth.getUser()
+  return user?.id ?? null
+}
+
+export interface UseGroceryCountResult {
+  count: number
+  /** True until the user and pantry have resolved (or failed). */
+  loading: boolean
+}
+
+export function useGroceryCount(): UseGroceryCountResult {
+  const user = useQuery({ queryKey: ['grocery-user-id'], queryFn: fetchUserId })
+  const userId = user.data ?? ''
+
+  // Under the ['pantry'] prefix so every pantry write that invalidates it also
+  // refreshes the count.
+  const pantry = useQuery({
+    queryKey: ['pantry', 'grocery'],
+    queryFn: fetchPantryItems,
+    enabled: userId !== '',
+  })
+
+  const getSnapshot = useCallback(() => readGroceryRaw(userId), [userId])
+  const raw = useSyncExternalStore(subscribeGrocery, getSnapshot, () => '')
+
+  const count = useMemo(() => {
+    if (!userId) return 0
+    const saved = parseGroceryLines(raw)
+    return countToBuy(pantry.data ? regenerateGroceryList(saved, pantry.data) : saved)
+  }, [userId, raw, pantry.data])
+
+  const loading = user.isLoading || (userId !== '' && pantry.isLoading)
+  return { count, loading }
+}
