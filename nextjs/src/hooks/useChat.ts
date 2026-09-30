@@ -100,6 +100,10 @@ export function useChat(options?: UseChatOptions) {
    * that already applied read-only and opens the editor only on these.
    */
   const [proposalFailedNames, setProposalFailedNames] = useState<Record<string, string[]>>({})
+  const proposalFailedNamesRef = useRef(proposalFailedNames)
+  useEffect(() => {
+    proposalFailedNamesRef.current = proposalFailedNames
+  }, [proposalFailedNames])
   /**
    * Stores the requestId + actions needed to call applyPantryProposal when the
    * user clicks "Add to Pantry". Keyed by the message ID that owns the card.
@@ -715,7 +719,30 @@ export function useChat(options?: UseChatOptions) {
    * it never reverts the UI and never throws.
    */
   const rejectProposal = useCallback((msgId: string) => {
-    setProposalStates((prev) => ({ ...prev, [msgId]: 'rejected' }))
+    // Dismissing after a partial failure leaves the rows that applied in the
+    // pantry, so the card reads "Added" with only those rows, the same as it
+    // does after a reload (#444). Nothing applied: "Skipped".
+    const failedNames = proposalFailedNamesRef.current[msgId]
+    const shown = messagesRef.current.find((m) => m.id === msgId)?.response?.proposal as
+      | PantryProposalData
+      | null
+      | undefined
+    const appliedRows =
+      proposalStatesRef.current[msgId] === 'failed' && failedNames && shown?.actions
+        ? shown.actions.filter((a) => !failedNames.includes(proposalActionKey(a)))
+        : []
+    if (appliedRows.length > 0) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msgId && m.response
+            ? { ...m, response: { ...m.response, proposal: { ...shown!, actions: appliedRows } } }
+            : m,
+        ),
+      )
+      setProposalStates((prev) => ({ ...prev, [msgId]: 'approved' }))
+    } else {
+      setProposalStates((prev) => ({ ...prev, [msgId]: 'rejected' }))
+    }
     const pending = pendingProposalsRef.current[msgId]
     const convId = conversationIdRef.current
     if (!convId || !pending || pending.turnRequestIds.length === 0) return

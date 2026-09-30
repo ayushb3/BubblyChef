@@ -168,6 +168,44 @@ describe('a partial failure retries only the failed rows', () => {
     expect(hook.result.current.proposalFailedNames[msgId]).toEqual(['eggs', 'spinach'])
   })
 
+  it('dismissing after a partial failure shows Added with only the applied rows (matches a reload, #444)', async () => {
+    const { hook, msgId } = setup()
+
+    applyPantryProposal.mockResolvedValueOnce({
+      success: false,
+      appliedCount: 1,
+      failedCount: 1,
+      errors: ["Units don't match (handful vs g), edit the unit for: Spinach"],
+      failedActions: [SPINACH],
+    })
+    await act(async () => {
+      await hook.result.current.approveProposal(msgId)
+    })
+    act(() => {
+      hook.result.current.rejectProposal(msgId)
+    })
+
+    expect(hook.result.current.proposalStates[msgId]).toBe('approved')
+    const shown = hook.result.current.messages[1].response?.proposal as { actions: PantryProposalAction[] }
+    expect(shown.actions).toEqual([EGGS])
+  })
+
+  it('dismissing when nothing applied stays Skipped and keeps every row', async () => {
+    const { hook, msgId } = setup()
+
+    applyPantryProposal.mockRejectedValueOnce(new Error('Failed to fetch'))
+    await act(async () => {
+      await hook.result.current.approveProposal(msgId)
+    })
+    act(() => {
+      hook.result.current.rejectProposal(msgId)
+    })
+
+    expect(hook.result.current.proposalStates[msgId]).toBe('rejected')
+    const shown = hook.result.current.messages[1].response?.proposal as { actions: PantryProposalAction[] }
+    expect(shown.actions).toEqual([EGGS, SPINACH])
+  })
+
   it('startNewChat clears the failed names', async () => {
     const { hook, msgId } = setup()
 
