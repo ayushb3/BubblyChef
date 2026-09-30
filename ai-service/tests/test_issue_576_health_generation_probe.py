@@ -192,28 +192,76 @@ class TestProbeCache:
         assert second["generation_probe"]["checked_at"] == first["generation_probe"]["checked_at"]
 
     @pytest.mark.asyncio
-    async def test_a_failed_probe_is_cached_too(self, clock: FakeClock) -> None:
+    async def test_a_failed_probe_is_cached_within_the_failure_ttl(
+        self, clock: FakeClock
+    ) -> None:
         gemini = FakeProvider("gemini/test", fail_kind="quota_exhausted")
         manager = AIManager(providers=[gemini])
 
         await manager.health_check(generation_probe_ttl_seconds=900)
+        clock.now += 59
         await manager.health_check(generation_probe_ttl_seconds=900)
 
         assert len(gemini.complete_calls) == 1
 
     @pytest.mark.asyncio
-    async def test_probes_again_once_the_ttl_has_elapsed(self, clock: FakeClock) -> None:
+    async def test_a_failed_probe_re_probes_after_60s_and_recovers(self, clock: FakeClock) -> None:
+        # The outage ends: /health/ai must go green within the failure TTL, not
+        # sit red for the full 15 min success TTL.
         gemini = FakeProvider("gemini/test", fail_kind="quota_exhausted")
         manager = AIManager(providers=[gemini])
 
         await manager.health_check(generation_probe_ttl_seconds=900)
-        clock.now += 901
+        clock.now += 61
         gemini.fail_kind = None  # the cap was lifted
         status = await manager.health_check(generation_probe_ttl_seconds=900)
 
         assert len(gemini.complete_calls) == 2
         assert status["healthy"] is True
         assert status["generation_probe"]["cached"] is False
+
+    @pytest.mark.asyncio
+    async def test_a_successful_probe_is_not_repeated_until_900s(self, clock: FakeClock) -> None:
+        gemini = FakeProvider("gemini/test")
+        manager = AIManager(providers=[gemini])
+
+        await manager.health_check(generation_probe_ttl_seconds=900)
+        clock.now += 61  # past the failure TTL, which must not apply to a success
+        await manager.health_check(generation_probe_ttl_seconds=900)
+        assert len(gemini.complete_calls) == 1
+
+        clock.now += 840  # 901s since the probe
+        status = await manager.health_check(generation_probe_ttl_seconds=900)
+        assert len(gemini.complete_calls) == 2
+        assert status["generation_probe"]["cached"] is False
+
+    @pytest.mark.asyncio
+    async def test_failure_ttl_zero_re_probes_a_failure_on_every_call(
+        self, clock: FakeClock
+    ) -> None:
+        gemini = FakeProvider("gemini/test", fail_kind="quota_exhausted")
+        manager = AIManager(providers=[gemini])
+
+        for _ in range(3):
+            await manager.health_check(
+                generation_probe_ttl_seconds=900, generation_probe_failure_ttl_seconds=0
+            )
+
+        assert len(gemini.complete_calls) == 3
+
+    @pytest.mark.asyncio
+    async def test_failure_ttl_zero_does_not_disable_the_probe_or_uncache_successes(
+        self, clock: FakeClock
+    ) -> None:
+        gemini = FakeProvider("gemini/test")
+        manager = AIManager(providers=[gemini])
+
+        for _ in range(3):
+            await manager.health_check(
+                generation_probe_ttl_seconds=900, generation_probe_failure_ttl_seconds=0
+            )
+
+        assert len(gemini.complete_calls) == 1
 
 
 class TestSingleFlight:
@@ -230,6 +278,25 @@ class TestSingleFlight:
 
         assert len(gemini.complete_calls) == 1
         assert all(r["healthy"] is True for r in results)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_hits_share_one_probe_even_with_failure_ttl_zero(
+        self, clock: FakeClock
+    ) -> None:
+        gemini = FakeProvider("gemini/test", fail_kind="quota_exhausted", delay=0.05)
+        manager = AIManager(providers=[gemini])
+
+        results = await asyncio.gather(
+            *[
+                manager.health_check(
+                    generation_probe_ttl_seconds=900, generation_probe_failure_ttl_seconds=0
+                )
+                for _ in range(10)
+            ]
+        )
+
+        assert len(gemini.complete_calls) == 1
+        assert all(r["healthy"] is False for r in results)
 
 
 class TestProbeDisabled:

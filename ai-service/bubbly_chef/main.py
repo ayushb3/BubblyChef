@@ -112,6 +112,7 @@ def create_app() -> FastAPI:
         status = await get_ai_manager().health_check(
             generation_probe_ttl_seconds=settings.health_generation_probe_ttl_seconds,
             generation_probe_max_output_tokens=settings.health_generation_probe_max_output_tokens,
+            generation_probe_failure_ttl_seconds=settings.health_generation_probe_failure_ttl_seconds,
         )
         return {
             "status": "ok",

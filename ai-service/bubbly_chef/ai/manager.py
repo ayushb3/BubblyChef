@@ -105,11 +105,11 @@ class AIManager:
         self._last_failure_kind: str | None = None
         self._last_failure_at: datetime | None = None
         # Generation-probe cache (#576): the last probe result, when it was
-        # taken (monotonic clock), and the lock that makes a cache miss
-        # single-flight so concurrent health hits share one provider call.
+        # taken (monotonic clock), and the in-flight probe task that makes a
+        # cache miss single-flight so concurrent health hits share one provider call.
         self._probe_result: dict[str, Any] | None = None
         self._probe_taken_at: float | None = None
-        self._probe_lock = asyncio.Lock()
+        self._probe_task: asyncio.Future[dict[str, Any]] | None = None
 
     def add_provider(self, provider: AIProvider) -> None:
         """Add a provider to the list."""
@@ -531,51 +531,76 @@ class AIManager:
             "checked_at": datetime.now().isoformat(),
         }
 
-    def _probe_fresh(self, ttl_seconds: int) -> bool:
-        return (
-            self._probe_result is not None
-            and self._probe_taken_at is not None
-            and _monotonic() - self._probe_taken_at < ttl_seconds
-        )
+    def _fresh_probe(
+        self, success_ttl_seconds: int, failure_ttl_seconds: int
+    ) -> dict[str, Any] | None:
+        """The cached probe result if it is still within its TTL, else ``None``.
 
-    async def _generation_probe(self, ttl_seconds: int, max_output_tokens: int) -> dict[str, Any]:
+        A failed probe uses the (shorter) failure TTL so ``/health/ai``
+        recovers soon after an outage ends; a failure TTL of 0 re-probes on
+        every call. A success uses the success TTL.
+        """
+        if self._probe_result is None or self._probe_taken_at is None:
+            return None
+        ttl = success_ttl_seconds if self._probe_result["healthy"] else failure_ttl_seconds
+        if _monotonic() - self._probe_taken_at < ttl:
+            return self._probe_result
+        return None
+
+    async def _probe_and_store(self, max_output_tokens: int) -> dict[str, Any]:
+        try:
+            try:
+                result = await asyncio.wait_for(
+                    self._run_generation_probe(max_output_tokens),
+                    timeout=_PROBE_TIMEOUT_SECONDS,
+                )
+            except TimeoutError:
+                logger.warning(f"AI generation probe timed out after {_PROBE_TIMEOUT_SECONDS:.0f}s")
+                result = {
+                    "healthy": False,
+                    "provider": None,
+                    "fallback": False,
+                    "failure_kind": self._finalize_failure(["timeout"]),
+                    "failures": [],
+                    "checked_at": datetime.now().isoformat(),
+                }
+            self._probe_result = result
+            self._probe_taken_at = _monotonic()
+            return result
+        finally:
+            self._probe_task = None
+
+    async def _generation_probe(
+        self,
+        success_ttl_seconds: int,
+        failure_ttl_seconds: int,
+        max_output_tokens: int,
+    ) -> dict[str, Any]:
         """Return the cached probe result, probing first on a cache miss.
 
-        Single-flight: the cache is re-checked after taking the lock, so N
-        concurrent health hits on a miss produce one probe and N-1 cache hits.
-        A failed probe is cached for the same TTL as a successful one — a
-        down provider must not be re-probed on every health hit either.
+        Single-flight: a miss starts one probe task and every concurrent
+        health hit awaits that same task, so N concurrent hits produce one
+        provider call — even with a failure TTL of 0, where the *next*
+        sequential call probes again but callers already waiting share the
+        in-flight one. A failed probe is cached for the failure TTL, a
+        successful one for the success TTL (#576).
         """
-        if not self._probe_fresh(ttl_seconds):
-            async with self._probe_lock:
-                if not self._probe_fresh(ttl_seconds):
-                    try:
-                        result = await asyncio.wait_for(
-                            self._run_generation_probe(max_output_tokens),
-                            timeout=_PROBE_TIMEOUT_SECONDS,
-                        )
-                    except TimeoutError:
-                        logger.warning(
-                            f"AI generation probe timed out after {_PROBE_TIMEOUT_SECONDS:.0f}s"
-                        )
-                        result = {
-                            "healthy": False,
-                            "provider": None,
-                            "fallback": False,
-                            "failure_kind": self._finalize_failure(["timeout"]),
-                            "failures": [],
-                            "checked_at": datetime.now().isoformat(),
-                        }
-                    self._probe_result = result
-                    self._probe_taken_at = _monotonic()
-                    return {**result, "cached": False}
-        assert self._probe_result is not None
-        return {**self._probe_result, "cached": True}
+        cached = self._fresh_probe(success_ttl_seconds, failure_ttl_seconds)
+        if cached is not None:
+            return {**cached, "cached": True}
+        task = self._probe_task
+        if task is None:
+            task = asyncio.ensure_future(self._probe_and_store(max_output_tokens))
+            self._probe_task = task
+        # shield: one caller being cancelled must not cancel the shared probe.
+        result = await asyncio.shield(task)
+        return {**result, "cached": False}
 
     async def health_check(
         self,
         generation_probe_ttl_seconds: int = 0,
         generation_probe_max_output_tokens: int = 4,
+        generation_probe_failure_ttl_seconds: int = 60,
     ) -> dict[str, Any]:
         """
         Check status of all providers.
@@ -584,7 +609,9 @@ class AIManager:
         key, so a spend-capped Gemini still reads available (#576). With
         ``generation_probe_ttl_seconds > 0`` this also runs a cached, capped,
         single-flight generation probe and ``healthy`` reflects whether a
-        generation actually succeeded. With 0 (the default) nothing is
+        generation actually succeeded; a failed probe is cached for the shorter
+        ``generation_probe_failure_ttl_seconds`` (0 = re-probe every call). With
+        a success TTL of 0 (the default) nothing is
         generated and ``healthy`` is the reachability-only answer, unchanged.
 
         Returns:
@@ -608,7 +635,9 @@ class AIManager:
         healthy = available_count > 0
         if generation_probe_ttl_seconds > 0:
             probe = await self._generation_probe(
-                generation_probe_ttl_seconds, generation_probe_max_output_tokens
+                generation_probe_ttl_seconds,
+                generation_probe_failure_ttl_seconds,
+                generation_probe_max_output_tokens,
             )
             healthy = bool(probe["healthy"])
 
