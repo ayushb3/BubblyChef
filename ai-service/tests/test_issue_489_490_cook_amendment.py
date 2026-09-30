@@ -272,7 +272,7 @@ def _apply_body(**overrides: Any) -> dict[str, Any]:
 
 def _apply_repo(session: ConversationSession | None = None) -> AsyncMock:
     repo = AsyncMock()
-    repo.get_or_create_session.return_value = session if session is not None else _session()
+    repo.get_session.return_value = session if session is not None else _session()
     repo.update_session.side_effect = lambda _uid, s: s
     repo.get_turns_by_request_ids.return_value = [
         {
@@ -333,7 +333,7 @@ class TestApplyAmendment:
             await client.post("/v1/workflows/apply", json=_apply_body())
         called = {c[0] for c in repo.method_calls}
         assert called <= {
-            "get_or_create_session",
+            "get_session",
             "update_session",
             "get_turns_by_request_ids",
             "set_turn_metadata",
@@ -378,6 +378,17 @@ class TestApplyAmendment:
         with _patch_apply_repo(repo):
             resp = await client.post("/v1/workflows/apply", json=_apply_body())
         assert resp.status_code == 409
+        repo.update_session.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_409_creates_no_session_row(self, client: AsyncClient) -> None:
+        """Validation reads the session; a rejected apply never creates one."""
+        repo = _apply_repo()
+        repo.get_session.return_value = None  # no session exists for this conversation
+        with _patch_apply_repo(repo):
+            resp = await client.post("/v1/workflows/apply", json=_apply_body())
+        assert resp.status_code == 409
+        repo.get_or_create_session.assert_not_awaited()
         repo.update_session.assert_not_awaited()
 
     @pytest.mark.asyncio

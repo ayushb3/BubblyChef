@@ -135,9 +135,22 @@ export default function CookModal({
   }, [])
   const panelRef = useRef<HTMLDivElement>(null)
 
-  // A caller may rebuild the array every render; key the fetch on its content.
-  const amendedList = mode === 'preview' || !amendedIngredients?.length ? null : amendedIngredients
-  const amendedKey = amendedList ? JSON.stringify(amendedList) : ''
+  // The amendment is snapshotted when the sheet opens for this recipe (and mode),
+  // and never re-read. Confirming ends the cook, which clears the stored
+  // amendment and so changes what the caller passes in; following that would
+  // re-run the proposal fetch below, flip the success sheet back to review and
+  // cancel the redirect timer. What was matched is what was cooked.
+  const amendedFor = mode === 'preview' || !amendedIngredients?.length ? null : amendedIngredients
+  const [amendedSnapshot, setAmendedSnapshot] = useState(() => ({
+    recipeId,
+    mode,
+    list: amendedFor,
+  }))
+  let amendedList = amendedSnapshot.list
+  if (amendedSnapshot.recipeId !== recipeId || amendedSnapshot.mode !== mode) {
+    amendedList = amendedFor
+    setAmendedSnapshot({ recipeId, mode, list: amendedFor })
+  }
 
   const skippedCount = skippedTotal(skipped)
   const showSkippedNotice = state === 'success' && skippedCount > 0
@@ -180,8 +193,7 @@ export default function CookModal({
   useEffect(() => {
     let cancelled = false
     setExpiredDismissed(false)
-    const amended: MealCookIngredient[] | null = amendedKey ? JSON.parse(amendedKey) : null
-    ;(amended ? cookRecipe(recipeId, amended) : cookRecipe(recipeId))
+    ;(amendedList ? cookRecipe(recipeId, amendedList) : cookRecipe(recipeId))
       .then((p) => {
         if (!cancelled) {
           setProposal(p)
@@ -198,7 +210,7 @@ export default function CookModal({
       cancelled = true
       if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current)
     }
-  }, [recipeId, amendedKey])
+  }, [recipeId, amendedList])
 
   // Recomputed as the user fills in override quantities, so the summary above
   // the button always describes the payload the button will actually send.

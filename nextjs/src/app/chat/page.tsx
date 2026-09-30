@@ -395,6 +395,15 @@ function ChatSurface() {
     }
     return null
   })()
+  // Read once per cook sheet (keyed on the target), not on every render: the
+  // sheet's confirm ends the cook and clears the record mid-render (#489).
+  const cookTargetAmended = useMemo(
+    () =>
+      cookTarget?.mode === 'confirm'
+        ? (getAmendedCook(cookTarget.recipeId)?.ingredients ?? null)
+        : null,
+    [cookTarget],
+  )
   const cookIsLive = Boolean(
     cookingRecipeId && cookingRecipeId !== dismissedRecipeId && !isCookSessionEnded(cookingRecipeId),
   )
@@ -1023,11 +1032,7 @@ function ChatSurface() {
           recipeTitle={cookTarget.recipeTitle}
           isDraft={cookTarget.isDraft}
           mode={cookTarget.mode}
-          amendedIngredients={
-            cookTarget.mode === 'confirm'
-              ? (getAmendedCook(cookTarget.recipeId)?.ingredients ?? null)
-              : null
-          }
+          amendedIngredients={cookTargetAmended}
           onStartCooking={() => {
             // The preview was the decision point; this is where cooking actually
             // begins. Nothing was deducted by the preview.

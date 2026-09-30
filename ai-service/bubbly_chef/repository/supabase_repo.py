@@ -1203,9 +1203,10 @@ class SupabaseRepository:
     # Session operations
     # =========================================================================
 
-    async def get_or_create_session(
+    async def get_session(
         self, user_id: str, conversation_id: str
-    ) -> ConversationSession:
+    ) -> ConversationSession | None:
+        """The conversation's session, or None. Read-only: never creates a row."""
         result = (
             self.client.table("conversation_sessions")
             .select("*")
@@ -1213,19 +1214,27 @@ class SupabaseRepository:
             .eq("user_id", user_id)
             .execute()
         )
-        if result.data:
-            row = _as_row(result.data[0])
-            raw_pending = row.get("pending_proposal")
-            raw_metadata = row.get("metadata") or {}
-            return ConversationSession(
-                conversation_id=row["conversation_id"],
-                active_mode=SessionMode(row.get("active_mode", "default")),
-                pinned_recipe_id=row.get("pinned_recipe_id"),
-                pending_proposal=PendingProposalMemory.model_validate(raw_pending)
-                if isinstance(raw_pending, dict)
-                else None,
-                metadata=SessionContext.model_validate(raw_metadata),
-            )
+        if not result.data:
+            return None
+        row = _as_row(result.data[0])
+        raw_pending = row.get("pending_proposal")
+        raw_metadata = row.get("metadata") or {}
+        return ConversationSession(
+            conversation_id=row["conversation_id"],
+            active_mode=SessionMode(row.get("active_mode", "default")),
+            pinned_recipe_id=row.get("pinned_recipe_id"),
+            pending_proposal=PendingProposalMemory.model_validate(raw_pending)
+            if isinstance(raw_pending, dict)
+            else None,
+            metadata=SessionContext.model_validate(raw_metadata),
+        )
+
+    async def get_or_create_session(
+        self, user_id: str, conversation_id: str
+    ) -> ConversationSession:
+        existing = await self.get_session(user_id, conversation_id)
+        if existing is not None:
+            return existing
 
         session = ConversationSession(conversation_id=conversation_id)
         self.client.table("conversation_sessions").insert(

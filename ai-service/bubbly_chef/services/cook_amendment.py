@@ -82,9 +82,10 @@ async def apply_cooking_amendment(
     if not lines:
         raise InvalidAmendmentError("The amendment has no usable ingredient lines")
 
-    session = await repo.get_or_create_session(user_id, request.conversation_id)
-    snapshot = session.metadata.cooking_recipe
-    if snapshot is None or snapshot.id != proposal.recipe_id:
+    # Read-only lookup: a rejected apply (409) must not leave a session row behind.
+    session = await repo.get_session(user_id, request.conversation_id)
+    snapshot = session.metadata.cooking_recipe if session is not None else None
+    if session is None or snapshot is None or snapshot.id != proposal.recipe_id:
         raise AmendmentNotApplicableError(
             f"Conversation is not cooking recipe {proposal.recipe_id}"
         )
