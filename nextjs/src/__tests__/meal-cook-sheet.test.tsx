@@ -179,6 +179,27 @@ function baseProposal(overrides: Partial<MealCookProposal> = {}): MealCookPropos
 
 const noop = () => {}
 
+describe('MealCookSheet — expired banner (PR #668 review)', () => {
+  it('says "this meal", not "this recipe"', () => {
+    render(
+      <MealCookSheet
+        open
+        mealTitle="Pasta night"
+        state="review"
+        proposal={baseProposal({
+          expired_items: [{ ingredient_name: 'garlic', pantry_item_name: 'garlic', days_expired: 2 }],
+        })}
+        onConfirm={jest.fn()}
+        onRetry={noop}
+        onBackToMeal={noop}
+        onClose={noop}
+      />,
+    )
+    expect(screen.getByText('Expired ingredients in this meal')).toBeInTheDocument()
+    expect(screen.queryByText('Expired ingredients in this recipe')).not.toBeInTheDocument()
+  })
+})
+
 describe('MealCookSheet — merged-line source notes', () => {
   it('shows the source note on a line shared by two dishes', () => {
     render(

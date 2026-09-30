@@ -90,9 +90,12 @@ function formatQty(qty: number | null, unit: string | null): string {
 export function ExpiredIngredientsBanner({
   expiredItems,
   onDismiss,
+  heading = 'Expired ingredients in this recipe',
 }: {
   expiredItems: ExpiredMatchedItem[]
   onDismiss: () => void
+  /** The meal sheet says "this meal"; the single-recipe default is unchanged. */
+  heading?: string
 }) {
   if (expiredItems.length === 0) return null
   return (
@@ -106,7 +109,7 @@ export function ExpiredIngredientsBanner({
     >
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs font-bold text-[var(--color-text)]">
-          Expired ingredients in this recipe
+          {heading}
         </p>
         <button
           onClick={onDismiss}
@@ -496,6 +499,8 @@ export interface CookReviewBodyProps {
   sourceNote?: (m: IngredientMatch) => string | null
   /** Rendered under each missing name, e.g. "Needed for Pasta + Salad". Forwarded to `MissingItemsList`'s `sourceNote`. */
   missingSourceNote?: (name: string) => string | null
+  /** The expired banner's heading; defaults to the single-recipe copy. */
+  expiredHeading?: string
 }
 
 /**
@@ -512,6 +517,7 @@ export function CookReviewBody({
   onDismissExpired,
   sourceNote,
   missingSourceNote,
+  expiredHeading,
 }: CookReviewBodyProps) {
   return (
     <div className="flex flex-col gap-4">
@@ -520,6 +526,7 @@ export function CookReviewBody({
         <ExpiredIngredientsBanner
           expiredItems={proposal.expired_items ?? []}
           onDismiss={onDismissExpired}
+          heading={expiredHeading}
         />
       )}
 

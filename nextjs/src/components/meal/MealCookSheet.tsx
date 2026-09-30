@@ -258,6 +258,7 @@ export default function MealCookSheet({
                   onDismissExpired={() => setExpiredDismissed(true)}
                   sourceNote={meaLineSourceNote}
                   missingSourceNote={missingSourceNote}
+                  expiredHeading="Expired ingredients in this meal"
                 />
               )}
             </div>
