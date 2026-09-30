@@ -487,6 +487,62 @@ class SupabaseRepository:
         )
         return len(result.data) > 0
 
+    # -------------------------------------------------------------------------
+    # Expiry backfill (#183). One-off maintenance, so unlike every other method
+    # here these are NOT scoped to a single user_id: the script walks all users'
+    # rows with the service role. Each write is conditional on the row's current
+    # state so a user edit that lands mid-run is never overwritten.
+    # -------------------------------------------------------------------------
+
+    async def list_pantry_missing_expiry(
+        self, after_id: str | None, limit: int
+    ) -> list[dict[str, Any]]:
+        """One keyset page (ordered by id) of rows whose expiry_date is NULL.
+
+        Returns only the columns the estimator needs. `user_id` is deliberately
+        not selected so nothing downstream can log it.
+        """
+        query = (
+            self.client.table("pantry_items")
+            .select("id,name,category,location,added_at")
+            .is_("expiry_date", "null")
+            .order("id")
+            .limit(limit)
+        )
+        if after_id is not None:
+            query = query.gt("id", after_id)
+        return _as_rows(query.execute().data)
+
+    async def set_backfilled_expiry(self, row_id: str, expiry: date) -> bool:
+        """Set an estimated expiry on a row, only if it still has none.
+
+        Returns False when the row gained a date in the meantime (or vanished).
+        """
+        result = (
+            self.client.table("pantry_items")
+            .update({"expiry_date": expiry.isoformat(), "estimated_expiry": True})
+            .eq("id", row_id)
+            .is_("expiry_date", "null")
+            .execute()
+        )
+        return len(result.data) > 0
+
+    async def revert_backfilled_expiry(self, row_id: str, expected: date) -> bool:
+        """Undo `set_backfilled_expiry`, only while the row still holds it.
+
+        Matches on the exact date AND `estimated_expiry = true`: a row the user
+        has since edited (which clears the flag) is left alone.
+        """
+        result = (
+            self.client.table("pantry_items")
+            .update({"expiry_date": None, "estimated_expiry": False})
+            .eq("id", row_id)
+            .eq("expiry_date", expected.isoformat())
+            .eq("estimated_expiry", True)
+            .execute()
+        )
+        return len(result.data) > 0
+
     async def count_pantry_items(self, user_id: str) -> int:
         result = (
             self.client.table("pantry_items")
