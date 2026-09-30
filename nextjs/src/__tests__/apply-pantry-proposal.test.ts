@@ -210,3 +210,56 @@ it('a unit-mismatch error narrows failedActions to exactly that action', async (
   expect(result.success).toBe(false)
   expect(result.failedActions).toEqual([spinach])
 })
+
+// ─── 8. Name matching uses the same trimmed key on both sides ─────────────────
+
+it('an action name with surrounding whitespace is still narrowed to the failed action', async () => {
+  mockFetch(true, {
+    success: false,
+    applied_count: 1,
+    failed_count: 1,
+    errors: ["Units don't match (handful vs g), edit the unit for: Spinach"],
+  })
+
+  const eggs: PantryProposalAction = {
+    action_type: 'use',
+    item: { name: 'eggs', quantity: 2, unit: 'item' },
+    confidence: 0.9,
+  }
+  const spinach: PantryProposalAction = {
+    action_type: 'use',
+    item: { name: '  Spinach ', quantity: 1, unit: 'handful' },
+    confidence: 0.9,
+  }
+
+  const result = await applyPantryProposal('req-5', [eggs, spinach])
+  expect(result.failedActions).toEqual([spinach])
+})
+
+// ─── 9. A non-string error body never renders as "[object Object]" ────────────
+
+describe('non-2xx error bodies become readable messages', () => {
+  const cases: Array<[string, unknown, string]> = [
+    ['a string error as-is', { error: 'Session expired' }, 'Session expired'],
+    [
+      'top-level FastAPI detail[0].msg',
+      { detail: [{ msg: 'field required', loc: ['body', 'proposal'] }] },
+      'field required',
+    ],
+    [
+      'detail[0].msg nested under error',
+      { error: { detail: [{ msg: 'value is not a valid list' }] } },
+      'value is not a valid list',
+    ],
+    ['a string detail', { detail: 'Not authenticated' }, 'Not authenticated'],
+    ['an object error with nothing readable', { error: { code: 42 } }, "Couldn't update your pantry"],
+    ['an empty body', {}, "Couldn't update your pantry"],
+  ]
+
+  it.each(cases)('%s', async (_label, body, expected) => {
+    mockFetch(false, body)
+    await expect(applyPantryProposal('req-6', makeActions())).rejects.toThrow(
+      new Error(expected),
+    )
+  })
+})

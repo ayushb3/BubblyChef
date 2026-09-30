@@ -22,6 +22,13 @@ def _row(**over: Any) -> dict[str, Any]:
     return dict(_EXISTING_ROW, **over)
 
 
+def _persist(row: dict[str, Any], payload: dict[str, Any]) -> None:
+    """Write `payload` onto `row` the way Postgres does: `pantry_items.quantity`
+    is NUMERIC(10,2) (migration 00001), so it keeps only 2 decimals."""
+    row.update(payload)
+    row["quantity"] = round(float(row["quantity"]), 2)
+
+
 async def _apply(
     existing: dict[str, Any], action: dict[str, Any]
 ) -> tuple[int, int, list[str], dict[str, Any]]:
@@ -87,7 +94,7 @@ class TestUseDifferentUnits:
         assert (applied, failed, errors) == (1, 0, [])
         assert store["deletes"] == []
         (payload,) = store["updates"]
-        assert payload["quantity"] == pytest.approx(0.8333, abs=1e-4)
+        assert payload["quantity"] == pytest.approx(0.83)
         assert payload["quantity_base"] == pytest.approx(10.0)
         assert payload["unit_base"] == "count"
 
@@ -107,7 +114,7 @@ class TestUseDifferentUnits:
 
         assert (applied, failed) == (1, 0)
         (payload,) = store["updates"]
-        assert payload["quantity"] == pytest.approx(0.8333, abs=1e-4)
+        assert payload["quantity"] == pytest.approx(0.83)
         assert payload["quantity_base"] == pytest.approx(10.0)
         assert payload["unit_base"] == "count"
 
@@ -129,11 +136,11 @@ class TestUseDifferentUnits:
         assert (applied, failed) == (1, 0)
         (payload,) = store["updates"]
         assert payload["quantity_base"] == pytest.approx(4.0)
-        assert payload["quantity"] == pytest.approx(0.3333, abs=1e-4)
+        assert payload["quantity"] == pytest.approx(0.33)
 
     async def test_one_then_eleven_from_a_dozen_deletes_the_row(self) -> None:
-        """The display is stored rounded to 4 places; re-deriving the base from it
-        must not leave 0.0004 dozen behind."""
+        """The display is stored rounded to 2 places; re-deriving the base from it
+        must not leave a rounding sliver behind."""
         row = _row(
             name="eggs",
             category="dairy",
@@ -146,7 +153,7 @@ class TestUseDifferentUnits:
 
         _a, _f, _e, store = await _apply(row, dict(action, quantity=1))
         (payload,) = store["updates"]
-        row.update(payload)
+        _persist(row, payload)
         assert row["quantity_base"] == pytest.approx(11.0)
 
         applied, failed, _errors, store = await _apply(row, dict(action, quantity=11))
@@ -170,11 +177,70 @@ class TestUseDifferentUnits:
             applied, failed, _errors, store = await _apply(row, action)
             assert (applied, failed) == (1, 0)
             assert store["deletes"] == [], f"deleted early on use {i + 1}"
-            row.update(store["updates"][0])
+            _persist(row, store["updates"][0])
             assert row["quantity_base"] == pytest.approx(11 - i)
 
         applied, failed, _errors, store = await _apply(row, action)
         assert (applied, failed) == (1, 0)
+        assert store["deletes"] == [row["id"]]
+
+    async def test_used_two_twice_from_a_dozen_lands_on_exactly_eight(self) -> None:
+        """The column keeps 0.83 for 0.8333 dozen; the second "used 2" must not
+        derive its base from that (it would leave 7.96)."""
+        row = _row(
+            name="eggs",
+            category="dairy",
+            quantity=1.0,
+            unit="dozen",
+            quantity_base=12.0,
+            unit_base="count",
+        )
+        action = {"action": "use", "name": "eggs", "quantity": 2, "unit": "item", "category": "dairy"}
+
+        _a, _f, _e, store = await _apply(row, action)
+        _persist(row, store["updates"][0])
+        assert row["quantity"] == 0.83 and row["quantity_base"] == pytest.approx(10.0)
+
+        applied, failed, _errors, store = await _apply(row, action)
+
+        assert (applied, failed) == (1, 0)
+        (payload,) = store["updates"]
+        assert payload["quantity_base"] == pytest.approx(8.0)
+        assert payload["quantity"] == 0.67
+
+    async def test_an_empty_row_is_deleted_without_error(self) -> None:
+        """A cook can deduct a row to 0.0 without deleting it. Its derived base is
+        0.0, which the different-unit branch must not divide by."""
+        row = _row(
+            name="eggs",
+            category="dairy",
+            quantity=0.0,
+            unit="dozen",
+            quantity_base=0.0,
+            unit_base="count",
+        )
+        applied, failed, errors, store = await _apply(
+            row, {"action": "use", "name": "eggs", "quantity": 2, "unit": "item", "category": "dairy"}
+        )
+
+        assert (applied, failed, errors) == (1, 0, [])
+        assert store["deletes"] == [row["id"]]
+        assert store["updates"] == []
+
+    async def test_an_empty_row_with_no_base_is_deleted_without_error(self) -> None:
+        row = _row(
+            name="eggs",
+            category="dairy",
+            quantity=0.0,
+            unit="dozen",
+            quantity_base=None,
+            unit_base=None,
+        )
+        applied, failed, errors, store = await _apply(
+            row, {"action": "use", "name": "eggs", "quantity": 2, "unit": "item", "category": "dairy"}
+        )
+
+        assert (applied, failed, errors) == (1, 0, [])
         assert store["deletes"] == [row["id"]]
 
     async def test_a_sliver_of_base_left_is_treated_as_used_up(self) -> None:

@@ -232,7 +232,7 @@ def _plan_pantry_use(
 
     Same unit: plain display subtraction. Different units: subtract in the base
     unit and scale the display amount proportionally (as `deduct_pantry_item`
-    does), so "used 2 eggs" from "1 dozen" leaves 0.8333 dozen, not nothing.
+    does), so "used 2 eggs" from "1 dozen" leaves 0.83 dozen, not nothing.
     When no base can be worked out, a default/count-like unit falls back to
     display subtraction and a real unit the user said is refused.
     """
@@ -243,21 +243,29 @@ def _plan_pantry_use(
     if normalize_unit(used_unit) == normalize_unit(existing.unit):
         return _display_subtraction_plan(existing, name, category, used_qty)
 
+    # An empty row (a cook deducts to 0.0 without deleting) has nothing to subtract
+    # from and no base to scale by. Using it up is a delete, as it always was.
+    quantity = float(existing.quantity)
+    if quantity <= 0:
+        return _PantryUsePlan()
+
     # The row's base comes from the displayed amount first: stored bases can be
     # stale from the old `use` path, and the display amount is what the user sees.
     row_base, row_unit = normalize_to_base_unit(
-        name=name, quantity=float(existing.quantity), unit=existing.unit, category=category
+        name=name, quantity=quantity, unit=existing.unit, category=category
     )
+    # Base units per one displayed unit (12 for a dozen of eggs), exact and
+    # independent of how the display amount was rounded.
+    unit_factor = row_base / quantity if row_base is not None and row_base > 0 else None
     stored_base = float(existing.quantity_base) if existing.quantity_base is not None else None
     if row_base is not None and stored_base is not None and existing.unit_base == row_unit:
-        # The displayed quantity is stored rounded to 4 places, so re-deriving the
-        # base from it drifts a little on every use (twelve "used 1 egg" calls would
-        # leave 0.0004 dozen and never delete the row). A stored base that agrees with
-        # the display within that rounding is the exact one -- keep it. One that
-        # disagrees by more is stale drift from the old `use` path, and the display
-        # (what the user sees) wins.
-        quantity = float(existing.quantity)
-        rel_tol = max(1e-3, 5.1e-5 / quantity) if quantity > 0 else 1e-3
+        # `pantry_items.quantity` is NUMERIC(10,2), so the displayed amount is off by up
+        # to 0.005 display units and re-deriving the base from it drifts a little on
+        # every use (a dozen used 2 at a time reads 0.83 dozen, so the next "used 2"
+        # would leave 7.96). A stored base that agrees with the display within that
+        # rounding is the exact one -- keep it. One that disagrees by more is stale
+        # drift from the old `use` path, and the display (what the user sees) wins.
+        rel_tol = max(1e-3, 0.0051 / quantity)
         if abs(stored_base - row_base) <= row_base * rel_tol:
             row_base = stored_base
     elif row_base is None and stored_base is not None and existing.unit_base:
@@ -268,9 +276,14 @@ def _plan_pantry_use(
             name=name, quantity=used_qty, unit=used_unit, category=category, target_unit=row_unit
         )
 
-    if row_base is not None and row_unit and used_base is not None:
+    if row_base is not None and row_base > 0 and row_unit and used_base is not None:
         new_base = max(0.0, row_base - used_base)
-        new_qty = round(float(existing.quantity) * new_base / row_base, 4)
+        # Scale the display from the exact unit factor when there is one, so the
+        # rounded display amount doesn't compound its error; otherwise proportionally.
+        # Rounded to 2 places, as the column stores it.
+        new_qty = round(
+            new_base / unit_factor if unit_factor else quantity * new_base / row_base, 2
+        )
         # Used up: nothing left in the base, a sliver below any real amount, or a
         # display quantity that rounds to zero.
         if new_base < _USED_UP_BASE_EPSILON or new_qty <= 0:
