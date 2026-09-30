@@ -39,6 +39,7 @@ from bubbly_chef.services.recipe_generator import (
     generate_recipe,
 )
 from bubbly_chef.workflows.recipe.nodes import (
+    _dietary_contradicted,
     _diets_set_aside,
     extract_recipe_constraints,
     generate_grounded_recipe,
@@ -416,7 +417,9 @@ async def test_session_vegetarian_does_not_survive_a_chicken_tikka_pick(
 
     assert "dietary" not in ai.generated_constraints()
     assert "dietary" not in state["recipe_constraints"]
-    assert _card_of(state).diets_set_aside == stored
+    # The pick records a set-aside conversation diet too (issue #685), not only a
+    # stored one; persistence restores it in `update_session_node`.
+    assert _card_of(state).diets_set_aside == ["Vegetarian"]
 
 
 @pytest.mark.asyncio
@@ -872,8 +875,12 @@ async def test_library_refine_of_a_tofu_recipe_keeps_the_diet(client: Any) -> No
 async def test_library_refine_of_a_tagged_row_keeps_the_diet_despite_a_matcher_misfire(
     client: Any,
 ) -> None:
-    # "tempeh bacon" trips the existing matcher on `bacon`; the row's tag wins.
-    row = _card_dict("Tempeh BLT", ingredients=("tempeh bacon", "lettuce"))
+    # "chicken-style seasoning" still trips the matcher on `chicken` (brand and
+    # "-style" imitations are a known gap); the row's tag wins.
+    assert _dietary_contradicted("vegetarian", "chicken-style seasoning")
+    row = _card_dict(
+        "Chicken-Style Lentil Bake", ingredients=("chicken-style seasoning", "lentils")
+    )
     row["tags"] = ["Vegetarian"]
     gen = await _library_refine(client, row, "make it quicker", ["Vegetarian"])
 
@@ -882,16 +889,31 @@ async def test_library_refine_of_a_tagged_row_keeps_the_diet_despite_a_matcher_m
 
 @pytest.mark.asyncio
 async def test_library_refine_without_the_tag_drops_the_misfiring_diet(client: Any) -> None:
-    row = _card_dict("Tempeh BLT", ingredients=("tempeh bacon", "lettuce"))
+    # The no-tag twin of the rescue above: proves the tag is what keeps the diet.
+    row = _card_dict(
+        "Chicken-Style Lentil Bake", ingredients=("chicken-style seasoning", "lentils")
+    )
     gen = await _library_refine(client, row, "make it quicker", ["Vegetarian"])
 
     assert "dietary" not in _library_constraints(gen)
 
 
 @pytest.mark.asyncio
+async def test_library_refine_of_an_untagged_tempeh_blt_keeps_the_diet(client: Any) -> None:
+    # The plant-based guard now reaches the library check (issue #684), so an
+    # untagged "tempeh bacon" row no longer misfires.
+    row = _card_dict("Tempeh BLT", ingredients=("tempeh bacon", "lettuce"))
+    gen = await _library_refine(client, row, "make it quicker", ["Vegetarian"])
+
+    assert _library_constraints(gen)["dietary"] == ["Vegetarian"]
+
+
+@pytest.mark.asyncio
 async def test_a_stricter_tag_keeps_the_looser_stored_diet(client: Any) -> None:
     # A "vegan" tag rescues a stored Vegetarian (_DIETARY_SUBSUMES).
-    row = _card_dict("Tempeh BLT", ingredients=("tempeh bacon", "lettuce"))
+    row = _card_dict(
+        "Chicken-Style Lentil Bake", ingredients=("chicken-style seasoning", "lentils")
+    )
     row["tags"] = ["vegan"]
     gen = await _library_refine(client, row, "make it quicker", ["Vegetarian"])
 
@@ -902,7 +924,9 @@ async def test_a_stricter_tag_keeps_the_looser_stored_diet(client: Any) -> None:
 async def test_chained_library_refines_keep_the_diet_through_the_carried_tag(
     client: Any,
 ) -> None:
-    row = _card_dict("Tempeh BLT", ingredients=("tempeh bacon", "lettuce"))
+    row = _card_dict(
+        "Chicken-Style Lentil Bake", ingredients=("chicken-style seasoning", "lentils")
+    )
     row["tags"] = ["vegetarian"]
 
     gen1 = AsyncMock(side_effect=lambda **_: _route_result())

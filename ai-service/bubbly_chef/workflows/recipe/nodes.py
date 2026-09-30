@@ -15,6 +15,12 @@ from typing import Any, NamedTuple
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.ai.provider import user_message_for_failure
 from bubbly_chef.api.deps import get_ai_manager
+from bubbly_chef.domain.diet_terms import (
+    FORBIDDEN_FOODS,
+    join_fields,
+    names_forbidden_food,
+    norm_label,
+)
 from bubbly_chef.domain.normalizer import normalize_food_name
 from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.domain.stock import filter_usable_pantry_rows
@@ -46,7 +52,7 @@ from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.services.dietary_preferences import get_stored_dietary_preferences
 from bubbly_chef.services.recipe_generator import generate_recipe as _generate_recipe_followup
 from bubbly_chef.tools.web_search import search_recipe
-from bubbly_chef.workflows.recipe.refine_diet import added_text, negated_text
+from bubbly_chef.workflows.recipe.refine_diet import added_clauses, added_text, negated_text
 from bubbly_chef.workflows.state import (
     LLMRecipeResult,
     WorkflowState,
@@ -715,33 +721,11 @@ def _merge_constraints(
 # asks for an ingredient the stored diet forbids. Small and explicit on
 # purpose: an LLM judgement call here would make the precedence unpredictable
 # turn to turn.
-_DIETARY_FORBIDDEN_INGREDIENTS: dict[str, frozenset[str]] = {
-    "vegetarian": frozenset(
-        {
-            "meat", "beef", "pork", "chicken", "turkey", "lamb", "bacon",
-            "sausage", "ham", "fish", "shrimp", "salmon", "tuna", "seafood",
-        }
-    ),
-    "vegan": frozenset(
-        {
-            "meat", "beef", "pork", "chicken", "turkey", "lamb", "bacon",
-            "sausage", "ham", "fish", "shrimp", "salmon", "tuna", "seafood",
-            "dairy", "cheese", "milk", "butter", "cream", "yogurt",
-            "egg", "eggs", "honey",
-        }
-    ),
-    "pescatarian": frozenset(
-        {"meat", "beef", "pork", "chicken", "turkey", "lamb", "bacon", "sausage", "ham"}
-    ),
-    "dairy-free": frozenset({"dairy", "cheese", "milk", "butter", "cream", "yogurt"}),
-    "nut-free": frozenset(
-        {
-            "nuts", "peanut", "peanuts", "almond", "almonds", "cashew", "cashews",
-            "walnut", "walnuts", "pecan", "pecans", "pistachio", "pistachios",
-            "hazelnut", "hazelnuts",
-        }
-    ),
-}
+#
+# The table and its matcher now live in `domain.diet_terms` (issue #684), shared
+# by every caller with the plant-based guard inside it. The alias keeps the name
+# for imports and tests.
+_DIETARY_FORBIDDEN_INGREDIENTS = FORBIDDEN_FOODS
 
 # A diet named on the left already satisfies every diet in its set — so when
 # both appear together in a combined list, the looser one is redundant and is
@@ -753,18 +737,17 @@ _DIETARY_SUBSUMES: dict[str, frozenset[str]] = {
 }
 
 
-def _dietary_contradicted(label: str, haystack: str) -> bool:
+def _dietary_contradicted(label: str, haystack: str, *, plant_markers: bool = True) -> bool:
     """True if `haystack` names an ingredient the dietary label `label` forbids."""
-    forbidden = _DIETARY_FORBIDDEN_INGREDIENTS.get(label.strip().lower(), frozenset())
-    return any(re.search(rf"\b{re.escape(term)}\b", haystack) for term in forbidden)
+    return names_forbidden_food(label, haystack, plant_markers=plant_markers)
 
 
 def _drop_redundant_dietary(labels: list[str]) -> list[str]:
     """Drop any label a stricter label already subsumes, preserving order."""
-    present = {label.strip().lower() for label in labels}
+    present = {norm_label(label) for label in labels}
     result: list[str] = []
     for label in labels:
-        key = label.strip().lower()
+        key = norm_label(label)
         subsumed = any(
             key in narrower and broad in present and broad != key
             for broad, narrower in _DIETARY_SUBSUMES.items()
@@ -772,6 +755,20 @@ def _drop_redundant_dietary(labels: list[str]) -> list[str]:
         if not subsumed:
             result.append(label)
     return result
+
+
+def _dietary_haystack(input_text: str, constraints: dict[str, Any]) -> str:
+    """The text a stored diet is checked against: the message plus the extracted ingredients.
+
+    Fields are joined with `FIELD_SEP` so a guard can't read across two of them
+    (issue #684). `fixed_main.py` passes a card's ingredient names as
+    `preferred_ingredients`, so it gets the separator through here too.
+    """
+    return join_fields(
+        input_text,
+        *(constraints.get("must_use_ingredients") or []),
+        *(constraints.get("preferred_ingredients") or []),
+    ).lower()
 
 
 def _combine_dietary_preferences(
@@ -789,10 +786,7 @@ def _combine_dietary_preferences(
     A requested label already implied by a surviving stricter label (see
     `_DIETARY_SUBSUMES`) is dropped as redundant rather than appended.
     """
-    ingredient_terms = " ".join(
-        [*(constraints.get("must_use_ingredients") or []), *(constraints.get("preferred_ingredients") or [])]
-    )
-    haystack = f"{input_text} {ingredient_terms}".lower()
+    haystack = _dietary_haystack(input_text, constraints)
 
     survivors: list[str] = []
     for label in stored:
@@ -806,18 +800,16 @@ def _combine_dietary_preferences(
         survivors.append(label)
 
     combined = list(survivors)
-    present_lower = {label.strip().lower() for label in combined}
+    present_keys = {norm_label(label) for label in combined}
     for label in requested:
-        if label.strip().lower() not in present_lower:
+        if norm_label(label) not in present_keys:
             combined.append(label)
-            present_lower.add(label.strip().lower())
+            present_keys.add(norm_label(label))
 
     return _drop_redundant_dietary(combined)
 
 
-def _norm_label(label: str) -> str:
-    """Case, space, underscore and hyphen-insensitive form of a diet label (#544)."""
-    return re.sub(r"[\s_-]+", "-", label.strip().lower())
+_norm_label = norm_label
 
 
 def _diets_set_aside(stored: list[str], final: list[str]) -> list[str]:
@@ -874,8 +866,100 @@ def _without_labels(labels: list[str], removed: list[str]) -> list[str]:
     return [label for label in labels if _norm_label(label) not in gone]
 
 
+def _message_sets_label_aside(label: str, text: str) -> bool:
+    """True when `text` uses `label` as a "non-LABEL" dish modifier (issue #685).
+
+    "make it non-vegan" and "a non-vegetarian pasta" set the label aside for this
+    turn only. A message that also names the label plainly ("a vegan dinner my
+    non-vegan family will enjoy") keeps it. A bare "not (a) LABEL" ("that's not
+    vegetarian!", "I'm not vegetarian any more") does nothing: there is no
+    permanent clearing here, so the diet is still sent.
+    """
+    words = [re.escape(w) for w in _norm_label(label).split("-") if w]
+    if not words:
+        return False
+    lowered = text.lower().replace("’", "'")
+    body = r"[\s_-]+".join(words)
+    if not re.search(rf"\bnon[- ]{body}(?![\w-])", lowered):
+        return False
+    return not _tweak_names_label(label, lowered)
+
+
+def _inherited_diet_contradicted(label: str, input_text: str, fresh: dict[str, Any]) -> bool:
+    """True when this turn asks for a food the conversation's inherited `label` forbids.
+
+    Reads this turn's message and this turn's FRESHLY extracted ingredients, never
+    the ones a session carried over, so an inherited "use up my chicken" can't
+    undo a later "actually make it vegetarian".
+
+    The message half is refine's two-part test: the negation-aware per-clause text
+    (so "pasta with no meat" is fine) must name the food, and so must the whole
+    message under the default guards (so "vegan pulled pork tacos" and "meat and
+    dairy free pasta" keep the diet). The field half uses the default guards, so a
+    fresh preferred "tempeh bacon" keeps it too.
+    """
+    message = _dietary_contradicted(
+        label, join_fields(*added_clauses(input_text)), plant_markers=False
+    ) and _dietary_contradicted(label, input_text)
+    fields = _dietary_contradicted(
+        label,
+        join_fields(
+            *(fresh.get("must_use_ingredients") or []),
+            *(fresh.get("preferred_ingredients") or []),
+        ),
+    )
+    return message or fields
+
+
+def constraints_to_persist(state: WorkflowState) -> dict[str, Any] | None:
+    """The `recipe_constraints` the session should remember after this turn (issue #685).
+
+    Persisting only what the generator was handed would make the conversation
+    forget "I'm vegetarian" for good after one "chicken curry". So the diet the
+    conversation held (`session_dietary`) and the diet named this turn
+    (`fresh_dietary`) are always kept, plus every label in the final diet that
+    isn't stored-only: a stored label only the profile read supplied is never
+    written back, so a profile diet can't get stuck in the session after the
+    profile drops it. A label already in the session counts as conversation-origin.
+
+    It sets `dietary` even to `[]`: the router saves only a truthy dict, and
+    `{"dietary": []}` overwrites a stale persisted value where `{}` would be
+    skipped. Returned unchanged when `stored_dietary` isn't in state (neither
+    extract nor research ran, e.g. a refine turn).
+    """
+    constraints = state.get("recipe_constraints")
+    if "stored_dietary" not in state:
+        return constraints
+
+    stored_keys = {_norm_label(x) for x in state.get("stored_dietary") or []}
+    fresh = list(state.get("fresh_dietary") or [])
+    session = list(state.get("session_dietary") or [])
+    conversation_keys = {_norm_label(x) for x in [*fresh, *session]}
+    kept_final = [
+        label
+        for label in (constraints or {}).get("dietary") or []
+        if _norm_label(label) not in stored_keys or _norm_label(label) in conversation_keys
+    ]
+    return {**(constraints or {}), "dietary": _dedupe_labels([*fresh, *session, *kept_final])}
+
+
 def _tag_key(tag: str) -> str:
     return re.sub(r"[\s_]+", "-", tag.strip().lower())
+
+
+def _tweak_adds_forbidden_food(label: str, added_haystack: str, tweak_lower: str) -> bool:
+    """True when a refine tweak really adds a food `label` forbids (issue #684).
+
+    Two checks, and both must say yes, so the second can only keep a diet: the
+    per-clause `added_haystack` (negations and swaps already removed, plant
+    markers already stripped by `added_text`, so `plant_markers=False`), and the
+    whole tweak. The second exists because `added_text` strips a `-free` span
+    before the matcher's coordinated-list rule can see it: "make it meat and dairy
+    free" becomes "make it meat and", which names meat.
+    """
+    return _dietary_contradicted(
+        label, added_haystack, plant_markers=False
+    ) and _dietary_contradicted(label, tweak_lower, plant_markers=False)
 
 
 class RefineDiet(NamedTuple):
@@ -929,10 +1013,13 @@ async def refine_dietary_constraints(
 
     tweak_lower = input_text.lower()
     added = added_text(input_text)
+    # Diet checks match per clause (issue #684): `added_text` joins clauses with a
+    # space, which would let a guard read across "add mushrooms, bacon too".
+    added_haystack = join_fields(*added_clauses(input_text))
 
     carried = {_norm_label(x) for x in (previous_recipe.diets_set_aside if previous_recipe else [])}
-    ingredient_names = " ".join(
-        ing.name for ing in (previous_recipe.ingredients if previous_recipe else [])
+    ingredient_names = join_fields(
+        *(ing.name for ing in (previous_recipe.ingredients if previous_recipe else []))
     ).lower()
     # A tag keeps its label, and a stricter tag keeps the looser labels it
     # subsumes (a "vegan" tag keeps a stored Vegetarian).
@@ -955,7 +1042,7 @@ async def refine_dietary_constraints(
             continue
         if not library and key in carried:
             continue
-        if _dietary_contradicted(label, added):
+        if _tweak_adds_forbidden_food(label, added_haystack, tweak_lower):
             set_aside_now.append(label)
             continue
         if (
@@ -1017,12 +1104,14 @@ def carry_dietary_tags(
     """
     if previous_recipe is None:
         return []
-    added = added_text(tweak)
+    added_haystack = join_fields(*added_clauses(tweak))
+    tweak_lower = tweak.lower()
     dropped = {_norm_label(label) for label in set_aside_now}
     return [
         tag
         for tag in previous_recipe.dietary_tags
-        if _norm_label(tag) not in dropped and not _dietary_contradicted(tag, added)
+        if _norm_label(tag) not in dropped
+        and not _tweak_adds_forbidden_food(tag, added_haystack, tweak_lower)
     ]
 
 
@@ -1064,6 +1153,21 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
         logger.warning("Constraint extraction failed (using empty constraints): %s", e)
         constraints = {}
 
+    # A diet the message turns down as a dish modifier ("make it non-vegan") isn't
+    # sent this turn even when the extractor returned it (issue #685). Filtered
+    # before the merge, so if nothing fresh remains the session's diet still
+    # inherits instead of being overridden by a label the user just turned down.
+    fresh_dietary = [
+        label
+        for label in (constraints.get("dietary") or [])
+        if not _message_sets_label_aside(label, input_text)
+    ]
+    if "dietary" in constraints:
+        constraints["dietary"] = fresh_dietary
+    # This turn's own extraction, before the merge: what the inherited-diet check
+    # reads, never the ingredients a session carried over.
+    fresh = dict(constraints)
+
     # Merge with prior constraints from the session (inherit + override).
     prior = _prior_constraints_from_state(state)
     if prior:
@@ -1088,10 +1192,30 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
     # `_combine_dietary_preferences`). It must never be silently dropped just
     # because this message didn't repeat it.
     stored_dietary = await get_stored_dietary_preferences(state.get("user_id") or "")
+
+    # Issue #685: when this turn names no diet, the merged `dietary` IS the
+    # conversation's diet, inherited from the session. It gets the same
+    # contradiction check the stored diet gets, against this turn's message and
+    # freshly extracted ingredients (a diet named this turn is an explicit ask and
+    # is never checked). A label set aside here comes back next turn: see
+    # `constraints_to_persist`.
+    inherited = [] if fresh_dietary else list(constraints.get("dietary") or [])
+    requested_dietary = fresh_dietary or _dedupe_labels(
+        [
+            label
+            for label in inherited
+            if not _message_sets_label_aside(label, input_text)
+            and not _inherited_diet_contradicted(label, input_text, fresh)
+        ]
+    )
+    # A "non-LABEL" modifier sets a stored label aside for this reply only; the
+    # profile is never changed, so the next turn's read brings it back.
+    stored_now = [
+        label for label in stored_dietary if not _message_sets_label_aside(label, input_text)
+    ]
     if stored_dietary:
-        requested_dietary = constraints.get("dietary") or []
         combined_dietary = _combine_dietary_preferences(
-            stored_dietary, requested_dietary, constraints, input_text
+            stored_now, requested_dietary, constraints, input_text
         )
         if combined_dietary != requested_dietary:
             logger.info(
@@ -1102,13 +1226,20 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
                 combined_dietary,
             )
         constraints["dietary"] = combined_dietary
+    elif inherited:
+        constraints["dietary"] = requested_dietary
 
     return {
         **state,
         "recipe_constraints": constraints,
-        # Per-turn marker, never persisted (#544): research_recipe reads it to
-        # know the stored diet was already combined with this turn's message.
+        # Per-turn markers, never persisted (#544, #685): research_recipe reads
+        # `constraints_extracted` to know the stored diet was already combined with
+        # this turn's message; the three diet lists feed research's
+        # `diets_set_aside` and `constraints_to_persist`.
         "constraints_extracted": True,
+        "session_dietary": inherited,
+        "fresh_dietary": fresh_dietary,
+        "stored_dietary": stored_dietary,
     }
 
 
@@ -1381,6 +1512,7 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
         # the stored one: a session "Vegetarian" doesn't survive a "Chicken
         # Tikka" pick either.
         rehydrated_dietary = list(constraints.get("dietary") or [])
+        session_dietary = rehydrated_dietary
         name_lower = recipe_name.lower()
         rehydrated_kept = [
             label for label in rehydrated_dietary if not _dietary_contradicted(label, name_lower)
@@ -1400,10 +1532,17 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
             constraints = {**constraints, "dietary": dietary}
         elif "dietary" in constraints:
             constraints = {k: v for k, v in constraints.items() if k != "dietary"}
-    # else: the direct path -- extract already combined the stored diet with
-    # this turn's message, so leave `dietary` alone.
+    else:
+        # The direct path -- extract already combined the stored diet with this
+        # turn's message, so leave `dietary` alone. Its conversation labels were
+        # handed over in state.
+        session_dietary = list(state.get("session_dietary") or [])
 
-    dietary_set_aside = _diets_set_aside(stored_dietary, constraints.get("dietary") or [])
+    # Stored labels first, then the conversation's (issue #685): a conversation
+    # diet set aside this turn is recorded too, so a refine of this card skips it.
+    dietary_set_aside = _diets_set_aside(
+        _dedupe_labels([*stored_dietary, *session_dietary]), constraints.get("dietary") or []
+    )
 
     cuisine_tag = constraints.get("cuisine")
     search_result = await search_recipe(recipe_name, cuisine_tag=cuisine_tag)
@@ -1412,6 +1551,8 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
         **state,
         "recipe_constraints": constraints,
         "dietary_set_aside": dietary_set_aside,
+        "session_dietary": session_dietary,
+        "stored_dietary": stored_dietary,
         "web_search_result": search_result.model_dump() if search_result else None,
     }
 

@@ -8,6 +8,12 @@ not a general NLU pass.
 
 import re
 
+from bubbly_chef.domain.diet_terms import (
+    PLANT_COMPOUND_BASES,
+    PLANT_COMPOUND_NOUNS,
+    PLANT_MARKER_WORDS,
+)
+
 _FREE_SPAN = re.compile(r"\b\w+[- ]?free\b")
 _CLAUSE_SPLIT = re.compile(r"[.,;!?]|\bbut\b")
 # `swap X for Y` / `replace X with Y`: X goes out, Y comes in.
@@ -27,22 +33,25 @@ _NEGATION = re.compile(
     r"|swap|replace|make)\b|$)"
 )
 # Plant-based foods aren't the forbidden food they're named after (#544): "oat
-# milk" is not milk, "tempeh bacon" is not bacon. Refine-only -- the shared
-# matcher and the #394 first-turn path stay as they are. The compound form is
-# stripped first (before the `-free` span, so "dairy free cheese" is covered);
-# the marker-word form runs per clause AFTER the structural rules, since
-# stripping "tofu for" earlier would break "substitute tofu for chicken".
+# milk" is not milk, "tempeh bacon" is not bacon. The word lists live in
+# `domain.diet_terms` (the shared matcher's guards use them too); refine keeps its
+# own clause-scoped, one-word stripping exactly as #681 tuned it. The compound
+# form is stripped first (before the `-free` span, so "dairy free cheese" is
+# covered); the marker-word form runs per clause AFTER the structural rules,
+# since stripping "tofu for" earlier would break "substitute tofu for chicken".
 _PLANT_COMPOUND = re.compile(
-    r"\b(?:coconut|oat|almond|soy|cashew|rice|hemp|pea|plant[- ]based|vegan|dairy[- ]free"
-    r"|non[- ]dairy)\s+(?:milk|cream|butter|cheese|yogurt|yoghurt|mayo|mayonnaise)\b"
+    r"\b(?:" + "|".join(PLANT_COMPOUND_BASES) + r")\s+(?:" + "|".join(PLANT_COMPOUND_NOUNS) + r")\b"
 )
-_PLANT_MARKER = re.compile(
-    r"\b(?:vegan|veggie|vegetarian|plant[- ]based|meatless|mock|faux|tofu|tempeh|seitan)\s+\w+"
-)
+_PLANT_MARKER = re.compile(r"\b(?:" + "|".join(PLANT_MARKER_WORDS) + r")\s+\w+")
 
 
-def added_text(tweak: str) -> str:
-    """The part of a refine tweak that adds foods, with negated spans removed."""
+def added_clauses(tweak: str) -> list[str]:
+    """The clauses of a refine tweak that add foods, negated spans removed.
+
+    `added_text` is these joined with a space. Callers that match foods against
+    them join with `diet_terms.FIELD_SEP` instead, so a guard can't read across
+    two clauses ("add mushrooms, bacon too").
+    """
     text = tweak.lower().replace("’", "'")
     text = _PLANT_COMPOUND.sub(" ", text)
     text = _FREE_SPAN.sub(" ", text)
@@ -57,7 +66,12 @@ def added_text(tweak: str) -> str:
         clause = " ".join(clause.split())
         if clause:
             kept.append(clause)
-    return " ".join(kept)
+    return kept
+
+
+def added_text(tweak: str) -> str:
+    """The part of a refine tweak that adds foods, with negated spans removed."""
+    return " ".join(added_clauses(tweak))
 
 
 def negated_text(tweak: str) -> str:
