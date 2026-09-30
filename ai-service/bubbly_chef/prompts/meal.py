@@ -217,7 +217,7 @@ characters, no emoji, no numbering. {_MEAL_FOLLOW_UPS_COMMON_RULE}\
 # pantry (issue #287) -- mirrors MEAL_DISH_PANTRY_BLOCK_NO_PANTRY's approach
 # for the recipe body: the pills must stay pantry-blind too.
 MEAL_FOLLOW_UPS_NO_PANTRY_RULE = """\
-Never mention the pantry, stock, the fridge, or expiring items in \
+ Never mention the pantry, stock, the fridge, or expiring items in \
 follow_ups.\
 """
 

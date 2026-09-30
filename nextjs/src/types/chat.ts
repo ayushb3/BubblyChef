@@ -537,7 +537,7 @@ export interface StarterRecentCook {
 export interface StarterContext {
   /** `expiry_date` in [server today −1, +7], soonest first then name; ≤10. */
   expiring: StarterExpiringItem[]
-  /** All pantry rows. `null` when the count query failed. */
+  /** In-stock pantry rows (`quantity > 0`); decides the scan pill. `null` when the count query failed. */
   pantry_count: number | null
   /** ≤3 non-draft recipes with `last_cooked_at`, most recent first. */
   recent_cooks: StarterRecentCook[]
