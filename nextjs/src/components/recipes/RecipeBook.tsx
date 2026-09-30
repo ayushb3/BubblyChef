@@ -20,7 +20,9 @@ import {
   markGuidedFlowOpen,
   clearGuidedFlowOpen,
   wasGuidedFlowOpen,
+  getAmendedIngredients,
 } from '@/lib/cook-session'
+import { toRecipeIngredients } from '@/lib/cook-amendment'
 import { springs, heartPopVariants } from '@/lib/motion'
 import Chip from '@/components/ui/Chip'
 import { tagToTone } from '@/lib/tag-tone'
@@ -158,6 +160,23 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   }, [search, filteredRecipes])
 
   const selectedRecipe = recipesWithOverrides.find((r) => r.id === selectedId) ?? recipesWithOverrides[0] ?? null
+
+  // #489/#490: a mid-cook amendment confirmed in chat for the recipe being
+  // cooked. It is an overlay on what this cook shows and deducts, read when a
+  // cook surface opens; it is never merged into `recipesWithOverrides`, so the
+  // saved recipe (card, detail, edit) is never changed by it.
+  const selectedRecipeId = selectedRecipe?.id ?? null
+  const amendedIngredients = useMemo(
+    () => (selectedRecipeId && (cookOpen || guidedCookOpen) ? getAmendedIngredients(selectedRecipeId) : null),
+    [selectedRecipeId, cookOpen, guidedCookOpen],
+  )
+  const guidedRecipe = useMemo(
+    () =>
+      selectedRecipe && amendedIngredients
+        ? { ...selectedRecipe, ingredients: toRecipeIngredients(amendedIngredients) }
+        : selectedRecipe,
+    [selectedRecipe, amendedIngredients],
+  )
 
   // Issue #441 / PR #475 — resume an in-progress guided cook after a full
   // page reload, but only *directly* re-open the flow when this looks like
@@ -1027,6 +1046,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         <CookModal
           recipeId={selectedRecipe.id}
           recipeTitle={selectedRecipe.title}
+          amendedIngredients={amendedIngredients}
           onClose={() => setCookOpen(false)}
           onCooked={() => {
             onMutate?.()
@@ -1041,7 +1061,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
       {guidedCookOpen && selectedRecipe && (
         <GuidedCookFlow
           key={selectedRecipe.id}
-          recipe={selectedRecipe}
+          recipe={guidedRecipe ?? selectedRecipe}
           initialStep={resumeStep ?? undefined}
           onStepsResolved={(steps) =>
             setStepsOverrides((prev) => ({ ...prev, [selectedRecipe.id]: steps }))

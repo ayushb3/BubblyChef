@@ -14,9 +14,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from bubbly_chef.api.auth import get_current_user_id
-from bubbly_chef.models.cook import CookConfirmRequest, CookProposal
+from bubbly_chef.models.cook import CookConfirmRequest, CookProposal, MealCookIngredient
 from bubbly_chef.repository.supabase_repo import get_repository
-from bubbly_chef.services.meal_cook import apply_collapsed_deductions, correlate_expired
+from bubbly_chef.services.meal_cook import (
+    apply_collapsed_deductions,
+    correlate_expired,
+    resolve_supplied_ingredients,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -214,6 +218,18 @@ class CookRequest(BaseModel):
     """Request body for POST /v1/recipes/cook."""
 
     recipe_id: str = Field(description="UUID of the recipe to cook")
+    ingredients: list[str | MealCookIngredient] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+        description=(
+            "The list as cooked (#489): the recipe's ingredients after a confirmed mid-cook "
+            "amendment. When set, THIS list is matched against the pantry instead of the stored "
+            "row's (same override a meal dish takes on POST /v1/meals/cook, #654). The saved "
+            "recipe is still looked up -- for ownership and title -- and never written. Objects "
+            "are used verbatim; strings are parsed."
+        ),
+    )
 
 
 @router.post(
@@ -248,7 +264,11 @@ async def cook_recipe(
 
         pantry_items = await repo.get_all_pantry_items(user_id)
 
-        ingredients: list[dict[str, Any]] = recipe_data.get("ingredients", [])
+        ingredients: list[Any] = recipe_data.get("ingredients", [])
+        if request.ingredients is not None:
+            # A confirmed amendment is what was actually cooked (#489): match it, not
+            # the stored row. The row is only read, for ownership and the title.
+            ingredients = resolve_supplied_ingredients(request.ingredients)
         title: str = recipe_data.get("title", "")
 
         # Deterministic matching first; the model is only consulted for whatever

@@ -1,7 +1,7 @@
 """Workflow routes for the BubblyChef AI microservice.
 
 Exposes:
-- POST /v1/workflows/apply — apply a reviewed proposal (pantry or recipe)
+- POST /v1/workflows/apply — apply a reviewed proposal (pantry, recipe, or a mid-cook amendment)
 - POST /v1/workflows/reject — record that a pantry proposal card was dismissed (#444)
 """
 
@@ -17,6 +17,11 @@ from bubbly_chef.models.requests import (
     RejectResponse,
 )
 from bubbly_chef.repository.supabase_repo import get_repository
+from bubbly_chef.services.cook_amendment import (
+    AmendmentNotApplicableError,
+    InvalidAmendmentError,
+    apply_cooking_amendment,
+)
 from bubbly_chef.services.proposal_review import apply_pantry_with_review, reject_with_review
 
 logger = logging.getLogger(__name__)
@@ -68,6 +73,16 @@ async def apply_proposal(
                 failed_count=1,
                 errors=[str(e)],
             )
+
+    elif request.intent == "recipe_amendment":
+        # A confirmed mid-cook amendment (#489): updates the conversation's pinned
+        # cook snapshot and records the turn applied. Never writes the recipe row.
+        try:
+            return await apply_cooking_amendment(repo, user_id, request)
+        except InvalidAmendmentError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        except AmendmentNotApplicableError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
 
     else:
         raise HTTPException(

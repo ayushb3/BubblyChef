@@ -18,7 +18,11 @@ from fastapi.responses import StreamingResponse
 from bubbly_chef.api.auth import get_current_user_id
 from bubbly_chef.models.requests import ChatRequest
 from bubbly_chef.repository.supabase_repo import get_repository
-from bubbly_chef.services.proposal_review import is_pantry_proposal_turn, metadata_for_save
+from bubbly_chef.services.proposal_review import (
+    is_amendment_proposal_turn,
+    is_pantry_proposal_turn,
+    metadata_for_save,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +140,11 @@ async def chat_stream(
                     # request_id) BEFORE its envelope is yielded, so a fast tap on Add
                     # can't reach /v1/workflows/apply ahead of the row it records onto.
                     # These turns get no follow-up chips, so nothing arrives after.
-                    if is_pantry_proposal_turn(envelope_data):
+                    # A mid-cook amendment turn (#489) is treated the same way: its
+                    # Apply records onto the row, so the row has to exist first.
+                    if is_pantry_proposal_turn(envelope_data) or is_amendment_proposal_turn(
+                        envelope_data
+                    ):
                         saved_assistant = await persist_assistant(
                             assistant_message or envelope_data.get("assistant_message", ""),
                             envelope_data,

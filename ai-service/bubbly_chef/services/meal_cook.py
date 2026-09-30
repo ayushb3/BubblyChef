@@ -74,6 +74,38 @@ class MealCookDishInput:
     recipe_row: dict[str, Any]
 
 
+def resolve_supplied_ingredients(
+    elements: Sequence[str | MealCookIngredient],
+    string_scale: float = 1.0,
+) -> list[Any]:
+    """Matcher-ready ingredients from a client-supplied list.
+
+    Objects are used verbatim (a blank `name` is dropped); strings are parsed
+    and scaled by `string_scale` (round to 2 dp, only when the scale isn't 1).
+    Shared by `POST /v1/meals/cook` (a dish's amended list, #654) and
+    `POST /v1/recipes/cook` (a single-recipe cook's amended list, #489).
+    """
+    resolved: list[Any] = []
+    for element in elements:
+        if isinstance(element, MealCookIngredient):
+            name = element.name.strip()
+            if not name:
+                continue
+            resolved.append({"name": name, "quantity": element.quantity, "unit": element.unit})
+        else:
+            stripped = element.strip()
+            if not stripped:
+                continue
+            parsed = _parse_ingredient_string(stripped)
+            if not parsed.get("name"):
+                continue
+            qty = parsed.get("quantity")
+            if string_scale != 1 and qty is not None:
+                parsed = {**parsed, "quantity": round(qty * string_scale, 2)}
+            resolved.append(parsed)
+    return resolved
+
+
 def _resolve_dish_ingredients(
     request: MealCookDishRequest,
     recipe_row: dict[str, Any],
@@ -88,34 +120,13 @@ def _resolve_dish_ingredients(
     applying the same string-scaling treatment.
     """
     if request.ingredients is not None:
-        resolved: list[Any] = []
-        scale = request.string_scale
-        for element in request.ingredients:
-            if isinstance(element, MealCookIngredient):
-                name = element.name.strip()
-                if not name:
-                    continue
-                resolved.append(
-                    {"name": name, "quantity": element.quantity, "unit": element.unit}
-                )
-            else:
-                stripped = element.strip()
-                if not stripped:
-                    continue
-                parsed = _parse_ingredient_string(stripped)
-                if not parsed.get("name"):
-                    continue
-                qty = parsed.get("quantity")
-                if scale != 1 and qty is not None:
-                    parsed = {**parsed, "quantity": round(qty * scale, 2)}
-                resolved.append(parsed)
-        return resolved, "supplied"
+        return resolve_supplied_ingredients(request.ingredients, request.string_scale), "supplied"
 
     raw_ingredients: list[Any] = recipe_row.get("ingredients") or []
     recipe_servings = _positive_int_or(recipe_row.get("servings"), meal_servings)
     factor = meal_servings / recipe_servings if recipe_servings else 1.0
 
-    resolved = []
+    resolved: list[Any] = []
     for element in raw_ingredients:
         if isinstance(element, dict):
             name = str(element.get("name") or "").strip()

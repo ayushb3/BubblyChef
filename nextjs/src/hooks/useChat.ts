@@ -7,15 +7,19 @@ import {
   fetchChatHistory,
   applyPantryProposal,
   rejectPantryProposal,
+  applyCookAmendment,
 } from '@/lib/api/chat'
 import type {
+  AmendmentCardState,
   ChatMessage,
   ChatResponse,
   PantryProposalData,
   PantryProposalAction,
   PendingProposal,
+  RecipeAmendmentProposal,
 } from '@/types/chat'
 import {
+  isRecipeAmendmentProposal,
   getClarificationSuggestions,
   mergeTermSuggestions,
   mergeActions,
@@ -94,6 +98,17 @@ export function useChat(options?: UseChatOptions) {
     Record<string, 'pending' | 'approving' | 'approved' | 'rejected' | 'failed'>
   >({})
   const [proposalErrors, setProposalErrors] = useState<Record<string, string>>({})
+  /**
+   * State of each "Update what I'm cooking" card (#489), by message id. Separate
+   * from `proposalStates`: an amendment is confirmed through a different call,
+   * writes no pantry rows and has nothing to merge or narrow on failure.
+   */
+  const [amendmentStates, setAmendmentStates] = useState<Record<string, AmendmentCardState>>({})
+  const [amendmentErrors, setAmendmentErrors] = useState<Record<string, string>>({})
+  const amendmentStatesRef = useRef(amendmentStates)
+  useEffect(() => {
+    amendmentStatesRef.current = amendmentStates
+  }, [amendmentStates])
   /**
    * Keys (`proposalActionKey`) of the actions a failed card will retry, per
    * message id. Set on every failure, cleared on success. The card keeps rows
@@ -206,6 +221,10 @@ export function useChat(options?: UseChatOptions) {
         setProposalStates(restored.proposalStates)
         setProposalErrors(restored.proposalErrors)
         setProposalFailedNames(restored.proposalFailedNames)
+        // An amendment card restores as the state the service recorded on its
+        // turn (#490): applied / dismissed are terminal, never a live button.
+        setAmendmentStates(restored.amendmentStates)
+        amendmentStatesRef.current = restored.amendmentStates
         setIsResuming(false)
       })
       .catch(() => {
@@ -431,6 +450,14 @@ export function useChat(options?: UseChatOptions) {
             )
           })
 
+          // A mid-cook amendment (#489) gets its own card state. It never merges:
+          // each amendment is the model's full list, so the page treats only the
+          // newest one as actionable.
+          if (response.intent === 'cooking_help' && isRecipeAmendmentProposal(response.proposal)) {
+            setAmendmentStates((prev) => ({ ...prev, [assistantMsgId]: 'pending' }))
+            amendmentStatesRef.current = { ...amendmentStatesRef.current, [assistantMsgId]: 'pending' }
+          }
+
           // The card is now owned by this turn (assistantMsgId), whether it
           // started fresh or was merged from an earlier one. Register the
           // pending proposal here so approve/reject callbacks resolve correctly.
@@ -586,6 +613,9 @@ export function useChat(options?: UseChatOptions) {
     setProposalErrors({})
     setProposalFailedNames({})
     setPendingProposals({})
+    setAmendmentStates({})
+    setAmendmentErrors({})
+    amendmentStatesRef.current = {}
     historyLoaded.current = false
   }, [cancelStream])
 
@@ -753,6 +783,77 @@ export function useChat(options?: UseChatOptions) {
     }
   }, [])
 
+  // ── Mid-cook amendment card (#489) ───────────────────────────────────────
+
+  /**
+   * Confirm the amendment on `msgId`'s card through the AI service.
+   *
+   * Fails closed, like the pantry card: the card reads `applying` while the call
+   * is in flight, `applied` only once the service has written the amended list
+   * into the conversation's pinned cook and recorded the turn, and `failed`
+   * (retryable, with the reason) otherwise. Resolves to the applied proposal so
+   * the caller can store what was cooked, or `null` when nothing was applied:
+   * a failure, a second tap while one is in flight, or a card already handled.
+   */
+  const applyAmendment = useCallback(
+    async (msgId: string): Promise<RecipeAmendmentProposal | null> => {
+      const state = amendmentStatesRef.current[msgId]
+      if (state !== 'pending' && state !== 'failed') return null
+
+      const msg = messagesRef.current.find((m) => m.id === msgId)
+      const proposal = msg?.response?.proposal
+      const convId = conversationIdRef.current
+      const requestId = msg?.response?.request_id
+      if (!isRecipeAmendmentProposal(proposal) || !convId || !requestId) return null
+
+      // Claimed synchronously so a double tap cannot reach the service twice.
+      amendmentStatesRef.current = { ...amendmentStatesRef.current, [msgId]: 'applying' }
+      setAmendmentStates((prev) => ({ ...prev, [msgId]: 'applying' }))
+      setAmendmentErrors((prev) => {
+        const next = { ...prev }
+        delete next[msgId]
+        return next
+      })
+
+      try {
+        await applyCookAmendment({ conversationId: convId, requestId, proposal })
+        amendmentStatesRef.current = { ...amendmentStatesRef.current, [msgId]: 'applied' }
+        setAmendmentStates((prev) => ({ ...prev, [msgId]: 'applied' }))
+        return proposal
+      } catch (err) {
+        amendmentStatesRef.current = { ...amendmentStatesRef.current, [msgId]: 'failed' }
+        setAmendmentStates((prev) => ({ ...prev, [msgId]: 'failed' }))
+        setAmendmentErrors((prev) => ({
+          ...prev,
+          [msgId]: err instanceof Error ? err.message : "Couldn't update what you're cooking",
+        }))
+        return null
+      }
+    },
+    [],
+  )
+
+  /**
+   * "Keep original": the card reads dismissed at once, and the dismissal is
+   * recorded on the persisted turn (the same `POST /v1/workflows/reject` a
+   * pantry card uses) so a reload shows it dismissed. Fire and forget: a failed
+   * record only means the card may come back pending, which writes nothing.
+   */
+  const dismissAmendment = useCallback((msgId: string) => {
+    const state = amendmentStatesRef.current[msgId]
+    if (state === 'applied' || state === 'applying') return
+    amendmentStatesRef.current = { ...amendmentStatesRef.current, [msgId]: 'dismissed' }
+    setAmendmentStates((prev) => ({ ...prev, [msgId]: 'dismissed' }))
+    const convId = conversationIdRef.current
+    const requestId = messagesRef.current.find((m) => m.id === msgId)?.response?.request_id
+    if (!convId || !requestId) return
+    try {
+      Promise.resolve(rejectPantryProposal(convId, [requestId])).catch(() => {})
+    } catch {
+      // Best effort only.
+    }
+  }, [])
+
   // ── Chip tap send (interrupts streaming) ────────────────────────────────
   // Clarification pill taps need to send even while a prior response is
   // streaming — the user has already seen enough to respond. Abort the
@@ -802,6 +903,8 @@ export function useChat(options?: UseChatOptions) {
     proposalStates,
     proposalErrors,
     proposalFailedNames,
+    amendmentStates,
+    amendmentErrors,
     sendMessage,
     sendChipMessage,
     sendConfirmChoice,
@@ -810,5 +913,7 @@ export function useChat(options?: UseChatOptions) {
     approveProposal,
     rejectProposal,
     updateProposalActions,
+    applyAmendment,
+    dismissAmendment,
   }
 }

@@ -2377,17 +2377,26 @@ async def run_chat_workflow_streaming(
         f"response_length={len(collected_text)}"
     )
 
-    # Stream-path amendment detection (issue #654 PR B, B1). Only for a
-    # cooking_help turn with a readable request-context cook pin (a full
-    # `cooking_recipe` dict) — never for an id-only pin or the session-
-    # snapshot pin alone, and never after a stream failure. `_detect_amendment`
-    # re-raises provider errors (it only catches ValueError/TypeError/
-    # ValidationError itself), so this is wrapped to never break the stream.
+    # Stream-path amendment detection (issue #654 PR B, B1; widened by #489). A
+    # cooking_help turn is checked when the cook is pinned by a readable
+    # request-context pin (a full `cooking_recipe` dict, the meal overlay) OR by
+    # the session snapshot of a COOKING session (the chat page sends its cook
+    # context once, on the first message, so every later turn, and the amended
+    # list a confirmed amendment writes back, lives only on the snapshot). Never
+    # for an id-only pin, never for a snapshot left by RECIPE_EXPLORING (a
+    # suggestion the user isn't cooking), and never after a stream failure.
+    # `_detect_amendment` returns None without a model call when the pin has no
+    # ingredients, and re-raises provider errors (it only catches ValueError/
+    # TypeError/ValidationError itself), so this is wrapped to never break the
+    # stream.
     proposal: RecipeAmendmentProposal | None = None
     if (
         intent == Intent.COOKING_HELP.value
         and not stream_failed
-        and _request_cook_pin(classified_state.get("context")) is not None
+        and (
+            _request_cook_pin(classified_state.get("context")) is not None
+            or classified_state.get("session_mode") == SessionMode.COOKING.value
+        )
     ):
         try:
             amendment = await _detect_amendment(stream_final_state, ai_manager, collected_text)

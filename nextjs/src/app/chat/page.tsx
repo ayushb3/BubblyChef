@@ -22,6 +22,7 @@ import ConfirmBand from '@/components/chat/ConfirmBand'
 import MealOptionCards from '@/components/chat/MealOptionCards'
 import CompactMealCard from '@/components/chat/CompactMealCard'
 import CookModal from '@/components/recipes/CookModal'
+import CookingAmendmentCard from '@/components/chat/CookingAmendmentCard'
 import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
 import Chip, { type ChipTone } from '@/components/ui/Chip'
 import EmptyState from '@/components/ui/EmptyState'
@@ -30,15 +31,24 @@ import { checkAIHealth } from '@/lib/api/chat'
 import { fetchRecipe, promoteRecipeDraft } from '@/lib/api/recipes'
 import { createMeal, updateMeal } from '@/lib/api/meals'
 import { buildCreateMealPayload, fixedMainForCard } from '@/lib/meal-chat-helpers'
-import { cookingContextForId, deriveChatSeed, makeMealMessage } from '@/lib/chat-seed'
-import { startCookSession, isCookSessionEnded } from '@/lib/cook-session'
+import { cookingContextForId, cookingPinContext, deriveChatSeed, makeMealMessage } from '@/lib/chat-seed'
+import {
+  startCookSession,
+  isCookSessionEnded,
+  saveAmendedCook,
+  getAmendedCook,
+  clearAmendedCook,
+} from '@/lib/cook-session'
+import { amendedLinesFromProposal } from '@/lib/cook-amendment'
 import { useStarterContext } from '@/lib/api/starter-context'
 import { rankStarterPills } from '@/lib/starter-pills'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import type {
+  AmendmentCardState,
   ChatMessage,
   ChatRecipeData,
   PantryProposalData,
+  RecipeAmendmentProposal,
   PantryProposalAction,
   MealOption,
   MealProposal,
@@ -53,6 +63,7 @@ import {
   getConfirmOptions,
   isMealOptionsProposal,
   isMealProposal,
+  isRecipeAmendmentProposal,
 } from '@/types/chat'
 import type { SavedRecipeMatch } from '@/types/chat'
 import { resolveChips, COOKING_CHIPS, type ChipConfig, type ChipAction } from '@/lib/chat-chips'
@@ -109,6 +120,8 @@ function ChatSurface() {
     proposalStates,
     proposalErrors,
     proposalFailedNames,
+    amendmentStates,
+    amendmentErrors,
     sendMessage,
     sendChipMessage,
     sendConfirmChoice,
@@ -117,6 +130,8 @@ function ChatSurface() {
     approveProposal,
     rejectProposal,
     updateProposalActions,
+    applyAmendment,
+    dismissAmendment,
   } = useChat({ skipResume: Boolean(seed) || Boolean(cookingRecipeId) })
 
   const [input, setInput] = useState('')
@@ -242,6 +257,11 @@ function ChatSurface() {
       ? loadedRecipe
       : null
 
+  // The amendment on record for the recipe being cooked (#489/#490), read at
+  // render like `isCookSessionEnded` (and refreshed by `cookTick`): the banner
+  // counts it, and it survives a reload because it lives in the cook-session store.
+  const amendedCook = cookingRecipe && cookingRecipeId ? getAmendedCook(cookingRecipeId) : null
+
   // Strip a `?cooking=` param that names an already-ended session — e.g. the
   // redirect CookModal performs right after a confirmed deduction, or the
   // back button returning to a stale URL. Without this the param lingers
@@ -265,8 +285,37 @@ function ChatSurface() {
   const takeCookingContext = (): Record<string, unknown> | undefined => {
     if (contextSentRef.current || isStreaming) return undefined
     const context = cookingContextForId(cookingRecipeId)
-    if (!context) return undefined
+    if (!context || !cookingRecipeId) return undefined
     contextSentRef.current = true
+    // #489/#490: pin what is actually being cooked. A confirmed amendment on
+    // record wins, so a reload's fresh conversation starts from the AMENDED
+    // list (the stored row the id resolves to would silently undo it), and so
+    // a further amendment is detected against it. Otherwise, once the recipe has
+    // loaded, the full pin lets the very first turn already carry an amendment.
+    // Before either is known, the id-only pin still works (#155).
+    const amended = getAmendedCook(cookingRecipeId)
+    if (amended) {
+      return {
+        ...cookingPinContext(
+          cookingRecipeId,
+          amended.recipeTitle || loadedRecipe?.title || '',
+          amended.ingredients,
+        ),
+      }
+    }
+    if (loadedRecipe?.id === cookingRecipeId) {
+      return {
+        ...cookingPinContext(
+          cookingRecipeId,
+          loadedRecipe.title,
+          loadedRecipe.ingredients.map((ing) =>
+            typeof ing === 'string'
+              ? ing
+              : { name: ing.name, quantity: ing.quantity ?? null, unit: ing.unit ?? null },
+          ),
+        ),
+      }
+    }
     return { ...context }
   }
 
@@ -310,7 +359,54 @@ function ChatSurface() {
     if (cookingRecipeId === recipeId) router.replace('/chat', { scroll: false })
   }
 
-  const dismissCookingCard = () => endCookingSession(cookingRecipeId)
+  const dismissCookingCard = () => {
+    // Walking away from the cook drops an amendment made during it (#489): the
+    // next cook of this recipe starts from the recipe as saved.
+    if (cookingRecipeId) clearAmendedCook(cookingRecipeId)
+    endCookingSession(cookingRecipeId)
+  }
+
+  /**
+   * "Update what I'm cooking" (#489). The hook confirms the amendment with the
+   * AI service (which pins it for later turns); only once that succeeds is it
+   * recorded here, so a failed apply changes nothing: the banner, the deduction
+   * and the next message's pin all stay on the original list. The record is what
+   * survives a reload (#490) and what "Finished cooking" deducts.
+   */
+  const handleApplyAmendment = async (msgId: string) => {
+    if (!cookingRecipeId) return
+    const applied = await applyAmendment(msgId)
+    if (!applied) return
+    saveAmendedCook(cookingRecipeId, {
+      title: applied.recipe_title ?? cookingRecipe?.title ?? loadedRecipe?.title,
+      ingredients: amendedLinesFromProposal(applied),
+      changeSummary: applied.change_summary,
+    })
+    setCookTick((n) => n + 1)
+  }
+
+  // Only the newest amendment card can be acted on (each one is the model's
+  // full list, so an older one would roll a later change back), and only for the
+  // recipe being cooked right now. Everything else reads as handled or inert.
+  const latestAmendmentMsgId = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (m.role === 'assistant' && isRecipeAmendmentProposal(m.response?.proposal)) return m.id
+    }
+    return null
+  })()
+  // Read once per cook sheet (keyed on the target), not on every render: the
+  // sheet's confirm ends the cook and clears the record mid-render (#489).
+  const cookTargetAmended = useMemo(
+    () =>
+      cookTarget?.mode === 'confirm'
+        ? (getAmendedCook(cookTarget.recipeId)?.ingredients ?? null)
+        : null,
+    [cookTarget],
+  )
+  const cookIsLive = Boolean(
+    cookingRecipeId && cookingRecipeId !== dismissedRecipeId && !isCookSessionEnded(cookingRecipeId),
+  )
 
   const handleNewChat = () => {
     // New conversation — the backend session is gone, so resend the context.
@@ -696,7 +792,7 @@ function ChatSurface() {
           <div className="flex-shrink-0 px-4 pt-4">
             <CookingContextCard
               title={cookingRecipe.title}
-              ingredientCount={cookingRecipe.ingredients.length}
+              ingredientCount={amendedCook?.ingredients.length ?? cookingRecipe.ingredients.length}
               onDismiss={dismissCookingCard}
               onFinishCooking={() => {
                 if (!cookingRecipeId) return
@@ -759,6 +855,17 @@ function ChatSurface() {
                 proposalState={proposalStates[msg.id]}
                 proposalError={proposalErrors[msg.id]}
                 failedNames={proposalFailedNames?.[msg.id]}
+                amendmentState={amendmentStates?.[msg.id] ?? 'pending'}
+                amendmentError={amendmentErrors?.[msg.id]}
+                amendmentActionable={
+                  cookIsLive &&
+                  msg.id === latestAmendmentMsgId &&
+                  isRecipeAmendmentProposal(msg.response?.proposal) &&
+                  msg.response.proposal.recipe_id === cookingRecipeId &&
+                  Boolean(msg.response.request_id)
+                }
+                onApplyAmendment={() => handleApplyAmendment(msg.id)}
+                onDismissAmendment={() => dismissAmendment(msg.id)}
                 saveState={saveStates[msg.id] ?? 'idle'}
                 onApprove={() => approveProposal(msg.id)}
                 onReject={() => rejectProposal(msg.id)}
@@ -925,6 +1032,7 @@ function ChatSurface() {
           recipeTitle={cookTarget.recipeTitle}
           isDraft={cookTarget.isDraft}
           mode={cookTarget.mode}
+          amendedIngredients={cookTargetAmended}
           onStartCooking={() => {
             // The preview was the decision point; this is where cooking actually
             // begins. Nothing was deducted by the preview.
@@ -975,6 +1083,12 @@ interface MessageRendererProps {
   proposalState?: 'pending' | 'approving' | 'approved' | 'rejected' | 'failed'
   proposalError?: string
   failedNames?: string[]
+  /** State / reason / actionability of an "Update what I'm cooking" card (#489). */
+  amendmentState: AmendmentCardState
+  amendmentError?: string
+  amendmentActionable: boolean
+  onApplyAmendment: () => void
+  onDismissAmendment: () => void
   saveState: 'idle' | 'saving' | 'saved' | 'error'
   onApprove: () => void
   onReject: () => void
@@ -1027,6 +1141,11 @@ function MessageRenderer({
   proposalState,
   proposalError,
   failedNames,
+  amendmentState,
+  amendmentError,
+  amendmentActionable,
+  onApplyAmendment,
+  onDismissAmendment,
   saveState,
   onApprove,
   onReject,
@@ -1069,6 +1188,38 @@ function MessageRenderer({
 
   const mascotState = isLastAssistant && isStreaming ? 'thinking' : 'happy'
   const intent = message.intent ?? message.response?.intent
+
+  // Mid-cook amendment (#489): the reply text plus the "Update what I'm cooking"
+  // card. Checked first: an amendment turn carries no pantry or recipe payload.
+  const amendmentProposal: RecipeAmendmentProposal | null = isRecipeAmendmentProposal(
+    message.response?.proposal,
+  )
+    ? (message.response?.proposal as RecipeAmendmentProposal)
+    : null
+  if (amendmentProposal) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      >
+        <div className="flex items-end gap-2">
+          <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+          <div className="flex flex-col gap-2 items-start min-w-0">
+            {message.content && <MessageBubble message={message} />}
+            <CookingAmendmentCard
+              proposal={amendmentProposal}
+              state={amendmentState}
+              actionable={amendmentActionable}
+              errorMessage={amendmentError}
+              onApply={onApplyAmendment}
+              onDismiss={onDismissAmendment}
+            />
+          </div>
+        </div>
+      </motion.div>
+    )
+  }
 
   // Confirm-choice band — renders before brainstorm so the explicit
   // next_action gate fires first. The band fires when the backend can't

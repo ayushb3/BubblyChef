@@ -14,6 +14,7 @@ import type {
   ConversationSession,
   AIHealthStatus,
   PantryProposalAction,
+  RecipeAmendmentProposal,
 } from '@/types/chat'
 
 const AI_SERVICE_URL =
@@ -281,6 +282,7 @@ export interface ApplyProposalResult {
 }
 
 const APPLY_FALLBACK_MESSAGE = "Couldn't update your pantry"
+const AMENDMENT_FALLBACK_MESSAGE = "Couldn't update what you're cooking"
 
 /**
  * A readable message from a non-2xx `/api/ai/workflows/apply` body. `error`
@@ -288,11 +290,11 @@ const APPLY_FALLBACK_MESSAGE = "Couldn't update your pantry"
  * arrives as `{ detail: [{ msg, ... }] }` (top level or under `error`).
  * Anything unreadable becomes a generic line rather than "[object Object]".
  */
-function applyErrorMessage(body: unknown): string {
+function applyErrorMessage(body: unknown, fallback: string = APPLY_FALLBACK_MESSAGE): string {
   const asRecord = (v: unknown): Record<string, unknown> | null =>
     v && typeof v === 'object' ? (v as Record<string, unknown>) : null
   const root = asRecord(body)
-  if (!root) return APPLY_FALLBACK_MESSAGE
+  if (!root) return fallback
   if (typeof root.error === 'string' && root.error.trim()) return root.error
   for (const holder of [root, asRecord(root.error)]) {
     const detail = holder?.detail
@@ -302,7 +304,7 @@ function applyErrorMessage(body: unknown): string {
       if (typeof msg === 'string' && msg.trim()) return msg
     }
   }
-  return APPLY_FALLBACK_MESSAGE
+  return fallback
 }
 
 /**
@@ -401,6 +403,42 @@ export async function applyPantryProposal(
     errors,
     failedActions,
   }
+}
+
+/**
+ * Confirm a mid-cook amendment card ("Update what I'm cooking", #489).
+ *
+ * Same proxy and same `POST /v1/workflows/apply` as a pantry proposal, with the
+ * `recipe_amendment` intent: the AI service writes the amended list into the
+ * conversation's pinned cook (so the NEXT amendment is detected against it) and
+ * records the turn as applied, so a reloaded thread shows the card as applied.
+ * It never writes the saved recipe. Throws on any failure, so the card fails
+ * closed and stays retryable; nothing is stored client-side until this resolves.
+ */
+export async function applyCookAmendment(args: {
+  conversationId: string
+  /** The amendment turn's own `request_id`: the key the service records the outcome under. */
+  requestId: string
+  proposal: RecipeAmendmentProposal
+}): Promise<void> {
+  const res = await fetch('/api/ai/workflows/apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      request_id: args.requestId,
+      intent: 'recipe_amendment',
+      conversation_id: args.conversationId,
+      turn_request_ids: [args.requestId],
+      proposal: args.proposal,
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => null)
+    throw new Error(applyErrorMessage(err, AMENDMENT_FALLBACK_MESSAGE))
+  }
+  const data = (await res.json().catch(() => null)) as { success?: unknown } | null
+  if (data?.success !== true) throw new Error(AMENDMENT_FALLBACK_MESSAGE)
 }
 
 /**

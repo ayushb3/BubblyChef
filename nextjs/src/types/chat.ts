@@ -4,6 +4,7 @@
  */
 
 import type { Step } from '@/types/recipes'
+import type { MealCookIngredient } from '@/types/meals'
 
 export type ChatIntent =
   | 'pantry_update'
@@ -370,12 +371,21 @@ export interface CookingRecipeIdContext {
   cooking_recipe_id: string
 }
 
-/** Legacy shape of `context.cooking_recipe` — still accepted by the AI service. */
+/**
+ * The full cook pin, `context.cooking_recipe` — accepted by the AI service. The
+ * chat page sends it (rather than the id) once it has the recipe, so the first
+ * turn can already be answered, and amended, against the list being cooked, and
+ * a reload mid-cook re-pins the AMENDED list (#489). Ingredients may be display
+ * strings or `{ name, quantity, unit }` objects; the service flattens both.
+ */
 export interface CookingRecipeContext {
   id: string
   title: string
-  ingredients: string[]
+  ingredients: (string | MealCookIngredient)[]
 }
+
+/** The state of an "Update what I'm cooking" card (#489), per message. */
+export type AmendmentCardState = 'pending' | 'applying' | 'applied' | 'failed' | 'dismissed'
 
 // ─── SSE Stream Events ────────────────────────────────────────────────────────
 
@@ -475,7 +485,7 @@ export interface ConversationHistoryTurn {
   role: 'user' | 'assistant'
   content: string
   intent: string | null
-  proposal?: PantryProposalData | ChatRecipeData | null
+  proposal?: PantryProposalData | ChatRecipeData | RecipeAmendmentProposal | null
   metadata?: Record<string, unknown> | null
   created_at: string
 }

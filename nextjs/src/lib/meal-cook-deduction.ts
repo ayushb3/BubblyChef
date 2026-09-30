@@ -44,7 +44,7 @@ export function cookedDishIds(dishes: SchedulerDish[], session: MealCookSession)
  * `Infinity`, a string) becomes `null`; at most `MAX_INGREDIENTS` elements,
  * keeping the first.
  */
-function sanitizeMealCookIngredients(raw: unknown[]): (string | MealCookIngredient)[] {
+export function sanitizeMealCookIngredients(raw: unknown[]): (string | MealCookIngredient)[] {
   const cleaned: (string | MealCookIngredient)[] = []
 
   for (const item of raw) {
