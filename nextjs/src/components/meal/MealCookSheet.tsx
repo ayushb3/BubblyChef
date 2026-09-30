@@ -9,7 +9,7 @@
  * `confirm_in_progress`, and navigating away on success.
  */
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { useMemo, useRef, useState, type MouseEvent } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
@@ -117,13 +117,17 @@ export default function MealCookSheet({
 
   // A fresh proposal (a re-open, or a Retry after a plain error) starts from
   // a clean slate — stale unit_conflict/compound overrides from a previous
-  // review shouldn't silently carry into a new one.
-  useEffect(() => {
+  // review shouldn't silently carry into a new one. Reset during render when
+  // `open`/`proposal` change (React's "adjust state on prop change" pattern),
+  // not in an effect, which the react-hooks lint rule rejects.
+  const [resetFor, setResetFor] = useState({ open, proposal })
+  if (resetFor.open !== open || resetFor.proposal !== proposal) {
+    setResetFor({ open, proposal })
     if (open) {
       setOverrides({})
       setExpiredDismissed(false)
     }
-  }, [open, proposal])
+  }
 
   const dishTitleByRecipeId = useMemo(() => {
     const map = new Map<string, string>()
