@@ -129,16 +129,13 @@ def _repo(
     recent_cuisines: list[str] | None = None,
     meal_plan_state: MealPlanSessionState | None = None,
 ) -> MagicMock:
-    """Mock repository. `get_recipe` mimics the real `.single()`: it RAISES when
-    the (user_id, recipe_id) pair has no row. `rows` is live, so a test can
+    """Mock repository. `get_recipe` mimics the real client: it returns None when
+    the (user_id, recipe_id) pair has no row (a zero-row `.limit(1)` read). `rows` is live, so a test can
     delete a row between two stages."""
     store = rows if rows is not None else {}
 
-    async def _get_recipe(user_id: str, recipe_id: str) -> dict[str, Any]:
-        row = store.get((user_id, recipe_id))
-        if row is None:
-            raise RuntimeError("JSON object requested, multiple (or no) rows returned")
-        return row
+    async def _get_recipe(user_id: str, recipe_id: str) -> dict[str, Any] | None:
+        return store.get((user_id, recipe_id))
 
     session = ConversationSession(
         conversation_id=_CONV_ID,

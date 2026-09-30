@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
 import Chip from '@/components/ui/Chip'
 import { titleCase } from '@/lib/format'
+import { proposalActionKey } from '@/types/chat'
 import type { PantryProposalData, PantryProposalAction, TermSuggestion } from '@/types/chat'
 
 interface PantryProposalCardProps {
@@ -32,6 +33,13 @@ interface PantryProposalCardProps {
    * proposal before the user approves.
    */
   onActionsChange?: (actions: PantryProposalAction[]) => void
+  /**
+   * Keys (`proposalActionKey`) of the rows a failed apply will retry. Rows
+   * outside the set already applied and stay read-only. `undefined` means every
+   * row is retryable (a failed card whose names never reached it degrades to
+   * the pre-existing behaviour instead of locking every row).
+   */
+  failedNames?: string[]
 }
 
 const ACTION_ICONS: Record<PantryProposalAction['action_type'], { icon: string; colorClass: string }> = {
@@ -58,10 +66,15 @@ function needsQtyEdit(action: PantryProposalAction): boolean {
 interface ActionRowProps {
   action: PantryProposalAction
   disabled: boolean
+  /**
+   * Open the editor even though the action looks concrete (a real unit). Set
+   * on a failed or retrying row so the user can fix a refused unit.
+   */
+  forceEditor?: boolean
   onQtyChange: (quantity: number | undefined, unit: string | undefined) => void
 }
 
-function ActionRow({ action, disabled, onQtyChange }: ActionRowProps) {
+function ActionRow({ action, disabled, forceEditor, onQtyChange }: ActionRowProps) {
   const { icon, colorClass } = ACTION_ICONS[action.action_type]
   // Once the editor is shown on mount (backend gave a vague unit/null qty), it
   // must stay mounted for the life of this row so the user can fill in both
@@ -69,7 +82,7 @@ function ActionRow({ action, disabled, onQtyChange }: ActionRowProps) {
   // `wasEverEditable` is frozen at mount; `needsQtyEdit(action)` catches the
   // initial render for rows that were always concrete (stays false → no editor).
   const [wasEverEditable] = useState(() => needsQtyEdit(action))
-  const showEditor = wasEverEditable || needsQtyEdit(action)
+  const showEditor = wasEverEditable || needsQtyEdit(action) || Boolean(forceEditor)
 
   // Local controlled state for the inline editor fields — only rendered when
   // showEditor is true. Initialised from whatever the backend gave us (or
@@ -164,12 +177,15 @@ export default function PantryProposalCard({
   clarificationTerms = [],
   onStagePick,
   onActionsChange,
+  failedNames,
 }: PantryProposalCardProps) {
   const isPending = state === 'pending'
   const isApproving = state === 'approving'
   const isApproved = state === 'approved'
   const isFailed = state === 'failed'
   const isEditable = isPending || isFailed
+  const failedSet = new Set(failedNames ?? [])
+  const retryable = (key: string) => !failedNames || failedSet.has(key)
 
   // Multi-select: track which items the user has tapped per vague term.
   // Tapping toggles the item; the updated selection map is forwarded to the
@@ -261,14 +277,24 @@ export default function PantryProposalCard({
 
       {/* Actions list */}
       <div className="px-4 py-2 flex flex-col divide-y divide-[var(--color-border)]">
-        {localActions.map((action, i) => (
-          <ActionRow
-            key={i}
-            action={action}
-            disabled={!isEditable}
-            onQtyChange={(qty, unit) => handleQtyChange(i, qty, unit)}
-          />
-        ))}
+        {localActions.map((action, i) => {
+          const key = proposalActionKey(action)
+          return (
+            <ActionRow
+              key={i}
+              action={action}
+              // Rows that already applied stay read-only after a partial
+              // failure: an edit to them would be dropped by useChat.
+              disabled={!isEditable || isApproving || (isFailed && !retryable(key))}
+              // The editor stays open (disabled) while a retry is in flight,
+              // so it doesn't collapse and reopen around the request. A FIRST
+              // approve has no failedNames yet (undefined reads as "every row
+              // retryable"), so it must not open every row's editor.
+              forceEditor={(isFailed || (isApproving && failedNames !== undefined)) && retryable(key)}
+              onQtyChange={(qty, unit) => handleQtyChange(i, qty, unit)}
+            />
+          )
+        })}
       </div>
 
       {/* Still-vague terms from this turn or a later one. Tapping a pill toggles

@@ -178,3 +178,35 @@ it('a `use` action arrives at the repository as `use`, not `add`', async () => {
   const body = JSON.parse(mock.mock.calls[0][1].body as string)
   expect(body.proposal.actions[0].action).toBe('use')
 })
+
+// ─── 7. A unit-mismatch refusal narrows failedActions to that one action ──────
+//
+// Issue #677: the AI service refuses a `use` whose unit can't be converted to
+// the row's ("Units don't match (handful vs g), edit the unit for: spinach").
+// The retry parser takes the name after the first ": ", so failedActions must
+// be exactly the spinach action, and the eggs that applied must not be resent.
+
+it('a unit-mismatch error narrows failedActions to exactly that action', async () => {
+  mockFetch(true, {
+    success: false,
+    applied_count: 1,
+    failed_count: 1,
+    errors: ["Units don't match (handful vs g), edit the unit for: spinach"],
+  })
+
+  const eggs: PantryProposalAction = {
+    action_type: 'use',
+    item: { name: 'eggs', quantity: 2, unit: 'item' },
+    confidence: 0.9,
+  }
+  const spinach: PantryProposalAction = {
+    action_type: 'use',
+    item: { name: 'Spinach', quantity: 1, unit: 'handful' },
+    confidence: 0.9,
+  }
+
+  const result = await applyPantryProposal('req-4', [eggs, spinach])
+
+  expect(result.success).toBe(false)
+  expect(result.failedActions).toEqual([spinach])
+})

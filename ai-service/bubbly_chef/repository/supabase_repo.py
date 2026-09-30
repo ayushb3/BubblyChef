@@ -15,7 +15,11 @@ from postgrest.types import JSON
 from supabase import Client, create_client
 
 from bubbly_chef.config import settings
-from bubbly_chef.domain.normalizer import normalize_food_name, normalize_to_base_unit
+from bubbly_chef.domain.normalizer import (
+    normalize_food_name,
+    normalize_to_base_unit,
+    normalize_unit,
+)
 from bubbly_chef.models.cook import MealCookClaim
 from bubbly_chef.models.pantry import FoodCategory, PantryItem, StorageLocation
 from bubbly_chef.models.recipe import RecipeCard
@@ -183,6 +187,87 @@ def _as_rows(value: list[JSON]) -> list[dict[str, Any]]:
     on every pantry fetch for a condition PostgREST can't produce.
     """
     return cast("list[dict[str, Any]]", value)
+
+
+class _PantryUsePlan:
+    """What one chat `use` action does to a pantry row (#677).
+
+    Exactly one of three shapes: `refusal` set (the row is untouched and the
+    action fails with that message), `updates` None with no refusal (the row is
+    used up and gets deleted), or `updates` holding the payload to write.
+    """
+
+    __slots__ = ("refusal", "updates")
+
+    def __init__(
+        self, updates: dict[str, Any] | None = None, refusal: str | None = None
+    ) -> None:
+        self.updates = updates
+        self.refusal = refusal
+
+
+def _display_subtraction_plan(
+    existing: PantryItem, name: str, category: str, used_qty: float
+) -> _PantryUsePlan:
+    """Subtract `used_qty` from the displayed quantity, in the row's own unit,
+    and re-derive the base from what remains (nulls when it can't be)."""
+    new_qty = max(0.0, float(existing.quantity) - used_qty)
+    if new_qty <= 0:
+        return _PantryUsePlan()
+    qb, ub = normalize_to_base_unit(
+        name=name, quantity=new_qty, unit=existing.unit, category=category
+    )
+    return _PantryUsePlan(updates={"quantity": new_qty, "quantity_base": qb, "unit_base": ub})
+
+
+def _plan_pantry_use(
+    existing: PantryItem, name: str, action: dict[str, Any]
+) -> _PantryUsePlan:
+    """Plan a chat `use` so the row's base stays in step with its display amount.
+
+    Same unit: plain display subtraction. Different units: subtract in the base
+    unit and scale the display amount proportionally (as `deduct_pantry_item`
+    does), so "used 2 eggs" from "1 dozen" leaves 0.8333 dozen, not nothing.
+    When no base can be worked out, a default/count-like unit falls back to
+    display subtraction and a real unit the user said is refused.
+    """
+    category = existing.category.value
+    used_qty = float(action.get("quantity", 1))
+    used_unit = str(action.get("unit") or existing.unit)
+
+    if normalize_unit(used_unit) == normalize_unit(existing.unit):
+        return _display_subtraction_plan(existing, name, category, used_qty)
+
+    # The row's base comes from the displayed amount first: stored bases can be
+    # stale from the old `use` path, and the display amount is what the user sees.
+    row_base, row_unit = normalize_to_base_unit(
+        name=name, quantity=float(existing.quantity), unit=existing.unit, category=category
+    )
+    if row_base is None and existing.quantity_base is not None and existing.unit_base:
+        row_base, row_unit = float(existing.quantity_base), existing.unit_base
+    used_base: float | None = None
+    if row_unit:
+        used_base, _ = normalize_to_base_unit(
+            name=name, quantity=used_qty, unit=used_unit, category=category, target_unit=row_unit
+        )
+
+    if row_base is not None and row_unit and used_base is not None:
+        new_base = max(0.0, row_base - used_base)
+        if new_base <= 0:
+            return _PantryUsePlan()
+        return _PantryUsePlan(
+            updates={
+                "quantity": round(float(existing.quantity) * new_base / row_base, 4),
+                "quantity_base": new_base,
+                "unit_base": row_unit,
+            }
+        )
+
+    if normalize_unit(str(action.get("unit") or "")) in {"item", "count"}:
+        return _display_subtraction_plan(existing, name, category, used_qty)
+    return _PantryUsePlan(
+        refusal=f"Units don't match ({used_unit} vs {existing.unit}), edit the unit for: {name}"
+    )
 
 
 def _parse_meal_cook_timestamp(value: Any) -> datetime | None:
@@ -456,17 +541,17 @@ class SupabaseRepository:
                         failed += 1
                         continue
                     if action_type == "use":
-                        new_qty = max(
-                            0,
-                            float(existing.quantity)
-                            - float(action.get("quantity", 1)),
-                        )
-                        if new_qty <= 0:
+                        plan = _plan_pantry_use(existing, name, action)
+                        if plan.refusal is not None:
+                            errors.append(plan.refusal)
+                            failed += 1
+                            continue
+                        if plan.updates is None:
                             await self.delete_pantry_item(user_id, str(existing.id))
                             affected_item_ids.append(existing.id)
                         else:
                             updated = await self.update_pantry_item(
-                                user_id, str(existing.id), {"quantity": new_qty}
+                                user_id, str(existing.id), plan.updates
                             )
                             affected_item_ids.append(updated.id if updated else existing.id)
                     else:
@@ -475,6 +560,19 @@ class SupabaseRepository:
                             for k, v in action.items()
                             if k not in ("action", "name") and v is not None
                         }
+                        # #677: a new amount or unit must carry a current base, or the
+                        # next cook deducts from the stale one. An update with neither
+                        # key (a location-only edit) stays base-neutral. None is written
+                        # explicitly when the base can't be derived.
+                        if "quantity" in updates or "unit" in updates:
+                            qb, ub = normalize_to_base_unit(
+                                name=str(updates.get("name", name)),
+                                quantity=float(updates.get("quantity", existing.quantity)),
+                                unit=str(updates.get("unit", existing.unit)),
+                                category=str(updates.get("category", existing.category.value)),
+                            )
+                            updates["quantity_base"] = qb
+                            updates["unit_base"] = ub
                         updated = await self.update_pantry_item(
                             user_id, str(existing.id), updates
                         )
@@ -764,18 +862,22 @@ class SupabaseRepository:
         (issue #376 / #417). Callers that need a model construct it
         themselves; the JSONB `ingredients` column can hold objects or plain
         strings, so `normalize_cooking_recipe` handles both.
+
+        A miss is a zero-row read that returns `None`; it never raises. (The
+        read is `.limit(1)`, not `.single()`: PostgREST answers zero rows to a
+        `.single()` with a 406 that supabase-py raises as `APIError` PGRST116,
+        so a missing recipe used to surface as a 500 instead of a 404. #676.)
         """
         result = (
             self.client.table("recipes")
             .select("*")
             .eq("id", recipe_id)
             .eq("user_id", user_id)
-            .single()
+            .limit(1)
             .execute()
         )
-        if not result.data:
-            return None
-        return _as_row(result.data)
+        rows = _as_rows(result.data)
+        return rows[0] if rows else None
 
     async def update_recipe_steps(
         self, user_id: str, recipe_id: str, steps: list[dict[str, Any]]
@@ -793,18 +895,31 @@ class SupabaseRepository:
             .execute()
         )
 
-    async def update_recipe_cooked(self, user_id: str, recipe_id: str) -> None:
-        """Increment times_cooked and set last_cooked_at to now."""
+    async def update_recipe_cooked(self, user_id: str, recipe_id: str) -> bool:
+        """Increment times_cooked and set last_cooked_at to now.
+
+        Returns True when the recipe was marked, False when it no longer exists
+        for this user (nothing is written). A miss never raises: a dish recipe
+        deleted after the deductions landed must not strand the meal claim (#676).
+        """
         # Read current times_cooked first
         result = (
             self.client.table("recipes")
             .select("times_cooked")
             .eq("id", recipe_id)
             .eq("user_id", user_id)
-            .single()
+            .limit(1)
             .execute()
         )
-        current = _as_row(result.data) if result.data else {}
+        rows = _as_rows(result.data)
+        if not rows:
+            logger.info(
+                "update_recipe_cooked: recipe %s not found for user %s; nothing to mark",
+                recipe_id,
+                user_id,
+            )
+            return False
+        current = rows[0]
         times_cooked = int(current.get("times_cooked", 0)) + 1
         (
             self.client.table("recipes")
@@ -818,6 +933,7 @@ class SupabaseRepository:
             .eq("user_id", user_id)
             .execute()
         )
+        return True
 
     async def deduct_pantry_item(
         self, user_id: str, item_id: str, deduct_qty: float
@@ -836,8 +952,9 @@ class SupabaseRepository:
         by the whole conversion factor whenever the two units differ: deducting
         100 g from a "2 kg" row would compute 2 - 100 and floor the row to zero.
 
-        Returns True when the row was updated, False when the deduction was
-        refused because no base unit was recorded or derivable. Callers must not
+        Returns True when the row was updated, False when the row is gone (at the
+        read or at the write) or the deduction was refused because no base unit
+        was recorded or derivable. Callers must not
         report a refused deduction as applied — the row is deliberately
         untouched, and telling the user their pantry was updated when it was not
         is the same lie the corruption bug told, just in the other direction.
@@ -847,14 +964,15 @@ class SupabaseRepository:
             .select("name, quantity, unit, quantity_base, unit_base")
             .eq("id", item_id)
             .eq("user_id", user_id)
-            .single()
+            .limit(1)
             .execute()
         )
-        if not result.data:
+        rows = _as_rows(result.data)
+        if not rows:
             logger.warning(f"deduct_pantry_item: item {item_id} not found for user {user_id}")
             return False
 
-        row = _as_row(result.data)
+        row = rows[0]
         current_base = float(row["quantity_base"]) if row.get("quantity_base") is not None else None
         current_qty = float(row["quantity"])
 
@@ -884,14 +1002,16 @@ class SupabaseRepository:
             update: dict[str, Any] = {"quantity": new_qty, "quantity_base": new_base}
             if derived_unit_base is not None:
                 update["unit_base"] = derived_unit_base
-            (
+            update_result = (
                 self.client.table("pantry_items")
                 .update(update)
                 .eq("id", item_id)
                 .eq("user_id", user_id)
                 .execute()
             )
-            return True
+            # An update that matched no row (the row was deleted between the
+            # read and the write) is a skip, not an applied deduction (#676).
+            return bool(_as_rows(update_result.data))
         else:
             # Base units are neither recorded nor derivable for this row, so the
             # unit `deduct_qty` is expressed in is unknown. Deducting it from the

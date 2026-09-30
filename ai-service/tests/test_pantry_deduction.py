@@ -32,11 +32,13 @@ class _FakeQuery:
     def eq(self, *_args: Any, **_kwargs: Any) -> _FakeQuery:
         return self
 
-    def single(self) -> _FakeQuery:
+    def limit(self, *_args: Any, **_kwargs: Any) -> _FakeQuery:
         return self
 
     def execute(self) -> Any:
-        return type("Result", (), {"data": self._row})()
+        # The real client returns a list for a `.limit(1)` read (empty on a miss)
+        # and the matched rows for an update, so one shape answers both (#676).
+        return type("Result", (), {"data": [self._row] if self._row else []})()
 
 
 class _FakeClient:

@@ -18,7 +18,8 @@ from bubbly_chef.repository.supabase_repo import SupabaseRepository
 
 
 class _FakeQuery:
-    """Replays a canned `.single()` select result and records the filters."""
+    """Replays a canned `.limit(1)` select result (a list, empty on a miss, as the
+    real client returns it) and records the filters."""
 
     def __init__(self, store: dict[str, Any], row: dict[str, Any] | None) -> None:
         self._store = store
@@ -31,11 +32,11 @@ class _FakeQuery:
         self._store["filters"].append((column, value))
         return self
 
-    def single(self) -> _FakeQuery:
+    def limit(self, *_args: Any, **_kwargs: Any) -> _FakeQuery:
         return self
 
     def execute(self) -> Any:
-        return type("Result", (), {"data": self._row})()
+        return type("Result", (), {"data": [self._row] if self._row else []})()
 
 
 class _FakeClient:

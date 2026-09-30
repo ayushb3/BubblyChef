@@ -108,6 +108,7 @@ function ChatSurface() {
     isResuming,
     proposalStates,
     proposalErrors,
+    proposalFailedNames,
     sendMessage,
     sendChipMessage,
     sendConfirmChoice,
@@ -757,6 +758,7 @@ function ChatSurface() {
                 }
                 proposalState={proposalStates[msg.id]}
                 proposalError={proposalErrors[msg.id]}
+                failedNames={proposalFailedNames?.[msg.id]}
                 saveState={saveStates[msg.id] ?? 'idle'}
                 onApprove={() => approveProposal(msg.id)}
                 onReject={() => rejectProposal(msg.id)}
@@ -972,6 +974,7 @@ interface MessageRendererProps {
   isLastSettledAssistant: boolean
   proposalState?: 'pending' | 'approving' | 'approved' | 'rejected' | 'failed'
   proposalError?: string
+  failedNames?: string[]
   saveState: 'idle' | 'saving' | 'saved' | 'error'
   onApprove: () => void
   onReject: () => void
@@ -1023,6 +1026,7 @@ function MessageRenderer({
   isLastSettledAssistant,
   proposalState,
   proposalError,
+  failedNames,
   saveState,
   onApprove,
   onReject,
@@ -1318,6 +1322,7 @@ function MessageRenderer({
               onReject={onReject}
               state={proposalState ?? 'pending'}
               error={proposalError}
+              failedNames={failedNames}
               clarificationTerms={clarificationTerms}
               onStagePick={(sel) => onStageText(buildClarificationText(sel))}
               onActionsChange={onActionsChange}
