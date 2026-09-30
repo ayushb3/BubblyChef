@@ -512,18 +512,128 @@ class SupabaseRepository:
         and deduction define it). Empty leftover rows sort last. `[]` when the
         pantry has no such food.
         """
+        return [lot for lot, _raw in await self._food_lot_rows(user_id, name)]
+
+    async def _food_lot_rows(
+        self, user_id: str, name: str
+    ) -> list[tuple[PantryItem, dict[str, Any]]]:
+        """`find_food_lots`, each lot paired with a copy of its raw table row.
+
+        The copy is what a failed multi-lot write puts back (#711), so it keeps
+        every column, including ones `PantryItem` does not model.
+        """
         anchor = await self.find_similar_item(user_id, name)
         if anchor is None:
             return []
         food = lot_food_key(anchor.name)
         result = self.client.table("pantry_items").select("*").eq("user_id", user_id).execute()
-        lots = {
-            item.id: item
-            for item in (self._row_to_pantry_item(r) for r in _as_rows(result.data))
-            if lot_food_key(item.name) == food
+        lots: dict[UUID, tuple[PantryItem, dict[str, Any]]] = {}
+        for row in _as_rows(result.data):
+            item = self._row_to_pantry_item(row)
+            if lot_food_key(item.name) == food:
+                lots[item.id] = (item, dict(row))
+        if anchor.id not in lots:
+            lots[anchor.id] = (anchor, self._pantry_item_row(user_id, anchor))
+        return sorted(lots.values(), key=lambda pair: soonest_first_key(pair[0]))
+
+    def _pantry_item_row(self, user_id: str, item: PantryItem) -> dict[str, Any]:
+        """The insert payload for `item` as it is now, keeping its id and dates."""
+        category = item.category.value if hasattr(item.category, "value") else str(item.category)
+        location = (
+            item.storage_location.value
+            if hasattr(item.storage_location, "value")
+            else str(item.storage_location)
+        )
+        return {
+            "id": str(item.id),
+            "user_id": user_id,
+            "name": item.name,
+            "name_normalized": item.name.lower().strip(),
+            "category": category,
+            "location": location,
+            "quantity": float(item.quantity),
+            "unit": item.unit,
+            "quantity_base": float(item.quantity_base) if item.quantity_base is not None else None,
+            "unit_base": item.unit_base,
+            "expiry_date": item.expiry_date.isoformat() if item.expiry_date else None,
+            "estimated_expiry": bool(item.estimated_expiry),
+            "slot_index": item.slot_index,
+            "added_at": item.created_at.isoformat(),
+            "updated_at": item.updated_at.isoformat(),
         }
-        lots.setdefault(anchor.id, anchor)
-        return sorted(lots.values(), key=soonest_first_key)
+
+    async def _write_use_plan(
+        self,
+        user_id: str,
+        planned: list[tuple[PantryItem, _PantryUsePlan]],
+        raw_rows: dict[UUID, dict[str, Any]],
+    ) -> list[UUID]:
+        """Write a chat `use` plan across lots, all or nothing as far as it can (#711).
+
+        Returns the ids of the rows written. When a write fails after earlier
+        ones landed, those are put back (quantities re-written, a deleted lot
+        re-inserted from its snapshot) and the error is re-raised, so the action
+        fails with nothing applied and a retry spends once. When putting them
+        back fails too, the stock is already part-spent and a retry would spend
+        it again, so this logs the row ids and returns as if applied: the
+        proposal-state guard (#444) then refuses the retry. Under-reporting stock
+        is the lesser harm.
+        """
+        landed: list[tuple[PantryItem, bool]] = []  # (lot, was_deleted), in write order
+        ids: list[UUID] = []
+        try:
+            for lot, plan in planned:
+                if plan.updates is None:
+                    if await self.delete_pantry_item(user_id, str(lot.id)):
+                        landed.append((lot, True))
+                    ids.append(lot.id)
+                else:
+                    updated = await self.update_pantry_item(user_id, str(lot.id), plan.updates)
+                    if updated is not None:
+                        landed.append((lot, False))
+                    ids.append(updated.id if updated else lot.id)
+        except Exception as write_error:
+            if not landed:
+                raise
+            unrestored = await self._restore_lots(user_id, landed, raw_rows)
+            if not unrestored:
+                raise
+            logger.error(
+                "chat use across lots failed part-way and could not be rolled back; "
+                "reporting it applied so a retry cannot spend twice. "
+                f"Write error: {write_error}. "
+                f"Rows changed and not restored: {sorted(str(i) for i in unrestored)}"
+            )
+            return [*ids, *(lot.id for lot, _ in planned if lot.id not in ids)]
+        return ids
+
+    async def _restore_lots(
+        self,
+        user_id: str,
+        landed: list[tuple[PantryItem, bool]],
+        raw_rows: dict[UUID, dict[str, Any]],
+    ) -> list[UUID]:
+        """Undo landed use-writes, newest first; the ids that could not be undone."""
+        unrestored: list[UUID] = []
+        for lot, was_deleted in reversed(landed):
+            raw = raw_rows.get(lot.id) or self._pantry_item_row(user_id, lot)
+            try:
+                if was_deleted:
+                    self.client.table("pantry_items").insert(raw).execute()
+                else:
+                    await self.update_pantry_item(
+                        user_id,
+                        str(lot.id),
+                        {
+                            "quantity": raw["quantity"],
+                            "quantity_base": raw.get("quantity_base"),
+                            "unit_base": raw.get("unit_base"),
+                        },
+                    )
+            except Exception as restore_error:
+                logger.error(f"Could not restore pantry row {lot.id}: {restore_error}")
+                unrestored.append(lot.id)
+        return unrestored
 
     async def add_pantry_item(self, user_id: str, item: PantryItem) -> PantryItem:
         data = {
@@ -759,23 +869,21 @@ class SupabaseRepository:
                 elif action_type == "use":
                     # #711: a food can sit in several lots, so a use is spread over
                     # them (soonest expiry first) instead of acting on one row.
-                    lots = await self.find_food_lots(user_id, name)
-                    if not lots:
+                    lot_rows = await self._food_lot_rows(user_id, name)
+                    if not lot_rows:
                         _record_failure(index, f"Item not found: {name}")
                         continue
-                    planned, refusal = _plan_use_across_lots(lots, name, action)
+                    planned, refusal = _plan_use_across_lots(
+                        [lot for lot, _raw in lot_rows], name, action
+                    )
                     if not planned:
                         _record_failure(index, refusal or f"Item not found: {name}")
                         continue
-                    for lot, plan in planned:
-                        if plan.updates is None:
-                            await self.delete_pantry_item(user_id, str(lot.id))
-                            affected_item_ids.append(lot.id)
-                        else:
-                            updated = await self.update_pantry_item(
-                                user_id, str(lot.id), plan.updates
-                            )
-                            affected_item_ids.append(updated.id if updated else lot.id)
+                    affected_item_ids.extend(
+                        await self._write_use_plan(
+                            user_id, planned, {lot.id: raw for lot, raw in lot_rows}
+                        )
+                    )
                     applied += 1
 
                 elif action_type == "update":
