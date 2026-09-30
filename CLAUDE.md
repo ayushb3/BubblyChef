@@ -458,7 +458,7 @@ BUBBLY_REVIEW_CONFIDENCE_THRESHOLD=0.5
 BUBBLY_CORS_ORIGINS=["http://localhost:3000"]
 BUBBLY_HEALTH_GENERATION_PROBE_TTL_SECONDS=900   # optional — /health/ai runs a tiny real generation, a successful result cached this long (single-flight); 0 disables the probe and /health/ai only checks reachability
 BUBBLY_HEALTH_GENERATION_PROBE_FAILURE_TTL_SECONDS=60   # optional — a FAILED probe is cached only this long so /health/ai recovers soon after an outage; 0 re-probes every call
-BUBBLY_HEALTH_GENERATION_PROBE_MAX_OUTPUT_TOKENS=4   # optional — token cap on that probe
+BUBBLY_HEALTH_GENERATION_PROBE_MAX_OUTPUT_TOKENS=16   # optional — token cap on that probe (16 leaves room for thinking tokens on a thinking model)
 BUBBLY_GIT_SHA=...                      # optional — deployed commit SHA, surfaced on /health and /health/ai for post-merge smoke tests; falls back to Railway's own RAILWAY_GIT_COMMIT_SHA, then "unknown"
 ```
 

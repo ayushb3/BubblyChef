@@ -17,7 +17,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from bubbly_chef.ai.manager import AIManager
-from bubbly_chef.ai.provider import AIProvider, ProviderUnavailableError
+from bubbly_chef.ai.provider import AIProvider, ProviderUnavailableError, StructuredOutputError
 from bubbly_chef.config import settings
 from bubbly_chef.main import app
 
@@ -31,8 +31,10 @@ class FakeProvider(AIProvider):
         *,
         fail_kind: str | None = None,
         delay: float = 0.0,
+        empty_reply: bool = False,
     ) -> None:
         self._name = name
+        self.empty_reply = empty_reply
         self.fail_kind = fail_kind
         self.delay = delay
         self.complete_calls: list[dict[str, Any]] = []
@@ -58,6 +60,10 @@ class FakeProvider(AIProvider):
                 kind=self.fail_kind,  # type: ignore[arg-type]
                 status_code=429,
             )
+        if self.empty_reply:
+            # What GeminiProvider raises for a 200 whose capped reply has no
+            # text (finishReason MAX_TOKENS, no parts).
+            raise StructuredOutputError("Unexpected Gemini response format: no parts")
         return "ok"
 
     async def is_available(self) -> bool:
@@ -172,6 +178,108 @@ class TestGenerationProbe:
         assert status["healthy"] is False
         assert status["generation_probe"]["healthy"] is False
         assert status["generation_probe"]["failure_kind"] is None
+
+
+class TestEmptyCappedReply:
+    @pytest.mark.asyncio
+    async def test_a_200_with_no_text_reads_as_healthy(self, clock: FakeClock) -> None:
+        # A thinking model can spend a tiny cap before emitting text; the
+        # request still succeeded, so the provider is healthy, not down.
+        gemini = FakeProvider("gemini/test", empty_reply=True)
+        manager = AIManager(providers=[gemini])
+
+        status = await manager.health_check(generation_probe_ttl_seconds=900)
+
+        assert status["healthy"] is True
+        probe = status["generation_probe"]
+        assert probe["healthy"] is True
+        assert probe["provider"] == "gemini/test"
+        assert probe["failure_kind"] is None
+        assert probe["failures"] == []
+
+    @pytest.mark.asyncio
+    async def test_an_empty_reply_does_not_fall_through_to_the_fallback(
+        self, clock: FakeClock
+    ) -> None:
+        gemini = FakeProvider("gemini/test", empty_reply=True)
+        ollama = FakeProvider("ollama/test")
+        manager = AIManager(providers=[gemini, ollama])
+
+        status = await manager.health_check(generation_probe_ttl_seconds=900)
+
+        assert status["generation_probe"]["provider"] == "gemini/test"
+        assert status["generation_probe"]["fallback"] is False
+        assert ollama.complete_calls == []
+
+    @pytest.mark.asyncio
+    async def test_gemini_max_tokens_response_without_parts_raises_structured_output_error(
+        self,
+    ) -> None:
+        # Ties the manager's "healthy" branch to what Gemini really sends back
+        # when a thinking model spends the cap before emitting text.
+        from unittest.mock import AsyncMock, MagicMock
+
+        from bubbly_chef.ai.gemini import GeminiProvider
+
+        provider = GeminiProvider(api_key="test-key", model="gemini-3.1-flash-lite")
+        response = MagicMock()
+        response.raise_for_status = MagicMock()
+        response.json = MagicMock(
+            return_value={
+                "candidates": [{"content": {"role": "model"}, "finishReason": "MAX_TOKENS"}],
+                "usageMetadata": {"thoughtsTokenCount": 4},
+            }
+        )
+        provider._client.post = AsyncMock(return_value=response)  # type: ignore[method-assign]
+
+        with pytest.raises(StructuredOutputError):
+            await provider.complete(prompt="hi", max_output_tokens=4)
+        await provider.close()
+
+
+class TestProbeDoesNotTouchCurrentProvider:
+    @pytest.mark.asyncio
+    async def test_a_probe_served_by_the_fallback_leaves_current_provider_alone(
+        self, clock: FakeClock
+    ) -> None:
+        # chat reads `current_provider` to name the provider that handled the
+        # last user request; a background probe must not change it.
+        gemini = FakeProvider("gemini/test", fail_kind="quota_exhausted")
+        ollama = FakeProvider("ollama/test")
+        manager = AIManager(providers=[gemini, ollama])
+        assert manager.current_provider is None
+
+        status = await manager.health_check(generation_probe_ttl_seconds=900)
+
+        assert status["generation_probe"]["provider"] == "ollama/test"
+        assert manager.current_provider is None
+
+    @pytest.mark.asyncio
+    async def test_a_probe_keeps_the_provider_of_the_last_real_request(
+        self, clock: FakeClock
+    ) -> None:
+        gemini = FakeProvider("gemini/test")
+        ollama = FakeProvider("ollama/test")
+        manager = AIManager(providers=[gemini, ollama])
+        await manager.complete(prompt="hello")
+        assert manager.current_provider is gemini
+
+        gemini.fail_kind = "quota_exhausted"
+        await manager.health_check(generation_probe_ttl_seconds=900)
+
+        assert manager.current_provider is gemini
+
+
+class TestDefaultProbeCap:
+    @pytest.mark.asyncio
+    async def test_default_cap_leaves_room_for_thinking_tokens(self, clock: FakeClock) -> None:
+        gemini = FakeProvider("gemini/test")
+        manager = AIManager(providers=[gemini])
+
+        await manager.health_check(generation_probe_ttl_seconds=900)
+
+        assert gemini.complete_calls[0]["max_output_tokens"] == 16
+        assert settings.health_generation_probe_max_output_tokens == 16
 
 
 class TestProbeCache:

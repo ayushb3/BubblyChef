@@ -499,9 +499,15 @@ class AIManager:
                 failure_kinds.append(e.kind)
                 continue
             except StructuredOutputError:
-                # The provider answered 200 but the capped reply had no text
-                # (e.g. the token cap was spent before any output). The
-                # generation path itself is alive, which is all the probe asks.
+                # The provider answered 200 but the capped reply had no text.
+                # With a tiny token cap on a thinking model (gemini-3.1-flash-
+                # lite) that is plausibly the *usual* success: the cap is spent
+                # on thinking tokens, finishReason is MAX_TOKENS and the
+                # response carries no parts, which GeminiProvider reports as
+                # StructuredOutputError. The request was accepted and billed-
+                # as-generation, so the path is alive, which is all the probe
+                # asks. Only ProviderUnavailableError (429/auth/5xx/network)
+                # means generation is down.
                 pass
             except Exception as e:
                 logger.error(
@@ -517,7 +523,11 @@ class AIManager:
 
         failure_kind: str | None = None
         if served_by is not None:
-            self._current_provider = served_by
+            # Deliberately does NOT set `_current_provider`: that property
+            # means "the provider that handled the last *user* request" and
+            # the chat nodes read it to name the active provider, so a
+            # background health probe served by the fallback must not change
+            # what chat reports.
             self._clear_failure()
         else:
             failure_kind = self._finalize_failure(failure_kinds)
@@ -599,7 +609,7 @@ class AIManager:
     async def health_check(
         self,
         generation_probe_ttl_seconds: int = 0,
-        generation_probe_max_output_tokens: int = 4,
+        generation_probe_max_output_tokens: int = 16,
         generation_probe_failure_ttl_seconds: int = 60,
     ) -> dict[str, Any]:
         """

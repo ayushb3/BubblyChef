@@ -72,7 +72,16 @@ class Settings(BaseSettings):
     # a down provider more often costs nothing); 0 re-probes on every call.
     health_generation_probe_ttl_seconds: int = Field(default=900, ge=0)
     health_generation_probe_failure_ttl_seconds: int = Field(default=60, ge=0)
-    health_generation_probe_max_output_tokens: int = Field(default=4, ge=1)
+    # 16, not 1-5: on a thinking model (gemini-3.1-flash-lite) thinking tokens
+    # count against maxOutputTokens, so a 4-token cap can be spent before any
+    # text is emitted. We do not send a thinkingConfig to avoid that: the knob
+    # is model-specific (thinkingBudget on 2.5, thinkingLevel on 3.x, and
+    # thinkingBudget=0 is rejected by models that can't disable thinking), and
+    # an unsupported field would 400 and read as a false outage. 16 leaves room
+    # for a little thinking plus the one-word reply at a cost that is still
+    # negligible, and a MAX_TOKENS reply with no text is treated as healthy
+    # anyway (see AIManager._run_generation_probe).
+    health_generation_probe_max_output_tokens: int = Field(default=16, ge=1)
 
     # Anthropic / SAP proxy (dev only — leave use_anthropic_proxy=false in prod/CI)
     anthropic_base_url: str = "http://localhost:6655/anthropic"
