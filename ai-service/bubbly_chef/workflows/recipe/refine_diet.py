@@ -16,10 +16,15 @@ _SWAP = re.compile(r"\b(?:swap|replace)\s+.+?\s+(?:with|for)\s+")
 # side counts as an add. Ends at and/then/clause end. `sub` is a whole word.
 _SUBSTITUTE = re.compile(r"\b(?:substitute|sub)\b.*?\bfor\b.*?(?=\band\b|\bthen\b|$)")
 _INSTEAD_OF = re.compile(r"\binstead of\b.*?(?=\b(?:use|add|try|with)\b|$)")
+# A negation runs to the end of its clause, or to an "and/then/also" followed by
+# an adding verb ("cut the salt and add pancetta" still adds pancetta). A bare
+# "and" doesn't end it: "no chicken and bacon" negates both.
 _NEGATION = re.compile(
     r"(?:\b(?:no|not|never|without|remove|don't|dont|do not|avoid|skip|hold|drop|lose"
     r"|minus|less|fewer|cut|exclude|omit)\b"
-    r"|\bleave out\b|\btake out\b|\bget rid of\b|\btake away\b).*$"
+    r"|\bleave out\b|\btake out\b|\bget rid of\b|\btake away\b)"
+    r".*?(?=\b(?:and|then|also)\s+(?:add|use|put|throw in|include|top|toss|stir in|mix in"
+    r"|swap|replace|make)\b|$)"
 )
 # Plant-based foods aren't the forbidden food they're named after (#544): "oat
 # milk" is not milk, "tempeh bacon" is not bacon. Refine-only -- the shared

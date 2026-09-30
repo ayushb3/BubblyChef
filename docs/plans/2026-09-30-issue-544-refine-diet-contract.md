@@ -284,3 +284,18 @@ None. It's a reversible v1 bug fix with no cost beyond the verify steps' model c
 ### §7.9 Tweak set-asides are carried on the card (product call)
 
 An explicit "add bacon" sticks: the card carries Vegetarian in `diets_set_aside`, so later tweaks don't push the diet back onto a dish the user deliberately made off-diet. Plant-based phrases ("oat milk", "tempeh bacon") don't count as adding the food they imitate. *Rejected:* not carrying tweak set-asides, where a later tweak would force the diet back onto a dish the user deliberately made off-diet.
+
+## Revision R8 (PR review round)
+
+| Item | Change |
+|---|---|
+| Exclusions (§7.10) | The "drop an exclusion because the previous card contains it" rule is removed. `RecipeCard.exclusions_set_aside` records exclusions the user's tweaks added ("add peanuts") and is carried forward exactly like `diets_set_aside` (previous union this turn's). A refine drops an exclusion only if it is in that carried set or the current tweak adds it. Like `diets_set_aside`, it is excluded from the library route's response and never written to the `recipes` table. `refine_dietary_constraints` now returns `(constraints, diets_set_aside_now, exclusions_set_aside_now)` |
+| Pick path | The contradiction filter also applies to the rehydrated session diet: a session `["Vegetarian"]` plus a "Chicken Tikka" pick is not generated under Vegetarian, whether or not the stored diet holds it. A non-contradicting pick keeps it |
+| Negation span | A negation ends at the clause end, or at `and/then/also` followed by an adding verb (add, use, put, throw in, include, top, toss, stir in, mix in, swap, replace, make). A bare "and" does not end it: "no chicken and bacon" stays negated |
+| Tags | No code change: a library card's `dietary_tags` now surviving a save is an improvement, noted in the PR body |
+
+### §7.10 Exclusions are dropped only when a tweak adds them (product call)
+
+A first-turn model ignoring "no peanuts" looks the same as a deliberate add, and the two can't be told apart from the card. So the exclusion stays unless the user's own tweak adds it, and that decision is recorded on the card. *Rejected:* dropping the exclusion when the previous card contains it, which lets a model failure silently delete an allergen exclusion.
+
+Known gap (unchanged): the shared `_DIETARY_FORBIDDEN_INGREDIENTS` table has no pancetta or chorizo, so "add pancetta" or "add chorizo" doesn't set Vegetarian aside. Widening the table is out of scope for #544.

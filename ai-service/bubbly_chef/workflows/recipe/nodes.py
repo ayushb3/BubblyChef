@@ -879,8 +879,8 @@ async def refine_dietary_constraints(
     previous_recipe: RecipeCard | None,
     *,
     library: bool = False,
-) -> tuple[dict[str, Any], list[str]]:
-    """The constraints a refine hands the generator, plus the diets set aside this turn (#544).
+) -> tuple[dict[str, Any], list[str], list[str]]:
+    """The constraints a refine hands the generator, plus what this turn set aside (#544).
 
     A refine *remembers* the diet decision the first turn already made rather
     than re-guessing it. Labels are the stored preferences followed by the
@@ -891,8 +891,15 @@ async def refine_dietary_constraints(
     saved recipe's ingredient names, unless a `dietary_tags` entry names the
     label. A label the tweak itself names is never set aside.
 
-    Returns `({"dietary": ..., "excluded_ingredients": ...}, set_aside_now)`,
-    omitting empty keys.
+    An exclusion ("no peanuts") is dropped only when the tweak adds it or an
+    earlier tweak already did (`previous_recipe.exclusions_set_aside`). It is
+    never dropped because the previous card happens to contain it: a first-turn
+    model ignoring "no peanuts" looks the same as a deliberate add, and letting
+    that silently delete an allergen exclusion is the worse failure.
+
+    Returns `(constraints, diets_set_aside_now, exclusions_set_aside_now)`,
+    where `constraints` is `{"dietary": ..., "excluded_ingredients": ...}` with
+    empty keys omitted.
     """
     stored = await get_stored_dietary_preferences(user_id)
     prior = prior or {}
@@ -936,10 +943,18 @@ async def refine_dietary_constraints(
             continue
         kept.append(label)
 
+    carried_exclusions = {
+        str(x).strip().lower()
+        for x in (previous_recipe.exclusions_set_aside if previous_recipe else [])
+    }
     excluded: list[str] = []
+    exclusions_set_aside_now: list[str] = []
     for entry in prior.get("excluded_ingredients") or []:
-        pattern = rf"\b{re.escape(str(entry).lower())}\b"
-        if re.search(pattern, added) or re.search(pattern, ingredient_names):
+        entry_key = str(entry).strip().lower()
+        if entry_key in carried_exclusions:
+            continue
+        if re.search(rf"\b{re.escape(entry_key)}\b", added):
+            exclusions_set_aside_now.append(entry)
             continue
         excluded.append(entry)
 
@@ -948,7 +963,7 @@ async def refine_dietary_constraints(
         constraints["dietary"] = kept
     if excluded:
         constraints["excluded_ingredients"] = excluded
-    return constraints, set_aside_now
+    return constraints, set_aside_now, exclusions_set_aside_now
 
 
 def carry_dietary_tags(
@@ -1321,9 +1336,17 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
         # set aside for a "Chicken Tikka" pick stays set aside, and one set
         # aside by the brainstorm reasserts once the pick stops contradicting
         # it (the #394 design).
+        #
+        # The same filter applies to the rehydrated conversation diet, not only
+        # the stored one: a session "Vegetarian" doesn't survive a "Chicken
+        # Tikka" pick either.
         rehydrated_dietary = list(constraints.get("dietary") or [])
+        name_lower = recipe_name.lower()
+        rehydrated_kept = [
+            label for label in rehydrated_dietary if not _dietary_contradicted(label, name_lower)
+        ]
         dietary = _combine_dietary_preferences(
-            stored_dietary, rehydrated_dietary, {}, recipe_name
+            stored_dietary, rehydrated_kept, {}, recipe_name
         )
         if dietary != rehydrated_dietary:
             logger.info(
@@ -1335,7 +1358,8 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
             )
         if dietary:
             constraints = {**constraints, "dietary": dietary}
-        # else: nothing to apply; leave `dietary` exactly as rehydrated.
+        elif "dietary" in constraints:
+            constraints = {k: v for k, v in constraints.items() if k != "dietary"}
     # else: the direct path -- extract already combined the stored diet with
     # this turn's message, so leave `dietary` alone.
 
@@ -1660,7 +1684,11 @@ async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
     # Keep the diet through the tweak (#544). This never writes back to
     # `state["recipe_constraints"]`: a diet set aside for one reply must not be
     # persisted into the session by update_session_node.
-    refine_constraints, set_aside_now = await refine_dietary_constraints(
+    (
+        refine_constraints,
+        set_aside_now,
+        exclusions_set_aside_now,
+    ) = await refine_dietary_constraints(
         state.get("user_id") or "",
         input_text,
         _prior_constraints_from_state(state),
@@ -1713,6 +1741,9 @@ async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
             "id": previous_recipe.id,
             "diets_set_aside": _dedupe_labels(
                 [*previous_recipe.diets_set_aside, *set_aside_now]
+            ),
+            "exclusions_set_aside": _dedupe_labels(
+                [*previous_recipe.exclusions_set_aside, *exclusions_set_aside_now]
             ),
         }
     )

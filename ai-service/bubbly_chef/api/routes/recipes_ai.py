@@ -157,7 +157,7 @@ async def refine_recipe(
 
         # No session and no carried field here, so keep the stored diet except
         # what the tweak adds or the saved recipe's ingredients contradict.
-        refine_constraints, set_aside_now = await refine_dietary_constraints(
+        refine_constraints, set_aside_now, _ = await refine_dietary_constraints(
             user_id, request.prompt, None, previous_recipe, library=True
         )
 
@@ -182,9 +182,12 @@ async def refine_recipe(
             )
 
         return {
-            # `diets_set_aside` is chat-session state; the library has no session.
+            # `diets_set_aside` / `exclusions_set_aside` are chat-session state;
+            # the library has no session.
             "recipe": (
-                result.recipe.model_dump(mode="json", exclude={"diets_set_aside"})
+                result.recipe.model_dump(
+                    mode="json", exclude={"diets_set_aside", "exclusions_set_aside"}
+                )
                 if hasattr(result.recipe, "model_dump")
                 else result.recipe
             ),

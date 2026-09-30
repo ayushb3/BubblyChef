@@ -370,6 +370,28 @@ async def test_a_non_contradicting_pick_holds_both_stored_and_session_diets() ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("stored", [[], ["Vegetarian"]])
+async def test_session_vegetarian_does_not_survive_a_chicken_tikka_pick(
+    stored: list[str],
+) -> None:
+    session = _pick_session(dietary=["Vegetarian"], cuisine="indian")
+    state, ai = await _pick_turn("Chicken Tikka", stored, session)
+
+    assert "dietary" not in ai.generated_constraints()
+    assert "dietary" not in state["recipe_constraints"]
+    assert _card_of(state).diets_set_aside == stored
+
+
+@pytest.mark.asyncio
+async def test_session_vegetarian_is_kept_by_a_non_contradicting_pick() -> None:
+    session = _pick_session(dietary=["Vegetarian"])
+    state, ai = await _pick_turn("Tofu Stir-Fry", ["Vegetarian"], session)
+
+    assert ai.generated_constraints()["dietary"] == ["Vegetarian"]
+    assert _card_of(state).diets_set_aside == []
+
+
+@pytest.mark.asyncio
 async def test_stored_must_use_chicken_does_not_count_as_the_pick_naming_chicken() -> None:
     session = _pick_session(dietary=[], must_use_ingredients=["chicken"])
     state, ai = await _pick_turn("Tofu Stir-Fry", ["Vegetarian"], session)
@@ -542,6 +564,47 @@ def test_added_text(tweak: str, present: str | None, absent: str | None) -> None
         assert absent not in result
 
 
+@pytest.mark.parametrize(
+    ("tweak", "present", "absent"),
+    [
+        ("cut the salt and add pancetta", "pancetta", "salt"),
+        ("less cheese and add bacon", "bacon", "cheese"),
+        ("skip the onion and add chorizo", "chorizo", "onion"),
+        ("no chicken and bacon", None, "bacon"),
+        ("no chicken and bacon", None, "chicken"),
+        ("hold the mayo and then use ham", "ham", "mayo"),
+    ],
+)
+def test_a_negation_ends_at_an_adding_verb_but_not_at_a_bare_and(
+    tweak: str, present: str | None, absent: str
+) -> None:
+    result = added_text(tweak)
+    if present:
+        assert present in result
+    assert absent not in result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tweak", "kept"),
+    [
+        ("cut the salt and add ham", False),
+        ("less cheese and add bacon", False),
+        ("skip the onion and add sausage", False),
+        ("no chicken and bacon", True),
+    ],
+)
+async def test_negation_span_decides_whether_the_diet_survives_the_tweak(
+    tweak: str, kept: bool
+) -> None:
+    _, gen = await _refine(_card_dict(), tweak, ["Vegetarian"])
+
+    if kept:
+        assert _sent(gen)["dietary"] == ["Vegetarian"]
+    else:
+        assert "dietary" not in _sent(gen)
+
+
 # ---------------------------------------------------------------------------
 # Exclusions
 # ---------------------------------------------------------------------------
@@ -549,7 +612,7 @@ def test_added_text(tweak: str, present: str | None, absent: str | None) -> None
 
 async def _exclusions(tweak: str, previous: RecipeCard | None = None) -> list[str]:
     with patch(STORED, AsyncMock(return_value=[])):
-        constraints, _ = await refine_dietary_constraints(
+        constraints, _, _ = await refine_dietary_constraints(
             USER, tweak, {"excluded_ingredients": ["peanuts"]}, previous
         )
     excluded: list[str] = constraints.get("excluded_ingredients", [])
@@ -568,8 +631,45 @@ async def test_exclusion_is_kept_when_the_tweak_negates_it() -> None:
 
 @pytest.mark.asyncio
 async def test_exclusion_is_dropped_when_an_earlier_tweak_added_it() -> None:
-    card = RecipeCard(title="Satay", ingredients=[Ingredient(name="peanuts")])
+    card = RecipeCard(title="Satay", exclusions_set_aside=["peanuts"])
     assert await _exclusions("make it spicier", card) == []
+
+
+@pytest.mark.asyncio
+async def test_exclusion_is_not_dropped_because_the_card_contains_it() -> None:
+    # A first-turn model ignoring "no peanuts" looks the same as a deliberate
+    # add; letting it silently delete an allergen exclusion is the worse failure.
+    card = RecipeCard(title="Satay", ingredients=[Ingredient(name="peanuts")])
+    assert await _exclusions("make it spicier", card) == ["peanuts"]
+
+
+@pytest.mark.asyncio
+async def test_no_peanuts_first_turn_is_still_sent_when_the_card_has_peanuts() -> None:
+    card = _card_dict("Satay", ingredients=("peanuts", "noodles"))
+    prior = {"excluded_ingredients": ["peanuts"]}
+
+    result, gen = await _refine(card, "make it spicier", [], prior)
+
+    assert _sent(gen)["excluded_ingredients"] == ["peanuts"]
+    assert "Never use: peanuts" in format_followup_dietary(_sent(gen))
+    assert _card_of(result).exclusions_set_aside == []
+
+
+@pytest.mark.asyncio
+async def test_add_peanuts_sets_the_exclusion_aside_and_it_carries() -> None:
+    prior = {"excluded_ingredients": ["peanuts"]}
+    card = _card_dict("Noodles", ingredients=("noodles",))
+
+    first, gen1 = await _refine(card, "add peanuts", [], prior)
+    assert "excluded_ingredients" not in _sent(gen1)
+    refined = _card_of(first)
+    assert refined.exclusions_set_aside == ["peanuts"]
+
+    second, gen2 = await _refine(
+        refined.model_dump(mode="json"), "make it spicier", [], prior
+    )
+    assert "excluded_ingredients" not in _sent(gen2)
+    assert _card_of(second).exclusions_set_aside == ["peanuts"]
 
 
 @pytest.mark.asyncio
@@ -678,6 +778,7 @@ async def _library_refine(
     response = await _post_refine(client, recipe, prompt, stored, gen)
     # The real serialisation of a real RecipeCard: the chat-only field is excluded.
     assert "diets_set_aside" not in response.json()["recipe"]
+    assert "exclusions_set_aside" not in response.json()["recipe"]
     return gen
 
 
