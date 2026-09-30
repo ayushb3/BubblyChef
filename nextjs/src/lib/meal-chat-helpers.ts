@@ -4,8 +4,67 @@
  * same rationale as `lib/chat-chips.ts`.
  */
 
-import type { MealProposal } from '@/types/chat'
+import type {
+  ChatRecipeData,
+  MealFixedMainContext,
+  MealFixedMainRecipe,
+  MealProposal,
+} from '@/types/chat'
 import type { CreateMealDish, CreateMealRequest } from '@/types/meals'
+
+/**
+ * The in-chat recipe as `context.meal_fixed_main.recipe` (issue #651 PR B).
+ * Copies only the fields `MealFixedMainRecipe` lists, so `ingredient_availability`
+ * and any `id` never reach the wire. Ingredients with a blank name are dropped;
+ * a missing title becomes 'Untitled recipe' and missing lists become `[]`.
+ */
+export function fixedMainPayload(recipe: ChatRecipeData): MealFixedMainRecipe {
+  const ingredients: MealFixedMainRecipe['ingredients'] = []
+  for (const ing of recipe.ingredients ?? []) {
+    if (!ing.name || ing.name.trim() === '') continue
+    ingredients.push({
+      name: ing.name,
+      ...(ing.quantity !== undefined ? { quantity: ing.quantity } : {}),
+      ...(ing.unit !== undefined ? { unit: ing.unit } : {}),
+      ...(ing.preparation !== undefined ? { preparation: ing.preparation } : {}),
+      ...(ing.optional !== undefined ? { optional: ing.optional } : {}),
+    })
+  }
+
+  return {
+    title: recipe.title?.trim() || 'Untitled recipe',
+    ...(recipe.description !== undefined ? { description: recipe.description } : {}),
+    ingredients,
+    instructions: recipe.instructions ?? [],
+    ...(recipe.steps !== undefined ? { steps: recipe.steps } : {}),
+    ...(recipe.prep_time_minutes !== undefined
+      ? { prep_time_minutes: recipe.prep_time_minutes }
+      : {}),
+    ...(recipe.cook_time_minutes !== undefined
+      ? { cook_time_minutes: recipe.cook_time_minutes }
+      : {}),
+    ...(recipe.total_time_minutes !== undefined
+      ? { total_time_minutes: recipe.total_time_minutes }
+      : {}),
+    ...(recipe.servings !== undefined ? { servings: recipe.servings } : {}),
+    ...(recipe.cuisine !== undefined ? { cuisine: recipe.cuisine } : {}),
+    ...(recipe.meal_type !== undefined ? { meal_type: recipe.meal_type } : {}),
+    ...(recipe.difficulty !== undefined ? { difficulty: recipe.difficulty } : {}),
+    ...(recipe.dietary_tags !== undefined ? { dietary_tags: recipe.dietary_tags } : {}),
+  }
+}
+
+/**
+ * `context.meal_fixed_main` for a chat card: `{ recipe_id }` when `savedId` is
+ * a non-empty string (the card's own Save succeeded, so the row is non-draft),
+ * otherwise the recipe as a payload.
+ */
+export function fixedMainForCard(
+  recipe: ChatRecipeData,
+  savedId?: string | null,
+): MealFixedMainContext {
+  return savedId ? { recipe_id: savedId } : { recipe: fixedMainPayload(recipe) }
+}
 
 /**
  * Build the `POST /api/meals` payload from a `meal` proposal's dishes. Every

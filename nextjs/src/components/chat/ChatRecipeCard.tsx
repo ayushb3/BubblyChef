@@ -30,6 +30,13 @@ interface ChatRecipeCardProps {
    *   does not reopen the card, because the deduction risk outlives the banner.
    */
   cookState?: 'idle' | 'pending' | 'started'
+  /**
+   * Shows the "Make it a meal" button when set. The page omits it while a cook
+   * is pinned in chat or this card's cook has started.
+   */
+  onMakeMeal?: () => void
+  /** Disables that button (the page passes `isStreaming`). */
+  makeMealDisabled?: boolean
 }
 
 const CHIP_COLORS: string[] = [
@@ -81,6 +88,9 @@ export default function ChatRecipeCard({
   onCookWithMe,
   onAlreadyMade,
   cookState = 'idle',
+  // Accepted but unused until ui-ux renders the button (issue #651 PR B seam).
+  onMakeMeal: _onMakeMeal,
+  makeMealDisabled: _makeMealDisabled = false,
 }: ChatRecipeCardProps) {
   const totalTime =
     recipe.total_time_minutes

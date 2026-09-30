@@ -48,8 +48,8 @@ export interface ReadableSearchParams {
   get(name: string): string | null
 }
 
-/** PR B adds 'meal'. */
-export type ChatSeedKind = 'tip' | 'use' | 'plan'
+/** `meal` is the make-it-a-meal seed (issue #651 PR B). */
+export type ChatSeedKind = 'tip' | 'use' | 'plan' | 'meal'
 
 export interface ChatSeedCard {
   emoji: string
@@ -100,7 +100,26 @@ export function planDinnerHref(): string {
   return '/chat?plan=dinner'
 }
 
+/**
+ * Recipe page → chat primed to make that saved recipe into a meal (issue #651
+ * PR B). The title rides in the URL so the auto-send never waits on a fetch.
+ */
+export function makeMealHref(recipeId: string, title?: string | null): string {
+  const trimmed = title?.trim()
+  const params = new URLSearchParams({ meal: recipeId, ...(trimmed ? { title: trimmed } : {}) })
+  return `/chat?${params.toString()}`
+}
+
 // ─── Message builders ─────────────────────────────────────────────────────────
+
+/**
+ * Message for a make-it-a-meal turn (issue #651 PR B). A blank or absent
+ * title falls back to a generic phrasing.
+ */
+export function makeMealMessage(title?: string | null): string {
+  const trimmed = title?.trim()
+  return trimmed ? `Make ${trimmed} into a meal` : 'Make a meal around your recipe'
+}
 
 /** Auto-sent message for the `?plan=dinner` seed (issue #651). */
 export const PLAN_DINNER_MESSAGE = 'Plan dinner for tonight'

@@ -17,6 +17,8 @@ import {
   ingredientSeedMessage,
   planDinnerHref,
   PLAN_DINNER_MESSAGE,
+  makeMealHref,
+  makeMealMessage,
 } from '@/lib/chat-seed'
 import * as pantryHelpers from '@/lib/pantry-helpers'
 
@@ -236,5 +238,37 @@ describe('expiryPhrase — regression guards (#438)', () => {
     jest.spyOn(pantryHelpers, 'parseLocalDate').mockReturnValue(twentyThreeHoursAgo)
 
     expect(expiryPhrase('irrelevant-with-the-mock-above', now)).toBe('already expired')
+  })
+})
+
+describe('makeMealMessage / makeMealHref (issue #651 PR B)', () => {
+  it('names the dish when there is a title', () => {
+    expect(makeMealMessage('Lemon pasta')).toBe('Make Lemon pasta into a meal')
+  })
+
+  it('trims the title but keeps the whole of it', () => {
+    expect(makeMealMessage('  Lemon Butter Pasta with Peas  ')).toBe(
+      'Make Lemon Butter Pasta with Peas into a meal',
+    )
+  })
+
+  it.each([undefined, null, '', '   '])('falls back for a blank title (%p)', (title) => {
+    expect(makeMealMessage(title)).toBe('Make a meal around your recipe')
+  })
+
+  it('builds the recipe-page link with the id and an encoded title', () => {
+    const href = makeMealHref('0b6e2f1a-1111-4222-8333-444455556666', 'Mac & Cheese')
+    expect(href.startsWith('/chat?')).toBe(true)
+    const params = paramsOf(href)
+    expect(params.get('meal')).toBe('0b6e2f1a-1111-4222-8333-444455556666')
+    expect(params.get('title')).toBe('Mac & Cheese')
+    expect(href).not.toContain('Mac & Cheese')
+  })
+
+  it('omits title for a blank or absent one', () => {
+    const id = '0b6e2f1a-1111-4222-8333-444455556666'
+    expect(makeMealHref(id)).toBe(`/chat?meal=${id}`)
+    expect(makeMealHref(id, '   ')).toBe(`/chat?meal=${id}`)
+    expect(makeMealHref(id, null)).toBe(`/chat?meal=${id}`)
   })
 })

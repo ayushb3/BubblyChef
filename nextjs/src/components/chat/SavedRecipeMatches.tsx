@@ -17,6 +17,11 @@ export interface SavedRecipeMatchesProps {
    * settled reply — same rule BrainstormOptions applies).
    */
   disabled?: boolean
+  /**
+   * Shows "Make it a meal" on the single card and on the expanded card only
+   * (never on mini cards). Disabled by the existing `disabled` flag.
+   */
+  onMakeMeal?: (match: SavedRecipeMatch) => void
 }
 
 /**
@@ -48,6 +53,8 @@ export default function SavedRecipeMatches({
   matches,
   onSelect,
   disabled = false,
+  // Accepted but unused until ui-ux renders the button (issue #651 PR B seam).
+  onMakeMeal: _onMakeMeal,
 }: SavedRecipeMatchesProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const expandedCardRef = useRef<HTMLDivElement>(null)
