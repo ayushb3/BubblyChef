@@ -1528,31 +1528,44 @@ def _dispatch_passthrough(state: WorkflowState) -> WorkflowState:
     return state
 
 
+def _with_diet_notice(state: WorkflowState, result: WorkflowState) -> WorkflowState:
+    """`result` with the turn's `diet_change_notice` (if any) in front of its reply."""
+    notice = state.get("diet_change_notice")
+    if not notice:
+        return result
+    answer = result.get("assistant_message") or ""
+    return {**result, "assistant_message": f"{notice}\n\n{answer}".rstrip()}
+
+
 async def cooking_help_with_diet_notice(state: WorkflowState) -> WorkflowState:
     """Answer a flagged cooking_help turn, with the diet sentence in front (#687).
 
     The question in the message still gets its ordinary (pantry-grounded) answer; the
     short deterministic sentence saying what happened to the diet goes first.
     """
-    result = await cooking_help_response(state)
-    notice = state.get("diet_change_notice")
-    if notice:
-        answer = result.get("assistant_message") or ""
-        result = {**result, "assistant_message": f"{notice}\n\n{answer}".rstrip()}
-    return result
+    return _with_diet_notice(state, await cooking_help_response(state))
+
+
+async def general_chat_with_diet_notice(state: WorkflowState) -> WorkflowState:
+    """Answer a flagged general_chat turn, with the diet sentence in front (#687).
+
+    A bare statement gets the notice plus a short chat reply; a message that also asks
+    something ("...do you think that's a bad idea?") gets both.
+    """
+    return _with_diet_notice(state, await general_chat_response(state))
 
 
 def _route_after_diet_change(state: WorkflowState) -> str:
     """Where a flagged turn goes once the diet extraction has run (#687).
 
-    A turn the extraction changed is answered there if it was a bare statement, or
-    continues into the cooking-help answer if the classifier chose cooking_help (it
-    carries a question). A turn it changed nothing for goes back to the intent the
-    classifier chose, so a liberal flag costs only the extra extraction call.
+    Every flagged turn is answered by the reply for the intent the classifier chose
+    (cooking_help or general_chat). When the extraction changed something, that reply
+    has the diet sentence in front; when it changed nothing the reply is the ordinary
+    one, so a liberal flag costs only the extra extraction call.
     """
     cooking = state.get("intent") == Intent.COOKING_HELP.value
     if state.get("diet_change_applied"):
-        return "cooking_help_with_diet_notice" if cooking else "update_session"
+        return "cooking_help_with_diet_notice" if cooking else "general_chat_with_diet_notice"
     return "cooking_help_response" if cooking else "general_chat_response"
 
 
@@ -1617,6 +1630,7 @@ def build_chat_router_graph(
     # A message about dropping a diet, with no recipe request (#687)
     workflow.add_node("apply_diet_change", apply_diet_change)
     workflow.add_node("cooking_help_with_diet_notice", cooking_help_with_diet_notice)
+    workflow.add_node("general_chat_with_diet_notice", general_chat_with_diet_notice)
 
     # Confirm band (#416 Q5) — non-generating terminal node for CONFIRM_CHOICE
     workflow.add_node("confirm_choice_response", confirm_choice_response)
@@ -1698,19 +1712,20 @@ def build_chat_router_graph(
     # General chat → update_session → END
     workflow.add_edge("general_chat_response", "update_session")
 
-    # Diet change (#687): answered directly when the extraction changed something,
-    # otherwise the ordinary chat reply (nothing was cleared; the turn is just chat).
+    # Diet change (#687): the reply for the classifier's intent, with the diet sentence
+    # in front when the extraction changed something.
     workflow.add_conditional_edges(
         "apply_diet_change",
         _route_after_diet_change,
         {
-            "update_session": "update_session",
             "general_chat_response": "general_chat_response",
             "cooking_help_response": "cooking_help_response",
             "cooking_help_with_diet_notice": "cooking_help_with_diet_notice",
+            "general_chat_with_diet_notice": "general_chat_with_diet_notice",
         },
     )
     workflow.add_edge("cooking_help_with_diet_notice", "update_session")
+    workflow.add_edge("general_chat_with_diet_notice", "update_session")
 
     # Cooking help → update_session → END
     workflow.add_edge("cooking_help_response", "update_session")

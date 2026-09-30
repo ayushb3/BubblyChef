@@ -467,7 +467,10 @@ async def test_bare_statement_reaches_extraction_clears_and_persists_through_the
     repo.get_or_create_session = AsyncMock(return_value=session)
     repo.update_session = AsyncMock(return_value=None)
     repo.get_all_pantry_items = AsyncMock(return_value=[])
-    graph = build_chat_router_graph(entry_point="dispatch").compile()
+
+    async def general(state: Any) -> Any:
+        return {**state, "assistant_message": "Sure, anything else?"}
+
     state = _state(
         "I'm not vegetarian any more",
         _session_of("Vegetarian"),
@@ -477,12 +480,15 @@ async def test_bare_statement_reaches_extraction_clears_and_persists_through_the
     )
     with (
         _env([], ai),
+        patch(f"{_ROUTER}.general_chat_response", general),
         patch(f"{_ROUTER}.get_repository", AsyncMock(return_value=repo)),
     ):
+        graph = build_chat_router_graph(entry_point="dispatch").compile()
         final = await graph.ainvoke(state)
 
     assert ai.extraction_prompts, "the extractor never ran for the bare statement"
-    assert "Vegetarian" in final["assistant_message"]
+    assert final["assistant_message"].startswith("Okay, I've dropped Vegetarian")
+    assert final["assistant_message"].endswith("Sure, anything else?")
     saved = repo.update_session.await_args.args[1]
     assert saved.metadata.recipe_constraints is not None
     assert saved.metadata.recipe_constraints.dietary == []
@@ -608,14 +614,21 @@ async def test_a_conversation_removal_on_a_cooking_help_turn_answers_and_persist
 
 
 @pytest.mark.asyncio
-async def test_a_bare_statement_with_no_question_stays_terminal() -> None:
-    """general_chat (no question) is answered by the diet sentence alone."""
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I'm not vegetarian any more",
+        "I'm not vegetarian any more, do you think that's a bad idea?",
+    ],
+)
+async def test_an_acted_general_chat_turn_gets_the_notice_and_a_general_reply(text: str) -> None:
+    """The diet sentence is prepended and the turn continues into general chat."""
     ai = _FakeAI(_removal("Vegetarian", scope="conversation"))
     ran: list[str] = []
 
     async def general(state: Any) -> Any:
-        ran.append("general")
-        return state
+        ran.append("general_chat_response")
+        return {**state, "assistant_message": "It is a personal choice."}
 
     session = ConversationSession(conversation_id="conv-687")
     repo = MagicMock()
@@ -629,15 +642,20 @@ async def test_a_bare_statement_with_no_question_stays_terminal() -> None:
         graph = build_chat_router_graph(entry_point="dispatch").compile()
         final = await graph.ainvoke(
             _state(
-                "I'm not vegetarian any more",
+                text,
                 _session_of("Vegetarian"),
                 intent=Intent.GENERAL_CHAT.value,
                 diet_change_mentioned=True,
                 conversation_id="conv-687",
             )
         )
-    assert ran == []
-    assert final["assistant_message"].startswith("Okay, I've dropped Vegetarian")
+    assert ran == ["general_chat_response"]
+    message = final["assistant_message"]
+    assert message.startswith("Okay, I've dropped Vegetarian")
+    assert message.endswith("It is a personal choice.")
+    saved = repo.update_session.await_args.args[1]
+    assert saved.metadata.recipe_constraints is not None
+    assert saved.metadata.recipe_constraints.dietary == []
 
 
 @pytest.mark.asyncio
@@ -738,8 +756,8 @@ async def test_node_clears_the_chat_diet_and_says_so() -> None:
         )
     assert out["diet_change_applied"] is True
     assert out["diet_change_constraints"]["dietary"] == ["Dairy-Free"]
-    assert "Vegetarian" in out["assistant_message"]
-    assert "profile" not in out["assistant_message"].lower()
+    assert "Vegetarian" in out["diet_change_notice"]
+    assert "profile" not in out["diet_change_notice"].lower()
 
 
 @pytest.mark.asyncio
@@ -750,7 +768,7 @@ async def test_node_tells_the_user_a_profile_diet_stays() -> None:
             _state("I'm not vegetarian any more", _session_of("Vegetarian"))
         )
     assert out["diet_change_applied"] is True
-    message = out["assistant_message"].lower()
+    message = out["diet_change_notice"].lower()
     assert "profile" in message
     assert "vegetarian" in message
     # The profile keeps it applied, so the reply must not also claim it was dropped.
@@ -792,7 +810,7 @@ async def test_node_with_only_a_profile_diet_still_answers() -> None:
     with _env(["Vegetarian"], ai):
         out = await apply_diet_change(_state("I'm not vegetarian any more", None))
     assert out["diet_change_applied"] is True
-    assert "profile" in out["assistant_message"].lower()
+    assert "profile" in out["diet_change_notice"].lower()
     assert out.get("diet_change_constraints") is None  # nothing to rewrite in the session
 
 
@@ -803,7 +821,7 @@ async def test_node_this_request_persists_nothing() -> None:
         out = await apply_diet_change(_state("we're not vegan tonight", _session_of("Vegan")))
     assert out["diet_change_applied"] is True
     assert out.get("diet_change_constraints") is None
-    assert "Vegan" in out["assistant_message"]
+    assert "Vegan" in out["diet_change_notice"]
 
 
 @pytest.mark.asyncio

@@ -1162,7 +1162,9 @@ async def apply_diet_change(state: WorkflowState) -> WorkflowState:
     `diet_change_mentioned` flag sends it here instead. This runs the same structured
     extraction and applies only what `diet_changes` says (`resolve_diet_change`); it
     never decides from the text. When nothing is applied, `diet_change_applied` stays
-    unset and the graph falls back to the ordinary general-chat reply.
+    unset and the graph returns to the reply for the intent the classifier chose. When
+    something is applied the turn still gets that reply, with the short diet sentence
+    (`diet_change_notice`) in front, so a question in the same message is answered.
 
     On a conversation-scope removal the session's remaining constraints are handed to
     `update_session_node` as `diet_change_constraints`, which is the only thing that
@@ -1191,28 +1193,15 @@ async def apply_diet_change(state: WorkflowState) -> WorkflowState:
         outcome.relaxed,
         outcome.kept_by_profile,
     )
-    notice = diet_change_reply(outcome)
-    if state.get("intent") == Intent.COOKING_HELP.value:
-        # The classifier chose cooking_help, so the message carries a question. Don't
-        # spend the turn on the diet sentence: hand it on as a notice and let the graph
-        # continue into the cooking-help answer, which prepends it.
-        update: dict[str, Any] = {
-            **state,
-            "diet_change_applied": True,
-            "diet_change_notice": notice,
-        }
-    else:
-        update = {
-            **state,
-            "intent": Intent.GENERAL_CHAT.value,
-            "diet_change_applied": True,
-            "assistant_message": notice,
-            "next_action": NextAction.NONE.value,
-            "proposal": None,
-            "requires_review": False,
-            "confidence": 1.0,
-            "workflow_status": WorkflowStatus.COMPLETED.value,
-        }
+    # The turn is never answered here: the diet sentence goes on as a notice, and the
+    # graph continues into the reply for the intent the classifier chose (general chat
+    # or cooking help), which prepends it. So a question in the same message still gets
+    # its answer.
+    update: dict[str, Any] = {
+        **state,
+        "diet_change_applied": True,
+        "diet_change_notice": diet_change_reply(outcome),
+    }
     if outcome.dropped:
         update["diet_change_constraints"] = {
             **(prior or {}),
