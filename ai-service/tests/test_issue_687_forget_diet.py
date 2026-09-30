@@ -31,7 +31,7 @@ from bubbly_chef.prompts.recipe import (
     REMEMBERED_DIETS_PROFILE_PREFIX,
 )
 from bubbly_chef.prompts.router import DIET_CHANGE_FLAG_PROMPT
-from bubbly_chef.workflows.recipe.diet_change import resolve_diet_change
+from bubbly_chef.workflows.recipe.diet_change import diet_change_reply, resolve_diet_change
 from bubbly_chef.workflows.recipe.nodes import (
     apply_diet_change,
     extract_recipe_constraints,
@@ -520,6 +520,145 @@ async def test_a_flagged_turn_the_extractor_declines_falls_back_to_general_chat(
     assert saved.metadata.recipe_constraints is None
 
 
+async def _cooking_graph_turn(
+    text: str,
+    extraction: RecipeConstraints,
+    *,
+    session_diet: list[str],
+    stored: list[str] | None = None,
+) -> tuple[dict[str, Any], list[str], MagicMock]:
+    """A flagged cooking_help turn through the real dispatch graph.
+
+    Returns the final state, the names of the answer nodes that ran, and the repo.
+    """
+    ai = _FakeAI(extraction)
+    ran: list[str] = []
+
+    async def cooking(state: Any) -> Any:
+        ran.append("cooking_help_response")
+        return {**state, "assistant_message": "Yes, butter works."}
+
+    async def general(state: Any) -> Any:
+        ran.append("general_chat_response")
+        return {**state, "assistant_message": "general reply"}
+
+    session = ConversationSession(conversation_id="conv-687")
+    repo = MagicMock()
+    repo.get_or_create_session = AsyncMock(return_value=session)
+    repo.update_session = AsyncMock(return_value=None)
+    with (
+        _env(stored or [], ai),
+        patch(f"{_ROUTER}.cooking_help_response", cooking),
+        patch(f"{_ROUTER}.general_chat_response", general),
+        patch(f"{_ROUTER}.get_repository", AsyncMock(return_value=repo)),
+    ):
+        graph = build_chat_router_graph(entry_point="dispatch").compile()
+        final = await graph.ainvoke(
+            _state(
+                text,
+                _session_of(*session_diet),
+                intent=Intent.COOKING_HELP.value,
+                diet_change_mentioned=True,
+                conversation_id="conv-687",
+            )
+        )
+    return dict(final), ran, repo
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text", ["that's not vegetarian! can I swap the stock?", "no longer vegan? what about butter"]
+)
+async def test_a_declined_cooking_help_turn_goes_back_to_cooking_help(text: str) -> None:
+    """The extractor declining must not cost the turn its pantry-grounded answer."""
+    final, ran, repo = await _cooking_graph_turn(
+        text, RecipeConstraints(), session_diet=["Vegetarian"]
+    )
+    assert ran == ["cooking_help_response"]
+    assert final["assistant_message"] == "Yes, butter works."
+    assert repo.update_session.await_args.args[1].metadata.recipe_constraints is None
+
+
+@pytest.mark.asyncio
+async def test_an_acted_cooking_help_turn_still_answers_the_question() -> None:
+    final, ran, _ = await _cooking_graph_turn(
+        "we're not vegan tonight, can I use butter instead of the oil?",
+        _removal("Vegan", scope="this_request"),
+        session_diet=["Vegan"],
+    )
+    assert ran == ["cooking_help_response"]
+    message = final["assistant_message"]
+    assert message.endswith("Yes, butter works.")  # the question's own answer is there
+    assert message.startswith("Got it. Vegan stays on for this chat")  # the diet sentence first
+
+
+@pytest.mark.asyncio
+async def test_a_conversation_removal_on_a_cooking_help_turn_answers_and_persists() -> None:
+    final, ran, repo = await _cooking_graph_turn(
+        "I'm not vegetarian any more, can I use chicken stock?",
+        _removal("Vegetarian", scope="conversation"),
+        session_diet=["Vegetarian"],
+    )
+    assert ran == ["cooking_help_response"]
+    assert final["assistant_message"].startswith("Okay, I've dropped Vegetarian")
+    assert final["assistant_message"].endswith("Yes, butter works.")
+    saved = repo.update_session.await_args.args[1]
+    assert saved.metadata.recipe_constraints is not None
+    assert saved.metadata.recipe_constraints.dietary == []
+
+
+@pytest.mark.asyncio
+async def test_a_bare_statement_with_no_question_stays_terminal() -> None:
+    """general_chat (no question) is answered by the diet sentence alone."""
+    ai = _FakeAI(_removal("Vegetarian", scope="conversation"))
+    ran: list[str] = []
+
+    async def general(state: Any) -> Any:
+        ran.append("general")
+        return state
+
+    session = ConversationSession(conversation_id="conv-687")
+    repo = MagicMock()
+    repo.get_or_create_session = AsyncMock(return_value=session)
+    repo.update_session = AsyncMock(return_value=None)
+    with (
+        _env([], ai),
+        patch(f"{_ROUTER}.general_chat_response", general),
+        patch(f"{_ROUTER}.get_repository", AsyncMock(return_value=repo)),
+    ):
+        graph = build_chat_router_graph(entry_point="dispatch").compile()
+        final = await graph.ainvoke(
+            _state(
+                "I'm not vegetarian any more",
+                _session_of("Vegetarian"),
+                intent=Intent.GENERAL_CHAT.value,
+                diet_change_mentioned=True,
+                conversation_id="conv-687",
+            )
+        )
+    assert ran == []
+    assert final["assistant_message"].startswith("Okay, I've dropped Vegetarian")
+
+
+@pytest.mark.asyncio
+async def test_cooking_help_node_hands_the_diet_sentence_on_instead_of_replacing_the_answer() -> (
+    None
+):
+    ai = _FakeAI(_removal("Vegan", scope="this_request"))
+    with _env([], ai):
+        out = await apply_diet_change(
+            _state(
+                "we're not vegan tonight, can I use butter?",
+                _session_of("Vegan"),
+                intent=Intent.COOKING_HELP.value,
+            )
+        )
+    assert out["diet_change_applied"] is True
+    assert out["intent"] == Intent.COOKING_HELP.value
+    assert "Vegan" in out["diet_change_notice"]
+    assert "assistant_message" not in out  # nothing has answered yet
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("flagged,streams", [(True, False), (False, True)])
 async def test_streaming_path_sends_a_flagged_turn_through_the_graph(
@@ -614,8 +753,36 @@ async def test_node_tells_the_user_a_profile_diet_stays() -> None:
     message = out["assistant_message"].lower()
     assert "profile" in message
     assert "vegetarian" in message
+    # The profile keeps it applied, so the reply must not also claim it was dropped.
+    assert "dropped" not in message
+    assert "rest of this chat" not in message
     # the session copy is cleared, the profile is not written
     assert out["diet_change_constraints"]["dietary"] == []
+
+
+@pytest.mark.parametrize("scope", ["conversation", "this_request"])
+def test_reply_for_a_label_in_chat_and_profile_says_only_the_true_thing(scope: str) -> None:
+    outcome = resolve_diet_change(
+        DietChanges(remove=["Vegetarian"], scope=scope),  # type: ignore[arg-type]
+        ["Vegetarian"],
+        ["vegetarian"],
+        [],
+    )
+    reply = diet_change_reply(outcome).lower()
+    assert "profile" in reply
+    assert "dropped" not in reply and "set it aside" not in reply and "stays on" not in reply
+
+
+def test_reply_keeps_the_dropped_sentence_for_a_label_only_the_chat_holds() -> None:
+    outcome = resolve_diet_change(
+        DietChanges(remove=["Vegetarian", "Dairy-Free"], scope="conversation"),
+        ["Vegetarian", "Dairy-Free"],
+        ["Dairy-Free"],
+        [],
+    )
+    reply = diet_change_reply(outcome)
+    assert "dropped Vegetarian" in reply
+    assert "dropped Dairy-Free" not in reply and "Dairy-Free is also saved" in reply
 
 
 @pytest.mark.asyncio

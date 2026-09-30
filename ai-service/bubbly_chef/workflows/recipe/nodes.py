@@ -1191,17 +1191,28 @@ async def apply_diet_change(state: WorkflowState) -> WorkflowState:
         outcome.relaxed,
         outcome.kept_by_profile,
     )
-    update: dict[str, Any] = {
-        **state,
-        "intent": Intent.GENERAL_CHAT.value,
-        "diet_change_applied": True,
-        "assistant_message": diet_change_reply(outcome),
-        "next_action": NextAction.NONE.value,
-        "proposal": None,
-        "requires_review": False,
-        "confidence": 1.0,
-        "workflow_status": WorkflowStatus.COMPLETED.value,
-    }
+    notice = diet_change_reply(outcome)
+    if state.get("intent") == Intent.COOKING_HELP.value:
+        # The classifier chose cooking_help, so the message carries a question. Don't
+        # spend the turn on the diet sentence: hand it on as a notice and let the graph
+        # continue into the cooking-help answer, which prepends it.
+        update: dict[str, Any] = {
+            **state,
+            "diet_change_applied": True,
+            "diet_change_notice": notice,
+        }
+    else:
+        update = {
+            **state,
+            "intent": Intent.GENERAL_CHAT.value,
+            "diet_change_applied": True,
+            "assistant_message": notice,
+            "next_action": NextAction.NONE.value,
+            "proposal": None,
+            "requires_review": False,
+            "confidence": 1.0,
+            "workflow_status": WorkflowStatus.COMPLETED.value,
+        }
     if outcome.dropped:
         update["diet_change_constraints"] = {
             **(prior or {}),

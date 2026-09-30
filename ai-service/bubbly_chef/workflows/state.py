@@ -174,6 +174,8 @@ class WorkflowState(TypedDict, total=False):
     # removal. All per-turn, never persisted as such.
     diet_change_mentioned: bool
     diet_change_applied: bool
+    # The diet sentence of a flagged cooking_help turn, prepended to its answer.
+    diet_change_notice: str
     diet_change_constraints: dict[str, Any] | None
     web_search_result: dict[str, Any] | None
     ingredient_availability: list[dict[str, Any]]

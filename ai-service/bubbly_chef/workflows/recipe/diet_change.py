@@ -94,12 +94,19 @@ def diet_change_reply(outcome: DietChangeOutcome) -> str:
     Deterministic on purpose: the reply states what actually happened to the diets,
     which a free-text model reply could get wrong in either direction.
     """
+    # A label the profile also holds is never dropped or relaxed in effect: the profile
+    # read re-adds it every turn. Saying "dropped" or "set aside" for it would be false,
+    # so only the profile sentence below talks about it.
+    profile_keys = {norm_label(label) for label in outcome.kept_by_profile}
+    dropped = [label for label in outcome.dropped if norm_label(label) not in profile_keys]
+    relaxed = [label for label in outcome.relaxed if norm_label(label) not in profile_keys]
+
     parts: list[str] = []
-    if outcome.dropped:
-        parts.append(f"Okay, I've dropped {_join(outcome.dropped)} for the rest of this chat.")
-    if outcome.relaxed:
+    if dropped:
+        parts.append(f"Okay, I've dropped {_join(dropped)} for the rest of this chat.")
+    if relaxed:
         parts.append(
-            f"Got it. {_join(outcome.relaxed)} stays on for this chat, but I'll set it "
+            f"Got it. {_join(relaxed)} stays on for this chat, but I'll set it "
             "aside for a dish you ask for that goes against it."
         )
     if outcome.kept_by_profile:
