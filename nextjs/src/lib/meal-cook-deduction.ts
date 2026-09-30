@@ -9,6 +9,7 @@ import type { SchedulerDish } from '@/lib/meal-scheduler'
 import type { Meal, MealDishFull } from '@/types/meals'
 import type { MealCookDishRequest, MealCookIngredient, MealCookRequest } from '@/types/meals'
 import { readDishAmendment, type MealCookSession } from '@/lib/meal-cook-session'
+import type { RecipeIngredient } from '@/types/recipes'
 
 /** The server's `max_length` on `MealCookDishRequest.ingredients` (§2a). */
 const MAX_INGREDIENTS = 100
@@ -116,6 +117,73 @@ export function cookedIngredientsForDish(
   }
 
   return { ingredients: sanitizeMealCookIngredients(raw), string_scale }
+}
+
+/**
+ * Maps one recipe-row ingredient element to the pin's `MealCookIngredient`
+ * shape (`preparation` dropped, per §3), or `null` for a blank-named object
+ * (dropped rather than sent to the model as an empty line).
+ */
+function toPinnedIngredient(ing: RecipeIngredient): MealCookIngredient | null {
+  if (typeof ing.name !== 'string' || ing.name.trim() === '') return null
+  return {
+    name: ing.name,
+    quantity: ing.quantity ?? null,
+    unit: ing.unit ?? null,
+    optional: ing.optional,
+  }
+}
+
+/**
+ * The dish's current ingredient list **at recipe scale** (§3), for pinning
+ * into the Ask Bubbles overlay's `context.cooking_recipe` — never at meal
+ * scale, so a string element (which can't be scaled client-side) never sits
+ * next to a scaled object in the same list:
+ *
+ * - **With a valid amendment** (`readDishAmendment` non-null): its objects.
+ *   When `amendment.servings` differs from `recipeServingsFor(dish,
+ *   mealServings)`, each numeric `quantity` is rescaled by
+ *   `recipeServingsFor / amendment.servings`, rounded to 2 dp — bringing an
+ *   amendment written at one servings count back to the recipe's own scale.
+ *   In the ordinary case the two already match and the list passes through.
+ * - **Otherwise:** `dish.recipe.ingredients` as stored. Strings stay
+ *   strings; objects are mapped to `{ name, quantity, unit, optional }`
+ *   (`preparation` dropped), and a blank name is dropped.
+ *
+ * **Accepted asymmetry (Nit 7):** when `recipe.servings` is null/0,
+ * `recipeServingsFor` falls back to `mealServings` *at call time*. So an
+ * unamended dish's rescale factor is always `mealServings / mealServings =
+ * 1` (never scales), while an amended dish's `servings` was fixed at the
+ * meal's headcount when the amendment was applied — if the meal's servings
+ * later change (from another tab; this page has no servings control), the
+ * amended dish *does* rescale on the next pin while the unamended one still
+ * doesn't. Both sides follow the meal screen's existing fallback rule, and
+ * the amended dish is the more correct of the two since its list was written
+ * against a known headcount, so this is documented rather than special-cased.
+ */
+export function pinnedIngredientsForDish(
+  dish: MealDishFull,
+  mealServings: number,
+  session: MealCookSession,
+): (string | MealCookIngredient)[] {
+  const amendment = readDishAmendment(session, dish.recipe.id)
+
+  if (amendment) {
+    const recipeServings = recipeServingsFor(dish, mealServings)
+    const factor = amendment.servings > 0 ? recipeServings / amendment.servings : 1
+    return amendment.ingredients.map((ing) => scaleQuantity(ing, factor))
+  }
+
+  const result: (string | MealCookIngredient)[] = []
+  for (const ing of dish.recipe.ingredients) {
+    if (typeof ing === 'string') {
+      result.push(ing)
+      continue
+    }
+    const pinned = toPinnedIngredient(ing)
+    if (pinned) result.push(pinned)
+  }
+  return result
 }
 
 /**

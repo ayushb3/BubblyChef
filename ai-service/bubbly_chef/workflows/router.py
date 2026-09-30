@@ -39,7 +39,7 @@ from bubbly_chef.models.meal import MealOptionsProposal, MealProposal
 from bubbly_chef.models.pantry import (
     PantryProposal,
 )
-from bubbly_chef.models.proposals import HandoffKind
+from bubbly_chef.models.proposals import HandoffKind, RecipeAmendmentProposal
 from bubbly_chef.models.recipe import RecipeCard, RecipeCardProposal, RecipeConstraints
 from bubbly_chef.models.session import (
     CookingRecipeSnapshot,
@@ -61,6 +61,8 @@ from bubbly_chef.workflows.chat.nodes import (
     COOKING_RECIPE_KEY,
     GENERAL_CHAT_SYSTEM_PROMPT,
     GENERAL_CHAT_USER_PROMPT,
+    _build_amendment_proposal,
+    _detect_amendment,
     _flatten_ingredient,
     cooking_help_response,
     detect_mode_suggestion,
@@ -97,6 +99,7 @@ from bubbly_chef.workflows.recipe.nodes import (
 from bubbly_chef.workflows.state import (
     LLMIntentResult,
     WorkflowState,
+    create_cooking_help_envelope,
     create_general_chat_envelope,
     create_handoff_envelope,
     create_meal_options_envelope,
@@ -209,11 +212,21 @@ async def load_session(state: WorkflowState) -> WorkflowState:
     Node: Load or create the conversation session.
 
     If session is stale (>30 min since last update), reset to default.
+
+    A pinned first turn runs as COOKING (S4): when the request carries a
+    readable cook pin (`_request_cook_pin`) and there's either no session to
+    load (no `conversation_id`, or the load failed) or the stored mode is
+    still `default`, the returned `session_mode` is overridden to `"cooking"`
+    so the turn gets the COOKING gate and cooking-bias prompt immediately.
+    Nothing is persisted here — `update_session_node` still pins the recipe
+    and writes the mode at the end of the turn, as today. A stored non-default
+    mode (e.g. `recipe_exploring`) is left alone.
     """
+    pinned = _request_cook_pin(state.get("context")) is not None
     conversation_id = state.get("conversation_id")
     if not conversation_id:
         logger.debug("No conversation_id — skipping session load")
-        return {**state, "session": None, "session_mode": None}
+        return {**state, "session": None, "session_mode": "cooking" if pinned else None}
 
     try:
         repo = await get_repository()
@@ -238,6 +251,9 @@ async def load_session(state: WorkflowState) -> WorkflowState:
             f"Session loaded: mode={session.active_mode.value}, "
             f"conversation={conversation_id}"
         )
+        session_mode = session.active_mode.value
+        if pinned and session_mode == SessionMode.DEFAULT.value:
+            session_mode = SessionMode.COOKING.value
         # Q6: carry the retained brainstorm set into workflow state so a re-pick
         # ("show me the pesto one instead") can resolve against the stored ideas
         # without regeneration, even when conversation_history was truncated.
@@ -245,14 +261,14 @@ async def load_session(state: WorkflowState) -> WorkflowState:
         loaded_state: WorkflowState = {
             **state,
             "session": session.model_dump(mode="json"),
-            "session_mode": session.active_mode.value,
+            "session_mode": session_mode,
         }
         if not state.get("brainstorm_ideas"):
             loaded_state["brainstorm_ideas"] = list(session.metadata.brainstorm_ideas)
         return loaded_state
     except Exception as e:
         logger.warning(f"Failed to load session: {e}")
-        return {**state, "session": None, "session_mode": None}
+        return {**state, "session": None, "session_mode": "cooking" if pinned else None}
 
 
 async def classify_intent(state: WorkflowState) -> WorkflowState:
@@ -956,6 +972,26 @@ async def build_handoff_recipe(state: WorkflowState) -> WorkflowState:
     }
 
 
+def _request_cook_pin(context: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Return `context["cooking_recipe"]` when it's a readable full pin.
+
+    A readable pin is a dict with a non-empty stripped `title` or truthy
+    `ingredients` — exactly `_resolve_cook_context`'s legacy-full-dict test.
+    An id-only `cooking_recipe` dict, or `cooking_recipe_id` alone, is **not**
+    a readable pin: resolving those needs a repository call this function
+    doesn't make, and the two router changes that consume this (a pinned
+    first turn running as COOKING, and stream-path amendment detection) are
+    deliberately scoped to the full-dict payload only (S4) — see the PR B
+    contract, §2c.
+    """
+    if not context:
+        return None
+    raw = context.get(COOKING_RECIPE_KEY)
+    if isinstance(raw, dict) and (str(raw.get("title") or "").strip() or raw.get("ingredients")):
+        return raw
+    return None
+
+
 async def _resolve_cook_context(
     context: dict[str, Any],
     user_id: str,
@@ -980,8 +1016,9 @@ async def _resolve_cook_context(
     raw = context.get(COOKING_RECIPE_KEY)
     if recipe_id is None and isinstance(raw, dict):
         # Legacy full dict already carries what we need.
-        if str(raw.get("title") or "").strip() or raw.get("ingredients"):
-            return raw
+        pin = _request_cook_pin(context)
+        if pin is not None:
+            return pin
         # Thin dict with only an id → resolve like the id-only payload.
         recipe_id = raw.get("id")
 
@@ -2314,16 +2351,45 @@ async def run_chat_workflow_streaming(
         f"response_length={len(collected_text)}"
     )
 
+    # Stream-path amendment detection (issue #654 PR B, B1). Only for a
+    # cooking_help turn with a readable request-context cook pin (a full
+    # `cooking_recipe` dict) — never for an id-only pin or the session-
+    # snapshot pin alone, and never after a stream failure. `_detect_amendment`
+    # re-raises provider errors (it only catches ValueError/TypeError/
+    # ValidationError itself), so this is wrapped to never break the stream.
+    proposal: RecipeAmendmentProposal | None = None
+    if (
+        intent == Intent.COOKING_HELP.value
+        and not stream_failed
+        and _request_cook_pin(classified_state.get("context")) is not None
+    ):
+        try:
+            amendment = await _detect_amendment(stream_final_state, ai_manager, collected_text)
+            proposal = _build_amendment_proposal(stream_final_state, amendment)
+        except Exception as e:  # _detect_amendment re-raises provider errors; never break the stream
+            logger.warning(f"Stream amendment detection failed (prose only): {e}")
+            proposal = None
+
     # Build final envelope
-    envelope = create_general_chat_envelope(
-        assistant_message=collected_text,
-        intent=Intent(intent) if intent in (
-            Intent.GENERAL_CHAT.value, Intent.COOKING_HELP.value, Intent.RECIPE_BRAINSTORM.value
-        ) else Intent.GENERAL_CHAT,
-        request_id=classified_state.get("request_id"),
-        workflow_id=classified_state.get("workflow_id"),
-        conversation_id=conversation_id,
-    )
+    envelope: ProposalEnvelope[RecipeAmendmentProposal] | ProposalEnvelope[None]
+    if proposal is not None:
+        envelope = create_cooking_help_envelope(
+            collected_text,
+            proposal,
+            classified_state.get("request_id"),
+            classified_state.get("workflow_id"),
+            conversation_id,
+        )
+    else:
+        envelope = create_general_chat_envelope(
+            assistant_message=collected_text,
+            intent=Intent(intent) if intent in (
+                Intent.GENERAL_CHAT.value, Intent.COOKING_HELP.value, Intent.RECIPE_BRAINSTORM.value
+            ) else Intent.GENERAL_CHAT,
+            request_id=classified_state.get("request_id"),
+            workflow_id=classified_state.get("workflow_id"),
+            conversation_id=conversation_id,
+        )
     envelope.suggested_mode = suggested_mode
 
     yield _json.dumps({"type": "done"})

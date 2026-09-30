@@ -14,11 +14,12 @@
  * completion (or a reload finding one already completed/dismissed) can mark
  * that exact step done — see `lib/meal-cook-stream.ts`.
  *
- * `ingredient_amendments` was reserved for issue #654 (the combined
- * deduction / amendments ticket) and stays `{}` on every session this slice
- * (PR A) creates — PR B's `withDishAmendment` is the only writer. PR A adds
- * the reader (`readDishAmendment`) so the deduction can already consume a
- * slot PR B will start filling.
+ * `ingredient_amendments` (issue #654) holds one amendment slot per dish,
+ * keyed by dish id (= recipe id). `withDishAmendment` (PR B) is the only
+ * writer — the mid-cook Ask Bubbles overlay applies a proposal through it —
+ * and `readDishAmendment` (PR A) is the only reader, validating the shape.
+ * A session with no amendments yet still has `{}`, so a pre-PR-B (#653)
+ * session restores unchanged.
  *
  * **Stale session:** the meal's current dish recipe ids might no longer
  * equal `session.dish_ids` (a side was swapped after cooking started), or a
@@ -289,6 +290,30 @@ export function readDishAmendment(session: MealCookSession, dishId: string): Dis
     servings: a.servings,
     change_summary: a.change_summary,
     applied_at_ms: a.applied_at_ms,
+  }
+}
+
+/**
+ * Returns a copy of `session` with `dishId`'s amendment slot set to
+ * `amendment`, every other dish's slot kept as-is (issue #654 §3). Pure —
+ * the caller persists the result through `saveMealCookProgress`, which is a
+ * no-op once the meal has ended.
+ *
+ * **One slot per dish; amendments stack.** Each amendment the overlay
+ * produces is the model's full replacement list, derived from whatever list
+ * the previous amendment (or the recipe) produced, so the latest simply
+ * replaces the slot rather than appending to a log.
+ *
+ * `cook_id` and `steps` are untouched.
+ */
+export function withDishAmendment(
+  session: MealCookSession,
+  dishId: string,
+  amendment: DishAmendment,
+): MealCookSession {
+  return {
+    ...session,
+    ingredient_amendments: { ...session.ingredient_amendments, [dishId]: amendment },
   }
 }
 

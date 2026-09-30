@@ -212,6 +212,89 @@ describe('MealNowCard', () => {
     expect(screen.getByTestId('meal-now-card-waiting-copy')).toBeInTheDocument()
   })
 
+  // ─── Ask Bubbles pill (issue #654 PR B) ────────────────────────────────────
+
+  it('shows the Ask Bubbles pill on an active card when onAskBubbles is provided', () => {
+    const onAskBubbles = jest.fn()
+    const card: NowCard = { kind: 'active', step: HANDS_ON_STEP }
+    render(
+      <MealNowCard
+        card={card}
+        clockLabel={clockLabel}
+        onDone={jest.fn()}
+        onExtend={jest.fn()}
+        onSkip={jest.fn()}
+        onStartEarly={jest.fn()}
+        onAskBubbles={onAskBubbles}
+      />,
+    )
+    const pill = screen.getByTestId('meal-now-card-ask-bubbles')
+    expect(pill).toBeInTheDocument()
+    fireEvent.click(pill)
+    expect(onAskBubbles).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the Ask Bubbles pill on an upcoming card when onAskBubbles is provided', () => {
+    const onAskBubbles = jest.fn()
+    const card: NowCard = { kind: 'upcoming', step: HANDS_OFF_STEP, starts_in_minutes: 6 }
+    render(
+      <MealNowCard
+        card={card}
+        clockLabel={clockLabel}
+        onDone={jest.fn()}
+        onExtend={jest.fn()}
+        onSkip={jest.fn()}
+        onStartEarly={jest.fn()}
+        onAskBubbles={onAskBubbles}
+      />,
+    )
+    expect(screen.getByTestId('meal-now-card-ask-bubbles')).toBeInTheDocument()
+  })
+
+  it('omits the Ask Bubbles pill on a waiting card even when onAskBubbles is provided', () => {
+    const card: NowCard = { kind: 'waiting', running: [HANDS_OFF_STEP] }
+    render(
+      <MealNowCard
+        card={card}
+        clockLabel={clockLabel}
+        onDone={jest.fn()}
+        onExtend={jest.fn()}
+        onSkip={jest.fn()}
+        onStartEarly={jest.fn()}
+        onAskBubbles={jest.fn()}
+      />,
+    )
+    expect(screen.queryByTestId('meal-now-card-ask-bubbles')).not.toBeInTheDocument()
+  })
+
+  it('omits the Ask Bubbles pill on active/upcoming cards when onAskBubbles is not provided', () => {
+    const activeCard: NowCard = { kind: 'active', step: HANDS_ON_STEP }
+    const { rerender } = render(
+      <MealNowCard
+        card={activeCard}
+        clockLabel={clockLabel}
+        onDone={jest.fn()}
+        onExtend={jest.fn()}
+        onSkip={jest.fn()}
+        onStartEarly={jest.fn()}
+      />,
+    )
+    expect(screen.queryByTestId('meal-now-card-ask-bubbles')).not.toBeInTheDocument()
+
+    const upcomingCard: NowCard = { kind: 'upcoming', step: HANDS_OFF_STEP, starts_in_minutes: 6 }
+    rerender(
+      <MealNowCard
+        card={upcomingCard}
+        clockLabel={clockLabel}
+        onDone={jest.fn()}
+        onExtend={jest.fn()}
+        onSkip={jest.fn()}
+        onStartEarly={jest.fn()}
+      />,
+    )
+    expect(screen.queryByTestId('meal-now-card-ask-bubbles')).not.toBeInTheDocument()
+  })
+
   it('disables every pill when disabled', () => {
     const card: NowCard = { kind: 'active', step: HANDS_ON_STEP }
     render(
