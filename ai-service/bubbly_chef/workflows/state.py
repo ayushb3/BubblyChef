@@ -155,6 +155,12 @@ class WorkflowState(TypedDict, total=False):
     # brainstorm_ideas) for the pick turn.
     # ==========================================================================
     meal_plan_session_state: MealPlanSessionState | None
+    # Predicted follow-up pills for a meal reply (issue #651) -- 0-4 cleaned
+    # strings, set by meal_options_stage/meal_pick_stage on every successful
+    # return and read by the envelope builders into
+    # metadata["follow_up_suggestions"]. Unset (not just []) on every
+    # non-meal turn and on the degraded general_chat fallbacks.
+    meal_follow_ups: list[str]
 
     # ==========================================================================
     # Saved-recipe lookup

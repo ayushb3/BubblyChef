@@ -180,6 +180,10 @@ class MealOptionsLLMResult(BaseModel):
     """Envelope for the option-stage structured call -- 3 options requested."""
 
     options: list[MealOptionLLM] = Field(default_factory=list)
+    follow_ups: list[str] = Field(
+        default_factory=list,
+        description="2-4 short next asks in the user's voice, each under 60 characters, no emoji",
+    )
 
 
 # ---------------------------------------------------------------------------

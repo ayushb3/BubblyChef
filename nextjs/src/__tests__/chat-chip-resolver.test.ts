@@ -304,6 +304,158 @@ describe('sanitiseFollowUps (#498)', () => {
   })
 })
 
+// ─── Issue #651 — meal_plan pill sets, the stamp, and the cap raise ──────────
+
+describe('resolveChips — meal_plan pill sets (#651, §2)', () => {
+  const OPTIONS_FIXED_LABELS = ['Something quicker', 'Make it vegetarian', 'Different ideas']
+  const MEAL_UNSAVED_LABELS = ['Save this meal', 'Swap a side', 'Start cooking', 'Different options']
+
+  it('options stage (proposalType "meal_options"), no model pills → the fixed set, all stamped', () => {
+    const chips = resolveChips('meal_plan', undefined, 'meal_options')
+    expect(chips.map((c) => c.label)).toEqual(OPTIONS_FIXED_LABELS)
+    chips.forEach((c) => expect(c.context).toEqual({ meal_followup: true }))
+  })
+
+  it('an absent proposalType behaves like "meal_options" (the stage has not resolved yet)', () => {
+    expect(resolveChips('meal_plan')).toEqual(resolveChips('meal_plan', undefined, 'meal_options'))
+  })
+
+  it('"Just one dish" is gone from the meal_plan fallback', () => {
+    const chips = resolveChips('meal_plan', undefined, 'meal_options')
+    expect(chips.map((c) => c.label)).not.toContain('Just one dish')
+  })
+
+  it('options stage, 1 model pill → [m1, Something quicker], both stamped', () => {
+    const chips = resolveChips('meal_plan', ['Something with less prep'], 'meal_options')
+    expect(chips.map((c) => c.label)).toEqual(['Something with less prep', 'Something quicker'])
+    chips.forEach((c) => expect(c.context).toEqual({ meal_followup: true }))
+  })
+
+  it('options stage, 5 model pills → m1-m4, capped at MAX_FOLLOW_UP_CHIPS and stamped', () => {
+    const many = ['A?', 'B?', 'C?', 'D?', 'E?']
+    const chips = resolveChips('meal_plan', many, 'meal_options')
+    expect(chips.map((c) => c.label)).toEqual(many.slice(0, 4))
+    chips.forEach((c) => expect(c.context).toEqual({ meal_followup: true }))
+  })
+
+  it('meal stage, unsaved, no model pills → the fixed set in order; only "Different options" is stamped', () => {
+    const chips = resolveChips('meal_plan', undefined, 'meal')
+    expect(chips.map((c) => c.label)).toEqual(MEAL_UNSAVED_LABELS)
+    expect(chips.map((c) => c.context?.meal_followup)).toEqual([undefined, undefined, undefined, true])
+    expect(chips[0]).toMatchObject({ kind: 'action', action: 'save_meal' })
+    expect(chips[1]).toMatchObject({ kind: 'action', action: 'open_meal' })
+    expect(chips[2]).toMatchObject({ kind: 'action', action: 'open_meal' })
+  })
+
+  it('meal stage, unsaved, 2 model pills → [m1, Save this meal, Swap a side, Start cooking]; m1 unstamped', () => {
+    const chips = resolveChips('meal_plan', ['Can I prep ahead?', 'What should I start first?'], 'meal')
+    expect(chips.map((c) => c.label)).toEqual([
+      'Can I prep ahead?',
+      'Save this meal',
+      'Swap a side',
+      'Start cooking',
+    ])
+    expect(chips[0].context).toBeUndefined()
+  })
+
+  it('meal stage, saved, 3 model pills → [m1, m2, Swap a side, Start cooking]; "Save this meal" omitted', () => {
+    const chips = resolveChips(
+      'meal_plan',
+      ['Can I prep ahead?', 'What should I start first?', 'How do I store leftovers?'],
+      'meal',
+      { mealSaved: true },
+    )
+    expect(chips.map((c) => c.label)).toEqual([
+      'Can I prep ahead?',
+      'What should I start first?',
+      'Swap a side',
+      'Start cooking',
+    ])
+    expect(chips.some((c) => c.action === 'save_meal')).toBe(false)
+  })
+})
+
+describe('resolveChips — meal_followup stamp matrix (#651, §2)', () => {
+  it('options stage stamps every send pill, fixed and model', () => {
+    const chips = resolveChips('meal_plan', ['Something with less prep'], 'meal_options')
+    chips.forEach((c) => expect(c.context).toEqual({ meal_followup: true }))
+  })
+
+  it('meal stage, no model pills, stamps only the fixed "Different options" send', () => {
+    const chips = resolveChips('meal_plan', undefined, 'meal')
+    const stamped = chips.filter((c) => c.context?.meal_followup === true)
+    expect(stamped.map((c) => c.label)).toEqual(['Different options'])
+  })
+
+  it('meal stage never stamps a model pill — it is a cooking question, not an options re-ask', () => {
+    const chips = resolveChips('meal_plan', ['Can I prep any of this ahead?'], 'meal')
+    expect(chips[0].label).toBe('Can I prep any of this ahead?')
+    expect(chips[0].context).toBeUndefined()
+  })
+
+  it('every other intent stamps nothing', () => {
+    const chips = resolveChips('cooking_help', ['What internal temperature?'])
+    chips.forEach((c) => expect(c.context).toBeUndefined())
+  })
+})
+
+describe('resolveChips — action pills (#651)', () => {
+  it('MAX_FOLLOW_UP_CHIPS is 4', () => {
+    expect(MAX_FOLLOW_UP_CHIPS).toBe(4)
+  })
+
+  it('a model pill duplicating a fixed action label (case-insensitive) is dropped — the action wins', () => {
+    const chips = resolveChips('meal_plan', ['save this meal', 'What should I prep first?'], 'meal')
+    const saveChips = chips.filter((c) => c.label.toLowerCase() === 'save this meal')
+    expect(saveChips).toHaveLength(1)
+    expect(saveChips[0].kind).toBe('action')
+  })
+
+  it('an action-shaped junk entry in the suggestions array is dropped, leaving only send pills', () => {
+    const chips = resolveChips('cooking_help', [{ kind: 'action', action: 'save_meal' }, 'Ok?'])
+    expect(chips.map((c) => c.label)).toContain('Ok?')
+    chips.forEach((c) => {
+      expect(c.kind).not.toBe('action')
+      expect(c.action).toBeUndefined()
+    })
+  })
+})
+
+describe('resolveChips — never empty, never over the cap, across meal_plan × suggestions (#651)', () => {
+  const PROPOSAL_TYPES: (string | undefined)[] = ['meal_options', 'meal', undefined]
+  const SAVED_STATES = [true, false]
+  const SUGGESTION_CASES: unknown[] = [
+    undefined,
+    ['', '   ', 7, null],
+    ['Only one?'],
+    ['A?', 'B?', 'C?', 'D?', 'E?', 'F?'],
+  ]
+
+  it('is never empty and never exceeds MAX_FOLLOW_UP_CHIPS for any combination', () => {
+    VALID_INTENTS.forEach((intent) => {
+      PROPOSAL_TYPES.forEach((proposalType) => {
+        SAVED_STATES.forEach((mealSaved) => {
+          SUGGESTION_CASES.forEach((suggestions) => {
+            const chips = resolveChips(intent, suggestions, proposalType, { mealSaved })
+            expect(chips.length).toBeGreaterThan(0)
+            expect(chips.length).toBeLessThanOrEqual(MAX_FOLLOW_UP_CHIPS)
+          })
+        })
+      })
+    })
+  })
+
+  it('resolveStaticChips matches resolveChips with no suggestions across every meal_plan proposalType/mealSaved combination', () => {
+    PROPOSAL_TYPES.forEach((proposalType) => {
+      SAVED_STATES.forEach((mealSaved) => {
+        expect(resolveChips('meal_plan', undefined, proposalType, { mealSaved })).toEqual(
+          resolveStaticChips('meal_plan', proposalType, { mealSaved }),
+        )
+      })
+    })
+  })
+})
+
 describe('getFollowUpSuggestions (#498)', () => {
   it('reads metadata.follow_up_suggestions and keeps only strings', () => {
     expect(getFollowUpSuggestions(envelope({ follow_up_suggestions: ['a?', 1, 'b?'] }))).toEqual([

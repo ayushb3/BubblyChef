@@ -1,7 +1,9 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
+import { useMotionConfig } from '@/lib/motion'
 import type { MealProposal } from '@/types/chat'
 
 export interface CompactMealCardProps {
@@ -39,7 +41,31 @@ export default function CompactMealCard({
   onSaveMeal,
   openState = 'idle',
   saveState = 'idle',
+  focusSaveToken = 0,
 }: CompactMealCardProps) {
+  const { reduced } = useMotionConfig()
+  const saveButtonRef = useRef<HTMLButtonElement>(null)
+  const [saveHighlighted, setSaveHighlighted] = useState(false)
+  const saveDisabled = saveState === 'saving' || saveState === 'saved'
+
+  // The "Save this meal" pill (§1b) bumps this token rather than writing
+  // anything itself — the card's own Save meal button stays the one confirm.
+  // A no-op while that button is disabled, so a stale pill tap after the
+  // meal's already saved can't yank focus onto a dead control.
+  useEffect(() => {
+    if (focusSaveToken === 0 || saveDisabled) return
+    const button = saveButtonRef.current
+    if (!button) return
+    button.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' })
+    button.focus()
+    setSaveHighlighted(true)
+    const timer = setTimeout(() => setSaveHighlighted(false), 2000)
+    return () => clearTimeout(timer)
+    // Reacts only to the token changing — `reduced`/`saveDisabled` are read
+    // at fire time, not tracked as retrigger conditions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSaveToken])
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -81,9 +107,12 @@ export default function CompactMealCard({
             {openState === 'pending' ? 'Opening…' : openState === 'opened' ? '✓ Opened' : 'Open meal'}
           </SpringButton>
           <SpringButton
+            ref={saveButtonRef}
             onClick={onSaveMeal}
-            disabled={saveState === 'saving' || saveState === 'saved'}
-            className="flex-1 py-2.5 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-bg)] disabled:opacity-60 disabled:cursor-not-allowed"
+            disabled={saveDisabled}
+            className={`flex-1 py-2.5 px-3 rounded-full text-sm font-semibold border border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-bg)] disabled:opacity-60 disabled:cursor-not-allowed transition-shadow motion-reduce:transition-none${
+              saveHighlighted ? ' ring-2 ring-[var(--color-primary)] ring-offset-2' : ''
+            }`}
           >
             {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? '✓ Saved!' : 'Save meal'}
           </SpringButton>

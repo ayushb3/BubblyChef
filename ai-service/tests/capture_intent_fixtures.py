@@ -88,6 +88,21 @@ CASES: list[dict[str, Any]] = [
     {"input": "cooking for friends this weekend", "expected": "meal_plan"},
     {"input": "a meal for 4", "expected": "meal_plan"},
     {"input": "a quick pasta recipe for dinner", "expected": "recipe_generation"},
+    # meal_plan (issue #651): the two phrasings the "Plan dinner" starter pill
+    # and the empty-state `?plan=dinner` deep link actually send. These two
+    # must pass -- they're what ships. A miss on the other #651 additions
+    # below is reported to the PM, not fixed with a classifier-prompt edit
+    # in PR A.
+    {"input": "Plan dinner for tonight", "expected": "meal_plan"},
+    {"input": "Plan dinner for 2", "expected": "meal_plan"},
+    # recipe_generation (issue #651): a named dish, no occasion -- stays
+    # recipe_generation per the existing meal_plan/recipe_generation
+    # disambiguation above.
+    {"input": "make a pasta dinner", "expected": "recipe_generation"},
+    # saved_recipe_lookup (issue #651): the phrasing the meal-ready "Make it
+    # again" pill (PR C) actually sends must pass.
+    {"input": "make the lemon pasta again", "expected": "saved_recipe_lookup"},
+    {"input": "Show me my saved lemon pasta", "expected": "saved_recipe_lookup"},
     # cooking_help
     {"input": "how do I caramelise onions?", "expected": "cooking_help"},
     {"input": "how long does chicken last in the fridge?", "expected": "cooking_help"},

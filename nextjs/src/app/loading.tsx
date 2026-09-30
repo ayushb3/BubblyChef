@@ -56,9 +56,9 @@ export default function Loading() {
           </div>
         </div>
 
-        {/* Action card row */}
-        <div className="grid grid-cols-3 gap-3 w-full max-w-sm mb-6">
-          {[0, 1, 2].map((i) => (
+        {/* Action card row — 2x2 (issue #651: Plan dinner is a 4th card) */}
+        <div className="grid grid-cols-2 gap-3 w-full max-w-sm mb-6">
+          {[0, 1, 2, 3].map((i) => (
             <div
               key={i}
               className={`${PULSE} h-[88px] rounded-2xl border border-[var(--color-border)]`}

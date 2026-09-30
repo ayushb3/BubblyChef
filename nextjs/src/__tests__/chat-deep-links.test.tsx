@@ -9,7 +9,7 @@
  *  - and a bare `/chat` stays a clean, empty conversation (#143's explicit
  *    "no context bleed" criterion).
  */
-import React from 'react'
+import React, { StrictMode } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/components/ThemeProvider'
@@ -186,6 +186,43 @@ describe('/chat?use= — expiring item handoff (#138)', () => {
     rerender(tree)
     rerender(tree)
     expect(sendMessage).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('/chat?plan=dinner — home screen handoff (#651)', () => {
+  it('auto-sends "Plan dinner for tonight" exactly once under a StrictMode double mount, with no context; the context card shows and there is no starter row', async () => {
+    withParams('plan=dinner')
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <StrictMode>
+        <QueryClientProvider client={client}>
+          <ThemeProvider>
+            <ChatPage />
+          </ThemeProvider>
+        </QueryClientProvider>
+      </StrictMode>,
+    )
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1))
+    expect(sendMessage).toHaveBeenCalledWith('Plan dinner for tonight')
+    expect(screen.getByText('Planning dinner')).toBeInTheDocument()
+    // No starter row under a seed — none of the always-present fallback pills
+    // render. Queried by role: RotatingPlaceholder's input placeholder text
+    // ("What can I make for dinner?") is a <span>, not a button, so this is
+    // unambiguous against it.
+    expect(screen.queryByRole('button', { name: /what can i make/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /quick weeknight dinner/i })).toBeNull()
+  })
+
+  it('dismissing the card drops the param so a refresh does not re-fire it', async () => {
+    withParams('plan=dinner')
+    renderChat()
+
+    await waitFor(() => expect(screen.getByText('Planning dinner')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /dismiss dinner planning context/i }))
+
+    await waitFor(() => expect(screen.queryByText('Planning dinner')).toBeNull())
+    expect(replace).toHaveBeenCalledWith('/chat', { scroll: false })
   })
 })
 

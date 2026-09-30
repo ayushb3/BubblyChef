@@ -6,6 +6,7 @@ Replaces SQLiteRepository. Uses supabase-py with the service_role key
 
 import logging
 import re
+from collections import Counter
 from datetime import UTC, date, datetime
 from typing import Any, cast
 from uuid import UUID
@@ -530,6 +531,69 @@ class SupabaseRepository:
         # on this table is actually an object, matching every other raw-dict
         # accessor in this class (e.g. get_recipe below).
         return _as_rows(result.data or [])
+
+    async def get_recent_cuisines(self, user_id: str, sample: int = 5) -> list[str]:
+        """The user's top-2 recent cuisines, lower-cased, most-cooked first
+        (issue #651 spec §6) -- a soft, non-binding preference for meal/recipe
+        prompts, never surfaced to the user as a profile.
+
+        Non-draft recipes only, ranked by `coalesce(last_cooked_at,
+        created_at)` desc. PostgREST can't order by a `coalesce` expression,
+        so this runs two limited queries -- top `sample` by `last_cooked_at`
+        desc (non-null only) and top `sample` by `created_at` desc -- merges
+        them by id, and re-sorts by the coalesced key in Python. That's exact
+        because a recipe's `last_cooked_at` is never earlier than its
+        `created_at`, so the true top-`sample` set is always covered by the
+        union of the two.
+
+        Ties in cuisine count are broken toward the most recent, matching
+        `Counter.most_common` over a newest-first list (ties resolve in
+        first-encountered order). Returns `[]` on any error or when nothing
+        qualifies. Never raises.
+        """
+        try:
+            cooked_result = (
+                self.client.table("recipes")
+                .select("id,cuisine,last_cooked_at,created_at")
+                .eq("user_id", user_id)
+                .eq("is_draft", False)
+                .not_.is_("last_cooked_at", "null")
+                .order("last_cooked_at", desc=True)
+                .limit(sample)
+                .execute()
+            )
+            created_result = (
+                self.client.table("recipes")
+                .select("id,cuisine,last_cooked_at,created_at")
+                .eq("user_id", user_id)
+                .eq("is_draft", False)
+                .order("created_at", desc=True)
+                .limit(sample)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning(f"Could not fetch recent cuisines for user {user_id}: {e}")
+            return []
+
+        rows_by_id: dict[Any, dict[str, Any]] = {}
+        for row in _as_rows(cooked_result.data or []) + _as_rows(created_result.data or []):
+            row_id = row.get("id")
+            if row_id is not None:
+                rows_by_id[row_id] = row
+
+        def _coalesced_key(row: dict[str, Any]) -> str:
+            return str(row.get("last_cooked_at") or row.get("created_at") or "")
+
+        top_rows = sorted(rows_by_id.values(), key=_coalesced_key, reverse=True)[:sample]
+
+        cuisines = [
+            c.strip().lower()
+            for row in top_rows
+            if isinstance(c := row.get("cuisine"), str) and c.strip()
+        ]
+        if not cuisines:
+            return []
+        return [c for c, _ in Counter(cuisines).most_common(2)]
 
     async def search_saved_recipes(
         self, user_id: str, query: str, limit: int = 5

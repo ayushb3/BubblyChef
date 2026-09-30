@@ -1,6 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import type { Ref } from 'react'
 
 interface SpringButtonProps {
   children: React.ReactNode
@@ -11,6 +12,12 @@ interface SpringButtonProps {
   disabled?: boolean
   /** Native tooltip / accessibility hint. */
   title?: string
+  /**
+   * React 19 ref-as-prop, forwarded to the underlying `<button>`. Added for
+   * issue #651 so `CompactMealCard` can scroll/focus its own Save meal
+   * button; no `forwardRef` wrapper needed under React 19.
+   */
+  ref?: Ref<HTMLButtonElement>
 }
 
 export default function SpringButton({
@@ -21,9 +28,11 @@ export default function SpringButton({
   type = 'button',
   disabled,
   title,
+  ref,
 }: SpringButtonProps) {
   return (
     <motion.button
+      ref={ref}
       type={type}
       onClick={onClick}
       disabled={disabled}

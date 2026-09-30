@@ -59,6 +59,14 @@ The deterministic meal scheduler's output for a set of 1-3 dishes (a main plus o
 - **Anchoring**: a separate pure helper (`resolveMealAnchor()`, `meal-anchor.ts`) maps offsets to clock time, given an explicit `now` — never reads a clock itself. Start-now shows relative offsets until cooking begins; serve-at computes `start = serve_at − total_minutes` and returns `too_late` plus the earliest ready time when that's already in the past.
 - **Related**: Structured step (the input), Kitchen limits (the `exclusive` resource), the timeline table component (`MealTimelineTable`, renders this) — see also issue #647's "the deterministic meal scheduler (contract)".
 
+### Pill
+A tappable affordance rendered by `PostMessageChips` (chat) or the home screen's starter row — the umbrella term for what issue #651 calls "chips" everywhere else in the codebase (`ChipConfig`, `resolveChips`, `lib/chat-chips.ts`). Two kinds, three sources.
+
+- **Kinds**: **send** (default) — taps `onChipTap(chip)`, which sends `chip.message` as the next user turn; gets a ✎ (edit) affordance when the caller wires `onEditChip`, staging the message in the input instead of sending. **action** — taps `onChipAction(chip.action)`, one of a closed union (`save_meal` | `open_scan` | `open_meal`) that model output can never produce; never gets a ✎; omitted entirely when the caller hasn't wired a handler.
+- **Sources**: **starter** — the empty chat screen's row, ranked from `StarterContext` by `rankStarterPills()` (`lib/starter-pills.ts`); always exactly 3, slot 1 always time-of-day. **predicted** — a model-generated follow-up riding `metadata.follow_up_suggestions`, sanitised and capped by `resolveChips()`. **fallback** — the fixed per-intent set (`resolveStaticChips()`) shown when no usable predicted pills survive sanitising, or topped up alongside them.
+- **The `meal_followup` stamp**: a resolver-only `context: { meal_followup: true }` on specific send pills (never on model output) that routes a tap straight back to the `meal_plan` intent, bypassing the classifier. Lost when a pill is edited via ✎.
+- **Related**: Meal option (the pick stage a meal-plan pill can re-open), Intent (what a stamped pill overrides)
+
 ### Kitchen limits
 User-stated cooking constraints, e.g. "I only have one pan" — not an equipment model (no burners/ovens/pans-as-inventory), just what the user says.
 

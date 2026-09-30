@@ -217,7 +217,12 @@ export interface ChatRequest {
    * `cooking_recipe_id` (string) — the recipe the user just started cooking;
    * the AI service resolves the full recipe from the DB and pins the
    * conversation to it. Legacy `cooking_recipe` ({ id, title, ingredients })
-   * is still accepted, same effect.
+   * is still accepted, same effect. `meal_option_id` (string) — a pick on a
+   * meal-options card; the backend resolves it from the session, never
+   * fuzzy-matched from the message text. `meal_followup` (`true` only) —
+   * stamped on a tap of a meal-stage pill (issue #651); routes the turn back
+   * to `meal_plan` without the classifier and inherits the retained meal's
+   * constraints, servings and option titles.
    */
   context?: Record<string, unknown> | null
   /**
@@ -503,4 +508,41 @@ export function buildClarificationText(selections: Record<string, string[]>): st
 export interface AIHealthStatus {
   ai_available: boolean
   providers: Array<{ name: string; available: boolean }>
+}
+
+// ─── Starter pills (issue #651) ────────────────────────────────────────────────
+
+/** One row from the `GET /api/chat/starter-context` expiring-items query. */
+export interface StarterExpiringItem {
+  name: string
+  /** `YYYY-MM-DD` */
+  expiry_date: string
+}
+
+/** One row from the `GET /api/chat/starter-context` recent-cooks query. */
+export interface StarterRecentCook {
+  recipe_id: string
+  title: string
+  last_cooked_at: string
+  cuisine: string | null
+}
+
+/**
+ * The context the starter-pill ranker (`lib/starter-pills.ts`) chooses from
+ * on the empty chat screen. Built server-side by
+ * `GET /api/chat/starter-context` and normalised client-side by
+ * `fetchStarterContext` (`lib/api/starter-context.ts`) so the ranker never
+ * has to guard against a malformed field itself.
+ */
+export interface StarterContext {
+  /** `expiry_date` in [server today −1, +7], soonest first then name; ≤10. */
+  expiring: StarterExpiringItem[]
+  /** All pantry rows. `null` when the count query failed. */
+  pantry_count: number | null
+  /** ≤3 non-draft recipes with `last_cooked_at`, most recent first. */
+  recent_cooks: StarterRecentCook[]
+  /** 0–2, lower-cased — the §6 recent-cuisine rule shared with the backend. */
+  recent_cuisines: string[]
+  /** The §6 rule; 2 on failure. */
+  default_servings: number
 }

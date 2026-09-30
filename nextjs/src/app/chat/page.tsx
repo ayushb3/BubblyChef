@@ -32,6 +32,8 @@ import { createMeal, updateMeal } from '@/lib/api/meals'
 import { buildCreateMealPayload } from '@/lib/meal-chat-helpers'
 import { cookingContextForId, deriveChatSeed } from '@/lib/chat-seed'
 import { startCookSession, isCookSessionEnded } from '@/lib/cook-session'
+import { useStarterContext } from '@/lib/api/starter-context'
+import { rankStarterPills } from '@/lib/starter-pills'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import type {
   ChatMessage,
@@ -53,27 +55,15 @@ import {
   isMealProposal,
 } from '@/types/chat'
 import type { SavedRecipeMatch } from '@/types/chat'
-import { resolveChips, COOKING_CHIPS, type ChipConfig } from '@/lib/chat-chips'
+import { resolveChips, COOKING_CHIPS, type ChipConfig, type ChipAction } from '@/lib/chat-chips'
 
 // ---------------------------------------------------------------------------
 // Intent-aware chip resolver — logic lives in lib/chat-chips.ts (testable
-// without the component tree).
+// without the component tree). The empty-state welcome row used to be a
+// fixed `SUGGESTIONS` list (issue #174); issue #651 replaced it with the
+// context-driven starter-pill ranker (`lib/starter-pills.ts`) below. The
+// pinned-cooking row is unrelated and stays as it was.
 // ---------------------------------------------------------------------------
-
-const SUGGESTIONS = [
-  'What can I make tonight? 🌙',
-  'Quick weeknight dinner ⚡',
-  'Use my expiring items 🍅',
-  'Help me meal prep 📦',
-]
-
-/*
- * Fix #174: one tone per chip so the four welcome suggestions read as
- * visually distinct options rather than four copies of the same pill.
- * Tones reuse existing Chip.tsx tokens — no new values introduced.
- * 'expiring' (amber) is a semantic match for the third chip's content.
- */
-const SUGGESTION_TONES: ChipTone[] = ['primary', 'accent', 'expiring', 'fresh']
 
 const COOKING_SUGGESTIONS = COOKING_CHIPS.map((c) => c.suggestion ?? c.message)
 
@@ -165,11 +155,25 @@ function ChatSurface() {
   const [mealIds, setMealIds] = useState<Record<string, { id: string; isDraft: boolean }>>({})
   const [mealOpenStates, setMealOpenStates] = useState<Record<string, 'idle' | 'pending' | 'opened'>>({})
   const [mealSaveStates, setMealSaveStates] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({})
+  /**
+   * msgId → a counter bumped by a tap on the meal-ready "Save this meal" pill
+   * (issue #651, §4). `CompactMealCard.focusSaveToken` scrolls to, focuses and
+   * highlights its own Save meal button on each change — the pill itself
+   * writes nothing; the card's button is still the one confirm.
+   */
+  const [mealSaveFocus, setMealSaveFocus] = useState<Record<string, number>>({})
   /** In-flight POST promises keyed by msgId — the double-creation guard Open and Save share. */
   const mealCreateInFlight = useRef<Map<string, Promise<{ id: string; isDraft: boolean }>>>(new Map())
   const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
   const [dismissedRecipeId, setDismissedRecipeId] = useState<string | null>(null)
   const [dismissedSeedKey, setDismissedSeedKey] = useState<string | null>(null)
+  /**
+   * One clock read per empty state (issue #651, §4/§12) — the starter-pill
+   * ranker (`rankStarterPills`) is pure and never reads the clock itself.
+   * Reset on "New Chat" so a session spanning a time-of-day boundary gets a
+   * fresh pill set rather than one frozen at first mount.
+   */
+  const [mountedAt, setMountedAt] = useState(() => new Date())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   // The recipe only needs to ride along on the first message — the backend
@@ -276,7 +280,14 @@ function ChatSurface() {
     seedSentRef.current = true
     // The seed *is* the first message, so the cook-context slot is spent.
     contextSentRef.current = true
-    sendMessage(seed.message)
+    // `seed.context` (issue #651, §8) is unset for `tip`/`use`/`plan` today —
+    // only PR B's `meal` seed sets it — so this is a no-op for every seed
+    // that currently exists.
+    if (seed.context) {
+      sendMessage(seed.message, seed.context)
+    } else {
+      sendMessage(seed.message)
+    }
   }, [seed, sendMessage])
 
   const dismissSeedCard = () => {
@@ -311,6 +322,8 @@ function ChatSurface() {
       setDismissedSeedKey(seed.key)
       router.replace('/chat', { scroll: false })
     }
+    // Fresh empty state, fresh clock read for the starter-pill ranker.
+    setMountedAt(new Date())
     startNewChat()
   }
 
@@ -428,8 +441,16 @@ function ChatSurface() {
     return promise
   }
 
+  // Forwards a stamped pill's request context (issue #651, §1c/§4) — set only
+  // by the resolver (`{ meal_followup: true }`), never from model output. An
+  // unstamped chip (every non-meal pill, plus any pill edited via ✎) keeps
+  // the pre-#651 one-argument call.
   const handleChipTap = (chip: ChipConfig) => {
-    sendChipMessage(chip.message)
+    if (chip.context) {
+      sendChipMessage(chip.message, chip.context)
+    } else {
+      sendChipMessage(chip.message)
+    }
   }
 
   const handleStageText = (text: string) => {
@@ -525,6 +546,31 @@ function ChatSurface() {
       })
   }
 
+  /**
+   * A tap on an action-kind pill (issue #651, §4). Bound per message at the
+   * render call site below, same pattern as `onOpenMeal`/`onSaveMeal`.
+   *
+   * `save_meal` writes nothing — the pill only bumps the focus token so
+   * `CompactMealCard` scrolls to, focuses and highlights its own Save meal
+   * button, which is the one confirm. `open_meal` (Swap a side, Start
+   * cooking) is exactly the card's Open meal action; `proposal` is only
+   * passed for a meal-ready message, so this is a no-op if it's somehow
+   * absent. `open_scan` matches the starter row's scan pill.
+   */
+  const handleChipAction = (action: ChipAction, msgId: string, proposal?: MealProposal) => {
+    switch (action) {
+      case 'save_meal':
+        setMealSaveFocus((prev) => ({ ...prev, [msgId]: (prev[msgId] ?? 0) + 1 }))
+        break
+      case 'open_meal':
+        if (proposal) handleOpenMeal(msgId, proposal)
+        break
+      case 'open_scan':
+        router.push('/pantry?add=scan')
+        break
+    }
+  }
+
   // Acts on the match by id — the same contract the single-match card's
   // "Cook this" action uses (`/chat?cooking=<id>`, read reactively via
   // `useSearchParams` above). Deliberately NOT sendMessage(match.title):
@@ -573,6 +619,14 @@ function ChatSurface() {
 
   // Derived like the cook card: shown until the user dismisses this exact seed.
   const activeSeed = seed && seed.key !== dismissedSeedKey ? seed : null
+
+  // Starter-pill context (issue #651, §4/§7) — only fetched for the plain
+  // empty state: not while resuming a persisted conversation, not under the
+  // cook handoff (that row is unrelated/unchanged), and not under a seed
+  // (no pill row shows there at all). `rankStarterPills` degrades to the
+  // time-of-day pill plus two fillers while this is pending or on error, so
+  // there is no network wait before the first paint.
+  const starter = useStarterContext(!hasMessages && !isResuming && !cookingRecipeId && !seed)
 
   return (
     <div className="flex flex-col h-screen pb-20">
@@ -724,6 +778,10 @@ function ChatSurface() {
                 }
                 onTryAnother={() => sendChipMessage('Give me a different recipe')}
                 onChipTap={handleChipTap}
+                onChipAction={(action) => {
+                  const proposal = msg.response?.proposal
+                  handleChipAction(action, msg.id, isMealProposal(proposal) ? proposal : undefined)
+                }}
                 onPickIdea={handlePickIdea}
                 onPickSavedRecipe={handlePickSavedRecipe}
                 onConfirmChoice={handleConfirmChoice}
@@ -733,6 +791,7 @@ function ChatSurface() {
                 onSaveMeal={(proposal) => handleSaveMeal(msg.id, proposal)}
                 mealOpenState={mealOpenStates[msg.id] ?? 'idle'}
                 mealSaveState={mealSaveStates[msg.id] ?? 'idle'}
+                mealSaveFocusToken={mealSaveFocus[msg.id] ?? 0}
               />
             ))}
 
@@ -762,18 +821,30 @@ function ChatSurface() {
               }
               className="w-full max-w-sm mb-5"
             />
-            {/* Chat-specific affordances — kept out of the generic EmptyState */}
-            <div className="flex flex-wrap gap-2 justify-center">
-              {(cookingRecipe ? COOKING_SUGGESTIONS : SUGGESTIONS).map((s, i) => (
-                <Chip
-                  key={s}
-                  tone={(cookingRecipe ? COOKING_SUGGESTION_TONES : SUGGESTION_TONES)[i]}
-                  onClick={() => handleSuggestionClick(s)}
-                >
-                  {s}
-                </Chip>
-              ))}
-            </div>
+            {/* Chat-specific affordances — kept out of the generic EmptyState.
+                Pinned-cooking row: unchanged. A seed above: no pill row (the
+                seed card is already the affordance). Otherwise: the
+                context-driven starter row (issue #651, §4/§7). */}
+            {cookingRecipe ? (
+              <div className="flex flex-wrap gap-2 justify-center">
+                {COOKING_SUGGESTIONS.map((s, i) => (
+                  <Chip key={s} tone={COOKING_SUGGESTION_TONES[i]} onClick={() => handleSuggestionClick(s)}>
+                    {s}
+                  </Chip>
+                ))}
+              </div>
+            ) : activeSeed ? null : (
+              <PostMessageChips
+                chips={rankStarterPills(starter.data ?? null, mountedAt)}
+                align="center"
+                onChipTap={(chip) => handleSuggestionClick(chip.message)}
+                onEditChip={handleStageText}
+                onChipAction={(action) => {
+                  // The starter row's only action pill is the scan pill.
+                  if (action === 'open_scan') router.push('/pantry?add=scan')
+                }}
+              />
+            )}
           </div>
         )}
       </div>
@@ -888,6 +959,8 @@ interface MessageRendererProps {
   onAlreadyMade: (recipe: ChatRecipeData) => void
   onTryAnother: () => void
   onChipTap: (chip: ChipConfig) => void
+  /** Action-kind pill tap (issue #651, §4) — save_meal / open_meal / open_scan. */
+  onChipAction: (action: ChipAction) => void
   onPickIdea: (idea: string) => void
   onPickSavedRecipe: (match: SavedRecipeMatch) => void
   /** Called when the user taps a confirm-band button (#416 AC3). */
@@ -905,6 +978,8 @@ interface MessageRendererProps {
   onSaveMeal: (proposal: MealProposal) => void
   mealOpenState: 'idle' | 'pending' | 'opened'
   mealSaveState: 'idle' | 'saving' | 'saved' | 'error'
+  /** Bumped by a "Save this meal" pill tap — see `CompactMealCard.focusSaveToken`. */
+  mealSaveFocusToken: number
 }
 
 function MessageRenderer({
@@ -926,6 +1001,7 @@ function MessageRenderer({
   onAlreadyMade,
   onTryAnother,
   onChipTap,
+  onChipAction,
   onPickIdea,
   onPickSavedRecipe,
   onConfirmChoice,
@@ -935,6 +1011,7 @@ function MessageRenderer({
   onSaveMeal,
   mealOpenState,
   mealSaveState,
+  mealSaveFocusToken,
 }: MessageRendererProps) {
   // User messages — simple bubble
   if (message.role === 'user') {
@@ -1041,6 +1118,8 @@ function MessageRenderer({
             <PostMessageChips
               chips={resolveChips(intent, getFollowUpSuggestions(message.response))}
               onChipTap={onChipTap}
+              onEditChip={onStageText}
+              onChipAction={onChipAction}
             />
           )}
         </motion.div>
@@ -1076,14 +1155,17 @@ function MessageRenderer({
           </div>
           {isLastSettledAssistant && !isFollowUpsPending(message.response) && (
             <PostMessageChips
-              chips={resolveChips(intent, getFollowUpSuggestions(message.response))}
+              chips={resolveChips(intent, getFollowUpSuggestions(message.response), proposal.proposal_type)}
               onChipTap={onChipTap}
+              onEditChip={onStageText}
+              onChipAction={onChipAction}
             />
           )}
         </motion.div>
       )
     }
     if (isMealProposal(proposal)) {
+      const mealSaved = mealSaveState === 'saving' || mealSaveState === 'saved'
       return (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -1100,9 +1182,18 @@ function MessageRenderer({
                 onSaveMeal={() => onSaveMeal(proposal)}
                 openState={mealOpenState}
                 saveState={mealSaveState}
+                focusSaveToken={mealSaveFocusToken}
               />
             </div>
           </div>
+          {isLastSettledAssistant && !isFollowUpsPending(message.response) && (
+            <PostMessageChips
+              chips={resolveChips(intent, getFollowUpSuggestions(message.response), 'meal', { mealSaved })}
+              onChipTap={onChipTap}
+              onEditChip={onStageText}
+              onChipAction={onChipAction}
+            />
+          )}
         </motion.div>
       )
     }
@@ -1234,6 +1325,8 @@ function MessageRenderer({
         <PostMessageChips
           chips={resolveChips(intent, getFollowUpSuggestions(message.response))}
           onChipTap={onChipTap}
+          onEditChip={onStageText}
+          onChipAction={onChipAction}
         />
       )}
     </motion.div>
