@@ -273,6 +273,9 @@ Report exactly which ingredients the request touched:
   copied exactly as written in the previous recipe above.
 - "changed": previous-recipe ingredients whose amount, unit or preparation the
   request changes -- the exact previous name plus the new values.
+A substitution ("swap the butter for olive oil") is a removal plus an addition:
+put the old one in "removed" and the new one in "added". Never report a
+different name under "changed"; it only ever updates an existing ingredient.
 Leave a list empty when the request did not touch anything in it. An
 ingredient you removed must not appear in the instructions or steps any more.
 

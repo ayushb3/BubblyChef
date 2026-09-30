@@ -16,8 +16,11 @@ from bubbly_chef.models.recipe import Ingredient, RecipeCard, StepMetadata, buil
 from bubbly_chef.prompts.recipe import RECIPE_FOLLOWUP_PROMPT, RECIPE_GENERATION_PROMPT
 from bubbly_chef.services.recipe_refine import (
     AppliedEdits,
+    RefineEdits,
     apply_ingredient_edits,
     instructions_mentioning_removed,
+    name_divergence,
+    unreported_additions,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,8 +91,9 @@ class AIRecipeRefineOutput(AIRecipeOutput):
         default_factory=list,
         description=(
             "Previous-recipe ingredients whose amount, unit or preparation the request "
-            "changes: the exact previous name plus the new values. Never an ingredient "
-            "the request didn't mention."
+            "changes: the exact previous name plus the new values. Never rename an "
+            "ingredient here and never list one the request didn't mention; a "
+            "substitution is a removal in `removed` plus an addition in `added`."
         ),
     )
 
@@ -389,38 +393,87 @@ def _to_ingredient(ing: AIRecipeIngredient) -> Ingredient:
     )
 
 
-def _apply_refine_edits(previous: RecipeCard, result: AIRecipeOutput) -> AppliedEdits:
-    """The previous card's ingredients plus the edits the model reported.
+def _reported_edits(result: AIRecipeOutput) -> RefineEdits:
+    """The edit list a refine reply reported.
 
     A provider (or test double) that answers with the plain recipe schema has
-    reported no edits, so the ingredient list comes through unchanged.
+    reported nothing, the same as a reply that left all three lists empty.
     """
-    added = getattr(result, "added", None) or []
-    removed = getattr(result, "removed", None) or []
-    changed = getattr(result, "changed", None) or []
+    return RefineEdits(
+        added=[_to_ingredient(i) for i in getattr(result, "added", None) or []],
+        removed=list(getattr(result, "removed", None) or []),
+        changed=[_to_ingredient(i) for i in getattr(result, "changed", None) or []],
+    )
+
+
+def _edits_for_refine(
+    previous: RecipeCard, result: AIRecipeOutput, instruction: str
+) -> RefineEdits:
+    """`_reported_edits`, with an unreported-but-evident addition taken (#579 review).
+
+    Gemini's structured output here is a schema embedded in the prompt and
+    validated afterwards, so a reply can omit `added`/`removed`/`changed` and
+    still validate. "No edits reported" and "the model ignored the new keys"
+    then look alike, so when nothing was reported but the regenerated list
+    differs from the card the divergence is logged, and an ingredient the
+    instruction itself names (the mushrooms of "add mushrooms") is accepted.
+
+    Rejected alternative: a silent no-op, which ships a card whose steps cook
+    mushrooms and whose ingredient list has none. Also rejected: trusting every
+    new name in the regenerated list, which is the drift this fixes.
+    """
+    edits = _reported_edits(result)
+    if not edits.is_empty:
+        return edits
+
+    regenerated = [_to_ingredient(i) for i in result.ingredients]
+    new_names, gone_names = name_divergence(previous.ingredients, regenerated)
+    if not new_names and not gone_names:
+        return edits
+
+    logger.warning(
+        "Refine reported no ingredient edits but its regenerated list differs from the "
+        "card (only in the reply: %s; only on the card: %s); the card's own list is kept "
+        "apart from additions the instruction names",
+        new_names,
+        gone_names,
+    )
+    named = unreported_additions(previous.ingredients, regenerated, instruction)
+    if named:
+        logger.warning(
+            "Accepting unreported addition(s) the instruction names: %s",
+            [i.name for i in named],
+        )
+        edits.added = named
+    return edits
+
+
+def _apply_refine_edits(previous: RecipeCard, edits: RefineEdits) -> AppliedEdits:
+    """The previous card's ingredients plus the edits the model reported."""
     applied = apply_ingredient_edits(
         previous.ingredients,
-        added=[_to_ingredient(i) for i in added],
-        removed=list(removed),
-        changed=[_to_ingredient(i) for i in changed],
+        added=edits.added,
+        removed=edits.removed,
+        changed=edits.changed,
     )
-    if applied.unmatched_removals or applied.unmatched_changes:
+    if applied.unmatched_removals or applied.unmatched_changes or applied.unmatched_additions:
         logger.warning(
-            "Refine edits that matched no ingredient on the previous card were ignored: "
-            "removed=%s changed=%s",
+            "Refine edits that matched no single ingredient on the previous card were "
+            "ignored: removed=%s changed=%s added=%s",
             applied.unmatched_removals,
             applied.unmatched_changes,
+            applied.unmatched_additions,
         )
     return applied
 
 
 def _stale_instruction_indices(
-    instructions: list[str], applied: AppliedEdits, result: AIRecipeOutput
+    instructions: list[str], applied: AppliedEdits, edits: RefineEdits
 ) -> list[int]:
     return instructions_mentioning_removed(
         instructions,
         removed=applied.removed,
-        reported_names=list(getattr(result, "removed", None) or []),
+        reported_names=edits.removed,
         remaining=applied.ingredients,
     )
 
@@ -436,7 +489,8 @@ def _stale_steps_prompt(
         f"Your previous answer removed {removed} but these instructions still use it:\n"
         f"{offending}\n"
         "Answer again, rewriting the instructions (and matching steps) so nothing "
-        "uses a removed ingredient. Keep every other ingredient exactly as it was."
+        "uses a removed ingredient. Keep reporting the same removals in `removed`, "
+        "and keep every other ingredient exactly as it was."
     )
 
 
@@ -506,11 +560,12 @@ async def generate_recipe(
 
         # A refine is an edit: the ingredient list is the previous card's plus
         # the model's reported edits, never its regenerated list (#579, #535).
-        applied = _apply_refine_edits(previous_recipe, result)
+        edits = _edits_for_refine(previous_recipe, result, prompt)
+        applied = _apply_refine_edits(previous_recipe, edits)
 
         # The steps may be rewritten, but not to cook a removed ingredient. One
         # corrective re-ask; whatever still names it after that is dropped.
-        stale = _stale_instruction_indices(instructions, applied, result)
+        stale = _stale_instruction_indices(instructions, applied, edits)
         if stale:
             retry_prompt = _stale_steps_prompt(full_prompt, applied, instructions, stale)
             try:
@@ -518,19 +573,31 @@ async def generate_recipe(
             except StructuredOutputError:
                 logger.warning("Refine re-ask for stale steps failed; dropping the steps instead")
             else:
+                # The re-ask is about the steps: its edit list extends the first
+                # answer's and can never undo a removal it made.
+                edits = edits.carried_into(_reported_edits(retried), applied.removed)
+                applied = _apply_refine_edits(previous_recipe, edits)
                 result = retried
-                applied = _apply_refine_edits(previous_recipe, result)
-                instructions = list(result.instructions)
-                steps_meta = list(result.steps)
-            stale = _stale_instruction_indices(instructions, applied, result)
+                instructions = list(retried.instructions)
+                steps_meta = list(retried.steps)
+            stale = _stale_instruction_indices(instructions, applied, edits)
             if stale:
-                logger.warning(
-                    "Dropping %d refined step(s) that still name a removed ingredient", len(stale)
-                )
-                instructions = [t for i, t in enumerate(instructions) if i not in stale]
-                # Step metadata is positional (depends_on indexes into it), so
-                # after a drop it can't be realigned: leave steps unstructured.
-                steps_meta = []
+                kept = [t for i, t in enumerate(instructions) if i not in stale]
+                if kept:
+                    logger.warning(
+                        "Dropping %d refined step(s) that still name a removed ingredient",
+                        len(stale),
+                    )
+                    instructions = kept
+                    # Step metadata is positional (depends_on indexes into it), so
+                    # after a drop it can't be realigned: leave steps unstructured.
+                    steps_meta = []
+                else:
+                    # Every step names it: dropping them all would leave a card
+                    # with nothing to cook from, so keep them and say so.
+                    logger.warning(
+                        "Every refined step still names a removed ingredient; keeping them"
+                    )
         ingredients = applied.ingredients
 
     # Calculate total time

@@ -33,7 +33,7 @@ from bubbly_chef.services.recipe_generator import (
     AIRecipeRefineOutput,
     generate_recipe,
 )
-from bubbly_chef.services.recipe_refine import apply_ingredient_edits
+from bubbly_chef.services.recipe_refine import RefineEdits, apply_ingredient_edits
 from bubbly_chef.workflows.recipe.nodes import refine_recipe_node
 from bubbly_chef.workflows.router import update_session_node
 
@@ -504,3 +504,160 @@ async def test_library_refine_preserves_the_dishes_other_ingredients(client: Any
     assert response.status_code == 200, response.text
     names = [i["name"] for i in response.json()["recipe"]["ingredients"]]
     assert names == ["Pasta", "Butter", "Carrots", "Parmesan cheese", "Cheddar cheese", "Mushrooms"]
+
+
+# ---------------------------------------------------------------------------
+# Review round 1 (PR #708)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_re_ask_cannot_undo_the_removal_it_was_cleaning_up_after() -> None:
+    """Turn 2 answers the steps problem but reports `removed: []`: the cheese must
+    stay gone and its steps with it."""
+    previous = _card()
+    still_cheesy = _drifted_output(removed=["cheese"])
+    forgot_the_removal = _drifted_output(
+        removed=[],
+        instructions=["Boil the pasta.", "Soften the carrots.", "Bake until golden."],
+    )
+    ai = _ai_returning(still_cheesy, forgot_the_removal)
+
+    result = await generate_recipe(
+        prompt="no cheese", pantry_items=[], ai_manager=ai, previous_recipe=previous
+    )
+
+    assert ai.complete.await_count == 2
+    assert [i.name for i in result.recipe.ingredients] == ["Pasta", "Butter", "Carrots"]
+    assert not any("cheese" in step.lower() for step in result.recipe.instructions)
+
+
+@pytest.mark.asyncio
+async def test_the_re_ask_cannot_add_back_what_the_first_answer_removed() -> None:
+    previous = _card()
+    ai = _ai_returning(
+        _drifted_output(removed=["cheese"]),
+        _drifted_output(
+            removed=[],
+            added=[_ai_ing("Parmesan cheese", 50, "g"), _ai_ing("Breadcrumbs", 30, "g")],
+            instructions=["Boil the pasta.", "Soften the carrots.", "Top with crumbs and bake."],
+        ),
+    )
+
+    result = await generate_recipe(
+        prompt="no cheese", pantry_items=[], ai_manager=ai, previous_recipe=previous
+    )
+
+    # The second answer may add (breadcrumbs) but not resurrect a removal.
+    assert [i.name for i in result.recipe.ingredients] == [
+        "Pasta",
+        "Butter",
+        "Carrots",
+        "Breadcrumbs",
+    ]
+
+
+def test_carried_edits_only_ever_grow_the_removals() -> None:
+    first = RefineEdits(removed=["cheese"], added=[Ingredient(name="Mushrooms")])
+    retry = RefineEdits(removed=["butter"], changed=[Ingredient(name="Carrots", quantity=6)])
+
+    merged = first.carried_into(retry)
+
+    assert merged.removed == ["cheese", "butter"]
+    assert [i.name for i in merged.added] == ["Mushrooms"]
+    assert [i.name for i in merged.changed] == ["Carrots"]
+    assert first.carried_into(RefineEdits()).removed == ["cheese"]
+
+
+@pytest.mark.asyncio
+async def test_unreported_addition_the_instruction_names_is_accepted(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """ "add mushrooms": the model put mushrooms in its list and steps but left
+    `added` empty. The card must not ship steps that cook what it doesn't list."""
+    previous = _card()
+    ai = _ai_returning(_drifted_output())  # drifted list incl. Mushrooms, no edit lists
+
+    with caplog.at_level("WARNING"):
+        result = await generate_recipe(
+            prompt="add mushrooms", pantry_items=[], ai_manager=ai, previous_recipe=previous
+        )
+
+    refined = result.recipe.ingredients
+    assert _dump(refined[:5]) == _dump(previous.ingredients)
+    assert [i.name for i in refined][5:] == ["Mushrooms"]
+    assert "Accepting unreported addition" in caplog.text
+    assert "reported no ingredient edits" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_unreported_new_ingredients_the_instruction_did_not_name_are_ignored(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    previous = _card()
+    ai = _ai_returning(_drifted_output())  # Mushrooms appear, but the tweak is about the title
+
+    with caplog.at_level("WARNING"):
+        result = await generate_recipe(
+            prompt="make it cosier", pantry_items=[], ai_manager=ai, previous_recipe=previous
+        )
+
+    assert _dump(result.recipe.ingredients) == _dump(previous.ingredients)
+    assert "reported no ingredient edits" in caplog.text  # the divergence is visible
+    assert "Accepting unreported addition" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_no_warning_when_the_regenerated_list_agrees_with_the_card(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    previous = _card()
+    same = [_ai_ing(i.name, i.quantity, i.unit) for i in previous.ingredients]
+    ai = _ai_returning(_drifted_output(ingredients=same))
+
+    with caplog.at_level("WARNING"):
+        await generate_recipe(
+            prompt="make it cosier", pantry_items=[], ai_manager=ai, previous_recipe=previous
+        )
+
+    assert "reported no ingredient edits" not in caplog.text
+
+
+def test_the_prompt_states_the_swap_rule() -> None:
+    """A substitution is removed + added, and `changed` never renames (review of #708)."""
+    rendered = RECIPE_FOLLOWUP_PROMPT.format(
+        previous_recipe="Title: X",
+        pantry_items_formatted="none",
+        user_prompt="swap the butter for olive oil",
+        dietary_requirements="",
+    )
+    assert "A substitution" in rendered
+    assert 'put the old one in "removed" and the new one in "added"' in " ".join(rendered.split())
+    assert 'Never report a different name under "changed"' in " ".join(rendered.split())
+    # The schema descriptions Gemini embeds in the prompt say it too.
+    assert (
+        "a substitution is a removal"
+        in AIRecipeRefineOutput.model_json_schema()["properties"]["changed"]["description"]
+    )
+
+
+def test_an_added_name_matching_two_rows_is_reported_not_dropped_silently() -> None:
+    previous = [Ingredient(name="Pasta", quantity=1), Ingredient(name="Spaghetti", quantity=2)]
+
+    applied = apply_ingredient_edits(previous, added=[Ingredient(name="pasta", quantity=9)])
+
+    assert _dump(applied.ingredients) == _dump(previous)
+    assert applied.unmatched_additions == ["pasta"]
+
+
+@pytest.mark.asyncio
+async def test_steps_are_kept_when_dropping_the_stale_ones_would_leave_none() -> None:
+    previous = _card(instructions=["Grate the cheese.", "Melt the cheese."])
+    all_cheese = _drifted_output(removed=["cheese"], instructions=["Grate the cheese."])
+    ai = _ai_returning(all_cheese, all_cheese)
+
+    result = await generate_recipe(
+        prompt="no cheese", pantry_items=[], ai_manager=ai, previous_recipe=previous
+    )
+
+    assert result.recipe.instructions == ["Grate the cheese."]  # kept, not emptied

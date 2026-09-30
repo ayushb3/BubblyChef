@@ -83,6 +83,9 @@ class AppliedEdits:
     # are ignored (never guessed at) and surfaced for logging.
     unmatched_removals: list[str] = field(default_factory=list)
     unmatched_changes: list[str] = field(default_factory=list)
+    # An added name that answers to two or more rows already on the card: which
+    # one it updates is unknowable, so it is reported rather than guessed at.
+    unmatched_additions: list[str] = field(default_factory=list)
 
 
 def apply_ingredient_edits(
@@ -111,6 +114,7 @@ def apply_ingredient_edits(
     dropped: list[Ingredient] = []
     unmatched_removals: list[str] = []
     unmatched_changes: list[str] = []
+    unmatched_additions: list[str] = []
 
     for name in removed:
         hits = _find(name, working)
@@ -146,13 +150,102 @@ def apply_ingredient_edits(
             _update(hits[0], new)
         elif not hits:
             working.append(new.model_copy(deep=True))
+        else:
+            unmatched_additions.append(new.name)
 
     return AppliedEdits(
         ingredients=working,
         removed=dropped,
         unmatched_removals=unmatched_removals,
         unmatched_changes=unmatched_changes,
+        unmatched_additions=unmatched_additions,
     )
+
+
+@dataclass
+class RefineEdits:
+    """The edit list a refine reply reported: what the instruction touched."""
+
+    added: list[Ingredient] = field(default_factory=list)
+    removed: list[str] = field(default_factory=list)
+    changed: list[Ingredient] = field(default_factory=list)
+
+    @property
+    def is_empty(self) -> bool:
+        return not (self.added or self.removed or self.changed)
+
+    def carried_into(
+        self, retry: "RefineEdits", dropped: Sequence[Ingredient] = ()
+    ) -> "RefineEdits":
+        """These edits, extended by a corrective re-ask's (never replaced by them).
+
+        The re-ask is about the *steps*, so its own edit list may well be empty
+        or partial. A removal the first answer reported stays removed whatever
+        the second says, and the second may only add to, or refine, what the
+        first reported: an addition or change naming something the first answer
+        removed is dropped, since that would quietly bring the ingredient back.
+        """
+        removed = list(self.removed)
+        seen = {_key(n) for n in removed}
+        removed += [n for n in retry.removed if _key(n) not in seen]
+
+        # `dropped` are the card's own ingredients those removals resolved to
+        # ("cheese" reaching "parmesan cheese"), which is what a re-add would name.
+        gone: set[str] = set()
+        for name in self.removed:
+            gone |= _keys(name)
+        for ing in dropped:
+            gone |= _keys(ing.name)
+        added = list(self.added)
+        added_keys = [_keys(i.name) for i in added]
+        for ing in retry.added:
+            keys = _keys(ing.name)
+            if keys & gone or any(keys & existing for existing in added_keys):
+                continue
+            added.append(ing)
+            added_keys.append(keys)
+
+        retry_changed = {_key(i.name) for i in retry.changed}
+        changed = [i for i in self.changed if _key(i.name) not in retry_changed]
+        changed += [i for i in retry.changed if not _keys(i.name) & gone]
+        return RefineEdits(added=added, removed=removed, changed=changed)
+
+
+def unreported_additions(
+    previous: Sequence[Ingredient], regenerated: Sequence[Ingredient], instruction: str
+) -> list[Ingredient]:
+    """Regenerated ingredients the instruction names that the card doesn't have.
+
+    Only consulted when a reply reported *no* edits. A model that puts mushrooms
+    in its list and steps for "add mushrooms" but leaves `added` empty has made
+    the edit and merely not reported it, so it is taken. Anything else in the
+    regenerated list that the instruction didn't name is still ignored: the
+    alternative of accepting every new name would let the drift back in, and
+    the alternative of accepting none (a silent no-op) ships steps that cook an
+    ingredient the list doesn't have.
+    """
+    spoken = {_singular(t) for t in re.findall(r"[a-z0-9%]+", instruction.lower())}
+    found: list[Ingredient] = []
+    for ing in regenerated:
+        if _find(ing.name, previous, exact_only=True):
+            continue
+        name_tokens = _tokens(ing.name)
+        if name_tokens and name_tokens <= spoken:
+            found.append(ing)
+    return found
+
+
+def name_divergence(
+    previous: Sequence[Ingredient], regenerated: Sequence[Ingredient]
+) -> tuple[list[str], list[str]]:
+    """(names only in the regenerated list, names only on the previous card).
+
+    Compared after catalog normalisation, so case, plurals and known synonyms
+    (spaghetti and pasta) don't count as a difference.
+    """
+    new = [i.name for i in regenerated if not _find(i.name, previous, exact_only=True)]
+    gone = [i.name for i in previous if not _find(i.name, regenerated, exact_only=True)]
+    return new, gone
 
 
 def _mention_patterns(
