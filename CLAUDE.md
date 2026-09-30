@@ -194,6 +194,11 @@ POST  /v1/pantry/estimate-category
 # Unified ingest dispatcher (receipt + barcode + URL)
 POST  /v1/ingest
 
+# Grocery (issue #497): read-only, deterministic, no LLM. The grocery list itself
+# is client-side (nextjs/src/lib/grocery.ts + grocery-store.ts, localStorage);
+# this is only a saved meal's missing ingredients, proxied at /api/ai/grocery/meal-to-buy
+POST  /v1/grocery/meal-to-buy
+
 # Apply proposal (human-reviewed → DB)
 POST  /v1/workflows/apply
 ```

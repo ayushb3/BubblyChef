@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from bubbly_chef.api.routes import (
     chat,
     dashboard,
+    grocery,
     ingest,
     meals_ai,
     pantry,
@@ -125,6 +126,7 @@ def create_app() -> FastAPI:
     app.include_router(ingest.router)
     app.include_router(pantry.router)
     app.include_router(dashboard.router)
+    app.include_router(grocery.router)
 
     return app
 
