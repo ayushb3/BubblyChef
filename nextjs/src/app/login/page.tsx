@@ -4,10 +4,36 @@ import { useState, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { takeLoginEmail } from '@/lib/auth/login-prefill'
+import { isGuestUser } from '@/lib/auth/guest'
+import {
+  clearAccountSwitchTried,
+  hasTriedAccountSwitch,
+  isLinkCollisionCode,
+  isSessionMissingError,
+  markAccountSwitchTried,
+} from '@/lib/auth/google-link'
 import { useRouter } from 'next/navigation'
 import FloatingBubbles from '@/components/ui/FloatingBubbles'
 import SpringButton from '@/components/ui/SpringButton'
 import BubblesMascot from '@/components/ui/BubblesMascot'
+
+// Shown while a colliding guest is being signed in to the existing account.
+const COLLISION_SWITCHING_MESSAGE =
+  'You already have a BubblyChef account with that Google login. Signing you in. Your guest pantry stays behind.'
+
+// Shown when the automatic switch can't run (redirect failed to start, session
+// unreadable, or no sessionStorage to guard a loop): the user does it with a
+// click instead.
+const COLLISION_FALLBACK_MESSAGE =
+  "That Google account already belongs to a different BubblyChef account. You can sign in to it instead, but your guest pantry won't move over."
+
+// Shown when switching can't help: the visitor isn't a guest (their plain
+// sign-in itself collided) or a switch was already tried once. Never mentions a
+// guest pantry.
+const EXISTING_EMAIL_MESSAGE =
+  'That email already has a BubblyChef account. Sign in with your email and password instead.'
+
+const SESSION_CHECK_FAILED_MESSAGE = "Couldn't check your current session. Please try again."
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -17,6 +43,10 @@ export default function LoginPage() {
   const [checkEmail, setCheckEmail] = useState(false)
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
+  // A collision (#389) is being resolved by signing in to the existing account.
+  const [switchingAccount, setSwitchingAccount] = useState(false)
+  // Show the manual "sign in to that account instead" button.
+  const [showSignInInstead, setShowSignInInstead] = useState(false)
   const router = useRouter()
   const supabase = createClient()
   const queryClient = useQueryClient()
@@ -25,17 +55,32 @@ export default function LoginPage() {
   // ?error=<message> (missing code, a failed exchange, or the provider's own
   // error_description) — read via window.location rather than
   // useSearchParams() to avoid a Suspense boundary for what's otherwise a
-  // plain client page. Read once on mount and strip the param so a refresh
+  // plain client page. Read once on mount and strip the params so a refresh
   // doesn't keep re-showing a stale error.
+  //
+  // A guest's linkIdentity collision (#389) mostly arrives this way: Supabase
+  // only learns the Google account belongs to another user after Google
+  // redirects back, so it shows up as ?error=...&error_code=<collision code>.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const oauthError = params.get('error')
     if (oauthError) {
-      setError(oauthError)
+      if (isLinkCollisionCode(params.get('error_code'))) {
+        void handleCollision()
+      } else {
+        clearAccountSwitchTried()
+        setError(oauthError)
+      }
       const url = new URL(window.location.href)
       url.searchParams.delete('error')
+      url.searchParams.delete('error_code')
       window.history.replaceState({}, '', url.toString())
+    } else {
+      // A clean load of /login ends any earlier switch attempt.
+      clearAccountSwitchTried()
     }
+    // Mount-only: read the redirect's params once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Prefill the email handed over from the profile's "Save your account"
@@ -45,28 +90,114 @@ export default function LoginPage() {
     if (stashed) setEmail(stashed)
   }, [])
 
+  // Plain Google sign-in (no guest check). Used for a non-guest's normal click
+  // and to sign a colliding guest in to the account that owns the Google
+  // identity. Never merges: the guest's data stays under the anonymous user id.
+  const signInWithGoogle = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    })
+    if (error) throw error
+  }
+
+  const showCollisionFallback = () => {
+    setSwitchingAccount(false)
+    setGoogleLoading(false)
+    setError(COLLISION_FALLBACK_MESSAGE)
+    setShowSignInInstead(true)
+  }
+
+  // The Google account already belongs to another BubblyChef user. Someone
+  // clicking Google wants into their account, so a guest is signed in to it
+  // directly rather than asked for a second click. Only once per attempt: a
+  // second collision, or a non-guest, gets the email/password hint instead.
+  async function handleCollision() {
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError && !isSessionMissingError(userError)) {
+        showCollisionFallback()
+        return
+      }
+      if (!isGuestUser(user) || hasTriedAccountSwitch()) {
+        clearAccountSwitchTried()
+        setSwitchingAccount(false)
+        setShowSignInInstead(false)
+        setGoogleLoading(false)
+        setError(EXISTING_EMAIL_MESSAGE)
+        return
+      }
+      // Without the one-shot flag a deterministic collision could loop, so no
+      // storage means no automatic switch.
+      if (!markAccountSwitchTried()) {
+        showCollisionFallback()
+        return
+      }
+      setError(null)
+      setShowSignInInstead(false)
+      setSwitchingAccount(true)
+      setGoogleLoading(true)
+      await signInWithGoogle()
+    } catch {
+      showCollisionFallback()
+    }
+  }
+
   const handleGoogleSignIn = async () => {
     setError(null)
     setCheckEmail(false)
+    setShowSignInInstead(false)
     setGoogleLoading(true)
 
-    // TODO(#382 composition point): if an anonymous (guest) session is active
-    // here, this should call `supabase.auth.linkIdentity({ provider: 'google', ... })`
-    // instead of `signInWithOAuth`, so the Google identity attaches to the
-    // guest's existing UID/pantry instead of starting a fresh account. No
-    // #382 branch was available to check against while building this, so
-    // this is the straightforward new-sign-in path only. See the callback
-    // route (`app/auth/callback/route.ts`) for the fuller note.
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
-      if (error) throw error
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+      // Fail closed. A failed session check (network error, expired token)
+      // returns a null user, which would read as "not a guest" and take the
+      // signInWithOAuth path: a new account, with the guest's data orphaned
+      // under the old user id (the bug #389 fixes). Only "no session at all"
+      // is a genuine non-guest.
+      if (userError && !isSessionMissingError(userError)) {
+        setError(SESSION_CHECK_FAILED_MESSAGE)
+        setGoogleLoading(false)
+        return
+      }
+
+      if (isGuestUser(user)) {
+        // Attach Google to the guest's existing user id so their pantry,
+        // recipes and chat carry over (same call as SaveAccountBanner, #382).
+        const { error } = await supabase.auth.linkIdentity({
+          provider: 'google',
+          options: { redirectTo: `${window.location.origin}/auth/callback` },
+        })
+        if (error) {
+          if (isLinkCollisionCode(error.code)) {
+            await handleCollision()
+            return
+          }
+          throw error
+        }
+      } else {
+        await signInWithGoogle()
+      }
       // On success the browser is redirected to Google, then back to
       // /auth/callback — nothing more to do here.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
+      setGoogleLoading(false)
+    }
+  }
+
+  // The manual fallback: plain sign-in to the account that owns the Google
+  // identity. Marks the one-shot flag so a repeat collision stops at the
+  // email/password hint instead of switching again.
+  const handleSignInInstead = async () => {
+    setError(null)
+    setShowSignInInstead(false)
+    setGoogleLoading(true)
+    markAccountSwitchTried()
+    try {
+      await signInWithGoogle()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setGoogleLoading(false)
@@ -77,6 +208,7 @@ export default function LoginPage() {
     e.preventDefault()
     setError(null)
     setCheckEmail(false)
+    setShowSignInInstead(false)
     setLoading(true)
 
     try {
@@ -177,10 +309,27 @@ export default function LoginPage() {
               </p>
             )}
 
+            {switchingAccount && (
+              <p className="text-sm text-[var(--color-text)] bg-[var(--color-accent)]/10 px-4 py-2 rounded-2xl">
+                {COLLISION_SWITCHING_MESSAGE}
+              </p>
+            )}
+
             {error && (
               <p className="text-sm text-[#ff9aa2] bg-[#ff9aa2]/10 px-4 py-2 rounded-2xl">
                 {error}
               </p>
+            )}
+
+            {showSignInInstead && (
+              <SpringButton
+                type="button"
+                onClick={handleSignInInstead}
+                disabled={googleLoading}
+                className="w-full py-2.5 px-4 rounded-full bg-white border border-[var(--color-border)] text-[var(--color-text)] text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Sign in to that account instead
+              </SpringButton>
             )}
 
             <SpringButton
@@ -229,7 +378,7 @@ export default function LoginPage() {
             {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
             <button
               type="button"
-              onClick={() => { setIsSignUp(!isSignUp); setError(null); setCheckEmail(false) }}
+              onClick={() => { setIsSignUp(!isSignUp); setError(null); setCheckEmail(false); setShowSignInInstead(false) }}
               className="text-[var(--color-accent)] underline font-medium"
             >
               {isSignUp ? 'Sign In' : 'Sign Up'}
