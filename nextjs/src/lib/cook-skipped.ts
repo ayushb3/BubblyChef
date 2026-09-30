@@ -9,9 +9,18 @@
 import type { CompoundSuggestion, IngredientMatch } from '@/types/recipes'
 
 export interface SkippedDeductionNames {
+  /** Distinct names, for display only. */
   names: string[]
   /** Ids that couldn't be resolved to a name through the proposal. */
   unnamed: number
+  /** Distinct refused ids: what the cook is told was not updated. Two rows
+   * that both read "Butter" are two items, so this can exceed `names.length + unnamed`. */
+  total: number
+}
+
+/** The count to show and gate on. Falls back for shapes built without `total`. */
+export function skippedTotal(s: { names: string[]; unnamed: number; total?: number }): number {
+  return s.total ?? s.names.length + s.unnamed
 }
 
 export function skippedDeductionNames(
@@ -43,5 +52,5 @@ export function skippedDeductionNames(
       names.push(name)
     }
   }
-  return { names, unnamed }
+  return { names, unnamed, total: seen.size }
 }

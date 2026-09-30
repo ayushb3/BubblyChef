@@ -310,6 +310,10 @@ export default function GuidedCookFlow({
   const { springs } = useMotionConfig()
   const [idx, setIdx] = useState<number>(initialStep ?? PREP)
   const [chatOpen, setChatOpen] = useState(false)
+  // True from the moment Ask Bubbles opens until its exit animation finishes
+  // (AnimatePresence `onExitComplete`), so the dock stays under the fading
+  // overlay instead of flashing over it.
+  const [chatPresent, setChatPresent] = useState(false)
 
   // Issue #657: hold the global timer dock above this full-screen flow so a
   // timer started here is visible. Dropped while Ask Bubbles is open: that
@@ -317,7 +321,7 @@ export default function GuidedCookFlow({
   // keep it above the dock is to stop raising the dock. All three hooks sit
   // above the empty-steps early return so both returns raise it and the hook
   // order is stable.
-  useRaiseTimerDock(!chatOpen)
+  useRaiseTimerDock(!chatOpen && !chatPresent)
   const dockRaised = useTimerDockRaised()
   const { timers } = useCookingTimers()
   const dockClearance = dockRaised && timers.length > 0
@@ -555,7 +559,10 @@ export default function GuidedCookFlow({
 
                 {/* Ask Bubbles — chat always one tap away */}
                 <button
-                  onClick={() => setChatOpen(true)}
+                  onClick={() => {
+                    setChatOpen(true)
+                    setChatPresent(true)
+                  }}
                   className="mt-4 w-full rounded-full py-2.5 text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform"
                   style={{ background: 'var(--color-accent)', color: 'var(--color-text)' }}
                   data-testid="guided-cook-ask-bubbles"
@@ -620,7 +627,7 @@ export default function GuidedCookFlow({
       )}
 
       {/* ─── Ask-Bubbles overlay ─── */}
-      <AnimatePresence>
+      <AnimatePresence onExitComplete={() => setChatPresent(false)}>
         {chatOpen && step && (
           <motion.div
             key="ask-bubbles"

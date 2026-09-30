@@ -9,7 +9,7 @@
  * `confirm_in_progress`, and navigating away on success.
  */
 
-import { useMemo, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
@@ -21,6 +21,7 @@ import {
 import type { MealCookProposal, MealCookErrorKind, MealIngredientMatch } from '@/types/meals'
 import type { DeductionItem, IngredientMatch } from '@/types/recipes'
 import SkippedDeductionsNotice from '@/components/cook/SkippedDeductionsNotice'
+import { skippedTotal } from '@/lib/cook-skipped'
 
 export type MealCookSheetState = 'loading' | 'review' | 'confirming' | 'success' | 'error'
 
@@ -51,7 +52,7 @@ export interface MealCookSheetProps {
    * the page auto-redirecting; ✕, the backdrop and Escape then leave the same
    * way (`onBackToMeal`), so the session still ends.
    */
-  skipped?: { names: string[]; unnamed: number }
+  skipped?: { names: string[]; unnamed: number; total?: number }
 }
 
 /** Distinct `recipe_id`s a merged line's sources span — 1 means "only one dish uses this", 2+ means it's shared. */
@@ -120,7 +121,7 @@ export default function MealCookSheet({
   // called, so every other dismiss path (✕, backdrop, Escape via
   // `useModalFocusTrap`) is covered by construction rather than needing its
   // own disabled check.
-  const hasSkipped = (skipped?.names.length ?? 0) + (skipped?.unnamed ?? 0) > 0
+  const hasSkipped = skipped ? skippedTotal(skipped) > 0 : false
   const guardedClose = () => {
     if (state === 'confirming') return
     // Issue #621: with the notice showing there is no redirect, so every exit
@@ -129,6 +130,14 @@ export default function MealCookSheet({
     else onClose()
   }
   useModalFocusTrap(open, guardedClose, panelRef)
+
+  // With the notice showing there is no redirect, so Back to meal is the next
+  // action: move focus to it as the success-with-notice state appears.
+  const backToMealRef = useRef<HTMLButtonElement>(null)
+  const showBackToMeal = open && state === 'success' && hasSkipped
+  useEffect(() => {
+    if (showBackToMeal) backToMealRef.current?.focus()
+  }, [showBackToMeal])
 
   // A fresh proposal (a re-open, or a Retry after a plain error) starts from
   // a clean slate — stale unit_conflict/compound overrides from a previous
@@ -261,9 +270,10 @@ export default function MealCookSheet({
                   </p>
                   {hasSkipped && skipped && (
                     <>
-                      <SkippedDeductionsNotice names={skipped.names} unnamed={skipped.unnamed} />
+                      <SkippedDeductionsNotice names={skipped.names} unnamed={skipped.unnamed} total={skipped.total} />
                       <button
                         type="button"
+                        ref={backToMealRef}
                         onClick={onBackToMeal}
                         className="min-h-[44px] px-6 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
                         style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}

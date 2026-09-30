@@ -39,6 +39,7 @@ describe('skippedDeductionNames', () => {
     expect(skippedDeductionNames(proposal, ['p-flour', 'p-butter'])).toEqual({
       names: ['Flour', 'Butter'],
       unnamed: 0,
+      total: 2,
     })
   })
 
@@ -47,14 +48,25 @@ describe('skippedDeductionNames', () => {
     expect(skippedDeductionNames(proposal, ['p-milk', 'p-butter'])).toEqual({
       names: ['Milk', 'Butter'],
       unnamed: 0,
+      total: 2,
     })
   })
 
-  it('collapses duplicates and keeps the order of ids', () => {
+  it('collapses repeated ids and same-named rows in names, but counts each distinct id in total', () => {
     const proposal = { matches: [match('p-a', 'Butter'), match('p-b', 'Butter'), match('p-c', 'Egg')] }
     expect(skippedDeductionNames(proposal, ['p-c', 'p-a', 'p-c', 'p-b'])).toEqual({
       names: ['Egg', 'Butter'],
       unnamed: 0,
+      total: 3,
+    })
+  })
+
+  it('counts two refused rows with the same name as two items', () => {
+    const proposal = { matches: [match('p-a', 'Butter'), match('p-b', 'Butter')] }
+    expect(skippedDeductionNames(proposal, ['p-a', 'p-b'])).toEqual({
+      names: ['Butter'],
+      unnamed: 0,
+      total: 2,
     })
   })
 
@@ -63,6 +75,7 @@ describe('skippedDeductionNames', () => {
     expect(skippedDeductionNames(proposal, ['p-butter', 'p-ghost', 'p-ghost2'])).toEqual({
       names: ['Butter'],
       unnamed: 2,
+      total: 3,
     })
   })
 
@@ -70,22 +83,23 @@ describe('skippedDeductionNames', () => {
     expect(skippedDeductionNames({ matches: [match('p-a', 'Butter')] }, [])).toEqual({
       names: [],
       unnamed: 0,
+      total: 0,
     })
   })
 
   it('handles a proposal with no compound_suggestions', () => {
     const proposal = { matches: [match('p-a', 'Butter')] }
-    expect(skippedDeductionNames(proposal, ['p-x'])).toEqual({ names: [], unnamed: 1 })
+    expect(skippedDeductionNames(proposal, ['p-x'])).toEqual({ names: [], unnamed: 1, total: 1 })
   })
 
   it('handles a suggestion with no component_items', () => {
     const bare: CompoundSuggestion = { ingredient_name: 'x', components: [], note: '' }
     const proposal = { matches: [match('p-a', 'Butter')], compound_suggestions: [bare] }
-    expect(skippedDeductionNames(proposal, ['p-a', 'p-x'])).toEqual({ names: ['Butter'], unnamed: 1 })
+    expect(skippedDeductionNames(proposal, ['p-a', 'p-x'])).toEqual({ names: ['Butter'], unnamed: 1, total: 2 })
   })
 
   it('falls back to ingredient_name when pantry_item_name is null', () => {
     const proposal = { matches: [match('p-a', null, 'plain flour')] }
-    expect(skippedDeductionNames(proposal, ['p-a'])).toEqual({ names: ['plain flour'], unnamed: 0 })
+    expect(skippedDeductionNames(proposal, ['p-a'])).toEqual({ names: ['plain flour'], unnamed: 0, total: 1 })
   })
 })

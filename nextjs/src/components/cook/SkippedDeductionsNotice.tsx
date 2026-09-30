@@ -10,20 +10,28 @@
  * resolved to a name) read "and N more". Renders nothing at zero.
  */
 
+import { skippedTotal } from '@/lib/cook-skipped'
+
 export interface SkippedDeductionsNoticeProps {
+  /** Distinct names, for display. */
   names: string[]
   /** Ids the caller couldn't resolve to a name. */
   unnamed: number
+  /** Distinct refused ids. Defaults to `names.length + unnamed`; pass it so two
+   * rows both named "Butter" read as two items. */
+  total?: number
 }
 
 const MAX_NAMED = 3
 
-export default function SkippedDeductionsNotice({ names, unnamed }: SkippedDeductionsNoticeProps) {
-  const total = names.length + unnamed
+export default function SkippedDeductionsNotice({ names, unnamed, total: totalProp }: SkippedDeductionsNoticeProps) {
+  const total = skippedTotal({ names, unnamed, total: totalProp })
   if (total <= 0) return null
 
   const shown = names.slice(0, MAX_NAMED)
-  const more = total - shown.length
+  // Only names that didn't fit, plus ids with no name. A repeated name isn't
+  // "more": it's already listed.
+  const more = names.length - shown.length + unnamed
   const list =
     shown.length > 0 ? `: ${shown.join(', ')}${more > 0 ? ` and ${more} more` : ''}` : ''
 

@@ -548,6 +548,11 @@ describe('MealCookSheet — skipped deductions (issue #621)', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  it('moves focus to Back to meal when the success-with-notice state appears', () => {
+    renderSuccess({ skipped })
+    expect(screen.getByRole('button', { name: 'Back to meal' })).toHaveFocus()
+  })
+
   it('leaves through onBackToMeal from the close button, the backdrop and Escape', () => {
     const { onBackToMeal, onClose } = renderSuccess({ skipped })
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))

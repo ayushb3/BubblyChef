@@ -6,7 +6,7 @@
  */
 
 import React from 'react'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import CookModal from '@/components/recipes/CookModal'
 import type { CookProposal } from '@/types/recipes'
@@ -114,6 +114,29 @@ describe('CookModal — skipped deductions (issue #621)', () => {
     await confirm()
     expect(screen.getByRole('status')).toHaveTextContent("Couldn't update 1 item: Butter. Check your pantry.")
     expect(screen.queryByText(/taking you to chat/i)).not.toBeInTheDocument()
+  })
+
+  it('moves focus to Continue when the notice appears', async () => {
+    resolveConfirm(['p-butter'])
+    renderModal()
+    await confirm()
+    expect(screen.getByRole('button', { name: 'Continue' })).toHaveFocus()
+  })
+
+  it('schedules no redirect when the confirm resolves after the modal unmounted', async () => {
+    let resolve!: (v: unknown) => void
+    confirmCook.mockReturnValue(new Promise((r) => { resolve = r }))
+    const { onCooked } = renderModal()
+    fireEvent.click(await screen.findByRole('button', { name: /yes, i cooked this/i }))
+    cleanup() // the modal closed while the request was in flight
+    await act(async () => {
+      resolve({ success: true, deductions_applied: 1, deductions_requested: 1, deductions_skipped: [] })
+    })
+    act(() => {
+      jest.advanceTimersByTime(1200)
+    })
+    expect(push).not.toHaveBeenCalled()
+    expect(onCooked).not.toHaveBeenCalled()
   })
 
   it('does not auto-redirect; Continue hands off to chat', async () => {

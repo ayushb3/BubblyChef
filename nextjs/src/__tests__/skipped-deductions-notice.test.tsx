@@ -36,6 +36,12 @@ describe('SkippedDeductionsNotice', () => {
     expect(screen.getByRole('status')).toHaveTextContent("Couldn't update 2 items. Check your pantry.")
   })
 
+  it('reads two same-named rows as two items, without an "and more"', () => {
+    render(<SkippedDeductionsNotice names={['Butter']} unnamed={0} total={2} />)
+    expect(screen.getByRole('status')).toHaveTextContent("Couldn't update 2 items: Butter. Check your pantry.")
+    expect(screen.getByRole('status')).not.toHaveTextContent('more')
+  })
+
   it('renders nothing at zero', () => {
     const { container } = render(<SkippedDeductionsNotice names={[]} unnamed={0} />)
     expect(container).toBeEmptyDOMElement()

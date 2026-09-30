@@ -23,7 +23,23 @@ jest.mock('framer-motion', () => {
     }
   return {
     motion: { div: make('div'), button: make('button'), span: make('span') },
-    AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    // Calls `onExitComplete` when the children go from present to empty, the
+    // way the real one does once the exit animation ends.
+    AnimatePresence: function MockPresence({
+      children,
+      onExitComplete,
+    }: {
+      children: React.ReactNode
+      onExitComplete?: () => void
+    }) {
+      const present = React.Children.toArray(children).length > 0
+      const wasPresent = React.useRef(present)
+      React.useEffect(() => {
+        if (wasPresent.current && !present) onExitComplete?.()
+        wasPresent.current = present
+      })
+      return <>{children}</>
+    },
     useReducedMotion: () => false,
   }
 })
