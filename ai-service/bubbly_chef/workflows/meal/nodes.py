@@ -44,6 +44,7 @@ from bubbly_chef.ai.provider import user_message_for_failure
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.domain.diet_terms import join_fields, norm_label
 from bubbly_chef.domain.kitchen_limits import map_kitchen_limits_to_tags
+from bubbly_chef.domain.staples import NEVER_TO_BUY, shoppable
 from bubbly_chef.domain.stock import filter_usable_pantry_items, filter_usable_pantry_rows
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
 from bubbly_chef.models.meal import (
@@ -106,18 +107,11 @@ logger = logging.getLogger(__name__)
 # when enough others qualify. Otherwise the best are kept.").
 _MAX_TO_BUY = 3
 
-# Never on a meal's to-buy list. Water isn't a culinary staple for the cook
-# matcher (issue #305 keeps it "missing", since a measured amount may need
-# readying), but nobody shops for tap water, so "To buy: water" is noise on
-# the option card and meal card. Exact names only: "coconut water" still counts.
-_NEVER_TO_BUY = frozenset(
-    {"water", "tap water", "cold water", "warm water", "hot water", "boiling water", "ice"}
-)
-
-
-def _shoppable(names: list[str]) -> list[str]:
-    """`names` without the ones nobody buys (`_NEVER_TO_BUY`)."""
-    return [n for n in names if n.strip().lower() not in _NEVER_TO_BUY]
+# "Never on a meal's to-buy list" lives in `domain/staples.py` now (issue #497:
+# the grocery list shares it). Kept under the old private names for callers
+# and tests that import them from here.
+_NEVER_TO_BUY = NEVER_TO_BUY
+_shoppable = shoppable
 
 
 # How many of a user's most recent recipes (saved or cooked, whichever came

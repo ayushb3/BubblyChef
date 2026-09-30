@@ -1528,6 +1528,116 @@ class SupabaseRepository:
             .execute()
         )
 
+    # =========================================================================
+    # Grocery list (issue #497) -- regenerate and add-from-meal write here;
+    # the user's own check/uncheck/add/remove/share go through the Next.js CRUD
+    # routes under RLS. This client is service_role (bypasses RLS), so every
+    # query below is scoped by `user_id` itself -- that scoping *is* the
+    # isolation on this path.
+    # =========================================================================
+
+    async def get_or_create_grocery_list(self, user_id: str) -> dict[str, Any]:
+        """The user's one grocery list, created on first use."""
+        for _ in range(2):
+            result = (
+                self.client.table("grocery_lists").select("*").eq("user_id", user_id).execute()
+            )
+            if result.data:
+                return _as_row(result.data[0])
+            # `user_id` is UNIQUE: two concurrent first calls collapse to one row.
+            self.client.table("grocery_lists").upsert(
+                {"user_id": user_id}, on_conflict="user_id", ignore_duplicates=True
+            ).execute()
+        raise RuntimeError("could not create a grocery list")
+
+    async def get_grocery_items(self, user_id: str, list_id: str) -> list[dict[str, Any]]:
+        """Every line on `list_id`, or none when the list isn't this user's."""
+        result = (
+            self.client.table("grocery_items")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("list_id", list_id)
+            .order("name")
+            .execute()
+        )
+        return _as_rows(result.data or [])
+
+    async def insert_grocery_items(
+        self, user_id: str, list_id: str, rows: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Insert lines into the user's own list; a food already there is skipped.
+
+        Raises `LookupError` when `list_id` isn't this user's list. Every row is
+        re-stamped with `user_id` and `list_id` rather than trusted.
+        """
+        owned = (
+            self.client.table("grocery_lists")
+            .select("id")
+            .eq("id", list_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        if not owned.data:
+            raise LookupError(f"grocery list {list_id} not found for user")
+        if not rows:
+            return []
+        stamped = [{**r, "user_id": user_id, "list_id": list_id} for r in rows]
+        result = (
+            self.client.table("grocery_items")
+            .upsert(cast(Any, stamped), on_conflict="list_id,name_key", ignore_duplicates=True)
+            .execute()
+        )
+        return _as_rows(result.data or [])
+
+    async def update_grocery_item(
+        self, user_id: str, item_id: str, fields: dict[str, Any]
+    ) -> bool:
+        """Update one of the user's lines. False when it isn't theirs / is gone."""
+        result = (
+            self.client.table("grocery_items")
+            .update(cast(Any, fields))
+            .eq("id", item_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return bool(_as_rows(result.data or []))
+
+    async def delete_grocery_items(self, user_id: str, item_ids: list[str]) -> None:
+        """Delete some of the user's lines (ids that aren't theirs are ignored)."""
+        if not item_ids:
+            return
+        (
+            self.client.table("grocery_items")
+            .delete()
+            .eq("user_id", user_id)
+            .in_("id", item_ids)
+            .execute()
+        )
+
+    async def mark_grocery_list_regenerated(self, user_id: str, list_id: str) -> None:
+        self.client.table("grocery_lists").update(
+            {"last_regenerated_at": datetime.now(UTC).isoformat()}
+        ).eq("id", list_id).eq("user_id", user_id).execute()
+
+    async def get_pantry_depletion_events(
+        self, user_id: str, since_iso: str
+    ) -> list[dict[str, Any]]:
+        """The user's `used`/`cooked` pantry events since `since_iso`, newest first.
+
+        Resolving a pantry item deletes its row, so these events are the only
+        trace that something ran out (`tossed` is waste, not depletion).
+        """
+        result = (
+            self.client.table("pantry_events")
+            .select("item_name,outcome,quantity,unit,created_at")
+            .eq("user_id", user_id)
+            .in_("outcome", ["used", "cooked"])
+            .gte("created_at", since_iso)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return _as_rows(result.data or [])
+
 
 # Singleton
 _repository: SupabaseRepository | None = None

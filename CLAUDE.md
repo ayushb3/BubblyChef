@@ -160,6 +160,13 @@ GET|PUT|DELETE    /api/profile/[id]
 GET               /api/profile/email/[email]
 GET               /api/profile/username/[username]
 
+# Grocery (issue #497; the /grocery page itself is held for the redesign)
+GET               /api/grocery
+POST|DELETE       /api/grocery/items             # DELETE needs ?checked=1
+PATCH|DELETE      /api/grocery/items/[id]
+POST|DELETE       /api/grocery/share             # read-only token
+GET               /api/grocery/shared/[token]    # public, unchecked lines only
+
 # Misc
 GET               /api/decorations
 GET               /api/foods/search
@@ -193,6 +200,10 @@ POST  /v1/pantry/estimate-category
 
 # Unified ingest dispatcher (receipt + barcode + URL)
 POST  /v1/ingest
+
+# Grocery list (deterministic, no LLM; proxied at /api/ai/grocery/*)
+POST  /v1/grocery/regenerate             # depletions + low/expiring stock
+POST  /v1/grocery/from-meal              # a saved meal's missing ingredients
 
 # Apply proposal (human-reviewed → DB)
 POST  /v1/workflows/apply
