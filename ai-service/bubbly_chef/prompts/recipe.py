@@ -259,6 +259,7 @@ The user wants to modify the previous recipe.
 {user_prompt}
 
 Modify the recipe according to the user's request.
+{dietary_requirements}
 Keep the same format but adjust ingredients, instructions,
 or other aspects as needed.
 
@@ -267,7 +268,7 @@ NOT a schema or template. Give each instruction a matching `steps` entry
 at the same index -- label, ongoing_label, duration_minutes, hands_on,
 depends_on and exclusive tags, never the instruction text itself.
 
-Example of what to return:
+Example of the output format only (not a recipe to copy):
 {{
   "title": "Spicy Honey Garlic Chicken Stir-Fry",
   "description": "A quick and delicious stir-fry with tender chicken,

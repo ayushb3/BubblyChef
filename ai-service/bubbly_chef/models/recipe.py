@@ -278,6 +278,13 @@ class RecipeCard(BaseModel):
     difficulty: str | None = Field(
         default=None, description="Difficulty level (easy, medium, hard)"
     )
+    diets_set_aside: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Stored diets this card was made without (issue #544); "
+            "internal, never saved to the recipes table"
+        ),
+    )
 
     # Source metadata
     source_type: str = Field(
