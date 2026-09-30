@@ -10,8 +10,11 @@ The model's job is now to *report what the instruction touched* (structured
 output: ``added`` / ``removed`` / ``changed``), and this module applies only
 those edits onto the prior card's own ingredients. An ingredient the model does
 not report comes through untouched, byte for byte, whatever the regenerated
-list looked like. No text of the user's message is inspected here: which
-ingredients an instruction names is the model's structured answer.
+list looked like. Which ingredients an instruction touched is the model's
+structured answer; the user's message is never used to classify intent. The one
+place it is read is `unreported_additions`, the fallback for a reply that
+reported no edits at all: it accepts an ingredient the model already put in its
+list only if that ingredient's own name appears in the message ("add mushrooms").
 
 Pure functions over ``Ingredient`` objects, no AI and no I/O.
 """
