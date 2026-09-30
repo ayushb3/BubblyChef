@@ -594,7 +594,8 @@ def test_c7_separator_tofu_chicken_thighs_main_drops_the_diet() -> None:
 
 
 def test_c7_a_dairy_free_tag_rescues_a_carried_dairy_free_spelling() -> None:
-    # fails on main: the tag and the label are compared with strip().lower()
+    # naive-widen guard: passes on main only because main's label lookup misses
+    # "Dairy Free" entirely; once labels go through norm_label, the tag must rescue it.
     card = _main("Cheesy Bake", "pasta", "cheese", tags=["dairy-free"])
 
     out = _drop_diets_the_main_contradicts(
