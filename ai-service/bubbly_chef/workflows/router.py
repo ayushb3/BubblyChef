@@ -47,6 +47,7 @@ from bubbly_chef.models.session import (
     SessionMode,
 )
 from bubbly_chef.prompts.router import (
+    DIET_CHANGE_FLAG_PROMPT,
     INTENT_CLASSIFICATION_SYSTEM_PROMPT,
     INTENT_CLASSIFICATION_USER_PROMPT,
     MODE_BIAS_RECIPE_PICKED_PROMPT,
@@ -87,6 +88,7 @@ from bubbly_chef.workflows.pantry.nodes import (
     suggest_specifics,
 )
 from bubbly_chef.workflows.recipe.nodes import (
+    apply_diet_change,
     brainstorm_recipe_ideas,
     constraints_to_persist,
     detect_brainstorm_followup,
@@ -548,6 +550,7 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
     prompt = (
         INTENT_CLASSIFICATION_SYSTEM_PROMPT
         + mode_bias_section
+        + DIET_CHANGE_FLAG_PROMPT
         + "\n\n"
         + INTENT_CLASSIFICATION_USER_PROMPT.format(text=input_text)
     )
@@ -756,6 +759,9 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "intent_confidence": confidence,
             "intent_reasoning": result.reasoning,
             "detected_entities": result.entities,
+            # Routing only (#687): it sends a general_chat / cooking_help turn to the
+            # diet extractor, which decides whether anything changes.
+            "diet_change_mentioned": result.diet_change_mentioned,
         }
 
     except NoProviderAvailableError as e:
@@ -809,6 +815,24 @@ def _build_mode_bias_prompt(session_mode: str | None, state: WorkflowState) -> s
     return ""
 
 
+def routes_to_diet_change(state: WorkflowState) -> bool:
+    """True when a turn goes to `apply_diet_change` instead of the ordinary chat reply (#687).
+
+    The classifier flagged the message as being about dropping a diet, and the intent
+    is one that would otherwise answer in free text (general_chat / cooking_help),
+    where constraint extraction never runs. A recipe request needs no detour: it runs
+    the extraction anyway. Mid-cook stays on cooking help, and the confirm band is
+    left alone.
+    """
+    if not state.get("diet_change_mentioned"):
+        return False
+    if state.get("next_action") == NextAction.CONFIRM_CHOICE.value:
+        return False
+    if state.get("session_mode") == SessionMode.COOKING.value:
+        return False
+    return state.get("intent") in (Intent.GENERAL_CHAT.value, Intent.COOKING_HELP.value)
+
+
 def route_by_intent(state: WorkflowState) -> str:
     """
     Router: Determine which path to take based on classified intent.
@@ -823,6 +847,9 @@ def route_by_intent(state: WorkflowState) -> str:
     # stored brainstorm set survive (root cause of #266).
     if state.get("next_action") == NextAction.CONFIRM_CHOICE.value:
         return "confirm_choice_response"
+
+    if routes_to_diet_change(state):
+        return "apply_diet_change"
 
     intent = state.get("intent", Intent.GENERAL_CHAT.value)
 
@@ -1433,6 +1460,16 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
                     "(intent=cooking_help but brainstorm_ideas present)"
                 )
 
+        # A conversation-scope diet removal (#687): apply_diet_change hands over the
+        # session's remaining constraints, and this is the one place the session is
+        # written. The mode is left alone.
+        diet_change_constraints = state.get("diet_change_constraints")
+        if diet_change_constraints is not None:
+            session.metadata.recipe_constraints = RecipeConstraints.model_validate(
+                diet_change_constraints
+            )
+            logger.info("Session: diet removed from persisted recipe_constraints")
+
         # general_chat / cooking_help (without brainstorm) don't change mode
 
         # #370: tick the clean-turn item-continuity TTL down on every turn
@@ -1489,6 +1526,11 @@ def _dispatch_passthrough(state: WorkflowState) -> WorkflowState:
     already-set intent / next_action off the incoming state.
     """
     return state
+
+
+def _route_after_diet_change(state: WorkflowState) -> str:
+    """A turn the diet extraction changed ends there; any other falls back to chat."""
+    return "update_session" if state.get("diet_change_applied") else "general_chat_response"
 
 
 def build_chat_router_graph(
@@ -1549,6 +1591,9 @@ def build_chat_router_graph(
     # General chat path
     workflow.add_node("general_chat_response", general_chat_response)
 
+    # A message about dropping a diet, with no recipe request (#687)
+    workflow.add_node("apply_diet_change", apply_diet_change)
+
     # Confirm band (#416 Q5) — non-generating terminal node for CONFIRM_CHOICE
     workflow.add_node("confirm_choice_response", confirm_choice_response)
 
@@ -1593,6 +1638,7 @@ def build_chat_router_graph(
         "meal_options_stage": "meal_options_stage",
         "meal_pick_stage": "meal_pick_stage",
         "general_chat_response": "general_chat_response",
+        "apply_diet_change": "apply_diet_change",
         "extract_recipe_constraints": "extract_recipe_constraints",
         "research_recipe": "research_recipe",
         "refine_recipe": "refine_recipe",
@@ -1627,6 +1673,14 @@ def build_chat_router_graph(
 
     # General chat → update_session → END
     workflow.add_edge("general_chat_response", "update_session")
+
+    # Diet change (#687): answered directly when the extraction changed something,
+    # otherwise the ordinary chat reply (nothing was cleared; the turn is just chat).
+    workflow.add_conditional_edges(
+        "apply_diet_change",
+        _route_after_diet_change,
+        {"update_session": "update_session", "general_chat_response": "general_chat_response"},
+    )
 
     # Cooking help → update_session → END
     workflow.add_edge("cooking_help_response", "update_session")
@@ -2257,7 +2311,9 @@ async def run_chat_workflow_streaming(
             yield chunk
         return
 
-    if intent not in streamable_intents:
+    if intent not in streamable_intents or routes_to_diet_change(classified_state):
+        # A diet-change turn (#687) is not streamed: its reply is built from what the
+        # extraction applied, so it resumes the graph like any non-streamable turn.
         # Non-streamable (incl. the confirm band and forced_intent results): resume
         # the graph from the classified state — never re-invoke from raw
         # initial_state, which would recompute classify_intent and discard the

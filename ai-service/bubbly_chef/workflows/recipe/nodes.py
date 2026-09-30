@@ -26,6 +26,7 @@ from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.domain.stock import filter_usable_pantry_rows
 from bubbly_chef.models.base import Intent, NextAction, WorkflowStatus
 from bubbly_chef.models.recipe import (
+    DietChanges,
     Ingredient,
     IngredientAvailability,
     RecipeCard,
@@ -35,6 +36,8 @@ from bubbly_chef.models.recipe import (
 )
 from bubbly_chef.prompts.recipe import (
     BRAINSTORM_SYSTEM_PROMPT_NO_PANTRY,
+    REMEMBERED_DIETS_CHAT_PREFIX,
+    REMEMBERED_DIETS_PROFILE_PREFIX,
     _MODE_SYSTEM_PROMPTS,
     _RECIPE_MODE_PANTRY_LINE,
 )
@@ -52,6 +55,7 @@ from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.services.dietary_preferences import get_stored_dietary_preferences
 from bubbly_chef.services.recipe_generator import generate_recipe as _generate_recipe_followup
 from bubbly_chef.tools.web_search import search_recipe
+from bubbly_chef.workflows.recipe.diet_change import diet_change_reply, resolve_diet_change
 from bubbly_chef.workflows.recipe.refine_diet import added_clauses, added_text, negated_text
 from bubbly_chef.workflows.state import (
     LLMRecipeResult,
@@ -1116,6 +1120,96 @@ def _prior_constraints_from_state(state: WorkflowState) -> dict[str, Any] | None
     return prior if isinstance(prior, dict) else None
 
 
+def _constraints_prompt(input_text: str, session_held: list[str], stored: list[str]) -> str:
+    """The extractor prompt for one message (#687).
+
+    When the conversation or the profile already holds a diet, the labels go in front
+    of the message so the extractor can name a dropped diet by the label it is
+    remembered under. Nothing is added when nothing is held, so a first turn's prompt
+    is the base prompt plus the message.
+    """
+    held = ""
+    if session_held:
+        held += REMEMBERED_DIETS_CHAT_PREFIX + ", ".join(session_held)
+    if stored:
+        held += REMEMBERED_DIETS_PROFILE_PREFIX + ", ".join(stored)
+    return RECIPE_CONSTRAINTS_SYSTEM_PROMPT + held + "\n\nUser message: " + input_text
+
+
+async def _extract_constraints(
+    input_text: str, session_held: list[str], stored: list[str]
+) -> dict[str, Any]:
+    """One structured extraction call; `{}` when it fails, which keeps every diet."""
+    ai_manager = get_ai_manager()
+    try:
+        result = await ai_manager.complete(
+            prompt=_constraints_prompt(input_text, session_held, stored),
+            response_schema=RecipeConstraints,
+            temperature=0.1,
+        )
+        if isinstance(result, RecipeConstraints):
+            return result.model_dump()
+    except Exception as e:
+        logger.warning("Constraint extraction failed (using empty constraints): %s", e)
+    return {}
+
+
+async def apply_diet_change(state: WorkflowState) -> WorkflowState:
+    """Node: a message about dropping a diet that has no recipe request with it (#687).
+
+    "I'm not vegetarian any more" is food talk with no dish, so it classifies as
+    general chat and constraint extraction would never run. The classifier's
+    `diet_change_mentioned` flag sends it here instead. This runs the same structured
+    extraction and applies only what `diet_changes` says (`resolve_diet_change`); it
+    never decides from the text. When nothing is applied, `diet_change_applied` stays
+    unset and the graph falls back to the ordinary general-chat reply.
+
+    On a conversation-scope removal the session's remaining constraints are handed to
+    `update_session_node` as `diet_change_constraints`, which is the only thing that
+    writes the session. The profile is never touched: a profile diet stays in force
+    and the reply says so.
+    """
+    input_text = state.get("input_text", "")
+    prior = _prior_constraints_from_state(state)
+    session_held = list((prior or {}).get("dietary") or [])
+    stored_dietary = await get_stored_dietary_preferences(state.get("user_id") or "")
+    if not session_held and not stored_dietary:
+        # Nothing remembered anywhere, so there is nothing a removal could clear.
+        return state
+
+    extracted = await _extract_constraints(input_text, session_held, stored_dietary)
+    changes = DietChanges.model_validate(extracted.get("diet_changes") or {})
+    outcome = resolve_diet_change(
+        changes, session_held, stored_dietary, list(extracted.get("dietary") or [])
+    )
+    if not outcome.acted:
+        return state
+
+    logger.info(
+        "Diet change (no recipe request): dropped=%s relaxed=%s kept_by_profile=%s",
+        outcome.dropped,
+        outcome.relaxed,
+        outcome.kept_by_profile,
+    )
+    update: dict[str, Any] = {
+        **state,
+        "intent": Intent.GENERAL_CHAT.value,
+        "diet_change_applied": True,
+        "assistant_message": diet_change_reply(outcome),
+        "next_action": NextAction.NONE.value,
+        "proposal": None,
+        "requires_review": False,
+        "confidence": 1.0,
+        "workflow_status": WorkflowStatus.COMPLETED.value,
+    }
+    if outcome.dropped:
+        update["diet_change_constraints"] = {
+            **(prior or {}),
+            "dietary": _without_labels(session_held, outcome.dropped),
+        }
+    return update  # type: ignore[return-value]
+
+
 async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
     """Node: Extract recipe constraints from user message via structured LLM call.
 
@@ -1125,22 +1219,20 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
     user didn't re-mention inherit from the prior turn (#144).
     """
     input_text = state.get("input_text", "")
-    ai_manager = get_ai_manager()
     logger.info("Extracting recipe constraints", extra={"message_preview": input_text[:80]})
 
-    try:
-        result = await ai_manager.complete(
-            prompt=RECIPE_CONSTRAINTS_SYSTEM_PROMPT + "\n\nUser message: " + input_text,
-            response_schema=RecipeConstraints,
-            temperature=0.1,
-        )
-        if isinstance(result, RecipeConstraints):
-            constraints: dict[str, Any] = result.model_dump()
-        else:
-            constraints = {}
-    except Exception as e:
-        logger.warning("Constraint extraction failed (using empty constraints): %s", e)
-        constraints = {}
+    # Read before the extraction so the extractor can name a diet the user drops by
+    # the label it is remembered under (#687). Both reads also feed the diet checks
+    # below.
+    prior = _prior_constraints_from_state(state)
+    session_held = list((prior or {}).get("dietary") or [])
+    stored_dietary = await get_stored_dietary_preferences(state.get("user_id") or "")
+
+    constraints = await _extract_constraints(input_text, session_held, stored_dietary)
+    # The structured "I no longer follow this diet" (#687). Taken off here so it is a
+    # per-turn instruction: it must not reach the merge, the generator's constraints
+    # JSON, or the session, where a stale removal would be replayed next turn.
+    diet_changes = DietChanges.model_validate(constraints.pop("diet_changes", None) or {})
 
     # A diet the message turns down as a dish modifier ("make it non-vegan") isn't
     # sent this turn even when the extractor returned it (issue #685). Filtered
@@ -1158,7 +1250,6 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
     fresh = dict(constraints)
 
     # Merge with prior constraints from the session (inherit + override).
-    prior = _prior_constraints_from_state(state)
     if prior:
         constraints = _merge_constraints(prior, constraints)
         logger.info(
@@ -1179,8 +1270,19 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
     # is only set aside — for this one reply — when the message explicitly
     # asks for an ingredient the stored diet forbids (see
     # `_combine_dietary_preferences`). It must never be silently dropped just
-    # because this message didn't repeat it.
-    stored_dietary = await get_stored_dietary_preferences(state.get("user_id") or "")
+    # because this message didn't repeat it. (Read above, before the extraction.)
+
+    # Issue #687: what the extractor said about dropping a diet. Applied only to the
+    # conversation's own diet, never to the profile's, and never decided from the
+    # message text (see `diet_change.resolve_diet_change`).
+    diet_outcome = resolve_diet_change(diet_changes, session_held, stored_dietary, fresh_dietary)
+    if diet_outcome.acted:
+        logger.info(
+            "Diet change from structured extraction: dropped=%s relaxed=%s kept_by_profile=%s",
+            diet_outcome.dropped,
+            diet_outcome.relaxed,
+            diet_outcome.kept_by_profile,
+        )
 
     # Issue #685: when this turn names no diet, the merged `dietary` IS the
     # conversation's diet, inherited from the session. It gets the same
@@ -1188,11 +1290,19 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
     # freshly extracted ingredients (a diet named this turn is an explicit ask and
     # is never checked). A label set aside here comes back next turn: see
     # `constraints_to_persist`.
-    inherited = [] if fresh_dietary else list(constraints.get("dietary") or [])
+    #
+    # `inherited` is also what the session remembers (`session_dietary`), so a
+    # conversation-scope removal leaves it here, and a this_request removal stays in
+    # it and is only left out of `requested_dietary` (#687).
+    inherited = (
+        []
+        if fresh_dietary
+        else _without_labels(list(constraints.get("dietary") or []), diet_outcome.dropped)
+    )
     requested_dietary = fresh_dietary or _dedupe_labels(
         [
             label
-            for label in inherited
+            for label in _without_labels(inherited, diet_outcome.relaxed)
             if not _message_sets_label_aside(label, input_text)
             and not _inherited_diet_contradicted(label, input_text, fresh)
         ]
@@ -1215,7 +1325,7 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
                 combined_dietary,
             )
         constraints["dietary"] = combined_dietary
-    elif inherited:
+    elif inherited or diet_outcome.dropped:
         constraints["dietary"] = requested_dietary
 
     return {

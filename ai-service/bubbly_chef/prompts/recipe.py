@@ -31,7 +31,40 @@ RECIPE_CONSTRAINTS_SYSTEM_PROMPT = (
     "'just give me a recipe'. Set it to true ONLY when they ask us to start using "
     "it again -- 'use my pantry', 'what can I make with what I have'. If they say "
     "nothing either way, leave it null: null means 'no opinion this turn', and a "
-    "choice they made earlier stays in force."
+    "choice they made earlier stays in force.\n\n"
+    "diet_changes: the ONLY way a diet the conversation already remembered gets "
+    "dropped. Fill it ONLY when the user says plainly, about THEMSELVES, that they no "
+    "longer follow a diet. Put the diet in `remove` (one label each, e.g. "
+    "'Vegetarian'); never put a diet they are dropping in `dietary`. Set `scope` to "
+    "'conversation' for a lasting change -- 'I'm not vegetarian any more', 'I've "
+    "stopped being vegan', 'I eat meat again now' -- and to 'this_request' for a "
+    "one-off -- 'we're not vegan tonight', 'just this once', 'for this meal'; a "
+    "one-off never gets scope 'conversation'.\n"
+    "Leave diet_changes empty (null) for ALL of these, because keeping a diet is the "
+    "safe direction and a wrong removal is the expensive mistake:\n"
+    "- someone else's diet: 'I'm not a vegetarian but my partner is' (the user dropped "
+    "nothing; the diet is about the partner)\n"
+    "- a question: 'no longer vegan?', 'am I still vegetarian?'\n"
+    "- a complaint about a dish: 'that's not vegetarian!' (the user is INSISTING on "
+    "the diet, not dropping it)\n"
+    "- a dish modifier: 'make it non-vegan', 'a non-vegetarian pasta'\n"
+    "- a diet they state or restate: 'I'm vegetarian'\n"
+    "- anything hypothetical, joking, or unclear.\n"
+    "When in doubt, leave diet_changes empty."
+)
+
+# Put in front of the user's message by `extract_recipe_constraints` when the
+# conversation (or the profile) already holds a diet, so the extractor names a dropped
+# diet by the label it is remembered under. The labels themselves are appended by the
+# caller; this module holds text only (#687).
+REMEMBERED_DIETS_CHAT_PREFIX = (
+    "\n\nDiets already remembered for this conversation (use these exact labels in "
+    "diet_changes.remove if the user drops one; do not repeat them in `dietary` unless "
+    "the user restates them): "
+)
+REMEMBERED_DIETS_PROFILE_PREFIX = (
+    "\n\nDiets saved in the user's profile (the same rules apply; these can be named "
+    "in diet_changes.remove, but they are kept either way): "
 )
 
 BRAINSTORM_SYSTEM_PROMPT = """\
