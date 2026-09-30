@@ -118,7 +118,7 @@ export default function ExclusionRow({
           {addLabel}
         </button>
       </form>
-      <p className="mt-2 text-xs h-4" aria-live="polite">
+      <p className="mt-2 text-xs min-h-4" aria-live="polite">
         {status === 'saved' && <span className="text-[var(--color-primary)]">Saved!</span>}
         {status === 'error' && <span className="text-[#ff9aa2]">{errorMessage}</span>}
       </p>
