@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { requireAuth, errorResponse } from '@/lib/response-helpers'
+import { requireAuth } from '@/lib/response-helpers'
 import { awardBubbles } from '@/lib/bubbles'
-import { validateClientDate, parseTzOffsetMinutes } from '@/lib/date'
+import { resolveLedgerDate } from '@/lib/ledger-date'
 import { settleWeeklyStreak } from '@/lib/streak-settlement'
 
 export async function GET(request: Request) {
@@ -10,38 +10,51 @@ export async function GET(request: Request) {
   const [supabase, user] = result
 
   const { searchParams } = new URL(request.url)
-  const date = searchParams.get('date')
-  const dateError = validateClientDate(date, 'date query param')
-  if (dateError) return errorResponse(dateError, 400)
-  // Narrowed by validateClientDate above.
-  const validDate = date as string
-  // Client's UTC offset in minutes (issue #524 review) — used to bucket
-  // `created_at` timestamps into the client's local calendar day rather
-  // than the server's UTC day. Missing/unparseable falls back to UTC.
-  const offsetMinutes = parseTzOffsetMinutes(searchParams.get('tz_offset_minutes'))
 
-  // Weekly rescue streak (#524): lazily settle any completed week since the
-  // last one that was awarded, bounded to ~12 weeks of catch-up, and report
-  // the resulting streak length + whether the current (in-progress) week has
-  // already seen waste. Settle BEFORE awarding today's `daily_visit`
-  // (re-review #4 on issue #524/#570) — that award is what marks "today's
-  // visit happened" for the NEXT call's `previousVisitDate` lookup, so if
-  // settlement fails, the visit must not be recorded either: doing so would
-  // permanently lock out every week that failed settlement would have
-  // judged. On failure this route falls through with no visit award; since
-  // `GET /api/bubbles` runs on nearly every page, the next request the same
-  // day simply retries both.
-  const { streakWeeks, wastedThisWeek, ok } = await settleWeeklyStreak(
-    supabase,
-    user.id,
-    validDate,
-    offsetMinutes,
-  )
+  // The ONE accepted local date (#550): the server's clock in the account's
+  // stored time zone. `tz` (if sent) can only propose a zone the first time
+  // or move it after the cooldown; no per-request `date` or UTC offset from
+  // the client is ever used as a key, so tomorrow can't be claimed today and
+  // a spoofed offset can't shift anything. `null` (no zone known yet, e.g. a
+  // stale tab that sends no `tz`) just means no date-keyed award this call.
+  const ledger = await resolveLedgerDate(user, searchParams.get('tz'))
 
-  // Award (or no-op if already awarded today) only once settlement has
-  // actually run — see above.
-  if (ok) {
-    await awardBubbles(user.id, 'daily_visit', validDate)
+  // A `date` query param (sent by a pre-#550 tab still running old JS) is
+  // IGNORED, not checked: the server's date wins, so a stale or skewed client
+  // clock gets today's balance rather than a 400, and a future date claims
+  // nothing because it is never read. There is no +-1 window because there is
+  // no client date at all.
+
+  // `null` (not 0) when there is no trustworthy date: the streak could not be
+  // computed, which is different from "no streak". The UI shows no streak
+  // indicator for null and must not read it as a lost streak.
+  let streakWeeks: number | null = null
+  let wastedThisWeek = false
+
+  if (ledger) {
+    // Weekly rescue streak (#524): lazily settle any completed week since the
+    // last one that was awarded, bounded to ~12 weeks of catch-up, and report
+    // the resulting streak length + whether the current (in-progress) week has
+    // already seen waste. Settle BEFORE awarding today's `daily_visit`
+    // (re-review #4 on issue #524/#570) — that award is what marks "today's
+    // visit happened" for the NEXT call's `previousVisitDate` lookup, so if
+    // settlement fails, the visit must not be recorded either: doing so would
+    // permanently lock out every week that failed settlement would have
+    // judged. On failure this route falls through with no visit award; since
+    // `GET /api/bubbles` runs on nearly every page, the next request the same
+    // day simply retries both.
+    //
+    // Both the reference date and the offset come from the stored zone (#550),
+    // so a client can't pass a future `date` to bank a week that hasn't ended.
+    const settled = await settleWeeklyStreak(supabase, user.id, ledger.date, ledger.offsetMinutes)
+    streakWeeks = settled.streakWeeks
+    wastedThisWeek = settled.wastedThisWeek
+
+    // Award (or no-op if already awarded today) only once settlement has
+    // actually run — see above.
+    if (settled.ok) {
+      await awardBubbles(user.id, 'daily_visit', ledger.date)
+    }
   }
 
   const [{ data: balanceRow }, { data: recent }] = await Promise.all([

@@ -2,8 +2,8 @@
  * Shared date helpers (issue #524).
  *
  * `localDateString` used to be a private copy inside `lib/api/bubbles.ts`;
- * it's pulled out here so `lib/api/pantry.ts` and `lib/api/recipes.ts` can
- * send the same client-local date without re-deriving it.
+ * it's pulled out here so other client code can derive the same local date
+ * without re-deriving it.
  */
 
 /**
@@ -12,6 +12,9 @@
  * Deliberately `toLocaleDateString`-based (en-CA formats as YYYY-MM-DD), not
  * `toISOString`, which is UTC and would credit a same-day award to the wrong
  * day for anyone not on UTC.
+ *
+ * Display/convenience only: since issue #550 no bubbles award trusts a date
+ * the client sends (see `lib/ledger-date.ts`).
  */
 export function localDateString(): string {
   return new Date().toLocaleDateString('en-CA')
@@ -36,6 +39,9 @@ export function addDaysToDateString(dateStr: string, days: number): string {
  * the *client's* local day rather than the server's UTC day — bucketing by
  * raw UTC date silently moves a Sunday-evening-local event into Monday for
  * anyone west of UTC (issue #524 review).
+ *
+ * Since issue #550 the offset fed to this comes from the account's stored
+ * zone (`resolveLedgerDate`), never from a request parameter.
  */
 export function utcTimestampToLocalDate(timestamp: string, offsetMinutes: number): string {
   const utcMs = new Date(timestamp).getTime()
@@ -43,55 +49,19 @@ export function utcTimestampToLocalDate(timestamp: string, offsetMinutes: number
 }
 
 /**
- * Clamp a client-supplied UTC-offset-in-minutes to real-world timezone
- * bounds (UTC-12 .. UTC+14) and fall back to UTC (0) for anything missing or
- * unparseable, so a bad/absent `tz_offset_minutes` query param degrades to
- * the old UTC-bucketing behavior instead of throwing or producing `NaN`
- * dates.
- */
-export function parseTzOffsetMinutes(raw: string | null): number {
-  if (raw === null) return 0
-  const n = Number(raw)
-  if (!Number.isFinite(n)) return 0
-  return Math.max(-720, Math.min(840, Math.trunc(n)))
-}
-
-/**
- * Validate a client-supplied local date (YYYY-MM-DD) against the server's
- * own clock, tolerating up to a day of skew either side — a signed-in
- * timezone can be up to 14 hours off UTC, which spans a full calendar day
- * either side of the server's date.
+ * The caller's IANA time zone (e.g. `America/Los_Angeles`).
  *
- * Extracted from `GET /api/bubbles` (issue #520) so the two new award routes
- * in issue #524 (`POST /api/pantry/[id]/resolve`, `POST
- * /api/ai/recipes/cook/confirm`) can reuse the same check instead of
- * copy-pasting it.
- *
- * Returns an error message string when invalid, or `null` when the date is
- * fine to use as an award ref_key component.
+ * Sent to the server so it can store the account's zone ONCE and derive the
+ * one accepted local date for every bubbles award from that plus its own
+ * clock (issue #550, see `lib/ledger-date.ts`). Deliberately a zone name, not
+ * a date or a UTC offset: the server never takes a per-request date from the
+ * client, so there is nothing here for a caller to shift. Empty string when
+ * the runtime can't say (the server treats that as "no zone").
  */
-export function validateClientDate(date: unknown, fieldLabel = 'date'): string | null {
-  if (!date || typeof date !== 'string') {
-    return `${fieldLabel} is required (YYYY-MM-DD, client local date)`
+export function clientTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? ''
+  } catch {
+    return ''
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return `${fieldLabel} must be YYYY-MM-DD`
-  }
-
-  const parsedDate = new Date(`${date}T00:00:00Z`)
-  if (Number.isNaN(parsedDate.getTime())) {
-    return `${fieldLabel} must be a valid date`
-  }
-
-  // Anything further off than a day either side is not a real client clock
-  // skew case — reject it so a signed-in user can't loop ?date=1, ?date=2,
-  // ... and mint unlimited date-keyed awards.
-  const msPerDay = 24 * 60 * 60 * 1000
-  const serverToday = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`)
-  const dayDiff = Math.abs(parsedDate.getTime() - serverToday.getTime()) / msPerDay
-  if (dayDiff > 1) {
-    return `${fieldLabel} is too far from the server date`
-  }
-
-  return null
 }

@@ -1474,6 +1474,7 @@ class SupabaseRepository:
                 outcome="claimed",
                 times_cooked=int(updated.get("times_cooked") or 0),
                 cooked_on=now.date(),
+                cooked_at=now,
             )
 
         # Zero rows updated: either a racing post with the SAME ref just won
@@ -1499,13 +1500,23 @@ class SupabaseRepository:
         cooked_on = last_cooked_at.date()
 
         if status == "applied":
-            return MealCookClaim(outcome="replay_applied", times_cooked=times_cooked, cooked_on=cooked_on)
+            return MealCookClaim(
+                outcome="replay_applied",
+                times_cooked=times_cooked,
+                cooked_on=cooked_on,
+                cooked_at=last_cooked_at,
+            )
 
         age = (datetime.now(UTC) - last_cooked_at).total_seconds()
         outcome: Literal["replay_in_progress", "replay_claimed"] = (
             "replay_in_progress" if age < 30 else "replay_claimed"
         )
-        return MealCookClaim(outcome=outcome, times_cooked=times_cooked, cooked_on=cooked_on)
+        return MealCookClaim(
+            outcome=outcome,
+            times_cooked=times_cooked,
+            cooked_on=cooked_on,
+            cooked_at=last_cooked_at,
+        )
 
     async def mark_meal_cook_applied(self, user_id: str, meal_id: str, cook_ref: str) -> None:
         """Stamp `last_cook_status = 'applied'` after a claimed cook's
