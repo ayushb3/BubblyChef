@@ -171,6 +171,39 @@ export function isMealProposal(proposal: unknown): proposal is MealProposal {
   )
 }
 
+/** One ingredient of a mid-cook amendment (backend RecipeIngredientAmendment). */
+export interface RecipeIngredientAmendment {
+  name: string
+  quantity: number
+  unit: string
+  optional: boolean
+  notes: string | null
+}
+
+/**
+ * A mid-cook amendment to the pinned recipe's ingredients (backend
+ * RecipeAmendmentProposal, models/proposals.py). `amended_ingredients` is the FULL
+ * replacement list, at the scale of the list the request pinned.
+ */
+export interface RecipeAmendmentProposal {
+  proposal_type: 'recipe_amendment'
+  is_amendment: boolean
+  amended_ingredients: RecipeIngredientAmendment[]
+  change_summary: string | null
+  recipe_id: string | null
+  recipe_title: string | null
+}
+
+export function isRecipeAmendmentProposal(proposal: unknown): proposal is RecipeAmendmentProposal {
+  return (
+    !!proposal &&
+    typeof proposal === 'object' &&
+    (proposal as { proposal_type?: unknown }).proposal_type === 'recipe_amendment' &&
+    Array.isArray((proposal as { amended_ingredients?: unknown }).amended_ingredients) &&
+    (proposal as { amended_ingredients: unknown[] }).amended_ingredients.length > 0
+  )
+}
+
 // ─── Chat Response ────────────────────────────────────────────────────────────
 
 export interface ChatResponse {
@@ -179,7 +212,13 @@ export interface ChatResponse {
   conversation_id: string | null
   intent: ChatIntent
   assistant_message: string
-  proposal: PantryProposalData | ChatRecipeData | MealOptionsProposal | MealProposal | null
+  proposal:
+    | PantryProposalData
+    | ChatRecipeData
+    | MealOptionsProposal
+    | MealProposal
+    | RecipeAmendmentProposal
+    | null
   confidence: { overall: number }
   requires_review: boolean
   next_action: ChatNextAction
