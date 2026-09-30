@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
 import type { CookProposal } from '@/types/recipes'
+import type { MealCookIngredient } from '@/types/meals'
 import { skippedDeductionNames, skippedTotal, type SkippedDeductionNames } from '@/lib/cook-skipped'
 import SkippedDeductionsNotice from '@/components/cook/SkippedDeductionsNotice'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
@@ -57,6 +58,13 @@ interface CookModalProps {
   mode?: 'confirm' | 'preview'
   /** Called when the user starts cooking from a preview. Required for 'preview'. */
   onStartCooking?: () => void
+  /**
+   * The list that was actually cooked, when the cook was amended mid-way (#489).
+   * The pantry is matched against this instead of the saved recipe, so a
+   * confirmed swap deducts the substitute. Ignored in 'preview' (that is a plan
+   * for the recipe as saved, before any amendment).
+   */
+  amendedIngredients?: MealCookIngredient[] | null
 }
 
 type ModalState = 'loading' | 'review' | 'confirming' | 'success' | 'error'
@@ -98,6 +106,7 @@ export default function CookModal({
   onAddToLibrary,
   mode = 'confirm',
   onStartCooking,
+  amendedIngredients = null,
 }: CookModalProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -125,6 +134,10 @@ export default function CookModal({
     }
   }, [])
   const panelRef = useRef<HTMLDivElement>(null)
+
+  // A caller may rebuild the array every render; key the fetch on its content.
+  const amendedList = mode === 'preview' || !amendedIngredients?.length ? null : amendedIngredients
+  const amendedKey = amendedList ? JSON.stringify(amendedList) : ''
 
   const skippedCount = skippedTotal(skipped)
   const showSkippedNotice = state === 'success' && skippedCount > 0
@@ -167,7 +180,8 @@ export default function CookModal({
   useEffect(() => {
     let cancelled = false
     setExpiredDismissed(false)
-    cookRecipe(recipeId)
+    const amended: MealCookIngredient[] | null = amendedKey ? JSON.parse(amendedKey) : null
+    ;(amended ? cookRecipe(recipeId, amended) : cookRecipe(recipeId))
       .then((p) => {
         if (!cancelled) {
           setProposal(p)
@@ -184,7 +198,7 @@ export default function CookModal({
       cancelled = true
       if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current)
     }
-  }, [recipeId])
+  }, [recipeId, amendedKey])
 
   // Recomputed as the user fills in override quantities, so the summary above
   // the button always describes the payload the button will actually send.
@@ -414,6 +428,15 @@ export default function CookModal({
               </div>
             )}
 
+            {(state === 'review' || state === 'confirming') && proposal && amendedList && (
+              <p
+                data-testid="cook-modal-amended-note"
+                className="mb-3 rounded-xl bg-[var(--color-bg)] px-3 py-2 text-xs text-[var(--color-muted)]"
+                style={{ fontFamily: 'Nunito, sans-serif' }}
+              >
+                Using your changes to this recipe. Your saved recipe stays as it was.
+              </p>
+            )}
             {(state === 'review' || state === 'confirming') && proposal && (
               <CookReviewBody
                 proposal={proposal}
