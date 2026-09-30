@@ -135,19 +135,34 @@ async def refine_recipe(
         from bubbly_chef.api.deps import get_ai_manager
         from bubbly_chef.services.recipe_generator import generate_recipe as gen_recipe
         from bubbly_chef.models.recipe import RecipeCard
+        from bubbly_chef.workflows.recipe.nodes import refine_dietary_constraints
 
         ai_manager = get_ai_manager()
 
         # Build a RecipeCard from the dict for the previous_recipe param
-        previous_recipe = RecipeCard(**request.recipe) if request.recipe else None
+        recipe_row = dict(request.recipe) if request.recipe else {}
+        # A saved recipe row carries its diet in `tags`; map it to
+        # `dietary_tags` the way recipe_card_from_row does (strings only) so the
+        # refine diet check can read it (#544).
+        raw_tags = recipe_row.get("tags")
+        if not recipe_row.get("dietary_tags") and isinstance(raw_tags, list):
+            recipe_row["dietary_tags"] = [t for t in raw_tags if isinstance(t, str)]
+        previous_recipe = RecipeCard(**recipe_row) if recipe_row else None
 
         repo = await get_repository()
         pantry_items = await repo.get_all_pantry_items(user_id)
+
+        # No session and no carried field here, so keep the stored diet except
+        # what the tweak adds or the saved recipe's ingredients contradict.
+        refine_constraints, _ = await refine_dietary_constraints(
+            user_id, request.prompt, None, previous_recipe, library=True
+        )
 
         result = await gen_recipe(
             prompt=request.prompt,
             pantry_items=pantry_items,
             ai_manager=ai_manager,
+            constraints=refine_constraints,
             previous_recipe=previous_recipe,
         )
 

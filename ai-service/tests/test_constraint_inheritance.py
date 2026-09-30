@@ -399,3 +399,17 @@ async def test_two_turn_constraint_inheritance_end_to_end() -> None:
     assert constraints.get("max_time_minutes") == 30, (
         "#144: Time constraint from turn 1 must not be dropped on turn 2"
     )
+
+
+@pytest.fixture(autouse=True)
+def _no_stored_dietary_preferences():
+    """research_recipe/refine now read the stored diet on every call (#544).
+
+    Patch the single read seam so this suite stays hermetic (no repository
+    lookup) and its assertions are about what it was written for.
+    """
+    with patch(
+        "bubbly_chef.workflows.recipe.nodes.get_stored_dietary_preferences",
+        AsyncMock(return_value=[]),
+    ):
+        yield

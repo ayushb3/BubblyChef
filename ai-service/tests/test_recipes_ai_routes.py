@@ -121,3 +121,17 @@ def test_routes_import_get_ai_manager_from_deps():
 
     assert not hasattr(ai_manager_module, "get_ai_manager")
     assert callable(get_ai_manager)
+
+
+@pytest.fixture(autouse=True)
+def _no_stored_dietary_preferences():
+    """research_recipe/refine now read the stored diet on every call (#544).
+
+    Patch the single read seam so this suite stays hermetic (no repository
+    lookup) and its assertions are about what it was written for.
+    """
+    with patch(
+        "bubbly_chef.workflows.recipe.nodes.get_stored_dietary_preferences",
+        AsyncMock(return_value=[]),
+    ):
+        yield

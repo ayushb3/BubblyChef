@@ -68,7 +68,7 @@ The refined card carries `diets_set_aside = previous_recipe.diets_set_aside ∪ 
   - `instead of` removes only up to the next `use`, `add`, `try` or `with`, or the clause end. So "use chicken instead of tofu" and "instead of tofu use chicken" both keep "chicken", and "tofu instead of chicken" drops it.
   - `(swap|replace) X (with|for) Y`: X is removed and Y is kept (X out, Y in).
   - `(substitute|\bsub\b) … for …` removes the phrase up to the next `and`, `then` or the clause end, so neither side counts as an add. The direction of "substitute" is ambiguous in everyday speech. `sub` matches only as a whole word, never inside "submarine" or "subtle".
-- **A label the tweak names is never set aside.** Compare the normalised label (§3) against the normalised tweak: "make it dairy free" keeps Dairy-free, whatever else it matches.
+- **A label the tweak names is never set aside.** Compare the normalised label (§3) against the normalised tweak: "make it dairy free" keeps Dairy-free, whatever else it matches. This also overrides (i): "make it vegetarian" after a chicken first turn sends Vegetarian for that reply even though the card still carries it in `diets_set_aside` (approved by the coordinator; the card's carried list is unchanged, so a later tweak that doesn't name the diet is back to setting it aside).
 - **Exclusions use the same text.** `excluded` starts from `prior["excluded_ingredients"]`. An entry is dropped when `\b<entry>\b` (case-insensitive) is in `added_text(tweak)`, or in the previous recipe's ingredient names (so an item added on an earlier tweak isn't taken out on the next one). On the library path there's no `prior`, so no exclusions.
 
 ## 3. The changes

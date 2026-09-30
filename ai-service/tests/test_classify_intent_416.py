@@ -1472,3 +1472,17 @@ def test_workflow_input_text_ignores_source_without_forced_intent():
     assert workflow_input_text("no cheese", None, "stale text") == "no cheese"
     assert workflow_input_text("Tweak this recipe", "recipe_card", None) == "Tweak this recipe"
     assert workflow_input_text("Tweak this recipe", "recipe_card", "   ") == "Tweak this recipe"
+
+
+@pytest.fixture(autouse=True)
+def _no_stored_dietary_preferences():
+    """research_recipe/refine now read the stored diet on every call (#544).
+
+    Patch the single read seam so this suite stays hermetic (no repository
+    lookup) and its assertions are about what it was written for.
+    """
+    with patch(
+        "bubbly_chef.workflows.recipe.nodes.get_stored_dietary_preferences",
+        AsyncMock(return_value=[]),
+    ):
+        yield

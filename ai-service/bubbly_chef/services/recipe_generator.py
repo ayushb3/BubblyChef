@@ -171,9 +171,7 @@ def format_followup_dietary(constraints: dict[str, Any] | None) -> str:
     lines.append(
         "The modified recipe must still meet these, even if the request doesn't mention them."
     )
-    return "
-".join(lines) + "
-"
+    return "\n".join(lines) + "\n"
 
 
 def format_recipe_for_context(recipe: RecipeCard) -> str:

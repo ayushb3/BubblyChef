@@ -46,6 +46,7 @@ from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.services.dietary_preferences import get_stored_dietary_preferences
 from bubbly_chef.services.recipe_generator import generate_recipe as _generate_recipe_followup
 from bubbly_chef.tools.web_search import search_recipe
+from bubbly_chef.workflows.recipe.refine_diet import added_text
 from bubbly_chef.workflows.state import (
     LLMRecipeResult,
     WorkflowState,
@@ -814,6 +815,116 @@ def _combine_dietary_preferences(
     return _drop_redundant_dietary(combined)
 
 
+def _norm_label(label: str) -> str:
+    """Case, space, underscore and hyphen-insensitive form of a diet label (#544)."""
+    return re.sub(r"[\s_-]+", "-", label.strip().lower())
+
+
+def _diets_set_aside(stored: list[str], final: list[str]) -> list[str]:
+    """The stored diet labels the final `constraints["dietary"]` doesn't cover (#544).
+
+    The one definition of a card's `diets_set_aside`. A stored label is covered
+    by an equal final label, or by a final label that subsumes it (a final Vegan
+    covers a stored Vegetarian).
+    """
+    covered = {_norm_label(label) for label in final}
+    for broad, narrower in _DIETARY_SUBSUMES.items():
+        if _norm_label(broad) in covered:
+            covered |= {_norm_label(n) for n in narrower}
+    return [label for label in stored if _norm_label(label) not in covered]
+
+
+def _dedupe_labels(labels: list[str]) -> list[str]:
+    """De-duplicate case-insensitively (through `_norm_label`), preserving order."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for label in labels:
+        key = _norm_label(label)
+        if key not in seen:
+            seen.add(key)
+            result.append(label)
+    return result
+
+
+def _tag_key(tag: str) -> str:
+    return re.sub(r"[\s_]+", "-", tag.strip().lower())
+
+
+async def refine_dietary_constraints(
+    user_id: str,
+    input_text: str,
+    prior: dict[str, Any] | None,
+    previous_recipe: RecipeCard | None,
+    *,
+    library: bool = False,
+) -> tuple[dict[str, Any], list[str]]:
+    """The constraints a refine hands the generator, plus the diets set aside this turn (#544).
+
+    A refine *remembers* the diet decision the first turn already made rather
+    than re-guessing it. Labels are the stored preferences followed by the
+    conversation's (`prior["dietary"]`). Chat refine keeps every label except
+    those already in `previous_recipe.diets_set_aside` and those the tweak
+    *adds* a forbidden food for. The library route (`library=True`, no session
+    and no carried field) also drops labels whose forbidden food appears in the
+    saved recipe's ingredient names, unless a `dietary_tags` entry names the
+    label. A label the tweak itself names is never set aside.
+
+    Returns `({"dietary": ..., "excluded_ingredients": ...}, set_aside_now)`,
+    omitting empty keys.
+    """
+    stored = await get_stored_dietary_preferences(user_id)
+    prior = prior or {}
+    labels = _dedupe_labels([*stored, *(prior.get("dietary") or [])])
+
+    tweak_lower = input_text.lower()
+    tweak_norm = _norm_label(tweak_lower)
+    added = added_text(input_text)
+
+    carried = {_norm_label(x) for x in (previous_recipe.diets_set_aside if previous_recipe else [])}
+    ingredient_names = " ".join(
+        ing.name for ing in (previous_recipe.ingredients if previous_recipe else [])
+    ).lower()
+    tag_keys = {_tag_key(t) for t in (previous_recipe.dietary_tags if previous_recipe else [])}
+
+    kept: list[str] = []
+    set_aside_now: list[str] = []
+    for label in labels:
+        key = _norm_label(label)
+        if key in tweak_norm:
+            # The tweak names the label ("make it dairy free"): never set aside,
+            # even if the card carries it as set aside.
+            kept.append(label)
+            continue
+        if not library and key in carried:
+            continue
+        if _dietary_contradicted(label, added):
+            set_aside_now.append(label)
+            continue
+        if (
+            library
+            and previous_recipe is not None
+            and key not in tag_keys
+            and _dietary_contradicted(label, ingredient_names)
+        ):
+            set_aside_now.append(label)
+            continue
+        kept.append(label)
+
+    excluded: list[str] = []
+    for entry in prior.get("excluded_ingredients") or []:
+        pattern = rf"\b{re.escape(str(entry).lower())}\b"
+        if re.search(pattern, added) or re.search(pattern, ingredient_names):
+            continue
+        excluded.append(entry)
+
+    constraints: dict[str, Any] = {}
+    if kept:
+        constraints["dietary"] = kept
+    if excluded:
+        constraints["excluded_ingredients"] = excluded
+    return constraints, set_aside_now
+
+
 def _prior_constraints_from_state(state: WorkflowState) -> dict[str, Any] | None:
     """Return recipe_constraints stored in the session metadata, if any."""
     session = state.get("session")
@@ -894,6 +1005,9 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
     return {
         **state,
         "recipe_constraints": constraints,
+        # Per-turn marker, never persisted (#544): research_recipe reads it to
+        # know the stored diet was already combined with this turn's message.
+        "constraints_extracted": True,
     }
 
 
@@ -1148,17 +1262,38 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
                 constraints.get("must_use_ingredients"),
             )
 
-    # Same stored-preference fallback as extract_recipe_constraints, for the
-    # (defensive) case this path is reached with no dietary signal in the
-    # rehydrated session constraints either (#394).
-    if not constraints.get("dietary"):
-        stored_dietary = await get_stored_dietary_preferences(state.get("user_id") or "")
-        if stored_dietary:
-            constraints = {**constraints, "dietary": stored_dietary}
+    # The stored diet, read once: it drives the diet below and the card's
+    # `diets_set_aside` (#544).
+    stored_dietary = await get_stored_dietary_preferences(state.get("user_id") or "")
+
+    if not state.get("constraints_extracted"):
+        # A brainstorm pick (or the defensive case): extract did not run this
+        # turn, so re-check the diet ourselves rather than blindly re-applying
+        # the stored one (#544). The picked name is the only text checked; `{}`
+        # is passed for the constraints so a stored must_use of "chicken" from
+        # the brainstorm turn doesn't count as this pick naming chicken. A diet
+        # set aside for a "Chicken Tikka" pick stays set aside, and one set
+        # aside by the brainstorm reasserts once the pick stops contradicting
+        # it (the #394 design).
+        rehydrated_dietary = list(constraints.get("dietary") or [])
+        dietary = _combine_dietary_preferences(
+            stored_dietary, rehydrated_dietary, {}, recipe_name
+        )
+        if dietary != rehydrated_dietary:
             logger.info(
-                "research_recipe: applied stored profile dietary preferences as default: %s",
+                "research_recipe: combined stored dietary preferences for the pick: "
+                "stored=%s rehydrated=%s -> %s",
                 stored_dietary,
+                rehydrated_dietary,
+                dietary,
             )
+        if dietary:
+            constraints = {**constraints, "dietary": dietary}
+        # else: nothing to apply; leave `dietary` exactly as rehydrated.
+    # else: the direct path -- extract already combined the stored diet with
+    # this turn's message, so leave `dietary` alone.
+
+    dietary_set_aside = _diets_set_aside(stored_dietary, constraints.get("dietary") or [])
 
     cuisine_tag = constraints.get("cuisine")
     search_result = await search_recipe(recipe_name, cuisine_tag=cuisine_tag)
@@ -1166,6 +1301,7 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
     return {
         **state,
         "recipe_constraints": constraints,
+        "dietary_set_aside": dietary_set_aside,
         "web_search_result": search_result.model_dump() if search_result else None,
     }
 
@@ -1328,6 +1464,7 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
         dietary_tags=llm_result.dietary_tags,
         difficulty=llm_result.difficulty,
         tips=llm_result.tips,
+        diets_set_aside=list(state.get("dietary_set_aside") or []),
     )
     logger.info(
         "Recipe card generated",
@@ -1474,6 +1611,16 @@ async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
     except Exception as e:
         logger.warning("Could not fetch pantry for recipe refinement: %s", e)
 
+    # Keep the diet through the tweak (#544). This never writes back to
+    # `state["recipe_constraints"]`: a diet set aside for one reply must not be
+    # persisted into the session by update_session_node.
+    refine_constraints, set_aside_now = await refine_dietary_constraints(
+        state.get("user_id") or "",
+        input_text,
+        _prior_constraints_from_state(state),
+        previous_recipe,
+    )
+
     ai_manager = get_ai_manager()
     try:
         result = await _generate_recipe_followup(
@@ -1481,6 +1628,7 @@ async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
             pantry_items=pantry_items,
             ai_manager=ai_manager,
             previous_recipe=previous_recipe,
+            constraints=refine_constraints,
         )
     except NoProviderAvailableError as e:
         logger.error("Recipe refinement failed: %s", e)
@@ -1513,7 +1661,15 @@ async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
 
     # Preserve the pinned recipe's id so the card replaces in place instead
     # of rendering as a new, distinct card (identity requirement, #416 AC1).
-    refined_recipe = result.recipe.model_copy(update={"id": previous_recipe.id})
+    # The set-aside decision carries across every later tweak (#544).
+    refined_recipe = result.recipe.model_copy(
+        update={
+            "id": previous_recipe.id,
+            "diets_set_aside": _dedupe_labels(
+                [*previous_recipe.diets_set_aside, *set_aside_now]
+            ),
+        }
+    )
 
     availability = [
         IngredientAvailability(

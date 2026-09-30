@@ -91,3 +91,17 @@ async def test_refine_recipe_node_quota_failure_names_budget():
     message = result["assistant_message"]
     assert "Sorry, I couldn't refine" not in message
     assert "budget" in message.lower() or "quota" in message.lower()
+
+
+@pytest.fixture(autouse=True)
+def _no_stored_dietary_preferences():
+    """research_recipe/refine now read the stored diet on every call (#544).
+
+    Patch the single read seam so this suite stays hermetic (no repository
+    lookup) and its assertions are about what it was written for.
+    """
+    with patch(
+        "bubbly_chef.workflows.recipe.nodes.get_stored_dietary_preferences",
+        AsyncMock(return_value=[]),
+    ):
+        yield
