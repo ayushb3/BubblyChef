@@ -3,7 +3,7 @@
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ApplyRequest(BaseModel):
@@ -17,6 +17,28 @@ class ApplyRequest(BaseModel):
     user_modifications: dict[str, Any] | None = Field(
         default=None, description="Track what the user changed from original"
     )
+    conversation_id: str | None = Field(
+        default=None,
+        description=(
+            "Issue #444: the conversation whose persisted turns this apply resolves. "
+            "Required when turn_request_ids is non-empty."
+        ),
+    )
+    turn_request_ids: list[UUID] = Field(
+        default_factory=list,
+        max_length=200,
+        description=(
+            "Issue #444: request ids of every chat turn the applied card spans, oldest "
+            "first. Empty (scan confirm, older clients) means no history is read or "
+            "written. 200 matches the history route's own read cap."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _turn_ids_need_a_conversation(self) -> "ApplyRequest":
+        if self.turn_request_ids and not self.conversation_id:
+            raise ValueError("turn_request_ids requires conversation_id")
+        return self
 
     model_config = ConfigDict(json_schema_extra={
         "example": {
@@ -47,6 +69,21 @@ class ApplyResponse(BaseModel):
     affected_item_ids: list[UUID] = Field(
         default_factory=list, description="IDs of created/updated items"
     )
+    failed_names: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Issue #444: proposal_action_key of each SENT action that failed, from the "
+            "repository's failure indices (no error-string parsing needed)"
+        ),
+    )
+    already_applied_names: list[str] = Field(
+        default_factory=list,
+        description="Issue #444: keys the server-side guard dropped as already applied",
+    )
+    recorded_turn_request_ids: list[UUID] = Field(
+        default_factory=list,
+        description="Issue #444: turns whose proposal_review was written by this apply",
+    )
 
     model_config = ConfigDict(json_schema_extra={
         "example": {
@@ -61,6 +98,21 @@ class ApplyResponse(BaseModel):
             ],
         }
     })
+
+
+class RejectRequest(BaseModel):
+    """Request body to record that a pantry proposal card was dismissed (#444)."""
+
+    conversation_id: str = Field(description="Conversation the turns belong to")
+    turn_request_ids: list[UUID] = Field(
+        min_length=1, max_length=200, description="Every chat turn the card spans, oldest first"
+    )
+
+
+class RejectResponse(BaseModel):
+    """Response after recording a rejection."""
+
+    recorded_turn_request_ids: list[UUID] = Field(default_factory=list)
 
 
 # =============================================================================
