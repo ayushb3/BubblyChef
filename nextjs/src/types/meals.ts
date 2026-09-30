@@ -7,7 +7,15 @@
  */
 
 import type { Recipe } from '@/components/recipes/RecipePage'
-import type { Step } from '@/types/recipes'
+import type {
+  CompoundSuggestion,
+  DeductionItem,
+  ExpiredMatchedItem,
+  IngredientMatch,
+  IngredientMatchStatus,
+  IngredientMatchType,
+  Step,
+} from '@/types/recipes'
 
 export type MealDishRole = 'main' | 'side'
 
@@ -159,4 +167,103 @@ export interface UpdateMealRequest {
   replace_dish?: ReplaceDishOp
   add_side?: AddSideOp
   remove_side?: RemoveSideOp
+}
+
+/**
+ * One ingredient object on a meal cook request (issue #654). RecipeIngredient's
+ * fields except `preparation` (the AI service ignores it), plus `notes`, which an
+ * amendment's objects carry. A blank `name` is dropped server-side.
+ */
+export interface MealCookIngredient {
+  name: string
+  quantity?: number | null
+  unit?: string | null
+  optional?: boolean
+  notes?: string | null
+}
+
+export interface MealCookDishRequest {
+  recipe_id: string
+  /** Objects at meal scale (used verbatim); strings at recipe scale (scaled by the server with `string_scale`). */
+  ingredients: (string | MealCookIngredient)[] | null
+  /** meal servings / the recipe's effective servings. Applied to string elements only. */
+  string_scale: number
+}
+
+export interface MealCookRequest {
+  meal_id: string
+  servings: number
+  dishes: MealCookDishRequest[]
+}
+
+/** One dish's contribution to a merged line. */
+export interface MealCookSource {
+  recipe_id: string
+  dish_title: string
+  ingredient_name: string
+  ingredient_qty: number | null
+  ingredient_unit: string | null
+  required_base_qty: number | null
+  status: IngredientMatchStatus
+  match_type: IngredientMatchType
+  substitution_note: string | null
+}
+
+export interface MealIngredientMatch extends IngredientMatch {
+  sources: MealCookSource[]
+}
+
+export interface MealCookProposalDish {
+  recipe_id: string
+  title: string
+  role: MealDishRole
+  position: number
+  ingredients_source: 'supplied' | 'recipe'
+}
+
+export interface MealCookProposal {
+  proposal_type: 'meal_cook'
+  meal_id: string
+  meal_title: string
+  servings: number
+  dishes: MealCookProposalDish[]
+  matches: MealIngredientMatch[]
+  missing: string[]
+  /** Key: the exact string in `missing`. */
+  missing_sources: Record<string, string[]>
+  missing_notes: Record<string, string>
+  unit_conflicts: Array<{ ingredient: string; recipe_unit: string; pantry_unit: string; recipe_id: string }>
+  compound_suggestions: CompoundSuggestion[]
+  expired_items: ExpiredMatchedItem[]
+}
+
+export interface MealCookConfirmRequest {
+  meal_id: string
+  /** MealCookSession.cook_id. */
+  cook_ref: string
+  /** The dishes actually cooked (cookedDishIds). */
+  recipe_ids: string[]
+  deductions: DeductionItem[]
+  /** The client's local date (localDateString()), for the proxy's rescue judgement. The AI service ignores it. */
+  date: string
+}
+
+export interface MealCookConfirmResponse {
+  success: true
+  already_confirmed: boolean
+  deductions_applied: number
+  deductions_requested: number
+  deductions_skipped: string[]
+  recipes_marked_cooked: string[]
+  meal_times_cooked: number
+  /** YYYY-MM-DD: the UTC date of the claim's last_cooked_at. The award key date. */
+  cooked_on: string
+}
+
+export type MealCookErrorKind = 'dish_mismatch' | 'confirm_in_progress' | 'confirm_incomplete'
+
+/** What lib/api/meals.ts throws for a meal cook call (the class itself is in lib/api/meals.ts, §4). */
+export interface MealCookError {
+  message: string
+  kind?: MealCookErrorKind
 }
