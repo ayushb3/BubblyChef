@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
+import { sanitizeTermList } from '@/lib/profile-lists'
 
 export async function GET(
   _request: Request,
@@ -39,6 +40,15 @@ export async function PUT(
   if (body.display_name !== undefined) updates.display_name = body.display_name
   if (body.avatar_url !== undefined) updates.avatar_url = body.avatar_url
   if (body.dietary_preferences !== undefined) updates.dietary_preferences = body.dietary_preferences
+  // Allergies and dislikes (#500): free-text ingredient lists, validated rather than
+  // trusted. An allergy must never be silently truncated or mangled, so a bad value
+  // is a 400, not a best-effort save.
+  for (const field of ['allergies', 'disliked_ingredients'] as const) {
+    if (body[field] === undefined) continue
+    const cleaned = sanitizeTermList(body[field])
+    if (cleaned === null) return errorResponse(`Invalid ${field}`, 400)
+    updates[field] = cleaned
+  }
 
   const { data, error } = await supabase
     .from('user_profiles')
