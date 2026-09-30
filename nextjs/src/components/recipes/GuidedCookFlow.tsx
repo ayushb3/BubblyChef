@@ -18,21 +18,25 @@
  *    the old non-functional placeholder.
  *
  * Wiring to Spec 0 session state (issue #410):
- *  The Ask-Bubbles overlay currently sends a pre-canned context message over the
- *  real chat stream but does NOT pin the recipe to a persisted conversation.
- *  Full session-pinned wiring is stubbed with TODO(#410) comments below.
+ *  The Ask-Bubbles overlay sends a pre-canned context message over the real
+ *  chat stream but does NOT pin the recipe to a persisted conversation here —
+ *  the backend does read a structured `ChatRequest.context` field
+ *  (`models/requests.py`) and the streaming route passes it through; this
+ *  single-recipe cook flow just chooses to send none, unlike the meal cook
+ *  page's pinned overlay (issue #654 PR B). Full session-pinned wiring for
+ *  *this* flow is stubbed with TODO(#410) comments below.
  */
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import { ingredientLabel } from '@/lib/recipe-helpers'
 import { useMotionConfig } from '@/lib/motion'
-import { streamChatMessage } from '@/lib/api/chat'
 import { ensureSteps } from '@/lib/api/recipes'
 import { saveCookProgress } from '@/lib/cook-session'
 import StepTimerChips, { StructuredStepTimerChip } from '@/components/timers/StepTimerChip'
+import AskBubblesOverlay from '@/components/cook/AskBubblesOverlay'
 import type { Recipe } from './RecipePage'
 import type { Step } from '@/types/recipes'
 
@@ -199,227 +203,6 @@ function ProgressDots({ steps, idx }: { steps: CookStep[]; idx: number }) {
           </span>
         )
       })}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Ask-Bubbles overlay
-// ---------------------------------------------------------------------------
-
-interface AskBubblesOverlayProps {
-  stepN: number
-  stepText: string
-  recipeTitle: string
-  onClose: () => void
-}
-
-interface OverlayMessage {
-  role: 'user' | 'assistant'
-  text: string
-}
-
-function AskBubblesOverlay({ stepN, stepText: stepBodyText, recipeTitle, onClose }: AskBubblesOverlayProps) {
-  const [input, setInput] = useState('')
-  const [messages, setMessages] = useState<OverlayMessage[]>([])
-  const [streaming, setStreaming] = useState(false)
-  const [streamingText, setStreamingText] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const abortRef = useRef<AbortController | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  // Focus input on mount
-  useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
-
-  // Cleanup abort on unmount
-  useEffect(() => {
-    return () => {
-      abortRef.current?.abort()
-    }
-  }, [])
-
-  const handleSend = useCallback(async () => {
-    const text = input.trim()
-    if (!text || streaming) return
-
-    setMessages((prev) => [...prev, { role: 'user', text }])
-    setInput('')
-    setStreaming(true)
-    setStreamingText('')
-    setError(null)
-
-    abortRef.current = new AbortController()
-
-    let accumulated = ''
-
-    // Fold the step context into the message body. The backend ChatRequest
-    // only accepts mode ∈ chat|recipe|learn|text|voice and does not read a
-    // structured `context` field, so a bespoke `mode`/`context` payload would
-    // 422 (or be silently ignored). We default to the "chat" mode and prepend
-    // the step framing as plain text so Bubbles answers about this step.
-    // TODO(#410): when Spec 0 session state lands, pass the pinned
-    // conversation_id here so the step question threads into the cooking session.
-    const framedMessage =
-      `While cooking "${recipeTitle}", on step ${stepN} ("${stepBodyText}"), ` +
-      `I have a question: ${text}`
-
-    await streamChatMessage(
-      {
-        message: framedMessage,
-        conversation_id: null, // TODO(#410): use pinned session conversation_id
-        // The cook overlay shows no follow-up chips, so don't pay for them (#498).
-        follow_up_chips: false,
-      },
-      (token) => {
-        accumulated += token
-        setStreamingText(accumulated)
-      },
-      (response) => {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', text: response.assistant_message || accumulated },
-        ])
-        setStreamingText('')
-        setStreaming(false)
-      },
-      (err) => {
-        setError(err.message)
-        setStreaming(false)
-        setStreamingText('')
-      },
-      abortRef.current.signal,
-    )
-  }, [input, streaming, stepN, stepBodyText, recipeTitle])
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      void handleSend()
-    }
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-[9998] flex flex-col justify-end"
-      style={{ background: 'var(--color-backdrop)' }}
-      onClick={onClose}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Ask Bubbles about step ${stepN}`}
-        className="w-full max-w-[480px] mx-auto rounded-t-3xl px-5 pt-3 pb-6 flex flex-col"
-        style={{ background: 'var(--color-surface)', maxHeight: '75vh' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Drag handle */}
-        <div className="flex items-center mb-3">
-          <span className="w-10 h-1.5 rounded-full mx-auto" style={{ background: 'var(--color-border)' }} />
-        </div>
-
-        <p
-          className="text-xs font-bold uppercase tracking-wide mb-3"
-          style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
-        >
-          Asking about step {stepN}
-        </p>
-
-        {/* Message thread */}
-        <div className="flex-1 overflow-y-auto space-y-2 mb-4 min-h-0">
-          {messages.length === 0 && !streaming && (
-            <p
-              className="text-sm text-center py-4"
-              style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
-            >
-              Ask Bubbles anything about this step!
-            </p>
-          )}
-          {messages.map((m, i) => (
-            <ChatBubble key={i} who={m.role}>
-              {m.text}
-            </ChatBubble>
-          ))}
-          {streaming && streamingText && (
-            <ChatBubble who="assistant">{streamingText}</ChatBubble>
-          )}
-          {streaming && !streamingText && (
-            <ChatBubble who="assistant">
-              <span className="animate-pulse">…</span>
-            </ChatBubble>
-          )}
-          {error && (
-            <p
-              className="text-xs text-center py-2"
-              style={{ color: '#D9534F', fontFamily: 'Nunito, sans-serif' }}
-              role="alert"
-            >
-              {error}
-            </p>
-          )}
-        </div>
-
-        {/* Input row */}
-        <div className="flex gap-2">
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask about this step…"
-            disabled={streaming}
-            className="flex-1 rounded-full px-4 py-2.5 text-sm outline-none disabled:opacity-60"
-            style={{
-              background: 'var(--color-bg)',
-              border: '1px solid var(--color-border)',
-              color: 'var(--color-text)',
-              fontFamily: 'Nunito, sans-serif',
-            }}
-          />
-          <button
-            onClick={() => void handleSend()}
-            disabled={!input.trim() || streaming}
-            aria-label="Send question"
-            className="rounded-full px-4 font-bold text-sm disabled:opacity-50 active:scale-95 transition-transform"
-            style={{
-              background: 'var(--color-primary)',
-              color: 'var(--color-text)',
-              fontFamily: 'Nunito, sans-serif',
-            }}
-          >
-            Send
-          </button>
-        </div>
-
-        <button
-          onClick={onClose}
-          className="mt-3 w-full text-sm font-bold active:opacity-70 transition-opacity"
-          style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
-          aria-label={`Back to step ${stepN}`}
-        >
-          &darr; Back to step {stepN}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function ChatBubble({ who, children }: { who: 'user' | 'assistant'; children: React.ReactNode }) {
-  const isMe = who === 'user'
-  return (
-    <div className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className="rounded-2xl px-3.5 py-2 text-sm max-w-[80%]"
-        style={{
-          background: isMe ? 'var(--color-primary)' : 'var(--color-bg)',
-          border: isMe ? 'none' : '1px solid var(--color-border)',
-          color: 'var(--color-text)',
-          fontFamily: 'Nunito, sans-serif',
-        }}
-      >
-        {children}
-      </div>
     </div>
   )
 }

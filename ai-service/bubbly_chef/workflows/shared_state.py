@@ -30,6 +30,7 @@ from bubbly_chef.models.pantry import (
 from bubbly_chef.models.proposals import (
     HandoffKind,
     HandoffProposal,
+    RecipeAmendmentProposal,
 )
 from bubbly_chef.models.recipe import RecipeCard, RecipeCardProposal, StepMetadata
 
@@ -378,6 +379,38 @@ def create_general_chat_envelope(
     )
 
 
+def create_cooking_help_envelope(
+    assistant_message: str,
+    proposal: RecipeAmendmentProposal,
+    request_id: str | None = None,
+    workflow_id: str | None = None,
+    conversation_id: str | None = None,
+) -> ProposalEnvelope[RecipeAmendmentProposal]:
+    """Create a proposal envelope for a detected mid-cook amendment.
+
+    Used by the streaming path (issue #654 PR B) when `_detect_amendment` finds
+    a real change to the pinned recipe's ingredients. Mirrors the confidence
+    and review fields the graph nodes already use for the same proposal
+    (`cooking_help_response`, `workflows/chat/nodes.py`).
+    """
+
+    return ProposalEnvelope[RecipeAmendmentProposal](
+        request_id=UUID(request_id) if request_id else uuid4(),
+        workflow_id=UUID(workflow_id) if workflow_id else uuid4(),
+        conversation_id=UUID(conversation_id) if conversation_id else None,
+        schema_version=settings.schema_version,
+        intent=Intent.COOKING_HELP,
+        proposal=proposal,
+        assistant_message=assistant_message,
+        confidence=ConfidenceScore(overall=1.0),
+        warnings=[],
+        errors=[],
+        requires_review=True,
+        next_action=NextAction.REVIEW_PROPOSAL,
+        workflow_status=WorkflowStatus.AWAITING_REVIEW,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helper Functions
 # ---------------------------------------------------------------------------
@@ -527,6 +560,7 @@ __all__ = [
     "create_meal_proposal_envelope",
     "create_handoff_envelope",
     "create_general_chat_envelope",
+    "create_cooking_help_envelope",
     # Helpers
     "map_category",
     "map_action_type",

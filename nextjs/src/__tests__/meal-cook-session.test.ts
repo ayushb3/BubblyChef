@@ -18,6 +18,8 @@ import {
   isStaleMealCookSession,
   ensureCookId,
   readDishAmendment,
+  withDishAmendment,
+  type DishAmendment,
   type MealCookSession,
 } from '@/lib/meal-cook-session'
 
@@ -453,4 +455,115 @@ describe('meal-cook-session — readDishAmendment (issue #654 §3)', () => {
       expect(readDishAmendment(resumed!, 'r-main')).toBeNull()
     })
   }
+})
+
+describe('meal-cook-session — withDishAmendment (issue #654 PR B)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  const amendment: DishAmendment = {
+    ingredients: [{ name: 'Greek yoghurt', quantity: 150, unit: 'ml' }],
+    servings: 2,
+    change_summary: 'Swapped the cream for yoghurt',
+    applied_at_ms: 1000,
+  }
+
+  it('sets the named dish slot, leaving cook_id and steps untouched', () => {
+    const base: MealCookSession = {
+      meal_id: 'meal-1',
+      started_at_ms: 1000,
+      dish_ids: ['r-main'],
+      dish_step_signatures: ['1:boil'],
+      steps: { 'r-main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 } },
+      cook_id: 'cook-123',
+      ingredient_amendments: {},
+    }
+
+    const updated = withDishAmendment(base, 'r-main', amendment)
+
+    expect(readDishAmendment(updated, 'r-main')).toEqual(amendment)
+    expect(updated.cook_id).toBe('cook-123')
+    expect(updated.steps).toBe(base.steps)
+  })
+
+  it('is pure — the input session is unchanged', () => {
+    const base: MealCookSession = {
+      meal_id: 'meal-1',
+      started_at_ms: 1000,
+      dish_ids: ['r-main'],
+      dish_step_signatures: ['1:boil'],
+      steps: {},
+      ingredient_amendments: {},
+    }
+    withDishAmendment(base, 'r-main', amendment)
+    expect(base.ingredient_amendments).toEqual({})
+  })
+
+  it('a second amendment for the same dish replaces the first', () => {
+    const base: MealCookSession = {
+      meal_id: 'meal-1',
+      started_at_ms: 1000,
+      dish_ids: ['r-main'],
+      dish_step_signatures: ['1:boil'],
+      steps: {},
+      ingredient_amendments: {},
+    }
+    const second: DishAmendment = {
+      ingredients: [{ name: 'Coconut cream', quantity: 150, unit: 'ml' }],
+      servings: 2,
+      change_summary: 'Swapped in coconut cream instead',
+      applied_at_ms: 2000,
+    }
+
+    const afterFirst = withDishAmendment(base, 'r-main', amendment)
+    const afterSecond = withDishAmendment(afterFirst, 'r-main', second)
+
+    expect(readDishAmendment(afterSecond, 'r-main')).toEqual(second)
+  })
+
+  it("another dish's amendment is kept", () => {
+    const base: MealCookSession = {
+      meal_id: 'meal-1',
+      started_at_ms: 1000,
+      dish_ids: ['r-main', 'r-side'],
+      dish_step_signatures: ['1:boil', '1:chop'],
+      steps: {},
+      ingredient_amendments: {},
+    }
+    const sideAmendment: DishAmendment = {
+      ingredients: [{ name: 'Basil', quantity: 3, unit: 'leaves' }],
+      servings: 2,
+      change_summary: null,
+      applied_at_ms: 500,
+    }
+
+    const afterMain = withDishAmendment(base, 'r-main', amendment)
+    const afterBoth = withDishAmendment(afterMain, 'r-side', sideAmendment)
+
+    expect(readDishAmendment(afterBoth, 'r-main')).toEqual(amendment)
+    expect(readDishAmendment(afterBoth, 'r-side')).toEqual(sideAmendment)
+  })
+
+  it('survives a reload via saveMealCookProgress → getActiveMealCookSession → readDishAmendment', () => {
+    const started = startMealCookSession('meal-1', ['r-main'], 1000, ['1:boil'])
+    const updated = withDishAmendment(started, 'r-main', amendment)
+    saveMealCookProgress(updated)
+
+    // Simulates a fresh module read after a full page reload.
+    const resumed = getActiveMealCookSession('meal-1')!
+    expect(readDishAmendment(resumed, 'r-main')).toEqual(amendment)
+  })
+
+  it('an ended meal ignores an amendment save (issue #654 review, S3)', () => {
+    const started = startMealCookSession('meal-1', ['r-main'], 1000, ['1:boil'])
+    endMealCookSession('meal-1')
+
+    const updated = withDishAmendment(started, 'r-main', amendment)
+    saveMealCookProgress(updated)
+
+    expect(getActiveMealCookSession('meal-1')).toBeNull()
+    const resumed = getActiveMealCookSession('meal-1')
+    expect(resumed ? readDishAmendment(resumed, 'r-main') : null).toBeNull()
+  })
 })

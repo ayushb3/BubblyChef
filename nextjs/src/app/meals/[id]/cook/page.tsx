@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import MealNowCard from '@/components/meal/MealNowCard'
 import MealNextUp from '@/components/meal/MealNextUp'
@@ -11,11 +12,17 @@ import MealCookFinished from '@/components/meal/MealCookFinished'
 import MealCookSheet, { type MealCookSheetState } from '@/components/meal/MealCookSheet'
 import MealTimelineSheet from '@/components/meal/MealTimelineSheet'
 import MealTimelineTable from '@/components/meal/MealTimelineTable'
+import AskBubblesOverlay, { type AskBubblesAmendment } from '@/components/cook/AskBubblesOverlay'
 import { fetchMeal, requestMealCookProposal, confirmMealCook, MealCookError } from '@/lib/api/meals'
 import { dishStepSignaturesForMeal, schedulerDishesForMeal } from '@/lib/meal-dishes'
 import { formatClockTime } from '@/lib/meal-anchor'
 import { localDateString } from '@/lib/date'
-import { cookedDishIds, buildMealCookRequest } from '@/lib/meal-cook-deduction'
+import {
+  cookedDishIds,
+  buildMealCookRequest,
+  recipeServingsFor,
+  pinnedIngredientsForDish,
+} from '@/lib/meal-cook-deduction'
 import type { Column } from '@/lib/meal-scheduler'
 import {
   deriveStream,
@@ -38,11 +45,20 @@ import {
   endMealCookSession,
   isStaleMealCookSession,
   ensureCookId,
+  withDishAmendment,
   type MealCookSession,
 } from '@/lib/meal-cook-session'
 import { useCookingTimers } from '@/lib/useCookingTimers'
-import type { MealCookErrorKind, MealCookProposal } from '@/types/meals'
+import type { MealCookErrorKind, MealCookProposal, MealDishFull } from '@/types/meals'
 import type { DeductionItem } from '@/types/recipes'
+
+/** The dish the Ask Bubbles overlay is pinned to (issue #654 PR B, §3). */
+interface AskPin {
+  dishId: string
+  dishTitle: string
+  stepN: number
+  stepText: string
+}
 
 /**
  * Issue #653 — the full-screen cook-along (contract §5). Schedules the same
@@ -83,6 +99,11 @@ export default function MealCookPage() {
   const [redirecting, setRedirecting] = useState(false)
   const [nowMinutes, setNowMinutes] = useState(0)
   const [timelineOpen, setTimelineOpen] = useState(false)
+  // Issue #654 PR B (§3) — the dish (and step) the Ask Bubbles overlay is
+  // pinned to. Captured once, at the tap that opens it, from the Now card's
+  // step at that instant: the Now card advancing while the overlay is open
+  // (a timer completing) must not move the pin onto a different dish.
+  const [askPin, setAskPin] = useState<AskPin | null>(null)
   // Guards the restore effect against React 18 StrictMode's synthetic
   // double-invoke in dev — same discipline as the meal screen's
   // `attemptedStepsRef` (issue #652): a ref persists across that remount,
@@ -131,6 +152,13 @@ export default function MealCookPage() {
   const columns = useMemo(
     () => schedulerDishes.map((d) => ({ column: d.column, title: d.title })),
     [schedulerDishes],
+  )
+  // Issue #654 PR B — looks up a dish by recipe id (= dish id) for the Ask
+  // Bubbles pin and its applied amendment; mirrors `buildMealCookRequest`'s
+  // own local map.
+  const dishByRecipeId = useMemo(
+    () => new Map<string, MealDishFull>(meal ? meal.dishes.map((d) => [d.recipe.id, d]) : []),
+    [meal],
   )
 
   // Restore (once — `restoredRef`) or redirect away from the session once the
@@ -396,6 +424,50 @@ export default function MealCookPage() {
     router.push(`/meals/${id}`)
   }
 
+  // Issue #654 PR B (§3) — opens the overlay pinned to the Now card's current
+  // dish/step. Captured once at the tap; the overlay's own `pinned` prop is
+  // re-derived from `askPin` on every render, not re-pinned as the Now card
+  // advances.
+  function handleAskBubbles() {
+    if (!stream) return
+    if (stream.now.kind !== 'active' && stream.now.kind !== 'upcoming') return
+    const step = stream.now.step
+    setAskPin({
+      dishId: step.dish_id,
+      dishTitle: step.dish_title,
+      stepN: step.step_index + 1,
+      stepText: step.text.trim() || step.label,
+    })
+  }
+
+  // Issue #654 PR B (§3) — applies an amendment from the overlay into the
+  // session's per-dish slot. Ignores anything that doesn't match the pin
+  // (a stale card from a since-superseded pin) or names a dish no longer in
+  // the meal. No request beyond the chat stream is made here — the saved
+  // recipe is never written.
+  //
+  // Review S1 (defence in depth) — a blank-named line is dropped before it
+  // ever reaches `withDishAmendment`: `readDishAmendment` rejects the WHOLE
+  // amendment if any ingredient has a blank name, so letting one through
+  // here would silently discard a real change the model made alongside it.
+  // If nothing usable is left, nothing is applied at all.
+  function handleApplyAmendment(a: AskBubblesAmendment) {
+    if (!askPin || !session || !meal) return
+    if (a.recipe_id !== askPin.dishId) return
+    const dish = dishByRecipeId.get(a.recipe_id)
+    if (!dish) return
+    const ingredients = a.ingredients.filter((ing) => ing.name.trim() !== '')
+    if (ingredients.length === 0) return
+    updateSession(
+      withDishAmendment(session, a.recipe_id, {
+        ingredients,
+        servings: recipeServingsFor(dish, meal.servings),
+        change_summary: a.change_summary,
+        applied_at_ms: Date.now(),
+      }),
+    )
+  }
+
   // Issue #654 §5 — "Skip pantry update" (canDeduct) and "Back to meal"
   // (!canDeduct) on the finished screen both mean the same thing: no write,
   // no bubbles, nothing marked cooked. Dismisses any still-running dock
@@ -624,6 +696,12 @@ export default function MealCookPage() {
     )
   }
 
+  // Issue #654 PR B — re-derived every render so a stacked amendment (or a
+  // live servings change) is reflected the next time the overlay reads it;
+  // `undefined` when the pinned dish is no longer in the meal, which also
+  // guards the overlay's mount condition below.
+  const askPinDish = askPin ? dishByRecipeId.get(askPin.dishId) : undefined
+
   if (isError || !meal || !session || !stream) {
     return (
       <main
@@ -692,6 +770,7 @@ export default function MealCookPage() {
               onExtend={handleExtend}
               onSkip={handleSkip}
               onStartEarly={handleStartEarly}
+              onAskBubbles={handleAskBubbles}
             />
             {/* A waiting card already lists what's running, and has nothing
                 next to preview: rendering either here would repeat it (PR #661 review). */}
@@ -726,6 +805,34 @@ export default function MealCookPage() {
         onBackToMeal={handleSheetBackToMeal}
         onClose={handleSheetClose}
       />
+
+      {/* Issue #654 PR B (§3) — the per-dish Ask Bubbles overlay, mounted
+          only while pinned to a dish still in the meal and the cook isn't
+          finished. */}
+      <AnimatePresence>
+        {askPin && askPinDish && stream.now.kind !== 'finished' && (
+          <motion.div
+            key="ask-bubbles-meal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+          >
+            <AskBubblesOverlay
+              stepN={askPin.stepN}
+              stepText={askPin.stepText}
+              recipeTitle={askPin.dishTitle}
+              onClose={() => setAskPin(null)}
+              pinned={{
+                recipe_id: askPin.dishId,
+                title: askPin.dishTitle,
+                ingredients: pinnedIngredientsForDish(askPinDish, meal.servings, session),
+              }}
+              onApplyAmendment={handleApplyAmendment}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   )
 }

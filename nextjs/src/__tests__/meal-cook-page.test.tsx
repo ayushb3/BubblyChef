@@ -12,11 +12,12 @@
  * would read/write.
  */
 import React from 'react'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Meal, MealCookProposal } from '@/types/meals'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import type { Step } from '@/types/recipes'
+import type { ChatResponse } from '@/types/chat'
 import {
   startMealCookSession,
   saveMealCookProgress,
@@ -31,6 +32,13 @@ import { TIMER_COMPLETED_EVENT, type CookingTimer } from '@/lib/useCookingTimers
 // The real class, re-exported from the mock factory below — `err instanceof
 // MealCookError` in the page needs the real constructor.
 import { MealCookError } from '@/lib/api/meals'
+
+// Issue #654 PR B — the Ask Bubbles overlay (rendered for real, mounted by
+// the page) calls `streamChatMessage`; mocked exactly as
+// `ask-bubbles-overlay.test.tsx` mocks it for the component in isolation.
+jest.mock('@/lib/api/chat', () => ({ streamChatMessage: jest.fn() }))
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const streamChatMessageMock = require('@/lib/api/chat').streamChatMessage as jest.Mock
 
 const pushMock = jest.fn()
 const replaceMock = jest.fn()
@@ -940,5 +948,323 @@ describe('MealCookPage — waiting card (PR #661 review)', () => {
     expect(screen.getAllByTestId('meal-running-strip')).toHaveLength(1)
     expect(screen.queryByTestId('meal-next-up')).not.toBeInTheDocument()
     expect(screen.queryByText("That's the last step")).not.toBeInTheDocument()
+  })
+})
+
+describe('MealCookPage — Ask Bubbles (issue #654 PR B, §3/§6)', () => {
+  const PASTA_WITH_INGREDIENTS: Recipe = {
+    ...MAIN_RECIPE,
+    ingredients: [{ name: 'Cream', quantity: 150, unit: 'ml' }],
+  }
+
+  function baseChatResponse(overrides: Partial<ChatResponse> = {}): ChatResponse {
+    return {
+      request_id: 'req-1',
+      workflow_id: 'wf-1',
+      conversation_id: 'conv-1',
+      intent: 'cooking_help',
+      assistant_message: 'Sure!',
+      proposal: null,
+      confidence: { overall: 0.9 },
+      requires_review: false,
+      next_action: 'none',
+      ...overrides,
+    }
+  }
+
+  const AMENDMENT_PROPOSAL = {
+    proposal_type: 'recipe_amendment' as const,
+    is_amendment: true,
+    amended_ingredients: [
+      { name: 'Greek yoghurt', quantity: 150, unit: 'ml', optional: false, notes: null },
+    ],
+    change_summary: 'Swapped the cream for yoghurt',
+    recipe_id: 'r-main',
+    recipe_title: 'Pasta dinner',
+  }
+
+  /** Queues the next `streamChatMessage` call to resolve immediately via `onDone`. */
+  function queueChatResponse(response: ChatResponse) {
+    streamChatMessageMock.mockImplementationOnce(
+      async (_req: unknown, _onToken: unknown, onDone: (r: ChatResponse) => void) => {
+        onDone(response)
+      },
+    )
+  }
+
+  function sendOverlayMessage(text: string) {
+    const input = screen.getByPlaceholderText(/ask about this step/i)
+    fireEvent.change(input, { target: { value: text } })
+    fireEvent.click(screen.getByRole('button', { name: /send question/i }))
+  }
+
+  it('the pill on an active card opens the overlay pinned to that card\'s dish', async () => {
+    const meal = baseMeal({ dishes: [{ role: 'main', position: 0, recipe: PASTA_WITH_INGREDIENTS }] })
+    fetchMeal.mockResolvedValue(meal)
+    seedSession(Date.now())
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Boil pasta')).toBeInTheDocument())
+
+    act(() => {
+      screen.getByTestId('meal-now-card-ask-bubbles').click()
+    })
+
+    expect(screen.getByText('Asking about Pasta dinner')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Ask Bubbles about step 1' })).toBeInTheDocument()
+  })
+
+  it('the first turn sends context.cooking_recipe at recipe scale, and later turns reuse the same conversation_id', async () => {
+    const meal = baseMeal({ dishes: [{ role: 'main', position: 0, recipe: PASTA_WITH_INGREDIENTS }] })
+    fetchMeal.mockResolvedValue(meal)
+    seedSession(Date.now())
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Boil pasta')).toBeInTheDocument())
+    act(() => {
+      screen.getByTestId('meal-now-card-ask-bubbles').click()
+    })
+
+    queueChatResponse(baseChatResponse())
+    act(() => {
+      sendOverlayMessage('can I use yoghurt instead of cream?')
+    })
+    expect(streamChatMessageMock).toHaveBeenCalledTimes(1)
+    const firstRequest = streamChatMessageMock.mock.calls[0][0]
+    expect(firstRequest.context).toEqual({
+      cooking_recipe: {
+        id: 'r-main',
+        title: 'Pasta dinner',
+        ingredients: [{ name: 'Cream', quantity: 150, unit: 'ml' }],
+      },
+    })
+    const conversationId = firstRequest.conversation_id
+    expect(typeof conversationId).toBe('string')
+
+    queueChatResponse(baseChatResponse())
+    act(() => {
+      sendOverlayMessage('and something else?')
+    })
+    expect(streamChatMessageMock).toHaveBeenCalledTimes(2)
+    expect(streamChatMessageMock.mock.calls[1][0].conversation_id).toBe(conversationId)
+  })
+
+  it('applying an amendment then asking again sends the amended list', async () => {
+    const meal = baseMeal({ dishes: [{ role: 'main', position: 0, recipe: PASTA_WITH_INGREDIENTS }] })
+    fetchMeal.mockResolvedValue(meal)
+    seedSession(Date.now())
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Boil pasta')).toBeInTheDocument())
+    act(() => {
+      screen.getByTestId('meal-now-card-ask-bubbles').click()
+    })
+
+    queueChatResponse(
+      baseChatResponse({ proposal: AMENDMENT_PROPOSAL, requires_review: true, next_action: 'review_proposal' }),
+    )
+    act(() => {
+      sendOverlayMessage('can I use yoghurt instead of cream?')
+    })
+    expect(screen.getByTestId('ask-bubbles-amendment-card')).toBeInTheDocument()
+
+    act(() => {
+      screen.getByTestId('ask-bubbles-amendment-use').click()
+    })
+
+    queueChatResponse(baseChatResponse())
+    act(() => {
+      sendOverlayMessage('anything else to change?')
+    })
+
+    const secondRequest = streamChatMessageMock.mock.calls[1][0]
+    // pinnedIngredientsForDish passes an amendment's objects through as-is
+    // (only `quantity` may be rescaled) — `notes` survives here, unlike
+    // cookedIngredientsForDish's sanitize step for the actual cook request.
+    expect(secondRequest.context.cooking_recipe.ingredients).toEqual([
+      { name: 'Greek yoghurt', quantity: 150, unit: 'ml', optional: false, notes: null },
+    ])
+  })
+
+  it('an applied amendment survives a remount and reaches the next requestMealCookProposal call, scaled to the meal', async () => {
+    const meal = baseMeal({ servings: 4, dishes: [{ role: 'main', position: 0, recipe: PASTA_WITH_INGREDIENTS }] })
+    fetchMeal.mockResolvedValue(meal)
+    requestMealCookProposal.mockResolvedValue(baseProposal())
+    seedSession(Date.now())
+    const { unmount } = renderPage()
+    await waitFor(() => expect(screen.getByText('Boil pasta')).toBeInTheDocument())
+
+    act(() => {
+      screen.getByTestId('meal-now-card-ask-bubbles').click()
+    })
+    queueChatResponse(
+      baseChatResponse({ proposal: AMENDMENT_PROPOSAL, requires_review: true, next_action: 'review_proposal' }),
+    )
+    act(() => {
+      sendOverlayMessage('can I use yoghurt instead of cream?')
+    })
+    act(() => {
+      screen.getByTestId('ask-bubbles-amendment-use').click()
+    })
+
+    // Stored at the recipe's own effective servings (2), not the meal's (4).
+    const persisted = getActiveMealCookSession('meal-1')
+    expect(persisted?.ingredient_amendments['r-main']).toMatchObject({ servings: 2 })
+
+    unmount()
+
+    // Simulate finishing the cook (all steps done) without going through the
+    // UI — the amendment applied above, already persisted, is the only thing
+    // under test here.
+    const afterAmendment = getActiveMealCookSession('meal-1')!
+    saveMealCookProgress({
+      ...afterAmendment,
+      steps: {
+        'r-main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0 },
+        'r-main:1': { status: 'done', started_at_minutes: 5, extra_minutes: 0 },
+        'r-main:2': { status: 'done', started_at_minutes: 13, extra_minutes: 0 },
+      },
+    })
+
+    renderPage()
+    await waitFor(() => expect(requestMealCookProposal).toHaveBeenCalledTimes(1))
+    const req = requestMealCookProposal.mock.calls[0][0] as { dishes: Array<{ ingredients: unknown[] }> }
+    // mealServings 4 / amendment.servings 2 = factor 2 → 150 -> 300
+    expect(req.dishes[0].ingredients).toEqual([
+      { name: 'Greek yoghurt', quantity: 300, unit: 'ml', optional: false },
+    ])
+  })
+
+  it('drops a blank-named ingredient line before applying, keeping the rest (issue #654 review, S1)', async () => {
+    // The overlay itself now also filters a blank-named line before it ever
+    // calls `onApplyAmendment` (its own S1 fix) — this is still worth
+    // covering end to end, since the page's own filter in `handleApplyAmendment`
+    // is a defence-in-depth backstop that must produce the same result.
+    // `meal-cook-page-apply-guards.test.tsx` exercises the page's filter in
+    // isolation, bypassing the overlay, for the case the overlay can't cover
+    // (all lines blank — no card is ever rendered to click).
+    const meal = baseMeal({ dishes: [{ role: 'main', position: 0, recipe: PASTA_WITH_INGREDIENTS }] })
+    fetchMeal.mockResolvedValue(meal)
+    seedSession(Date.now())
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Boil pasta')).toBeInTheDocument())
+    act(() => {
+      screen.getByTestId('meal-now-card-ask-bubbles').click()
+    })
+
+    const mixedProposal = {
+      ...AMENDMENT_PROPOSAL,
+      amended_ingredients: [
+        { name: '  ', quantity: 1, unit: 'g', optional: false, notes: null },
+        { name: 'Greek yoghurt', quantity: 150, unit: 'ml', optional: false, notes: null },
+      ],
+    }
+    queueChatResponse(baseChatResponse({ proposal: mixedProposal, requires_review: true, next_action: 'review_proposal' }))
+    act(() => {
+      sendOverlayMessage('can I use yoghurt instead of cream?')
+    })
+    act(() => {
+      screen.getByTestId('ask-bubbles-amendment-use').click()
+    })
+
+    const persisted = getActiveMealCookSession('meal-1')
+    expect(persisted?.ingredient_amendments['r-main']).toMatchObject({
+      ingredients: [{ name: 'Greek yoghurt', quantity: 150, unit: 'ml', optional: false, notes: null }],
+    })
+  })
+
+  it('an amendment for another dish is ignored — no card, no session mutation', async () => {
+    const SIDE_WITH_INGREDIENTS: Recipe = { ...SIDE_RECIPE, ingredients: [{ name: 'Garlic', quantity: 1, unit: 'clove' }] }
+    const meal = mealWithSide()
+    meal.dishes = [
+      { role: 'main', position: 0, recipe: PASTA_WITH_INGREDIENTS },
+      { role: 'side', position: 1, recipe: SIDE_WITH_INGREDIENTS },
+    ]
+    fetchMeal.mockResolvedValue(meal)
+    const signatures = dishStepSignaturesForMeal(meal)
+    startMealCookSession('meal-1', ['r-main', 'r-side'], Date.now(), signatures)
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Boil pasta')).toBeInTheDocument())
+
+    act(() => {
+      screen.getByTestId('meal-now-card-ask-bubbles').click()
+    })
+    expect(screen.getByText('Asking about Pasta dinner')).toBeInTheDocument()
+
+    // The model's reply names the OTHER dish (r-side) — the overlay is
+    // pinned to r-main, so this never becomes an actionable card, and
+    // nothing is ever applied to the session.
+    queueChatResponse(
+      baseChatResponse({
+        proposal: { ...AMENDMENT_PROPOSAL, recipe_id: 'r-side', recipe_title: 'Garlic bread' },
+        requires_review: true,
+        next_action: 'review_proposal',
+      }),
+    )
+    act(() => {
+      sendOverlayMessage('what about the bread?')
+    })
+
+    expect(screen.queryByTestId('ask-bubbles-amendment-card')).not.toBeInTheDocument()
+    const persisted = getActiveMealCookSession('meal-1')
+    expect(persisted?.ingredient_amendments).toEqual({})
+  })
+
+  it("the Now card advancing while the overlay is open doesn't change the pin", async () => {
+    const meal = baseMeal({ dishes: [{ role: 'main', position: 0, recipe: PASTA_WITH_INGREDIENTS }] })
+    fetchMeal.mockResolvedValue(meal)
+    seedSession(Date.now())
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Boil pasta')).toBeInTheDocument())
+
+    act(() => {
+      screen.getByTestId('meal-now-card-ask-bubbles').click()
+    })
+    expect(screen.getByRole('dialog', { name: 'Ask Bubbles about step 1' })).toBeInTheDocument()
+
+    act(() => {
+      screen.getByRole('button', { name: 'Done' }).click()
+    })
+    await waitFor(() => expect(screen.queryByText('Boil pasta')).not.toBeInTheDocument())
+
+    // The overlay is still pinned to the original step (1), not whatever the
+    // Now card moved on to.
+    expect(screen.getByRole('dialog', { name: 'Ask Bubbles about step 1' })).toBeInTheDocument()
+    expect(screen.getByText('Asking about Pasta dinner')).toBeInTheDocument()
+  })
+
+  it('no request other than the chat stream is made on apply — the saved recipe is untouched', async () => {
+    const meal = baseMeal({ dishes: [{ role: 'main', position: 0, recipe: PASTA_WITH_INGREDIENTS }] })
+    fetchMeal.mockResolvedValue(meal)
+    seedSession(Date.now())
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Boil pasta')).toBeInTheDocument())
+    expect(fetchMeal).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      screen.getByTestId('meal-now-card-ask-bubbles').click()
+    })
+    queueChatResponse(
+      baseChatResponse({ proposal: AMENDMENT_PROPOSAL, requires_review: true, next_action: 'review_proposal' }),
+    )
+    act(() => {
+      sendOverlayMessage('can I use yoghurt instead of cream?')
+    })
+
+    // Review N2 — `streamChatMessage` is mocked above the API layer, so this
+    // also spies on `fetch` itself: applying the amendment must not reach the
+    // network through any path other than that mocked chat call (in
+    // particular, never a direct write to the saved recipe).
+    const fetchSpy = jest.spyOn(global, 'fetch')
+    act(() => {
+      screen.getByTestId('ask-bubbles-amendment-use').click()
+    })
+    const nonChatFetches = fetchSpy.mock.calls.filter(
+      ([input]) => !String(input).includes('/v1/chat'),
+    )
+    expect(nonChatFetches).toEqual([])
+    fetchSpy.mockRestore()
+
+    expect(fetchMeal).toHaveBeenCalledTimes(1)
+    expect(requestMealCookProposal).not.toHaveBeenCalled()
+    expect(confirmMealCook).not.toHaveBeenCalled()
+    expect(streamChatMessageMock).toHaveBeenCalledTimes(1)
   })
 })

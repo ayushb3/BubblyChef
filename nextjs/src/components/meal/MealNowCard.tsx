@@ -34,6 +34,13 @@ export interface MealNowCardProps {
   onSkip: () => void
   onStartEarly: () => void
   disabled?: boolean
+  /**
+   * Opens the per-dish Ask Bubbles overlay, pinned to this card's dish
+   * (issue #654 PR B). Rendered as a pill on `active` and `upcoming` cards
+   * only — `waiting` has no single dish to pin. Omitted entirely when this
+   * prop is left out, so every existing render is unchanged.
+   */
+  onAskBubbles?: () => void
 }
 
 const PILL_BASE =
@@ -45,6 +52,22 @@ const PILL_SECONDARY = {
   border: '1.5px solid var(--color-border)',
   color: 'var(--color-text)',
 } as const
+
+function AskBubblesPill({ onClick, disabled }: { onClick: () => void; disabled: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={PILL_BASE}
+      style={{ background: 'var(--color-accent)', color: 'var(--color-text)' }}
+      aria-label="Ask Bubbles about this dish"
+      data-testid="meal-now-card-ask-bubbles"
+    >
+      💬 Ask Bubbles
+    </button>
+  )
+}
 
 function DishTag({ step }: { step: StreamStep }) {
   return (
@@ -71,6 +94,7 @@ export default function MealNowCard({
   onSkip,
   onStartEarly,
   disabled = false,
+  onAskBubbles,
 }: MealNowCardProps) {
   if (card.kind === 'finished') return null
 
@@ -116,7 +140,7 @@ export default function MealNowCard({
           <p className="text-sm mt-1" style={{ color: 'var(--color-text)' }}>
             {card.step.text}
           </p>
-          <div className="flex gap-2 mt-4">
+          <div className="flex flex-wrap gap-2 mt-4">
             <button
               type="button"
               onClick={onStartEarly}
@@ -137,6 +161,7 @@ export default function MealNowCard({
             >
               Skip
             </button>
+            {onAskBubbles && <AskBubblesPill onClick={onAskBubbles} disabled={disabled} />}
           </div>
         </>
       )}
@@ -199,6 +224,7 @@ export default function MealNowCard({
                 </button>
               </>
             )}
+            {onAskBubbles && <AskBubblesPill onClick={onAskBubbles} disabled={disabled} />}
           </div>
         </>
       )}

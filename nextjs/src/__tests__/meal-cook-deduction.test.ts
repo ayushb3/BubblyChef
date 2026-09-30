@@ -9,6 +9,7 @@ import {
   recipeServingsFor,
   cookedDishIds,
   cookedIngredientsForDish,
+  pinnedIngredientsForDish,
   buildMealCookRequest,
 } from '@/lib/meal-cook-deduction'
 import type { SchedulerDish } from '@/lib/meal-scheduler'
@@ -188,6 +189,86 @@ describe('cookedIngredientsForDish', () => {
 
     expect(ingredients).toHaveLength(100)
     expect(ingredients[0]).toEqual({ name: 'Salt', quantity: null, unit: 'g' })
+  })
+})
+
+describe('pinnedIngredientsForDish (issue #654 §3)', () => {
+  it('returns the raw recipe list at recipe scale with no amendment — strings kept, objects mapped, preparation dropped', () => {
+    const r = recipe({
+      id: 'r1',
+      title: 'Pasta',
+      servings: 2,
+      ingredients: [
+        { name: 'Garlic', quantity: 1, unit: 'clove', preparation: 'minced' },
+        '2 cups flour',
+      ],
+    })
+    const d = dish({ recipe: r })
+
+    const ingredients = pinnedIngredientsForDish(d, 4, session())
+
+    // Never rescaled to meal servings (4) — always at recipe scale (2).
+    expect(ingredients).toEqual([{ name: 'Garlic', quantity: 1, unit: 'clove' }, '2 cups flour'])
+  })
+
+  it('drops a blank-named object', () => {
+    const r = recipe({
+      id: 'r1',
+      title: 'Pasta',
+      servings: 2,
+      ingredients: [{ name: '  ', quantity: 1, unit: 'g' } as never, { name: 'Salt', quantity: 1, unit: 'g' }],
+    })
+    const d = dish({ recipe: r })
+
+    const ingredients = pinnedIngredientsForDish(d, 4, session())
+    expect(ingredients).toEqual([{ name: 'Salt', quantity: 1, unit: 'g' }])
+  })
+
+  it("returns the amendment's list at recipe scale, unscaled when servings already match", () => {
+    const r = recipe({ id: 'r1', title: 'Pasta', servings: 2, ingredients: [{ name: 'Old', quantity: 1, unit: 'g' }] })
+    const d = dish({ recipe: r })
+    const s = session({
+      ingredient_amendments: {
+        r1: { ingredients: [{ name: 'New', quantity: 2, unit: 'g' }], servings: 2, change_summary: null, applied_at_ms: 1 },
+      },
+    })
+
+    const ingredients = pinnedIngredientsForDish(d, 4, s)
+    expect(ingredients).toEqual([{ name: 'New', quantity: 2, unit: 'g' }])
+  })
+
+  it('rescales the amendment list from its own servings back to the recipe scale', () => {
+    // recipe servings 2, amendment written at servings 4 → factor 2/4 = 0.5
+    const r = recipe({ id: 'r1', title: 'Pasta', servings: 2, ingredients: [] })
+    const d = dish({ recipe: r })
+    const s = session({
+      ingredient_amendments: {
+        r1: { ingredients: [{ name: 'New', quantity: 4, unit: 'g' }], servings: 4, change_summary: null, applied_at_ms: 1 },
+      },
+    })
+
+    const ingredients = pinnedIngredientsForDish(d, 8, s)
+    expect(ingredients).toEqual([{ name: 'New', quantity: 2, unit: 'g' }])
+  })
+})
+
+describe('an amendment written at recipe servings feeds cookedIngredientsForDish at meal scale, doubled (issue #654 §3)', () => {
+  it('an amendment written at recipe servings 2 feeds cookedIngredientsForDish at meal servings 4 as doubled quantities', () => {
+    const r = recipe({ id: 'r1', title: 'Pasta', servings: 2, ingredients: [{ name: 'Old', quantity: 1, unit: 'g' }] })
+    const d = dish({ recipe: r })
+    const s = session({
+      ingredient_amendments: {
+        r1: {
+          ingredients: [{ name: 'Greek yoghurt', quantity: 150, unit: 'ml' }],
+          servings: 2,
+          change_summary: 'Swapped the cream for yoghurt',
+          applied_at_ms: 1,
+        },
+      },
+    })
+
+    const { ingredients } = cookedIngredientsForDish(d, 4, s)
+    expect(ingredients).toEqual([{ name: 'Greek yoghurt', quantity: 300, unit: 'ml' }])
   })
 })
 
