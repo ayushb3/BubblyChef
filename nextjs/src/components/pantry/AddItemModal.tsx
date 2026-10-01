@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useEffect } from 'react'
 import SpringButton from '@/components/ui/SpringButton'
 import FoodAutocomplete from '@/components/pantry/FoodAutocomplete'
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
+import PixelSheet from '@/components/ui/PixelSheet'
 import { updatePantryItem, deletePantryItem } from '@/lib/api/pantry'
 import type { FoodCatalogEntry } from '@/lib/api/foods'
 import type { PantryItem } from '@/types/pantry'
@@ -59,9 +58,6 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
-
-  const panelRef = useRef<HTMLDivElement>(null)
-  useModalFocusTrap(isOpen, onClose, panelRef)
 
   // Populate the form from the item every time the sheet opens.
   useEffect(() => {
@@ -134,167 +130,137 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
   }
 
   return (
-    <AnimatePresence>
-      {isOpen && (
+    <PixelSheet
+      open={isOpen}
+      onClose={onClose}
+      title="Edit Item ✏️"
+      titleId="edit-item-modal-title"
+      // Land on the name field, as the trap did before the sheet owned it.
+      initialFocus="#edit-item-name"
+      footer={
         <>
-          {/* Backdrop */}
-          <motion.div
-            className="fixed inset-0 bg-black/40 z-[60]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-          />
-
-          {/* Modal */}
-          <motion.div
-            ref={panelRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="edit-item-modal-title"
-            tabIndex={-1}
-            className="fixed bottom-0 left-0 right-0 z-[60] bg-white rounded-t-3xl max-h-[85vh] overflow-y-auto outline-none"
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          >
-            {/* Handle bar */}
-            <div className="flex justify-center pt-3 pb-1">
-              <div className="w-10 h-1 rounded-full bg-[var(--color-border)]" />
-            </div>
-
-            <div className="px-6 pb-8">
-              <h2 id="edit-item-modal-title" className="text-lg font-extrabold text-[var(--color-text)] mb-4">
-                Edit Item ✏️
-              </h2>
-
-              {/* Name — with catalog autocomplete (#398, #478) */}
-              <div className="mb-3">
-                <label
-                  htmlFor="edit-item-name"
-                  className="text-xs font-semibold text-[var(--color-muted)] mb-1 block"
+          {error && (
+            <p
+              role="alert"
+              className="mb-2 text-xs font-semibold text-red-500 text-center"
+            >
+              {error}
+            </p>
+          )}
+          <div className="flex gap-3">
+            {confirmDelete ? (
+              <div className="flex gap-2 flex-1">
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={saving}
+                  className="flex-1 py-2.5 rounded-full bg-red-400 text-white text-sm font-semibold disabled:opacity-50"
                 >
-                  Name
-                </label>
-                <FoodAutocomplete
-                  id="edit-item-name"
-                  value={name}
-                  onChange={setName}
-                  onSelect={handleCatalogSelect}
-                  placeholder="e.g., Milk, Eggs, Rice..."
-                  ariaLabel="Item name"
-                  className={fieldClass}
-                />
-              </div>
-
-              {/* Quantity + Unit row */}
-              <div className="flex gap-3 mb-3">
-                <div className="flex-1">
-                  <label className="text-xs font-semibold text-[var(--color-muted)] mb-1 block">Quantity</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={quantity}
-                    onChange={(e) => setQuantity(Number(e.target.value))}
-                    className={fieldClass}
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="text-xs font-semibold text-[var(--color-muted)] mb-1 block">Unit</label>
-                  <input
-                    type="text"
-                    value={unit}
-                    onChange={(e) => setUnit(e.target.value)}
-                    list="unit-suggestions"
-                    className={fieldClass}
-                  />
-                  <datalist id="unit-suggestions">
-                    {UNIT_SUGGESTIONS.map((u) => (
-                      <option key={u} value={u} />
-                    ))}
-                  </datalist>
-                </div>
-              </div>
-
-              {/* Category */}
-              <div className="mb-3">
-                <label className="text-xs font-semibold text-[var(--color-muted)] mb-1 block">Category</label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className={fieldClass}
+                  Confirm Delete
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="flex-1 py-2.5 rounded-full bg-[var(--color-surface)] text-[var(--color-text)] text-sm font-semibold border border-[var(--color-border)]"
                 >
-                  {categoryOptions.map((c) => (
-                    <option key={c.value} value={c.value}>{c.label}</option>
-                  ))}
-                </select>
+                  Cancel
+                </button>
               </div>
-
-              {/* Expiry Date */}
-              <div className="mb-5">
-                <label className="text-xs font-semibold text-[var(--color-muted)] mb-1 block">Expiry Date</label>
-                <input
-                  type="date"
-                  value={expiryDate}
-                  onChange={(e) => setExpiryDate(e.target.value)}
-                  className={fieldClass}
-                />
-              </div>
-
-              {error && (
-                <p
-                  role="alert"
-                  className="mb-3 text-xs font-semibold text-red-500 text-center"
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="py-2.5 px-4 rounded-full text-red-400 text-sm font-semibold border border-red-300"
                 >
-                  {error}
-                </p>
-              )}
-
-              {/* Actions */}
-              <div className="flex gap-3">
-                {confirmDelete ? (
-                  <div className="flex gap-2 flex-1">
-                    <button
-                      type="button"
-                      onClick={handleDelete}
-                      disabled={saving}
-                      className="flex-1 py-2.5 rounded-full bg-red-400 text-white text-sm font-semibold disabled:opacity-50"
-                    >
-                      Confirm Delete
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDelete(false)}
-                      className="flex-1 py-2.5 rounded-full bg-[var(--color-surface)] text-[var(--color-text)] text-sm font-semibold border border-[var(--color-border)]"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDelete(true)}
-                      className="py-2.5 px-4 rounded-full text-red-400 text-sm font-semibold border border-red-300"
-                    >
-                      Delete
-                    </button>
-                    <SpringButton
-                      onClick={handleSubmit}
-                      disabled={saving || !name.trim()}
-                      className="flex-1 bg-[var(--color-primary)] text-white font-semibold py-2.5 rounded-full disabled:opacity-50"
-                    >
-                      {saving ? 'Saving...' : 'Save Changes'}
-                    </SpringButton>
-                  </>
-                )}
-              </div>
-            </div>
-          </motion.div>
+                  Delete
+                </button>
+                <SpringButton
+                  onClick={handleSubmit}
+                  disabled={saving || !name.trim()}
+                  className="flex-1 bg-[var(--color-primary)] text-white font-semibold py-2.5 rounded-full disabled:opacity-50"
+                >
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </SpringButton>
+              </>
+            )}
+          </div>
         </>
-      )}
-    </AnimatePresence>
+      }
+    >
+      {/* Name — with catalog autocomplete (#398, #478) */}
+      <div className="mb-3">
+        <label
+          htmlFor="edit-item-name"
+          className="text-xs font-semibold text-[var(--color-muted)] mb-1 block"
+        >
+          Name
+        </label>
+        <FoodAutocomplete
+          id="edit-item-name"
+          value={name}
+          onChange={setName}
+          onSelect={handleCatalogSelect}
+          placeholder="e.g., Milk, Eggs, Rice..."
+          ariaLabel="Item name"
+          className={fieldClass}
+        />
+      </div>
+
+      {/* Quantity + Unit row */}
+      <div className="flex gap-3 mb-3">
+        <div className="flex-1">
+          <label className="text-xs font-semibold text-[var(--color-muted)] mb-1 block">Quantity</label>
+          <input
+            type="number"
+            min={0}
+            step="any"
+            value={quantity}
+            onChange={(e) => setQuantity(Number(e.target.value))}
+            className={fieldClass}
+          />
+        </div>
+        <div className="flex-1">
+          <label className="text-xs font-semibold text-[var(--color-muted)] mb-1 block">Unit</label>
+          <input
+            type="text"
+            value={unit}
+            onChange={(e) => setUnit(e.target.value)}
+            list="unit-suggestions"
+            className={fieldClass}
+          />
+          <datalist id="unit-suggestions">
+            {UNIT_SUGGESTIONS.map((u) => (
+              <option key={u} value={u} />
+            ))}
+          </datalist>
+        </div>
+      </div>
+
+      {/* Category */}
+      <div className="mb-3">
+        <label className="text-xs font-semibold text-[var(--color-muted)] mb-1 block">Category</label>
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className={fieldClass}
+        >
+          {categoryOptions.map((c) => (
+            <option key={c.value} value={c.value}>{c.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Expiry Date */}
+      <div className="mb-5">
+        <label className="text-xs font-semibold text-[var(--color-muted)] mb-1 block">Expiry Date</label>
+        <input
+          type="date"
+          value={expiryDate}
+          onChange={(e) => setExpiryDate(e.target.value)}
+          className={fieldClass}
+        />
+      </div>
+    </PixelSheet>
   )
 }
