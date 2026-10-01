@@ -33,6 +33,7 @@ from bubbly_chef.domain.normalizer import (
     CONTAINER_UNITS,
     EACH_LIKE_UNITS,
     each_factor,
+    is_estimated_size,
     is_package_unit,
     is_piece_unit,
     measure_in_base,
@@ -119,7 +120,9 @@ def _source_measure(name: str, quantity: float, unit: str) -> tuple[float, str, 
         sized = parse_sized_container(unit)
         assert sized is not None
         measured = measure_in_base(quantity * sized[0], sized[1])
-        return None if measured is None else (measured[0], measured[1], False)
+        if measured is None:
+            return None
+        return measured[0], measured[1], is_estimated_size(unit)
 
     if kind in ("mass", "volume"):
         measured = measure_in_base(quantity, canonical)

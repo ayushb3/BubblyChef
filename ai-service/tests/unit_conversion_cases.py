@@ -244,4 +244,17 @@ CASES: tuple[Case, ...] = (
          "ready", 50, "g", True, left(1, LB, 50)),
     Case("a-cup-of-cheese-off-ounces", (("cheese", 8, "oz"),), "1 cup cheese",
          "ready", CUP * 0.45, "g", True, left(8, 8 * OZ, CUP * 0.45)),
+    # --- a size on the pantry row: unit side is exact, name side is a label -------------------
+    Case("grams-off-a-unit-side-28-oz-can", (("tomatoes", 1, "28 oz can"),), "400 g tomatoes",
+         "ready", 400, "g", False, left(1, 28 * OZ, 400),
+         note="the size is written in the unit, so it is a stated container size: exact"),
+    Case("grams-off-a-name-side-28-oz-can", (("tomatoes 28 oz", 1, "can"),), "400 g tomatoes",
+         "ready", 400, "g", True, left(1, 28 * OZ, 400),
+         note="the size is only in the name (a label), so the can is an estimate"),
+    Case("yogurt-5-3-oz-multipack", (("yogurt 5.3 oz", 1, "pack"),), "150 g yogurt",
+         "unit_conflict", aliases={"yogurt": "yogurt 5.3 oz"},
+         note="5.3 oz is per cup inside the pack, not the pack: never converted, never exact"),
+    Case("yogurt-5-3-oz-box-of-four", (("yogurt 5.3 oz", 1, "box"),), "150 g yogurt",
+         "unit_conflict", aliases={"yogurt": "yogurt 5.3 oz"},
+         note="box, package and bag behave like pack"),
 )

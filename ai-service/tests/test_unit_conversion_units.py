@@ -25,6 +25,7 @@ from bubbly_chef.api.auth import get_current_user_id
 from bubbly_chef.domain.conversion import convert_amount, juice_as_fruit, juice_fruit, unit_kind
 from bubbly_chef.domain.normalizer import (
     effective_unit,
+    is_estimated_size,
     normalize_to_base_unit,
     normalize_unit,
     parse_sized_container,
@@ -102,10 +103,36 @@ def test_parse_sized_container(text: str | None, parsed: tuple[float, str, str] 
     assert parse_sized_container(text) == parsed
 
 
-def test_a_size_in_the_pantry_name_is_read_through_effective_unit() -> None:
-    assert effective_unit("tomatoes 28 oz", "can") == "28 oz can"
+def test_a_size_in_the_pantry_name_is_read_through_effective_unit_as_an_estimate() -> None:
+    assert effective_unit("tomatoes 28 oz", "can") == "~28 oz can"
+    assert is_estimated_size(effective_unit("tomatoes 28 oz", "can"))
     assert effective_unit("tomatoes", "can") == "can"
+    # A size the unit states is left alone, and is not an estimate.
     assert effective_unit("tomatoes", "14.5 oz can") == "14.5 oz can"
+    assert not is_estimated_size("14.5 oz can")
+
+
+@pytest.mark.parametrize("unit", ["pack", "package", "box", "bag"])
+def test_a_multipack_never_takes_a_size_from_its_name(unit: str) -> None:
+    """"yogurt 5.3 oz" held as 1 pack: 5.3 oz is per cup, not the pack's weight."""
+    assert effective_unit("yogurt 5.3 oz", unit) == unit
+    assert to_base_unit("yogurt 5.3 oz", 1, unit, target_unit="g") is None
+
+
+@pytest.mark.parametrize("unit", ["can", "jar", "bottle", "container"])
+def test_a_size_in_the_name_converts_for_a_single_container_but_is_approximate(
+    unit: str,
+) -> None:
+    got = to_base_unit("sauce 24 oz", 1, unit)
+    assert got is not None
+    assert got[0] == pytest.approx(24 * 28.35, rel=2e-3)
+    assert got[2] is True
+
+
+def test_the_same_size_written_in_the_unit_is_exact() -> None:
+    got = to_base_unit("sauce", 1, "24 oz jar")
+    assert got is not None
+    assert got[2] is False
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +264,8 @@ def test_juice_as_fruit_is_a_fraction_of_a_fruit() -> None:
     ("line", "name", "qty", "unit", "qty_max"),
     [
         ("a pinch of salt", "salt", 1.0, "pinch", None),
+        ("2 dashes bitters", "bitters", 2.0, "dashes", None),
+        ("3 pinches saffron", "saffron", 3.0, "pinches", None),
         ("salt, to taste", "salt", None, "to taste", None),
         ("1-2 cloves garlic", "garlic", 1.5, "clove", 2.0),
         ("1 (14.5 oz) can tomatoes", "tomatoes", 1.0, "14.5 oz can", None),

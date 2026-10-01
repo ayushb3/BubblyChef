@@ -646,7 +646,7 @@ _SIZE_CONTAINER = (
     r"cartons?|tubs?|canisters?"
 )
 _SIZED_PREFIX_RE = re.compile(
-    rf"^\(?\s*(?P<amt>\d+(?:\.\d+)?)\s*-?\s*(?P<unit>{_SIZE_UNIT})\.?\s*\)?\s*"
+    rf"^~?\(?\s*(?P<amt>\d+(?:\.\d+)?)\s*-?\s*(?P<unit>{_SIZE_UNIT})\.?\s*\)?\s*"
     rf"(?P<container>{_SIZE_CONTAINER})$",
     re.IGNORECASE,
 )
@@ -687,23 +687,42 @@ def parse_sized_container(unit: str | None) -> tuple[float, str, str] | None:
     return float(m.group("amt")), measure, container
 
 
-def _stated_container_size(name: str, unit: str) -> tuple[float, str] | None:
-    """A container's stated size, from the unit ("28 oz can") or else the name.
+# Containers whose label size describes the container itself. A pack, box, package
+# or bag is different: a multipack's label size ("yogurt 5.3 oz", held as 1 pack)
+# is per item inside it, so the name says nothing about what the pack weighs.
+_NAME_SIZE_CONTAINERS: frozenset[str] = frozenset({"can", "jar", "bottle", "container"})
 
-    The name is only consulted when the unit is a bare container word, so
-    "tomatoes 28 oz" held as "1 can" is a 28 oz can, while "2 lb onions" held as
+# `effective_unit` writes a size it read from a NAME with this prefix ("~28 oz
+# can"), so the estimate survives being handed on as a plain unit string. The
+# unit-side form a person wrote ("28 oz can") never carries it and stays exact.
+_ESTIMATED_SIZE_MARK = "~"
+
+
+def is_estimated_size(unit: str | None) -> bool:
+    """True for a sized container whose size was read from a name, not stated as a unit."""
+    return bool(unit) and str(unit).strip().startswith(_ESTIMATED_SIZE_MARK)
+
+
+def _stated_container_size(name: str, unit: str) -> tuple[float, str, bool] | None:
+    """A container's stated size as (amount, measure, estimated), or None.
+
+    A size written in the unit ("28 oz can") is exact. A size written in the NAME
+    ("tomatoes 28 oz" held as "1 can") is only a label and is flagged estimated,
+    and is read for can, jar, bottle and container only: on a pack, package, box
+    or bag the label size is per item, so it is ignored. The name is consulted
+    only when the unit is a bare container word, so "2 lb onions" held as
     "3 item" is not touched.
     """
     sized = parse_sized_container(unit)
     if sized is not None:
         amount, measure, _container = sized
-        return amount, measure
-    if normalize_unit(unit) in CONTAINER_UNITS:
+        return amount, measure, is_estimated_size(unit)
+    if normalize_unit(unit) in _NAME_SIZE_CONTAINERS:
         m = _NAME_SIZE_RE.search(name)
         if m is not None:
             measure = _measure_unit(m.group("unit"))
             if measure in _TO_G or measure in _TO_ML:
-                return float(m.group("amt")), measure
+                return float(m.group("amt")), measure, True
     return None
 
 
@@ -713,15 +732,18 @@ def effective_unit(name: str, unit: str) -> str:
     A pantry row "tomatoes 28 oz" held as "1 can" is a 28 oz can: the name carries
     the size because that is how receipts and labels write it. Callers that
     normalise the name first (and so lose the size) pass the raw name through
-    here to get a unit that still knows it: "28 oz can".
+    here to get a unit that still knows it. A size read from the name comes back
+    marked as an estimate ("~28 oz can", see `is_estimated_size`); a unit that
+    already states its size is returned untouched; a pack/package/box/bag never
+    takes a size from its name.
     """
     if parse_sized_container(unit) is not None:
         return unit
     stated = _stated_container_size(name.lower().strip(), unit)
     if stated is None:
         return unit
-    amount, measure = stated
-    return f"{amount:g} {measure} {normalize_unit(unit)}"
+    amount, measure, _estimated = stated
+    return f"{_ESTIMATED_SIZE_MARK}{amount:g} {measure} {normalize_unit(unit)}"
 
 
 def each_factor(unit: str | None) -> float | None:
@@ -842,12 +864,17 @@ def to_base_unit(
 
     name_lower = name.lower().strip()
 
-    # A container that states its size ("28 oz can", or "1 can" of "tomatoes 28 oz")
-    # is that many ounces/grams/ml, and converts like any other measure.
+    # A container that states its size converts like any other measure: exactly when
+    # the unit says it ("28 oz can"), approximately when only the name does ("1 can"
+    # of "tomatoes 28 oz"). A pack/package/box/bag never takes a size from its name.
     stated = _stated_container_size(name_lower, unit)
     if stated is not None:
-        amount, measure = stated
-        return to_base_unit(name, quantity * amount, measure, category, target_unit)
+        amount, measure, estimated = stated
+        sized = to_base_unit(name, quantity * amount, measure, category, target_unit)
+        if sized is None:
+            return None
+        # A size read off a label is an estimate of the container, not a definition.
+        return sized[0], sized[1], sized[2] or estimated
 
     canonical_unit = normalize_unit(unit)
 

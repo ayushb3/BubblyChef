@@ -433,7 +433,7 @@ _FRACTION_CHAR_RE = re.compile("(?:(\\d+)\\s*)?([" + "".join(_FRACTION_CHARS) + 
 
 # "a pinch of salt", "pinch salt", "2 dashes bitters": a trace amount, not a measure.
 _TRACE_RE = re.compile(
-    r"^(?:(?:a|an|one|\d+)\s+)?(?P<unit>pinch|pinches|dash|dashes)\s+(?:of\s+)?(?P<rest>.+)$",
+    r"^(?:(?P<count>a|an|one|\d+)\s+)?(?P<unit>pinch|pinches|dash|dashes)\s+(?:of\s+)?(?P<rest>.+)$",
     re.IGNORECASE,
 )
 # "salt, to taste", "pepper to taste", "oil as needed".
@@ -603,7 +603,9 @@ def _parse_special_forms(text: str) -> dict[str, Any] | None:
     if trace:
         rest = _CONJUNCTION_RE.sub("", trace.group("rest")).strip().lower()
         if rest:
-            return {"name": rest, "quantity": 1.0, "unit": trace.group("unit").lower()}
+            count = trace.group("count")
+            quantity = float(count) if count is not None and count.isdigit() else 1.0
+            return {"name": rest, "quantity": quantity, "unit": trace.group("unit").lower()}
 
     dozen = _DOZEN_RE.match(text)
     if dozen:
