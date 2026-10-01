@@ -253,7 +253,73 @@ describe('/chat?ask= — Home "What\'s for dinner?" input (#854)', () => {
   })
 })
 
+describe('a consumed seed is stripped from the URL (#854)', () => {
+  /** The address bar after `history.replaceState(…, '/chat')`: a bare `/chat`. */
+  let replaceState: jest.SpyInstance
+  function urlFollowsReplace() {
+    replaceState = jest.spyOn(window.history, 'replaceState').mockImplementation(() => {
+      searchParams = new URLSearchParams('')
+    })
+  }
+  afterEach(() => replaceState?.mockRestore())
+
+  it.each([
+    ['ask', 'ask=something+with+eggs'],
+    ['plan', 'plan=dinner&with=eggs|rice'],
+    ['tip', 'tip=salt+early'],
+    ['use', 'use=eggs&expires=2099-01-01'],
+    ['meal', 'meal=0b6e2f1a-1111-4222-8333-444455556666&title=Lemon+pasta'],
+  ])('%s: sends once, drops its params, and a remount after that sends nothing', async (_kind, query) => {
+    urlFollowsReplace()
+    withParams(query)
+    const first = renderChat()
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1))
+    expect(replaceState).toHaveBeenCalledTimes(1)
+    expect(replaceState).toHaveBeenCalledWith(window.history.state, '', '/chat')
+
+    // A refresh: a fresh mount at the stripped URL.
+    first.unmount()
+    renderChat()
+    await waitFor(() => expect(screen.getByText('Chat with Bubbles')).toBeInTheDocument())
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the context card after the params are gone, until it is dismissed', async () => {
+    urlFollowsReplace()
+    withParams('plan=dinner')
+    const { rerender } = renderChat()
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1))
+    // The router's replace re-renders the page at the bare URL.
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <ThemeProvider>
+          <ChatPage />
+        </ThemeProvider>
+      </QueryClientProvider>,
+    )
+    expect(screen.getByText('Planning dinner')).toBeInTheDocument()
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('/chat?new=1 — Home input, submitted empty (#854)', () => {
+  it('drops the param, so a refresh resumes the conversation again', async () => {
+    const replaceState = jest.spyOn(window.history, 'replaceState').mockImplementation(() => {
+      searchParams = new URLSearchParams('')
+    })
+    withParams('new=1')
+    const first = renderChat()
+    await waitFor(() => expect(replaceState).toHaveBeenCalledWith(window.history.state, '', '/chat'))
+    expect(useChatOptions).toHaveBeenLastCalledWith(expect.objectContaining({ skipResume: true }))
+
+    first.unmount()
+    useChatOptions.mockClear()
+    renderChat()
+    expect(useChatOptions).toHaveBeenCalledWith(expect.objectContaining({ skipResume: false }))
+    replaceState.mockRestore()
+  })
+
   it('starts a fresh conversation (no resume) and sends nothing', async () => {
     withParams('new=1')
     renderChat()
