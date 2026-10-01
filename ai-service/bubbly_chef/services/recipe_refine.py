@@ -23,8 +23,9 @@ import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
-from bubbly_chef.domain.normalizer import normalize_food_name
+from bubbly_chef.domain.normalizer import is_unit_word, normalize_food_name
 from bubbly_chef.models.recipe import Ingredient
+from bubbly_chef.services.cook_matcher import _LEADING_QTY_RE
 
 
 def _key(name: str) -> str:
@@ -54,6 +55,34 @@ def _singular(token: str) -> str:
     return token
 
 
+_OPTIONAL_SUFFIX_RE = re.compile(r"\s*\(optional\)\s*$", re.IGNORECASE)
+
+
+def bare_ingredient_name(name: str) -> str:
+    """The ingredient name inside a line as `format_recipe_for_context` renders it.
+
+    The previous card is shown to the model as ``- 250.0 g cheddar cheese,
+    shredded`` and a model that copies a line reports it that way (issue #721).
+    This drops what the renderer added around the name: a trailing
+    "(optional)", the ", preparation" clause, and the leading quantity and
+    unit. The quantity/unit grammar is the cook matcher's own (`_LEADING_QTY_RE`
+    plus the normalizer's unit vocabulary), so the two can't drift apart. A
+    name with none of that on it comes back unchanged.
+    """
+    text = _OPTIONAL_SUFFIX_RE.sub("", name).strip()
+    text = text.split(",", 1)[0].strip()
+    match = _LEADING_QTY_RE.match(text)
+    if match:
+        text = text[match.end() :]
+        if not match.group("unit"):
+            # The cook matcher's unit list is short ("1 bottle olive oil" has no
+            # unit in it); the normalizer knows the rest.
+            head, _, rest = text.partition(" ")
+            if rest.strip() and is_unit_word(head):
+                text = rest
+    return text.strip()
+
+
 def _find(name: str, pool: Sequence[Ingredient], *, exact_only: bool = False) -> list[int]:
     """Indices in `pool` that `name` refers to.
 
@@ -62,14 +91,27 @@ def _find(name: str, pool: Sequence[Ingredient], *, exact_only: bool = False) ->
     word of `name` ("cheese" finds "parmesan cheese" and "cheddar cheese"),
     so a model that shortens a name still lands on the right rows, while
     "butter" never reaches "peanut butter" when a plain "butter" exists.
+
+    A name copied with its quantity ("250.0 g cheddar cheese, shredded") is
+    read as the bare name after the exact match on the reported text fails,
+    so a real ingredient whose own name starts with a number is never
+    misread, and the same two steps then apply to the bare name.
     """
     wanted = _keys(name)
     if not wanted:
         return []
     exact = [i for i, ing in enumerate(pool) if wanted & _keys(ing.name)]
-    if exact or exact_only:
+    if exact:
         return exact
-    wanted_tokens = _tokens(name)
+    bare = bare_ingredient_name(name)
+    if bare and _key(bare) != _key(name):
+        wanted = _keys(bare)
+        exact = [i for i, ing in enumerate(pool) if wanted & _keys(ing.name)]
+        if exact:
+            return exact
+    if exact_only:
+        return exact
+    wanted_tokens = _tokens(bare or name)
     if not wanted_tokens:
         return []
     return [i for i, ing in enumerate(pool) if wanted_tokens <= _tokens(ing.name)]
