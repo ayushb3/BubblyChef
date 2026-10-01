@@ -174,6 +174,11 @@ class WorkflowState(TypedDict, total=False):
     profile_allergies: list[str]
     dislikes_set_aside: list[str]
     profile_excluded: list[str]
+    # Issue #502, per-turn and never persisted: the profile's expiry priority
+    # ("off" | "gentle" | "aggressive"), read once by extract_recipe_constraints
+    # (research_recipe on the pick path) and used by scoring, brainstorm and the
+    # recipe-card prompt. Unset means "read the profile", and Gentle if that fails.
+    expiry_priority: str
     # Issue #687. `diet_change_mentioned` is the classifier's flag that the message
     # talks about dropping a diet; route_by_intent sends a flagged general_chat /
     # cooking_help turn to apply_diet_change. That node sets `diet_change_applied`

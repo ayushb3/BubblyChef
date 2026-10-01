@@ -1,6 +1,7 @@
 """User profile-related Pydantic models."""
 
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -33,6 +34,10 @@ class UserProfile(BaseModel):
         default_factory=list,
         description="Ingredients to leave out of suggestions unless a message asks for one (#500)",
     )
+    expiry_priority: Literal["off", "gentle", "aggressive"] = Field(
+        default="gentle",
+        description="How hard to push expiring food into suggestions (issue #502)",
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -60,6 +65,7 @@ class CreateUserProfileRequest(BaseModel):
     dietary_preferences: list[str] = Field(default_factory=list)
     allergies: list[str] = Field(default_factory=list)
     disliked_ingredients: list[str] = Field(default_factory=list)
+    expiry_priority: Literal["off", "gentle", "aggressive"] = "gentle"
 
 
 class UpdateUserProfileRequest(BaseModel):
@@ -72,3 +78,4 @@ class UpdateUserProfileRequest(BaseModel):
     dietary_preferences: list[str] | None = None
     allergies: list[str] | None = None
     disliked_ingredients: list[str] | None = None
+    expiry_priority: Literal["off", "gentle", "aggressive"] | None = None

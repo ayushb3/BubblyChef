@@ -8,12 +8,13 @@ from pydantic import BaseModel, Field
 
 from bubbly_chef.ai import AIManager
 from bubbly_chef.ai.provider import StructuredOutputError
+from bubbly_chef.domain.expiry_priority import DEFAULT_EXPIRY_PRIORITY, ExpiryPriority
 from bubbly_chef.domain.normalizer import normalize_food_name
 from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.models.recipe import Ingredient, RecipeCard, StepMetadata, build_structured_steps
-from bubbly_chef.prompts.recipe import RECIPE_FOLLOWUP_PROMPT, RECIPE_GENERATION_PROMPT
+from bubbly_chef.prompts.recipe import RECIPE_FOLLOWUP_PROMPT, recipe_generation_prompt
 from bubbly_chef.services.allergen_guard import (
     allergen_card_warning,
     card_allergens,
@@ -528,6 +529,7 @@ async def generate_recipe(
     constraints: dict[str, Any] | None = None,
     previous_recipe: RecipeCard | None = None,
     allergies: list[str] | None = None,
+    expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY,
 ) -> GenerateRecipeResponse:
     """
     Generate a recipe using AI based on prompt and pantry context.
@@ -543,6 +545,9 @@ async def generate_recipe(
         allergies: The user's profile allergies (#500). Named in the prompt as a hard
             "NEVER include", and enforced after generation: a card that names one is
             regenerated once, then `AllergenViolation` is raised.
+        expiry_priority: The user's expiry-priority setting (#502). Shapes the
+            "Items Expiring Soon" section of a fresh generation (Off drops it); a
+            follow-up (`previous_recipe`) prompt has no such section.
 
     Returns:
         Generated recipe with ingredient availability status
@@ -572,7 +577,7 @@ async def generate_recipe(
             dietary_requirements=format_followup_dietary(constraints),
         )
     else:
-        full_prompt = RECIPE_GENERATION_PROMPT.format(
+        full_prompt = recipe_generation_prompt(expiry_priority).format(
             pantry_items_formatted=pantry_formatted,
             expiring_items=expiring_formatted,
             user_prompt=prompt,

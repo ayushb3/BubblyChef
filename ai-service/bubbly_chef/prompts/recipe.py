@@ -8,6 +8,8 @@ CODEOWNERS-gated: prompt wording changes model behavior even though the test
 suite can stay green.
 """
 
+from bubbly_chef.domain.expiry_priority import DEFAULT_EXPIRY_PRIORITY, ExpiryPriority
+
 RECIPE_CONSTRAINTS_SYSTEM_PROMPT = (
     "Extract cooking constraints from the user's message. "
     "Return structured data: cuisine preference, meal_type (breakfast/lunch/dinner/snack), "
@@ -87,40 +89,93 @@ DISLIKES_TEMPLATE = (
     "the user's message explicitly asks for one."
 )
 
-BRAINSTORM_SYSTEM_PROMPT = """\
-# TODO(#395): this prompt wording encodes the "Gentle" expiry-priority level.
-# When the expiry_priority profile field is wired here, swap the expiring-items
-# rule text based on Off/Gentle/Aggressive. Off = omit the rule entirely;
-# Gentle = current text; Aggressive = "try to include expiring items in every idea".
-You are a creative cooking assistant. Given the user's available ingredients \
-and constraints, suggest 3-4 recipe ideas.
+# Expiry priority (issue #502, Spec B.10): how hard expiring food is pushed. `gentle` is
+# the default and what every user had before the setting existed; `off` and `aggressive`
+# swap the expiring-items rule. An explicit dish request wins at every level.
+_BRAINSTORM_INTRO = (
+    "You are a creative cooking assistant. Given the user's available ingredients "
+    "and constraints, suggest 3-4 recipe ideas.\n"
+    "\n"
+    "Rules:\n"
+    "- Each idea should be a recipe name (2-5 words), not a full recipe\n"
+    '- If "Must use" ingredients are listed, EVERY idea must actually use them — '
+    "this overrides every other preference\n"
+)
 
-Rules:
-- Each idea should be a recipe name (2-5 words), not a full recipe
-- If "Must use" ingredients are listed, EVERY idea must actually use them — \
-this overrides every other preference
-- Ingredients marked as expiring soon are a strong preference, not a \
-requirement: try to build at least one idea around them, but it's fine to \
-leave an expiring item out of a specific idea when it doesn't belong there. \
-If none of your ideas can sensibly use the expiring items, say so briefly \
-instead of forcing one in.
-- Every idea has to make culinary sense on its own terms — don't weld an \
-ingredient into a dish just because it's expiring. In particular, don't \
-wedge a sweet ingredient like fruit into a savoury dish unless the user \
-asked for that combination or it's a genuine part of the cuisine in play.
-- Match the cuisine/mood if specified
-- ALL suggestions must be for the same meal type — if meal_type is specified, \
-every idea must fit that meal (don't mix breakfast and dinner). If no meal type is given, don't assume one from the time of day or frame the ideas as snacks; suggest ordinary dishes for any meal.
-- Only suggest recipes that can realistically be made with 60%+ of the listed ingredients
-- Format: conversational text with **bold** recipe names in a numbered list
-- End with a prompt like "Which one sounds good?" or "Want me to make any of these?"\
-"""
+# The #288 coherence guard: expiry urgency never outranks whether a dish makes sense.
+_BRAINSTORM_COHERENCE_RULE = (
+    "- Every idea has to make culinary sense on its own terms — don't weld an "
+    "ingredient into a dish just because it's expiring. In particular, don't "
+    "wedge a sweet ingredient like fruit into a savoury dish unless the user "
+    "asked for that combination or it's a genuine part of the cuisine in play.\n"
+)
+
+_BRAINSTORM_EXPIRY_RULES: dict[ExpiryPriority, str] = {
+    # Off: no expiring-items rule, nor its coherence companion (which is about
+    # expiring food), so the prompt carries no expiry language at all.
+    "off": "",
+    "gentle": (
+        "- Ingredients marked as expiring soon are a strong preference, not a "
+        "requirement: try to build at least one idea around them, but it's fine to "
+        "leave an expiring item out of a specific idea when it doesn't belong there. "
+        "If none of your ideas can sensibly use the expiring items, say so briefly "
+        "instead of forcing one in.\n" + _BRAINSTORM_COHERENCE_RULE
+    ),
+    "aggressive": (
+        "- Ingredients marked as expiring soon are a high priority: build as many ideas "
+        "as sensibly possible around them, and leave an expiring item out of an idea "
+        "only when it would clearly clash with the dish. An explicit request (a named "
+        'dish, a cuisine, or "Must use" ingredients) still wins: add an expiring item '
+        "to that dish only where it fits.\n" + _BRAINSTORM_COHERENCE_RULE
+    ),
+}
+
+_BRAINSTORM_RULES_TAIL = (
+    "- Match the cuisine/mood if specified\n"
+    "- ALL suggestions must be for the same meal type — if meal_type is specified, "
+    "every idea must fit that meal (don't mix breakfast and dinner). If no meal "
+    "type is given, don't assume one from the time of day or frame the ideas as "
+    "snacks; suggest ordinary dishes for any meal.\n"
+    # Issue #499: the old "60%+ of the listed ingredients" rule read as "use most of
+    # the pantry", which pushed the model toward kitchen-sink dishes.
+    "- Ideas may use a sensible subset of the listed ingredients: each should be "
+    "realistically makeable from what's listed plus everyday staples (oil, salt, "
+    "spices), but don't try to use as many of them as possible. A focused dish "
+    "beats a kitchen-sink one, and it's fine for an idea to leave most of the list "
+    "unused.\n"
+    "- Format: conversational text with **bold** recipe names in a numbered list\n"
+    '- End with a prompt like "Which one sounds good?" or '
+    '"Want me to make any of these?"'
+)
+
+
+def brainstorm_system_prompt(expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY) -> str:
+    """The pantry-grounded brainstorm prompt for one expiry-priority level."""
+    return _BRAINSTORM_INTRO + _BRAINSTORM_EXPIRY_RULES[expiry_priority] + _BRAINSTORM_RULES_TAIL
+
+
+# The Gentle (default) rendering, kept under its old name for importers.
+BRAINSTORM_SYSTEM_PROMPT = brainstorm_system_prompt("gentle")
+
+# The label over the expiring items in the brainstorm's pantry block. Off has none:
+# the block isn't rendered, and those items are listed with the rest of the pantry.
+_EXPIRING_CONTEXT_LABELS: dict[ExpiryPriority, str | None] = {
+    "off": None,
+    "gentle": "Expiring soon (weave in where it fits, not mandatory)",
+    "aggressive": "Expiring soon (use these up, building ideas around them where they fit)",
+}
+
+
+def expiring_context_label(expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY) -> str | None:
+    """The "Expiring soon (...)" label for the brainstorm's pantry block, or None for Off."""
+    return _EXPIRING_CONTEXT_LABELS[expiry_priority]
+
 
 # Used when the user has asked us not to look at their pantry (#287). The two
 # pantry-dependent rules are dropped rather than softened: "prioritize expiring"
-# and "60%+ of the listed ingredients" both refer to a list that is not in this
-# prompt, and leaving them in is what pulled the pantry back into a conversation
-# the user had explicitly excluded it from.
+# and the "make something from the listed ingredients" rule both refer to a list
+# that is not in this prompt, and leaving them in is what pulled the pantry back
+# into a conversation the user had explicitly excluded it from.
 BRAINSTORM_SYSTEM_PROMPT_NO_PANTRY = """\
 You are a creative cooking assistant. Suggest 3-4 recipe ideas from the user's \
 request alone.
@@ -140,32 +195,75 @@ every idea must fit that meal (don't mix breakfast and dinner). If no meal type 
 - End with a prompt like "Which one sounds good?" or "Want me to make any of these?"\
 """
 
-GROUNDED_RECIPE_SYSTEM_PROMPT = """\
-# TODO(#395): "Priority ingredients (expiring soon...)" line below encodes Gentle level.
-# Off = omit this line entirely; Aggressive = "must try to use" rather than "strong preference".
-# The reinforcing paragraph at lines 194-200 ("a strong preference, not a requirement...
-# don't wedge a sweet ingredient...") also encodes the same Gentle level and must change
-# together: Off = remove the paragraph; Aggressive = tighten to "only omit if it truly clashes".
-# This prompt generates full recipe cards (not just names) — the primary expiry-priority touch point.
-Generate a complete recipe card for "{recipe_name}".
+# The recipe-card prompt generates full cards (not just names): the primary
+# expiry-priority touch point. It is a `str.format` template; the node fills the
+# placeholders. Off omits the "Priority ingredients" line and paragraph entirely.
+_GROUNDED_HEAD = (
+    'Generate a complete recipe card for "{recipe_name}".\n'
+    "\n"
+    "Constraints: {constraints_json}\n"
+    "Must-use ingredients (the user asked to cook with these — the recipe MUST "
+    "include them): {must_use_items}\n"
+)
 
-Constraints: {constraints_json}
-Must-use ingredients (the user asked to cook with these — the recipe MUST \
-include them): {must_use_items}
-Priority ingredients (expiring soon — a strong preference, not a \
-requirement): {priority_items}
-Preferred flavors/ingredients (include if sensible): {preferred_ingredients}
-Supporting ingredients available: {supporting_items}
-Context: {context}
+_GROUNDED_PRIORITY_LINES: dict[ExpiryPriority, str] = {
+    "off": "",
+    "gentle": (
+        "Priority ingredients (expiring soon — a strong preference, not a "
+        "requirement): {priority_items}\n"
+    ),
+    "aggressive": (
+        "Priority ingredients (expiring soon — use them up if you can): {priority_items}\n"
+    ),
+}
 
-Priority ingredients are a strong preference, not a requirement: favor \
-building this recipe around them, but it's fine to leave one out if it \
-doesn't belong in "{recipe_name}" — include a priority ingredient only if it \
-genuinely fits the dish. In particular, don't wedge a sweet ingredient like \
-fruit into a savoury dish unless the user asked for that combination or it's \
-a genuine part of the cuisine in play. This does not apply to must-use \
-ingredients above, which remain a hard requirement regardless of fit.
+_GROUNDED_MID = (
+    "Preferred flavors/ingredients (include if sensible): {preferred_ingredients}\n"
+    "Supporting ingredients available: {supporting_items}\n"
+    "Context: {context}\n"
+    "\n"
+)
 
+_GROUNDED_PRIORITY_PARAGRAPHS: dict[ExpiryPriority, str] = {
+    "off": "",
+    "gentle": (
+        "Priority ingredients are a strong preference, not a requirement: favor "
+        "building this recipe around them, but it's fine to leave one out if it "
+        'doesn\'t belong in "{recipe_name}" — include a priority ingredient only if it '
+        "genuinely fits the dish. In particular, don't wedge a sweet ingredient like "
+        "fruit into a savoury dish unless the user asked for that combination or it's "
+        "a genuine part of the cuisine in play. This does not apply to must-use "
+        "ingredients above, which remain a hard requirement regardless of fit.\n"
+        "\n"
+    ),
+    "aggressive": (
+        "Priority ingredients are expiring: build this recipe around them and use them "
+        "up, leaving one out only if it would clearly clash with "
+        '"{recipe_name}". In particular, don\'t wedge a sweet ingredient like fruit '
+        "into a savoury dish unless the user asked for that combination or it's a "
+        "genuine part of the cuisine in play. If the user named a dish or asked for "
+        "specific ingredients, that request wins: add a priority ingredient only where "
+        "it fits. This does not apply to must-use ingredients above, which remain a "
+        "hard requirement regardless of fit.\n"
+        "\n"
+    ),
+}
+
+
+def grounded_recipe_system_prompt(
+    expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY,
+) -> str:
+    """The recipe-card prompt template (unformatted) for one expiry-priority level."""
+    return (
+        _GROUNDED_HEAD
+        + _GROUNDED_PRIORITY_LINES[expiry_priority]
+        + _GROUNDED_MID
+        + _GROUNDED_PRIORITY_PARAGRAPHS[expiry_priority]
+        + _GROUNDED_TAIL
+    )
+
+
+_GROUNDED_TAIL = """\
 Generate a full recipe with:
 - title, description
 - ingredients: a list of objects, each with keys:
@@ -199,6 +297,9 @@ Build the recipe from the listed ingredients where you can. \
 For any missing ingredients, suggest pantry substitutes where possible.\
 """
 
+# The Gentle (default) rendering, kept under its old name for importers.
+GROUNDED_RECIPE_SYSTEM_PROMPT = grounded_recipe_system_prompt("gentle")
+
 
 _MODE_SYSTEM_PROMPTS: dict[str, str] = {
     "chat": "",
@@ -229,7 +330,12 @@ _MODE_SYSTEM_PROMPTS: dict[str, str] = {
 _RECIPE_MODE_PANTRY_LINE = "Prioritize ingredients the user already has in their pantry.\n"
 
 
-RECIPE_GENERATION_PROMPT = """\
+# The standalone generation prompt (`services.recipe_generator`), a `str.format`
+# template. The "Items Expiring Soon" section and its criterion follow the user's
+# expiry priority (#502); Off drops both and renumbers. It used to say "prioritize
+# using these!" with no coherence guard, so a sweet ingredient could be welded into
+# a savoury dish exactly as #288 reported for brainstorm.
+_GENERATION_HEAD = """\
 You are a helpful cooking assistant.
 Generate a recipe based on the user's request.
 
@@ -237,9 +343,34 @@ Generate a recipe based on the user's request.
 The user has these ingredients available:
 {pantry_items_formatted}
 
-## Items Expiring Soon (prioritize using these!)
-{expiring_items}
+"""
 
+_GENERATION_EXPIRING_SECTIONS: dict[ExpiryPriority, str] = {
+    "off": "",
+    "gentle": (
+        "## Items Expiring Soon (a strong preference, not a requirement)\n"
+        "{expiring_items}\n"
+        "Favor using these, but only where they genuinely fit the dish: don't wedge "
+        "a sweet ingredient like fruit into a savoury dish unless the user asked for "
+        "that combination or it's a genuine part of the cuisine in play. If the "
+        "request below names a dish or specific ingredients, that request wins: add "
+        "an expiring item only where it fits.\n"
+        "\n"
+    ),
+    "aggressive": (
+        "## Items Expiring Soon (use them up if you can)\n"
+        "{expiring_items}\n"
+        "Build the recipe around these and use them up, leaving one out only if it "
+        "would clearly clash with the dish. Still don't wedge a sweet ingredient like "
+        "fruit into a savoury dish unless the user asked for that combination or it's "
+        "a genuine part of the cuisine in play. If the request below names a dish or "
+        "specific ingredients, that request wins: add an expiring item only where it "
+        "fits.\n"
+        "\n"
+    ),
+}
+
+_GENERATION_MID = """\
 ## User Request
 {user_prompt}
 
@@ -247,14 +378,15 @@ The user has these ingredients available:
 {constraints}
 
 Generate a recipe that:
-1. Uses ingredients from the user's pantry when possible
-2. Prioritizes items that are expiring soon
-3. Clearly lists all ingredients with quantities and units
-4. Provides clear, numbered step-by-step instructions
-5. Estimates prep and cook time realistically
-6. Gives each instruction a `steps` entry at the same index with its label, \
-ongoing_label, duration_minutes, hands_on, depends_on and exclusive tags -- \
-do not repeat the instruction text there, only the metadata
+"""
+
+_GENERATION_EXPIRY_CRITERIA: dict[ExpiryPriority, str | None] = {
+    "off": None,
+    "gentle": "Favors items that are expiring soon where they fit the dish",
+    "aggressive": "Builds the dish around items that are expiring soon where it makes sense",
+}
+
+_GENERATION_TAIL = """\
 
 IMPORTANT: You MUST return actual recipe data, NOT a schema or template.
 Generate a real recipe with actual values.
@@ -297,6 +429,35 @@ Example of what to return:
 
 Now generate YOUR recipe following this same structure with ACTUAL VALUES (not the schema).
 """
+
+
+def recipe_generation_prompt(expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY) -> str:
+    """The standalone generation prompt template (unformatted) for one expiry-priority level."""
+    criteria = [
+        "Uses ingredients from the user's pantry when possible",
+        _GENERATION_EXPIRY_CRITERIA[expiry_priority],
+        "Clearly lists all ingredients with quantities and units",
+        "Provides clear, numbered step-by-step instructions",
+        "Estimates prep and cook time realistically",
+        "Gives each instruction a `steps` entry at the same index with its label, "
+        "ongoing_label, duration_minutes, hands_on, depends_on and exclusive tags -- "
+        "do not repeat the instruction text there, only the metadata",
+    ]
+    numbered = "\n".join(
+        f"{n}. {text}" for n, text in enumerate((c for c in criteria if c is not None), start=1)
+    )
+    return (
+        _GENERATION_HEAD
+        + _GENERATION_EXPIRING_SECTIONS[expiry_priority]
+        + _GENERATION_MID
+        + numbered
+        + "\n"
+        + _GENERATION_TAIL
+    )
+
+
+# The Gentle (default) rendering, kept under its old name for importers.
+RECIPE_GENERATION_PROMPT = recipe_generation_prompt("gentle")
 
 RECIPE_FOLLOWUP_PROMPT = """\
 You are a helpful cooking assistant.

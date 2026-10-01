@@ -22,6 +22,12 @@ from bubbly_chef.domain.diet_terms import (
     names_forbidden_food,
     norm_label,
 )
+from bubbly_chef.domain.expiry_priority import (
+    DEFAULT_EXPIRY_PRIORITY,
+    ExpiryPriority,
+    coerce_expiry_priority,
+    urgency_weights,
+)
 from bubbly_chef.domain.normalizer import normalize_food_name
 from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.domain.stock import filter_usable_pantry_rows
@@ -41,6 +47,9 @@ from bubbly_chef.prompts.recipe import (
     REMEMBERED_DIETS_PROFILE_PREFIX,
     _MODE_SYSTEM_PROMPTS,
     _RECIPE_MODE_PANTRY_LINE,
+    brainstorm_system_prompt,
+    expiring_context_label,
+    grounded_recipe_system_prompt,
 )
 # Re-exported for callers that import these off this module (e.g.
 # workflows/recipe/__init__.py) — `as`-aliasing makes the re-export explicit
@@ -61,6 +70,7 @@ from bubbly_chef.services.allergen_guard import (
     generate_allergen_safe,
 )
 from bubbly_chef.services.dietary_preferences import get_stored_dietary_preferences
+from bubbly_chef.services.expiry_priority import get_stored_expiry_priority
 from bubbly_chef.services.food_exclusions import (
     allergy_never_block,
     get_stored_food_exclusions,
@@ -592,14 +602,15 @@ def score_and_rank(
     pantry_items: list[dict[str, Any]],
     constraints: dict[str, Any],
     allergies: list[str] | None = None,
+    expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY,
 ) -> list[dict[str, Any]]:
     """
     Deterministically score and rank pantry items for recipe grounding.
 
     Scoring:
     - item in must_use_ingredients: +20 (also tagged `_must_use`)
-    - days_until_expiry <= 3: +4
-    - days_until_expiry <= 7: +2
+    - days_until_expiry <= 3: +4 (Gentle, the default; Aggressive +8; Off 0)
+    - days_until_expiry <= 7: +2 (Gentle, the default; Aggressive +5; Off 0)
     - item in preferred_ingredients: +5
     - item name matches cuisine keywords: +3
     - item in excluded_ingredients: -100
@@ -611,7 +622,12 @@ def score_and_rank(
     (4), aligning the ranking with the softened prompt wording from #288/#336.
     Must-use (20) still dominates everything; within the must-use group,
     expiry urgency still orders items.
+
+    `expiry_priority` is the profile's expiry-priority setting (#502). Off awards no
+    urgency points, so the ranking is what it would be if nothing were expiring;
+    expired stock is still flagged `_expired` at every level.
     """
+    near_points, soon_points = urgency_weights(expiry_priority)
     cuisine = (constraints.get("cuisine") or "").lower()
     preferred = {p.lower() for p in (constraints.get("preferred_ingredients") or [])}
     excluded = {e.lower() for e in (constraints.get("excluded_ingredients") or [])}
@@ -636,7 +652,7 @@ def score_and_rank(
         if is_must_use:
             score += 20
 
-        # Expiry urgency  # TODO(#395): Off=skip this block entirely; Aggressive=raise weights (+8/+5 instead of +4/+2)
+        # Expiry urgency, scaled by the user's expiry priority (#502).
         expiry_str = item.get("expiry_date")
         if expiry_str:
             try:
@@ -650,9 +666,9 @@ def score_and_rank(
                 if days_left < 0:
                     is_expired = True
                 elif days_left <= 3:
-                    score += 4
+                    score += near_points
                 elif days_left <= 7:
-                    score += 2
+                    score += soon_points
             except (ValueError, TypeError):
                 pass
 
@@ -676,6 +692,17 @@ def score_and_rank(
     # Filter out excluded items (negative score)
     scored = [s for s in scored if s.get("_score", 0) >= 0]
     return scored[:15]
+
+
+async def _expiry_priority(state: WorkflowState) -> ExpiryPriority:
+    """The user's expiry priority: this turn's, if a node already read it, else the profile's.
+
+    Gentle when there is no profile, no such column yet, or the read fails (#502).
+    """
+    stored = state.get("expiry_priority")
+    if stored is not None:
+        return coerce_expiry_priority(stored)
+    return await get_stored_expiry_priority(state.get("user_id") or "")
 
 
 def _days_until_expiry(item: dict[str, Any]) -> int | None:
@@ -1412,6 +1439,9 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
     return {
         **state,
         "recipe_constraints": constraints,
+        # Per-turn, never persisted (#502): the profile's expiry priority, read once
+        # here so scoring, brainstorm and the recipe card all see the same level.
+        "expiry_priority": await _expiry_priority(state),
         # Per-turn markers, never persisted (#500): the allergies the guard enforces,
         # the dislikes this message set aside, and which `excluded_ingredients`
         # entries came from the profile (`constraints_to_persist` leaves them out).
@@ -1455,12 +1485,17 @@ async def score_pantry_ingredients(state: WorkflowState) -> WorkflowState:
     # ranked pool, so no prompt-builder downstream can list them as available
     # (#443). Rows expiring today or later stay in and still get the urgency
     # bonus in score_and_rank.
+    expiry_priority = await _expiry_priority(state)
     scored = score_and_rank(
-        filter_usable_pantry_rows(pantry_items), constraints, state.get("profile_allergies")
+        filter_usable_pantry_rows(pantry_items),
+        constraints,
+        state.get("profile_allergies"),
+        expiry_priority,
     )
 
     return {
         **state,
+        "expiry_priority": expiry_priority,
         "scored_pantry_items": scored,
     }
 
@@ -1530,6 +1565,8 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
     scored_items: list[dict[str, Any]] = state.get("scored_pantry_items") or []
     constraints: dict[str, Any] = state.get("recipe_constraints") or {}
     pantry_grounded = is_pantry_grounded(constraints)
+    expiry_priority = await _expiry_priority(state) if pantry_grounded else DEFAULT_EXPIRY_PRIORITY
+    expiring_label = expiring_context_label(expiry_priority)
 
     # Build ingredient summary for the prompt
     if not pantry_grounded:
@@ -1555,10 +1592,16 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         rest = [
             i for i in usable_items if not i.get("_must_use") and not i.get("_expired")
         ]
-        expiring = [
-            i for i in rest
-            if (d := _days_until_expiry(i)) is not None and 0 <= d <= 7
-        ]
+        # Off (#502): no "Expiring soon" block at all, so expiring items are simply
+        # listed with the rest of what's available.
+        expiring = (
+            [
+                i for i in rest
+                if (d := _days_until_expiry(i)) is not None and 0 <= d <= 7
+            ]
+            if expiring_label
+            else []
+        )
         supporting = [i for i in rest if i not in expiring]
         expiring_str = ", ".join(i.get("name", "") for i in expiring[:5])
         supporting_str = ", ".join(i.get("name", "") for i in supporting[:10])
@@ -1566,7 +1609,8 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         if must_use:
             must_use_str = ", ".join(i.get("name", "") for i in must_use[:5])
             pantry_context += f"\nMust use (the user asked to cook with these): {must_use_str}"
-        pantry_context += f"\nExpiring soon (weave in where it fits, not mandatory): {expiring_str or 'none'}"  # TODO(#395): suppress entirely when expiry_priority==Off; strengthen label when Aggressive
+        if expiring_label:
+            pantry_context += f"\n{expiring_label}: {expiring_str or 'none'}"
         pantry_context += f"\nOther available: {supporting_str or 'none'}"
     elif not constraints.get("must_use_ingredients"):
         # Reaching this branch means pantry_grounded is True, scored_items is
@@ -1648,7 +1692,9 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
     history_context = _format_history_context(state)
     mode_prefix = _get_mode_prefix(state, pantry_grounded=pantry_grounded)
     system_prompt = (
-        BRAINSTORM_SYSTEM_PROMPT if pantry_grounded else BRAINSTORM_SYSTEM_PROMPT_NO_PANTRY
+        brainstorm_system_prompt(expiry_priority)
+        if pantry_grounded
+        else BRAINSTORM_SYSTEM_PROMPT_NO_PANTRY
     )
     prompt = (
         mode_prefix
@@ -1800,6 +1846,8 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
         "profile_allergies": profile_allergies,
         "dislikes_set_aside": dislikes_set_aside,
         "profile_excluded": profile_excluded,
+        # Read here on the pick path (extract didn't run) so the card sees the level (#502).
+        "expiry_priority": await _expiry_priority(state),
         "web_search_result": search_result.model_dump() if search_result else None,
     }
 
@@ -1813,6 +1861,7 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
     web_result: dict[str, Any] | None = state.get("web_search_result")
     pantry_grounded = is_pantry_grounded(constraints)
     allergies = await _profile_allergies(state)
+    expiry_priority = await _expiry_priority(state) if pantry_grounded else DEFAULT_EXPIRY_PRIORITY
 
     # If pantry wasn't scored yet (direct recipe_card path), try to load & score now.
     # Skipped entirely when the user opted out — this is the path that would
@@ -1828,7 +1877,7 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
                 logger.warning("Could not fetch pantry for recipe generation: %s", e)
         if pantry_snapshot:
             scored_items = score_and_rank(
-                filter_usable_pantry_rows(pantry_snapshot), constraints, allergies
+                filter_usable_pantry_rows(pantry_snapshot), constraints, allergies, expiry_priority
             )
 
     # This is the path that told a user to cook "fresh spinach from your
@@ -1851,11 +1900,24 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
         if item.get("_must_use") and name and name not in must_use_names:
             must_use_names.append(name)
 
-    priority_items = [_format_pantry_item_for_prompt(i) for i in scored_items if i.get("_score", 0) >= 5]
-    supporting_items = [
-        _format_pantry_item_for_prompt(i) for i in scored_items
-        if 0 <= i.get("_score", 0) < 5
-    ]
+    if expiry_priority == "off":
+        # Off (#502): there is no "Priority ingredients (expiring soon)" line, so nothing
+        # is singled out; every cookable item is listed as available (must-use items
+        # already have their own line).
+        priority_items: list[str] = []
+        supporting_items = [
+            _format_pantry_item_for_prompt(i)
+            for i in scored_items
+            if not i.get("_must_use") and i.get("_score", 0) >= 0
+        ]
+    else:
+        priority_items = [
+            _format_pantry_item_for_prompt(i) for i in scored_items if i.get("_score", 0) >= 5
+        ]
+        supporting_items = [
+            _format_pantry_item_for_prompt(i) for i in scored_items
+            if 0 <= i.get("_score", 0) < 5
+        ]
 
     context = ""
     if web_result and web_result.get("snippet"):
@@ -1871,7 +1933,7 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
     preferred_ingredients_str = (
         ", ".join(constraints.get("preferred_ingredients") or []) or "none specified"
     )
-    prompt = GROUNDED_RECIPE_SYSTEM_PROMPT.format(
+    prompt = grounded_recipe_system_prompt(expiry_priority).format(
         recipe_name=recipe_name,
         constraints_json=constraints_json,
         must_use_items=", ".join(must_use_names[:5]) or "none specified",

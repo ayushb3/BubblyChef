@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
+import { isExpiryPriority } from '@/lib/expiry-priority'
 import { sanitizeTermList } from '@/lib/profile-lists'
 import { isNoRowError } from '@/lib/supabase/errors'
 
@@ -44,6 +45,11 @@ export async function PUT(
   // Allergies and dislikes (#500): free-text ingredient lists, validated rather than
   // trusted. An allergy must never be silently truncated or mangled, so a bad value
   // is a 400, not a best-effort save.
+  // Expiry priority (#502): one of off / gentle / aggressive, anything else is a 400.
+  if (body.expiry_priority !== undefined) {
+    if (!isExpiryPriority(body.expiry_priority)) return errorResponse('Invalid expiry_priority', 400)
+    updates.expiry_priority = body.expiry_priority
+  }
   for (const field of ['allergies', 'disliked_ingredients'] as const) {
     if (body[field] === undefined) continue
     const cleaned = sanitizeTermList(body[field])

@@ -17,6 +17,7 @@ from bubbly_chef.api.auth import get_current_user_id
 from bubbly_chef.models.cook import CookConfirmRequest, CookProposal, MealCookIngredient
 from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.services.allergen_guard import AllergenViolation, allergen_refusal_message
+from bubbly_chef.services.expiry_priority import get_stored_expiry_priority
 from bubbly_chef.services.food_exclusions import get_stored_food_exclusions
 from bubbly_chef.services.meal_cook import (
     apply_collapsed_deductions,
@@ -111,6 +112,7 @@ async def generate_recipe(
             ai_manager=ai_manager,
             constraints=applied.constraints if applied.constraints else None,
             allergies=applied.allergies,
+            expiry_priority=await get_stored_expiry_priority(user_id),
         )
 
         return {
