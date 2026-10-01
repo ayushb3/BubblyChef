@@ -21,7 +21,9 @@
  * success the pending scan is cleared and the sheet closes (`onPutAway` runs
  * first, so home can refresh its counts); on failure the sheet stays open with
  * the items, a friendly error, and the key wiggles. The hop-into-place animation
- * is issue #754 and plays after a successful write.
+ * (issue #754, `PutAwayFlight`) plays after a successful write and never after a
+ * failed one: the sheet hands the caller each written item with the place it went
+ * to and where its row was, and the caller plays the flight.
  *
  * The record (`PendingPutAway`, in local storage) is the single source of truth:
  * every edit is written back to it, so the +N badges follow a moved place and a
@@ -33,9 +35,9 @@
  *    button and drag-dismiss. It never clears the pending scan.
  *  - `record`: from `usePendingPutAway()`. The sheet keeps the last record on
  *    screen while it animates out after the record clears.
- *  - `onPutAway(count)`: after the write succeeded, before the record clears.
- *    May return a promise (the counts refresh); a rejection is ignored, since
- *    the pantry is already written.
+ *  - `onPutAway(count, hops)`: after the write succeeded, before the record
+ *    clears. `hops` is the flight's input, in list order (issue #754). May return
+ *    a promise; a rejection is ignored, since the pantry is already written.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion, useAnimationControls } from 'framer-motion'
@@ -44,8 +46,10 @@ import PixelSheet from '@/components/ui/PixelSheet'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import SpringButton from '@/components/ui/SpringButton'
 import ReviewSurface, { type PutAwayTiers } from '@/components/scan/ReviewSurface'
+import type { PutAwayHop } from '@/components/kitchen/PutAwayFlight'
 import { bulkAddPantryItems } from '@/lib/api/pantry'
-import { scannedToBulkAddItem } from '@/lib/scan-helpers'
+import { getFoodEmoji } from '@/lib/food-emoji'
+import { scanItemPlace, scannedToBulkAddItem, type ScannedItemWithId } from '@/lib/scan-helpers'
 import { useReactionVariants } from '@/lib/motion'
 import { WALL_H } from '@/lib/kitchen/slots'
 import {
@@ -66,11 +70,47 @@ export interface PutAwaySheetProps {
   open: boolean
   onClose: () => void
   record: PendingPutAway | null
-  onPutAway: (count: number) => void | Promise<void>
+  onPutAway: (count: number, hops: PutAwayHop[]) => void | Promise<void>
 }
 
 function plural(n: number): string {
   return n === 1 ? 'item' : 'items'
+}
+
+/**
+ * What the hop-into-place animation (issue #754) needs, read off the sheet as it
+ * stands when the write has just succeeded: the written items in the order the
+ * list shows them (the places, then each place's items), each with the place it
+ * was written to, its emoji and the centre of its row on screen. A row scrolled
+ * out of the sheet's view leaves from the sheet's edge, not from off-screen; an
+ * item with no row (its place is being edited) leaves from the middle of the sheet.
+ */
+function collectHops(items: readonly ScannedItemWithId[]): PutAwayHop[] {
+  const dialog = document.querySelector<HTMLElement>('[data-testid="put-away-sheet"]')
+  const sheet = dialog?.getBoundingClientRect()
+  const sheetShown = sheet !== undefined && sheet.height > 0
+  const middle = sheetShown
+    ? { x: sheet.left + sheet.width / 2, y: sheet.top + sheet.height / 2 }
+    : { x: window.innerWidth / 2, y: window.innerHeight * 0.7 }
+
+  const rows = new Map<string, { order: number; at: { x: number; y: number } }>()
+  dialog?.querySelectorAll<HTMLElement>('[data-putaway-item]').forEach((row, order) => {
+    const r = row.getBoundingClientRect()
+    let y = r.top + r.height / 2
+    if (sheetShown) y = Math.min(Math.max(y, sheet.top + 48), sheet.bottom - 96)
+    rows.set(row.dataset.putawayItem ?? '', { order, at: { x: r.left + r.width / 2, y } })
+  })
+
+  return items
+    .map((item, i) => ({ item, i, row: rows.get(item._id) }))
+    .sort((a, b) => (a.row?.order ?? Infinity) - (b.row?.order ?? Infinity) || a.i - b.i)
+    .map(({ item, row }) => ({
+      id: item._id,
+      place: scanItemPlace(item),
+      emoji: getFoodEmoji(item.name, item.category),
+      name: item.name,
+      from: row?.at ?? middle,
+    }))
 }
 
 export default function PutAwaySheet({ open, onClose, record, onPutAway }: PutAwaySheetProps) {
@@ -172,10 +212,13 @@ export default function PutAwaySheet({ open, onClose, record, onPutAway }: PutAw
       return
     }
 
+    // The write succeeded. Read the rows now, while the sheet is still as the
+    // user left it: the animation starts from where they are.
+    const hops = collectHops(items)
     queryClient.invalidateQueries({ queryKey: ['pantry'] })
     queryClient.invalidateQueries({ queryKey: ['bubbles'] })
     try {
-      await onPutAway(items.length)
+      await onPutAway(items.length, hops)
     } catch {
       // The pantry is written; a failed refresh must not leave the scan pending
       // (a reload would put the same shopping away twice).

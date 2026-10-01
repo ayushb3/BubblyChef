@@ -39,8 +39,10 @@
  * Places with no data yet (`places === null`: loading, or the pantry failed to
  * load) show their name only and draw no stock; never a made-up zero.
  */
-import { useMemo, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useMemo, type CSSProperties, type ReactNode } from 'react'
 import Link from 'next/link'
+import { motion, useAnimationControls } from 'framer-motion'
+import { useReactionVariants } from '@/lib/motion'
 import { WALL_PAINT, rectsToPath, type WallLayer } from '@/lib/kitchen/wall-art'
 import { WALL_H, WALL_W } from '@/lib/kitchen/slots'
 import {
@@ -138,18 +140,34 @@ function WallTag({
   label,
   count,
   incoming,
+  bounce = 0,
   style,
 }: {
   label: string
   count?: number
   /** Shopping waiting to be put away here (issue #753): reads "+N" in place of the count. */
   incoming?: number
+  /**
+   * Issue #754: how many items have landed here. Each rise plays the landing
+   * bounce (the world's `bounce` reaction: a 2 px hop in 3 stepped frames; under
+   * reduced motion it holds still and only the number changes).
+   */
+  bounce?: number
   style: CSSProperties
 }) {
   const coming = incoming !== undefined && incoming > 0
+  const { bounce: bounceVariants } = useReactionVariants()
+  const controls = useAnimationControls()
+  useEffect(() => {
+    if (bounce > 0) void controls.start('play')
+  }, [bounce, controls])
   return (
-    <span
+    <motion.span
       aria-hidden="true"
+      data-bounces={bounce}
+      variants={bounceVariants}
+      initial="idle"
+      animate={controls}
       style={style}
       className="font-pixel absolute border-2 border-[color:var(--color-text)] bg-[color:var(--color-surface)] px-1.5 py-0.5 text-[13px] leading-4 font-medium whitespace-nowrap text-[color:var(--color-text)] shadow-[2px_2px_0_var(--color-text)]"
     >
@@ -168,7 +186,7 @@ function WallTag({
           </>
         )
       )}
-    </span>
+    </motion.span>
   )
 }
 
@@ -215,6 +233,12 @@ export interface KitchenWallProps {
    * `null` / `undefined`: nothing waiting, the tags show their counts.
    */
   incoming?: Record<PlaceKey, number> | null
+  /**
+   * The put-away flight's landings (issue #754): items landed so far per place.
+   * Each rise plays that place's tag bounce. Pass the same record as `incoming`
+   * while the flight runs, so the tag ticks up (+1, +2, ...) as each lands.
+   */
+  bounce?: Record<PlaceKey, number> | null
   /** The decoration slots. Absolutely positioned, in percent of the wall. */
   children?: ReactNode
 }
@@ -229,6 +253,7 @@ export default function KitchenWall({
   bubblesLayer,
   sceneLabel,
   incoming = null,
+  bounce = null,
   children,
 }: KitchenWallProps) {
   const vars = {
@@ -335,6 +360,7 @@ export default function KitchenWall({
               label={p.label}
               count={summary?.count}
               incoming={coming}
+              bounce={bounce?.[p.key] ?? 0}
               style={tagStyle(box, PLACE_BOXES[p.key])}
             />
           </button>

@@ -34,6 +34,7 @@ import PixelBubbles from '@/components/kitchen/PixelBubbles'
 import { sceneLabel } from '@/lib/kitchen/bubbles-spot'
 import { useBubblesSpot } from '@/hooks/useBubblesSpot'
 import PutAwaySheet from '@/components/kitchen/PutAwaySheet'
+import PutAwayFlight, { type PutAwayHop } from '@/components/kitchen/PutAwayFlight'
 import SpringButton from '@/components/ui/SpringButton'
 import { usePendingPutAway } from '@/hooks/usePendingPutAway'
 import { incomingByPlace, pendingLineCount } from '@/lib/kitchen/pending-putaway'
@@ -246,7 +247,12 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
   // badges) and Bubbles stands at the door. The sheet opens over the scene when
   // home mounts with one pending (a hand-off from a scan, or a reload).
   const pending = usePendingPutAway()
-  const incoming = pending ? incomingByPlace(pending) : null
+  // After a successful put-away (#754) the items hop from the sheet to their
+  // places. While they do, the tags read the running +N (`landed`, ticking up as
+  // each lands) and the real counts are held back: they are re-read when it ends.
+  const [flightHops, setFlightHops] = useState<PutAwayHop[] | null>(null)
+  const [landed, setLanded] = useState<Record<PlaceKey, number> | null>(null)
+  const incoming = landed ?? (pending ? incomingByPlace(pending) : null)
   const [putAwayOpen, setPutAwayOpen] = useState(false)
   const putAwayOffered = useRef(false)
   useEffect(() => {
@@ -409,6 +415,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         bubblesLayer={<PixelBubbles spot={bubblesSpot} cooking={cooking} />}
         sceneLabel={sceneLabel(bubblesSpot, cooking)}
         incoming={incoming}
+        bounce={landed}
       />
 
       {/* A scan waiting to be put away, with its sheet closed: the way back in
@@ -434,8 +441,23 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         open={putAwayOpen}
         record={pending}
         onClose={() => setPutAwayOpen(false)}
-        onPutAway={pantryChanged}
+        onPutAway={(_count, hops) => {
+          // The write succeeded: play the hop into place, then refresh the counts.
+          setLanded(null)
+          setFlightHops(hops)
+        }}
       />
+      {flightHops && (
+        <PutAwayFlight
+          hops={flightHops}
+          onLanded={setLanded}
+          onDone={() => {
+            setFlightHops(null)
+            setLanded(null)
+            pantryChanged()
+          }}
+        />
+      )}
 
       {/* Under the wall: the pantry count on the left, the streak (#524) and the
           theme picker trigger (#523) on the right. */}
