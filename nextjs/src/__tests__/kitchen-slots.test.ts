@@ -81,4 +81,15 @@ describe('SLOTS on the wall (#748)', () => {
       }
     }
   })
+
+  it('keeps the tap targets (place buttons and the chalkboard link) from overlapping each other', () => {
+    const boxes = Object.entries(PLACE_BOXES).map(([name, { box }]) => ({ name, rect: pct(...box) }))
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]
+        const b = boxes[j]
+        expect([a.name, b.name, hits(a.rect, b.rect)]).toEqual([a.name, b.name, false])
+      }
+    }
+  })
 })

@@ -47,9 +47,10 @@ export type WallBox = readonly [x: number, y: number, w: number, h: number]
 
 /**
  * The tap area of each place and its tag's origin, in wall units. A box is the
- * drawn object plus its tag, so tapping the tag taps the place. Boxes are at
- * least 44 px a side at 390 px wide. Where two boxes overlap (the basket's apples
- * over the shelf's lower edge) the later one wins. Tag origins are the board's
+ * drawn object; its tag is a child of the button, so tapping the tag taps the
+ * place even where the tag spills below the box (the shelves' does). Boxes are at
+ * least 44 px a side at 390 px wide and never overlap each other
+ * (`kitchen-slots.test.ts`). Tag origins are the board's
  * label positions (Main board A, 390 px wide: Fridge 16/78, Freezer 20/228,
  * Shelves 110/197, Basket 244/260, Plan dinner 299/180) converted to wall units.
  */
@@ -64,8 +65,10 @@ export const PLACE_BOXES: Record<
 > = {
   fridge: { box: [3.9, 4.4, 20.1, 36.6], tag: [3.94, 4.43] },
   freezer: { box: [4, 41, 20, 17], tag: [4.92, 41.36] },
-  shelves: { box: [27, 21, 42, 17.8], tag: [27.08, 32.8] },
-  basket: { box: [59, 33, 20, 21.5], tag: [60.06, 49.2] },
+  // Ends at y 33, where the basket's box starts; its tag below still taps the shelves.
+  shelves: { box: [27, 21, 42, 12], tag: [27.08, 32.8] },
+  // Ends at x 73.6, where the chalkboard's box begins: two tap targets never overlap.
+  basket: { box: [59, 33, 14.6, 21.5], tag: [60.06, 49.2] },
   // "Plan dinner" is the widest tag and sits at the wall's right edge, so it is
   // anchored by its right edge (the board's 94.5): on a phone narrower than the
   // board it grows leftwards over the door instead of being clipped.

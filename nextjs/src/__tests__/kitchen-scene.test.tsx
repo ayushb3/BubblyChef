@@ -6,7 +6,7 @@
  *
  * Rewritten in #748: the scene no longer draws the bubbles balance or the
  * streak (they moved to the header and the toolbar, tested in
- * `kitchen-header.test.tsx` and `kitchen-home.test.tsx`), and empty slots are no
+ * `kitchen-home.test.tsx`), and empty slots are no
  * longer dashed placeholder boxes (on the wall they would read as clutter).
  */
 import React from 'react'
