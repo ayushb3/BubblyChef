@@ -507,3 +507,141 @@ async def test_route_private_video_error_leaks_no_internals(client: AsyncClient)
     assert "gemini" not in body
     assert "traceback" not in body
     assert "flash" not in body
+
+
+# ---------------------------------------------------------------------------
+# 403 handling: unreachable video vs. real auth failure (live check on #764)
+# ---------------------------------------------------------------------------
+
+_GENERIC_403 = (
+    '{"error": {"code": 403, "message": "The caller does not have permission", '
+    '"status": "PERMISSION_DENIED"}}'
+)
+
+
+def _provider_failing_with(status: int, body: str) -> GeminiProvider:
+    provider = GeminiProvider(api_key="k")
+    request = httpx.Request("POST", "https://example.test")
+    resp = httpx.Response(status, text=body, request=request)
+    provider._client.post = AsyncMock(  # type: ignore[method-assign]
+        side_effect=httpx.HTTPStatusError(str(status), request=request, response=resp)
+    )
+    return provider
+
+
+async def _video_error_kind(status: int, body: str) -> tuple[str, int | None]:
+    provider = _provider_failing_with(status, body)
+    with pytest.raises(ProviderUnavailableError) as exc_info:
+        await provider.video_complete(prompt="p", video_url="https://youtu.be/x")
+    return exc_info.value.kind, exc_info.value.status_code
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        _GENERIC_403,
+        '{"error": {"code": 403, "message": "Video is private or unavailable", '
+        '"status": "PERMISSION_DENIED"}}',
+        '{"error": {"code": 403, "message": "Cannot fetch content from the provided URL; '
+        'the file may be removed", "status": "PERMISSION_DENIED"}}',
+    ],
+)
+@pytest.mark.asyncio
+async def test_403_about_the_video_is_bad_request_not_auth(body: str) -> None:
+    assert await _video_error_kind(403, body) == ("bad_request", 403)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"error": {"code": 403, "message": "Your API key was reported as leaked. '
+        'Please use another API key.", "status": "PERMISSION_DENIED"}}',
+        '{"error": {"code": 403, "message": "Generative Language API has not been used in '
+        'project 123 before or it is disabled.", "status": "PERMISSION_DENIED"}}',
+        '{"error": {"code": 403, "message": "Method doesn\'t allow unregistered callers", '
+        '"status": "PERMISSION_DENIED"}}',
+        '{"error": {"code": 403, "message": "Permission denied: Consumer \'api_key:AIza\' has '
+        'been suspended. The video could not be read.", "status": "PERMISSION_DENIED"}}',
+        '{"error": {"code": 403, "message": "nope", "status": "PERMISSION_DENIED"}}',
+    ],
+)
+@pytest.mark.asyncio
+async def test_403_about_the_key_or_project_stays_auth(body: str) -> None:
+    kind, _ = await _video_error_kind(403, body)
+    assert kind == "auth"
+
+
+@pytest.mark.asyncio
+async def test_a_403_on_a_missing_video_reaches_the_user_as_video_unavailable() -> None:
+    from bubbly_chef.services.recipe_import_errors import RecipeImportError
+
+    manager = AIManager()
+    manager.add_provider(_provider_failing_with(403, _GENERIC_403))
+    with patch("bubbly_chef.services.recipe_url_ingestor.get_ai_manager", return_value=manager):
+        with pytest.raises(RecipeImportError) as exc_info:
+            await ingest_recipe_from_video(SHORTS_URL)
+
+    assert exc_info.value.reason == "video_unavailable"
+    assert exc_info.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_a_real_auth_403_is_not_reported_as_an_unavailable_video() -> None:
+    from bubbly_chef.services.recipe_import_errors import RecipeImportError
+
+    body = '{"error": {"code": 403, "message": "Your API key was reported as leaked."}}'
+    manager = AIManager()
+    manager.add_provider(_provider_failing_with(403, body))
+    with patch("bubbly_chef.services.recipe_url_ingestor.get_ai_manager", return_value=manager):
+        with pytest.raises(RecipeImportError) as exc_info:
+            await ingest_recipe_from_video(SHORTS_URL)
+
+    assert exc_info.value.reason == "video_failed"
+
+
+# ---------------------------------------------------------------------------
+# Fallback key (#737) applies to video the way it does to vision
+# ---------------------------------------------------------------------------
+
+
+def _gated_manager(primary: _FakeProvider, fallback: _FakeProvider) -> AIManager:
+    from bubbly_chef.ai.manager import ACCOUNT_FAILURE_KINDS
+
+    manager = AIManager()
+    manager.add_provider(primary, label="gemini-primary")
+    manager.add_provider(
+        fallback, label="gemini-fallback", only_after_failure_kinds=ACCOUNT_FAILURE_KINDS
+    )
+    return manager
+
+
+@pytest.mark.parametrize("kind", ["auth", "quota_exhausted", "rate_limited"])
+@pytest.mark.asyncio
+async def test_video_falls_over_to_the_fallback_key_on_account_failures(kind: str) -> None:
+    primary = _FakeProvider(
+        "p", video=True, exc=ProviderUnavailableError("x", kind=kind)  # type: ignore[arg-type]
+    )
+    fallback = _FakeProvider("f", video=True, result="from fallback")
+    manager = _gated_manager(primary, fallback)
+
+    result = await manager.video_complete(prompt="p", video_url="https://youtu.be/x")
+
+    assert result == "from fallback"
+    assert primary.video_calls == 1 and fallback.video_calls == 1
+
+
+@pytest.mark.parametrize("kind", ["bad_request", "timeout", "network"])
+@pytest.mark.asyncio
+async def test_video_does_not_burn_the_fallback_key_on_other_failures(kind: str) -> None:
+    """An unreadable video (bad_request) must not cost a second Gemini call."""
+    primary = _FakeProvider(
+        "p", video=True, exc=ProviderUnavailableError("x", kind=kind)  # type: ignore[arg-type]
+    )
+    fallback = _FakeProvider("f", video=True, result="from fallback")
+    manager = _gated_manager(primary, fallback)
+
+    with pytest.raises(NoProviderAvailableError) as exc_info:
+        await manager.video_complete(prompt="p", video_url="https://youtu.be/x")
+
+    assert fallback.video_calls == 0
+    assert exc_info.value.kind == kind

@@ -52,6 +52,31 @@ _SPEND_CAP_RE = re.compile(r"spend(?:ing)?\s+cap", re.IGNORECASE)
 # one users need to hear about (#514).
 _API_KEY_INVALID_RE = re.compile(r"API_KEY_INVALID|API key not valid", re.IGNORECASE)
 
+# A video call (#528) for a private, removed or nonexistent video comes back as
+# HTTP 403 PERMISSION_DENIED ("The caller does not have permission"), the same
+# status a genuinely bad key or project returns. Only the body tells them apart,
+# and the account side must stay `auth` so AIManager can fail over to the
+# fallback key (#737). A 403 counts as "this video is not reachable" only when
+# it carries no sign of a key/project/billing/service problem AND either names
+# the video/file or is Gemini's generic "caller does not have permission".
+_ACCOUNT_DENIED_RE = re.compile(
+    r"api[ _-]?key|consumer|project|has not been used|service[_ ]disabled|disabled|"
+    r"suspended|leaked|unregistered caller|billing|quota|credential|referer|ip address",
+    re.IGNORECASE,
+)
+_VIDEO_DENIED_RE = re.compile(
+    r"video|file|youtube|caller does not have permission", re.IGNORECASE
+)
+
+
+def _is_video_access_denied(status_code: int, body: str) -> bool:
+    """True for a 403 that means the video itself can't be read, not the key."""
+    if status_code != 403:
+        return False
+    if _ACCOUNT_DENIED_RE.search(body):
+        return False
+    return _VIDEO_DENIED_RE.search(body) is not None
+
 
 def _classify_http_error(status_code: int, body: str) -> ProviderFailureKind:
     """Classify a Gemini HTTP error response into a `ProviderFailureKind`.
@@ -589,8 +614,9 @@ Return ONLY the JSON, no markdown formatting or extra text."""
         Gemini fetches and watches the video itself (visual + audio), so
         nothing is downloaded or transcribed here. One attempt, on the
         dedicated ``video_timeout``: a retry would double a slow, billed call.
-        A private / removed / age-restricted video comes back as HTTP 400 and
-        is classified ``bad_request``.
+        A private / removed / age-restricted / nonexistent video comes back
+        as HTTP 400, or as a 403 whose body doesn't point at the key or project
+        (``_is_video_access_denied``); both are classified ``bad_request``.
         """
         url = f"{self.BASE_URL}/models/{self.model}:generateContent"
 
@@ -639,9 +665,15 @@ Return ONLY the JSON, no markdown formatting or extra text."""
         except httpx.HTTPStatusError as e:
             full_body = e.response.text if hasattr(e.response, "text") else str(e)
             status = e.response.status_code
+            video_error_kind = _classify_http_error(status, full_body)
+            if _is_video_access_denied(status, full_body):
+                # Not an account failure: reported as `bad_request` so the
+                # caller says "can't open that video" and AIManager does not
+                # burn the fallback key on a video that no key could read.
+                video_error_kind = "bad_request"
             raise ProviderUnavailableError(
                 f"Gemini [{self.model}] video API error {status}: {full_body[:500]}",
-                kind=_classify_http_error(status, full_body),
+                kind=video_error_kind,
                 status_code=status,
             ) from e
         except httpx.RequestError as e:

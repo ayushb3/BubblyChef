@@ -57,6 +57,14 @@ _KIND_RANK: dict[str, int] = {
 }
 _LEAST_INFORMATIVE_RANK = 3
 
+# Failures that are about the *account behind a key*, not about the request
+# (#737): the key's spend cap is hit, the key is rejected, or it is being rate
+# limited. A second key in its own Google project can plausibly succeed where
+# the first one failed for one of these; for anything else (a bad request, a
+# timeout, an overloaded model) the second key would fail the same way, so a
+# gated fallback provider must not be tried.
+ACCOUNT_FAILURE_KINDS: frozenset[str] = frozenset({"quota_exhausted", "auth", "rate_limited"})
+
 
 def _aggregate_kind(kinds: list[str]) -> str | None:
     """Pick the most meaningful failure kind out of everything tried.
@@ -119,6 +127,12 @@ class AIManager:
             providers: List of AI providers in priority order
         """
         self.providers: list[AIProvider] = providers or []
+        # Non-secret display labels for /health/ai (#737), keyed by provider.
+        # A provider with no entry is labelled by its own ``name``.
+        self._labels: dict[AIProvider, str] = {}
+        # Providers that are only tried once an earlier provider in the same
+        # cascade failed with one of these kinds (#737).
+        self._only_after_kinds: dict[AIProvider, frozenset[str]] = {}
         self._current_provider: AIProvider | None = None
         # Last provider-level failure seen across complete/vision_complete/
         # complete_with_tools/stream_complete (#514). Cleared on the next
@@ -133,9 +147,47 @@ class AIManager:
         self._probe_taken_at: float | None = None
         self._probe_task: asyncio.Future[dict[str, Any]] | None = None
 
-    def add_provider(self, provider: AIProvider) -> None:
-        """Add a provider to the list."""
+    def add_provider(
+        self,
+        provider: AIProvider,
+        *,
+        label: str | None = None,
+        only_after_failure_kinds: frozenset[str] | None = None,
+    ) -> None:
+        """Add a provider to the list.
+
+        Args:
+            provider: The provider, appended after those already registered.
+            label: A short, non-secret name shown on ``/health/ai`` (e.g.
+                ``gemini-fallback``). Never put a key in it. Defaults to the
+                provider's ``name``.
+            only_after_failure_kinds: When set, the provider is a gated
+                fallback (#737): it is skipped unless an earlier provider in
+                the same call failed with one of these kinds, so e.g. a second
+                Gemini key is not burned by a ``bad_request``.
+        """
         self.providers.append(provider)
+        if label is not None:
+            self._labels[provider] = label
+        if only_after_failure_kinds is not None:
+            self._only_after_kinds[provider] = only_after_failure_kinds
+
+    def label_for(self, provider: AIProvider) -> str:
+        """The non-secret ``/health/ai`` label for ``provider``."""
+        return self._labels.get(provider, provider.name)
+
+    def _gated_out(self, provider: AIProvider, failure_kinds: list[str]) -> bool:
+        """True if ``provider`` is a gated fallback whose condition isn't met."""
+        allowed = self._only_after_kinds.get(provider)
+        if allowed is None:
+            return False
+        skip = not any(kind in allowed for kind in failure_kinds)
+        if skip:
+            logger.info(
+                f"Skipping fallback provider [{self.label_for(provider)}]: "
+                "no earlier quota/auth/rate-limit failure"
+            )
+        return skip
 
     @property
     def last_failure_kind(self) -> str | None:
@@ -163,7 +215,7 @@ class AIManager:
         previously inconsistent, logging).
         """
         logger.warning(
-            f"AI provider [{provider.name}] failed: kind={error.kind} "
+            f"AI provider [{provider.name}] ({self.label_for(provider)}) failed: kind={error.kind} "
             f"status_code={error.status_code}: {error}"
         )
         return f"{provider.name}: {error}"
@@ -226,6 +278,8 @@ class AIManager:
         max_structured_retries = 2
 
         for provider in self.providers:
+            if self._gated_out(provider, failure_kinds):
+                continue
             try:
                 # Deliberately no `is_available()` pre-check here (#514): a
                 # cheap probe request only proves reachability at that
@@ -327,7 +381,7 @@ class AIManager:
         start_time = datetime.now()
 
         for provider in self.providers:
-            if not provider.supports_vision:
+            if not provider.supports_vision or self._gated_out(provider, failure_kinds):
                 continue
             try:
                 # See `complete()` for why there's no `is_available()`
@@ -394,7 +448,7 @@ class AIManager:
         start_time = datetime.now()
 
         for provider in self.providers:
-            if not provider.supports_video:
+            if not provider.supports_video or self._gated_out(provider, failure_kinds):
                 continue
             try:
                 logger.info(
@@ -461,7 +515,7 @@ class AIManager:
         start_time = datetime.now()
 
         for provider in self.providers:
-            if not provider.supports_tool_calling:
+            if not provider.supports_tool_calling or self._gated_out(provider, failure_kinds):
                 continue
             try:
                 # See `complete()` for why there's no `is_available()`
@@ -518,6 +572,8 @@ class AIManager:
         failure_kinds: list[str] = []
 
         for provider in self.providers:
+            if self._gated_out(provider, failure_kinds):
+                continue
             try:
                 # See `complete()` for why there's no `is_available()`
                 # pre-check gating this call (#514).
@@ -570,6 +626,8 @@ class AIManager:
         fallback = False
 
         for index, provider in enumerate(self.providers):
+            if self._gated_out(provider, failure_kinds):
+                continue
             try:
                 await provider.complete(
                     prompt=_PROBE_PROMPT,
@@ -618,6 +676,8 @@ class AIManager:
         return {
             "healthy": served_by is not None,
             "provider": served_by.name if served_by is not None else None,
+            # Which registered provider/key served it, by its non-secret label (#737).
+            "label": self.label_for(served_by) if served_by is not None else None,
             "fallback": fallback,
             "failure_kind": failure_kind,
             "failures": failures,
@@ -652,6 +712,7 @@ class AIManager:
                 result = {
                     "healthy": False,
                     "provider": None,
+                    "label": None,
                     "fallback": False,
                     "failure_kind": self._finalize_failure(["timeout"]),
                     "failures": [],
@@ -718,6 +779,7 @@ class AIManager:
             providers_list.append(
                 {
                     "name": provider.name,
+                    "label": self.label_for(provider),
                     "available": available,
                 }
             )

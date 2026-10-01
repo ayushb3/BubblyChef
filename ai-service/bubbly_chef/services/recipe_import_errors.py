@@ -74,7 +74,8 @@ def classify_video_error(exc: Exception) -> RecipeImportError:
     if isinstance(exc, RecipeImportError):
         return exc
     if isinstance(exc, NoProviderAvailableError):
-        # Gemini answers HTTP 400 for a private / removed / age-restricted video.
+        # GeminiProvider reports an unreadable video (HTTP 400, or a 403 that is not a
+        # key/project problem) as `bad_request`; real auth failures stay `auth`.
         if exc.kind == "bad_request":
             return video_unavailable()
         if exc.kind == "timeout":
