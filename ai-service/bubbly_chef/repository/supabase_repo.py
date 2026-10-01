@@ -1572,6 +1572,38 @@ class SupabaseRepository:
         rows = _as_rows(result.data)
         return bool(rows) and rows[0].get("role") == "user" and rows[0].get("content") == content
 
+    async def delete_unanswered_user_turn(self, user_id: str, conversation_id: str) -> bool:
+        """Delete the conversation's newest stored message, but only when it is a
+        user turn (so no assistant reply follows it). Returns whether a row went.
+
+        Issue #871: a user turn is saved BEFORE its reply streams, so a failed
+        send leaves it stored with no reply. Dismissing the failed send on the
+        client calls this so the turn does not come back on reload. A newest row
+        that is an assistant turn (the send did get answered) is left alone, as
+        is every other user's and every other conversation's row: both
+        `user_id` and `conversation_id` are filtered on the lookup and the delete.
+        """
+        result = (
+            self.client.table("conversation_history")
+            .select("id,role")
+            .eq("user_id", user_id)
+            .eq("conversation_id", conversation_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = _as_rows(result.data)
+        if not rows or rows[0].get("role") != "user":
+            return False
+        deleted = (
+            self.client.table("conversation_history")
+            .delete()
+            .eq("id", rows[0]["id"])
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return len(_as_rows(deleted.data)) > 0
+
     async def get_history(
         self, user_id: str, conversation_id: str, limit: int = _HISTORY_DEFAULT_LIMIT
     ) -> list[dict[str, Any]]:

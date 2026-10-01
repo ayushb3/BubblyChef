@@ -234,6 +234,22 @@ export async function fetchChatHistory(
 }
 
 /**
+ * Delete the conversation's newest stored message when it is an unanswered user
+ * turn (issue #871). The AI service saves the user turn before it streams the
+ * reply, so a failed send leaves it stored with no reply; Dismiss calls this so
+ * it does not come back on reload. Resolves to whether a row was deleted.
+ */
+export async function dismissUnansweredTurn(conversationId: string): Promise<boolean> {
+  const res = await aiFetch(
+    `/v1/chat/history/${encodeURIComponent(conversationId)}/unanswered`,
+    { method: 'DELETE' },
+  )
+  if (!res.ok) throw new Error(`Failed to dismiss turn: ${res.status}`)
+  const body = (await res.json()) as { deleted?: boolean }
+  return body.deleted === true
+}
+
+/**
  * List the current user's conversation sessions.
  */
 export async function fetchChatSessions(): Promise<ConversationSession[]> {

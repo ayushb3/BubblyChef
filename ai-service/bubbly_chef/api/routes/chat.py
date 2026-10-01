@@ -1,9 +1,10 @@
 """Chat HTTP routes for the BubblyChef AI microservice.
 
-Exposes four endpoints under /v1/chat:
+Exposes these endpoints under /v1/chat:
 - POST /v1/chat/stream  — SSE streaming chat
 - POST /v1/chat         — Non-streaming fallback
 - GET  /v1/chat/history/{conversation_id} — Fetch history
+- DELETE /v1/chat/history/{conversation_id}/unanswered — Dismiss a failed send (#871)
 - GET  /v1/chat/sessions — List user's conversation sessions
 """
 
@@ -305,6 +306,35 @@ async def get_history(
     except Exception as e:
         logger.error(f"Failed to fetch history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch conversation history") from e
+
+
+@router.delete(
+    "/history/{conversation_id}/unanswered",
+    summary="Delete the conversation's trailing unanswered user turn",
+    responses={
+        200: {"description": "`{deleted: bool}` -- false when there was no such turn"},
+        401: {"description": "Missing or invalid JWT"},
+    },
+)
+async def delete_unanswered_turn(
+    conversation_id: str,
+    user_id: str = Depends(get_current_user_id),
+) -> dict[str, bool]:
+    """Back Dismiss on a failed chat send (#871).
+
+    The user turn is saved before the reply streams, so a failed send leaves it
+    stored with no reply. This removes the conversation's newest message only if
+    it is a user turn, so an answered turn is never touched.
+    """
+    try:
+        repo = await get_repository()
+        deleted = await repo.delete_unanswered_user_turn(
+            user_id=user_id, conversation_id=conversation_id
+        )
+    except Exception as e:
+        logger.error(f"Failed to delete unanswered turn: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete unanswered turn") from e
+    return {"deleted": deleted}
 
 
 @router.get(
