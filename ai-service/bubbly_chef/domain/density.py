@@ -82,6 +82,18 @@ INGREDIENT_DENSITY_G_PER_ML: dict[str, float] = {
     "baking powder": 0.80,  # 1 tsp = 4 g
     "baking soda": 1.2,     # 1 tsp = 6 g
     "chocolate chips": 0.71,  # 1 cup = 170 g
+    # Leafy greens, loosely packed as a recipe measures them by the cup.
+    "spinach": 0.125,       # USDA: 1 cup raw = 30 g
+    "arugula": 0.083,       # USDA: 1 cup = 20 g
+    # Ground spices: USDA household teaspoon weights divided by 5 ml.
+    "cumin": 0.42,          # 1 tsp = 2.1 g
+    "cinnamon": 0.52,       # 1 tsp = 2.6 g
+    "paprika": 0.46,        # 1 tsp = 2.3 g
+    "black pepper": 0.46,   # 1 tsp = 2.3 g
+    "chili powder": 0.54,   # 1 tsp = 2.7 g
+    "garlic powder": 0.62,  # 1 tsp = 3.1 g
+    "turmeric": 0.60,       # 1 tsp = 3.0 g
+    "cayenne": 0.36,        # 1 tsp = 1.8 g
 }
 
 # ── Head-noun fallbacks, g per ml ──────────────────────────────────────────
@@ -129,11 +141,22 @@ CATEGORY_DENSITY_G_PER_ML: dict[str, float] = {
 PIECE_WEIGHTS_G: dict[tuple[str, str], float] = {
     ("stick", "butter"): 113.0,     # 1 US stick = 1/4 lb = 8 tbsp
     ("stick", "margarine"): 113.0,
-    ("clove", "garlic"): 3.0,       # USDA: garlic, raw, 1 clove = 3 g
+    # USDA lists 3 g for a small clove; a supermarket clove is 4-6 g (a ~50 g head
+    # holds about 10), so 5 g is the figure a cook counting cloves actually meets.
+    ("clove", "garlic"): 5.0,
+    ("head", "garlic"): 50.0,       # about 10 cloves
     ("slice", "bread"): 28.0,       # commercial sandwich loaf slice
     ("slice", "cheese"): 21.0,      # deli sandwich slice
+    ("slice", "bacon"): 25.0,       # a 12 oz pack holds about 14 regular slices
     ("leaf", "basil"): 0.5,         # a single fresh basil leaf
 }
+
+# The pairs above that are exact by definition rather than a typical figure: a US
+# stick of butter is a quarter pound, whatever the brand. Everything else in
+# PIECE_WEIGHTS_G is an estimate, and the conversions that use it are flagged.
+EXACT_PIECE_WEIGHTS: frozenset[tuple[str, str]] = frozenset(
+    {("stick", "butter"), ("stick", "margarine")}
+)
 
 # ── Units this module refuses on purpose ───────────────────────────────────
 #
@@ -183,6 +206,11 @@ def density_g_per_ml(name: str, category: str | None = None) -> float | None:
     return None
 
 
+def is_exact_piece_weight(unit: str, name: str) -> bool:
+    """True when the (unit, name) piece weight is a definition, not an estimate."""
+    return (unit.lower().strip(), name.lower().strip()) in EXACT_PIECE_WEIGHTS
+
+
 def piece_weight_g(unit: str, name: str) -> float | None:
     """Return the conventional gram weight of one *unit* of *name*, or None.
 
@@ -190,7 +218,7 @@ def piece_weight_g(unit: str, name: str) -> float | None:
     "1 stick celery" never gets treated as 113 g of celery.
 
     Examples:
-        piece_weight_g("clove", "garlic") -> 3.0
+        piece_weight_g("clove", "garlic") -> 5.0
         piece_weight_g("stick", "celery") -> None
     """
     if not unit or not name:
