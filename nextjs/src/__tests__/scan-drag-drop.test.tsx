@@ -184,7 +184,8 @@ describe('ScanTab drag-and-drop', () => {
 
   it('a dropped file reaches the same upload path as the file picker', async () => {
     mockUploadReceipt.mockResolvedValue(SCAN_RESULT)
-    render(<ScanTab onItemsReady={jest.fn()} />)
+    const onParsed = jest.fn()
+    render(<ScanTab onParsed={onParsed} />)
 
     const dropzone = screen.getByText(/Drop your receipt here/).closest('button')
     expect(dropzone).not.toBeNull()
@@ -198,11 +199,11 @@ describe('ScanTab drag-and-drop', () => {
     // request be aborted), so match on the file and let the options object
     // through unchecked here.
     await waitFor(() => expect(mockUploadReceipt).toHaveBeenCalledWith(file, expect.anything()))
-    await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
+    await waitFor(() => expect(onParsed).toHaveBeenCalledWith(SCAN_RESULT))
   })
 
   it('shows an armed visual state on dragenter and clears it on dragleave', () => {
-    render(<ScanTab onItemsReady={jest.fn()} />)
+    render(<ScanTab onParsed={jest.fn()} />)
     const dropzone = screen.getByText(/Drop your receipt here/).closest('button') as HTMLButtonElement
 
     fireEvent.dragEnter(dropzone, { dataTransfer: { types: ['Files'] } })
@@ -214,12 +215,13 @@ describe('ScanTab drag-and-drop', () => {
 
   it('click-to-upload still works unchanged', async () => {
     mockUploadReceipt.mockResolvedValue(SCAN_RESULT)
-    render(<ScanTab onItemsReady={jest.fn()} />)
+    const onParsed = jest.fn()
+    render(<ScanTab onParsed={onParsed} />)
 
     const file = new File(['bytes'], 'receipt.png', { type: 'image/png' })
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
     fireEvent.change(fileInput, { target: { files: [file] } })
 
-    await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
+    await waitFor(() => expect(onParsed).toHaveBeenCalledWith(SCAN_RESULT))
   })
 })

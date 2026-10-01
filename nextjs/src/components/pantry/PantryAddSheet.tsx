@@ -7,14 +7,16 @@ import TypeTab from './TypeTab'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import { bulkAddPantryItems } from '@/lib/api/pantry'
 import PixelSheet from '@/components/ui/PixelSheet'
+import type { ScanResult } from '@/types/scan'
 import { placeDef, placeLocation, type PlaceKey } from '@/lib/kitchen/places'
+import { pendingFromScan, savePendingPutAway } from '@/lib/kitchen/pending-putaway'
 
 export interface AddItem {
   name: string
   quantity: number
   unit: string
   category: string
-  /** Only the scan path sets this (backend-derived); manual adds omit it (#397). */
+  /** Manual adds omit it (#397); scanned items no longer pass through this sheet (#753). */
   storage_location?: string
   expiry_date: string | null
   source: 'scan' | 'manual'
@@ -28,11 +30,20 @@ interface PantryAddSheetProps {
   initialTab?: PantryAddTab
   onItemsAdded: () => void
   /**
+   * The scan tab parsed a receipt (issue #753). By default this sheet hands it
+   * off itself, so no host can forget to: the scan is kept as the pending
+   * put-away (`lib/kitchen/pending-putaway`) and the sheet closes; the kitchen
+   * home opens put-away over the scene when a new pending scan appears. A host
+   * can take over instead by passing this. Either way the sheet never reviews or
+   * writes a scan; its own confirm key is for the Manual tab's rows.
+   */
+  onScanParsed?: (result: ScanResult) => void
+  /**
    * The storage place being added to (issue #749: the storage sheet's "Add to
-   * the freezer"). Typed items save with that place's location. Scanned items
-   * keep the location the AI derived for each: a receipt mixes fridge, freezer
-   * and shelf food, and flattening it into one place would be wrong more often
-   * than right.
+   * the freezer"). Typed items save with that place's location. A scan is not
+   * flattened into it: it is handed off (`onScanParsed`) and put away by place,
+   * each item to the place the AI derived for it, since a receipt mixes fridge,
+   * freezer and shelf food.
    */
   place?: PlaceKey
 }
@@ -42,10 +53,10 @@ export default function PantryAddSheet({
   onClose,
   initialTab = 'scan',
   onItemsAdded,
+  onScanParsed,
   place,
 }: PantryAddSheetProps) {
   const [activeTab, setActiveTab] = useState<PantryAddTab>(initialTab)
-  const [scanItems, setScanItems] = useState<AddItem[]>([])
   const [typeItems, setTypeItems] = useState<AddItem[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -99,7 +110,6 @@ export default function PantryAddSheet({
   // Reset state when sheet closes
   useEffect(() => {
     if (!isOpen) {
-      setScanItems([])
       setTypeItems([])
       setError(null)
       setIsSubmitting(false)
@@ -111,7 +121,7 @@ export default function PantryAddSheet({
     }
   }, [isOpen])
 
-  const allItems = [...scanItems, ...typeItems]
+  const allItems = typeItems
   const itemCount = allItems.length
 
   /** Wraps `onClose` so an early close (backdrop, swipe, X) cancels the pending auto-close timer. */
@@ -130,7 +140,6 @@ export default function PantryAddSheet({
       // own default (milk -> fridge): the user said where they are putting it.
       const toSave = place
         ? [
-            ...scanItems,
             ...typeItems.map((item) => ({ ...item, storage_location: placeLocation(place) })),
           ]
         : allItems
@@ -289,7 +298,17 @@ export default function PantryAddSheet({
                 : 'absolute inset-0 opacity-0 -translate-x-3 pointer-events-none'
             }`}
           >
-            <ScanTab onItemsReady={setScanItems} onProcessingChange={setScanProcessing} />
+            <ScanTab
+              onParsed={(result) => {
+                if (onScanParsed) {
+                  onScanParsed(result)
+                  return
+                }
+                savePendingPutAway(pendingFromScan(result))
+                handleClose()
+              }}
+              onProcessingChange={setScanProcessing}
+            />
           </div>
           <div
             aria-hidden={activeTab !== 'type'}
