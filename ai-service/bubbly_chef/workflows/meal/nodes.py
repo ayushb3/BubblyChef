@@ -108,6 +108,7 @@ from bubbly_chef.workflows.recipe.nodes import (
     score_and_rank,
     score_pantry_ingredients,
 )
+from bubbly_chef.workflows.recipe_result import complete_recipe
 from bubbly_chef.workflows.state import LLMRecipeResult, WorkflowState
 
 logger = logging.getLogger(__name__)
@@ -1263,12 +1264,11 @@ async def _expand_dish_result(
     prompt += allergy_never_block(allergy_list)
 
     async def _expand(extra: str) -> LLMRecipeResult:
-        result = await ai_manager.complete(
-            prompt=prompt + extra, response_schema=response_schema, temperature=0.5
+        # A dish with no ingredients or steps is retried once and then fails the meal
+        # (issue #720): the caller reports a failed generation, never a blank dish.
+        return await complete_recipe(
+            ai_manager, prompt=prompt + extra, response_schema=response_schema, temperature=0.5
         )
-        if not isinstance(result, LLMRecipeResult):
-            raise ValueError(f"Unexpected response type expanding dish {dish.name!r}")
-        return result
 
     # A dish that names an allergen is regenerated once, then refused (#500).
     return await generate_allergen_safe(

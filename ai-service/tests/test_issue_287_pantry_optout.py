@@ -281,7 +281,7 @@ class TestGroundedRecipePrompt:
             return_value=LLMRecipeResult(
                 title="Roast Chicken",
                 description="d",
-                ingredients=[],
+                ingredients=[{"name": "rice"}],
                 instructions=["step"],
             )
         )

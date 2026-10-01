@@ -211,7 +211,7 @@ async def test_scoring_drops_dead_rows_fetched_from_the_database() -> None:
 
 
 def _llm_recipe() -> LLMRecipeResult:
-    return LLMRecipeResult(title="Toast", description="d", ingredients=[], instructions=["s"])
+    return LLMRecipeResult(title="Toast", description="d", ingredients=[{"name": "rice"}], instructions=["s"])
 
 
 @pytest.mark.asyncio
