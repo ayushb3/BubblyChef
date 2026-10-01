@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
-import BubblesHeader from '@/components/layout/BubblesHeader'
+import PageHeader from '@/components/layout/PageHeader'
+import NotificationBell from '@/components/layout/NotificationBell'
 import BubblesMascot from '@/components/ui/BubblesMascot'
-import SpringButton from '@/components/ui/SpringButton'
+import PixelPanel from '@/components/ui/PixelPanel'
+import SpringButton, { PixelDots } from '@/components/ui/SpringButton'
 import ScanFailureNotice from '@/components/scan/ScanFailureNotice'
 import { useFileDropzone } from '@/hooks/useFileDropzone'
 import { useScanHandOff } from '@/hooks/useScanHandOff'
@@ -122,16 +124,15 @@ export default function ScanPage() {
 
   return (
     <div className="min-h-screen pb-24">
-      <BubblesHeader
-        rightSlot={
-          <Link
-            href="/"
-            className="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)] underline transition-colors"
-          >
-            Cancel
-          </Link>
-        }
-      />
+      <PageHeader eyebrow="Receipt" title="Scan a receipt">
+        <Link
+          href="/"
+          className="inline-flex min-h-[44px] items-center px-2 text-sm font-bold text-[var(--color-text)] underline underline-offset-2"
+        >
+          Cancel
+        </Link>
+        <NotificationBell />
+      </PageHeader>
 
       <div className="px-6 pt-4">
         {error && (
@@ -147,24 +148,35 @@ export default function ScanPage() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.25 }}
             >
-              <button
-                type="button"
-                onClick={() => inputRef.current?.click()}
+              {/* The panel is the drop target; the keycap is the tap target (a
+                  button can't hold a button, so the zone is no longer one). */}
+              <PixelPanel
                 {...dropzoneHandlers}
-                className={`w-full border-2 border-dashed rounded-3xl p-10 text-center transition-colors active:scale-95 ${
-                  isDragActive
-                    ? 'border-[var(--color-primary)] bg-[var(--color-border)] scale-[1.02]'
-                    : 'border-[var(--color-primary)] bg-[var(--color-surface)] hover:bg-[var(--color-border)]'
+                data-drag-active={isDragActive || undefined}
+                className={`text-center transition-transform motion-reduce:transition-none ${
+                  isDragActive ? 'scale-[1.02]' : ''
                 }`}
+                contentClassName="p-6"
               >
                 <div className="flex justify-center mb-3">
-                  <BubblesMascot state="happy" size={72} />
+                  <BubblesMascot state={isDragActive ? 'surprised' : 'happy'} size={72} />
                 </div>
-                <p className="font-semibold text-[var(--color-text)] mb-1">
+                <p className="font-extrabold text-[var(--color-text)] mb-1">
                   {isDragActive ? 'Drop it here!' : 'Drop your receipt here'}
                 </p>
-                <p className="text-sm text-[var(--color-muted)]">or tap to upload</p>
-              </button>
+                <p className="text-sm text-[var(--color-muted)] mb-4">
+                  Bubbles reads the items; nothing goes in until you say so.
+                </p>
+                {/* After a failure the notice above carries the primary key; this
+                    one steps back so there is a single primary action. */}
+                <SpringButton
+                  variant={error ? 'secondary' : 'primary'}
+                  fullWidth
+                  onClick={() => inputRef.current?.click()}
+                >
+                  Choose a photo
+                </SpringButton>
+              </PixelPanel>
 
               <input
                 ref={inputRef}
@@ -186,33 +198,30 @@ export default function ScanPage() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.97 }}
               transition={{ duration: 0.25 }}
-              className="text-center"
             >
-              {preview && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={preview}
-                  alt="Receipt preview"
-                  className="w-full max-h-48 object-contain rounded-2xl mb-4 border border-[var(--color-border)]"
-                />
-              )}
-              <div className="flex justify-center mb-3">
-                <BubblesMascot state="thinking" size={64} />
-              </div>
-              <div className="flex items-center justify-center gap-3">
-                <motion.div
-                  className="w-5 h-5 rounded-full border-2 border-[var(--color-primary)] border-t-transparent"
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }}
-                />
-                <p className="font-semibold text-[var(--color-text)]">Scanning receipt…</p>
-              </div>
-              <p className="text-sm text-[var(--color-muted)] mt-2">Bubbles is reading your items</p>
-              <div className="mt-4 flex justify-center">
-                <SpringButton variant="secondary" size="sm" onClick={handleCancelScan}>
-                  Cancel scan
-                </SpringButton>
-              </div>
+              <PixelPanel className="text-center" contentClassName="p-6">
+                {preview && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={preview}
+                    alt="Receipt preview"
+                    className="mb-4 max-h-48 w-full border-[3px] border-[var(--color-text)] bg-[var(--color-bg)] object-contain"
+                  />
+                )}
+                <div className="flex justify-center mb-3">
+                  <BubblesMascot state="thinking" size={64} />
+                </div>
+                <div className="flex items-center justify-center gap-3 text-[var(--color-text)]">
+                  <PixelDots />
+                  <p className="font-extrabold">Scanning receipt…</p>
+                </div>
+                <p className="text-sm text-[var(--color-muted)] mt-2">Bubbles is reading your items</p>
+                <div className="mt-4 flex justify-center">
+                  <SpringButton variant="secondary" size="sm" onClick={handleCancelScan}>
+                    Cancel scan
+                  </SpringButton>
+                </div>
+              </PixelPanel>
             </motion.div>
           )}
 
@@ -223,15 +232,16 @@ export default function ScanPage() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.97 }}
               transition={{ duration: 0.25 }}
-              className="text-center"
               role="status"
             >
-              <div className="flex justify-center mb-3">
-                <BubblesMascot state="happy" size={72} />
-              </div>
-              <p className="font-semibold text-[var(--color-text)]">
-                Taking your shopping to the kitchen…
-              </p>
+              <PixelPanel className="text-center" contentClassName="p-6">
+                <div className="flex justify-center mb-3">
+                  <BubblesMascot state="happy" size={72} />
+                </div>
+                <p className="font-extrabold text-[var(--color-text)]">
+                  Taking your shopping to the kitchen…
+                </p>
+              </PixelPanel>
             </motion.div>
           )}
         </AnimatePresence>
