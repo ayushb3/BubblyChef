@@ -17,27 +17,17 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from uuid import UUID, uuid4
 
 from bubbly_chef.domain.normalizer import normalize_food_name
-from bubbly_chef.domain.staples import shoppable
 from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.repository.supabase_repo import SupabaseRepository
-from bubbly_chef.services.cook_matcher import match_ingredients
+from bubbly_chef.services.ingredient_match import missing_line_names
 
 logger = logging.getLogger(__name__)
 
 
 class MealNotFoundError(LookupError):
     """The meal doesn't exist or isn't this user's (indistinguishable by design)."""
-
-
-def _uuid_str(value: Any) -> str:
-    """`value` as a UUID string; the matcher needs one but only uses it as a label."""
-    try:
-        return str(UUID(str(value)))
-    except ValueError:
-        return str(uuid4())
 
 
 def _matcher_ingredients(raw: list[Any]) -> list[Any]:
@@ -57,10 +47,11 @@ def _matcher_ingredients(raw: list[Any]) -> list[Any]:
 def missing_ingredients_for_dishes(dishes: list[dict[str, Any]], pantry: list[Any]) -> list[str]:
     """Foods the dishes need that `pantry` lacks, once each, in first-seen order.
 
-    Same matcher as the cook flow (synonym table, culinary staples assumed on
-    hand), so "to buy" never disagrees with what the cook screen will call
-    missing. Water and ice are never shopped for. Two dishes needing the same
-    food (by normalised name) list it once.
+    The same resolution as the ingredient tags (`ingredient_match.missing_line_names`:
+    the cook matcher's synonym table, culinary staples assumed on hand, water and
+    ice never shopped for), so a food is listed here exactly when its row on the
+    meal screen reads "To buy" (issue #805). Two dishes needing the same food (by
+    normalised name) list it once.
     """
     seen: set[str] = set()
     out: list[str] = []
@@ -69,13 +60,7 @@ def missing_ingredients_for_dishes(dishes: list[dict[str, Any]], pantry: list[An
         ingredients = _matcher_ingredients(recipe.get("ingredients") or [])
         if not ingredients:
             continue
-        proposal = match_ingredients(
-            recipe_id=_uuid_str(recipe.get("id") or dish.get("recipe_id")),
-            recipe_title=str(recipe.get("title") or ""),
-            recipe_ingredients=ingredients,
-            pantry_items=pantry,
-        )
-        for name in shoppable(list(proposal.missing)):
+        for name in missing_line_names(ingredients, pantry):
             key = normalize_food_name(name).lower().strip()
             if key and key not in seen:
                 seen.add(key)

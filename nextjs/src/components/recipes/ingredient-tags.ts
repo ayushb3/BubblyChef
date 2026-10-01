@@ -1,11 +1,13 @@
 /**
  * Issue #745 — the food tag an ingredient row wears when the caller knows how
- * the pantry covers it: "In pantry", "Short ½", "Staple". Pure; built on the
- * cook proposal's `IngredientMatch` (`types/recipes.ts`), so the recipe page
- * and the cook sheet can never disagree about what counts as covered.
+ * the pantry covers it: "In pantry", "Short ½", "Staple", "To buy". Pure; built
+ * on the cook proposal's `IngredientMatch` (`types/recipes.ts`), so the recipe
+ * page and the cook sheet can never disagree about what counts as covered.
  *
- * A missing ingredient (or one with a unit conflict) gets no tag: the tags say
- * what you already have, and an absent tag is "you need it".
+ * A missing ingredient is "To buy" (issue #805): the meal screen's "N to buy"
+ * line lists exactly the foods the match calls missing, so a row with no tag
+ * beside a line that names it read as a contradiction. A match the tags have no
+ * word for (`to_taste`, a unit conflict) still gets none.
  */
 
 import type { ChipTone } from '@/components/ui/Chip'
@@ -13,7 +15,7 @@ import type { IngredientMatch } from '@/types/recipes'
 
 export interface PantryTag {
   label: string
-  tone: Extract<ChipTone, 'fresh' | 'expiring' | 'muted'>
+  tone: Extract<ChipTone, 'fresh' | 'expiring' | 'muted' | 'primary'>
 }
 
 const QUARTERS: Record<number, string> = { 0.25: '¼', 0.5: '½', 0.75: '¾' }
@@ -43,6 +45,8 @@ export function pantryTag(match: IngredientMatch): PantryTag | null {
       return { label: shortLabel(match), tone: 'expiring' }
     case 'assumed':
       return { label: 'Staple', tone: 'muted' }
+    case 'missing':
+      return { label: 'To buy', tone: 'primary' }
     default:
       return null
   }

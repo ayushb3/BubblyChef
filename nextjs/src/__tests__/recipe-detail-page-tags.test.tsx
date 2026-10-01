@@ -52,13 +52,14 @@ function mockFetch(match: () => unknown) {
 }
 
 describe('RecipeDetailPage food tags (#784)', () => {
-  it('tags each ingredient from the pantry match; a missing one is untagged', async () => {
+  it('tags each ingredient from the pantry match; a missing one is To buy', async () => {
     mockFetch(() => reply(MATCHES))
     renderPage()
-    await waitFor(() => expect(screen.getAllByTestId('ingredient-tag')).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByTestId('ingredient-tag')).toHaveLength(3))
     expect(screen.getAllByTestId('ingredient-tag').map((t) => t.textContent)).toEqual([
       'In pantry',
       'Short ½',
+      'To buy',
     ])
   })
 
