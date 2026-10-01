@@ -126,15 +126,34 @@ const chips = () => [
   ...screen.queryAllByTestId('bubbles-counter-rise'),
 ]
 
+/** jsdom has no layout: the header counter is "on screen" (the home at the top). */
+class OnScreenIntersectionObserver {
+  constructor(private readonly callback: IntersectionObserverCallback) {}
+  observe(target: Element) {
+    this.callback(
+      [{ target, isIntersecting: true, intersectionRatio: 1 } as IntersectionObserverEntry],
+      this as unknown as IntersectionObserver,
+    )
+  }
+  unobserve() {}
+  disconnect() {}
+  takeRecords() {
+    return []
+  }
+}
+const originalIO = (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver
+
 const originalFetch = global.fetch
 let rows: Row[]
 beforeEach(() => {
+  ;(globalThis as { IntersectionObserver?: unknown }).IntersectionObserver = OnScreenIntersectionObserver
   mockReduced = false
   rows = seed()
   resetDeferredResolvesForTests()
   setUndoWindowMsForTests(50)
 })
 afterEach(() => {
+  ;(globalThis as { IntersectionObserver?: unknown }).IntersectionObserver = originalIO
   global.fetch = originalFetch
   resetDeferredResolvesForTests()
 })

@@ -1,14 +1,19 @@
 /**
- * Issue #843 — one "+N" per award. After a put-away the home showed two: the
- * global `BubblePop` and the header counter's own tag. On the kitchen home the
- * counter's tag is the reaction and `BubblePop` stays quiet while the counter is
- * visible; every other page keeps `BubblePop`.
+ * Issue #843 — one "+N" per award, and never none. After a put-away the home
+ * showed two: the global `BubblePop` and the header counter's own tag. While the
+ * counter is on screen its tag is the reaction and `BubblePop` stays quiet; with
+ * the home scrolled so the header is out of view (the header is not sticky), or on
+ * any other page, `BubblePop` shows.
  *
- * Both are driven off the shared `['bubbles']` query, as in the app. The real
- * `HeroHome` is mounted for the home case, with a put-away award (a bulk add that
- * raises the balance) as the trigger.
+ * jsdom has no layout, so "on screen" is driven through a mocked
+ * IntersectionObserver (and, for the no-observer fallback, a mocked rectangle).
+ * The real browser case is `e2e/pixel-sheet-scroll.spec.ts`'s sibling,
+ * `e2e/bubble-award-scrolled.spec.ts`.
+ *
+ * Both reactions are driven off the shared `['bubbles']` query, as in the app,
+ * with the real `HeroHome` for the home cases.
  */
-import React from 'react'
+import React, { useRef } from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import HeroHome from '@/components/dashboard/HeroHome'
@@ -21,6 +26,41 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(''),
   usePathname: () => mockPathname,
 }))
+
+/** A controllable IntersectionObserver: tests say how much of each target is on screen. */
+class MockIntersectionObserver {
+  static instances = new Set<MockIntersectionObserver>()
+  private target: Element | null = null
+  constructor(private readonly callback: IntersectionObserverCallback) {}
+  observe(el: Element) {
+    this.target = el
+    MockIntersectionObserver.instances.add(this)
+  }
+  unobserve() {}
+  disconnect() {
+    MockIntersectionObserver.instances.delete(this)
+  }
+  takeRecords() {
+    return []
+  }
+  report(ratio: number) {
+    this.callback(
+      [
+        {
+          target: this.target as Element,
+          isIntersecting: ratio > 0,
+          intersectionRatio: ratio,
+        } as IntersectionObserverEntry,
+      ],
+      this as unknown as IntersectionObserver,
+    )
+  }
+  static setOnScreen(ratio: number) {
+    act(() => {
+      MockIntersectionObserver.instances.forEach((o) => o.report(ratio))
+    })
+  }
+}
 
 function json(body: unknown): Response {
   return { ok: true, status: 200, json: async () => body } as Response
@@ -39,16 +79,20 @@ function mockApi() {
 }
 
 const originalFetch = global.fetch
+const originalIO = (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver
 beforeEach(() => {
   balance = 100
   mockPathname = '/'
+  MockIntersectionObserver.instances.clear()
+  ;(globalThis as { IntersectionObserver?: unknown }).IntersectionObserver = MockIntersectionObserver
   mockApi()
 })
 afterEach(() => {
   global.fetch = originalFetch
+  ;(globalThis as { IntersectionObserver?: unknown }).IntersectionObserver = originalIO
 })
 
-/** Every "+N" award chip on screen: the global pop plus the counter's own tag. */
+/** Every "+N" award chip in the DOM: the global pop plus the counter's own tag. */
 function awardChips() {
   return [
     ...screen.queryAllByTestId('bubble-pop'),
@@ -56,31 +100,69 @@ function awardChips() {
   ].filter((el) => /\+\d/.test(el.textContent ?? ''))
 }
 
-function Claimer({ active = true }: { active?: boolean }) {
-  useClaimBubbleReaction(active)
-  return null
+async function award(client: QueryClient, to: number) {
+  balance = to
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ['bubbles'] })
+  })
 }
 
-describe('one +N per award (#843)', () => {
-  it('on the kitchen home, an award renders exactly one +N: the counter tag', async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(
-      <QueryClientProvider client={client}>
-        <HeroHome displayName="ayush" />
-        <BubblePop />
-      </QueryClientProvider>,
-    )
-    await screen.findByRole('group', { name: '100 bubbles' })
+async function renderHome() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <HeroHome displayName="ayush" />
+      <BubblePop />
+    </QueryClientProvider>,
+  )
+  await screen.findByRole('group', { name: '100 bubbles' })
+  return client
+}
 
-    // A put-away award: the balance rises and every watcher of the cache refetches.
-    balance = 112
-    await act(async () => {
-      await client.invalidateQueries({ queryKey: ['bubbles'] })
-    })
+describe('one +N per award, never none (#843)', () => {
+  it('on the kitchen home with the counter on screen, an award renders exactly one +N: the counter tag', async () => {
+    const client = await renderHome()
+    MockIntersectionObserver.setOnScreen(1)
+
+    await award(client, 112)
 
     await waitFor(() => expect(screen.getByTestId('bubbles-counter-rise')).toHaveTextContent('+12'))
     expect(screen.queryByTestId('bubble-pop')).not.toBeInTheDocument()
     expect(awardChips()).toHaveLength(1)
+  })
+
+  it('with the home scrolled past its header, BubblePop shows so the award is not invisible', async () => {
+    const client = await renderHome()
+    MockIntersectionObserver.setOnScreen(0)
+
+    await award(client, 112)
+
+    await waitFor(() => expect(screen.getByTestId('bubble-pop')).toHaveTextContent('+12'))
+  })
+
+  it('a counter only just peeking in (under half visible) does not claim the award', async () => {
+    const client = await renderHome()
+    MockIntersectionObserver.setOnScreen(0.3)
+
+    await award(client, 112)
+
+    await waitFor(() => expect(screen.getByTestId('bubble-pop')).toBeInTheDocument())
+  })
+
+  it('follows the scroll: out of view then back in view', async () => {
+    const client = await renderHome()
+    MockIntersectionObserver.setOnScreen(0)
+    await award(client, 105)
+    await waitFor(() => expect(screen.getByTestId('bubble-pop')).toHaveTextContent('+5'))
+
+    // Wait the pop out, scroll the counter back into view, award again.
+    await waitFor(() => expect(screen.queryByTestId('bubble-pop')).not.toBeInTheDocument(), {
+      timeout: 3000,
+    })
+    MockIntersectionObserver.setOnScreen(1)
+    await award(client, 117)
+    await waitFor(() => expect(screen.getByTestId('bubbles-counter-rise')).toHaveTextContent('+12'))
+    expect(screen.queryByTestId('bubble-pop')).not.toBeInTheDocument()
   })
 
   it('anywhere else, BubblePop is still the reaction', async () => {
@@ -93,41 +175,70 @@ describe('one +N per award (#843)', () => {
     )
     await waitFor(() => expect(client.getQueryData(['bubbles'])).toBeDefined())
 
-    balance = 112
-    await act(async () => {
-      await client.invalidateQueries({ queryKey: ['bubbles'] })
-    })
+    await award(client, 112)
     await waitFor(() => expect(screen.getByTestId('bubble-pop')).toHaveTextContent('+12'))
     expect(awardChips()).toHaveLength(1)
   })
 
-  it('BubblePop is quiet only while a counter holds the claim, and works again once it is gone', async () => {
+  describe('without IntersectionObserver the counter\'s rectangle is checked at the award', () => {
+    const rectOf = (top: number, bottom: number) =>
+      jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        const real = this.getAttribute('data-testid') === 'kitchen-bubbles-balance-group'
+        return (real
+          ? { top, bottom, left: 300, right: 376, width: 76, height: 44 }
+          : { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }) as DOMRect
+      })
+
+    beforeEach(() => {
+      ;(globalThis as { IntersectionObserver?: unknown }).IntersectionObserver = undefined
+    })
+    afterEach(() => jest.restoreAllMocks())
+
+    it('in view: BubblePop is quiet', async () => {
+      rectOf(10, 54)
+      const client = await renderHome()
+      await award(client, 112)
+      await waitFor(() => expect(screen.getByTestId('bubbles-counter-rise')).toBeInTheDocument())
+      expect(screen.queryByTestId('bubble-pop')).not.toBeInTheDocument()
+    })
+
+    it('scrolled out of view: BubblePop shows', async () => {
+      rectOf(-90, -46)
+      const client = await renderHome()
+      await award(client, 112)
+      await waitFor(() => expect(screen.getByTestId('bubble-pop')).toHaveTextContent('+12'))
+    })
+  })
+
+  it('a counter that is gone releases its claim', async () => {
+    function Claimer({ show }: { show: boolean }) {
+      const ref = useRef<HTMLDivElement>(null)
+      useClaimBubbleReaction(ref, show)
+      return <div ref={ref} />
+    }
     mockPathname = '/chat'
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const tree = (claimed: boolean) => (
+    const tree = (show: boolean) => (
       <QueryClientProvider client={client}>
-        {claimed && <Claimer />}
+        <Claimer show={show} />
         <BubblePop />
       </QueryClientProvider>
     )
     const view = render(tree(true))
     await waitFor(() => expect(client.getQueryData(['bubbles'])).toBeDefined())
+    MockIntersectionObserver.setOnScreen(1)
 
-    balance = 105
-    await act(async () => {
-      await client.invalidateQueries({ queryKey: ['bubbles'] })
-    })
+    await award(client, 105)
     await act(async () => {
       await new Promise((r) => setTimeout(r, 50))
     })
     expect(screen.queryByTestId('bubble-pop')).not.toBeInTheDocument()
 
-    // The counter leaves (navigated away from home): the next award pops again.
     view.rerender(tree(false))
-    balance = 110
-    await act(async () => {
-      await client.invalidateQueries({ queryKey: ['bubbles'] })
-    })
+    expect(MockIntersectionObserver.instances.size).toBe(0)
+    await award(client, 110)
     await waitFor(() => expect(screen.getByTestId('bubble-pop')).toHaveTextContent('+5'))
   })
 })
