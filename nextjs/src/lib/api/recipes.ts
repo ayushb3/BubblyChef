@@ -32,6 +32,38 @@ export async function fetchRecipe(recipeId: string): Promise<Recipe> {
   return res.json()
 }
 
+/** Page size for `fetchAllRecipes`. The route's own default is 50. */
+const RECIPE_PAGE_SIZE = 100
+
+/**
+ * Every saved (non-draft) recipe the user has, not just the route's first
+ * page (issue #869).
+ *
+ * `GET /api/recipes` returns 50 rows unless told otherwise, so a library that
+ * fetched it once silently lost everything past the 50th: search and the
+ * Favourites filter run client-side over what was loaded, so they could not
+ * find the rest. This walks `limit`/`offset` until `total_count` rows are in
+ * hand (or a page comes back empty, so a stale count can never loop forever).
+ * Client-side search stays; list sizes are small.
+ *
+ * Throws on a non-ok page rather than returning a partial list: a half-loaded
+ * library that looks complete is the exact bug this fixes.
+ */
+export async function fetchAllRecipes(): Promise<Recipe[]> {
+  const all: Recipe[] = []
+  let offset = 0
+  for (;;) {
+    const res = await fetch(`/api/recipes?limit=${RECIPE_PAGE_SIZE}&offset=${offset}`)
+    if (!res.ok) throw new Error(`Failed to fetch recipes: ${res.status}`)
+    const data = (await res.json()) as { recipes?: Recipe[]; total_count?: number }
+    const page = data.recipes ?? []
+    all.push(...page)
+    offset += page.length
+    const total = typeof data.total_count === 'number' ? data.total_count : 0
+    if (page.length === 0 || offset >= total) return all
+  }
+}
+
 /**
  * Generate a pantry-aware recipe from constraints.
  */

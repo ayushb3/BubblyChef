@@ -16,6 +16,7 @@ from postgrest.types import JSON
 from supabase import Client, create_client
 
 from bubbly_chef.config import settings
+from bubbly_chef.domain.household import coerce_household_size
 from bubbly_chef.domain.lots import fresh_first_key, lot_base, lot_food_key, soonest_first_key
 from bubbly_chef.domain.normalizer import (
     effective_unit,
@@ -388,6 +389,34 @@ def _plan_use_across_lots(
         plan = _plan_pantry_use(stocked[0], name, action)
         return ([] if plan.refusal else [(stocked[0], plan)]), plan.refusal
     return planned, refusal
+
+
+def merge_recent_titles(rows: list[dict[str, Any]], limit: int) -> list[str]:
+    """Titles from recipe/meal rows, newest first by `coalesce(last_cooked_at, created_at)`.
+
+    De-duplicated ignoring case and punctuation (the first, newest, spelling wins), blank
+    titles dropped, capped at `limit`. Rows from both tables go in together: a recipe cooked
+    last night and a meal saved last week sort into one recency order (issue #852).
+    """
+    ordered = sorted(
+        rows,
+        key=lambda r: str(r.get("last_cooked_at") or r.get("created_at") or ""),
+        reverse=True,
+    )
+    titles: list[str] = []
+    seen: set[str] = set()
+    for row in ordered:
+        title = row.get("title")
+        if not isinstance(title, str):
+            continue
+        key = re.sub(r"[\W_]+", " ", title.casefold()).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        titles.append(title.strip())
+        if len(titles) >= limit:
+            break
+    return titles
 
 
 def _parse_meal_cook_timestamp(value: Any) -> datetime | None:
@@ -1061,6 +1090,43 @@ class SupabaseRepository:
             return []
         return [c for c, _ in Counter(cuisines).most_common(2)]
 
+    async def get_recent_dish_titles(self, user_id: str, limit: int = 10) -> list[str]:
+        """Titles of the user's most recently saved or cooked recipes and meals, newest
+        first (issue #852): the "dishes to avoid repeating" for the meal option prompt.
+
+        Non-draft rows only, from both `recipes` and `meals`. As in `get_recent_cuisines`,
+        PostgREST can't order by `coalesce(last_cooked_at, created_at)`, so each table is
+        read twice (top `limit` by `last_cooked_at`, top `limit` by `created_at`) and the
+        rows merged and re-sorted in Python; a row's `last_cooked_at` is never earlier than
+        its `created_at`, so the union always covers the true top `limit`. Scoped by
+        `user_id` on every read. Returns `[]` on any error. Never raises.
+        """
+        rows: list[dict[str, Any]] = []
+        try:
+            for table in ("recipes", "meals"):
+                base = (
+                    self.client.table(table)
+                    .select("title,created_at,last_cooked_at")
+                    .eq("user_id", user_id)
+                    .eq("is_draft", False)
+                )
+                cooked = (
+                    self.client.table(table)
+                    .select("title,created_at,last_cooked_at")
+                    .eq("user_id", user_id)
+                    .eq("is_draft", False)
+                    .not_.is_("last_cooked_at", "null")
+                    .order("last_cooked_at", desc=True)
+                    .limit(limit)
+                    .execute()
+                )
+                created = base.order("created_at", desc=True).limit(limit).execute()
+                rows += _as_rows(cooked.data or []) + _as_rows(created.data or [])
+        except Exception as e:
+            logger.warning(f"Could not fetch recent dish titles for user {user_id}: {e}")
+            return []
+        return merge_recent_titles(rows, limit)
+
     async def search_saved_recipes(
         self, user_id: str, query: str, limit: int = 5
     ) -> list[dict[str, Any]]:
@@ -1679,6 +1745,45 @@ class SupabaseRepository:
         if result.data:
             return _as_row(result.data[0])
         return None
+
+    async def get_household_size(self, user_id: str) -> int | None:
+        """How many people the user cooks for, or None when they never said (#874).
+
+        Source of truth is the auth user's `user_metadata.household_size`, which
+        the first-run staples step and the Profile entry write (#853). It is read
+        with the service role (`auth.admin.get_user_by_id`) rather than from the
+        request's JWT claims: the access token carries the metadata as of its
+        last refresh, so a size set a minute ago would be missing from it. When
+        the metadata has no usable size, `user_profiles.household_size` is the
+        fallback; when both are set the metadata wins.
+
+        Both reads are scoped by `user_id`. Never raises: each source degrades
+        to "not set" on any error, so the caller falls through to the learned
+        servings rather than failing the turn.
+        """
+        try:
+            response = self.client.auth.admin.get_user_by_id(user_id)
+            user = getattr(response, "user", None)
+            metadata = getattr(user, "user_metadata", None)
+            if isinstance(metadata, dict):
+                size = coerce_household_size(metadata.get("household_size"))
+                if size is not None:
+                    return size
+        except Exception as e:
+            logger.warning(f"Could not read household size from auth for user {user_id}: {e}")
+
+        try:
+            result = (
+                self.client.table("user_profiles")
+                .select("household_size")
+                .eq("user_id", user_id)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning(f"Could not read household size from profile for user {user_id}: {e}")
+            return None
+        rows = _as_rows(result.data or [])
+        return coerce_household_size(rows[0].get("household_size")) if rows else None
 
     # =========================================================================
     # Meals (issue #650) -- read-only from ai-service. Full meal CRUD lives

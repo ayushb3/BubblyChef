@@ -171,3 +171,10 @@ class PantryProposal(BaseModel):
     normalization_applied: bool = Field(
         default=False, description="Whether name normalization was applied"
     )
+    is_receipt: bool = Field(
+        default=True,
+        description=(
+            "Receipt scans only (issue #856): False when the parse judged the image "
+            "not to be a receipt, so the UI can warn before anything is added."
+        ),
+    )

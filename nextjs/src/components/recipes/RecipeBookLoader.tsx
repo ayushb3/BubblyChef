@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import RecipeBook from '@/components/recipes/RecipeBook'
 import MealsList from '@/components/recipes/MealsList'
 import { type Recipe } from '@/components/recipes/RecipePage'
+import { fetchAllRecipes } from '@/lib/api/recipes'
 
 type LibraryTab = 'recipes' | 'meals'
 
@@ -25,10 +26,11 @@ export default function RecipeBookLoader() {
   const [tab, setTab] = useState<LibraryTab>(initialTab)
 
   useEffect(() => {
-    fetch('/api/recipes')
-      .then((r) => r.json())
-      .then((data) => {
-        setRecipes(data.recipes ?? [])
+    // Every page, not the route's default 50 (issue #869) — search and the
+    // Favourites filter run client-side over this list.
+    fetchAllRecipes()
+      .then((all) => {
+        setRecipes(all)
       })
       .catch(() => {
         setRecipes([])

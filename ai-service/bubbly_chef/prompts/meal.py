@@ -65,7 +65,9 @@ each dish, in whole minutes.
 
 Rules:
 - The options must be genuinely different from one another -- different \
-mains, not the same dish with a swapped side.
+mains, not the same dish with a swapped side. Each option's main has to \
+differ from the other options' mains in its main protein or its cuisine; \
+three variations on one stew are one option, not three.
 - If "Must use" ingredients are listed, every option must actually use them \
 -- this overrides every other preference.
 """
@@ -95,6 +97,23 @@ _MEAL_OPTIONS_EXPIRY_RULES: dict[ExpiryPriority, str] = {
     ),
 }
 
+# Seasoning and honesty (issue #852). Both option prompts share the honesty rule; the
+# seasoning rule differs only in where seasonings may come from, and the no-pantry
+# prompt's must not mention the pantry at all (issue #287).
+_MEAL_OPTIONS_NAMED_INGREDIENTS_RULE = """\
+- Every ingredient you name in a title or blurb must also be in the \
+key_ingredients of one of that option's dishes. Name nothing the dishes \
+won't contain.
+"""
+
+_MEAL_OPTIONS_SEASONING_RULE = """\
+- Treat salt, pepper, cooking oil and any spices, herbs or aromatics listed as \
+available as stocked. Every dish must be properly seasoned, never bland: put \
+the seasonings that define its flavour (e.g. garlic, cumin, lemon) in its \
+key_ingredients, drawn from what is available or from salt, pepper and oil. \
+Those seasonings may take a dish past 6 key ingredients.
+"""
+
 _MEAL_OPTIONS_RULES_TAIL = """\
 - Match the cuisine, mood, and dietary restrictions if specified.
 - If kitchen limits are listed (e.g. "one pan"), keep the dishes simple \
@@ -110,6 +129,8 @@ def meal_options_system_prompt(expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_
     return (
         _MEAL_OPTIONS_INTRO
         + _MEAL_OPTIONS_EXPIRY_RULES[expiry_priority]
+        + _MEAL_OPTIONS_SEASONING_RULE
+        + _MEAL_OPTIONS_NAMED_INGREDIENTS_RULE
         + _MEAL_OPTIONS_RULES_TAIL
     )
 
@@ -136,8 +157,15 @@ Estimate est_total_minutes and est_hands_on_minutes for each dish, in \
 whole minutes.
 
 Rules:
-- The options must be genuinely different from one another.
+- The options must be genuinely different from one another. Each option's \
+main has to differ from the other options' mains in its main protein or its \
+cuisine; three variations on one stew are one option, not three.
 - If "Must use" ingredients are listed, every option must actually use them.
+- Treat salt, pepper and cooking oil as on hand. Every dish must be properly \
+seasoned, never bland: put the seasonings that define its flavour (e.g. \
+garlic, cumin, lemon) in its key_ingredients. Those seasonings may take a \
+dish past 6 key ingredients.
+""" + _MEAL_OPTIONS_NAMED_INGREDIENTS_RULE + """\
 - Match the cuisine, mood, and dietary restrictions if specified.
 - If kitchen limits are listed (e.g. "one pan"), keep the dishes simple \
 enough to realistically cook with that limited equipment.
@@ -243,6 +271,22 @@ toward ingredients you think they might have. Work only from the dish and \
 the rest of the meal.\
 """
 
+# Appended to every dish-expansion prompt (issue #852). The option card promised these
+# seasonings; the recipe has to list them, and has to be seasoned even when the card
+# listed none. Pantry-neutral wording so it is safe under the no-pantry opt-out (#287).
+MEAL_DISH_SEASONING_RULE = """
+Season the dish properly: use salt, pepper, cooking oil and the spices, herbs or \
+aromatics that suit it, and list every one you use in "ingredients". A recipe with \
+no seasoning is not acceptable.\
+"""
+
+# `{ingredients}` is the dish outline's key_ingredients, comma-joined. Omitted when the
+# outline has none.
+MEAL_DISH_PROMISED_INGREDIENTS_RULE = """
+The meal card promised these ingredients for this dish, so the recipe must include \
+every one of them: {ingredients}.\
+"""
+
 # The meal screen's "Swap"/"Add a side" flow (issue #652, `workflows/meal/
 # sides.py`). Unlike the option stage, this call is scoped to one slot in an
 # *existing* meal: it knows the main and the other side (not the one being
@@ -325,6 +369,16 @@ MEAL_OPTIONS_PREVIOUS_BLOCK = (
     "\nAlready suggested in this conversation: {options}. If the user's "
     "request refers to one of these (most likely one just shown), build on "
     "it; otherwise suggest meals different from all of them."
+)
+
+# The user's last ~10 saved and cooked recipe/meal titles (issue #852), so a library of six
+# tomato-chickpea stews stops producing a seventh. `{titles}` is `"; "`-joined, already
+# cleaned by `workflows.meal.variety.avoid_titles_block`. Not pantry data, so it rides the
+# opt-out prompt too. Omitted entirely when there is no history or on a fixed-main turn.
+MEAL_OPTIONS_AVOID_BLOCK = (
+    "\nDishes the user already has saved or has cooked recently: {titles}. Don't "
+    "suggest any of these or a close variant of one -- offer something new. If the "
+    "user's own request names one of them, that request wins."
 )
 
 # Added to the option prompt when a typed message changes the meal on screen (issue
