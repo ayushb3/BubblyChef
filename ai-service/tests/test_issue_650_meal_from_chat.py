@@ -460,7 +460,14 @@ class TestKitchenLimits:
                         _dish_llm("main", "One Pan Pasta", ["pasta", "tomato"]),
                         _dish_llm("side", "Garlic Bread", ["bread", "butter"]),
                     ],
-                )
+                ),
+                MealOptionLLM(
+                    title="One Pan Pasta Night Too",
+                    dishes=[
+                        _dish_llm("main", "One Pan Pasta", ["pasta", "tomato"]),
+                        _dish_llm("side", "Garlic Bread", ["bread", "butter"]),
+                    ],
+                ),
             ]
         )
         meal_ai = MagicMock()
@@ -699,7 +706,14 @@ class TestDefaultServings:
                         _dish_llm("main", "Roast", ["chicken"]),
                         _dish_llm("side", "Salad", ["lettuce"]),
                     ],
-                )
+                ),
+                MealOptionLLM(
+                    title="Dinner for Six Too",
+                    dishes=[
+                        _dish_llm("main", "Roast", ["chicken"]),
+                        _dish_llm("side", "Salad", ["lettuce"]),
+                    ],
+                ),
             ]
         )
         meal_ai = MagicMock()
@@ -747,7 +761,14 @@ class TestDefaultServings:
                         _dish_llm("main", "Roast", ["chicken"]),
                         _dish_llm("side", "Salad", ["lettuce"]),
                     ],
-                )
+                ),
+                MealOptionLLM(
+                    title="Family Dinner Too",
+                    dishes=[
+                        _dish_llm("main", "Roast", ["chicken"]),
+                        _dish_llm("side", "Salad", ["lettuce"]),
+                    ],
+                ),
             ]
         )
         meal_ai = MagicMock()
@@ -795,7 +816,14 @@ class TestDefaultServings:
                         _dish_llm("main", "Pasta", ["pasta"]),
                         _dish_llm("side", "Salad", ["lettuce"]),
                     ],
-                )
+                ),
+                MealOptionLLM(
+                    title="Simple Dinner Too",
+                    dishes=[
+                        _dish_llm("main", "Pasta", ["pasta"]),
+                        _dish_llm("side", "Salad", ["lettuce"]),
+                    ],
+                ),
             ]
         )
         meal_ai = MagicMock()

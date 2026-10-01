@@ -14,12 +14,12 @@ The shared contract between the ai-service half and the Next.js half of issue #6
 ```jsonc
 {
   "proposal_type": "meal_options",
-  "options": [ /* exactly 3, fewer only if generation fails for some */
+  "options": [ /* 3 by default; 2 when a thin pantry or tight constraints allow no more (issue #758) */
     {
       "option_id": "opt_1",            // stable within the conversation
       "title": "Lemon chicken dinner",
       "blurb": "Bright, quick, uses the romaine tonight.",
-      "dishes": [                       // exactly 1 main first, then 1–2 sides
+      "dishes": [                       // exactly 1 main first, then 0–2 sides fitted to the main (issue #758)
         { "role": "main", "name": "Lemon butter chicken",
           "key_ingredients": ["chicken thighs", "lemon", "butter"],
           "est_total_minutes": 30, "est_hands_on_minutes": 15 },
