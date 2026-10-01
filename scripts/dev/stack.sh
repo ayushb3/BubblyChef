@@ -21,6 +21,9 @@
 #     browser while the page itself looks fine.
 set -uo pipefail
 
+# shellcheck source=scripts/dev/node-modules-link.sh
+. "$(dirname "${BASH_SOURCE[0]}")/node-modules-link.sh"
+
 ROOT=$(git rev-parse --show-toplevel)
 STATE="$ROOT/.verify"
 mkdir -p "$STATE"
@@ -118,9 +121,17 @@ cmd_up() {
   # page's extra named export) even though the code builds fine on a clean
   # checkout. They are dev-server output only, so clear them first.
   rm -rf "$ROOT/nextjs/.next/dev"
+  # Turbopack (the default bundler) rejects a linked node_modules, which is how
+  # agent worktrees share the main checkout's install. Use webpack for those only;
+  # a real directory keeps the default build (issue #828).
+  local build_flags=()
+  if node_modules_is_link "$ROOT/nextjs/node_modules"; then
+    echo "  nextjs/node_modules is a link (shared install): building with --webpack, Turbopack rejects it"
+    build_flags=(--webpack)
+  fi
   (
     cd "$ROOT/nextjs" || exit 1
-    NEXT_PUBLIC_GIT_SHA="$SHA" NEXT_PUBLIC_AI_SERVICE_URL="$AI_URL" npm run build >"$STATE/nextjs-build.log" 2>&1
+    NEXT_PUBLIC_GIT_SHA="$SHA" NEXT_PUBLIC_AI_SERVICE_URL="$AI_URL" npm run build -- ${build_flags[@]+"${build_flags[@]}"} >"$STATE/nextjs-build.log" 2>&1
   ) || fail_up "next build failed" "$STATE/nextjs-build.log"
 
   echo "== nextjs on $PORT"
