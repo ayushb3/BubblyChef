@@ -28,14 +28,62 @@ async function failure(res: Response, fallback: string): Promise<Error> {
  * nothing. Rejects with the server's message on failure (e.g. "Meal not found").
  */
 export async function fetchMealToBuy(mealId: string): Promise<string[]> {
+  return (await fetchMealToBuyDetail(mealId)).names
+}
+
+/** One to-buy food and the dishes that need it (issue #805). */
+export interface MealToBuyItem {
+  /** The deduped name (how the first dish that needs it wrote it). */
+  name: string
+  /** The `position` of every dish with a line for this food. */
+  dishPositions: number[]
+  /** That dish's own wording, parallel to `dishPositions`. */
+  dishNames: string[]
+}
+
+export interface MealToBuyDetail {
+  names: string[]
+  /** Per-dish attribution from the service; `null` from an older service (or a malformed one). */
+  items: MealToBuyItem[] | null
+}
+
+function parseItems(raw: unknown): MealToBuyItem[] | null {
+  if (!Array.isArray(raw)) return null
+  const items: MealToBuyItem[] = []
+  for (const entry of raw) {
+    const e = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>
+    const positions = e.dish_positions
+    const names = e.dish_names
+    if (
+      typeof e.name !== 'string' ||
+      !Array.isArray(positions) ||
+      !positions.every((p) => typeof p === 'number') ||
+      !Array.isArray(names) ||
+      !names.every((n) => typeof n === 'string') ||
+      names.length !== positions.length
+    ) {
+      return null
+    }
+    items.push({ name: e.name, dishPositions: positions as number[], dishNames: names as string[] })
+  }
+  return items
+}
+
+/**
+ * `fetchMealToBuy` plus the service's per-dish attribution (issue #805). The
+ * service decides which dishes need each food with the same key it dedupes the
+ * list on, so a card's "N to buy" line can follow it instead of re-matching names.
+ */
+export async function fetchMealToBuyDetail(mealId: string): Promise<MealToBuyDetail> {
   const res = await fetch('/api/ai/grocery/meal-to-buy', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ meal_id: mealId }),
   })
   if (!res.ok) throw await failure(res, "Couldn't work out what the meal needs")
-  const data = (await res.json()) as { to_buy?: unknown }
-  return Array.isArray(data.to_buy)
+  const data = (await res.json()) as { to_buy?: unknown; items?: unknown }
+  const names = Array.isArray(data.to_buy)
     ? data.to_buy.filter((n): n is string => typeof n === 'string')
     : []
+  return { names, items: parseItems(data.items) }
 }

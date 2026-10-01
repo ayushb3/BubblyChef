@@ -44,13 +44,14 @@ const recipe: Recipe = {
 }
 
 describe('recipe page food tags', () => {
-  it('tags each ingredient from the match; a missing one is untagged', async () => {
+  it('tags each ingredient from the match; a missing one is To buy', async () => {
     fetchMock.mockResolvedValue(reply(MATCHES))
     render(withClient(<PantryRecipeDetail recipe={recipe} />))
-    await waitFor(() => expect(screen.getAllByTestId('ingredient-tag')).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByTestId('ingredient-tag')).toHaveLength(3))
     expect(screen.getAllByTestId('ingredient-tag').map((t) => t.textContent)).toEqual([
       'In pantry',
       'Short ½',
+      'To buy',
     ])
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
       ingredients: ['2 onions', { name: 'butter', quantity: 100, unit: 'g' }, 'saffron'],
@@ -84,7 +85,7 @@ describe('staleness', () => {
         <PantryRecipeDetail recipe={recipe} />
       </QueryClientProvider>,
     )
-    await waitFor(() => expect(screen.getAllByTestId('ingredient-tag')).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByTestId('ingredient-tag')).toHaveLength(3))
 
     // The user then restocks butter: the next match says it is covered.
     fetchMock.mockResolvedValueOnce(
@@ -101,6 +102,7 @@ describe('staleness', () => {
       expect(screen.getAllByTestId('ingredient-tag').map((t) => t.textContent)).toEqual([
         'In pantry',
         'In pantry',
+        'To buy',
       ]),
     )
     expect(fetchMock).toHaveBeenCalledTimes(2)

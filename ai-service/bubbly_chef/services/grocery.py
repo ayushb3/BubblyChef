@@ -17,27 +17,19 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from uuid import UUID, uuid4
+
+from pydantic import BaseModel, Field
 
 from bubbly_chef.domain.normalizer import normalize_food_name
-from bubbly_chef.domain.staples import shoppable
 from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.repository.supabase_repo import SupabaseRepository
-from bubbly_chef.services.cook_matcher import match_ingredients
+from bubbly_chef.services.ingredient_match import missing_line_names
 
 logger = logging.getLogger(__name__)
 
 
 class MealNotFoundError(LookupError):
     """The meal doesn't exist or isn't this user's (indistinguishable by design)."""
-
-
-def _uuid_str(value: Any) -> str:
-    """`value` as a UUID string; the matcher needs one but only uses it as a label."""
-    try:
-        return str(UUID(str(value)))
-    except ValueError:
-        return str(uuid4())
 
 
 def _matcher_ingredients(raw: list[Any]) -> list[Any]:
@@ -54,36 +46,61 @@ def _matcher_ingredients(raw: list[Any]) -> list[Any]:
     return out
 
 
-def missing_ingredients_for_dishes(dishes: list[dict[str, Any]], pantry: list[Any]) -> list[str]:
+class ToBuyItem(BaseModel):
+    """One food the meal needs, and which dishes need it (issue #805).
+
+    The list is deduped by food (`normalize_food_name`), so "fresh basil" in one
+    dish and "basil" in another are one entry. Each dish card still has to list
+    every food its own rows read "To buy" for, and only this side knows the key
+    that decided "same food", so it says which dishes the entry covers instead of
+    leaving the client to re-match names with a different key.
+    """
+
+    name: str = Field(description="The deduped name: how the first dish that needs it wrote it")
+    dish_positions: list[int] = Field(
+        description="The `position` of every dish with a line for this food, in dish order"
+    )
+    dish_names: list[str] = Field(
+        description="That dish's own wording of the food, parallel to `dish_positions`"
+    )
+
+
+def to_buy_items_for_dishes(dishes: list[dict[str, Any]], pantry: list[Any]) -> list[ToBuyItem]:
     """Foods the dishes need that `pantry` lacks, once each, in first-seen order.
 
-    Same matcher as the cook flow (synonym table, culinary staples assumed on
-    hand), so "to buy" never disagrees with what the cook screen will call
-    missing. Water and ice are never shopped for. Two dishes needing the same
-    food (by normalised name) list it once.
+    The same resolution as the ingredient tags (`ingredient_match.missing_line_names`:
+    the cook matcher's synonym table, culinary staples assumed on hand, water and
+    ice never shopped for), so a food is listed here exactly when its row on the
+    meal screen reads "To buy" (issue #805). Two dishes needing the same food (by
+    normalised name) list it once, with both dishes in `dish_positions`.
     """
-    seen: set[str] = set()
-    out: list[str] = []
-    for dish in dishes:
+    by_key: dict[str, ToBuyItem] = {}
+    for index, dish in enumerate(dishes):
+        position = dish.get("position")
+        dish_position = position if isinstance(position, int) else index
         recipe = dish.get("recipe") or {}
         ingredients = _matcher_ingredients(recipe.get("ingredients") or [])
         if not ingredients:
             continue
-        proposal = match_ingredients(
-            recipe_id=_uuid_str(recipe.get("id") or dish.get("recipe_id")),
-            recipe_title=str(recipe.get("title") or ""),
-            recipe_ingredients=ingredients,
-            pantry_items=pantry,
-        )
-        for name in shoppable(list(proposal.missing)):
+        for name in missing_line_names(ingredients, pantry):
             key = normalize_food_name(name).lower().strip()
-            if key and key not in seen:
-                seen.add(key)
-                out.append(name)
-    return out
+            if not key:
+                continue
+            item = by_key.get(key)
+            if item is None:
+                by_key[key] = ToBuyItem(name=name, dish_positions=[dish_position], dish_names=[name])
+            elif dish_position not in item.dish_positions:
+                item.dish_positions.append(dish_position)
+                item.dish_names.append(name)
+    return list(by_key.values())
 
 
-async def meal_to_buy(repo: SupabaseRepository, user_id: str, meal_id: str) -> list[str]:
+def missing_ingredients_for_dishes(dishes: list[dict[str, Any]], pantry: list[Any]) -> list[str]:
+    """The names of `to_buy_items_for_dishes`, once each, in first-seen order."""
+    return [item.name for item in to_buy_items_for_dishes(dishes, pantry)]
+
+
+async def meal_to_buy_items(repo: SupabaseRepository, user_id: str, meal_id: str) -> list[ToBuyItem]:
     """A saved meal's missing ingredients against the user's current pantry.
 
     Raises `MealNotFoundError` when the meal isn't this user's.
@@ -92,4 +109,9 @@ async def meal_to_buy(repo: SupabaseRepository, user_id: str, meal_id: str) -> l
     if meal is None:
         raise MealNotFoundError(meal_id)
     pantry = filter_usable_pantry_items(await repo.get_all_pantry_items(user_id))
-    return missing_ingredients_for_dishes(meal["dishes"], pantry)
+    return to_buy_items_for_dishes(meal["dishes"], pantry)
+
+
+async def meal_to_buy(repo: SupabaseRepository, user_id: str, meal_id: str) -> list[str]:
+    """`meal_to_buy_items`, as names only."""
+    return [item.name for item in await meal_to_buy_items(repo, user_id, meal_id)]

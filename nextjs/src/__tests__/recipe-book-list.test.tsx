@@ -157,8 +157,12 @@ describe('Recipes tab list (issue #801)', () => {
       // One card now (the header), and the detail with its ingredients and tags.
       expect(screen.getAllByTestId('recipe-card-saved')).toHaveLength(1)
       expect(screen.getByRole('heading', { name: 'Ingredients' })).toBeInTheDocument()
-      await waitFor(() => expect(screen.getAllByTestId('ingredient-tag')).toHaveLength(1))
-      expect(screen.getByTestId('ingredient-tag')).toHaveTextContent('In pantry')
+      // Pasta is stocked; saffron is missing, which reads To buy (issue #805), not no tag.
+      await waitFor(() => expect(screen.getAllByTestId('ingredient-tag')).toHaveLength(2))
+      expect(screen.getAllByTestId('ingredient-tag').map((t) => t.textContent)).toEqual([
+        'In pantry',
+        'To buy',
+      ])
       expect(screen.getByRole('button', { name: 'Cook this recipe' })).toBeInTheDocument()
 
       fireEvent.click(screen.getByRole('button', { name: /Back to recipes/ }))
