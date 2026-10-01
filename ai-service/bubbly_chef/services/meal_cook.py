@@ -49,7 +49,7 @@ from bubbly_chef.services.cook_matcher import (
 
 logger = logging.getLogger(__name__)
 
-_MeasuredKind = Literal["measured", "unit_conflict", "imprecise", "assumed"]
+_MeasuredKind = Literal["measured", "unit_conflict", "imprecise", "assumed", "to_taste"]
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +227,8 @@ def _line_kind(match: IngredientMatch) -> _MeasuredKind:
         return "unit_conflict"
     if match.status == "imprecise":
         return "imprecise"
+    if match.status == "to_taste":
+        return "to_taste"
     # "missing" never appears in `proposal.matches` (match_ingredients only
     # ever appends missing NAMES to `proposal.missing`), so the only other
     # status IngredientMatch can carry here is "assumed".
@@ -363,7 +365,9 @@ def _merge_unit_conflict_or_imprecise(
     )
 
 
-def _merge_assumed(group: _Group) -> MealIngredientMatch:
+def _merge_assumed(
+    group: _Group, status: Literal["assumed", "to_taste"] = "assumed"
+) -> MealIngredientMatch:
     sources_output = [_to_source(dish, m) for dish, m in group]
     first_match = group[0][1]
     ingredient_qty, ingredient_unit = _same_unit_sum(group)
@@ -377,7 +381,7 @@ def _merge_assumed(group: _Group) -> MealIngredientMatch:
         pantry_qty_available=None,
         deduct_qty=None,
         base_unit=None,
-        status="assumed",
+        status=status,
         shortfall=None,
         match_type="none",
         substitution_note=None,
@@ -403,8 +407,8 @@ def merge_meal_matches(
         for match in proposal.matches:
             kind = _line_kind(match)
             key: tuple[str, Any] = (
-                ("assumed", _normalize_ingredient_name(match.ingredient_name))
-                if kind == "assumed"
+                (kind, _normalize_ingredient_name(match.ingredient_name))
+                if kind in ("assumed", "to_taste")
                 else (kind, match.pantry_item_id)
             )
             groups.setdefault(key, []).append((dish, match))
@@ -417,6 +421,8 @@ def merge_meal_matches(
             matches.append(_merge_measured(group))
         elif kind == "assumed":
             matches.append(_merge_assumed(group))
+        elif kind == "to_taste":
+            matches.append(_merge_assumed(group, "to_taste"))
         else:
             matches.append(_merge_unit_conflict_or_imprecise(kind, group))
 

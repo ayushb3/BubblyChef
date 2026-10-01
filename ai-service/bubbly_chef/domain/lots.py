@@ -5,7 +5,9 @@ can hold 2 onions bought last week and 3 bought today as two rows. Everything
 that asks "how much do I have" sums the rows, and everything that uses some
 up takes the lot that will go off first. This module is the one place that
 says which lot that is and what a lot is worth in the base unit, so the cook
-matcher and the repository's deduction can't disagree.
+matcher and the repository's deduction can't disagree. Chat uses
+`soonest_first_key`; cook deduction uses `fresh_first_key`, which also keeps an
+expired lot behind every fresh one (#756).
 """
 
 from __future__ import annotations
@@ -34,6 +36,31 @@ def soonest_first_key(item: PantryItem) -> tuple[bool, bool, date, float, str]:
     """
     return (
         item.quantity <= 0,
+        item.expiry_date is None,
+        item.expiry_date or date.max,
+        item.created_at.timestamp(),
+        str(item.id),
+    )
+
+
+def fresh_first_key(
+    item: PantryItem, today: date | None = None
+) -> tuple[bool, bool, bool, date, float, str]:
+    """Sort key for cook deduction: fresh lots first, expired lots only after them (#756).
+
+    Stocked lots before empty ones, then lots that have not expired (a lot
+    expiring today is still fresh, matching `PantryItem.is_expired`) before
+    expired ones, then the soonest expiry with undated lots last, then the older
+    purchase, then the id. An expired lot is not usable stock while a fresh one
+    exists, but it is still spent when it is all there is.
+
+    Chat `use` keeps `soonest_first_key` (#711); only the cook paths use this.
+    """
+    today = today or date.today()
+    expired = item.expiry_date is not None and item.expiry_date < today
+    return (
+        item.quantity <= 0,
+        expired,
         item.expiry_date is None,
         item.expiry_date or date.max,
         item.created_at.timestamp(),

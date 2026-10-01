@@ -132,6 +132,12 @@ export type IngredientMatchStatus =
    * staples is fully makeable.
    */
   | 'assumed'
+  /**
+   * A seasoning line with no amount ("salt and pepper", "to taste"). Never
+   * matched to a pantry row, nothing is deducted or asked for. Shown as one quiet
+   * "Not deducted: to taste" line and left out of the footer counts (#756).
+   */
+  | 'to_taste'
 
 /** How the pantry item was found, recorded separately from status. */
 export type IngredientMatchType = 'exact' | 'substitute' | 'none'

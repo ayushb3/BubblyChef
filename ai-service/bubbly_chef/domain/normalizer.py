@@ -585,6 +585,9 @@ def is_package_unit(unit: str | None) -> bool:
 _TO_COUNT: dict[str, float] = {
     "count": 1.0,
     "item": 1.0,
+    # "1 whole onion" counts one onion, same as "1 item" (#756). Not in
+    # PIECE_UNITS/PACKAGE_UNITS, so it never trips the piece-vs-package guard.
+    "whole": 1.0,
     "dozen": 12.0,
     # Pieces of an ingredient
     "slice": 1.0,
