@@ -89,8 +89,10 @@ class AIRecipeRefineOutput(AIRecipeOutput):
     removed: list[str] = Field(
         default_factory=list,
         description=(
-            "Names of previous-recipe ingredients the user's request takes out, copied "
-            "exactly as written on the previous recipe. Empty when it removes nothing."
+            "Names of previous-recipe ingredients the user's request takes out: the "
+            "ingredient name alone as the previous recipe names it, without its amount, "
+            "unit or preparation (\"cheddar cheese\", not \"250 g cheddar cheese\"). "
+            "Empty when it removes nothing."
         ),
     )
     changed: list[AIRecipeIngredient] = Field(

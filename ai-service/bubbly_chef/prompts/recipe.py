@@ -322,10 +322,12 @@ it. Do not regenerate the ingredient list from scratch.
 
 Report exactly which ingredients the request touched:
 - "added": ingredients the request introduces (full details).
-- "removed": names of previous-recipe ingredients the request takes out,
-  copied exactly as written in the previous recipe above.
+- "removed": names of previous-recipe ingredients the request takes out. Give
+  the ingredient name alone, exactly as the previous recipe above names it,
+  without its amount, unit or preparation: "cheddar cheese", not "250 g
+  cheddar cheese, shredded".
 - "changed": previous-recipe ingredients whose amount, unit or preparation the
-  request changes -- the exact previous name plus the new values.
+  request changes -- the ingredient name alone, as above, plus the new values.
 A substitution ("swap the butter for olive oil") is a removal plus an addition:
 put the old one in "removed" and the new one in "added". Never report a
 different name under "changed"; it only ever updates an existing ingredient.
