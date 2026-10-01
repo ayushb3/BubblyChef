@@ -133,6 +133,18 @@ async def _tags_and_to_buy(
     return rows, res.json()["to_buy"]
 
 
+async def _rows_per_dish(client: AsyncClient, meal: dict[str, Any]) -> list[list[tuple[str, str]]]:
+    """(line name, status) per row, grouped by dish: what each dish card shows."""
+    out: list[list[tuple[str, str]]] = []
+    for dish in meal["dishes"]:
+        res = await client.post(
+            "/v1/pantry/match-ingredients", json={"ingredients": dish["recipe"]["ingredients"]}
+        )
+        assert res.status_code == 200
+        out.append([(m["name"], m["status"]) for m in res.json()["matches"]])
+    return out
+
+
 class TestTagAndToBuyAgree:
     @pytest.mark.asyncio
     async def test_the_onion_line_is_to_buy_on_both(
@@ -163,6 +175,27 @@ class TestTagAndToBuyAgree:
         for name, status in rows:
             if status == "missing":
                 assert _key(name) in listed, f"{name!r} is tagged To buy but not on the line"
+
+    @pytest.mark.asyncio
+    async def test_each_dish_card_lists_every_one_of_its_to_buy_rows(
+        self, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A card's "N to buy" summary is the meal's to-buy foods that the dish itself
+        # lists (the client attributes by food, to EVERY dish that lists it). So per
+        # card: the foods of the dish's rows tagged To buy must equal the dish's foods
+        # that are on the meal list. The onion is missing in both dishes, listed once.
+        _wire(monkeypatch, _meal(), _stock())
+        per_dish = await _rows_per_dish(client, _meal())
+        res = await client.post("/v1/grocery/meal-to-buy", json={"meal_id": "meal-1"})
+        listed = {_key(n) for n in res.json()["to_buy"]}
+        assert [_key(n) for n in res.json()["to_buy"]].count("onion") == 1
+
+        for rows in per_dish:
+            to_buy_rows = {_key(name) for name, status in rows if status == "missing"}
+            on_card = {_key(name) for name, _ in rows} & listed
+            assert to_buy_rows == on_card
+        assert "onion" in {_key(n) for n, st in per_dish[0] if st == "missing"}
+        assert "onion" in {_key(n) for n, st in per_dish[1] if st == "missing"}
 
     @pytest.mark.asyncio
     async def test_the_fixture_resolves_as_expected(

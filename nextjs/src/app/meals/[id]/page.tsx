@@ -269,7 +269,7 @@ export default function MealDetailPage() {
 
   // Each dish card's "N to buy" line (issue #744). The AI service computes the
   // meal's missing foods against the current pantry (deterministic, read-only);
-  // they are attributed to the dish that lists them. A failure just hides the
+  // they are attributed to every dish that lists them. A failure just hides the
   // lines: the cards never show a made-up "nothing to buy".
   const { data: mealToBuy } = useQuery({
     queryKey: ['meal-to-buy', id, dishIds.join(',')],
