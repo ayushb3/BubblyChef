@@ -160,7 +160,7 @@ describe('what the sheet shows (board A3)', () => {
 
   it('has the primary key with the count and says nothing goes in until it is tapped', () => {
     renderSheet()
-    expect(screen.getByRole('button', { name: 'Put away 11 items' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Put away 9 items' })).toBeEnabled()
     expect(screen.getByText('Nothing goes in until you tap this.')).toBeInTheDocument()
   })
 
@@ -184,6 +184,9 @@ describe('nothing is written before the tap', () => {
     const onPutAway = jest.fn()
     renderSheet(SCAN, { onPutAway })
 
+    // The two asked-about lines go in once answered Yes.
+    fireEvent.click(screen.getByRole('button', { name: /^Yes.*Green peppers/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Yes.*Mango mochi/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Put away 11 items' }))
 
     await waitFor(() => expect(mockBulkAdd).toHaveBeenCalledTimes(1))
@@ -203,11 +206,11 @@ describe('nothing is written before the tap', () => {
   })
 
   it('clears the pending scan after a successful write and closes the sheet', async () => {
-    mockBulkAdd.mockResolvedValue({ count: 11, items: [] })
+    mockBulkAdd.mockResolvedValue({ count: 9, items: [] })
     const onClose = jest.fn()
     renderSheet(SCAN, { onClose })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Put away 11 items' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Put away 9 items' }))
 
     await waitFor(() => expect(readPendingPutAway()).toBeNull())
     expect(onClose).toHaveBeenCalled()
@@ -216,14 +219,97 @@ describe('nothing is written before the tap', () => {
   it('sends one write for a double tap', async () => {
     let resolve!: () => void
     mockBulkAdd.mockImplementation(
-      () => new Promise((r) => { resolve = () => r({ count: 11, items: [] }) }),
+      () => new Promise((r) => { resolve = () => r({ count: 9, items: [] }) }),
     )
     renderSheet()
-    const key = screen.getByRole('button', { name: 'Put away 11 items' })
+    const key = screen.getByRole('button', { name: 'Put away 9 items' })
     fireEvent.click(key)
     fireEvent.click(key)
     expect(mockBulkAdd).toHaveBeenCalledTimes(1)
     await act(async () => resolve())
+  })
+})
+
+// Issue #753 says the review "keeps its tiers and its confirm semantics" and that
+// Yes moves a needs-review item into Going in. So a line nobody answered is not
+// going in: the key counts and writes only Going in (the ready tier plus any line
+// answered Yes or fixed), and says so while any line is unanswered.
+describe('unanswered lines stay out', () => {
+  // 10 confident items and 2 the scan was unsure about.
+  const TEN_AND_TWO: ScanResult = {
+    ...SCAN,
+    ready_to_add: [...SCAN.ready_to_add, it_('Rice', 'pantry')],
+  }
+
+  it('writes only Going in: 10 ready + 2 unanswered posts exactly 10', async () => {
+    mockBulkAdd.mockResolvedValue({ count: 10, items: [] })
+    renderSheet(TEN_AND_TWO)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Put away 10 items' }))
+
+    await waitFor(() => expect(mockBulkAdd).toHaveBeenCalledTimes(1))
+    const names = bulkPayload().map((p) => p.name)
+    expect(names).toHaveLength(10)
+    expect(names).not.toContain('Green peppers')
+    expect(names).not.toContain('Mango mochi')
+  })
+
+  it('Yes on one of them makes it 11, and that one is written', async () => {
+    mockBulkAdd.mockResolvedValue({ count: 11, items: [] })
+    renderSheet(TEN_AND_TWO)
+
+    fireEvent.click(screen.getByRole('button', { name: /^Yes.*Green peppers/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Put away 11 items' }))
+
+    await waitFor(() => expect(mockBulkAdd).toHaveBeenCalledTimes(1))
+    const names = bulkPayload().map((p) => p.name)
+    expect(names).toHaveLength(11)
+    expect(names).toContain('Green peppers')
+    expect(names).not.toContain('Mango mochi')
+  })
+
+  it('a fixed line (Fix, then Done) counts as answered; one still being edited does not', () => {
+    renderSheet(TEN_AND_TWO)
+    const mochi = screen.getByRole('listitem', { name: /Mango mochi/ })
+    fireEvent.click(within(mochi).getByRole('button', { name: 'Fix Mango mochi' }))
+    fireEvent.change(within(mochi).getByRole('textbox', { name: 'Item name' }), {
+      target: { value: 'Mango mochi box' },
+    })
+    expect(screen.getByRole('button', { name: 'Put away 10 items' })).toBeInTheDocument()
+
+    fireEvent.click(within(mochi).getByRole('button', { name: 'Done' }))
+    expect(screen.getByRole('button', { name: 'Put away 11 items' })).toBeInTheDocument()
+    const freezer = screen.getByRole('group', { name: /Freezer, 2 items/ })
+    expect(within(freezer).getByText('Mango mochi box')).toBeInTheDocument()
+  })
+
+  it('says so under the key while any line is unanswered, then stops', () => {
+    renderSheet(TEN_AND_TWO)
+    expect(
+      screen.getByText('2 still to check, they stay out until you tap Yes'),
+    ).toBeInTheDocument()
+    // The standing promise is still there beside it.
+    expect(screen.getByText('Nothing goes in until you tap this.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Yes.*Green peppers/ }))
+    expect(screen.getByText('1 still to check, it stays out until you tap Yes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Yes.*Mango mochi/ }))
+    expect(screen.queryByText(/still to check/)).not.toBeInTheDocument()
+  })
+
+  it('leaving an unanswered line out drops it from "still to check" too', () => {
+    renderSheet(TEN_AND_TWO)
+    const peppers = screen.getByRole('listitem', { name: /Green peppers/ })
+    fireEvent.click(within(peppers).getByRole('button', { name: 'Fix Green peppers' }))
+    fireEvent.click(within(peppers).getByRole('button', { name: 'Leave out Green peppers' }))
+    expect(screen.getByText('1 still to check, it stays out until you tap Yes')).toBeInTheDocument()
+  })
+
+  it('with nothing going in but lines to check, the key is off and the line says why', () => {
+    renderSheet({ ...SCAN, ready_to_add: [], skipped: [] })
+    expect(screen.getByRole('button', { name: 'Nothing to put away' })).toBeDisabled()
+    expect(screen.getByText('2 still to check, they stay out until you tap Yes')).toBeInTheDocument()
   })
 })
 
@@ -237,8 +323,8 @@ describe('Yes and Fix', () => {
     expect(screen.getByRole('heading', { name: /Going in 10/ })).toBeInTheDocument()
     const fridge = screen.getByRole('group', { name: /Fridge, 5 items/ })
     expect(within(fridge).getByText('Green peppers')).toBeInTheDocument()
-    // Answering does not change what will be put away.
-    expect(screen.getByRole('button', { name: 'Put away 11 items' })).toBeInTheDocument()
+    // Answering Yes puts it into what will be put away.
+    expect(screen.getByRole('button', { name: 'Put away 10 items' })).toBeInTheDocument()
   })
 
   it('Yes on the last question takes the section away', () => {
@@ -248,7 +334,7 @@ describe('Yes and Fix', () => {
   })
 
   it('Fix edits the name, quantity and place inline', async () => {
-    mockBulkAdd.mockResolvedValue({ count: 11, items: [] })
+    mockBulkAdd.mockResolvedValue({ count: 9, items: [] })
     renderSheet()
     const peppers = screen.getByRole('listitem', { name: /Green peppers/ })
     fireEvent.click(within(peppers).getByRole('button', { name: 'Fix Green peppers' }))
@@ -262,10 +348,12 @@ describe('Yes and Fix', () => {
     fireEvent.click(within(peppers).getByRole('radio', { name: 'Basket' }))
     fireEvent.click(within(peppers).getByRole('button', { name: 'Done' }))
 
-    expect(within(peppers).getByText(/Green bell peppers · 3/)).toBeInTheDocument()
-    expect(within(peppers).getByText('→ Basket')).toBeInTheDocument()
+    // Done answers the line: it moves into Going in, under its new place.
+    expect(screen.queryByRole('listitem', { name: /Green/ })).not.toBeInTheDocument()
+    const basket = screen.getByRole('group', { name: /Basket, 3 items/ })
+    expect(within(basket).getByText('Green bell peppers')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Put away 11 items' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Put away 10 items' }))
     await waitFor(() => expect(mockBulkAdd).toHaveBeenCalledTimes(1))
     const written = bulkPayload().find((p) => p.name === 'Green bell peppers')
     expect(written).toMatchObject({ quantity: 3, storage_location: 'counter' })
@@ -294,14 +382,14 @@ describe('Yes and Fix', () => {
   })
 
   it('leaves an item out of the shopping', async () => {
-    mockBulkAdd.mockResolvedValue({ count: 10, items: [] })
+    mockBulkAdd.mockResolvedValue({ count: 9, items: [] })
     renderSheet()
     const peppers = screen.getByRole('listitem', { name: /Green peppers/ })
     fireEvent.click(within(peppers).getByRole('button', { name: 'Fix Green peppers' }))
     fireEvent.click(within(peppers).getByRole('button', { name: 'Leave out Green peppers' }))
 
-    expect(screen.getByRole('button', { name: 'Put away 10 items' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Put away 10 items' }))
+    expect(screen.getByRole('button', { name: 'Put away 9 items' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Put away 9 items' }))
     await waitFor(() => expect(mockBulkAdd).toHaveBeenCalledTimes(1))
     expect(bulkPayload().map((p) => p.name)).not.toContain('Green peppers')
   })
@@ -311,7 +399,9 @@ describe('Yes and Fix', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show skipped lines' }))
     fireEvent.click(screen.getByRole('button', { name: 'Add Bag fee' }))
     expect(screen.getByRole('listitem', { name: /Bag fee/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Put away 12 items' })).toBeInTheDocument()
+    // Added back means asked about, not going in: the key still says 9.
+    expect(screen.getByRole('button', { name: 'Put away 9 items' })).toBeInTheDocument()
+    expect(screen.getByText('3 still to check, they stay out until you tap Yes')).toBeInTheDocument()
     expect(screen.getByText(/Skipped 1 line: Tax\./)).toBeInTheDocument()
   })
 })
@@ -354,7 +444,7 @@ describe('the pending scan', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Discard this scan' }))
     fireEvent.click(screen.getByRole('button', { name: 'Keep it' }))
     expect(readPendingPutAway()).not.toBeNull()
-    expect(screen.getByRole('button', { name: 'Put away 11 items' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Put away 9 items' })).toBeInTheDocument()
   })
 
   it('closing the sheet leaves the scan pending', () => {
@@ -398,7 +488,7 @@ describe('a failed write', () => {
     const wiggle = () => screen.getByTestId('put-away-key').getAttribute('data-wiggles')
     expect(wiggle()).toBe('0')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Put away 11 items' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Put away 9 items' }))
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(/couldn't put the shopping away/i)
@@ -414,18 +504,18 @@ describe('a failed write', () => {
     expect(onPutAway).not.toHaveBeenCalled()
 
     // And the key works again: a retry that succeeds finishes the job.
-    mockBulkAdd.mockResolvedValue({ count: 11, items: [] })
-    fireEvent.click(screen.getByRole('button', { name: 'Put away 11 items' }))
+    mockBulkAdd.mockResolvedValue({ count: 9, items: [] })
+    fireEvent.click(screen.getByRole('button', { name: 'Put away 9 items' }))
     await waitFor(() => expect(readPendingPutAway()).toBeNull())
-    expect(onPutAway).toHaveBeenCalledWith(11)
+    expect(onPutAway).toHaveBeenCalledWith(9)
   })
 
   it('a second failure wiggles again', async () => {
     mockBulkAdd.mockRejectedValue(new Error('nope'))
     renderSheet()
-    fireEvent.click(screen.getByRole('button', { name: 'Put away 11 items' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Put away 9 items' }))
     await screen.findByRole('alert')
-    fireEvent.click(screen.getByRole('button', { name: 'Put away 11 items' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Put away 9 items' }))
     await waitFor(() =>
       expect(screen.getByTestId('put-away-key').getAttribute('data-wiggles')).toBe('2'),
     )

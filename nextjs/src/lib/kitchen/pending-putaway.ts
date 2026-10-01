@@ -73,17 +73,24 @@ export function pendingFromScan(result: ScanResult, now: Date = new Date()): Pen
   }
 }
 
-/** How many items "Put away" will write: Going in plus the asked-about ones. */
-export function pendingItemCount(record: Pick<PendingPutAway, 'ready' | 'review'>): number {
+/**
+ * How many items "Put away" will write: Going in only (the ready tier, plus any
+ * needs-review line that was answered Yes or fixed, which moves into it). A line
+ * still being asked about is not going in, and skipped lines never are.
+ */
+export function pendingItemCount(record: Pick<PendingPutAway, 'ready'>): number {
+  return record.ready.length
+}
+
+/** Every item line the scan holds, going in or still to check (skipped lines aside). */
+export function pendingLineCount(record: Pick<PendingPutAway, 'ready' | 'review'>): number {
   return record.ready.length + record.review.length
 }
 
-/** What is headed to each place, review items under the place they were guessed to go. */
-export function incomingByPlace(
-  record: Pick<PendingPutAway, 'ready' | 'review'>,
-): Record<PlaceKey, number> {
+/** What is going in to each place (the +N on the wall). Unanswered lines are not counted. */
+export function incomingByPlace(record: Pick<PendingPutAway, 'ready'>): Record<PlaceKey, number> {
   const counts = Object.fromEntries(PLACE_KEYS.map((k) => [k, 0])) as Record<PlaceKey, number>
-  for (const item of [...record.ready, ...record.review]) counts[scanItemPlace(item)] += 1
+  for (const item of record.ready) counts[scanItemPlace(item)] += 1
   return counts
 }
 

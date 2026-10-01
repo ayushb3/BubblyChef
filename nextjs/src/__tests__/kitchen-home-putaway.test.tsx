@@ -138,11 +138,20 @@ describe('with a scan waiting', () => {
   it('shows +N on each place for what is headed there', async () => {
     renderHome()
     await screen.findByRole('dialog')
-    // Fridge: Milk, Eggs, and the green peppers still being asked about.
-    expect(screen.getByRole('button', { name: /^Fridge/ })).toHaveTextContent('Fridge +3')
+    // Going in only: Milk and Eggs. The green peppers are still being asked about.
+    expect(screen.getByRole('button', { name: /^Fridge/ })).toHaveTextContent('Fridge +2')
     expect(screen.getByRole('button', { name: /^Freezer/ })).toHaveTextContent('Freezer +1')
     expect(screen.getByRole('button', { name: /^Shelves/ })).toHaveTextContent('Shelves +1')
     expect(screen.getByRole('button', { name: /^Basket/ })).toHaveTextContent('Basket +1')
+  })
+
+  it('an unanswered line adds no +N until it is answered Yes', async () => {
+    renderHome()
+    const dialog = await screen.findByRole('dialog')
+    expect(screen.getByRole('button', { name: /^Fridge/ })).toHaveTextContent('Fridge +2')
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Yes.*Green peppers/ }))
+    expect(screen.getByRole('button', { name: /^Fridge/ })).toHaveTextContent('Fridge +3')
   })
 
   it("puts Bubbles at the door while shopping waits", async () => {
@@ -154,19 +163,22 @@ describe('with a scan waiting', () => {
     )
   })
 
-  it("Fix moves an item's place and its +N badge moves with it", async () => {
+  it("Fix then Done answers it, and its +N lands under the place it was moved to", async () => {
     renderHome()
     const dialog = await screen.findByRole('dialog')
     const peppers = within(dialog).getByRole('listitem', { name: /Green peppers/ })
     fireEvent.click(within(peppers).getByRole('button', { name: 'Fix Green peppers' }))
     fireEvent.click(within(peppers).getByRole('radio', { name: 'Basket' }))
+    // Moving it is not answering it: still no +N for it anywhere.
+    expect(screen.getByRole('button', { name: /^Basket/ })).toHaveTextContent('Basket +1')
+    fireEvent.click(within(peppers).getByRole('button', { name: 'Done' }))
 
     expect(screen.getByRole('button', { name: /^Fridge/ })).toHaveTextContent('Fridge +2')
     expect(screen.getByRole('button', { name: /^Basket/ })).toHaveTextContent('Basket +2')
   })
 
   it('Put away writes the items, refreshes the counts, clears the scan and closes', async () => {
-    mockBulkAdd.mockResolvedValue({ count: 6, items: [] })
+    mockBulkAdd.mockResolvedValue({ count: 5, items: [] })
     renderHome()
     const dialog = await screen.findByRole('dialog')
     await waitFor(() => expect(pantryFetchCount()).toBe(1))
@@ -174,12 +186,12 @@ describe('with a scan waiting', () => {
     // The pantry now holds the shopping too: what the refresh will read.
     pantryItems = [
       ...pantryItems,
-      ...['Milk', 'Eggs', 'Green peppers'].map((name, i) => ({
+      ...['Milk', 'Eggs'].map((name, i) => ({
         id: `f${i}`, name, category: 'dairy', location: 'fridge', quantity: 1, unit: 'item', expiry_date: null,
       })),
     ]
 
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Put away 6 items' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Put away 5 items' }))
 
     await waitFor(() => expect(mockBulkAdd).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(readPendingPutAway()).toBeNull())
@@ -187,7 +199,7 @@ describe('with a scan waiting', () => {
 
     // Counts refreshed (a second pantry load), and the badges gave way to them.
     expect(pantryFetchCount()).toBe(2)
-    expect(screen.getByRole('button', { name: /^Fridge/ })).toHaveTextContent('Fridge 4')
+    expect(screen.getByRole('button', { name: /^Fridge/ })).toHaveTextContent('Fridge 3')
     expect(screen.getByRole('button', { name: /^Fridge/ })).not.toHaveTextContent('+')
     // Bubbles has left the door.
     expect(screen.getByTestId('kitchen-wall')).not.toHaveAttribute(
@@ -200,12 +212,12 @@ describe('with a scan waiting', () => {
     mockBulkAdd.mockRejectedValue(new Error('boom'))
     renderHome()
     const dialog = await screen.findByRole('dialog')
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Put away 6 items' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Put away 5 items' }))
 
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(screen.getByRole('dialog', { name: 'Put the shopping away?' })).toBeInTheDocument()
     expect(readPendingPutAway()).not.toBeNull()
-    expect(screen.getByRole('button', { name: /^Fridge/ })).toHaveTextContent('Fridge +3')
+    expect(screen.getByRole('button', { name: /^Fridge/ })).toHaveTextContent('Fridge +2')
   })
 
   it('Discard clears the scan, closes the sheet and takes the badges away', async () => {
@@ -227,7 +239,7 @@ describe('with a scan waiting', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(readPendingPutAway()).not.toBeNull()
-    expect(screen.getByRole('button', { name: /^Fridge/ })).toHaveTextContent('Fridge +3')
+    expect(screen.getByRole('button', { name: /^Fridge/ })).toHaveTextContent('Fridge +2')
 
     const waiting = screen.getByTestId('put-away-waiting')
     expect(within(waiting).getByText(/6 items/)).toBeInTheDocument()

@@ -10,6 +10,7 @@ import {
   incomingByPlace,
   pendingFromScan,
   pendingItemCount,
+  pendingLineCount,
   readPendingPutAway,
   savePendingPutAway,
   type PendingPutAway,
@@ -74,13 +75,17 @@ describe('pendingFromScan', () => {
 })
 
 describe('counts', () => {
-  it('counts what will be put away: Going in plus the asked-about items, never skipped lines', () => {
-    expect(pendingItemCount(pendingFromScan(SCAN, NOW))).toBe(4)
+  it('counts what will be put away: Going in only, not unanswered lines or skipped ones', () => {
+    expect(pendingItemCount(pendingFromScan(SCAN, NOW))).toBe(3)
   })
 
-  it('groups what is headed to each place, review items under their guessed place', () => {
+  it('counts every line the scan holds to answer or put away, for the header', () => {
+    expect(pendingLineCount(pendingFromScan(SCAN, NOW))).toBe(4)
+  })
+
+  it('groups what is going in by place; unanswered lines are not headed anywhere yet', () => {
     expect(incomingByPlace(pendingFromScan(SCAN, NOW))).toEqual({
-      fridge: 2,
+      fridge: 1,
       freezer: 1,
       shelves: 1,
       basket: 0,

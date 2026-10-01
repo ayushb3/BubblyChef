@@ -24,9 +24,11 @@ import ItemEditor from './ItemEditor'
  *  - the skipped tier is **"Skipped N lines"** (bag fee, tax) with Show, which
  *    lists them, each with a way to add it back.
  *
- * What goes in is Going in plus the items still being asked about (the board's
- * "Put away 11 items" is 9 + 2): the host's confirm key, not this surface, does
- * the writing, and names the count. Skipped lines never go in unless added back.
+ * What goes in is Going in, and only that: a line still being asked about stays
+ * out until it is answered (Yes, or Fix then Done, both move it into Going in), as
+ * the issue's "keeps its tiers and its confirm semantics" has it. The host's
+ * confirm key, not this surface, does the writing, and names the count. Skipped
+ * lines never go in unless added back (which asks about them first).
  *
  * Every change (Yes, Fix, a moved place, leaving an item out, adding a skipped
  * line back) goes out whole through `onChange`, so a host that persists the
@@ -91,6 +93,16 @@ export default function ReviewSurface({
     })
   }
 
+  /** Yes, or Done on a fixed line: the item moves from asked-about into Going in. */
+  function answer(item: ScannedItemWithId) {
+    setEditingFor([item._id], false)
+    onChange({
+      ...tiers,
+      needsReview: without(needsReview, item._id),
+      readyToAdd: [...readyToAdd, item],
+    })
+  }
+
   function leaveOut(id: string) {
     setEditingFor([id], false)
     onChange({ ...tiers, readyToAdd: without(readyToAdd, id), needsReview: without(needsReview, id) })
@@ -126,14 +138,8 @@ export default function ReviewSurface({
                   editing={editing.has(item._id)}
                   disabled={disabled}
                   onFix={() => setEditingFor([item._id], !editing.has(item._id))}
-                  onYes={() => {
-                    setEditingFor([item._id], false)
-                    onChange({
-                      ...tiers,
-                      needsReview: without(needsReview, item._id),
-                      readyToAdd: [...readyToAdd, item],
-                    })
-                  }}
+                  onYes={() => answer(item)}
+                  onDone={() => answer(item)}
                   onChange={(updated) =>
                     onChange({ ...tiers, needsReview: replaceItem(needsReview, updated) })
                   }

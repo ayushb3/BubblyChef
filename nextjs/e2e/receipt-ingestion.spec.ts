@@ -215,9 +215,53 @@ test.describe('3b — receipt ingestion (stubbed, CI-safe)', () => {
     expect(captured[0].unit).toBe('item');
     expect(captured[0].category).toBe('dairy');
     expect(captured[0].storage_location).toBe('fridge');
-    expect(captured[0].source).toBeUndefined();
+    expect(captured[0].source).toBe('scan');
     expect(captured[1].name).toBe('Whole Milk');
     expect(captured[1].quantity).toBe(1);
+  });
+
+  test('lines the scan was unsure about stay out until answered Yes', async ({ page }) => {
+    const captured: Array<Record<string, unknown>> = [];
+    const unsure = (name: string) => ({
+      name, quantity: 1, unit: 'item', category: 'other', location: 'pantry', confidence: 0.6,
+    });
+
+    await page.route('**/api/ai/scan', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...GROCERY_MART_SCAN_RESULT,
+          ready_to_add: GROCERY_MART_SCAN_RESULT.ready_to_add.slice(0, 3),
+          needs_review: [unsure('Org Cane Sugar'), unsure('Chdr Blk')],
+          total_items: 5,
+        }),
+      }),
+    );
+    await stubPantryReads(page);
+    await page.route('**/api/pantry/bulk', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}');
+      captured.push(...body.items);
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ count: body.items.length, items: makeBulkResponse().items.slice(0, 3) }),
+      });
+    });
+
+    await page.goto('/pantry?add=scan');
+    await page.locator('input[type="file"][accept="image/*"]').setInputFiles(RECEIPT_STUB_PNG);
+
+    const sheet = page.getByTestId('put-away-sheet');
+    await expect(sheet).toBeVisible({ timeout: 10_000 });
+    await expect(sheet.getByText('2 still to check, they stay out until you tap Yes')).toBeVisible();
+
+    // Answer one Yes; the other stays out.
+    await sheet.getByRole('button', { name: 'Yes, Org Cane Sugar is right' }).click();
+    await sheet.getByRole('button', { name: 'Put away 4 items' }).click();
+    await expect(sheet).not.toBeVisible({ timeout: 8_000 });
+
+    expect(captured.map((i) => i.name)).toEqual(['Eggs', 'Whole Milk', 'Bananas', 'Org Cane Sugar']);
   });
 
   test('error from /api/ai/scan shows an error message and stays on upload state', async ({ page }) => {

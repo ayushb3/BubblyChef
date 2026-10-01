@@ -51,6 +51,7 @@ import { WALL_H } from '@/lib/kitchen/slots'
 import {
   clearPendingPutAway,
   pendingItemCount,
+  pendingLineCount,
   savePendingPutAway,
   type PendingPutAway,
 } from '@/lib/kitchen/pending-putaway'
@@ -127,7 +128,11 @@ export default function PutAwaySheet({ open, onClose, record, onPutAway }: PutAw
 
   if (!shown) return null
 
+  // What the key writes: Going in only. Lines still being asked about stay out
+  // until they are answered Yes (or fixed), and the key says so.
   const count = pendingItemCount(shown)
+  const lines = pendingLineCount(shown)
+  const toCheck = shown.review.length
 
   function edit(next: PutAwayTiers) {
     if (!shown) return
@@ -149,7 +154,7 @@ export default function PutAwaySheet({ open, onClose, record, onPutAway }: PutAw
 
   async function putAway() {
     if (!shown || submittingRef.current) return
-    const items = [...shown.ready, ...shown.review]
+    const items = shown.ready
     if (items.length === 0) return
     submittingRef.current = true
     setSubmitting(true)
@@ -197,7 +202,7 @@ export default function PutAwaySheet({ open, onClose, record, onPutAway }: PutAw
       }}
       closeDisabled={submitting}
       title="Put the shopping away?"
-      subtitle={<span className="tabular-nums">{`${store}${count} ${plural(count)}`}</span>}
+      subtitle={<span className="tabular-nums">{`${store}${lines} ${plural(lines)}`}</span>}
       icon={<BubblesMascot state="happy" size={36} animate={false} />}
       scrim={false}
       maxHeight={maxHeight}
@@ -232,6 +237,13 @@ export default function PutAwaySheet({ open, onClose, record, onPutAway }: PutAw
                   : `Put away ${count} ${plural(count)}`}
             </SpringButton>
           </motion.div>
+          {toCheck > 0 && (
+            <p className="self-center text-center text-xs font-bold text-[color:var(--color-text)] tabular-nums">
+              {toCheck === 1
+                ? '1 still to check, it stays out until you tap Yes'
+                : `${toCheck} still to check, they stay out until you tap Yes`}
+            </p>
+          )}
           <p className="self-center text-xs font-bold text-[color:var(--color-text)]">
             Nothing goes in until you tap this.
           </p>

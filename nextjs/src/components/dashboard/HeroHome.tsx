@@ -36,7 +36,7 @@ import { useBubblesSpot } from '@/hooks/useBubblesSpot'
 import PutAwaySheet from '@/components/kitchen/PutAwaySheet'
 import SpringButton from '@/components/ui/SpringButton'
 import { usePendingPutAway } from '@/hooks/usePendingPutAway'
-import { incomingByPlace, pendingItemCount } from '@/lib/kitchen/pending-putaway'
+import { incomingByPlace, pendingLineCount } from '@/lib/kitchen/pending-putaway'
 import KitchenHeader from '@/components/kitchen/KitchenHeader'
 import UnlockOffer from '@/components/kitchen/UnlockOffer'
 import KitchenThemePicker from '@/components/kitchen/KitchenThemePicker'
@@ -421,7 +421,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
           <p className="min-w-0 text-sm font-bold text-[color:var(--color-text)] tabular-nums">
             Shopping is waiting at the door
             <span className="block text-xs">
-              {pendingItemCount(pending)} {pendingItemCount(pending) === 1 ? 'item' : 'items'}
+              {pendingLineCount(pending)} {pendingLineCount(pending) === 1 ? 'item' : 'items'}
             </span>
           </p>
           <SpringButton size="sm" onClick={() => setPutAwayOpen(true)}>

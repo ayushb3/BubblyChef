@@ -9,7 +9,8 @@
  * is headed to. Two answers:
  *
  *  - **Fix** opens the inline editor: name, quantity, place (and leaving the item
- *    out). It stays in this section until it is answered.
+ *    out). The item stays in this section, unanswered, while it is being edited;
+ *    the editor's **Done** answers it (as Yes does, with the fixed values).
  *  - **Yes** accepts the reading: the item moves to "Going in".
  *
  * Presentation-only: edits and answers go out through callbacks; nothing here
@@ -30,6 +31,8 @@ interface ScannedItemCardProps {
   editing: boolean
   onFix: () => void
   onYes: () => void
+  /** The editor's Done: the item has been fixed, so it is answered. Defaults to closing (`onFix`). */
+  onDone?: () => void
   onChange: (updated: ScannedItemWithId) => void
   onLeaveOut: () => void
   disabled?: boolean
@@ -41,6 +44,7 @@ export default function ScannedItemCard({
   editing,
   onFix,
   onYes,
+  onDone,
   onChange,
   onLeaveOut,
   disabled = false,
@@ -100,7 +104,7 @@ export default function ScannedItemCard({
           item={item}
           onChange={onChange}
           onLeaveOut={onLeaveOut}
-          onDone={onFix}
+          onDone={onDone ?? onFix}
           disabled={disabled}
         />
       )}
