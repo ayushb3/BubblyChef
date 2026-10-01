@@ -14,10 +14,12 @@ import KitchenScene from '@/components/kitchen/KitchenScene'
 
 jest.mock('@/lib/kitchen/catalog', () => {
   const actual = jest.requireActual('@/lib/kitchen/catalog')
-  const [first, ...rest] = actual.CATALOG
+  const [first, second, ...rest] = actual.CATALOG
   return {
     ...actual,
-    CATALOG: [{ ...first, art: '/kitchen/shelf_mugs.png' }, ...rest],
+    // Every real entry has pixel art since #751, so the entry that exercises the
+    // emoji fallback has its art taken away here.
+    CATALOG: [{ ...first, art: '/kitchen/shelf_mugs.png' }, { ...second, art: undefined }, ...rest],
   }
 })
 

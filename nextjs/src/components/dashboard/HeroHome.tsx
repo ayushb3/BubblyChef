@@ -11,7 +11,7 @@ import { titleCase } from '@/lib/format'
 import { useMotionConfig } from '@/lib/motion'
 import { cookThisHref, planDinnerHref, tipChatHref } from '@/lib/chat-seed'
 import { kitchenEyebrow } from '@/lib/kitchen/eyebrow'
-import { summarizePlaces, type PlaceSummaries } from '@/lib/kitchen/places'
+import { kitchenStock, summarizePlaces, type KitchenStock, type PlaceSummaries } from '@/lib/kitchen/places'
 import { fetchDashboardDaily } from '@/lib/api/dashboard'
 import type { DashboardTip, DashboardSuggestion } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
@@ -35,6 +35,8 @@ interface HomeData {
   hasUnusedExpired: boolean
   /** Per-place counts for the wall; `null` until the pantry loads, and if it fails to. */
   places: PlaceSummaries | null
+  /** What each place draws (category sprites and up to 3 wilting items); `null` like `places`. */
+  stock: KitchenStock | null
 }
 
 // Client-side fallback only — used when `GET /v1/dashboard/daily` (#225, #168)
@@ -106,6 +108,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     suggestion: null,
     hasUnusedExpired: false,
     places: null,
+    stock: null,
   })
 
   useEffect(() => {
@@ -163,6 +166,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
           // A failed pantry fetch is "unknown", not "empty": the wall then shows
           // names only rather than claiming four empty places.
           places: pantryRes.ok ? summarizePlaces(allItems) : null,
+          stock: pantryRes.ok ? kitchenStock(allItems) : null,
         })
       } catch {
         // silent
@@ -202,6 +206,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     suggestion,
     hasUnusedExpired,
     places,
+    stock,
   } = data
 
   // Kitchen scene (#521): `decorations` rows use `name`/`decoration_type`;
@@ -314,6 +319,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         loading={decorationsLoading}
         theme={kitchenTheme}
         places={places}
+        stock={stock}
         onOpenPlace={openPlace}
         planDinnerHref={planDinnerHref()}
       />
