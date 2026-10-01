@@ -47,6 +47,7 @@ from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.domain.allergens import allergens_named
 from bubbly_chef.domain.diet_terms import join_fields, norm_label
 from bubbly_chef.domain.expiry_priority import DEFAULT_EXPIRY_PRIORITY, ExpiryPriority
+from bubbly_chef.domain.household import coerce_household_size
 from bubbly_chef.domain.kitchen_limits import map_kitchen_limits_to_tags
 from bubbly_chef.domain.staples import NEVER_TO_BUY, shoppable
 from bubbly_chef.domain.stock import filter_usable_pantry_items, filter_usable_pantry_rows
@@ -389,13 +390,33 @@ async def _pantry_items_for_matching(user_id: str) -> list[PantryItem]:
 
 
 async def _default_servings(user_id: str) -> int:
-    """Explicit-ask servings takes priority (handled by the caller); this is
-    the fallback: the mode of the user's last three *cooked* meals, else 2.
+    """The servings to plan for when the ask names no number (issue #874).
 
-    Ties are broken by the earliest occurrence in `recent` (i.e. the most
-    recently cooked of the tied values), since `recent` is already newest-
-    first from the repository.
+    Explicit-ask servings takes priority (handled by the caller). Below it:
+      1. the user's household size (issue #853's first-run answer, or the
+         Profile entry) -- their own word beats a guess;
+      2. the mode of the user's last three *cooked* meals;
+      3. 2.
+
+    Same order as the Next.js starter-context route's `computeDefaultServings`.
+    The household read replaces the history read when a size is set, so this
+    makes no more calls than before for those users, and it only runs on a turn
+    that reaches this fallback.
+
+    Ties in the learned mode are broken by the earliest occurrence in `recent`
+    (i.e. the most recently cooked of the tied values), since `recent` is
+    already newest-first from the repository.
     """
+    try:
+        repo = await get_repository()
+        household = coerce_household_size(await repo.get_household_size(user_id))
+    except Exception as e:
+        logger.warning("Could not fetch household size: %s", e)
+        household = None
+    if household is not None:
+        logger.info("Default servings %d from household size", household)
+        return household
+
     try:
         repo = await get_repository()
         recent = await repo.get_recent_meal_servings(user_id, limit=3)
