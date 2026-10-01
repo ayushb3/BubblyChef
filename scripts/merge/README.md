@@ -41,9 +41,11 @@ either is now named in the sprint doc instead (`WORKFLOW.md` §6).
   `VERDICT: looks-mergeable` to queue a merge, so `unknown` is NOT mergeable,
   same as `needs-changes` and `needs-human`: every case the protected parser
   can't read still fails closed. This is stricter than the old shell-side
-  parser in a few cases (a heading-only verdict, a marker, a verdict phrase
-  with trailing prose) — see `test-parse-verdict.sh` and PR #636's body for
-  the fixture-by-fixture list of what changed.
+  parser in a few cases (a verdict phrase with trailing prose) — see
+  `test-parse-verdict.sh` and PR #636's body for the fixture-by-fixture list
+  of what changed. Since issue #571 the parser also reads a heading that ends
+  in a verdict and the trailing `<!-- verdict: x -->` marker; every source
+  present must agree or the comment is unreadable.
 
   ```bash
   scripts/merge/parse-verdict.sh < review-body.txt
