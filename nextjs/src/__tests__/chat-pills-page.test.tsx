@@ -313,15 +313,11 @@ describe('option-stage pills stamp the meal_followup context (issue #651)', () =
     })
   })
 
-  it('✎ fills the input with the pill message and sends nothing', async () => {
+  it('renders no ✎ edit button beside the pill (issue #730)', async () => {
     renderChat()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit "Something quicker" before sending' }))
-
-    expect(screen.getByRole('textbox', { name: 'Message Bubbles' })).toHaveValue(
-      'Something quicker, under 30 minutes',
-    )
-    expect(sendChipMessage).not.toHaveBeenCalled()
-    expect(sendMessage).not.toHaveBeenCalled()
+    await screen.findByRole('button', { name: 'Something quicker' })
+    expect(screen.queryByRole('button', { name: /before sending/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('✎')).not.toBeInTheDocument()
   })
 })
