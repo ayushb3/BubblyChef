@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { motion, AnimatePresence, useAnimation, type PanInfo } from 'framer-motion'
+import { AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
-import { Heart, DotsThree } from '@phosphor-icons/react'
 import type { Recipe } from './RecipePage'
+import RecipeCard from './RecipeCard'
 import PantryRecipeDetail from './PantryRecipeDetail'
 import RecipeSearchBar from './RecipeSearchBar'
 import EmptyState from '@/components/ui/EmptyState'
@@ -24,9 +24,7 @@ import {
   getAmendedIngredients,
 } from '@/lib/cook-session'
 import { toRecipeIngredients } from '@/lib/cook-amendment'
-import { springs, heartPopVariants } from '@/lib/motion'
-import Chip from '@/components/ui/Chip'
-import { tagToTone } from '@/lib/tag-tone'
+import SpringButton from '@/components/ui/SpringButton'
 
 interface RecipeBookProps {
   recipes: Recipe[]
@@ -46,44 +44,16 @@ function scoreRecipe(r: Recipe, q: string): number {
   return score
 }
 
-// Page-turn animation variants — book-page-curl feel
-const pageVariants = {
-  enter: (dir: number) => ({
-    x: dir > 0 ? '60%' : '-60%',
-    rotateY: dir > 0 ? -15 : 15,
-    opacity: 0,
-    scale: 0.92,
-  }),
-  center: {
-    x: 0,
-    rotateY: 0,
-    opacity: 1,
-    scale: 1,
-  },
-  exit: (dir: number) => ({
-    x: dir > 0 ? '-60%' : '60%',
-    rotateY: dir > 0 ? 12 : -12,
-    opacity: 0,
-    scale: 0.92,
-  }),
-}
-
-const pageTransition = springs.page
-
-const SWIPE_THRESHOLD = 50
-const VELOCITY_THRESHOLD = 300
-
 export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [selectedId, setSelectedId] = useState<string | null>(
-    recipes.length > 0 ? recipes[0].id : null,
-  )
-  const [direction, setDirection] = useState<1 | -1>(1)
-  const [editOpen, setEditOpen] = useState(false)
-  const [deleteOpen, setDeleteOpen] = useState(false)
+  // The recipe opened in place (issue #801); null is the list. Edit and delete are
+  // started from a card in the list or from the opened recipe, so they name their
+  // own recipe instead of leaning on the opened one.
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [cookOpen, setCookOpen] = useState(false)
   const [guidedCookOpen, setGuidedCookOpen] = useState(false)
@@ -110,27 +80,12 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const [stepsOverrides, setStepsOverrides] = useState<Record<string, Recipe['steps']>>({})
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [thumbError, setThumbError] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const heartControls = useAnimation()
-  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!errorMessage) return
     const t = setTimeout(() => setErrorMessage(null), 5000)
     return () => clearTimeout(t)
   }, [errorMessage])
-
-  // Close overflow menu on outside click
-  useEffect(() => {
-    if (!menuOpen) return
-    const handleMouseDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleMouseDown)
-    return () => document.removeEventListener('mousedown', handleMouseDown)
-  }, [menuOpen])
 
   // Merge optimistic favorite + structured-steps overrides into the recipe list
   const recipesWithOverrides = useMemo(
@@ -154,13 +109,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     [recipesWithOverrides, search],
   )
 
-  useEffect(() => {
-    if (search.trim() && filteredRecipes.length > 0) {
-      setSelectedId(filteredRecipes[0].id)
-    }
-  }, [search, filteredRecipes])
-
-  const selectedRecipe = recipesWithOverrides.find((r) => r.id === selectedId) ?? recipesWithOverrides[0] ?? null
+  const selectedRecipe = recipesWithOverrides.find((r) => r.id === selectedId) ?? null
+  const editRecipe = recipesWithOverrides.find((r) => r.id === editId) ?? null
 
   // #489/#490: a mid-cook amendment confirmed in chat for the recipe being
   // cooked. It is an overlay on what this cook shows and deducts, read when a
@@ -257,45 +207,9 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   // Reset hero image error state whenever the selected recipe changes
   useEffect(() => { setThumbError(false) }, [selectedId])
 
-  const currentIndex = filteredRecipes.findIndex((r) => r.id === selectedId)
-
-  const goNext = useCallback(() => {
-    if (currentIndex < filteredRecipes.length - 1) {
-      setDirection(1)
-      setSelectedId(filteredRecipes[currentIndex + 1].id)
-      setSidebarOpen(false)
-    }
-  }, [currentIndex, filteredRecipes])
-
-  const goPrev = useCallback(() => {
-    if (currentIndex > 0) {
-      setDirection(-1)
-      setSelectedId(filteredRecipes[currentIndex - 1].id)
-      setSidebarOpen(false)
-    }
-  }, [currentIndex, filteredRecipes])
-
-  const handleDragEnd = useCallback(
-    (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-      if (info.offset.x < -SWIPE_THRESHOLD || info.velocity.x < -VELOCITY_THRESHOLD) {
-        goNext()
-      } else if (info.offset.x > SWIPE_THRESHOLD || info.velocity.x > VELOCITY_THRESHOLD) {
-        goPrev()
-      }
-    },
-    [goNext, goPrev],
-  )
-
   const handleSearch = useCallback((q: string) => {
     setSearch(q)
   }, [])
-
-  const handleSelect = (id: string) => {
-    const newIndex = filteredRecipes.findIndex((r) => r.id === id)
-    setDirection(newIndex > currentIndex ? 1 : -1)
-    setSelectedId(id)
-    setSidebarOpen(false)
-  }
 
   /**
    * Opens the guided step-by-step cook flow. This is the "start cooking"
@@ -316,14 +230,13 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     setGuidedCookOpen(true)
   }
 
-  const handleFavorite = async () => {
-    if (!selectedRecipe || mutating) return
+  const handleFavorite = async (recipe: Recipe) => {
+    if (mutating) return
     setMutating(true)
     setErrorMessage(null)
-    const id = selectedRecipe.id
-    const newVal = !selectedRecipe.is_favorite
+    const id = recipe.id
+    const newVal = !recipe.is_favorite
     setFavoriteOverrides((prev) => ({ ...prev, [id]: newVal }))
-    void heartControls.start('pop').then(() => heartControls.start('idle'))
     try {
       const res = await fetch(`/api/recipes/${id}`, {
         method: 'PUT',
@@ -343,13 +256,13 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     setMutating(true)
     setErrorMessage(null)
     try {
-      const res = await fetch(`/api/recipes/${selectedRecipe!.id}`, {
+      const res = await fetch(`/api/recipes/${editId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       })
       if (!res.ok) throw new Error('Failed to save')
-      setEditOpen(false)
+      setEditId(null)
       onMutate?.()
     } catch {
       setErrorMessage('Could not save changes. Please try again.')
@@ -424,12 +337,12 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
   const handleDeleteConfirm = async () => {
     setMutating(true)
     setErrorMessage(null)
-    const nextRecipe = filteredRecipes.find((r) => r.id !== selectedRecipe?.id) ?? null
     try {
-      const res = await fetch(`/api/recipes/${selectedRecipe!.id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/recipes/${deleteId}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to delete')
-      setDeleteOpen(false)
-      setSelectedId(nextRecipe?.id ?? null)
+      setDeleteId(null)
+      // If the deleted recipe was the open one, back to the list.
+      if (deleteId === selectedId) setSelectedId(null)
       onMutate?.()
     } catch {
       setErrorMessage('Could not delete recipe. Please try again.')
@@ -438,11 +351,52 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     }
   }
 
-  const totalTime = selectedRecipe?.total_time_minutes
-    ? `${selectedRecipe.total_time_minutes} min`
-    : selectedRecipe?.prep_time_minutes || selectedRecipe?.cook_time_minutes
-    ? `${(selectedRecipe.prep_time_minutes ?? 0) + (selectedRecipe.cook_time_minutes ?? 0)} min`
-    : null
+  const totalMinutes = (r: Recipe): number | null =>
+    r.total_time_minutes || ((r.prep_time_minutes ?? 0) + (r.cook_time_minutes ?? 0) || null)
+
+  /** The card for one saved recipe: the list's row, and the opened recipe's header. */
+  const savedCard = (r: Recipe, opts: { open: boolean }) => (
+    <RecipeCard
+      variant="saved"
+      title={r.title}
+      // The opened recipe shows its photo as a hero below, so its header keeps the emoji tile.
+      thumbnailUrl={opts.open ? null : r.thumbnail_url}
+      minutes={totalMinutes(r)}
+      servings={r.servings}
+      cuisine={r.cuisine}
+      difficulty={r.difficulty}
+      tags={r.tags}
+      favorite={Boolean(r.is_favorite)}
+      busy={mutating}
+      onOpen={opts.open ? undefined : () => setSelectedId(r.id)}
+      onToggleFavorite={() => handleFavorite(r)}
+      onEdit={() => setEditId(r.id)}
+      onDelete={() => setDeleteId(r.id)}
+    />
+  )
+
+  const deleteConfirm = (r: Recipe) =>
+    deleteId === r.id && (
+      <RecipeDeleteConfirm
+        recipeTitle={r.title}
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeleteId(null)}
+        deleting={mutating}
+        mealTitles={r.meal_titles ?? []}
+      />
+    )
+
+  const importButton = (
+    <button
+      onClick={() => setImportOpen(true)}
+      className="font-sans flex-shrink-0 px-3 py-2 rounded-full text-sm font-bold text-[var(--color-text)] active:scale-95 transition-transform"
+      style={{ background: 'var(--color-accent)' }}
+      title="Import recipe from URL"
+      aria-label="Import recipe from URL"
+    >
+      🔗 Import
+    </button>
+  )
 
   return (
     <div className="w-full max-w-md mx-auto px-2 flex flex-col gap-3">
@@ -502,513 +456,129 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         </div>
       )}
 
-      {/* Search + Import */}
-      <div className="flex gap-2 items-center">
-        <div className="flex-1">
-          <RecipeSearchBar onSearch={handleSearch} />
-        </div>
-        <button
-          onClick={() => setImportOpen(true)}
-          className="font-sans flex-shrink-0 px-3 py-2 rounded-full text-sm font-bold text-[var(--color-text)] active:scale-95 transition-transform"
-          style={{ background: 'var(--color-accent)' }}
-          title="Import recipe from URL"
-          aria-label="Import recipe from URL"
+      {/* Error banner */}
+      {errorMessage && (
+        <div
+          className="font-sans px-3 py-2 rounded-xl text-sm flex items-center justify-between"
+          style={{
+            background: 'var(--color-bg)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-text)',
+          }}
+          role="alert"
         >
-          🔗 Import
-        </button>
-      </div>
+          <span>{errorMessage}</span>
+          <button
+            onClick={() => setErrorMessage(null)}
+            className="ml-2 hover:opacity-70 transition-opacity"
+            style={{ color: 'var(--color-primary-dark)' }}
+            aria-label="Dismiss error"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
-      {/* Book container — swapped wholesale for the empty state when the
-          library has no recipes at all (sidebar/hamburger are moot then). */}
       {selectedRecipe ? (
-      <div
-        className="relative rounded-2xl overflow-hidden border border-[var(--color-border)]"
-        style={{
-          background: 'var(--color-surface)',
-          boxShadow: 'var(--shadow-soft)',
-          minHeight: '520px',
-        }}
-      >
-        {/* ─── Sidebar overlay ─── */}
-        <AnimatePresence>
-          {sidebarOpen && (
-            <>
-              {/* Backdrop */}
-              <motion.div
-                key="backdrop"
-                className="absolute inset-0 z-10"
-                style={{ background: 'var(--color-backdrop)' }}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                onClick={() => setSidebarOpen(false)}
+        /* ─── One recipe, opened in place ─── */
+        <>
+          <button
+            type="button"
+            onClick={() => setSelectedId(null)}
+            className="font-sans -mb-1 flex min-h-[44px] items-center gap-1 self-start rounded-full px-2 text-sm font-extrabold text-[var(--color-text)] active:scale-95 transition-transform"
+          >
+            <span aria-hidden="true">←</span> Back to recipes
+          </button>
+
+          {savedCard(selectedRecipe, { open: true })}
+          {deleteConfirm(selectedRecipe)}
+
+          <SpringButton
+            variant="primary"
+            fullWidth
+            onClick={handleOpenGuidedCook}
+            disabled={mutating}
+            aria-label="Cook this recipe"
+            title="Cook it"
+            data-testid="recipe-book-cook-button"
+          >
+            <span aria-hidden="true">🍳</span> Cook it
+          </SpringButton>
+
+          <div
+            className="rounded-2xl overflow-hidden border border-[var(--color-border)]"
+            style={{ background: 'var(--color-surface)', boxShadow: 'var(--shadow-soft)' }}
+          >
+            {selectedRecipe.thumbnail_url && !thumbError && (
+              // eslint-disable-next-line @next/next/no-img-element -- user-supplied, arbitrary hosts
+              <img
+                src={selectedRecipe.thumbnail_url}
+                alt={selectedRecipe.title}
+                className="w-full object-cover"
+                style={{ height: '180px' }}
+                onError={() => setThumbError(true)}
               />
+            )}
+            {selectedRecipe.description && (
+              <p className="font-sans px-5 pt-4 text-sm text-[var(--color-muted)]">
+                {selectedRecipe.description}
+              </p>
+            )}
+            <PantryRecipeDetail recipe={selectedRecipe} />
+          </div>
+        </>
+      ) : recipes.length === 0 ? (
+        <>
+          {/* Import stays reachable on an empty library: it is how the first recipe arrives. */}
+          <div className="flex justify-end">{importButton}</div>
+          <EmptyState
+            mascotState="surprised"
+            headerLabel="Your Recipe Book"
+            headline="No recipes yet"
+            subline="Ask Chef Bubbly what to cook, or import a recipe with the link button above."
+            ctaLabel="Chat with Bubbles"
+            ctaEmoji="💬"
+            onCta={() => router.push('/chat')}
+          />
+        </>
+      ) : (
+        /* ─── The list ─── */
+        <>
+          <div className="flex gap-2 items-center">
+            <div className="flex-1">
+              <RecipeSearchBar onSearch={handleSearch} />
+            </div>
+            {importButton}
+          </div>
 
-              {/* Sidebar panel */}
-              <motion.div
-                key="sidebar"
-                className="absolute left-0 top-0 bottom-0 z-20 flex flex-col"
-                style={{
-                  width: '72%',
-                  maxWidth: '280px',
-                  background: 'var(--color-surface)',
-                  borderRight: '1px solid var(--color-border)',
-                }}
-                initial={{ x: '-100%' }}
-                animate={{ x: 0 }}
-                exit={{ x: '-100%' }}
-                transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-              >
-                {/* Sidebar header */}
-                <div
-                  className="flex items-center justify-between px-4 py-3 flex-shrink-0 border-b border-[var(--color-border)]"
-                  style={{ background: 'var(--color-bg)' }}
-                >
-                  <span
-                    className="font-sans font-extrabold text-sm text-[var(--color-text)]"
-                  >
-                    Recipes 🍳
-                  </span>
-                  <button
-                    onClick={() => setSidebarOpen(false)}
-                    className="text-[var(--color-muted)] hover:text-[var(--color-text)] text-lg leading-none px-1"
-                    aria-label="Close sidebar"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                {/* Recipe list */}
-                <ul className="flex-1 overflow-y-auto">
-                  {filteredRecipes.length === 0 ? (
-                    <li className="font-sans px-4 py-6 text-center text-xs text-[var(--color-muted)]">
-                      {search ? `No results for "${search}"` : 'No recipes yet'}
-                    </li>
-                  ) : (
-                    filteredRecipes.map((r) => {
-                      const isActive = r.id === selectedId
-                      return (
-                        <li key={r.id}>
-                          <button
-                            onClick={() => handleSelect(r.id)}
-                            className="font-sans w-full text-left px-4 py-3 text-sm transition-colors"
-                            style={{
-                              background: isActive ? 'var(--color-bg)' : 'transparent',
-                              borderLeft: `3px solid ${isActive ? 'var(--color-primary)' : 'transparent'}`,
-                              fontWeight: isActive ? 700 : 400,
-                              color: isActive ? 'var(--color-text)' : 'var(--color-muted)',
-                            }}
-                          >
-                            <span className="line-clamp-2">{r.title}</span>
-                          </button>
-                        </li>
-                      )
-                    })
-                  )}
-                </ul>
-
-                {/* Recipe count */}
-                <div
-                  className="font-sans px-4 py-2 text-xs text-[var(--color-muted)] border-t border-[var(--color-border)] flex-shrink-0"
-                >
-                  {filteredRecipes.length} of {recipes.length} recipe{recipes.length !== 1 ? 's' : ''}
-                </div>
-              </motion.div>
+          {filteredRecipes.length === 0 ? (
+            <p className="font-sans py-8 text-center text-sm text-[var(--color-muted)]">
+              No results for &ldquo;{search}&rdquo;
+            </p>
+          ) : (
+            <>
+              <ul className="flex flex-col gap-3" aria-label="Saved recipes">
+                {filteredRecipes.map((r) => (
+                  <li key={r.id}>
+                    {savedCard(r, { open: false })}
+                    {deleteConfirm(r)}
+                  </li>
+                ))}
+              </ul>
+              <p className="font-sans text-center text-xs text-[var(--color-muted)]">
+                {filteredRecipes.length} of {recipes.length} recipe{recipes.length !== 1 ? 's' : ''}
+              </p>
             </>
           )}
-        </AnimatePresence>
-
-        {/* ─── Hamburger tab ─── */}
-        {!sidebarOpen && (
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="absolute left-0 top-4 z-10 flex items-center justify-center rounded-r-lg shadow-sm"
-            style={{
-              width: '28px',
-              height: '40px',
-              background: 'var(--color-primary)',
-              color: 'var(--color-on-primary)',
-              fontSize: '14px',
-            }}
-            aria-label="Open recipe list"
-          >
-            ☰
-          </button>
-        )}
-
-        {/* ─── Main recipe panel ─── */}
-          <div className="flex flex-col h-full">
-            {/* Recipe header — hero variant when thumbnail exists and loads successfully */}
-            {selectedRecipe.thumbnail_url && !thumbError ? (
-              <div className="flex-shrink-0">
-                {/* Hero image with title overlay */}
-                <div className="relative w-full overflow-hidden" style={{ height: '180px' }}>
-                  <img
-                    src={selectedRecipe.thumbnail_url}
-                    alt={selectedRecipe.title}
-                    className="w-full h-full object-cover"
-                    onError={() => setThumbError(true)}
-                  />
-                  {/* Gradient overlay — title sits on top */}
-                  <div
-                    className="absolute inset-0 flex flex-col justify-end px-4 pb-3"
-                    style={{
-                      background: 'linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.18) 55%, transparent 100%)',
-                    }}
-                  >
-                    <h2
-                      className="font-sans text-lg font-extrabold text-white leading-tight line-clamp-2"
-                      style={{ textShadow: '0 1px 4px rgba(0,0,0,0.4)' }}
-                    >
-                      {selectedRecipe.title}
-                    </h2>
-                    {selectedRecipe.description && (
-                      <p className="text-xs text-white/80 mt-0.5 line-clamp-1">
-                        {selectedRecipe.description}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Tags + chips + actions — below the hero */}
-                <div className="px-4 pt-2 pb-3">
-                  {selectedRecipe.tags && selectedRecipe.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                      {selectedRecipe.tags.map((tag) => {
-                        const { tone, emoji } = tagToTone(tag)
-                        return <Chip key={tag} tone={tone} emoji={emoji || undefined} size="sm">{tag}</Chip>
-                      })}
-                    </div>
-                  )}
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {selectedRecipe.cuisine && <Chip tone="fresh" emoji="✨">{selectedRecipe.cuisine}</Chip>}
-                    {totalTime && <Chip tone="expiring" emoji="⏱️">{totalTime}</Chip>}
-                    {selectedRecipe.difficulty && <Chip tone="fresh" emoji="✨">{selectedRecipe.difficulty}</Chip>}
-                    {selectedRecipe.servings && <Chip tone="muted" emoji="🍽️">{`Serves ${selectedRecipe.servings}`}</Chip>}
-                  </div>
-                  {/* Action buttons — Cook on left, Heart + menu on right */}
-                  <div className="flex items-center justify-between">
-                    {/* Cook it — opens guided step-by-step cooking flow (#263) */}
-                    <button
-                      onClick={handleOpenGuidedCook}
-                      disabled={mutating}
-                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
-                      style={{ background: 'color-mix(in srgb, var(--color-primary) 18%, var(--color-bg))', border: '1.5px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border))' }}
-                      aria-label="Cook this recipe"
-                      title="Cook it"
-                      data-testid="recipe-book-cook-button"
-                    >
-                      🍳
-                    </button>
-
-                    <div className="flex items-center gap-2">
-                      {/* Heart button — 44x44 with pop animation */}
-                      <motion.button
-                        onClick={handleFavorite}
-                        disabled={mutating}
-                        className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
-                        style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
-                        aria-label={selectedRecipe.is_favorite ? 'Unfavorite' : 'Favorite'}
-                        title={selectedRecipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
-                      >
-                        <motion.span variants={heartPopVariants} animate={heartControls} initial="idle">
-                          <Heart
-                            size={20}
-                            weight={selectedRecipe.is_favorite ? 'fill' : 'regular'}
-                            color={selectedRecipe.is_favorite ? 'var(--color-coral)' : 'var(--color-muted)'}
-                          />
-                        </motion.span>
-                      </motion.button>
-
-                      {/* Overflow menu — Edit + Delete */}
-                      <div className="relative" ref={menuRef}>
-                        <button
-                          onClick={() => setMenuOpen((o) => !o)}
-                          disabled={mutating}
-                          className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
-                          style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
-                          aria-label="More options"
-                          aria-haspopup="true"
-                          aria-expanded={menuOpen}
-                        >
-                          <DotsThree size={20} weight="bold" color="var(--color-muted)" />
-                        </button>
-                        <AnimatePresence>
-                          {menuOpen && (
-                            <motion.div
-                              initial={{ opacity: 0, scale: 0.9, y: -4 }}
-                              animate={{ opacity: 1, scale: 1, y: 0 }}
-                              exit={{ opacity: 0, scale: 0.9, y: -4 }}
-                              transition={springs.snappy}
-                              className="absolute right-0 top-12 z-20 rounded-2xl overflow-hidden"
-                              style={{
-                                background: 'var(--color-surface)',
-                                border: '1px solid var(--color-border)',
-                                boxShadow: 'var(--shadow-pop)',
-                                minWidth: '140px',
-                              }}
-                            >
-                              <button
-                                onClick={() => { setMenuOpen(false); setEditOpen(true) }}
-                                className="font-sans w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
-                                style={{ color: 'var(--color-text)' }}
-                              >
-                                ✏️ Edit
-                              </button>
-                              <button
-                                onClick={() => { setMenuOpen(false); setDeleteOpen(true) }}
-                                className="font-sans w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
-                                style={{ color: 'var(--color-coral)' }}
-                              >
-                                🗑️ Delete
-                              </button>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    </div>
-                  </div>
-                  {deleteOpen && (
-                    <RecipeDeleteConfirm
-                      recipeTitle={selectedRecipe.title}
-                      onConfirm={handleDeleteConfirm}
-                      onCancel={() => setDeleteOpen(false)}
-                      deleting={mutating}
-                      mealTitles={selectedRecipe.meal_titles ?? []}
-                    />
-                  )}
-                </div>
-              </div>
-            ) : (
-              /* Plain header — no thumbnail.
-                 pl-10 (40px) reserves clearance for the 28px-wide hamburger tab
-                 that is absolutely positioned at left-0; without it the first
-                 character of the title is hidden behind the button. */
-              <div
-                className="pl-10 pr-4 pt-4 pb-3 flex-shrink-0"
-              >
-                <h2
-                  className="font-sans text-xl font-extrabold text-[var(--color-text)] leading-tight"
-                >
-                  {selectedRecipe.title}
-                </h2>
-                {selectedRecipe.description && (
-                  <p className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-2">
-                    {selectedRecipe.description}
-                  </p>
-                )}
-                {selectedRecipe.tags && selectedRecipe.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {selectedRecipe.tags.map((tag) => {
-                      const { tone, emoji } = tagToTone(tag)
-                      return <Chip key={tag} tone={tone} emoji={emoji || undefined} size="sm">{tag}</Chip>
-                    })}
-                  </div>
-                )}
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {selectedRecipe.cuisine && <Chip tone="fresh" emoji="✨">{selectedRecipe.cuisine}</Chip>}
-                  {totalTime && <Chip tone="expiring" emoji="⏱️">{totalTime}</Chip>}
-                  {selectedRecipe.difficulty && <Chip tone="fresh" emoji="✨">{selectedRecipe.difficulty}</Chip>}
-                  {selectedRecipe.servings && (
-                    <Chip tone="muted" emoji="🍽️">{`Serves ${selectedRecipe.servings}`}</Chip>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mt-2">
-                  {/* Action buttons — Cook on left, Heart + menu on right */}
-                  <div className="flex items-center justify-between w-full">
-                    {/* Cook it — opens guided step-by-step cooking flow (#263) */}
-                    <button
-                      onClick={handleOpenGuidedCook}
-                      disabled={mutating}
-                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
-                      style={{ background: 'color-mix(in srgb, var(--color-primary) 18%, var(--color-bg))', border: '1.5px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border))' }}
-                      aria-label="Cook this recipe"
-                      title="Cook it"
-                      data-testid="recipe-book-cook-button"
-                    >
-                      🍳
-                    </button>
-
-                    <div className="flex items-center gap-2">
-                      {/* Heart button — 44x44 with pop animation */}
-                      <motion.button
-                        onClick={handleFavorite}
-                        disabled={mutating}
-                        className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
-                        style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
-                        aria-label={selectedRecipe.is_favorite ? 'Unfavorite' : 'Favorite'}
-                        title={selectedRecipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
-                      >
-                        <motion.span variants={heartPopVariants} animate={heartControls} initial="idle">
-                          <Heart
-                            size={20}
-                            weight={selectedRecipe.is_favorite ? 'fill' : 'regular'}
-                            color={selectedRecipe.is_favorite ? 'var(--color-coral)' : 'var(--color-muted)'}
-                          />
-                        </motion.span>
-                      </motion.button>
-
-                      {/* Overflow menu — Edit + Delete */}
-                      <div className="relative" ref={menuRef}>
-                        <button
-                          onClick={() => setMenuOpen((o) => !o)}
-                          disabled={mutating}
-                          className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
-                          style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
-                          aria-label="More options"
-                          aria-haspopup="true"
-                          aria-expanded={menuOpen}
-                        >
-                          <DotsThree size={20} weight="bold" color="var(--color-muted)" />
-                        </button>
-                        <AnimatePresence>
-                          {menuOpen && (
-                            <motion.div
-                              initial={{ opacity: 0, scale: 0.9, y: -4 }}
-                              animate={{ opacity: 1, scale: 1, y: 0 }}
-                              exit={{ opacity: 0, scale: 0.9, y: -4 }}
-                              transition={springs.snappy}
-                              className="absolute right-0 top-12 z-20 rounded-2xl overflow-hidden"
-                              style={{
-                                background: 'var(--color-surface)',
-                                border: '1px solid var(--color-border)',
-                                boxShadow: 'var(--shadow-pop)',
-                                minWidth: '140px',
-                              }}
-                            >
-                              <button
-                                onClick={() => { setMenuOpen(false); setEditOpen(true) }}
-                                className="font-sans w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
-                                style={{ color: 'var(--color-text)' }}
-                              >
-                                ✏️ Edit
-                              </button>
-                              <button
-                                onClick={() => { setMenuOpen(false); setDeleteOpen(true) }}
-                                className="font-sans w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
-                                style={{ color: 'var(--color-coral)' }}
-                              >
-                                🗑️ Delete
-                              </button>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {deleteOpen && (
-                  <RecipeDeleteConfirm
-                    recipeTitle={selectedRecipe.title}
-                    onConfirm={handleDeleteConfirm}
-                    onCancel={() => setDeleteOpen(false)}
-                    deleting={mutating}
-                    mealTitles={selectedRecipe.meal_titles ?? []}
-                  />
-                )}
-              </div>
-            )}
-
-            {/* Error banner */}
-            {errorMessage && (
-              <div
-                className="font-sans mx-4 mt-2 px-3 py-2 rounded-xl text-sm flex items-center justify-between"
-                style={{
-                  background: 'var(--color-bg)',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-text)',
-                }}
-                role="alert"
-              >
-                <span>{errorMessage}</span>
-                <button
-                  onClick={() => setErrorMessage(null)}
-                  className="ml-2 hover:opacity-70 transition-opacity"
-                  style={{ color: 'var(--color-primary-dark)' }}
-                  aria-label="Dismiss error"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
-
-            {/* Divider */}
-            <div className="h-px flex-shrink-0" style={{ background: 'var(--color-border)' }} />
-
-            {/* Page indicator + nav arrows */}
-            {filteredRecipes.length > 1 && (
-              <div className="flex items-center justify-between px-5 py-1.5 flex-shrink-0" style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <button
-                  onClick={goPrev}
-                  disabled={currentIndex === 0}
-                  className="text-[var(--color-primary-dark)] text-lg px-1 disabled:opacity-30 active:scale-90 transition-transform"
-                  aria-label="Previous recipe"
-                >
-                  ‹
-                </button>
-                <span className="font-sans text-xs text-[var(--color-muted)]">
-                  {currentIndex + 1} / {filteredRecipes.length}
-                </span>
-                <button
-                  onClick={goNext}
-                  disabled={currentIndex === filteredRecipes.length - 1}
-                  className="text-[var(--color-primary-dark)] text-lg px-1 disabled:opacity-30 active:scale-90 transition-transform"
-                  aria-label="Next recipe"
-                >
-                  ›
-                </button>
-              </div>
-            )}
-
-            {/* Scrollable recipe body — book page-turn animation */}
-            <div className="flex-1 overflow-hidden relative" style={{ perspective: '1200px' }}>
-              <AnimatePresence mode="wait" custom={direction}>
-                <motion.div
-                  key={selectedRecipe.id}
-                  custom={direction}
-                  variants={pageVariants}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  transition={pageTransition}
-                  drag="x"
-                  dragConstraints={{ left: 0, right: 0 }}
-                  dragElastic={0.1}
-                  onDragEnd={handleDragEnd}
-                  style={{
-                    height: '100%',
-                    overflowY: 'auto',
-                    transformOrigin: direction > 0 ? 'left center' : 'right center',
-                    cursor: 'grab',
-                    willChange: 'transform',
-                  }}
-                  whileDrag={{ cursor: 'grabbing' }}
-                >
-                  <PantryRecipeDetail recipe={selectedRecipe} />
-                </motion.div>
-              </AnimatePresence>
-            </div>
-          </div>
-      </div>
-      ) : (
-        <EmptyState
-          mascotState="surprised"
-          headerLabel="Your Recipe Book"
-          headline="No recipes yet"
-          subline="Ask Chef Bubbly what to cook, or import a recipe with the link button above."
-          ctaLabel="Chat with Bubbles"
-          ctaEmoji="💬"
-          onCta={() => router.push('/chat')}
-        />
+        </>
       )}
 
       {/* Edit modal */}
-      {editOpen && selectedRecipe && (
+      {editRecipe && (
         <RecipeEditModal
-          recipe={selectedRecipe}
+          recipe={editRecipe}
           onSave={handleEditSave}
-          onClose={() => setEditOpen(false)}
+          onClose={() => setEditId(null)}
           disabled={mutating}
         />
       )}
@@ -1082,3 +652,4 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     </div>
   )
 }
+
