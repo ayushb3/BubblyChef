@@ -9,9 +9,8 @@ import time
 from typing import Any
 
 import jwt
-from jwt import PyJWKClient, PyJWKClientError
-
 from fastapi import HTTPException, Request
+from jwt import PyJWKClient, PyJWKClientError
 
 from bubbly_chef.config import settings
 

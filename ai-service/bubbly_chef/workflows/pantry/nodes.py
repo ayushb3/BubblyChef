@@ -8,7 +8,6 @@ they can be dropped directly into the existing StateGraph.
 
 import logging
 from datetime import date
-
 from uuid import uuid4
 
 from bubbly_chef.ai.manager import NoProviderAvailableError

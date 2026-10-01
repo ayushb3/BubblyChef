@@ -16,7 +16,7 @@ from postgrest.types import JSON
 from supabase import Client, create_client
 
 from bubbly_chef.config import settings
-from bubbly_chef.domain.lots import lot_base, lot_food_key, soonest_first_key
+from bubbly_chef.domain.lots import fresh_first_key, lot_base, lot_food_key, soonest_first_key
 from bubbly_chef.domain.normalizer import (
     normalize_food_name,
     normalize_to_base_unit,
@@ -1285,10 +1285,10 @@ class SupabaseRepository:
 
         Takes from the named row first. When `deduct_qty` is more than that row
         holds, the remainder goes to the food's other lots (same synonym-normalised
-        name, same base unit, with stock), soonest expiry first and undated last
-        (#356). The cook matcher names the soonest lot and reports the total
-        across all of them, so one confirmed deduction consumes lots in expiry
-        order. Returns whether the named row was updated; see
+        name, same base unit, with stock): fresh lots soonest expiry first and
+        undated last (#356), expired lots only after every fresh one (#756). The
+        cook matcher names the first of those lots and reports the total across
+        all of them, so one confirmed deduction consumes lots in that order. Returns whether the named row was updated; see
         `_deduct_from_row` for what that means.
         """
         applied, overflow, food, base_unit = await self._deduct_from_row(
@@ -1301,7 +1301,8 @@ class SupabaseRepository:
     async def _carry_deduction_to_lots(
         self, user_id: str, item_id: str, food: str, base_unit: str, remainder: float
     ) -> None:
-        """Spend `remainder` (in `base_unit`) on the other lots of `food`, soonest first."""
+        """Spend `remainder` (in `base_unit`) on the other lots of `food`, fresh lots
+        soonest-expiry first, expired lots only after them (#756)."""
         result = self.client.table("pantry_items").select("*").eq("user_id", user_id).execute()
         lots: list[tuple[PantryItem, float]] = []
         for row in _as_rows(result.data):
@@ -1314,7 +1315,7 @@ class SupabaseRepository:
             if qty is None or qty <= 0 or unit != base_unit:
                 continue
             lots.append((item, qty))
-        lots.sort(key=lambda lot: soonest_first_key(lot[0]))
+        lots.sort(key=lambda lot: fresh_first_key(lot[0]))
         for item, qty in lots:
             if remainder <= _LOT_EPSILON:
                 return

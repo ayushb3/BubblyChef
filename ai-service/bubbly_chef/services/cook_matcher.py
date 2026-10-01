@@ -17,15 +17,15 @@ from typing import Any, Callable, Literal, TypeVar
 
 from pydantic import BaseModel, Field
 
+from bubbly_chef.domain.lots import fresh_first_key, lot_base
 from bubbly_chef.domain.normalizer import (
+    SIZE_ADJECTIVE_UNITS,  # noqa: F401  re-export: single source of truth
     get_unit_dimension,
     is_package_unit,
     is_piece_unit,
     normalize_food_name,
     normalize_to_base_unit,
 )
-from bubbly_chef.domain.normalizer import SIZE_ADJECTIVE_UNITS  # noqa: F401  re-export: single source of truth
-from bubbly_chef.domain.lots import lot_base, soonest_first_key
 from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.models.cook import (
     CompoundComponent,
@@ -602,8 +602,9 @@ class _FoodLots:
 
     Each add of a food is its own row with its own expiry, so a pantry can
     hold 2 onions and 3 onions as two rows. `primary` is the lot to use first
-    (soonest expiry, undated last, among lots that have stock and a base unit):
-    it is the row a match names, and the one a deduction starts from.
+    (among lots that have stock and a base unit: fresh before expired, then
+    soonest expiry, undated last; see `fresh_first_key`, #756): it is the row a
+    match names, and the one a deduction starts from.
     `total_base` is the stock across every lot whose base unit agrees with
     `base_unit` (the soonest lot's). `uncounted` are lots that hold stock but
     are not in that total: no base unit could be worked out ("1 bag"), or a
@@ -619,7 +620,7 @@ class _FoodLots:
 
 
 def _group_lots(key: str, rows: list[PantryItem]) -> _FoodLots:
-    ordered = sorted(rows, key=soonest_first_key)
+    ordered = sorted(rows, key=fresh_first_key)
     measured = [(item, *lot_base(item)) for item in ordered if item.quantity > 0]
     basis = next(((i, q, u) for i, q, u in measured if q is not None and u is not None), None)
 
@@ -656,6 +657,47 @@ def _index_pantry_lots(pantry_items: list[PantryItem]) -> dict[str, _FoodLots]:
     for item in pantry_items:
         by_key.setdefault(_normalize_ingredient_name(item.name), []).append(item)
     return {key: _group_lots(key, rows) for key, rows in by_key.items()}
+
+
+# Differences below this are float noise, not a missing amount: 0.1 g + 0.7 g sums to
+# 0.7999999999999999, which a strict compare calls short of 0.8 g. Matches the
+# tolerance `meal_cook._merge_measured` already applies to the merged total (#756).
+_QTY_TOLERANCE = 1e-4
+
+# A unit field that says "no amount" rather than naming a measure.
+_TO_TASTE_UNITS = frozenset({"to taste", "as needed", "to season", "as desired", "for seasoning"})
+
+# "salt and pepper", "salt, pepper", "salt & pepper", "salt/pepper".
+_COMPONENT_SPLIT_RE = re.compile(r"\s*(?:,|&|/|\+|\band\b|\bor\b)\s*", re.IGNORECASE)
+_SEASONING_DESCRIPTOR_RE = re.compile(r"^(?:freshly|fresh)\s+", re.IGNORECASE)
+
+
+def _is_compound_seasoning(norm_name: str) -> bool:
+    """True for "salt and pepper": two or more parts, every one a culinary staple (#756).
+
+    `is_staple` alone calls the compound unknown, so it was sent to the model for
+    a stand-in and matched to `salt`. A compound is a line of seasonings, not a
+    food: it is never matched to one of its parts. A single staple is not a
+    compound and keeps the #305 handling.
+    """
+    parts = [p.strip() for p in _COMPONENT_SPLIT_RE.split(norm_name) if p.strip()]
+    if len(parts) < 2:
+        return False
+    for part in parts:
+        text = _SEASONING_DESCRIPTOR_RE.sub("", part)
+        for _ in range(5):
+            stripped = _ADJECTIVE_RE.sub("", text)
+            if stripped == text:
+                break
+            text = stripped
+        if not is_staple(_normalize_ingredient_name(text)):
+            return False
+    return True
+
+
+def _has_no_amount(quantity: float | None, unit: str | None) -> bool:
+    """True for a line with no quantity, or whose unit just says "to taste"."""
+    return quantity is None or (unit or "").strip().lower() in _TO_TASTE_UNITS
 
 
 def match_ingredients(
@@ -722,11 +764,34 @@ def match_ingredients(
         ing_unit: str | None = ingredient.get("unit")
         norm_name = _normalize_ingredient_name(raw_name)
 
+        # --- Compound seasoning with no amount: "salt and pepper" (#756) ---
+        # Nothing to deduct and nothing to ask for, so it is neither matched to a
+        # pantry row (a compound is never a stand-in for one of its parts) nor
+        # allowed to become a unit conflict. The review shows it as one quiet line.
+        compound_seasoning = _is_compound_seasoning(norm_name)
+        if compound_seasoning and _has_no_amount(ing_qty, ing_unit):
+            matches.append(
+                IngredientMatch(
+                    ingredient_name=raw_name,
+                    ingredient_qty=ing_qty,
+                    ingredient_unit=ing_unit,
+                    pantry_item_id=None,
+                    pantry_item_name=None,
+                    pantry_qty_available=None,
+                    deduct_qty=None,
+                    base_unit=None,
+                    status="to_taste",
+                    match_type="none",
+                    substitution_note=None,
+                )
+            )
+            continue
+
         # --- Find pantry match ---
         lots = pantry_index.get(norm_name)
         alias: ResolvedAlias | None = None
 
-        if lots is None and aliases:
+        if lots is None and aliases and not compound_seasoning:
             alias = aliases.get(norm_name)
             if alias is not None:
                 lots = pantry_index.get(alias.pantry_name)
@@ -736,8 +801,9 @@ def match_ingredients(
 
         if lots is None:
             # No match at all — but a culinary staple (salt, pepper, oil, …)
-            # is presumed on hand even when not in the pantry (#305).
-            if is_staple(norm_name):
+            # is presumed on hand even when not in the pantry (#305). So is a
+            # compound of them ("salt and pepper") when it carries an amount.
+            if is_staple(norm_name) or compound_seasoning:
                 matches.append(
                     IngredientMatch(
                         ingredient_name=raw_name,
@@ -775,8 +841,15 @@ def match_ingredients(
         # recipe took their share.
         already_claimed = consumed.get(lots.key, 0.0)
 
+        # A bare number ("1 lemon") counts that many of the food. Against a row
+        # counted in units it is deducted by count (#756); against a weighed or
+        # measured row it stays unconvertible and is left as before.
+        calc_unit = ing_unit
+        if ing_qty is not None and ing_unit is None and lots.base_unit == "count":
+            calc_unit = "count"
+
         # --- No quantity on recipe ingredient → can't deduct, just note as ready ---
-        if ing_qty is None or ing_unit is None:
+        if ing_qty is None or calc_unit is None:
             unclaimed = lots.total_base
             if unclaimed is not None:
                 unclaimed = max(0.0, unclaimed - already_claimed)
@@ -816,7 +889,7 @@ def match_ingredients(
         req_base_qty, req_base_unit = normalize_to_base_unit(
             name=norm_name,
             quantity=ing_qty,
-            unit=ing_unit,
+            unit=calc_unit,
             target_unit=pantry_base_unit,
         )
 
@@ -832,7 +905,7 @@ def match_ingredients(
         # req_base_unit is "g" and this branch never sees it. Only a pair that
         # landed on "count" (or failed to convert at all) can be imprecise.
         if (
-            is_piece_unit(ing_unit)
+            is_piece_unit(calc_unit)
             and is_package_unit(pantry_item.unit)
             and req_base_unit in (None, "count")
         ):
@@ -884,7 +957,7 @@ def match_ingredients(
         #    while it was expressed in the display unit — corrupting stock when
         #    display != base (1 "dozen" != 1 egg, 1 "kg" != 1 g).
         if req_base_qty is None or pantry_base_qty is None or req_base_unit != pantry_base_unit:
-            req_dim = get_unit_dimension(ing_unit)
+            req_dim = get_unit_dimension(calc_unit)
             pantry_dim = get_unit_dimension(pantry_item.unit)
 
             genuine_conflict = (
@@ -896,7 +969,7 @@ def match_ingredients(
             if genuine_conflict:
                 conflict_info = {
                     "ingredient": raw_name,
-                    "recipe_unit": ing_unit,
+                    "recipe_unit": calc_unit,
                     "pantry_unit": pantry_item.unit,
                 }
                 unit_conflicts.append(conflict_info)
@@ -909,7 +982,7 @@ def match_ingredients(
                         pantry_item_name=pantry_item.name,
                         pantry_qty_available=pantry_base_qty,
                         deduct_qty=None,
-                        base_unit=pantry_base_unit or ing_unit,
+                        base_unit=pantry_base_unit or calc_unit,
                         status="unit_conflict",
                         match_type=match_type,
                         substitution_note=note,
@@ -956,7 +1029,7 @@ def match_ingredients(
         # Compare against what is left, not the row's original quantity.
         available_base_qty = max(0.0, pantry_base_qty - already_claimed)
 
-        if available_base_qty >= req_base_qty:
+        if available_base_qty + _QTY_TOLERANCE >= req_base_qty:
             consumed[lots.key] = already_claimed + req_base_qty
             matches.append(
                 IngredientMatch(
@@ -1049,8 +1122,8 @@ def _unmatched_ingredient_names(
         norm = _normalize_ingredient_name(raw_name)
         if norm in pantry_names or norm in seen:
             continue
-        if is_staple(norm):
-            continue  # assumed on hand — never send to the LLM
+        if is_staple(norm) or _is_compound_seasoning(norm):
+            continue  # assumed on hand or to taste — never send to the LLM
         seen.add(norm)
         unmatched.append(raw_name)
     return unmatched
