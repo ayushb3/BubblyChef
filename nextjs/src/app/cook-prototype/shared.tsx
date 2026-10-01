@@ -3,8 +3,6 @@
 
 import { MOCK_DEDUCTIONS, STATUS_META, MOCK_RECIPE } from './mock'
 
-const FONT = { fontFamily: 'Nunito, sans-serif' } as const
-
 /** Placeholder timer affordance (#45 owns real timers). Purely decorative. */
 export function TimerChip({ min }: { min: number }) {
   return (
@@ -21,7 +19,7 @@ export function TimerChip({ min }: { min: number }) {
 /** The deduction preview — reused wherever a variant places it. */
 export function DeductionPreview({ compact }: { compact?: boolean }) {
   return (
-    <div className="space-y-1.5" style={FONT}>
+    <div className="font-sans space-y-1.5">
       {!compact && (
         <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
           This cook will use
@@ -63,7 +61,7 @@ export function LockedRecipeCard() {
     >
       <div className="px-4 py-3 flex items-center gap-2" style={{ background: 'var(--color-primary)' }}>
         <span className="text-lg">{MOCK_RECIPE.emoji}</span>
-        <span className="font-extrabold" style={{ ...FONT, color: 'var(--color-text)' }}>
+        <span className="font-sans font-extrabold" style={{ color: 'var(--color-text)' }}>
           {MOCK_RECIPE.title}
         </span>
         <span
@@ -73,7 +71,7 @@ export function LockedRecipeCard() {
           🔒 cooking now
         </span>
       </div>
-      <div className="px-4 py-2 text-xs" style={{ ...FONT, color: 'var(--color-muted)' }}>
+      <div className="font-sans px-4 py-2 text-xs" style={{ color: 'var(--color-muted)' }}>
         Locked while you cook — no second recipe, no double deduction.
       </div>
     </div>
@@ -83,7 +81,7 @@ export function LockedRecipeCard() {
 /** Clean done-state (#268) — exits the mode, banner cleared. */
 export function DoneState({ onExit }: { onExit: () => void }) {
   return (
-    <div className="text-center py-8 px-6" style={FONT}>
+    <div className="font-sans text-center py-8 px-6">
       <div className="text-5xl mb-3">🎉</div>
       <h2 className="text-xl font-extrabold mb-1" style={{ color: 'var(--color-text)' }}>
         Nicely done!
@@ -101,5 +99,3 @@ export function DoneState({ onExit }: { onExit: () => void }) {
     </div>
   )
 }
-
-export const SHEET_FONT = FONT

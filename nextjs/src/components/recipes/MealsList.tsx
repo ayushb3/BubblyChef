@@ -23,7 +23,7 @@ export default function MealsList() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[300px] gap-3">
         <span className="text-4xl animate-bounce">🍽️</span>
-        <p className="text-sm text-[var(--color-muted)]" style={{ fontFamily: 'Nunito, sans-serif' }}>
+        <p className="font-sans text-sm text-[var(--color-muted)]">
           Loading your meals…
         </p>
       </div>

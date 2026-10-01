@@ -53,21 +53,18 @@ export default function ChatContextCard({
 
       <div className="flex-1 min-w-0">
         <p
-          className="text-[11px] font-bold uppercase tracking-wide text-[var(--color-muted)]"
-          style={{ fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans text-[11px] font-bold uppercase tracking-wide text-[var(--color-muted)]"
         >
           {label}
         </p>
         <p
-          className="text-sm font-extrabold text-[var(--color-text)] leading-snug"
-          style={{ fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans text-sm font-extrabold text-[var(--color-text)] leading-snug"
         >
           {title}
         </p>
         {subtitle && (
           <p
-            className="text-xs text-[var(--color-muted)] mt-0.5"
-            style={{ fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-xs text-[var(--color-muted)] mt-0.5"
           >
             {subtitle}
           </p>

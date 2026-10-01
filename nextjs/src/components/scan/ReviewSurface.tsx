@@ -287,7 +287,7 @@ export default function ReviewSurface({
             whileTap={{ scale: checkedCount === 0 || isSubmitting ? 1 : 0.96 }}
             transition={{ type: 'spring', stiffness: 400, damping: 17 }}
             className="w-full py-4 rounded-full font-bold text-white shadow-lg transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: 'var(--color-primary-dark, #FF8FAB)' }}
+            style={{ background: 'var(--color-primary-dark)' }}
           >
             {isSubmitting
               ? 'Adding…'

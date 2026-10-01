@@ -92,7 +92,7 @@ export default function KitchenThemePicker({
         titleId="kitchen-theme-picker-title"
         subheader={
           error ? (
-            <p className="text-xs text-center text-[#ff9aa2]" role="alert">
+            <p className="text-xs text-center text-[var(--color-coral)]" role="alert">
               {error}
             </p>
           ) : undefined

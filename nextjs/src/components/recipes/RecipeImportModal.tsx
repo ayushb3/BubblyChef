@@ -122,20 +122,19 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
           <button
             onClick={handleImport}
             disabled={state === 'loading' || !url.trim()}
-            className="flex-1 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
-            style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans flex-1 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
+            style={{ background: 'var(--color-primary)' }}
           >
             {state === 'loading' ? 'Importing…' : 'Import'}
           </button>
           <button
             onClick={handleClose}
             disabled={state === 'loading'}
-            className="flex-1 py-2.5 rounded-full text-sm font-bold disabled:opacity-50 active:scale-95 transition-transform"
+            className="font-sans flex-1 py-2.5 rounded-full text-sm font-bold disabled:opacity-50 active:scale-95 transition-transform"
             style={{
               background: 'var(--color-bg)',
               border: '1.5px solid var(--color-border)',
               color: 'var(--color-muted)',
-              fontFamily: 'Nunito, sans-serif',
             }}
           >
             Cancel
@@ -146,8 +145,7 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
       {/* Body */}
       <div className="space-y-3">
         <p
-          className="text-xs text-[var(--color-muted)]"
-          style={{ fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans text-xs text-[var(--color-muted)]"
         >
           Browse a site, copy the recipe URL (or a YouTube recipe video, Shorts work too),
           and paste it below.
@@ -166,16 +164,15 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
               target="_blank"
               rel="noopener noreferrer"
               title={noImage ? 'Images may not be available for this site' : undefined}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold no-underline hover:opacity-80 active:scale-95 transition-all"
+              className="font-sans inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold no-underline hover:opacity-80 active:scale-95 transition-all"
               style={{
                 background: 'var(--color-bg)',
                 border: '1.5px solid var(--color-border)',
                 color: 'var(--color-primary-dark)',
-                fontFamily: 'Nunito, sans-serif',
               }}
             >
               {label}
-              {noImage && <span style={{ color: '#f59e0b' }}>⚠</span>}
+              {noImage && <span style={{ color: 'var(--color-warn-icon)' }}>⚠</span>}
               {' '}↗
             </a>
           ))}
@@ -192,19 +189,18 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
           placeholder="Recipe page or YouTube link..."
           disabled={state === 'loading'}
           autoFocus
-          className="w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)] disabled:opacity-50"
+          className="font-sans w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)] disabled:opacity-50"
           style={{
             background: 'var(--color-bg)',
             border: `1.5px solid ${state === 'error' ? 'var(--color-coral)' : 'var(--color-border)'}`,
             color: 'var(--color-text)',
-            fontFamily: 'Nunito, sans-serif',
           }}
         />
 
         {state === 'error' && (
           <p
-            className="text-xs font-semibold"
-            style={{ color: 'var(--color-coral)', fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-xs font-semibold"
+            style={{ color: 'var(--color-coral)' }}
           >
             {errorMsg}
           </p>
@@ -212,8 +208,7 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
 
         {state === 'loading' && (
           <p
-            className="text-xs text-[var(--color-muted)] flex items-center gap-1.5"
-            style={{ fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-xs text-[var(--color-muted)] flex items-center gap-1.5"
           >
             <BubblesMascot state="thinking" size={20} />
             {isYouTubeUrl(url)

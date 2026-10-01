@@ -141,7 +141,7 @@ export default function FacetDropdown({
                   aria-pressed={isActive}
                   onClick={() => toggleValue(value)}
                   // py-3 keeps rows at 44px tall, matching ThemePicker.
-                  className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-bold hover:bg-[var(--color-bg)] transition-colors"
+                  className="font-sans w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-bold hover:bg-[var(--color-bg)] transition-colors"
                   style={{ color: 'var(--color-text)' }}
                 >
                   {emoji && <span aria-hidden="true">{emoji}</span>}
