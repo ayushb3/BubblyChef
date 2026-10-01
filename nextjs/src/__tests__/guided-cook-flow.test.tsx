@@ -365,10 +365,44 @@ describe('GuidedCookFlow — Ask Bubbles sends a valid ChatRequest', () => {
     expect(request.message).toMatch(/why al dente\?/i)
   })
 
-  it('sends a null conversation_id (no pinned session yet)', () => {
+  it('sends the dish (id, title, ingredient lines) as context.cooking_recipe (#814)', () => {
     openOverlayAndSend('why al dente?')
     const request = chatApi.streamChatMessage.mock.calls[0][0]
-    expect(request.conversation_id).toBeNull()
+    expect(request.context).toEqual({
+      cooking_recipe: {
+        id: 'r1',
+        title: 'Creamy Tomato Pasta',
+        ingredients: ['200 g pasta', '400 g canned tomatoes', '100 ml cream'],
+        // No amendment card here, so no amendment-detection model call.
+        amendable: false,
+      },
+    })
+    // A single-recipe cook has no planning chat, so no meal constraints are sent.
+    expect('meal_constraints' in request.context).toBe(false)
+  })
+
+  it('sends one stable conversation_id for the whole cook, even across closing and reopening Ask Bubbles (#814)', () => {
+    renderFlow()
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // skip prep → step 1
+
+    const ask = (question: string) => {
+      fireEvent.change(screen.getByPlaceholderText(/ask about this step/i), {
+        target: { value: question },
+      })
+      fireEvent.click(screen.getByRole('button', { name: /send question/i }))
+    }
+
+    fireEvent.click(screen.getByTestId('guided-cook-ask-bubbles'))
+    ask('why al dente?')
+    fireEvent.click(screen.getByRole('button', { name: /back to step 1/i }))
+
+    fireEvent.click(screen.getByTestId('guided-cook-ask-bubbles'))
+    ask('how much salt?')
+
+    expect(chatApi.streamChatMessage).toHaveBeenCalledTimes(2)
+    const [first, second] = chatApi.streamChatMessage.mock.calls.map((c) => c[0])
+    expect(typeof first.conversation_id).toBe('string')
+    expect(second.conversation_id).toBe(first.conversation_id)
   })
 
   it('opts out of follow-up chips, which the overlay never renders (#498)', () => {

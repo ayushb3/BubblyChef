@@ -52,8 +52,20 @@ import {
 } from '@/lib/meal-cook-session'
 import { skippedDeductionNames, type SkippedDeductionNames } from '@/lib/cook-skipped'
 import { useCookingTimers } from '@/lib/useCookingTimers'
-import type { MealCookErrorKind, MealCookProposal, MealDishFull } from '@/types/meals'
+import type { MealCookErrorKind, MealCookProposal, MealConstraints, MealDishFull } from '@/types/meals'
 import type { DeductionItem } from '@/types/recipes'
+
+/**
+ * True when a meal carries any planning constraints worth sending to Ask Bubbles
+ * (issue #814). A meal planned without chat, or with nothing stated, stores an
+ * empty shell, which would only add noise to every request.
+ */
+function hasPlanningConstraints(c: MealConstraints | undefined): boolean {
+  if (!c) return false
+  return (
+    (c.kitchen_limits?.length ?? 0) > 0 || Object.keys(c.recipe_constraints ?? {}).length > 0
+  )
+}
 
 /** The dish the Ask Bubbles overlay is pinned to (issue #654 PR B, §3). */
 interface AskPin {
@@ -861,6 +873,7 @@ export default function MealCookPage() {
                 ingredients: pinnedIngredientsForDish(askPinDish, meal.servings, session),
               }}
               onApplyAmendment={handleApplyAmendment}
+              mealConstraints={hasPlanningConstraints(meal.constraints) ? meal.constraints : undefined}
             />
           </motion.div>
         )}

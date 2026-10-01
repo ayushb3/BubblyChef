@@ -67,7 +67,13 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
       exit={{ opacity: 0, scale: 0.9 }}
       transition={
         isCompleted && !reduced
-          ? { repeat: Infinity, duration: 1.1, ease: 'easeInOut' }
+          ? {
+              // Only the pulse repeats. A bare `repeat: Infinity` also applied
+              // to the `layout` animation, so expanding the dock with finished
+              // chips made them swing sideways forever (issue #802 verify).
+              layout: { type: 'spring', stiffness: 500, damping: 30 },
+              default: { repeat: Infinity, duration: 1.1, ease: 'easeInOut' },
+            }
           : { type: 'spring', stiffness: 500, damping: 30 }
       }
       // Issue #757 — a finished chip clears when tapped (the other way it
@@ -109,18 +115,24 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
       <span aria-hidden="true" className="flex-shrink-0 text-sm">
         {isCompleted ? '⏰' : isPaused ? '⏸️' : '⏱️'}
       </span>
-      {expanded && (
+      {/* Issue #802 — a finished chip keeps its label ("Rice · done") in the
+          collapsed row too, so two finished timers can be told apart. A running
+          or paused chip shows the countdown instead and names itself only in
+          the expanded stack. */}
+      {(expanded || isCompleted) && (
         <span
-          className="flex-1 min-w-0 truncate text-xs font-bold"
+          className={`min-w-0 truncate text-xs font-bold ${expanded ? 'flex-1' : 'max-w-[10rem]'}`}
         >
-          {timer.label}
+          {isCompleted ? `${timer.label} · done` : timer.label}
         </span>
       )}
-      <span
-        className="flex-shrink-0 whitespace-nowrap text-xs font-extrabold tabular-nums"
-      >
-        {isCompleted ? 'Done!' : formatDuration(timer.remainingSeconds)}
-      </span>
+      {!isCompleted && (
+        <span
+          className="flex-shrink-0 whitespace-nowrap text-xs font-extrabold tabular-nums"
+        >
+          {formatDuration(timer.remainingSeconds)}
+        </span>
+      )}
       {expanded && !isCompleted && (
         <button
           type="button"
@@ -228,9 +240,12 @@ export default function TimerDock() {
           className={`fixed left-0 right-0 ${raised ? 'z-[9991]' : 'z-40'} flex justify-center px-3 pointer-events-none`}
           // Raised: clears guided cook's ~76px Back/Next footer (no bottom nav
           // there). z-[9991] sits above the guided root (9990) and below
-          // BubblePop (9999). Otherwise it sits above the bottom nav (64px).
+          // BubblePop (9999). Otherwise it sits above the bottom nav: 88px =
+          // the nav's 79px (3px border + 8px top pad + 56px key + 12px bottom
+          // pad), the dock's 3px hard shadow, and a 6px gap — issue #802: at
+          // 64px the nav covered the dock's bottom edge and clipped its shadow.
           style={{
-            bottom: `calc(${raised ? 96 : 64}px + env(safe-area-inset-bottom, 0px))`,
+            bottom: `calc(${raised ? 96 : 88}px + env(safe-area-inset-bottom, 0px))`,
           }}
           data-testid="timer-dock"
           data-raised={raised ? 'true' : 'false'}
