@@ -19,7 +19,7 @@ const FADE_ITEM = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { du
 
 /** Client-coded app actions. A closed union: model output can never name one.
  *  PR B/C extend it here, in one place. */
-export type ChipAction = 'save_meal' | 'open_scan' | 'open_meal'
+export type ChipAction = 'save_meal' | 'open_scan' | 'open_meal' | 'retry_send' | 'dismiss_send'
 
 export interface ChipConfig {
   label: string

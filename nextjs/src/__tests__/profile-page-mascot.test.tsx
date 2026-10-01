@@ -40,6 +40,11 @@ jest.mock('@/components/profile/TakeTourButton', () => ({
   __esModule: true,
   default: () => <button>Take the tour</button>,
 }))
+// Opens the app-level TourProvider's staples sheet (#853), which this render doesn't mount.
+jest.mock('@/components/profile/SetUpStaplesButton', () => ({
+  __esModule: true,
+  default: () => <button>Staples &amp; household size</button>,
+}))
 jest.mock('@/components/ui/ThemePicker', () => ({
   __esModule: true,
   default: () => <div data-testid="theme-picker" />,

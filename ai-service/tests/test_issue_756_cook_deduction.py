@@ -118,11 +118,11 @@ class TestEqualAmountsAreReady:
     def test_whole_against_a_weighed_or_measured_row_stays_the_quiet_have_it(
         self, pantry_unit: str, base_unit: str
     ) -> None:
-        # "1 whole chicken breast" vs "500 g": we have it, we can't say how much the
+        # "1 whole block of tofu" vs "500 g": we have it, we can't say how much the
         # recipe uses. Not a unit conflict with an empty box to fill (#756 review).
-        pantry = [_item("chicken breast", 500.0, pantry_unit, base=500.0, base_unit=base_unit)]
+        pantry = [_item("tofu", 500.0, pantry_unit, base=500.0, base_unit=base_unit)]
 
-        proposal = _match(pantry, [{"name": "chicken breast", "quantity": 1.0, "unit": "whole"}])
+        proposal = _match(pantry, [{"name": "tofu", "quantity": 1.0, "unit": "whole"}])
 
         (m,) = proposal.matches
         assert m.status == "imprecise"
@@ -134,11 +134,12 @@ class TestEqualAmountsAreReady:
     def test_the_other_count_units_against_a_weighed_row_are_unchanged(
         self, recipe_unit: str, pantry_unit: str, base_unit: str
     ) -> None:
-        # Pinned so the class is explicit: these were already a unit conflict on main
+        # Pinned so the class is explicit (a food with no typical piece weight; a chicken
+        # breast now converts, see test_unit_conversion_gaps.py): these were already a unit conflict on main
         # (test_mass_vs_count_stays_unit_conflict) and #756 does not touch that.
-        pantry = [_item("chicken breast", 500.0, pantry_unit, base=500.0, base_unit=base_unit)]
+        pantry = [_item("tofu", 500.0, pantry_unit, base=500.0, base_unit=base_unit)]
 
-        proposal = _match(pantry, [{"name": "chicken breast", "quantity": 1.0, "unit": recipe_unit}])
+        proposal = _match(pantry, [{"name": "tofu", "quantity": 1.0, "unit": recipe_unit}])
 
         (m,) = proposal.matches
         assert m.status == "unit_conflict"
@@ -281,9 +282,11 @@ class TestUnitlessAmountIsACount:
 
     def test_a_unitless_amount_against_a_weighed_row_is_left_as_it_was(self) -> None:
         # No way to turn "2" into grams; this must not become a made-up deduction.
-        pantry = [_item("onion", 500.0, "g", base=500.0, base_unit="g")]
+        # (Tofu has no typical piece weight; an onion does, and converts: see
+        # test_unit_conversion_gaps.py.)
+        pantry = [_item("tofu", 500.0, "g", base=500.0, base_unit="g")]
 
-        proposal = _match(pantry, [{"name": "onion", "quantity": 2.0, "unit": None}])
+        proposal = _match(pantry, [{"name": "tofu", "quantity": 2.0, "unit": None}])
 
         (m,) = proposal.matches
         assert m.deduct_qty is None

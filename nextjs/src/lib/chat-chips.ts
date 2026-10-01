@@ -255,6 +255,19 @@ export function resolveAiErrorChips(kind: string, retryText: string | undefined)
 }
 
 /**
+ * The pills under a reply whose request never completed (issue #847): Retry
+ * first (resends the identical text), then Dismiss (drops the failed turn and
+ * puts the text back in the input). The normal follow-ups would only fail the
+ * same way, so none are offered.
+ */
+export function resolveSendFailureChips(): ChipConfig[] {
+  return [
+    { label: 'Retry', message: '', tone: 'accent', emoji: '🔄', kind: 'action', action: 'retry_send' },
+    { label: 'Dismiss', message: '', tone: 'primary', emoji: '✏️', kind: 'action', action: 'dismiss_send' },
+  ]
+}
+
+/**
  * Resolve the follow-up chips for an assistant message.
  *
  * Prefers the backend's context-aware `follow_up_suggestions` (issue #498)

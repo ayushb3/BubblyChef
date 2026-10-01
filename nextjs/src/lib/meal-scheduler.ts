@@ -630,6 +630,37 @@ function scheduleWithProgress(
     lateness = Math.max(0, lateness)
   }
 
+  // Issue #849 — a step the cook started EARLY ("Start now") runs ahead of its
+  // baseline slot, and so should whatever follows it in the same dish. Without
+  // this the baseline floor below held the dependent at its planned time, many
+  // minutes after the step it waits on had actually finished. Early-started
+  // steps are the only source: an early Done or a Skip still can't pull
+  // anything earlier (see the doc comment above), and another dish keeps its
+  // own baseline floor, so the meal doesn't unravel.
+  const earlyShift = new Map<string, number>()
+  if (baseline) {
+    for (const key of fixedKeys) {
+      const p = progress.steps[key]
+      const b = baseline.get(key)
+      if (!p || !b || p.status === 'skipped') continue
+      const shift = b.start - p.started_at_minutes - (p.extra_minutes ?? 0)
+      if (shift > 0) earlyShift.set(key, shift)
+    }
+  }
+  // Largest early shift among a step's ancestors in its own dish, memoised.
+  const inheritedShift = new Map<string, number>()
+  const inheritedShiftOf = (dish: SanitizedDish, index: number): number => {
+    const key = keyOf(dish.dish_id, index)
+    const cached = inheritedShift.get(key)
+    if (cached !== undefined) return cached
+    let best = 0
+    for (const d of dish.steps[index].depends_on) {
+      best = Math.max(best, earlyShift.get(keyOf(dish.dish_id, d)) ?? 0, inheritedShiftOf(dish, d))
+    }
+    inheritedShift.set(key, best)
+    return best
+  }
+
   const remainingNodes: Node[] = []
   for (const dish of dishes) {
     for (const step of dish.steps) {
@@ -649,7 +680,13 @@ function scheduleWithProgress(
 
       if (baseline) {
         const b = baseline.get(key)
-        if (b) readyFloor = Math.max(readyFloor, b.start + lateness)
+        // Lateness elsewhere in the meal still wins: the dish waits so
+        // everything keeps landing together; only a meal that is on time
+        // lets an early-started dish's followers move up.
+        if (b) {
+          const slide = lateness > 0 ? lateness : -inheritedShiftOf(dish, step.index)
+          readyFloor = Math.max(readyFloor, b.start + slide)
+        }
       }
 
       remainingNodes.push({

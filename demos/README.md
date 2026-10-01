@@ -1,5 +1,9 @@
 # Demos — common user flows
 
+> **Milestone demos** (one recording per signature-PRD goal: the meal engine,
+> the kitchen home, the signature components) are in
+> [`milestones/`](milestones/README.md).
+
 Screen recordings of the core BubblyChef flows, captured against a live Supabase
 session on a mobile viewport (430×932). These exist so a reviewer can validate
 that flows actually *work* end-to-end — something static screenshots can't show.

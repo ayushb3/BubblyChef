@@ -492,14 +492,15 @@ class TestCrossDimensionDeduction:
         assert deductions["basmati rice"] == pytest.approx(300.0)
 
     def test_piece_units_deduct_by_conventional_weight(self) -> None:
-        """2 cloves garlic = 6 g against a gram row, not a whole bulb."""
+        """2 cloves garlic = 10 g (5 g a clove) against a gram row, not a whole bulb."""
         pantry = [_make_item("garlic", 100.0, "g", qty_base=100.0, unit_base="g")]
         ingredients = [{"name": "garlic", "quantity": 2.0, "unit": "cloves"}]
 
         proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
 
         assert proposal.matches[0].status == "ready"
-        assert proposal.matches[0].deduct_qty == pytest.approx(6.0)
+        assert proposal.matches[0].deduct_qty == pytest.approx(10.0)
+        assert proposal.matches[0].approximate is True
 
     def test_ingredient_without_density_stays_an_honest_conflict(self) -> None:
         """No density for matcha, so a tablespoon of it is still not comparable.
@@ -623,13 +624,13 @@ class TestPieceUnitParsing:
         assert proposal.matches[0].deduct_qty == pytest.approx(4.0)
 
     def test_pinch_of_salt_from_a_string(self) -> None:
-        """1 pinch = 1/16 tsp = 0.3125 ml; salt at 1.2 g/ml = 0.375 g."""
+        """A pinch is too small to measure: the salt is on hand and nothing comes off it."""
         pantry = [_make_item("salt", 1.0, "kg", qty_base=1000.0, unit_base="g")]
 
         proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ["1 pinch salt"], pantry)
 
-        assert proposal.matches[0].status == "ready"
-        assert proposal.matches[0].deduct_qty == pytest.approx(0.375)
+        assert proposal.matches[0].status == "to_taste"
+        assert proposal.matches[0].deduct_qty is None
 
 
 class TestAliasCache:
@@ -2404,16 +2405,18 @@ class TestUnitConflictFallback:
     def test_unregistered_pantry_unit_with_volume_recipe_unit(self) -> None:
         """Pantry uses 'bag' (count dimension); recipe uses 'cup' (ml dimension).
         'bag' → count, 'cup' → ml. Both sides' dimensions are known but differ
+        and nothing bridges them (matcha has no density and no bag size)
         → this IS a genuine mismatch; expect unit_conflict (not soft fallback).
+        (Flour does bridge: a bag is 5 lb and a cup 127 g, see test_unit_conversion_gaps.py.)
         """
-        pantry = [_make_item("flour", 2.0, "bag", qty_base=2.0, unit_base="count")]
-        ingredients = [{"name": "flour", "quantity": 1.0, "unit": "cup"}]
+        pantry = [_make_item("matcha", 2.0, "bag", qty_base=2.0, unit_base="count")]
+        ingredients = [{"name": "matcha", "quantity": 1.0, "unit": "cup"}]
 
         proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
 
         # count vs ml → genuine dimension mismatch → unit_conflict
         assert len(proposal.unit_conflicts) == 1
-        assert proposal.unit_conflicts[0]["ingredient"] == "flour"
+        assert proposal.unit_conflicts[0]["ingredient"] == "matcha"
         assert proposal.matches[0].status == "unit_conflict"
 
     def test_soft_fallback_reports_pantry_base_unit_not_a_guess(self) -> None:

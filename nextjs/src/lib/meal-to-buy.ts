@@ -13,6 +13,7 @@
  */
 
 import { groceryFoodKey } from '@/lib/grocery'
+import type { ManualLineInput } from '@/lib/grocery'
 import type { MealToBuyDetail } from '@/lib/api/grocery'
 
 export interface DishIngredientNames {
@@ -57,4 +58,20 @@ export function toBuyByDish(detail: MealToBuyDetail, dishes: DishIngredientNames
     })
   }
   return result
+}
+
+/**
+ * What goes on the grocery list for a meal's to-buy (issue #850): each item with
+ * the amount the meal lacks, its unit and its category, so a line reads "Feta
+ * (200 g)" in the dairy group instead of a bare name under "other". An older
+ * service sent no `items`: fall back to the bare names.
+ */
+export function groceryEntriesFromDetail(detail: MealToBuyDetail): Array<string | ManualLineInput> {
+  if (!detail.items) return detail.names
+  return detail.items.map((i) => ({
+    name: i.name,
+    quantity: i.quantity,
+    unit: i.unit,
+    category: i.category ?? undefined,
+  }))
 }

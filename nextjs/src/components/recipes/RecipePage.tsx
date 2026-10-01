@@ -41,6 +41,9 @@ export interface Recipe {
   meal_type?: string | null
   is_favorite?: boolean
   created_at?: string
+  /** Cook history, bumped when a cook is confirmed (issue #855 reads it for the library card). */
+  times_cooked?: number
+  last_cooked_at?: string | null
   /** Titles of meals this recipe is a dish in (issue #650) — `[]` when none. */
   meal_titles?: string[]
 }

@@ -15,6 +15,11 @@ interface BulkItemInput {
   expiry_date?: string | null
   source?: 'scan' | 'manual'
   estimated_expiry?: boolean
+  /**
+   * Shelf-stable item (first-run staples, #853): store no expiry at all instead of
+   * estimating one. Only honoured when the client sent no date of its own.
+   */
+  no_expiry?: boolean
 }
 
 export async function POST(request: Request) {
@@ -41,13 +46,15 @@ export async function POST(request: Request) {
           ? item.category
           : (await estimateCategory(item.name)) || item.category || 'other'
 
-      const expiry =
-        item.expiry_date ||
-        (await estimateExpiry({
-          name: item.name,
-          category,
-          location: item.storage_location,
-        }))
+      const skipEstimate = item.no_expiry === true && !item.expiry_date
+      const expiry = skipEstimate
+        ? null
+        : item.expiry_date ||
+          (await estimateExpiry({
+            name: item.name,
+            category,
+            location: item.storage_location,
+          }))
 
       const qty = item.quantity ?? 1.0
       const unit = item.unit || 'item'

@@ -538,6 +538,13 @@ export function useChat(options?: UseChatOptions) {
                 ? {
                     ...msg,
                     content: `Oops! Something went wrong (${err.message}). Please try again!`,
+                    // Remember exactly what was sent so Retry is identical (#847).
+                    sendFailure: {
+                      text: trimmed,
+                      context: context ?? null,
+                      forcedIntent: forcedIntent ?? null,
+                      forcedIntentSource: forcedIntentSource ?? null,
+                    },
                   }
                 : msg,
             ),
@@ -876,6 +883,40 @@ export function useChat(options?: UseChatOptions) {
     [sendMessage],
   )
 
+  // ── Failed send: Retry / Dismiss (#847) ──────────────────────────────────
+
+  /** Drop a failed reply and the user bubble that triggered it; returns what was sent. */
+  const takeFailedSend = useCallback((failedId: string) => {
+    const list = messagesRef.current
+    const at = list.findIndex((m) => m.id === failedId)
+    const failure = at >= 0 ? list[at].sendFailure : undefined
+    if (!failure) return null
+    const userId = list[at - 1]?.role === 'user' ? list[at - 1].id : null
+    setMessages((prev) => prev.filter((m) => m.id !== failedId && m.id !== userId))
+    return failure
+  }, [])
+
+  /**
+   * Resend a failed turn: the identical text, context and forced intent, once.
+   * The failed pair is replaced by the fresh send, so the thread keeps a single
+   * user bubble for it.
+   */
+  const retryFailedSend = useCallback(
+    (failedId: string) => {
+      if (isStreaming) return
+      const failure = takeFailedSend(failedId)
+      if (!failure) return
+      sendMessage(failure.text, failure.context, failure.forcedIntent, failure.forcedIntentSource)
+    },
+    [isStreaming, takeFailedSend, sendMessage],
+  )
+
+  /** Drop a failed turn without resending; returns its text so the page can put it back in the input. */
+  const dismissFailedSend = useCallback(
+    (failedId: string): string | null => takeFailedSend(failedId)?.text ?? null,
+    [takeFailedSend],
+  )
+
   // ── Confirm-band send ────────────────────────────────────────────────────
   // Called when the user taps a confirm-band button. Aborts any in-flight
   // stream (same as sendChipMessage), then sends the button label as the
@@ -910,6 +951,8 @@ export function useChat(options?: UseChatOptions) {
     sendMessage,
     sendChipMessage,
     sendConfirmChoice,
+    retryFailedSend,
+    dismissFailedSend,
     cancelStream,
     startNewChat,
     approveProposal,
