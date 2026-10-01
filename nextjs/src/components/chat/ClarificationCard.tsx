@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { motion } from 'framer-motion'
 import { titleCase } from '@/lib/format'
 import Chip from '@/components/ui/Chip'
+import PixelPanel from '@/components/ui/PixelPanel'
+import ChatCardHeader from './ChatCardHeader'
 import type { TermSuggestion } from '@/types/chat'
 
 interface ClarificationCardProps {
@@ -48,16 +49,8 @@ export default function ClarificationCard({ terms, onStagePick, disabled = false
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: 'easeOut' }}
-      className="rounded-2xl bg-white border border-[var(--color-border)] shadow-sm overflow-hidden max-w-[85%]"
-    >
-      <div className="px-4 py-3 border-b border-[var(--color-border)] flex items-center gap-2">
-        <span className="text-lg" role="img" aria-label="thinking">🤔</span>
-        <span className="font-bold text-sm text-[var(--color-text)]">What did you mean?</span>
-      </div>
+    <PixelPanel entrance contentClassName="p-0" className="max-w-[85%] mr-1 mb-1">
+      <ChatCardHeader emoji="🤔" emojiLabel="thinking" title="What did you mean?" />
 
       <div className="px-4 py-3 flex flex-col gap-3">
         {terms.map(({ term, suggestions }) => (
@@ -83,6 +76,6 @@ export default function ClarificationCard({ terms, onStagePick, disabled = false
           </div>
         ))}
       </div>
-    </motion.div>
+    </PixelPanel>
   )
 }

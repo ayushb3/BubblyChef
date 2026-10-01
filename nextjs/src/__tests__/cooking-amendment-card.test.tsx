@@ -18,7 +18,12 @@ jest.mock('framer-motion', () => {
     return MotionStub
   }
   const motion = new Proxy({}, { get: (_t, tag: string) => passthrough(tag) })
-  return { motion, AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</> }
+  // `useReducedMotion` is read by PixelPanel (the card's frame, issue #746).
+  return {
+    motion,
+    AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    useReducedMotion: () => false,
+  }
 })
 
 const PROPOSAL: RecipeAmendmentProposal = {
