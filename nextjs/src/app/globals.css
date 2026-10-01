@@ -137,7 +137,7 @@
   body {
     background: var(--color-bg);
     color: var(--color-text);
-    font-family: Nunito, sans-serif;
+    font-family: var(--font-nunito, Nunito), Nunito, sans-serif;
   }
 
   h1, h2, h3, h4 {

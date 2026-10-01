@@ -68,17 +68,34 @@ def is_pantry_proposal_turn(envelope: dict[str, Any] | None) -> bool:
     )
 
 
+def is_amendment_proposal_turn(envelope: dict[str, Any] | None) -> bool:
+    """A `cooking_help` envelope carrying a mid-cook amendment proposal (#489)
+    and a usable `request_id`: stamped and saved early exactly like a pantry
+    proposal turn, so applying it can record the outcome on the row."""
+    if not envelope:
+        return False
+    request_id = envelope.get("request_id")
+    proposal = envelope.get("proposal")
+    return (
+        envelope.get("intent") == "cooking_help"
+        and isinstance(proposal, dict)
+        and proposal.get("proposal_type") == "recipe_amendment"
+        and isinstance(request_id, str)
+        and bool(request_id)
+    )
+
+
 def metadata_for_save(envelope: dict[str, Any] | None) -> dict[str, Any] | None:
     """The `metadata` to persist for an assistant turn.
 
-    Pantry proposal turns get the envelope's `request_id` stamped in, which is
-    the key apply and reject use to find the row. Every other turn is saved
-    exactly as before.
+    Pantry proposal turns and mid-cook amendment turns get the envelope's
+    `request_id` stamped in, which is the key apply and reject use to find the
+    row. Every other turn is saved exactly as before.
     """
     if envelope is None:
         return None
     metadata = envelope.get("metadata")
-    if not is_pantry_proposal_turn(envelope):
+    if not (is_pantry_proposal_turn(envelope) or is_amendment_proposal_turn(envelope)):
         return metadata if isinstance(metadata, dict) else None
     base = metadata if isinstance(metadata, dict) else {}
     return {**base, "request_id": envelope["request_id"]}

@@ -14,9 +14,15 @@
  *   applied  read-only "Added to pantry!"
  *   rejected read-only "Skipped"
  *
+ * A mid-cook amendment card ("Update what I'm cooking", #489/#490) restores from
+ * the same record: `applied` and `rejected` turns come back as applied and
+ * dismissed (never a live button that would re-apply), anything else as pending,
+ * and the page decides whether a pending one is still actionable.
+ *
  * Pure: no React, no I/O. Malformed rows degrade to a text bubble and never throw.
  */
 import type {
+  AmendmentCardState,
   ChatIntent,
   ChatMessage,
   ChatResponse,
@@ -30,6 +36,7 @@ import type {
 import {
   filterResolvedTerms,
   getClarificationSuggestions,
+  isRecipeAmendmentProposal,
   mergeActions,
   mergeTermSuggestions,
   proposalActionKey,
@@ -46,6 +53,8 @@ export interface RestoredThread {
   proposalStates: Record<string, RestoredProposalState>
   proposalErrors: Record<string, string>
   proposalFailedNames: Record<string, string[]>
+  /** One entry per restored "Update what I'm cooking" card, keyed by message id (#490). */
+  amendmentStates: Record<string, AmendmentCardState>
 }
 
 const GENERIC_FAILURE = 'Some items could not be added. Please try again.'
@@ -159,6 +168,15 @@ function restore(turns: ConversationHistoryTurn[], conversationId: string): Rest
   const proposalStates: Record<string, RestoredProposalState> = {}
   const proposalErrors: Record<string, string> = {}
   const proposalFailedNames: Record<string, string[]> = {}
+  const amendmentStates: Record<string, AmendmentCardState> = {}
+
+  // ── Mid-cook amendment turns (#490) ────────────────────────────────────────
+  turns.forEach((turn, i) => {
+    if (turn.role !== 'assistant' || !isRecipeAmendmentProposal(turn.proposal)) return
+    const review = readProposalReview(isRecord(turn.metadata) ? turn.metadata : null)
+    amendmentStates[ids[i]] =
+      review?.status === 'applied' ? 'applied' : review?.status === 'rejected' ? 'dismissed' : 'pending'
+  })
 
   // ── Classify every assistant pantry turn ───────────────────────────────────
   const nodes: PantryNode[] = []
@@ -333,7 +351,7 @@ function restore(turns: ConversationHistoryTurn[], conversationId: string): Rest
     return base
   })
 
-  return { messages, pendingProposals, proposalStates, proposalErrors, proposalFailedNames }
+  return { messages, pendingProposals, proposalStates, proposalErrors, proposalFailedNames, amendmentStates }
 }
 
 /**
@@ -355,6 +373,7 @@ export function buildRestoredThread(
       proposalStates: {},
       proposalErrors: {},
       proposalFailedNames: {},
+      amendmentStates: {},
     }
   }
 }

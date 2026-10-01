@@ -6,8 +6,13 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 import ReviewSurface from '@/components/scan/ReviewSurface'
 import { useFileDropzone } from '@/hooks/useFileDropzone'
 import { uploadReceipt, ScanError } from '@/lib/api/scan'
-import { scannedToBulkAddItem, assignScanIds, type ScannedItemWithId } from '@/lib/scan-helpers'
-import { scanErrorCopy } from '@/lib/scan-error-copy'
+import {
+  scannedToBulkAddItem,
+  assignScanIds,
+  isEmptyScan,
+  type ScannedItemWithId,
+} from '@/lib/scan-helpers'
+import { scanErrorCopy, SCAN_NO_ITEMS_CODE } from '@/lib/scan-error-copy'
 import type { ScanResult } from '@/types/scan'
 import type { AddItem } from './PantryAddSheet'
 
@@ -53,8 +58,14 @@ export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabPro
   const scanTokenRef = useRef(0)
   const abortControllerRef = useRef<AbortController | null>(null)
   const unmountedRef = useRef(false)
+  // A second pick/drop while a scan is in flight (double tap, a drop during
+  // the exit animation) must not start a second billed request (issue #642).
+  const inFlightRef = useRef(false)
 
   useEffect(() => {
+    // Reset on mount too: React Strict Mode runs effect cleanup then setup
+    // again on the same instance, which would otherwise leave this `true`.
+    unmountedRef.current = false
     return () => {
       unmountedRef.current = true
       // Stop billing a vision call the user already walked away from.
@@ -63,6 +74,8 @@ export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabPro
   }, [])
 
   async function handleFileSelect(file: File) {
+    if (inFlightRef.current) return
+    inFlightRef.current = true
     const token = ++scanTokenRef.current
     const controller = new AbortController()
     abortControllerRef.current = controller
@@ -79,6 +92,14 @@ export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabPro
       const result: ScanResult = await uploadReceipt(file, { signal: controller.signal })
       if (isStale()) return
       const withIds = assignScanIds(result)
+      if (isEmptyScan(withIds)) {
+        // The scan worked but found nothing: say so, rather than showing
+        // "Found 0 items" over an empty review list (#642).
+        setError(scanErrorCopy(SCAN_NO_ITEMS_CODE))
+        setState('upload')
+        if (inputRef.current) inputRef.current.value = ''
+        return
+      }
       setReadyToAdd(withIds.ready_to_add)
       setNeedsReview(withIds.needs_review)
       setSkipped(withIds.skipped)
@@ -99,6 +120,9 @@ export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabPro
       // without this the same file simply does nothing (#246).
       if (inputRef.current) inputRef.current.value = ''
     } finally {
+      // Only the current scan may release the in-flight flag; a cancelled one
+      // settling late must not free a newer scan's slot.
+      if (scanTokenRef.current === token) inFlightRef.current = false
       setTimeout(() => URL.revokeObjectURL(objectUrl), 500)
       // Every path out of `processing` — results or upload/error — must
       // release the Type-tab lock (issue #402), but only for the scan that
@@ -106,6 +130,19 @@ export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabPro
       // (issue #439).
       if (!isStale()) onProcessingChange?.(false)
     }
+  }
+
+  /** Abandon the scan in flight, release the Type-tab lock, back to upload. */
+  function handleCancelScan() {
+    scanTokenRef.current++ // the in-flight scan is now stale; its settle is ignored
+    inFlightRef.current = false
+    abortControllerRef.current?.abort()
+    abortControllerRef.current = null
+    setState('upload')
+    setPreview(null)
+    setError(null)
+    onProcessingChange?.(false)
+    if (inputRef.current) inputRef.current.value = ''
   }
 
   function handleReset() {
@@ -206,6 +243,13 @@ export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabPro
               <p className="font-semibold text-[var(--color-text)]">Scanning receipt…</p>
             </div>
             <p className="text-sm text-[var(--color-muted)] mt-2">Bubbles is reading your items</p>
+            <button
+              type="button"
+              onClick={handleCancelScan}
+              className="mt-4 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] underline transition-colors"
+            >
+              Cancel scan
+            </button>
           </motion.div>
         )}
 

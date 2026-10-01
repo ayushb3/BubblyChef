@@ -5,7 +5,7 @@
  * see the "two API surfaces" rule in CLAUDE.md.
  */
 
-import { localDateString } from '@/lib/date'
+import { clientTimeZone } from '@/lib/date'
 import type { PantryItem } from '@/types/pantry'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
 
@@ -91,9 +91,9 @@ export async function resolvePantryItem(
   const res = await fetch(`/api/pantry/${itemId}/resolve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    // The client's own local date, used server-side to key a `rescue`
-    // bubbles award (#524) — same convention as the daily_visit award.
-    body: JSON.stringify({ outcome, date: localDateString() }),
+    // The client's IANA zone (#550), not a date: the server keys a `rescue`
+    // bubbles award on its own clock in the account's stored zone (#524).
+    body: JSON.stringify({ outcome, tz: clientTimeZone() }),
   })
 
   if (!res.ok) {

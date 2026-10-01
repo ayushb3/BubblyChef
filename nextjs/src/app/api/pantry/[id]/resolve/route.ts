@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
 import { daysUntilExpiry, daysUntilExpiryOn, isExpiringSoon } from '@/lib/pantry-helpers'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
-import { validateClientDate } from '@/lib/date'
+import { resolveLedgerDate } from '@/lib/ledger-date'
 import { awardBubbles } from '@/lib/bubbles'
 
 /** Outcomes the client may record. Must match the CHECK constraint on pantry_events. */
@@ -53,14 +53,16 @@ export async function POST(
     )
   }
 
-  // Client's local date (issue #524) — used only to key the `rescue` bubbles
-  // award, same clock-skew tolerance as `GET /api/bubbles`. A missing or
-  // out-of-range date must never block the resolve itself (a stale tab with
-  // pre-deploy JS sends no `date` at all) — it only means the rescue award
-  // is skipped, matching the never-block contract every other award call
-  // site follows (see bubbles-award-call-sites.test.ts).
-  const date = (body as { date?: unknown } | null)?.date
-  const validDate = validateClientDate(date, 'date') ? null : (date as string)
+  // The ONE accepted local date (issues #524, #550): the server's clock in the
+  // account's stored time zone, the same date `daily_visit` and `cook_confirm`
+  // key on. A `date` or UTC offset in the body is never used; `tz` can only
+  // propose a zone the first time or move it after the cooldown. With no
+  // trustworthy date (no stored zone, none sent — e.g. a stale tab) the
+  // resolve itself must still go ahead: it only means the rescue award is
+  // skipped, matching the never-block contract every other award call site
+  // follows (see bubbles-award-call-sites.test.ts).
+  const ledger = await resolveLedgerDate(user, (body as { tz?: unknown } | null)?.tz)
+  const validDate = ledger?.date ?? null
 
   // Read the item first — both to confirm ownership and to snapshot the fields
   // the event needs before the row goes away.
@@ -75,8 +77,8 @@ export async function POST(
 
   const row = item as PantryItemRow
 
-  // Prefer the client's validated local date over the server's UTC clock
-  // (#524 review): `daysUntilExpiry` alone anchors on `new Date()`, which on
+  // Prefer the account's local date over the server's UTC clock
+  // (#524 review):`daysUntilExpiry` alone anchors on `new Date()`, which on
   // Vercel is UTC and can already be a calendar day ahead of/behind the
   // client near local midnight — misclassifying a same-day rescue/waste and
   // writing an off-by-one `days_until_expiry`. Falls back to the old

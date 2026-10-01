@@ -33,7 +33,8 @@
  */
 
 import { parseLocalDate } from '@/lib/pantry-helpers'
-import type { CookingRecipeIdContext } from '@/types/chat'
+import type { CookingRecipeContext, CookingRecipeIdContext } from '@/types/chat'
+import type { MealCookIngredient } from '@/types/meals'
 
 /**
  * Cook-handoff context for the first chat message, built from the `?cooking=<id>`
@@ -46,6 +47,27 @@ export function cookingContextForId(
 ): CookingRecipeIdContext | undefined {
   const id = recipeId?.trim()
   return id ? { cooking_recipe_id: id } : undefined
+}
+
+/**
+ * The full cook pin (`context.cooking_recipe`) for the first chat message, for
+ * when the client already holds the list being cooked. Used instead of the
+ * id-only payload (above) in two cases (#489):
+ *
+ *  - the recipe has loaded, so the very first turn is pinned as COOKING and can
+ *    already carry an amendment ("no cream, use a roux");
+ *  - a mid-cook amendment is on record, so a reload's fresh conversation pins the
+ *    AMENDED list, not the stored row the id would resolve to.
+ *
+ * The id-only payload stays the fallback when the recipe has not loaded yet, so
+ * a message sent before the fetch resolves still pins (#155).
+ */
+export function cookingPinContext(
+  recipeId: string,
+  title: string,
+  ingredients: (string | MealCookIngredient)[],
+): { cooking_recipe: CookingRecipeContext } {
+  return { cooking_recipe: { id: recipeId, title, ingredients } }
 }
 
 /** Minimal read surface shared by `URLSearchParams` and Next's readonly variant. */

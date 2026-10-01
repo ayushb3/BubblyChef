@@ -10,7 +10,9 @@ class ApplyRequest(BaseModel):
     """Request body to apply a reviewed proposal."""
 
     request_id: UUID = Field(description="Original proposal request ID")
-    intent: Literal["pantry_update", "recipe_card"] = Field(description="Intent type being applied")
+    intent: Literal["pantry_update", "recipe_card", "recipe_amendment"] = Field(
+        description="Intent type being applied"
+    )
     proposal: dict[str, Any] = Field(
         description="The reviewed (possibly modified) proposal to apply"
     )
