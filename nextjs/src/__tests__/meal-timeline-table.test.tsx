@@ -40,12 +40,14 @@ describe('MealTimelineTable', () => {
         ]}
       />,
     )
-    expect(screen.getByText('Roast chicken')).toBeInTheDocument()
-    expect(screen.getByText('Roast potatoes')).toBeInTheDocument()
-    expect(screen.getByText('Green beans')).toBeInTheDocument()
+    // Each title is a column header; a step cell can share the dish's name
+    // (#745 dropped the ✋/⏳ prefix that used to keep the two texts apart).
+    for (const title of ['Roast chicken', 'Roast potatoes', 'Green beans']) {
+      expect(screen.getAllByText(title).length).toBeGreaterThanOrEqual(1)
+    }
   })
 
-  it('renders a faded ongoing cell with the remaining minutes', () => {
+  it('renders a hatched ongoing cell with the remaining minutes', () => {
     const timeline = scheduleMeal({ dishes: PASTA_SAUCE_SALAD.dishes })
     render(
       <MealTimelineTable
@@ -60,7 +62,8 @@ describe('MealTimelineTable', () => {
     expect(ongoingCells.length).toBeGreaterThan(0)
     expect(ongoingCells[0]).toHaveTextContent('the sauce reduces')
     expect(ongoingCells[0]).toHaveTextContent('min')
-    expect(ongoingCells[0].className).toContain('opacity-50')
+    // #745: a step that is just cooking is hatched (not faded, so its text stays readable).
+    expect(ongoingCells[0]).toHaveAttribute('data-look', 'hatched')
   })
 
   it('renders the cue on its row', () => {

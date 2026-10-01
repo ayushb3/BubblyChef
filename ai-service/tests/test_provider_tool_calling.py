@@ -519,8 +519,8 @@ class TestGeminiResponseParsing:
 
     @pytest.mark.asyncio
     async def test_api_key_sent_as_query_param(self) -> None:
-        """Despite the name (kept as-is so the test-count guard sees this as
-        a fixed test, not a removed one — see #602 review), this now asserts
+        """Despite the name (kept as-is so a rename is not read as a
+        removed test — see #602 review), this now asserts
         the *opposite* of what its name says: Gemini authenticates via the
         x-goog-api-key header, not a ?key=... query param (issue #515) — a
         query param lands in plaintext in any log of the outgoing request

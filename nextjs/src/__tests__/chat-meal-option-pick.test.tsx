@@ -149,10 +149,11 @@ beforeEach(() => {
 describe('meal option cards in chat send the structured option id (issue #650)', () => {
   it('renders both option cards from the meal_options proposal', async () => {
     renderChat()
-    expect(await screen.findByRole('heading', { name: 'Lemon chicken dinner' })).toBeInTheDocument()
-    // "Sheet pan salmon" is both this option's title and its main dish name
-    // — findByRole('heading') isolates the card title specifically.
-    expect(screen.getByRole('heading', { name: 'Sheet pan salmon' })).toBeInTheDocument()
+    // Issue #744: each option is one card (a button named "Pick <title>"), so its title is
+    // no longer a heading. "Sheet pan salmon" is both an option's title and its main dish
+    // name, so the cards themselves are the unambiguous thing to count.
+    expect(await screen.findByRole('listitem', { name: 'Pick Lemon chicken dinner' })).toBeInTheDocument()
+    expect(screen.getByRole('listitem', { name: 'Pick Sheet pan salmon' })).toBeInTheDocument()
   })
 
   it('sends the option title as the message and the option_id in context.meal_option_id — never a fuzzy match', async () => {

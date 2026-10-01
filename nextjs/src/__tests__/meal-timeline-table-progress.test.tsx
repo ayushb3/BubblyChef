@@ -45,7 +45,7 @@ describe('MealTimelineTable progress', () => {
     )
     const cell = screen.getByTestId('meal-timeline-cell-start')
     expect(cell).toHaveAttribute('data-status', 'done')
-    expect(cell.className).toContain('opacity-40')
+    expect(cell.className).toContain('opacity-60')
 
     const marker = screen.getByTestId('meal-timeline-cell-done-marker')
     expect(marker).toHaveTextContent('✓')
@@ -68,7 +68,7 @@ describe('MealTimelineTable progress', () => {
     )
     const cell = screen.getByTestId('meal-timeline-cell-start')
     expect(cell).toHaveAttribute('data-status', 'skipped')
-    expect(cell.className).toContain('opacity-40')
+    expect(cell.className).toContain('opacity-60')
     const label = screen.getByText(/Boil pasta/)
     expect(label).toHaveStyle({ textDecoration: 'line-through' })
     expect(screen.getByTestId('meal-timeline-cell-skipped-marker')).toHaveTextContent('skipped')
@@ -128,7 +128,7 @@ describe('MealTimelineTable progress', () => {
     )
     const cell = screen.getByTestId('meal-timeline-cell-ongoing')
     expect(cell).toHaveAttribute('data-status', 'done')
-    expect(cell.className).toContain('opacity-30')
+    expect(cell.className).toContain('opacity-60')
     expect(screen.getByTestId('meal-timeline-cell-done-marker')).toBeInTheDocument()
   })
 

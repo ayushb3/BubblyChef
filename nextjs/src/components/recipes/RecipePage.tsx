@@ -2,9 +2,12 @@
 
 import { motion } from 'framer-motion'
 import { ingredientLabel } from '@/lib/recipe-helpers'
+import { useMotionConfig } from '@/lib/motion'
 import HeaderQuickSetTimers from '@/components/timers/HeaderQuickSetTimers'
-import StepTimerChips from '@/components/timers/StepTimerChip'
-import type { RecipeIngredient, Step } from '@/types/recipes'
+import Chip from '@/components/ui/Chip'
+import RecipeSteps from './RecipeSteps'
+import { tagForIngredient } from './ingredient-tags'
+import type { IngredientMatch, RecipeIngredient, Step } from '@/types/recipes'
 
 /**
  * Re-exported as `Ingredient` for back-compat with existing imports
@@ -44,13 +47,20 @@ export interface Recipe {
 
 interface RecipeDetailProps {
   recipe: Recipe
+  /**
+   * How the pantry covers each ingredient (the cook proposal's matches, issue
+   * #745). When given, an ingredient row wears a food tag: "In pantry",
+   * "Short ½" or "Staple". Omitted: no tags (the page never guesses).
+   */
+  ingredientMatches?: IngredientMatch[]
 }
 
 // Ruled-paper constants — text line-height must match the gradient repeat
 const LINE_HEIGHT = 28 // px — matches repeating-linear-gradient step
 const FIRST_LINE_OFFSET = 4 // px — pad-top so first text line sits on first rule
 
-export default function RecipeDetail({ recipe }: RecipeDetailProps) {
+export default function RecipeDetail({ recipe, ingredientMatches }: RecipeDetailProps) {
+  const { reduced } = useMotionConfig()
   return (
     <>
       <div
@@ -87,12 +97,13 @@ export default function RecipeDetail({ recipe }: RecipeDetailProps) {
           <ul>
             {recipe.ingredients.map((ing, i) => {
               const label = ingredientLabel(ing)
+              const tag = tagForIngredient(label, ingredientMatches)
               return (
                 <motion.li
                   key={i}
                   className="flex items-center gap-2"
                   style={{ lineHeight: `${LINE_HEIGHT}px` }}
-                  initial={{ opacity: 0, x: -6 }}
+                  initial={reduced ? { opacity: 0 } : { opacity: 0, x: -6 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.03, duration: 0.25 }}
                 >
@@ -100,7 +111,14 @@ export default function RecipeDetail({ recipe }: RecipeDetailProps) {
                     className="flex-shrink-0 w-2 h-2 rounded-full"
                     style={{ background: 'var(--color-primary)' }}
                   />
-                  <span>{label}</span>
+                  <span className="min-w-0 flex-1">{label}</span>
+                  {tag && (
+                    <span data-testid="ingredient-tag" className="flex-shrink-0">
+                      <Chip tone={tag.tone} size="sm">
+                        {tag.label}
+                      </Chip>
+                    </span>
+                  )}
                 </motion.li>
               )
             })}
@@ -128,50 +146,21 @@ export default function RecipeDetail({ recipe }: RecipeDetailProps) {
         </div>
       )}
 
-      {/* Instructions */}
+    </div>
+
+      {/* Method (issue #745) — the timeline's solid / hatched language: a step
+          you do is solid, a hands-off step (already cooking) is hatched with a
+          dashed edge. Steps without structure are plain solid rows. */}
       {recipe.instructions.length > 0 && (
-        <div>
-          <h3
-            className="font-extrabold text-base"
-            style={{ lineHeight: `${LINE_HEIGHT}px`, fontFamily: 'Nunito, sans-serif' }}
-          >
+        <div className="px-5 pb-5 pt-1 text-sm text-[var(--color-text)]">
+          <h3 className="font-extrabold text-base" style={{ lineHeight: `${LINE_HEIGHT}px` }}>
             Method
           </h3>
-          <ol>
-            {recipe.instructions.map((step, i) => {
-              const text = typeof step === 'string' ? step : (step.text ?? step.step ?? '')
-              return (
-                <motion.li
-                  key={i}
-                  className="flex items-start gap-3"
-                  style={{ lineHeight: `${LINE_HEIGHT}px` }}
-                  initial={{ opacity: 0, x: -6 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.04, duration: 0.25 }}
-                >
-                  <span
-                    className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                    style={{
-                      background: 'var(--color-accent)',
-                      fontFamily: 'Nunito, sans-serif',
-                      marginTop: `${(LINE_HEIGHT - 24) / 2}px`,
-                    }}
-                  >
-                    {i + 1}
-                  </span>
-                  <span className="flex-1">
-                    {text}
-                    {/* Step ⏱ chip (issue #495) — renders only when this
-                        step's text has a parseable duration. */}
-                    <StepTimerChips stepText={text} className="ml-2 align-middle" />
-                  </span>
-                </motion.li>
-              )
-            })}
-          </ol>
+          <div className="mt-1">
+            <RecipeSteps instructions={recipe.instructions} steps={recipe.steps} />
+          </div>
         </div>
       )}
-    </div>
     </>
   )
 }

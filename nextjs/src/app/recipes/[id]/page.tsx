@@ -8,6 +8,7 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 import FadeInView from '@/components/ui/FadeInView'
 import SpringButton from '@/components/ui/SpringButton'
 import RecipeRefinementModal from '@/components/recipes/RecipeRefinementModal'
+import RecipeSteps from '@/components/recipes/RecipeSteps'
 import { ingredientParts } from '@/lib/recipe-helpers'
 import { makeMealHref } from '@/lib/chat-seed'
 import type { GeneratedRecipe } from '@/types/recipes'
@@ -411,30 +412,7 @@ export default function RecipeDetailPage() {
                 >
                   Steps
                 </h2>
-                <ol className="space-y-4">
-                  {recipe.instructions.map((step, i) => (
-                    <motion.li
-                      key={i}
-                      className="flex items-start gap-3"
-                      initial={{ opacity: 0, x: -6 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.04, duration: 0.25 }}
-                    >
-                      <span
-                        className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-extrabold"
-                        style={{ background: 'var(--color-accent)' }}
-                      >
-                        {i + 1}
-                      </span>
-                      <p
-                        className="text-sm leading-relaxed pt-1.5"
-                        style={{ color: 'var(--color-text)' }}
-                      >
-                        {step}
-                      </p>
-                    </motion.li>
-                  ))}
-                </ol>
+                <RecipeSteps instructions={recipe.instructions} steps={recipe.steps} />
               </section>
             </FadeInView>
           )}

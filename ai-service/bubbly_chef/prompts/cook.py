@@ -5,8 +5,8 @@ recipe ingredient with no pantry match, whether a pantry item (or a
 combination of pantry items) can stand in for it. Prompt wording changes
 model behavior even though the test suite can stay green, so a change here
 needs a `verify` run exercising the affected output (see
-`ai-service/bubbly_chef/prompts/README.md`) — no CODEOWNERS gate as of
-2026-09-29, but the review discipline still applies.
+`ai-service/bubbly_chef/prompts/README.md`), and the fresh-context review
+reads the change as a behavior change.
 """
 
 _SUBSTITUTION_PROMPT = """You are helping a home cook decide whether anything in their \

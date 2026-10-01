@@ -288,8 +288,8 @@ were honour-system (any agent could `touch` one), and the hook that read them
 The branch must also be up to date with `main`. There is no CODEOWNERS file and no
 required approval. The earlier fail-to-pass, test-count and exemption gates were
 removed in issue #640. The agent-loop harness (`scripts/agent-gates/agent-loop-
-harness.cjs`) stays: it tests `agent-loop.js`'s own control flow, which is unchanged,
-and runs as a non-required step in the `Agent scripts (unit tests)` job.
+harness.cjs`) stays: it tests `agent-loop.js`'s own control flow (merge conditions, tiers,
+the bot identity, the verdict read), and runs as a non-required step in the `Agent scripts (unit tests)` job.
 
 **A PR that edits `claude-review.yml` gets no automated review:** the action skips
 when its workflow file differs from `main`'s. Run a fresh-context review in a separate
@@ -402,27 +402,35 @@ the agents it calls:
 | Preflight — step 1, readiness | Sonnet gathers facts; **the script decides** | Stops if `AGENTS_ENABLED` isn't `true` or couldn't be read at all, 15 loop PRs were opened in the last 24 hours (raised from 3 to 6 on 2026-09-19, to 15 on 2026-09-23 for ship mode), the issue isn't open and `ready-for-agent`, or a PR is already on it |
 | Setup | Sonnet, low effort | A fresh branch from `main` **in the session's own checkout** (never a separate worktree; see below). Refuses to start on uncommitted work |
 | Plan | the dev role for the domain | Lists genuine ambiguities, each with its own take |
-| Decide | **Opus, high effort** | Settles each ambiguity; escalates to Ayush (`needs-decision`) only for protected paths or product behaviour beyond the issue |
+| Decide | **Opus, high effort** | Settles each ambiguity as a reversible product call, logged in the PR body with the alternative it rejected; escalates to Ayush (`needs-decision`) only for a change to v1 scope or anything that costs money (§6) |
 | Reproduce | dev role | Bugs only: a test that fails on the unfixed code, plus before-screenshots |
 | Implement + Verify | dev role | Quality gates, then the `verify` skill; **2 attempts total** |
 | Review | **Opus**, fresh context | Up to **3** fix rounds; if any fix happened, **verification re-runs on the final commit** before Ship, and a failed re-verification takes the blocked path |
-| Ship | Sonnet | PR as `bubblychef-bot`, protected paths flagged at the top |
-| Respond | Sonnet reads, dev role fixes | Waits for the **GitHub review** of the PR, and answers it: each finding fixed or disputed with a reason, a resolutions comment on the PR, and a push that triggers a fresh GitHub review. **Up to 2 rounds**; still unresolved → PR drafted and labelled `agent-blocked`. `needs a human` (e.g. a protected path) is left for Ayush |
+| Ship | Sonnet | PR as `bubblychef-bot`; a change to CI, gates or agent config is flagged at the top, for the sprint doc (§6), not as a gate |
+| Respond | Sonnet reads, dev role fixes | Waits for the **GitHub review** of the PR, and answers it: each finding fixed or disputed with a reason, a resolutions comment on the PR, and a push that triggers a fresh GitHub review. **Up to 2 rounds**; still unresolved → PR drafted and labelled `agent-blocked`. `needs a human` is left for Ayush |
 
 Any stage that can't finish takes the **blocked path**: a draft PR labelled
 `agent-blocked` with the work so far and where it stopped, and the issue moved back to
 `needs-triage` so it isn't picked up again until a human has looked. A stuck run is a
 normal outcome; a silent half-done branch is not.
 
-The loop itself never merges. In shadow mode (the default) it never requests
-auto-merge either; it marks PRs that *would* auto-merge. Outside shadow mode it
-requests auto-merge only when the GitHub review says `looks mergeable` and the PR
-touches no protected path. GitHub then still waits for every required check. Either
-way, the orchestrating session merges a loop PR under §6 like any other.
+The loop never merges directly. Its Finish step requests GitHub auto-merge
+(`gh pr merge --auto --merge`, after bringing a behind branch up to date with `main`)
+when the §6 conditions hold: the GitHub review of the final commit says
+`looks mergeable`, read through `scripts/merge/parse-verdict.sh`, the same parser the
+`verdict` check runs, so the loop and the gate cannot disagree about what a review
+says (a verdict it cannot read counts as no review); and a `verify` run passed for any
+user-visible change. For a small change the loop doesn't wait for that review:
+the required `Claude review verdict` check holds the merge until it says `looks
+mergeable`. GitHub then still waits for every required check. Run with
+`shadow: true` to open the PR but leave the merge to a human. The orchestrating
+session can also merge a loop PR under §6 like any other.
 
-The loop's shadow mode, protected-path tiering and `needs-decision` escalation predate
-§6 and still read `.github/CODEOWNERS`, which no longer exists. Aligning the script is
-issue #645.
+The loop keeps two size tiers, `small` and `standard`, chosen in code from the diff and
+only ever raised; there is no protected tier. A small bug nobody can see writes its
+failing test first inside Implement rather than in a separate Reproduce stage, and
+nothing in CI re-runs that test against `main`, so the agent confirming it fails on the
+unfixed code is the only check.
 
 `claude-review.yml` re-reviews new pushes **on PRs labelled `agent-loop`, and on any PR
 opened by `bubblychef-bot`, labelled or not**, which is what gives Respond a fresh review

@@ -3,36 +3,34 @@
 /**
  * Issue #649 — the timeline table: renders a `MealTimeline` (from
  * `@/lib/meal-scheduler`) as one column per dish and one row per moment
- * something starts. Functional UI on existing tokens per #647's "all UI in
- * these tickets is functional UI built on the existing components" note —
- * final visual design is Goal 3, on the Claude Design canvas.
+ * something starts. Restyled in the signature look (issue #745, Goal 3's
+ * "meal timeline", drawn to the Signature "Timeline" board):
  *
- * Column colours are the CLAUDE.md Sanrio pastel trio (pink/mint/peach),
- * fixed regardless of the user's active kitchen theme, so "main" always
- * reads as pink etc. — there's no existing design token for this three-way
- * dish tagging, so they're named constants here. Exported (issue #653) so
- * the cook-along components (`MealNowCard`, `MealNextUp`,
- * `MealRunningStrip`) tag a dish with the same colour the table does.
+ *  - one pastel per dish column, from the theme-invariant dish tokens, so a
+ *    dish keeps its colour from its card to its column (`dish-style.ts`);
+ *  - a step you do is SOLID (pastel fill, ink edge); a step that is just
+ *    cooking is HATCHED (dashed muted edge over stripes) and never animates;
+ *  - a "Now" line over the row being cooked, a Serve row closing the plan,
+ *    and cues as plain-language glue between rows.
  *
  * `progress` (issue #653, additive) marks cells done/skipped/current for the
- * cook-along's timeline sheet. With no `progress`, output is byte-for-byte
- * unchanged from #649 — every existing test keeps passing.
+ * cook-along's timeline sheet. The scheduler and the cook-along logic are
+ * unchanged; this file only draws their output.
  */
 
+import type { ReactNode } from 'react'
 import type { Column, MealTimeline, RowCell, SchedulerWarning, TimelineRow } from '@/lib/meal-scheduler'
 import { anchoredTimeLabel, type MealAnchorResult } from '@/lib/meal-anchor'
-
-export const COLUMN_COLORS: Record<Column, string> = {
-  main: '#FFB5C5', // pastel pink
-  side_1: '#B5EAD7', // pastel mint
-  side_2: '#FFDAB3', // pastel peach
-}
+import { DISH_BG, HATCHED, SOLID_EDGE } from './dish-style'
 
 const COLUMN_LABELS: Record<Column, string> = {
   main: 'Main',
   side_1: 'Side 1',
   side_2: 'Side 2',
 }
+
+/** The time column is wide enough for "6:36 PM" and "+18 min". */
+const grid = (columns: number) => ({ gridTemplateColumns: `3.5rem repeat(${columns}, minmax(0, 1fr))` })
 
 /**
  * Plain-language notes for a timeline's warnings. The scheduler's warnings
@@ -75,6 +73,12 @@ export interface MealTimelineTableProps {
   progress?: MealTimelineProgress
 }
 
+/** `step_index` (contract 1b) only exists on the two cell kinds that map to an actual step. */
+function cellStepIndex(cell: RowCell): number | undefined {
+  if (cell.kind !== 'start' && cell.kind !== 'ongoing') return undefined
+  return cell.step_index
+}
+
 export default function MealTimelineTable({
   timeline,
   columns,
@@ -84,49 +88,80 @@ export default function MealTimelineTable({
 }: MealTimelineTableProps) {
   if (timeline.rows.length === 0) {
     return (
-      <p
-        className="text-sm text-[var(--color-muted)]"
-        style={{ fontFamily: 'Nunito, sans-serif' }}
-        data-testid="meal-timeline-empty"
-      >
+      <p className="text-sm text-[var(--color-muted)]" data-testid="meal-timeline-empty">
         Nothing to cook yet.
       </p>
     )
   }
 
+  // The first row holding the step being cooked gets the "Now" line.
+  const current = progress?.current
+  const nowOffset = current
+    ? timeline.rows.find((row) => {
+        const cell = row.cells[current.column]
+        return cell != null && cellStepIndex(cell) === current.step_index
+      })?.offset_minutes
+    : undefined
+
   return (
-    <div
-      className={`rounded-2xl border overflow-hidden ${className ?? ''}`}
-      style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
-      data-testid="meal-timeline-table"
-    >
+    <div className={`flex flex-col gap-1.5 ${className ?? ''}`} data-testid="meal-timeline-table">
       <div
-        className="grid text-xs font-bold px-3 py-2"
-        style={{
-          gridTemplateColumns: `4.5rem repeat(${columns.length}, 1fr)`,
-          background: 'var(--color-bg)',
-          fontFamily: 'Nunito, sans-serif',
-        }}
+        className="grid items-end gap-1.5 border-b-2 border-[color:var(--color-text)] pb-1.5 text-xs leading-[15px] font-extrabold"
+        style={grid(columns.length)}
       >
-        <div className="text-[var(--color-muted)]">Time</div>
+        <span className="sr-only">Time</span>
         {columns.map(({ column, title }) => (
-          <div key={column} className="flex items-start gap-1.5 min-w-0">
+          <span key={column} className="flex min-w-0 flex-col gap-[3px]">
             <span
               aria-hidden="true"
-              className="mt-1 inline-block h-2.5 w-2.5 rounded-full shrink-0"
-              style={{ background: COLUMN_COLORS[column] }}
+              className={`h-2 rounded-full border-[1.5px] border-[color:var(--color-text)] ${DISH_BG[column]}`}
             />
-            <span className="min-w-0 break-words line-clamp-2">{title || COLUMN_LABELS[column]}</span>
-          </div>
+            <span className="line-clamp-2 min-w-0 break-words text-[color:var(--color-text)]">
+              {title || COLUMN_LABELS[column]}
+            </span>
+          </span>
         ))}
       </div>
 
-      <ul>
+      <ul className="flex flex-col gap-1.5">
         {timeline.rows.map((row) => (
-          <TimelineRowView key={row.offset_minutes} row={row} columns={columns} anchor={anchor} progress={progress} />
+          <TimelineRowView
+            key={row.offset_minutes}
+            row={row}
+            columns={columns}
+            anchor={anchor}
+            progress={progress}
+            isNow={row.offset_minutes === nowOffset}
+          />
         ))}
+        <li className="grid items-stretch gap-1.5" style={grid(columns.length)} data-testid="meal-timeline-serve-row">
+          <TimeLabel>{anchoredTimeLabel(anchor, timeline.total_minutes)}</TimeLabel>
+          {columns.map(({ column }) => (
+            <div
+              key={column}
+              className="rounded-[10px] bg-[var(--color-text)] px-2 py-1.5 text-center text-xs font-extrabold text-[color:var(--color-surface)]"
+            >
+              Serve
+            </div>
+          ))}
+        </li>
       </ul>
     </div>
+  )
+}
+
+function TimeLabel({ children, done = false }: { children: ReactNode; done?: boolean }) {
+  return (
+    <span
+      className={`pt-1.5 text-[13px] font-extrabold tabular-nums text-[color:var(--color-text)] ${done ? 'opacity-60' : ''}`}
+    >
+      {done && (
+        <span aria-hidden="true" className="mr-0.5">
+          ✓
+        </span>
+      )}
+      {children}
+    </span>
   )
 }
 
@@ -135,38 +170,43 @@ function TimelineRowView({
   columns,
   anchor,
   progress,
+  isNow,
 }: {
   row: TimelineRow
   columns: MealTimelineTableColumn[]
   anchor: MealAnchorResult
   progress?: MealTimelineProgress
+  isNow: boolean
 }) {
+  const timeLabel = anchoredTimeLabel(anchor, row.offset_minutes)
+  // A row reads as done once every step cell in it is done or skipped.
+  const stepStatuses = columns.flatMap(({ column }) => {
+    const cell = row.cells[column]
+    const idx = cell ? cellStepIndex(cell) : undefined
+    return progress && idx != null ? [progress.statuses[`${column}:${idx}`]] : []
+  })
+  const rowDone = stepStatuses.length > 0 && stepStatuses.every((s) => s === 'done' || s === 'skipped')
+
   return (
-    <li
-      className="border-t"
-      style={{ borderColor: 'var(--color-border)' }}
-      data-testid="meal-timeline-row"
-      data-offset-minutes={row.offset_minutes}
-    >
-      {row.cue && (
-        <div
-          className="px-3 pt-2 text-[11px] italic"
-          style={{ color: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
-          data-testid="meal-timeline-cue"
-        >
-          💡 {row.cue}
+    <li data-testid="meal-timeline-row" data-offset-minutes={row.offset_minutes} className="flex flex-col gap-1.5">
+      {isNow && (
+        <div role="presentation" aria-hidden="true" className="my-0.5 flex items-center" data-testid="meal-timeline-now-line">
+          <span className="flex-none rounded-full bg-[var(--color-text)] px-2 py-0.5 text-xs leading-4 font-extrabold tabular-nums text-[color:var(--color-surface)]">
+            Now · {timeLabel}
+          </span>
+          <span className="h-[3px] flex-1 bg-[var(--color-text)]" />
         </div>
       )}
-      <div
-        className="grid px-3 py-2 gap-1.5 items-start"
-        style={{ gridTemplateColumns: `4.5rem repeat(${columns.length}, 1fr)` }}
-      >
+      {row.cue && (
         <div
-          className="text-xs font-bold tabular-nums pt-2"
-          style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+          className="ml-[3.875rem] self-start rounded-full border border-[color:var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 text-xs leading-4 font-bold text-[color:var(--color-text)] italic"
+          data-testid="meal-timeline-cue"
         >
-          {anchoredTimeLabel(anchor, row.offset_minutes)}
+          {row.cue}
         </div>
+      )}
+      <div className="grid items-stretch gap-1.5" style={grid(columns.length)}>
+        <TimeLabel done={rowDone}>{timeLabel}</TimeLabel>
         {columns.map(({ column }) => (
           <CellView key={column} column={column} cell={row.cells[column]} progress={progress} />
         ))}
@@ -175,17 +215,14 @@ function TimelineRowView({
   )
 }
 
-/** `step_index` (contract 1b) only exists on the two cell kinds that map to an actual step. */
-function cellStepIndex(cell: RowCell): number | undefined {
-  if (cell.kind !== 'start' && cell.kind !== 'ongoing') return undefined
-  return cell.step_index
-}
-
 /**
  * Review round 1 (S5) — progress must never be colour-only: a visible marker
  * plus, for "done", an sr-only word backs every colour cue. `isRunning` is
  * scoped to hands-off cells — a running hands-on step is the Now card
  * elsewhere on the page, not something this table calls out separately.
+ *
+ * Issue #745: the current step's visible marker is now the row's "Now" line,
+ * so the cell keeps only a screen-reader "Now" (plus the ring).
  */
 function CellMarkers({
   isCurrent,
@@ -200,13 +237,9 @@ function CellMarkers({
 }) {
   if (!isCurrent && !isDone && !isSkipped && !isRunning) return null
   return (
-    <div className="flex flex-wrap items-center gap-1 mt-1">
+    <div className="mt-1 flex flex-wrap items-center gap-1">
       {isCurrent && (
-        <span
-          className="text-[10px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
-          style={{ background: 'var(--color-text)', color: 'var(--color-surface)' }}
-          data-testid="meal-timeline-cell-now-marker"
-        >
+        <span className="sr-only" data-testid="meal-timeline-cell-now-marker">
           Now
         </span>
       )}
@@ -217,18 +250,12 @@ function CellMarkers({
         </span>
       )}
       {isSkipped && (
-        <span
-          className="text-[10px] font-bold uppercase tracking-wide"
-          data-testid="meal-timeline-cell-skipped-marker"
-        >
+        <span className="text-[10px] font-bold tracking-wide uppercase" data-testid="meal-timeline-cell-skipped-marker">
           skipped
         </span>
       )}
       {isRunning && (
-        <span
-          className="text-[10px] font-bold uppercase tracking-wide"
-          data-testid="meal-timeline-cell-cooking-marker"
-        >
+        <span className="text-[10px] font-bold tracking-wide uppercase" data-testid="meal-timeline-cell-cooking-marker">
           cooking
         </span>
       )}
@@ -249,59 +276,53 @@ function CellView({
     return <div />
   }
 
-  const base = 'rounded-xl px-2 py-1.5 text-xs'
-  const fontStyle = { fontFamily: 'Nunito, sans-serif' } as const
+  const base = 'rounded-[10px] px-2 py-1.5 text-[11px] leading-[14px] font-bold text-[color:var(--color-text)]'
 
   const stepIndex = cellStepIndex(cell)
-  const status =
-    progress && stepIndex != null ? progress.statuses[`${column}:${stepIndex}`] : undefined
+  const status = progress && stepIndex != null ? progress.statuses[`${column}:${stepIndex}`] : undefined
   const isCurrent =
-    !!progress?.current &&
-    progress.current.column === column &&
-    progress.current.step_index === stepIndex
+    !!progress?.current && progress.current.column === column && progress.current.step_index === stepIndex
   const isDone = status === 'done'
   const isSkipped = status === 'skipped'
-  const isRunning =
-    status === 'running' && (cell.kind === 'start' || cell.kind === 'ongoing') && !cell.hands_on
+  const isRunning = status === 'running' && (cell.kind === 'start' || cell.kind === 'ongoing') && !cell.hands_on
   // Review round 1 (S5) — the ring is `--color-text` (soft-charcoal), never
   // one of the pastel dish colours: it has to contrast against every dish's
   // own tinted fill, not blend into whichever one happens to be current.
   const progressStyle = isCurrent ? { boxShadow: '0 0 0 2px var(--color-text)' } : undefined
+  // Done rows fade to 60% (the board's value); the hatching itself never animates.
+  const faded = isDone || isSkipped ? 'opacity-60' : ''
 
   switch (cell.kind) {
     case 'start':
       return (
         <div
-          className={`${base} font-bold ${isDone || isSkipped ? 'opacity-40' : ''}`}
-          style={{
-            background: `color-mix(in srgb, ${COLUMN_COLORS[column]} 45%, var(--color-surface))`,
-            color: 'var(--color-text)',
-            ...progressStyle,
-            ...fontStyle,
-          }}
+          className={`${base} ${SOLID_EDGE} ${DISH_BG[column]} ${faded}`}
+          style={progressStyle}
           data-testid="meal-timeline-cell-start"
+          data-look="solid"
           data-status={status}
           aria-current={isCurrent ? 'step' : undefined}
         >
-          <span style={isSkipped ? { textDecoration: 'line-through' } : undefined}>
-            {cell.hands_on ? '✋ ' : '⏳ '}
+          <span
+            className="block text-[13px] leading-[17px] font-extrabold"
+            style={isSkipped ? { textDecoration: 'line-through' } : undefined}
+          >
             {cell.label}
           </span>
-          <div className="font-normal opacity-70 tabular-nums">{cell.duration_minutes} min</div>
+          <span className="block tabular-nums">
+            {cell.hands_on ? '' : 'hands-off · '}
+            {cell.duration_minutes} min
+          </span>
           <CellMarkers isCurrent={isCurrent} isDone={isDone} isSkipped={isSkipped} isRunning={isRunning} />
         </div>
       )
     case 'ongoing':
       return (
         <div
-          className={`${base} ${isDone || isSkipped ? 'opacity-30' : 'opacity-50'}`}
-          style={{
-            background: `color-mix(in srgb, ${COLUMN_COLORS[column]} 20%, var(--color-surface))`,
-            color: 'var(--color-text)',
-            ...progressStyle,
-            ...fontStyle,
-          }}
+          className={`${base} ${HATCHED} ${faded}`}
+          style={progressStyle}
           data-testid="meal-timeline-cell-ongoing"
+          data-look="hatched"
           data-status={status}
           aria-current={isCurrent ? 'step' : undefined}
         >
@@ -314,23 +335,16 @@ function CellView({
         </div>
       )
     case 'waiting':
+      // This dish hasn't started: a blank cell, said aloud for screen readers.
       return (
-        <div
-          className={base}
-          style={{ color: 'var(--color-muted)', ...fontStyle }}
-          data-testid="meal-timeline-cell-waiting"
-        >
-          waiting…
+        <div data-testid="meal-timeline-cell-waiting">
+          <span className="sr-only">waiting to start</span>
         </div>
       )
     case 'done':
       return (
-        <div
-          className={base}
-          style={{ color: 'var(--color-muted)', ...fontStyle }}
-          data-testid="meal-timeline-cell-done"
-        >
-          ✓ done
+        <div className={`${base} ${HATCHED}`} data-testid="meal-timeline-cell-done" data-look="hatched">
+          done · keep warm
         </div>
       )
   }
