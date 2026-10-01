@@ -21,15 +21,18 @@
  * cycle, so a timer completing is reflected the next time this hook
  * re-renders rather than needing a `refresh()` call.
  *
- * The grocery pointer (Spec B.5) isn't wired to a real source yet — it's
- * left `undefined` in the derivation input, which `deriveInboxEntries`
- * treats as "feature absent" rather than "empty", so this hook needs no
- * further changes when it lands: whoever wires B.5 adds `groceryCount` to
- * `fetchInboxSources` below.
+ * The grocery pointer (Spec B.5, issue #497) is wired below: the count of
+ * lines still to buy on the `/grocery` page, computed in the same `useMemo`
+ * from the saved list (browser storage, not a fetch) and the pantry rows
+ * fetched above. `undefined` (feature absent) until the user and pantry are
+ * known.
  */
-import { useMemo } from 'react'
+import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchPantryItems } from '@/lib/api/pantry'
+import { countToBuy, regenerateGroceryList } from '@/lib/grocery'
+import { parseGroceryLines, readGroceryRaw, subscribeGrocery } from '@/lib/grocery-store'
+import { fetchUserId } from '@/hooks/useGroceryCount'
 import { fetchRecipeCookMeta } from '@/lib/api/recipes'
 import { useCookingTimers } from '@/lib/useCookingTimers'
 import {
@@ -90,9 +93,27 @@ export function useInboxEntries(): UseInboxEntriesResult {
     [liveTimers],
   )
 
+  // The grocery pointer (issue #497): the count the /grocery page will show, from
+  // the saved list (this browser's localStorage, read with `useSyncExternalStore`
+  // so an "Add to list" elsewhere updates the bell) merged with the pantry rows
+  // fetched above, so the bell costs no extra request. Undefined (no pointer)
+  // until we know who the user is and have the pantry.
+  const user = useQuery({ queryKey: ['grocery-user-id'], queryFn: fetchUserId })
+  const userId = user.data ?? ''
+  const getGrocerySnapshot = useCallback(() => readGroceryRaw(userId), [userId])
+  const groceryRaw = useSyncExternalStore(subscribeGrocery, getGrocerySnapshot, () => '')
+  const groceryCount = useMemo(
+    () =>
+      data && userId
+        ? countToBuy(regenerateGroceryList(parseGroceryLines(groceryRaw), data.pantryItems))
+        : undefined,
+    [data, userId, groceryRaw],
+  )
+
   const derivation = useMemo<InboxDerivation | undefined>(
-    () => (data ? deriveInboxEntries({ ...data, timers: completedTimers }) : undefined),
-    [data, completedTimers],
+    () =>
+      data ? deriveInboxEntries({ ...data, timers: completedTimers, groceryCount }) : undefined,
+    [data, completedTimers, groceryCount],
   )
 
   return {
