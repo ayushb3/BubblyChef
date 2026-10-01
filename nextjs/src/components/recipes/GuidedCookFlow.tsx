@@ -17,14 +17,13 @@
  *  - Step ⏱ chips (issue #495 / Spec B.3) — real, functional timers replacing
  *    the old non-functional placeholder.
  *
- * Wiring to Spec 0 session state (issue #410):
- *  The Ask-Bubbles overlay sends a pre-canned context message over the real
- *  chat stream but does NOT pin the recipe to a persisted conversation here —
- *  the backend does read a structured `ChatRequest.context` field
- *  (`models/requests.py`) and the streaming route passes it through; this
- *  single-recipe cook flow just chooses to send none, unlike the meal cook
- *  page's pinned overlay (issue #654 PR B). Full session-pinned wiring for
- *  *this* flow is stubbed with TODO(#410) comments below.
+ * Ask Bubbles context (issues #410, #814):
+ *  The overlay sends the step-framed question over the real chat stream, plus
+ *  `context.cooking_recipe` (this recipe's ingredient lines) and one
+ *  `conversation_id` minted per cook session, so the model sees the dish and
+ *  remembers earlier questions even if the overlay is closed and reopened. It
+ *  is deliberately not the meal cook's `pinned` mode: that mode renders
+ *  amendment cards, and a single recipe has no ingredient store to apply one to.
  */
 
 import { useState, useRef, useEffect } from 'react'
@@ -309,6 +308,9 @@ export default function GuidedCookFlow({
   const { springs } = useMotionConfig()
   const [idx, setIdx] = useState<number>(initialStep ?? PREP)
   const [chatOpen, setChatOpen] = useState(false)
+  // One conversation per cook session (issue #814): minted once, so Ask Bubbles
+  // keeps its memory across open/close. Lazy initializer, not a render-time ref write.
+  const [askConversationId] = useState(() => crypto.randomUUID())
   // True from the moment Ask Bubbles opens until its exit animation finishes
   // (AnimatePresence `onExitComplete`), so the dock stays under the fading
   // overlay instead of flashing over it.
@@ -656,6 +658,12 @@ export default function GuidedCookFlow({
               stepText={step.text}
               recipeTitle={recipe.title}
               onClose={() => setChatOpen(false)}
+              conversationId={askConversationId}
+              cookContext={{
+                recipe_id: recipe.id,
+                title: recipe.title,
+                ingredients: recipe.ingredients.map((ing) => ingredientLabel(ing)).filter(Boolean),
+              }}
             />
           </motion.div>
         )}
