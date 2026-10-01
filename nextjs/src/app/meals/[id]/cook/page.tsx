@@ -36,6 +36,7 @@ import {
   applyTimerState,
   findTimerCompletedSteps,
   timerIdsToDismiss,
+  finishedTimerIdsToClear,
   isMealCookFinished,
   canStartEarly,
 } from '@/lib/meal-cook-stream'
@@ -387,9 +388,18 @@ export default function MealCookPage() {
     return Date.now() < tapGuardUntilRef.current
   }
 
+  // Issue #757 — acting on a step moves the cook past every earlier step, so
+  // any finished dock chip left by one of them has done its job. Running
+  // timers are untouched.
+  function clearFinishedTimers() {
+    if (!session) return
+    for (const timerId of finishedTimerIdsToClear(session, timers)) dismissTimer(timerId)
+  }
+
   function handleDone() {
     if (!session || !stream || stream.now.kind !== 'active') return
     if (tapGuarded()) return
+    clearFinishedTimers()
     const step = stream.now.step
     if (step.hands_on) {
       updateSession(recordDone(session, step, nowMinutes))
@@ -409,6 +419,7 @@ export default function MealCookPage() {
     if (!session || !stream) return
     if (stream.now.kind !== 'active' && stream.now.kind !== 'upcoming') return
     if (tapGuarded()) return
+    clearFinishedTimers()
     updateSession(recordSkip(session, stream.now.step, nowMinutes))
   }
 
@@ -416,6 +427,7 @@ export default function MealCookPage() {
     // Issue #663 — not while a step this one follows is still running.
     if (!session || !stream || !canStartEarly(stream.now)) return
     if (tapGuarded()) return
+    clearFinishedTimers()
     const step = stream.now.step
     if (step.hands_on) {
       updateSession(recordStartEarly(session, step, nowMinutes))

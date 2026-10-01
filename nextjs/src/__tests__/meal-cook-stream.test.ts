@@ -17,6 +17,7 @@ import {
   applyTimerState,
   findTimerCompletedSteps,
   timerIdsToDismiss,
+  finishedTimerIdsToClear,
   isMealCookFinished,
   canStartEarly,
   type NowCard,
@@ -582,6 +583,27 @@ describe('timerIdsToDismiss', () => {
   })
 })
 
+describe('finishedTimerIdsToClear (issue #757)', () => {
+  const steps: MealCookSession['steps'] = {
+    'main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0, timer_id: 't-done' },
+    'main:1': { status: 'running', started_at_minutes: 0, extra_minutes: 0, timer_id: 't-running' },
+    'side:0': { status: 'skipped', started_at_minutes: 0, extra_minutes: 0, timer_id: 't-gone' },
+  }
+
+  it('returns only linked timers that have finished', () => {
+    const ids = finishedTimerIdsToClear(session({ steps }), [
+      { id: 't-done', status: 'completed' },
+      { id: 't-running', status: 'running' },
+      { id: 't-unlinked', status: 'completed' },
+    ])
+    expect(ids).toEqual(['t-done'])
+  })
+
+  it('ignores a linked timer that is no longer in the dock', () => {
+    expect(finishedTimerIdsToClear(session({ steps }), [])).toEqual([])
+  })
+})
+
 // ---------------------------------------------------------------------------
 // Per-action recorders
 // ---------------------------------------------------------------------------
@@ -672,6 +694,19 @@ describe('recordDone', () => {
     })
   })
 
+  it("keeps the step's timer link so its finished dock chip can be found later (issue #757)", () => {
+    const s = session({
+      steps: {
+        'main:0': { status: 'running', started_at_minutes: 0, extra_minutes: 0, timer_id: 't1' },
+      },
+    })
+    const updated = recordDone(s, streamStep({ key: 'main:0', duration_minutes: 5, hands_on: false }), 5)
+    expect(updated.steps['main:0']?.timer_id).toBe('t1')
+    // A done record's link must not make it look "running" to the timer sweeps.
+    expect(timerIdsToDismiss(updated)).toEqual([])
+    expect(findTimerCompletedSteps(updated, [])).toEqual([])
+  })
+
   it('a late Done sets extra_minutes so the recorded end equals now', () => {
     const s = session({
       steps: { 'main:0': { status: 'running', started_at_minutes: 0, extra_minutes: 0 } },
@@ -707,16 +742,6 @@ describe('recordDone', () => {
       extra_minutes: 0,
       ended_at_minutes: 4,
     })
-  })
-
-  it('drops a timer_id once the step is done', () => {
-    const s = session({
-      steps: {
-        'main:0': { status: 'running', started_at_minutes: 0, extra_minutes: 0, timer_id: 't1' },
-      },
-    })
-    const updated = recordDone(s, streamStep({ key: 'main:0', duration_minutes: 5 }), 5)
-    expect(updated.steps['main:0'].timer_id).toBeUndefined()
   })
 
   it('issue #653 review round 1 (S1) — a done step\'s recorded lateness never shrinks on a later derive, unlike the old min(nominalEnd, now) recompute', () => {

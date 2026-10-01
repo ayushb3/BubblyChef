@@ -254,6 +254,26 @@ export function timerIdsToDismiss(session: MealCookSession): string[] {
   return ids
 }
 
+/**
+ * Issue #757 — dock timer ids owned by this session's steps that have
+ * finished (`completed`). A finished chip stays in the dock until the cook
+ * taps it or moves past the step that owns it; the page calls this when the
+ * cook acts on a later step (Done / Skip / Start) and dismisses each id.
+ * Running and paused timers are never returned, and neither is a timer the
+ * session doesn't own.
+ */
+export function finishedTimerIdsToClear(
+  session: MealCookSession,
+  timers: Pick<CookingTimer, 'id' | 'status'>[],
+): string[] {
+  const finished = new Set(timers.filter((t) => t.status === 'completed').map((t) => t.id))
+  const ids: string[] = []
+  for (const rec of Object.values(session.steps)) {
+    if (rec.timer_id && finished.has(rec.timer_id)) ids.push(rec.timer_id)
+  }
+  return ids
+}
+
 // ---------------------------------------------------------------------------
 // Section 4 — per-action recorders
 // ---------------------------------------------------------------------------
@@ -350,6 +370,11 @@ export function recordDone(session: MealCookSession, step: StreamStep, nowMinute
     started_at_minutes: startedAt,
     extra_minutes: extra,
     ended_at_minutes: Math.floor(nowMinutes),
+    // Issue #757 — keep the link to the step's dock timer after it's done, so
+    // its finished chip can still be found and cleared once the cook moves on.
+    // Every timer sweep above only looks at `running` records, so a done
+    // record's link is inert to them.
+    ...(existing?.timer_id ? { timer_id: existing.timer_id } : {}),
   })
 }
 
