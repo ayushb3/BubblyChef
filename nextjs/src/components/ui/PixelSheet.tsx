@@ -23,7 +23,8 @@
  *    the close button and a drag-dismiss all call, so a caller that must guard
  *    closing (a request in flight) guards it once, there.
  *  - `title` (+ optional `subtitle`, `icon`): the header row. `titleId` keeps a
- *    caller's existing heading id; the dialog is labelled by the title.
+ *    caller's existing heading id; the dialog is labelled by the title, unless
+ *    `ariaLabel` gives it a fuller accessible name.
  *  - `closeLabel` (default "Close"), `closeDisabled`: the built-in close button.
  *  - `subheader`: fixed content under the title row (tabs, search).
  *  - `children`: the scrolling body. `footer`: fixed content under it (the
@@ -33,6 +34,15 @@
  *  - `testId` / `backdropTestId`: on the dialog and on the scrim container.
  *
  * Mounts-to-open callers pass `open` as a constant `true`.
+ *
+ *  - `layer`: stacking layer. `'sheet'` (default, z 60) for page sheets;
+ *    `'cook'` (z 9998) for a sheet opened over the full-screen cook surface.
+ *
+ * `PixelModalLayer` (issue #743) is the sheet's backdrop and focus handling
+ * on its own: the fixed layer, the optional scrim, the trap, Escape, scrim-tap
+ * and scroll lock, with the caller drawing the panel. PixelSheet is built on
+ * it; the onboarding tour uses it directly because its panel is a positioned
+ * tooltip beside a spotlight cut-out, not a bottom sheet.
  */
 
 import {
@@ -42,6 +52,7 @@ import {
   useRef,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type RefObject,
 } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
@@ -53,6 +64,8 @@ export interface PixelSheetProps {
   onClose: () => void
   title: ReactNode
   titleId?: string
+  /** Overrides the dialog's accessible name (default: labelled by the title). */
+  ariaLabel?: string
   subtitle?: ReactNode
   /** Pixel thumbnail for the title row (the only pixel art in it). */
   icon?: ReactNode
@@ -61,6 +74,8 @@ export interface PixelSheetProps {
   subheader?: ReactNode
   footer?: ReactNode
   initialFocus?: string
+  /** Stacking layer: `'cook'` sits above the full-screen cook surface. */
+  layer?: PixelLayer
   /**
    * Extra classes for the sheet itself. A tall sheet that must not change height
    * as its content does (the storage sheet, issue #749) passes `h-[84dvh]`; the
@@ -70,6 +85,14 @@ export interface PixelSheetProps {
   testId?: string
   backdropTestId?: string
   children?: ReactNode
+}
+
+export type PixelLayer = 'sheet' | 'cook'
+
+// Literal class names so Tailwind sees them.
+const LAYER_CLASS: Record<PixelLayer, string> = {
+  sheet: 'z-[60]',
+  cook: 'z-[9998]',
 }
 
 // Board motion note: stiffness 380, damping 34, about 280 ms.
@@ -94,11 +117,84 @@ function unlockScroll() {
   if (--scrollLocks === 0) document.body.style.overflow = scrollBefore
 }
 
+export interface PixelModalLayerProps {
+  open: boolean
+  onClose: () => void
+  /** The element the focus trap wraps (the sheet panel, the tour tooltip). */
+  panelRef: RefObject<HTMLElement | null>
+  /** Draw the `--color-backdrop` scrim. The tour draws its own cut-out dim. */
+  scrim?: boolean
+  /** A tap on the layer itself (outside the panel) closes. Off: it is swallowed. */
+  dismissOnScrimTap?: boolean
+  /** Lock page scroll while open. */
+  lockPageScroll?: boolean
+  /** Bottom-align the children (a sheet). Off: children position themselves. */
+  alignEnd?: boolean
+  layer?: PixelLayer
+  testId?: string
+  children?: ReactNode
+}
+
+export function PixelModalLayer({
+  open,
+  onClose,
+  panelRef,
+  scrim = true,
+  dismissOnScrimTap = true,
+  lockPageScroll = true,
+  alignEnd = true,
+  layer = 'sheet',
+  testId,
+  children,
+}: PixelModalLayerProps) {
+  const { reduced } = useMotionConfig()
+
+  useModalFocusTrap(open, onClose, panelRef)
+
+  useEffect(() => {
+    if (!open || !lockPageScroll) return
+    lockScroll()
+    return unlockScroll
+  }, [open, lockPageScroll])
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <div
+          className={`fixed inset-0 ${LAYER_CLASS[layer]}${alignEnd ? ' flex items-end justify-center' : ''}`}
+          data-testid={testId}
+          // Taps on the container itself (the scrim area around the panel)
+          // close; taps inside the dialog bubble up with another target.
+          onClick={(e: React.MouseEvent<HTMLDivElement>) => {
+            if (e.target !== e.currentTarget) return
+            if (dismissOnScrimTap) onClose()
+            else e.stopPropagation()
+          }}
+        >
+          {scrim && (
+            <motion.div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0"
+              style={{ background: 'var(--color-backdrop)' }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: reduced ? 0.15 : 0.2 }}
+            />
+          )}
+          {children}
+        </div>
+      )}
+    </AnimatePresence>
+  )
+}
+
 export default function PixelSheet({
   open,
   onClose,
   title,
   titleId,
+  ariaLabel,
   subtitle,
   icon,
   closeLabel = 'Close',
@@ -106,6 +202,7 @@ export default function PixelSheet({
   subheader,
   footer,
   initialFocus,
+  layer,
   panelClassName,
   testId,
   backdropTestId,
@@ -116,8 +213,6 @@ export default function PixelSheet({
   const headingId = titleId ?? `pixel-sheet-title-${autoId}`
   const panelRef = useRef<HTMLDivElement>(null)
 
-  useModalFocusTrap(open, onClose, panelRef)
-
   // Focus a named field instead of the first focusable. A layout effect runs
   // before the trap's passive effect, which leaves focus alone when something
   // inside the panel already has it (same path as a native `autoFocus`).
@@ -125,12 +220,6 @@ export default function PixelSheet({
     if (!open || !initialFocus) return
     panelRef.current?.querySelector<HTMLElement>(initialFocus)?.focus()
   }, [open, initialFocus])
-
-  useEffect(() => {
-    if (!open) return
-    lockScroll()
-    return unlockScroll
-  }, [open])
 
   // ---- drag to dismiss (handle only) ------------------------------------
   // Written with plain pointer events and the CSS `translate` property rather
@@ -204,147 +293,133 @@ export default function PixelSheet({
       }
 
   return (
-    <AnimatePresence>
-      {open && (
+    <PixelModalLayer
+      open={open}
+      onClose={onClose}
+      panelRef={panelRef}
+      layer={layer}
+      testId={backdropTestId}
+    >
+      <motion.div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabel ? undefined : headingId}
+        tabIndex={-1}
+        data-testid={testId}
+        className={`relative flex max-h-[90dvh] w-full max-w-lg flex-col rounded-t-[24px] border-solid border-t-[3px] outline-none sm:border-x-[3px]${panelClassName ? ` ${panelClassName}` : ''}`}
+        style={{
+          background: 'var(--color-bg)',
+          color: PIXEL_INK,
+          borderColor: PIXEL_INK,
+        }}
+        {...sheetMotion}
+      >
+        {/* Grab handle: decorative; the close button is the real control. */}
         <div
-          className="fixed inset-0 z-[60] flex items-end justify-center"
-          data-testid={backdropTestId}
-          // Taps on the container itself (the scrim area around the sheet)
-          // close; taps inside the dialog bubble up with another target.
-          onClick={(e: React.MouseEvent<HTMLDivElement>) => {
-            if (e.target === e.currentTarget) onClose()
-          }}
+          data-testid="pixel-sheet-handle"
+          aria-hidden="true"
+          className="flex shrink-0 cursor-grab touch-none justify-center pb-2 pt-2.5 active:cursor-grabbing"
+          onPointerDown={onHandleDown}
+          onPointerMove={onHandleMove}
+          onPointerUp={onHandleUp}
+          onPointerCancel={onHandleUp}
         >
-          <motion.div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0"
-            style={{ background: 'var(--color-backdrop)' }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: reduced ? 0.15 : 0.2 }}
+          <div
+            className="h-[5px] w-10 rounded-full"
+            style={{ background: 'var(--color-border)' }}
           />
-          <motion.div
-            ref={panelRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={headingId}
-            tabIndex={-1}
-            data-testid={testId}
-            className={`relative flex max-h-[90dvh] w-full max-w-lg flex-col rounded-t-[24px] border-solid border-t-[3px] outline-none sm:border-x-[3px]${panelClassName ? ` ${panelClassName}` : ''}`}
-            style={{
-              background: 'var(--color-bg)',
-              color: PIXEL_INK,
-              borderColor: PIXEL_INK,
-            }}
-            {...sheetMotion}
-          >
-            {/* Grab handle: decorative; the close button is the real control. */}
-            <div
-              data-testid="pixel-sheet-handle"
-              aria-hidden="true"
-              className="flex shrink-0 cursor-grab touch-none justify-center pb-2 pt-2.5 active:cursor-grabbing"
-              onPointerDown={onHandleDown}
-              onPointerMove={onHandleMove}
-              onPointerUp={onHandleUp}
-              onPointerCancel={onHandleUp}
-            >
-              <div
-                className="h-[5px] w-10 rounded-full"
-                style={{ background: 'var(--color-border)' }}
-              />
-            </div>
-
-            {/* Title row */}
-            <div className="flex shrink-0 items-center gap-3 px-4 pb-2">
-              {icon && (
-                <div
-                  aria-hidden="true"
-                  className="flex shrink-0 items-center justify-center rounded-[10px] border-2"
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderColor: PIXEL_INK,
-                    background: 'var(--color-surface)',
-                  }}
-                >
-                  {icon}
-                </div>
-              )}
-              <div className="flex min-w-0 flex-1 flex-col">
-                <h2
-                  id={headingId}
-                  className="text-xl font-bold leading-[26px]"
-                  style={{ color: PIXEL_INK }}
-                >
-                  {title}
-                </h2>
-                {subtitle && (
-                  <p
-                    className="line-clamp-1 text-[13px] font-bold leading-[18px]"
-                    style={{ color: PIXEL_INK }}
-                  >
-                    {subtitle}
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={closeDisabled}
-                aria-label={closeLabel}
-                className="flex shrink-0 items-center justify-center rounded-full border-2 focus-visible:rounded-full! focus-visible:outline-[3px]! focus-visible:outline-offset-[3px]! disabled:opacity-50"
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderColor: PIXEL_INK,
-                  background: 'var(--color-surface)',
-                  color: PIXEL_INK,
-                }}
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  aria-hidden="true"
-                >
-                  <path d="M6 6l12 12M18 6L6 18" />
-                </svg>
-              </button>
-            </div>
-
-            {subheader && <div className="shrink-0 px-4 pb-3">{subheader}</div>}
-
-            {/* Body: the only part that scrolls. */}
-            <div
-              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4"
-              // With no footer the body is the bottom edge: clear the home bar.
-              style={
-                footer ? undefined : { paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }
-              }
-            >
-              {children}
-            </div>
-
-            {footer && (
-              <div
-                className="shrink-0 px-4 py-3"
-                style={{
-                  background: 'var(--color-surface)',
-                  borderTop: `3px solid ${PIXEL_INK}`,
-                  paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
-                }}
-              >
-                {footer}
-              </div>
-            )}
-          </motion.div>
         </div>
-      )}
-    </AnimatePresence>
+
+        {/* Title row */}
+        <div className="flex shrink-0 items-center gap-3 px-4 pb-2">
+          {icon && (
+            <div
+              aria-hidden="true"
+              className="flex shrink-0 items-center justify-center rounded-[10px] border-2"
+              style={{
+                width: 44,
+                height: 44,
+                borderColor: PIXEL_INK,
+                background: 'var(--color-surface)',
+              }}
+            >
+              {icon}
+            </div>
+          )}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <h2
+              id={headingId}
+              className="text-xl font-bold leading-[26px]"
+              style={{ color: PIXEL_INK }}
+            >
+              {title}
+            </h2>
+            {subtitle && (
+              <p
+                className="line-clamp-1 text-[13px] font-bold leading-[18px]"
+                style={{ color: PIXEL_INK }}
+              >
+                {subtitle}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={closeDisabled}
+            aria-label={closeLabel}
+            className="flex shrink-0 items-center justify-center rounded-full border-2 focus-visible:rounded-full! focus-visible:outline-[3px]! focus-visible:outline-offset-[3px]! disabled:opacity-50"
+            style={{
+              width: 44,
+              height: 44,
+              borderColor: PIXEL_INK,
+              background: 'var(--color-surface)',
+              color: PIXEL_INK,
+            }}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+
+        {subheader && <div className="shrink-0 px-4 pb-3">{subheader}</div>}
+
+        {/* Body: the only part that scrolls. */}
+        <div
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4"
+          // With no footer the body is the bottom edge: clear the home bar.
+          style={
+            footer ? undefined : { paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }
+          }
+        >
+          {children}
+        </div>
+
+        {footer && (
+          <div
+            className="shrink-0 px-4 py-3"
+            style={{
+              background: 'var(--color-surface)',
+              borderTop: `3px solid ${PIXEL_INK}`,
+              paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+            }}
+          >
+            {footer}
+          </div>
+        )}
+      </motion.div>
+    </PixelModalLayer>
   )
 }

@@ -138,7 +138,7 @@ class TestSuggestFollowUps:
 
 
 # ---------------------------------------------------------------------------
-# The prompt lives in prompts/ (CODEOWNERS-reviewed), not inline
+# The prompt lives in prompts/ (reviewed as a behavior change), not inline
 # ---------------------------------------------------------------------------
 
 
