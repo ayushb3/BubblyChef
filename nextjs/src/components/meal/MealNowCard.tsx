@@ -53,6 +53,29 @@ export interface MealNowCardProps {
    * it with `dishProgress`). Omitted or empty: no strip.
    */
   progress?: DishProgress[]
+  /**
+   * Issue #849 — the scaled ingredients this card's step uses, as display
+   * labels ("2 tbsp butter"; build them with `ingredientsForStep`). Drawn as a
+   * row of chips under the step text on `active` and `upcoming` cards. Empty
+   * or omitted: no row (a step that names nothing shows none; never a guess).
+   */
+  stepIngredients?: string[]
+}
+
+function StepIngredientChips({ labels }: { labels: string[] }) {
+  if (labels.length === 0) return null
+  return (
+    <ul className="mt-3 flex flex-wrap gap-2" aria-label="Ingredients for this step" data-testid="meal-now-card-ingredients">
+      {labels.map((label) => (
+        <li
+          key={label}
+          className={`rounded-full bg-[color:var(--color-surface)] px-3 py-1 text-base leading-6 font-bold text-[color:var(--color-text)] ${SOLID_EDGE}`}
+        >
+          {label}
+        </li>
+      ))}
+    </ul>
+  )
 }
 
 function AskBubblesKey({ onClick, disabled }: { onClick: () => void; disabled: boolean }) {
@@ -90,6 +113,7 @@ export default function MealNowCard({
   disabled = false,
   onAskBubbles,
   progress,
+  stepIngredients,
 }: MealNowCardProps) {
   if (card.kind === 'finished') return null
 
@@ -126,8 +150,11 @@ export default function MealNowCard({
               after {card.waiting_on.label}
             </p>
           )}
-          <p className="mt-3 text-lg font-extrabold text-[color:var(--color-text)]">{card.step.label}</p>
-          <p className="mt-1 text-sm text-[color:var(--color-text)]">{card.step.text}</p>
+          <p className="mt-3 text-2xl leading-tight font-extrabold text-[color:var(--color-text)]">{card.step.label}</p>
+          <p className="mt-1 text-xl leading-snug text-[color:var(--color-text)]" data-testid="meal-now-card-step-text">
+            {card.step.text}
+          </p>
+          <StepIngredientChips labels={stepIngredients ?? []} />
           <div className="mt-4 flex flex-wrap gap-2.5">
             {/* Issue #663: no Start now while a step this one follows is
                 still running — the "after ‹label›" line above says why. */}
@@ -154,8 +181,11 @@ export default function MealNowCard({
               testId="meal-now-card-badge"
             />
           </div>
-          <p className="mt-3 text-xl font-extrabold text-[color:var(--color-text)]">{card.step.label}</p>
-          <p className="mt-1 text-sm text-[color:var(--color-text)]">{card.step.text}</p>
+          <p className="mt-3 text-2xl leading-tight font-extrabold text-[color:var(--color-text)]">{card.step.label}</p>
+          <p className="mt-1 text-xl leading-snug text-[color:var(--color-text)]" data-testid="meal-now-card-step-text">
+            {card.step.text}
+          </p>
+          <StepIngredientChips labels={stepIngredients ?? []} />
           <p className="mt-2 text-xs font-bold text-[color:var(--color-text)] tabular-nums">
             {card.step.duration_minutes} min
           </p>

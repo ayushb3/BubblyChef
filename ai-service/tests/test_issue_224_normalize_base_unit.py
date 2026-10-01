@@ -84,9 +84,9 @@ def test_same_unit_no_conversion_needed() -> None:
 
 
 def test_piece_weight_clove_garlic() -> None:
-    """2 cloves garlic → 6 g (conventional 3 g/clove)."""
+    """2 cloves garlic → 10 g (5 g/clove)."""
     qty, unit = normalize_to_base_unit("garlic", 2.0, "clove")
-    assert qty == pytest.approx(6.0)
+    assert qty == pytest.approx(10.0)
     assert unit == "g"
 
 

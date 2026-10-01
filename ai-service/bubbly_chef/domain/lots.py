@@ -15,7 +15,12 @@ from __future__ import annotations
 
 from datetime import date
 
-from bubbly_chef.domain.normalizer import normalize_food_name, normalize_to_base_unit
+from bubbly_chef.domain.normalizer import (
+    effective_unit,
+    normalize_food_name,
+    normalize_to_base_unit,
+    to_base_unit,
+)
 from bubbly_chef.models.pantry import PantryItem
 
 
@@ -80,8 +85,32 @@ def lot_base(item: PantryItem) -> tuple[float | None, str | None]:
     if item.quantity_base is not None and item.unit_base is not None:
         return float(item.quantity_base), item.unit_base
     return normalize_to_base_unit(
-        name=lot_food_key(item.name), quantity=item.quantity, unit=item.unit
+        name=lot_food_key(item.name),
+        quantity=item.quantity,
+        unit=effective_unit(item.name, item.unit),
     )
+
+
+def lot_base_approximate(item: PantryItem) -> bool:
+    """True when a lot's base quantity rests on an estimate.
+
+    "1 head garlic" is 50 g only because a head is about ten cloves of 5 g, and a
+    "1 bag" of flour is 5 lb only because that is the usual bag. A lot measured in
+    its own units (a dozen eggs as 12 count, 2 lb as grams) is exact. The cook
+    matcher flags a deduction against an estimated lot as approximate, since the
+    amount taken off is only as good as the amount the row is worth.
+    """
+    base_qty, base_unit = lot_base(item)
+    if base_qty is None or base_unit is None:
+        return False
+    derived = to_base_unit(
+        name=lot_food_key(item.name),
+        quantity=item.quantity,
+        unit=effective_unit(item.name, item.unit),
+    )
+    # A stored base in another unit than the row derives now (an old count for a
+    # head of garlic) counts containers, which is exact.
+    return derived is not None and derived[1] == base_unit and derived[2]
 
 
 _PLAN_EPSILON = 1e-6
