@@ -58,6 +58,7 @@ jobs:
       contents: read
       pull-requests: write
       issues: read
+      actions: read
       id-token: write
 
     steps:
@@ -74,6 +75,8 @@ jobs:
         id: baseonly
         if: github.event.action == 'synchronize'
         env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.event.pull_request.head.sha }}
           BASE: ${{ github.event.pull_request.base.ref }}
@@ -81,8 +84,23 @@ jobs:
           set -eu
           read -r _ p1 p2 extra <<<"$(git rev-list --parents -n1 "$AFTER")"
           if [ -n "${p2:-}" ] && [ -z "${extra:-}" ] && [ "$p1" = "$BEFORE" ]              && git merge-base --is-ancestor "$p2" "origin/$BASE"              && [ -z "$(git show --format= --cc "$AFTER")" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Push only merged $BASE into the branch with no conflict edits; keeping the existing review."
+            # Keeping the existing review is only sound if the commit being merged INTO
+            # was itself reviewed (or inherited a review the same way). A real push
+            # whose review run was cancelled by a quick follow-up push (cancel-in-progress
+            # above) was never reviewed; skipping on top of it would leave the PR holding
+            # an older commit's verdict, or none. Fail closed: if the API call fails or
+            # finds no successful review job for $BEFORE, run the review.
+            reviewed=0
+            for run_id in $(gh api "repos/$REPO/actions/workflows/claude-review.yml/runs?head_sha=$BEFORE&event=pull_request&per_page=50" --jq '.workflow_runs[] | select(.conclusion == "success") | .id' || true); do
+              n=$(gh api "repos/$REPO/actions/runs/$run_id/jobs" --jq '[.jobs[] | select(.name == "review" and .conclusion == "success")] | length' || echo 0)
+              if [ "${n:-0}" -gt 0 ]; then reviewed=1; break; fi
+            done
+            if [ "$reviewed" = 1 ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "Push only merged $BASE into the branch with no conflict edits; keeping the existing review."
+            else
+              echo "Push only merged $BASE, but the previous head ${BEFORE:0:8} has no completed review (cancelled or never ran); reviewing this commit."
+            fi
           fi
 
       - name: Claude review
@@ -150,6 +168,10 @@ jobs:
               `needs changes`. Never write "looks mergeable" together with
               "the human should accept/confirm/decide …"; that combination is
               `needs a human`.
+              Write the verdict as a literal line `**Verdict: `<one of the three>`**`
+              in EVERY summary, including a re-review. A heading such as
+              "## Re-review (round 3) — `looks mergeable`" is fine as a title, but it
+              does not replace that line, and the two must agree.
             - The findings that drove the verdict, most severe first, one line each.
             - Anything you could not check.
             Keep it short enough to read on a phone.
