@@ -82,6 +82,19 @@ describe('BubblesCounter (#741)', () => {
     expect(counter).toHaveTextContent('252')
   })
 
+  it('keeps the +N tag under the counter, never out to its left where the header title is (#839)', () => {
+    // jsdom has no layout, so this pins the placement the 390px check measured: the
+    // tag hangs off the counter's bottom-right corner, so it can only ever sit
+    // inside the counter's own width. Out to its left (`right-[calc(100%+...)]`) it
+    // landed on "THURSDAY MORNING" / "Your kitchen" once the balance had four digits.
+    const { rerender } = render(<BubblesCounter value={1240} />)
+    rerender(<BubblesCounter value={1255} />)
+    const classes = screen.getByTestId('bubbles-counter-rise').className.split(/\s+/)
+    expect(classes).toContain('right-0')
+    expect(classes.some((c) => c.startsWith('top-full') || c.startsWith('top-[calc(100%'))).toBe(true)
+    expect(classes.some((c) => c.startsWith('right-[calc(100%') || c.startsWith('left-'))).toBe(false)
+  })
+
   it('does not pop on a drop; the number just updates', () => {
     const { rerender } = render(<BubblesCounter value={50} />)
     rerender(<BubblesCounter value={20} />)
