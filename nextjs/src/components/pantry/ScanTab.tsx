@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import BubblesMascot from '@/components/ui/BubblesMascot'
-import SpringButton from '@/components/ui/SpringButton'
+import ScanDropzone, { ScanHandoffPanel, ScanProcessingPanel } from '@/components/scan/ScanDropzone'
 import ScanFailureNotice from '@/components/scan/ScanFailureNotice'
 import { useFileDropzone } from '@/hooks/useFileDropzone'
 import { uploadReceipt, ScanError } from '@/lib/api/scan'
@@ -165,24 +164,12 @@ export default function ScanTab({ onParsed, onProcessingChange }: ScanTabProps) 
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.25 }}
           >
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              {...dropzoneHandlers}
-              className={`w-full border-2 border-dashed rounded-3xl p-10 text-center transition-colors active:scale-95 ${
-                isDragActive
-                  ? 'border-[var(--color-primary)] bg-[var(--color-border)] scale-[1.02]'
-                  : 'border-[var(--color-primary)] bg-[var(--color-surface)] hover:bg-[var(--color-border)]'
-              }`}
-            >
-              <div className="flex justify-center mb-3">
-                <BubblesMascot state="happy" size={72} />
-              </div>
-              <p className="font-semibold text-[var(--color-text)] mb-1">
-                {isDragActive ? 'Drop it here!' : 'Drop your receipt here'}
-              </p>
-              <p className="text-sm text-[var(--color-muted)]">or tap to upload</p>
-            </button>
+            <ScanDropzone
+              isDragActive={isDragActive}
+              dropzoneHandlers={dropzoneHandlers}
+              onChoose={() => inputRef.current?.click()}
+              hasError={!!error}
+            />
 
             <input
               ref={inputRef}
@@ -204,33 +191,8 @@ export default function ScanTab({ onParsed, onProcessingChange }: ScanTabProps) 
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.97 }}
             transition={{ duration: 0.25 }}
-            className="text-center"
           >
-            {preview && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={preview}
-                alt="Receipt preview"
-                className="w-full max-h-48 object-contain rounded-2xl mb-4 border border-[var(--color-border)]"
-              />
-            )}
-            <div className="flex justify-center mb-3">
-              <BubblesMascot state="thinking" size={64} />
-            </div>
-            <div className="flex items-center justify-center gap-3">
-              <motion.div
-                className="w-5 h-5 rounded-full border-2 border-[var(--color-primary)] border-t-transparent"
-                animate={{ rotate: 360 }}
-                transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }}
-              />
-              <p className="font-semibold text-[var(--color-text)]">Scanning receipt…</p>
-            </div>
-            <p className="text-sm text-[var(--color-muted)] mt-2">Bubbles is reading your items</p>
-            <div className="mt-4 flex justify-center">
-              <SpringButton variant="secondary" size="sm" onClick={handleCancelScan}>
-                Cancel scan
-              </SpringButton>
-            </div>
+            <ScanProcessingPanel preview={preview} onCancel={handleCancelScan} />
           </motion.div>
         )}
 
@@ -240,13 +202,9 @@ export default function ScanTab({ onParsed, onProcessingChange }: ScanTabProps) 
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.25 }}
-            className="text-center"
             role="status"
           >
-            <div className="flex justify-center mb-3">
-              <BubblesMascot state="happy" size={64} />
-            </div>
-            <p className="font-semibold text-[var(--color-text)]">Taking your shopping to the kitchen…</p>
+            <ScanHandoffPanel />
           </motion.div>
         )}
       </AnimatePresence>
