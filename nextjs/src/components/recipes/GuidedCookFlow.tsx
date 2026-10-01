@@ -31,6 +31,8 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import BubblesMascot from '@/components/ui/BubblesMascot'
+import PixelPanel from '@/components/ui/PixelPanel'
+import SpringButton from '@/components/ui/SpringButton'
 import { ingredientLabel } from '@/lib/recipe-helpers'
 import { useMotionConfig } from '@/lib/motion'
 import { ensureSteps } from '@/lib/api/recipes'
@@ -215,13 +217,11 @@ function ProgressDots({ steps, idx }: { steps: CookStep[]; idx: number }) {
 
 function DoneState({ recipe, onExit, onFinish }: { recipe: Recipe; onExit: () => void; onFinish?: () => void }) {
   return (
-    <div
-      className="font-sans rounded-3xl text-center py-8 px-6"
-      style={{
-        background: 'var(--color-surface)',
-        border: '1px solid var(--color-border)',
-        boxShadow: 'var(--shadow-soft)',
-      }}
+    // Issue #812: same PixelPanel + keycaps as the meal cook's finish screen.
+    <PixelPanel
+      as="div"
+      contentClassName="px-6 py-8 text-center"
+      className="font-sans"
       data-testid="guided-cook-done"
     >
       <div className="flex justify-center mb-3">
@@ -239,29 +239,22 @@ function DoneState({ recipe, onExit, onFinish }: { recipe: Recipe; onExit: () =>
       {/* Primary action: hand off to the CookModal deduction flow so the
           guided path ends where the pantry gets updated (issue #263). Falls
           back to a plain exit when no deduction handoff is wired. */}
-      {onFinish && (
-        <button
-          onClick={onFinish}
-          className="rounded-full px-6 py-2.5 font-bold text-sm active:scale-95 transition-transform mb-3 w-full"
-          style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
-          data-testid="guided-cook-deduct"
+      <div className="flex flex-col gap-3">
+        {onFinish && (
+          <SpringButton variant="primary" fullWidth onClick={onFinish} data-testid="guided-cook-deduct">
+            Update my pantry 🧺
+          </SpringButton>
+        )}
+        <SpringButton
+          variant={onFinish ? 'secondary' : 'primary'}
+          fullWidth
+          onClick={onExit}
+          data-testid="guided-cook-exit"
         >
-          Update my pantry 🧺
-        </button>
-      )}
-      <button
-        onClick={onExit}
-        className="rounded-full px-6 py-2.5 font-bold text-sm active:scale-95 transition-transform"
-        style={
-          onFinish
-            ? { background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }
-            : { background: 'var(--color-primary)', color: 'var(--color-text)' }
-        }
-        data-testid="guided-cook-exit"
-      >
-        {onFinish ? 'Skip for now' : 'Back to recipe'}
-      </button>
-    </div>
+          {onFinish ? 'Skip for now' : 'Back to recipe'}
+        </SpringButton>
+      </div>
+    </PixelPanel>
   )
 }
 
