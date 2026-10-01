@@ -10,6 +10,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { estimateExpiryFallback } from '@/lib/expiry-fallback'
 
 const AI_SERVICE_URL =
   process.env.AI_SERVICE_URL ||
@@ -74,17 +75,33 @@ export async function aiProxyJson(
   return NextResponse.json(data)
 }
 
+/** How long to wait on the AI service's estimate before using the local fallback. */
+const ESTIMATE_EXPIRY_TIMEOUT_MS = 5000
+
 /**
  * Estimate an expiry date for a pantry item via the AI service's Python
  * heuristic (the single source of truth — see #158). Returns an ISO date
- * string, or `null` on any failure so callers can fall back to a null expiry
- * without ever blocking the add.
+ * string.
+ *
+ * When the AI service fails, times out or answers without a date (an outage or
+ * cold start), this falls back to a local, deterministic estimate by
+ * category/location (`lib/expiry-fallback.ts`, a mirror of the same Python
+ * table) and logs a warning, instead of returning null and letting the row be
+ * saved with no expiry (#705). The add is never blocked, and never loses its
+ * expiry. Callers flag the result `estimated_expiry` as before.
  */
 export async function estimateExpiry(item: {
   name: string
   category?: string | null
   location?: string | null
-}): Promise<string | null> {
+}): Promise<string> {
+  const fallback = (reason: string): string => {
+    console.warn(
+      `[estimateExpiry] AI service estimate unavailable (${reason}); using local fallback for "${item.name}"`,
+    )
+    return estimateExpiryFallback(item)
+  }
+
   try {
     const res = await aiProxyFetch('/v1/pantry/estimate-expiry', {
       method: 'POST',
@@ -94,13 +111,14 @@ export async function estimateExpiry(item: {
         category: item.category || 'other',
         location: item.location || 'pantry',
       }),
+      signal: AbortSignal.timeout(ESTIMATE_EXPIRY_TIMEOUT_MS),
     })
-    if (res instanceof NextResponse || !res.ok) return null
+    if (res instanceof NextResponse) return fallback(`proxy status ${res.status}`)
+    if (!res.ok) return fallback(`status ${res.status}`)
     const data = (await res.json()) as { expiry_date?: string }
-    return data.expiry_date ?? null
-  } catch {
-    // Estimation is best-effort — never let it block adding the item.
-    return null
+    return data.expiry_date || fallback('no expiry_date in response')
+  } catch (err) {
+    return fallback(err instanceof Error ? err.message : 'request failed')
   }
 }
 
