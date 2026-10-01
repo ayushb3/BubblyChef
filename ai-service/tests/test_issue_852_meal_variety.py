@@ -131,6 +131,46 @@ class TestClaimedIngredients:
     def test_pantry_names_extend_the_vocabulary(self) -> None:
         assert claimed_ingredients("Warm with harissa", extra_names=["Harissa"]) == ["harissa"]
 
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("Stuffed bell peppers", ["bell pepper"]),
+            ("Roasted capsicum", ["bell pepper"]),
+            ("Sweet green pepper rings", ["bell pepper"]),
+            ("Chicken with red pepper flakes", ["chicken", "chili flake"]),
+            ("Crushed red pepper heat", ["chili flake"]),
+            ("A chili pepper kick", ["chili pepper"]),
+            ("Dusted with cayenne pepper", ["cayenne pepper"]),
+            ("Glazed with sesame oil", ["sesame oil"]),
+            ("Fried in coconut oil", ["coconut oil"]),
+            ("Finished with sea salt", []),
+            ("Cracked black pepper and kosher salt", []),
+            ("Drizzled with extra virgin olive oil", []),
+            ("Pan fried in vegetable oil", []),
+            ("Bell peppers, black pepper and olive oil", ["bell pepper"]),
+            ("Olives and olive oil", ["olive"]),
+            ("Seasoned with pepper", []),
+        ],
+    )
+    def test_multi_word_phrases_that_contain_a_staple_word(
+        self, text: str, expected: list[str]
+    ) -> None:
+        assert claimed_ingredients(text) == expected
+
+    def test_generic_category_words_are_never_claims(self) -> None:
+        text = "Fresh herbs, vegetables, greens, spices, meat, fish, fruit, nuts and beans"
+        assert claimed_ingredients(text) == []
+
+    def test_a_pantry_row_named_for_a_category_does_not_readmit_the_word(self) -> None:
+        extra = ["Cheese", "Herbs", "Beans", "Vegetables", "Spices", "Meat"]
+        assert claimed_ingredients("A creamy cheese sauce with herbs and beans", extra) == []
+        assert unsupported_claims("A creamy cheese sauce", ["mozzarella"], ["Cheese"]) == []
+
+    def test_a_specific_pantry_name_still_extends_the_vocabulary(self) -> None:
+        assert claimed_ingredients("Warm with harissa", extra_names=["Cheese", "Harissa"]) == [
+            "harissa"
+        ]
+
     def test_no_claims_in_plain_prose(self) -> None:
         assert claimed_ingredients("Bright, zesty and ready in twenty minutes.") == []
 
@@ -144,6 +184,8 @@ class TestUnsupportedClaims:
 
     def test_partial_names_match_whole_words(self) -> None:
         assert unsupported_claims("Tomato bake", ["crushed tomatoes", "spaghetti"]) == []
+        # "bell peppers" in the supported list is what backs the claim: without it, flagged
+        assert unsupported_claims("Stuffed bell pepper", ["beef"]) == ["bell pepper"]
         assert unsupported_claims("Stuffed bell pepper", ["bell peppers", "beef"]) == []
 
     def test_a_substring_alone_is_not_a_match(self) -> None:

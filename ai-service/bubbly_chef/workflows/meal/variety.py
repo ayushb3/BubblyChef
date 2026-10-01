@@ -31,7 +31,21 @@ from bubbly_chef.prompts.meal import MEAL_OPTIONS_AVOID_BLOCK
 
 # Universal: the seasoning rule has every dish use them, so naming one is never a false claim.
 _UNIVERSAL = frozenset(
-    {"salt", "pepper", "black pepper", "oil", "olive oil", "cooking oil", "vegetable oil", "water"}
+    {
+        "salt", "sea salt", "kosher salt", "table salt", "pepper", "black pepper", "white pepper",
+        "ground pepper", "oil", "olive oil", "cooking oil", "vegetable oil", "canola oil", "water",
+    }
+)
+
+# Generic category words are never claims, however they get into the vocabulary (the
+# curated list, or a pantry row literally named "Cheese"): "a creamy cheese sauce" over a
+# mozzarella dish is true, and "fresh herbs" over a dish with basil is too.
+_GENERIC = frozenset(
+    {
+        "cheese", "herb", "spice", "vegetable", "veg", "green", "meat", "fish", "seafood",
+        "fruit", "nut", "bean", "legume", "grain", "poultry", "produce", "protein", "seasoning",
+        "sauce", "dairy", "oil", "salt", "pepper", "water", "other", "item", "food",
+    }
 )
 
 # Spelling and regional variants collapsed to one form, on both sides of a comparison.
@@ -46,6 +60,13 @@ _SYNONYMS: dict[str, str] = {
     "chile": "chili",
     "prawn": "shrimp",
     "capsicum": "bell pepper",
+    "sweet pepper": "bell pepper",
+    "green pepper": "bell pepper",
+    "red pepper": "bell pepper",
+    "yellow pepper": "bell pepper",
+    "orange pepper": "bell pepper",
+    "red pepper flake": "chili flake",
+    "crushed red pepper": "chili flake",
     "rocket": "arugula",
     "mince": "ground beef",
     "yoghurt": "yogurt",
@@ -53,11 +74,12 @@ _SYNONYMS: dict[str, str] = {
 
 _CURATED = """
 chicken, beef, pork, lamb, turkey, duck, bacon, ham, sausage, chorizo, steak, salmon, tuna, cod,
-shrimp, tofu, tempeh, egg, chickpea, lentil, black bean, kidney bean, white bean, bean, pea,
+shrimp, tofu, tempeh, egg, chickpea, lentil, black bean, kidney bean, white bean, pea,
 garlic, onion, green onion, shallot, leek, ginger, lemon, lime, orange, chili, jalapeno,
 tomato, potato, sweet potato, carrot, celery, broccoli, cauliflower, spinach, kale, cabbage,
 mushroom, zucchini, eggplant, bell pepper, cucumber, corn, avocado, squash, pumpkin, beet,
 asparagus, arugula, lettuce, apple, banana, pineapple, mango, coconut, olive, caper,
+chili pepper, cayenne pepper, sesame oil, coconut oil, peanut oil,
 basil, parsley, coriander, mint, thyme, rosemary, oregano, sage, dill, chive, bay leaf,
 cumin, paprika, turmeric, cinnamon, nutmeg, cardamom, curry, cayenne, chili flake, harissa,
 butter, cream, milk, yogurt, sour cream, parmesan, cheddar, mozzarella, feta, ricotta,
@@ -84,14 +106,16 @@ def _tokens(text: str) -> list[str]:
     out: list[str] = []
     i = 0
     while i < len(words):
-        # two-word synonyms first ("spring onion"), then single words
-        pair = " ".join(words[i : i + 2])
-        if pair in _SYNONYMS:
-            out.extend(_SYNONYMS[pair].split())
-            i += 2
-            continue
-        out.extend(_SYNONYMS.get(words[i], words[i]).split())
-        i += 1
+        # longest synonym first ("red pepper flake" before "red pepper"), then single words
+        for width in (3, 2):
+            gram = " ".join(words[i : i + width])
+            if len(words[i : i + width]) == width and gram in _SYNONYMS:
+                out.extend(_SYNONYMS[gram].split())
+                i += width
+                break
+        else:
+            out.extend(_SYNONYMS.get(words[i], words[i]).split())
+            i += 1
     return out
 
 
@@ -103,6 +127,10 @@ _CURATED_PHRASES: frozenset[tuple[str, ...]] = frozenset(
     p for raw in _CURATED.split(",") if (p := _phrase(raw.strip()))
 )
 _UNIVERSAL_PHRASES: frozenset[tuple[str, ...]] = frozenset(_phrase(n) for n in _UNIVERSAL)
+
+
+def _is_generic(phrase: tuple[str, ...]) -> bool:
+    return all(word in _GENERIC for word in phrase)
 
 
 def _contains(haystack: Sequence[str], needle: Sequence[str]) -> bool:
@@ -126,24 +154,23 @@ def claimed_ingredients(text: str, extra_names: Iterable[str] = ()) -> list[str]
     """Ingredients `text` names, in order of appearance, de-duplicated ("tomatoes" is
     "tomato"; "scallions" is "green onion"). `extra_names` (the user's pantry) extend the
     curated vocabulary. Salt, pepper and oil are never claims."""
-    vocabulary = set(_CURATED_PHRASES) | {p for n in extra_names if (p := _phrase(n))}
-    vocabulary -= _UNIVERSAL_PHRASES
+    claimable = {
+        p for p in (*_CURATED_PHRASES, *(_phrase(n) for n in extra_names)) if p and not _is_generic(p)
+    } - _UNIVERSAL_PHRASES
     words = _tokens(text)
     taken = [False] * len(words)
-    # Consume salt, pepper and oil first, so "olive oil" is not read as an "olive".
-    for phrase in _UNIVERSAL_PHRASES:
-        n = len(phrase)
-        for i in range(len(words) - n + 1):
-            if tuple(words[i : i + n]) == phrase:
-                taken[i : i + n] = [True] * n
     found: list[tuple[int, tuple[str, ...]]] = []
-    # Longest phrase first, so "sweet potato" is one claim and not "potato".
-    for phrase in sorted(vocabulary, key=len, reverse=True):
+    # One longest-first pass over claimable phrases AND the universal ones, so "sweet
+    # potato" is one claim and not "potato", "bell pepper" is a claim and not a "pepper",
+    # and "olive oil" is consumed whole instead of leaving an "olive". A universal match
+    # takes its words but is not reported.
+    for phrase in sorted(claimable | _UNIVERSAL_PHRASES, key=lambda p: (-len(p), p)):
         n = len(phrase)
         for i in range(len(words) - n + 1):
             if tuple(words[i : i + n]) == phrase and not any(taken[i : i + n]):
                 taken[i : i + n] = [True] * n
-                found.append((i, phrase))
+                if phrase in claimable:
+                    found.append((i, phrase))
     found.sort()
     names: list[str] = []
     for _, phrase in found:
