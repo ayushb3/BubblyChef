@@ -25,6 +25,11 @@ export interface ResolveActionsProps {
    * Used it / Tossed.
    */
   cookHref?: string
+  /**
+   * "Add to list" (issue #497): puts this food on the grocery list. Omit it and
+   * there is no such key. It never resolves the item.
+   */
+  onAddToList?: () => void
 }
 
 const FOCUS =
@@ -38,7 +43,8 @@ const FOCUS =
  * cost two rows of height, so they are gone from the surface. The meaning is
  * kept in the aria-label (assistive tech) and a native `title` (hover). The
  * keys stay a full 44px square (WCAG 2.5.5) and keep the fresh / expired colour
- * coding.
+ * coding. The storage list adds a fourth, 🛒 "Add to list" (#497), between cook and
+ * used it; it only puts the food on the grocery list and resolves nothing.
  *
  * Urgency buys the card real estate: these items are the whole point of the
  * expiry feature, so their resolve action is a present affordance rather than
@@ -56,6 +62,7 @@ export default function ResolveActions({
   pending = false,
   variant = 'bar',
   cookHref,
+  onAddToList,
 }: ResolveActionsProps) {
   const [confirmingToss, setConfirmingToss] = useState(false)
   const tossRef = useRef<HTMLButtonElement>(null)
@@ -130,6 +137,22 @@ export default function ResolveActions({
           <span aria-hidden="true">🍳</span>
         </Link>
       )}
+      {onAddToList && (
+        <motion.button
+          type="button"
+          disabled={pending}
+          whileTap={pending ? undefined : { scale: 0.97 }}
+          transition={springs.snappy}
+          onClick={onAddToList}
+          aria-label={`Add ${itemName} to grocery list`}
+          title="Add to list"
+          className={`${icon} text-[var(--color-text)] bg-[var(--color-accent)] ${FOCUS} ${
+            pills ? pill : `hover:brightness-95 ${cookHref ? hairline : ''}`
+          }`}
+        >
+          <span aria-hidden="true">🛒</span>
+        </motion.button>
+      )}
       <motion.button
         type="button"
         disabled={pending}
@@ -140,7 +163,7 @@ export default function ResolveActions({
         aria-label={`Mark ${itemName} as used up`}
         title="Used it"
         className={`${icon} text-[var(--color-fresh-text)] bg-[var(--color-fresh)] ${FOCUS} ${
-          pills ? pill : `hover:brightness-95 ${cookHref ? hairline : ''}`
+          pills ? pill : `hover:brightness-95 ${cookHref || onAddToList ? hairline : ''}`
         }`}
       >
         <span aria-hidden="true">{pending ? '…' : '✓'}</span>

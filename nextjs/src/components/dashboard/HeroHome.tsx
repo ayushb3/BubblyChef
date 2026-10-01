@@ -16,6 +16,7 @@ import {
   type PlaceSummaries,
 } from '@/lib/kitchen/places'
 import { movePantryItems, resolvePantryItems } from '@/lib/api/pantry'
+import { addPantryItemToMyGroceryList } from '@/lib/grocery-add'
 import { fetchDashboardDaily } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
 import { useDecorations } from '@/lib/api/kitchen'
@@ -477,6 +478,7 @@ export default function HeroHome({
         onAdd={(place) => setAddSheet({ tab: 'type', place })}
         onMove={movePantry}
         onResolve={resolvePantry}
+        onAddToList={addPantryItemToMyGroceryList}
         onRetry={reload}
       />
       <EditItemModal

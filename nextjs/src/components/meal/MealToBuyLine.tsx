@@ -9,8 +9,8 @@
  * items on the client-side grocery list (`addMissingToGroceryList`, which adopts a
  * food already on the list instead of duplicating it and leaves a ticked one
  * ticked) and the line crossfades
- * to a confirmation with the count. A link to open the list comes when the
- * list gets its own page (issue #497).
+ * to a confirmation with the count and a "View list" link to `/grocery`
+ * (issue #497).
  *
  * States: loading (a quiet skeleton), error (a retry key), nothing to buy
  * (a plain confirmation, no key), items (the line), added (the confirmation).
@@ -21,6 +21,7 @@
  */
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import SpringButton from '@/components/ui/SpringButton'
@@ -142,6 +143,10 @@ export default function MealToBuyLine({ mealId, signature }: MealToBuyLineProps)
               ✓
             </motion.span>
             {added} added to your grocery list
+            {' · '}
+            <Link href="/grocery" className="underline underline-offset-[3px]">
+              View list
+            </Link>
           </motion.p>
         )}
       </AnimatePresence>

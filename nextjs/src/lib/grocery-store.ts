@@ -13,7 +13,10 @@ import type { GroceryLine, GrocerySource, ManualLineInput } from '@/lib/grocery'
 import { addManualLines, groceryFoodKey } from '@/lib/grocery'
 
 const PREFIX = 'bubblychef:grocery:'
-const VERSION = 1
+/** 2: records carry `dismissed`. A version 1 record (no such field) still reads. */
+const VERSION = 2
+/** A cap so dismissals can never grow the record without bound. */
+const MAX_DISMISSED = 500
 /** Fired on `window` after a save in this tab (the native `storage` event only
  *  reaches other tabs). */
 const CHANGE_EVENT = 'bubblychef:grocery-changed'
@@ -69,13 +72,47 @@ export function loadGroceryLines(userId: string): GroceryLine[] {
   return parseGroceryLines(readGroceryRaw(userId))
 }
 
-/** Persist the list. Returns false (and changes nothing) when it can't. */
+/** The dismissed suggestions' fingerprints (`lib/grocery.ts` `dismissalsFor`):
+ *  `[]` when absent, unreadable, or from a record saved before they existed. */
+export function parseGroceryDismissed(raw: string): string[] {
+  if (!raw) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) return []
+    const dismissed = (parsed as { dismissed?: unknown }).dismissed
+    return Array.isArray(dismissed)
+      ? dismissed.filter((d): d is string => typeof d === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
+
+export function loadGroceryDismissed(userId: string): string[] {
+  return parseGroceryDismissed(readGroceryRaw(userId))
+}
+
+/** Persist the list, keeping the user's dismissals as they are. */
 export function saveGroceryLines(userId: string, lines: GroceryLine[]): boolean {
+  return saveGroceryState(userId, lines, loadGroceryDismissed(userId))
+}
+
+/**
+ * Persist the list and the dismissed suggestions as one record, so they can't
+ * drift apart. A dismissal outlives the line the user removed: it is what stops
+ * the next regenerate from re-adding it (issue #497 review).
+ * Returns false (and changes nothing) when it can't.
+ */
+export function saveGroceryState(
+  userId: string,
+  lines: GroceryLine[],
+  dismissed: readonly string[]
+): boolean {
   if (!userId || typeof window === 'undefined') return false
   try {
     window.localStorage.setItem(
       groceryStorageKey(userId),
-      JSON.stringify({ v: VERSION, lines })
+      JSON.stringify({ v: VERSION, lines, dismissed: [...new Set(dismissed)].slice(-MAX_DISMISSED) })
     )
   } catch {
     return false

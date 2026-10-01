@@ -121,6 +121,11 @@ export interface StorageSheetProps<T extends StoredItem> {
   onMove: (ids: string[], place: PlaceKey) => Promise<BulkResult>
   /** Record "used up" or "tossed" on rows (the existing per-item resolve). */
   onResolve: (ids: string[], outcome: 'used' | 'tossed') => Promise<BulkResult>
+  /**
+   * Put one item on the grocery list (issue #497). Rejects when it could not.
+   * Omitted: rows show no "Add to list" key.
+   */
+  onAddToList?: (item: T) => Promise<void> | void
   /** Expiry filters (`expiring`, `expired`) the List opens with. */
   initialExpiry?: readonly string[]
   onRetry: () => void
@@ -129,6 +134,8 @@ export interface StorageSheetProps<T extends StoredItem> {
 interface Notice {
   kind: 'ok' | 'error'
   text: string
+  /** A link after the text ("View list" after an add to the grocery list, #497). */
+  link?: { href: string; label: string }
 }
 
 const pillButton = 'rounded-full border-2 font-extrabold text-[color:var(--color-text)]'
@@ -184,6 +191,7 @@ export default function StorageSheet<T extends StoredItem>({
   onAdd,
   onMove,
   onResolve,
+  onAddToList,
   onRetry,
 }: StorageSheetProps<T>) {
   const uid = useId()
@@ -348,6 +356,22 @@ export default function StorageSheet<T extends StoredItem>({
     )
   }
 
+  const addToList = async (item: T) => {
+    if (!onAddToList) return
+    setNotice(null)
+    const name = titleCase(item.name)
+    try {
+      await onAddToList(item)
+      setNotice({
+        kind: 'ok',
+        text: `${name} added to your grocery list.`,
+        link: { href: '/grocery', label: 'View list' },
+      })
+    } catch {
+      setNotice({ kind: 'error', text: `Couldn’t add ${name} to your grocery list. Try again.` })
+    }
+  }
+
   const bulk = async (
     op: { kind: 'move'; to: PlaceKey } | { kind: 'used' } | { kind: 'tossed' },
   ) => {
@@ -408,6 +432,7 @@ export default function StorageSheet<T extends StoredItem>({
         // gesture whose only feedback is movement needs buttons without motion.
         showButtons: soon || isExpired(days) || !!prefersReduced,
         cookHref: soon ? cookThisHref(item.name, item.expiry_date) : undefined,
+        onAddToList: onAddToList ? () => void addToList(item) : undefined,
         onResolve: (outcome: ResolveOutcome) => void resolveOne(item, outcome),
       },
     }
@@ -804,6 +829,14 @@ export default function StorageSheet<T extends StoredItem>({
           }}
         >
           {notice.text}
+          {notice.link && (
+            <>
+              {' '}
+              <Link href={notice.link.href} className="font-extrabold underline underline-offset-[3px]">
+                {notice.link.label}
+              </Link>
+            </>
+          )}
         </p>
       )}
       <div
