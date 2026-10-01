@@ -160,8 +160,8 @@ describe('kitchen home wall (#748)', () => {
     mockFetch({ pantryOk: false })
     renderHome()
 
-    // Wait for the loading state to clear (the speech bubble's skeleton goes).
-    await waitFor(() => expect(screen.getByText(/Your pantry is empty/)).toBeInTheDocument())
+    // Wait for the loading state to clear (the Bubbles card's skeleton goes).
+    await screen.findByTestId('bubbles-card')
     expect(screen.getByRole('button', { name: 'Fridge' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /empty/ })).not.toBeInTheDocument()
   })
@@ -199,7 +199,7 @@ describe('kitchen home wall (#748)', () => {
     await screen.findByRole('button', { name: /^Shelves/ })
 
     expect(container.querySelector('[data-tour="quick-actions"]')).toBeNull()
-    // The one illustrated Bubbles left is the small one beside the speech bubble.
+    // The one illustrated Bubbles left is the small one on the Bubbles card.
     expect(screen.getAllByAltText(/^Bubbles /)).toHaveLength(1)
   })
 })

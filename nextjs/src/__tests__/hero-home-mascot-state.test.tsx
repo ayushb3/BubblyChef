@@ -1,7 +1,8 @@
 /**
- * HeroHome mascot state priority (issue #525): worried (unused expired food)
- * beats surprised (an urgent-but-not-expired item with no AI suggestion),
- * which beats the happy default.
+ * Bubbles' face on the home card (issues #525, #593, #755): worried (unused
+ * expired food) beats surprised (food expiring today or tomorrow), which beats the
+ * card's own mood: thinking at a mealtime, happy otherwise. The face matches what
+ * the card says, so it is never smiling at "your milk needs using today".
  */
 import React from 'react'
 import { render, screen } from '@testing-library/react'
@@ -50,22 +51,40 @@ function mockFetch(allItems: MockItem[], expiringItems: MockItem[] = []) {
   }) as unknown as typeof fetch
 }
 
-function renderHero() {
+function renderHero(props: Partial<React.ComponentProps<typeof HeroHome>> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <HeroHome displayName="ayush" />
+      <HeroHome displayName="ayush" {...props} />
     </QueryClientProvider>,
   )
 }
 
+/** Only `Date` is faked, so React Query and waitFor keep their timers. */
+function fixClock(iso: string) {
+  jest.useFakeTimers({
+    now: new Date(iso),
+    doNotFake: [
+      'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'setImmediate',
+      'clearImmediate', 'requestAnimationFrame', 'cancelAnimationFrame', 'queueMicrotask',
+      'nextTick', 'performance', 'hrtime', 'requestIdleCallback', 'cancelIdleCallback',
+    ],
+  })
+}
+
 const originalFetch = global.fetch
+// 15:30: between lunch and dinner, so a card with nothing urgent is the quiet moment.
+beforeEach(() => {
+  window.localStorage.clear()
+  fixClock('2026-09-23T15:30:00')
+})
 afterEach(() => {
   global.fetch = originalFetch
   jest.restoreAllMocks()
+  jest.useRealTimers()
 })
 
-describe('HeroHome mascot state priority (#525)', () => {
+describe('Bubbles card mood (#525, #593)', () => {
   it('shows worried when the pantry has unused expired food', async () => {
     mockFetch([
       { id: 'p1', name: 'milk', is_expired: true, quantity: 1 },
@@ -133,5 +152,24 @@ describe('HeroHome mascot state priority (#525)', () => {
 
     const img = await screen.findByAltText('Bubbles happy')
     expect(img).toBeInTheDocument()
+  })
+
+  it('is not surprised by expiring food when expiry priority is Off', async () => {
+    mockFetch(
+      [{ id: 'p1', name: 'eggs', is_expired: false, quantity: 3 }],
+      [{ id: 'p1', name: 'eggs', days_until_expiry: 0, is_expiring_soon: true, expiry_date: '2026-09-23' }],
+    )
+    renderHero({ initialExpiryPriority: 'off' })
+
+    expect(await screen.findByAltText('Bubbles happy')).toBeInTheDocument()
+    expect(screen.queryByAltText('Bubbles surprised')).not.toBeInTheDocument()
+  })
+
+  it('is thinking at a mealtime with nothing urgent', async () => {
+    fixClock('2026-09-23T18:30:00')
+    mockFetch([{ id: 'p1', name: 'eggs', is_expired: false, quantity: 3 }])
+    renderHero()
+
+    expect(await screen.findByAltText('Bubbles thinking')).toBeInTheDocument()
   })
 })

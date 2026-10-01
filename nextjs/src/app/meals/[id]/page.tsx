@@ -30,6 +30,13 @@ import { ingredientParts } from '@/lib/recipe-helpers'
 import { scaledIngredients } from '@/lib/recipe-helpers'
 import { scheduleMeal } from '@/lib/meal-scheduler'
 import { resolveMealAnchor } from '@/lib/meal-anchor'
+import {
+  clearPlannedTonight,
+  isPlannedForToday,
+  readPlannedTonight,
+  resolveServeAtDate,
+  savePlannedTonight,
+} from '@/lib/kitchen/planned-tonight'
 import { columnFor, dishStepSignaturesForMeal, fallbackSteps, schedulerDishesForMeal } from '@/lib/meal-dishes'
 import {
   getActiveMealCookSession,
@@ -76,9 +83,12 @@ function dishRecipeIdAt(meal: Meal, position: number): string | undefined {
   return meal.dishes.find((d) => d.position === position)?.recipe.id
 }
 
+function hhmmOf(d: Date): string {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 function defaultServeAtInput(now: Date): string {
-  const in90 = new Date(now.getTime() + 90 * 60_000)
-  return `${String(in90.getHours()).padStart(2, '0')}:${String(in90.getMinutes()).padStart(2, '0')}`
+  return hhmmOf(new Date(now.getTime() + 90 * 60_000))
 }
 
 export default function MealDetailPage() {
@@ -102,8 +112,16 @@ export default function MealDetailPage() {
   // Fixed for the life of this page load, like the #649 demo page — not
   // re-read per render, so the anchor doesn't drift while the screen is open.
   const [now] = useState(() => new Date())
-  const [mode, setMode] = useState<ServeAtMode>('start-now')
-  const [serveAtInput, setServeAtInput] = useState(() => defaultServeAtInput(now))
+  // Opens on tonight's plan when this meal has one that is still ahead (#755): the
+  // Bubbles card's "Show the timeline" lands on the timeline at that serve time.
+  const [plan] = useState(() => {
+    const p = readPlannedTonight()
+    return p && p.mealId === id && isPlannedForToday(p, now) && p.serveAtMs > now.getTime() ? p : null
+  })
+  const [mode, setMode] = useState<ServeAtMode>(plan ? 'serve-at' : 'start-now')
+  const [serveAtInput, setServeAtInput] = useState(() =>
+    plan ? hhmmOf(new Date(plan.serveAtMs)) : defaultServeAtInput(now),
+  )
   const [row, setRow] = useState<RowUiState | null>(null)
   const [confirmRemovePosition, setConfirmRemovePosition] = useState<number | null>(null)
   const [removeError, setRemoveError] = useState<string | null>(null)
@@ -326,24 +344,13 @@ export default function MealDetailPage() {
     return active && active.meal_id !== meal.id ? active : null
   }, [meal, sessionTick])
 
-  const serveAt = useMemo(() => {
-    if (mode !== 'serve-at') return undefined
-    const [h, m] = serveAtInput.split(':').map(Number)
-    if (Number.isNaN(h) || Number.isNaN(m)) return undefined
-    const d = new Date(now)
-    d.setHours(h, m, 0, 0)
-    // An "HH:MM" earlier than `now` means tomorrow, not "already passed
-    // today" (issue #652 review) — e.g. typing, or "Use <earliest>"
-    // offering, "00:30" at 23:00. Minute granularity, not raw ms: `now`
-    // carries seconds the input can't express, so a same-minute
-    // reconstruction (a few seconds "before" `now`) must not roll over.
-    const dMinute = Math.floor(d.getTime() / 60_000)
-    const nowMinute = Math.floor(now.getTime() / 60_000)
-    if (dMinute < nowMinute) {
-      d.setDate(d.getDate() + 1)
-    }
-    return d
-  }, [mode, serveAtInput, now])
+  // An "HH:MM" earlier than `now` means tomorrow, not "already passed today"
+  // (issue #652 review); the rule lives in `resolveServeAtDate` so the Bubbles
+  // card's planned-tonight record (#755) agrees with this screen.
+  const serveAt = useMemo(
+    () => (mode === 'serve-at' ? resolveServeAtDate(serveAtInput, now) : undefined),
+    [mode, serveAtInput, now],
+  )
 
   const anchor = resolveMealAnchor({
     mode,
@@ -351,6 +358,60 @@ export default function MealDetailPage() {
     now,
     serve_at: serveAt,
   })
+
+  // Tonight's planned meal (#755). A Serve at time that can be met keeps a
+  // device-local record (the Bubbles card on home reads it); Start now, or a time
+  // that is too soon, drops this meal's record. Written from the handlers below
+  // (a user's change), never on mount: reopening the screen must not undo a plan
+  // that was moved to tomorrow.
+  function persistPlan(nextMode: ServeAtMode, nextInput: string) {
+    if (!meal) return
+    const serve = nextMode === 'serve-at' ? resolveServeAtDate(nextInput, now) : undefined
+    const nextAnchor = resolveMealAnchor({
+      mode: nextMode,
+      total_minutes: timeline.total_minutes,
+      now,
+      serve_at: serve,
+    })
+    if (!serve || nextAnchor.status !== 'clock') {
+      clearPlannedTonight(meal.id)
+      return
+    }
+    // The first thing to start: the earliest placement, the main on a tie.
+    const first = timeline.placements.reduce<(typeof timeline.placements)[number] | null>(
+      (best, p) => (best === null || p.start < best.start ? p : best),
+      null,
+    )
+    savePlannedTonight({
+      v: 1,
+      mealId: meal.id,
+      title: meal.title,
+      servings: meal.servings,
+      serveAtMs: serve.getTime(),
+      startAtMs: nextAnchor.start_at.getTime() + (first?.start ?? 0) * 60_000,
+      startDish: schedulerDishes.find((d) => d.dish_id === first?.dish_id)?.title ?? null,
+    })
+  }
+
+  // A swapped or removed dish changes how long the meal takes, and with it when to
+  // start: keep an existing plan for this meal true. It only ever updates a record
+  // that is already this meal's, so it never creates a plan by itself.
+  useEffect(() => {
+    if (!meal || mode !== 'serve-at') return
+    if (readPlannedTonight()?.mealId !== meal.id) return
+    persistPlan(mode, serveAtInput)
+    // Re-run when the timeline changes; the rest is read fresh from this render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeline])
+
+  const handleModeChange = (next: ServeAtMode) => {
+    setMode(next)
+    persistPlan(next, serveAtInput)
+  }
+  const handleServeAtChange = (hhmm: string) => {
+    setServeAtInput(hhmm)
+    persistPlan(mode, hhmm)
+  }
 
   const handleServingsChange = (delta: number) => {
     if (!meal) return
@@ -679,8 +740,8 @@ export default function MealDetailPage() {
             mode={mode}
             serveAt={serveAtInput}
             anchor={anchor}
-            onModeChange={setMode}
-            onServeAtChange={setServeAtInput}
+            onModeChange={handleModeChange}
+            onServeAtChange={handleServeAtChange}
             totalMinutes={timeline.total_minutes}
           />
         </FadeInView>

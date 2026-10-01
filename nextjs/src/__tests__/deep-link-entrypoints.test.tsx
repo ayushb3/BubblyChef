@@ -1,6 +1,6 @@
 /**
  * The two surfaces that hand off into the seeded chat:
- *  - the dashboard hero CTA and tip card (#138 scope 1, #143)
+ *  - the home Bubbles card's expiring-food and tip answers (#138 scope 1, #143, #755)
  *  - expiring pantry item rows in the storage sheet's List (#138 scope 2; the
  *    cards moved there from the Pantry page in #750)
  *
@@ -30,10 +30,24 @@ function hrefParams(el: HTMLElement): URLSearchParams {
 }
 
 const originalFetch = global.fetch
+beforeEach(() => window.localStorage.clear())
 afterEach(() => {
   global.fetch = originalFetch
   jest.restoreAllMocks()
+  jest.useRealTimers()
 })
+
+/** Only `Date` is faked, so React Query and waitFor keep their timers. */
+function fixClock(iso: string) {
+  jest.useFakeTimers({
+    now: new Date(iso),
+    doNotFake: [
+      'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'setImmediate',
+      'clearImmediate', 'requestAnimationFrame', 'cancelAnimationFrame', 'queueMicrotask',
+      'nextTick', 'performance', 'hrtime', 'requestIdleCallback', 'cancelIdleCallback',
+    ],
+  })
+}
 
 // HeroHome now also fetches decorations via `useDecorations()` (#521), which
 // needs a QueryClient in context — same wrapper `renderPantry()` below uses.
@@ -46,7 +60,7 @@ function renderHero() {
   )
 }
 
-describe('dashboard hero CTA (#138)', () => {
+describe('home card: food expiring tomorrow (#138, #755)', () => {
   const urgentItem = {
     id: 'p1',
     name: 'large free-range eggs',
@@ -68,21 +82,25 @@ describe('dashboard hero CTA (#138)', () => {
     }) as unknown as typeof fetch
   })
 
-  it('deep-links the urgent item into a seeded chat, name verbatim', async () => {
+  it('seeds a plan-dinner chat with the item, name verbatim', async () => {
     renderHero()
 
-    const cta = await screen.findByRole('link', { name: /find a recipe/i })
+    const cta = await screen.findByRole('link', { name: 'Dinner with the large free-range eggs' })
     const params = hrefParams(cta)
     expect(cta.getAttribute('href')).toMatch(/^\/chat\?/)
-    expect(params.get('use')).toBe('large free-range eggs')
-    expect(params.get('expires')).toBe('2026-07-29')
+    expect(params.get('plan')).toBe('dinner')
+    expect(params.get('with')).toBe('large free-range eggs')
+    expect(screen.getByTestId('bubbles-card-message')).toHaveTextContent(
+      'Your large free-range eggs need using by tomorrow.',
+    )
   })
 })
 
-describe('dashboard hero ignores already-expired items', () => {
+describe('home card ignores already-expired items', () => {
   // days_until_expiry is negative once an item is past its date. The urgent-item
   // window was written as an unbounded `<= 1`, so expired stock matched it and —
   // because the copy only special-cases 0 — got announced as "expires tomorrow".
+  // The Bubbles card's expiring case (#755) keeps the lower bound.
   const expiredItem = {
     id: 'p-expired',
     name: 'fresh basil',
@@ -107,10 +125,9 @@ describe('dashboard hero ignores already-expired items', () => {
   it('does not describe an expired item as expiring today or tomorrow', async () => {
     renderHero()
 
-    await waitFor(() =>
-      expect(screen.queryByText(/your pantry is empty/i)).not.toBeInTheDocument()
-    )
-    expect(screen.queryByText(/fresh basil expires (today|tomorrow)/i)).not.toBeInTheDocument()
+    await screen.findByTestId('bubbles-card')
+    expect(screen.getByTestId('bubbles-card')).not.toHaveAttribute('data-card-kind', 'expiring')
+    expect(screen.queryByText(/fresh basil/i)).not.toBeInTheDocument()
   })
 
   it('does not count an expired item toward the expiring total', async () => {
@@ -141,16 +158,17 @@ describe('kitchen wall Plan dinner chalkboard (issue #651, #748)', () => {
   })
 })
 
-describe('dashboard tip card (#143)', () => {
+describe('home card: the daily tip (#143, #755)', () => {
   beforeEach(() => {
-    // The tip now skeletons until the fetches resolve (#225 spec-review
-    // finding 1) rather than rendering the fallback tip immediately, so
-    // (unlike other describe blocks in this file) the mock here must
-    // actually resolve for the tip link to ever appear.
+    // 15:30 on an even day of the year: between meals, so the card is the tip.
+    fixClock('2026-10-01T15:30:00')
+    // The card skeletons until the fetches resolve rather than rendering a
+    // fallback tip immediately, so the mock here must actually resolve for the
+    // tip link to ever appear.
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes('/api/pantry/expiring')) return jsonResponse({ items: [], count: 0 })
-      if (url.includes('/api/pantry')) return jsonResponse({ items: [], total_count: 0 })
+      if (url.includes('/api/pantry')) return jsonResponse({ items: [{ id: 'p1', name: 'eggs' }], total_count: 1 })
       if (url.includes('/api/ai/dashboard/daily')) {
         return jsonResponse({
           tip: { text: 'Zest citrus before juicing it.', category: 'technique' },
@@ -166,18 +184,13 @@ describe('dashboard tip card (#143)', () => {
   it('carries the tip the user is actually looking at', async () => {
     renderHero()
 
-    // The tip is corrected after hydration (#135's neutral-render convention),
-    // so read the rendered copy rather than assuming a fixed index.
-    // The accessible name is an explicit aria-label ("Ask Bubbles about today's
-    // tip: …") rather than the raw tip text, so screen-reader users are told
-    // what activating the card actually does.
-    const tipLink = await screen.findByRole('link', { name: /Ask Bubbles about today's tip/i })
+    // The accessible name is the key's own label ("Show me how"); the href
+    // carries the tip the card is showing, verbatim.
+    const tipLink = await screen.findByRole('link', { name: 'Show me how' })
     await waitFor(() => expect(hrefParams(tipLink).get('tip')).toBeTruthy())
 
-    // Since #391 the link is a separate "Ask Bubbles" pill beside the tip, not
-    // the whole card, so the rendered copy is read from the tip paragraph.
-    const rendered = (document.getElementById('home-tip-text')?.textContent ?? '').split('Tip:')[1]?.trim()
-    expect(rendered).toBeTruthy()
+    const rendered = (screen.getByTestId('bubbles-card-message').textContent ?? '').replace(/^Tip:\s*/, '')
+    expect(rendered).toBe('Zest citrus before juicing it.')
     expect(hrefParams(tipLink).get('tip')).toBe(rendered)
     expect(tipLink.getAttribute('href')).toMatch(/^\/chat\?tip=/)
   })

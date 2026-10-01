@@ -1,14 +1,12 @@
 /**
  * Regression tests for #391 (home screen visual polish):
  *  1. (The quick-action cards' line icons: the cards went in #748.)
- *  2. The daily tip is no longer silently clamped: when the text overflows two
- *     lines a "Read more" toggle appears, and the seeded-chat deep link moved
- *     to its own "Ask Bubbles" pill so expanding and asking are two distinct
- *     taps. The full tip text stays in the DOM either way, so the screen-reader
- *     path is unchanged.
+ *  2. The daily tip is never silently clamped. It used to be a two-line clamp
+ *     with a "Read more" toggle; on the Bubbles card (#755) the tip is the quiet
+ *     moment's one line of copy and simply wraps, in full.
  */
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import HeroHome from '@/components/dashboard/HeroHome'
 
@@ -54,36 +52,24 @@ function renderHero() {
   )
 }
 
-/** The tip `<p>` — `getByText(/^Tip:/)` would match the inner `<strong>`. */
-function tipParagraph(): HTMLElement {
-  const el = document.getElementById('home-tip-text')
-  if (!el) throw new Error('tip paragraph not rendered')
-  return el
-}
-
-/** jsdom has no layout, so overflow is simulated by stubbing the box metrics. */
-function stubOverflow(overflows: boolean) {
-  Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
-    configurable: true,
-    get() { return overflows ? 60 : 30 },
-  })
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
-    configurable: true,
-    get() { return 30 },
-  })
-}
-
 const originalFetch = global.fetch
-const originalScrollHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight')
-const originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight')
+beforeEach(() => {
+  window.localStorage.clear()
+  // 15:30 on an even day of the year: between meals, so the card is the daily tip.
+  jest.useFakeTimers({
+    now: new Date('2026-10-01T15:30:00'),
+    doNotFake: [
+      'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'setImmediate',
+      'clearImmediate', 'requestAnimationFrame', 'cancelAnimationFrame', 'queueMicrotask',
+      'nextTick', 'performance', 'hrtime', 'requestIdleCallback', 'cancelIdleCallback',
+    ],
+  })
+})
 
 afterEach(() => {
   global.fetch = originalFetch
-  if (originalScrollHeight) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', originalScrollHeight)
-  else delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollHeight
-  if (originalClientHeight) Object.defineProperty(HTMLElement.prototype, 'clientHeight', originalClientHeight)
-  else delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientHeight
   jest.restoreAllMocks()
+  jest.useRealTimers()
 })
 
 // The three line-icon quick-action cards (#391) went with the old dashboard when
@@ -101,54 +87,22 @@ describe('quick-action row is gone from the kitchen home (#748)', () => {
   })
 })
 
-describe('daily tip expand/collapse (#391)', () => {
-  it('shows no "Read more" control when the tip fits in two lines', async () => {
-    stubOverflow(false)
-    mockFetch('Taste as you cook.')
+describe('the daily tip on the Bubbles card (#391, #755)', () => {
+  it('shows the whole tip: the card wraps it, nothing is clamped or hidden', async () => {
+    mockFetch(LONG_TIP)
     renderHero()
 
-    await screen.findByText(/^Tip:/)
+    const message = await screen.findByTestId('bubbles-card-message')
+    expect(message).toHaveTextContent(`Tip: ${LONG_TIP}`)
+    expect(message.className).not.toMatch(/line-clamp/)
     expect(screen.queryByRole('button', { name: /read more/i })).toBeNull()
-    expect(tipParagraph()).toHaveClass('line-clamp-2')
   })
 
-  it('offers "Read more" when the tip overflows, and expanding removes the clamp', async () => {
-    stubOverflow(true)
+  it('"Show me how" seeds the chat with the full tip the card is showing', async () => {
     mockFetch(LONG_TIP)
     renderHero()
 
-    await screen.findByText(/^Tip:/)
-    const tipText = tipParagraph()
-    // Full text is in the DOM even while clamped — the clamp is CSS-only.
-    expect(tipText.textContent).toContain('before the sauce goes on.')
-    expect(tipText).toHaveClass('line-clamp-2')
-
-    const toggle = await screen.findByRole('button', { name: /read more/i })
-    expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(toggle).toHaveAttribute('aria-controls', tipText.id)
-
-    fireEvent.click(toggle)
-
-    await waitFor(() => expect(tipText).not.toHaveClass('line-clamp-2'))
-    const collapse = screen.getByRole('button', { name: /show less/i })
-    expect(collapse).toHaveAttribute('aria-expanded', 'true')
-
-    fireEvent.click(collapse)
-    await waitFor(() => expect(tipText).toHaveClass('line-clamp-2'))
-  })
-
-  it('keeps the seeded-chat deep link as its own "Ask Bubbles" pill, labelled with the full tip', async () => {
-    stubOverflow(true)
-    mockFetch(LONG_TIP)
-    renderHero()
-
-    const ask = await screen.findByRole('link', { name: /Ask Bubbles about today's tip/i })
-    expect(ask.getAttribute('aria-label')).toBe(`Ask Bubbles about today's tip: ${LONG_TIP}`)
-    expect(ask.getAttribute('href')).toBe(`/chat?${new URLSearchParams({ tip: LONG_TIP })}`)
-
-    // The tip text itself is not inside the link: expanding is a separate tap.
-    expect(ask.textContent).not.toContain('Tip:')
-    const toggle = await screen.findByRole('button', { name: /read more/i })
-    expect(ask.contains(toggle)).toBe(false)
+    const how = await screen.findByRole('link', { name: 'Show me how' })
+    expect(how.getAttribute('href')).toBe(`/chat?${new URLSearchParams({ tip: LONG_TIP })}`)
   })
 })
