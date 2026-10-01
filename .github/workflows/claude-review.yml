@@ -58,6 +58,7 @@ jobs:
       contents: read
       pull-requests: write
       issues: read
+      actions: read
       id-token: write
 
     steps:
@@ -74,6 +75,9 @@ jobs:
         id: baseonly
         if: github.event.action == 'synchronize'
         env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.event.pull_request.head.sha }}
           BASE: ${{ github.event.pull_request.base.ref }}
@@ -81,8 +85,35 @@ jobs:
           set -eu
           read -r _ p1 p2 extra <<<"$(git rev-list --parents -n1 "$AFTER")"
           if [ -n "${p2:-}" ] && [ -z "${extra:-}" ] && [ "$p1" = "$BEFORE" ]              && git merge-base --is-ancestor "$p2" "origin/$BASE"              && [ -z "$(git show --format= --cc "$AFTER")" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Push only merged $BASE into the branch with no conflict edits; keeping the existing review."
+            # Keeping the existing review is only sound if the commit being merged INTO
+            # was itself reviewed (or inherited a review the same way). A real push
+            # whose review run was cancelled by a quick follow-up push (cancel-in-progress
+            # above) was never reviewed, and a review job can also conclude `success`
+            # without posting anything (the action skips PRs that edit this workflow, and
+            # may run out of turns). So "reviewed" means: a `review` job for $BEFORE
+            # succeeded AND either a claude[bot] verdict comment was updated after that
+            # job started, or $BEFORE itself inherited its review through this step.
+            # Fail open: if any API call fails or nothing matches, the review runs.
+            # The run's own conclusion is not checked: the verdict job fails it
+            # whenever an agent-loop verdict holds, which says nothing about the review.
+            reviewed=0
+            for run_id in $(gh api "repos/$REPO/actions/workflows/claude-review.yml/runs?head_sha=$BEFORE&event=pull_request&per_page=50" --jq '.workflow_runs[].id' || true); do
+              # "<started_at> <conclusion of the Claude review step>" for a successful review job.
+              job=$(gh api "repos/$REPO/actions/runs/$run_id/jobs" --jq '[.jobs[] | select(.name == "review" and .conclusion == "success") | "\(.started_at) \([.steps[] | select(.name == "Claude review") | .conclusion] | .[0] // "none")"] | .[0] // empty' || true)
+              [ -n "${job:-}" ] || continue
+              read -r started step <<<"$job"
+              # The Claude step skipped means $BEFORE was itself a base-only merge that
+              # inherited its review through this same check: the chain stays valid.
+              if [ "$step" = skipped ]; then reviewed=1; break; fi
+              posted=$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" --jq ".[] | select(.user.login == \"claude[bot]\" and (.body | contains(\"<!-- verdict:\")) and .updated_at >= \"$started\") | .id" || true)
+              if [ -n "${posted:-}" ]; then reviewed=1; break; fi
+            done
+            if [ "$reviewed" = 1 ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "Push only merged $BASE into the branch with no conflict edits; keeping the existing review."
+            else
+              echo "Push only merged $BASE, but the previous head ${BEFORE:0:8} has no completed review (cancelled or never ran); reviewing this commit."
+            fi
           fi
 
       - name: Claude review
@@ -150,6 +181,10 @@ jobs:
               `needs changes`. Never write "looks mergeable" together with
               "the human should accept/confirm/decide …"; that combination is
               `needs a human`.
+              Write the verdict as a literal line `**Verdict: `<one of the three>`**`
+              in EVERY summary, including a re-review. A heading such as
+              "## Re-review (round 3) — `looks mergeable`" is fine as a title, but it
+              does not replace that line, and the two must agree.
             - The findings that drove the verdict, most severe first, one line each.
             - Anything you could not check.
             Keep it short enough to read on a phone.
