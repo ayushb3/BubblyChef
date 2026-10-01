@@ -145,7 +145,7 @@ describe('case 1: something in progress', () => {
     renderHome()
 
     const c = await card()
-    expect(message()).toBe('Back to the lemon pasta? You were on step 4 of 7.')
+    expect(message()).toBe('Back to the Lemon pasta? You were on step 4 of 7.')
     expect(keys()).toEqual(['I finished it', 'Pick up at step 4'])
     expect(within(c).getByRole('link', { name: 'Pick up at step 4' })).toHaveAttribute(
       'href',
@@ -178,13 +178,54 @@ describe('case 1: something in progress', () => {
     renderHome()
 
     const c = await card()
-    expect(message()).toBe('Back to the pasta night? You were on step 1 of 7.')
+    expect(message()).toBe('Back to the Pasta night? You were on step 1 of 7.')
     expect(within(c).getByRole('link', { name: 'Pick up at step 1' })).toHaveAttribute(
       'href',
       '/meals/m-1/cook',
     )
     fireEvent.click(within(c).getByRole('button', { name: 'I finished it' }))
     await waitFor(() => expect(getActiveMealCookSession()).toBeNull())
+  })
+
+  it('"I finished it" on a guided cook ends it in the scene too: the steam stops, no reload (#837)', async () => {
+    startGuidedCookSession('r-lemon')
+    saveCookProgress('r-lemon', 3)
+    mockWorld()
+    renderHome()
+
+    const c = await card()
+    expect(screen.getByTestId('stove-steam')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: /Bubbles is at the stove, cooking/ })).toBeInTheDocument()
+
+    fireEvent.click(within(c).getByRole('button', { name: 'I finished it' }))
+    await waitFor(() => expect(screen.queryByTestId('stove-steam')).toBeNull())
+    expect(screen.getByRole('group', { name: /Bubbles is at the stove\./ })).toBeInTheDocument()
+  })
+
+  it('"I finished it" on a meal cook-along ends it in the scene too (#837)', async () => {
+    const meal = {
+      id: 'm-1',
+      user_id: 'u',
+      title: 'Pasta night',
+      description: null,
+      servings: 2,
+      constraints: { kitchen_limits: [], exclusive_tags: [], recipe_constraints: {} },
+      is_draft: false,
+      source_type: 'chat',
+      last_cooked_at: null,
+      times_cooked: 0,
+      created_at: 't',
+      updated_at: 't',
+      dishes: [{ role: 'main', position: 0, recipe: { ...LEMON_PASTA, id: 'd-1', steps: null } }],
+    } as unknown as Meal
+    startMealCookSession('m-1', ['d-1'], Date.now(), dishStepSignaturesForMeal(meal))
+    mockWorld({ meal })
+    renderHome()
+
+    const c = await card()
+    expect(screen.getByTestId('stove-steam')).toBeInTheDocument()
+    fireEvent.click(within(c).getByRole('button', { name: 'I finished it' }))
+    await waitFor(() => expect(screen.queryByTestId('stove-steam')).toBeNull())
   })
 
   it('a recipe that cannot be fetched gives no cook card, and the next case shows', async () => {
@@ -290,7 +331,7 @@ describe("case 2: tonight's planned meal", () => {
     renderHome()
 
     const c = await card()
-    expect(message()).toBe('Dinner for two at 7:00. Start the rice at 6:15 and everything lands together.')
+    expect(message()).toBe('Dinner for two at 7:00. Start the Rice at 6:15 and everything lands together.')
     expect(keys()).toEqual(['Move it to tomorrow', 'Show the timeline'])
     expect(within(c).getByRole('link', { name: 'Show the timeline' })).toHaveAttribute('href', '/meals/m-1')
   })
@@ -336,7 +377,7 @@ describe('case 3: food expires today or tomorrow', () => {
     expect(keys()).toEqual([
       'Dinner with the romaine',
       'Something in 20 minutes',
-      'Make the lemon pasta again',
+      'Make the Lemon pasta again',
       'Plan a whole dinner',
     ])
     expect(within(c).getByRole('link', { name: 'Dinner with the romaine' })).toHaveAttribute(
@@ -556,7 +597,7 @@ describe('Not now', () => {
     renderHome()
     await card()
     expect(screen.getByTestId('bubbles-card')).toHaveAttribute('data-card-kind', 'cook')
-    expect(message()).toBe('Back to the lemon pasta? You were on step 5 of 7.')
+    expect(message()).toBe('Back to the Lemon pasta? You were on step 5 of 7.')
   })
 
   it('the cross is a 44px target named Not now', async () => {

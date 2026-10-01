@@ -16,6 +16,10 @@
  * `balance` is `null` while it is unknown (loading or failed): the counter is
  * hidden rather than flashing a `0`. Its slot is reserved, so the title does not
  * jump when the balance lands.
+ *
+ * The header is `relative z-10` (passed to `PageHeader`) so it paints over the wall
+ * below it: the counter's "+N" tag hangs under the counter, over the wall's top edge
+ * (issue #839).
  */
 import BubblesCounter from '@/components/ui/BubblesCounter'
 import PageHeader from '@/components/layout/PageHeader'
@@ -29,7 +33,12 @@ export interface KitchenHeaderProps {
 
 export default function KitchenHeader({ eyebrow, balance }: KitchenHeaderProps) {
   return (
-    <PageHeader eyebrow={eyebrow} eyebrowTestId="kitchen-eyebrow" title="Your kitchen">
+    <PageHeader
+      eyebrow={eyebrow}
+      eyebrowTestId="kitchen-eyebrow"
+      title="Your kitchen"
+      className="relative z-10"
+    >
       <div className="mr-1 flex min-w-[76px] justify-end" data-testid="kitchen-bubbles-balance-group">
         {balance !== null && <BubblesCounter value={balance} testId="kitchen-bubbles-balance" />}
       </div>

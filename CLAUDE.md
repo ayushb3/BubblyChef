@@ -127,6 +127,7 @@ BubblyChef/
 | `/profile` | Profile | User settings, dietary preferences |
 | `/login` | Auth | Sign in / sign up (Supabase) |
 | `/scan` | Scan | Receipt OCR upload, then hand-off to the kitchen put-away |
+| `/grocery` | Grocery list | Client-side list (`lib/grocery*.ts`, localStorage per user): category groups, check-off, quantity edit, free-text add, Regenerate, Share. Removed or cleared suggestions stay dismissed until the pantry state changes. Entry from the storage rows' cart key, the bell, and the meal and recipe "N to buy" lines (issue #497). No nav tab |
 
 Receipt scanning has two entry points that share one hand-off: the full-page
 `/scan` route (`app/scan/page.tsx`) and the quick path inside the pantry add

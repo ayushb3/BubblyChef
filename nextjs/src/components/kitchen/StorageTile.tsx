@@ -145,6 +145,8 @@ export interface RowResolve {
   showButtons: boolean
   /** "Cook this": a chat seeded with this item, for food that is expiring soon. */
   cookHref?: string
+  /** "Add to list" (issue #497): the cart key on the icon strip. Omitted: no key. */
+  onAddToList?: () => void
   onResolve: (outcome: ResolveOutcome) => void
 }
 
@@ -284,13 +286,14 @@ export function StorageRow({
     return (
       <li className={ROW_BORDER}>
         {button}
-        {/* One strip under the row: three icon keys, cook / used it / tossed (#813). */}
+        {/* One strip under the row: icon keys, cook / add to list / used it / tossed (#813, #497). */}
         <ResolveActions
           variant="pills"
           itemName={item.name}
           pending={resolve.pending}
           onResolve={resolve.onResolve}
           cookHref={resolve.cookHref}
+          onAddToList={resolve.onAddToList}
         />
       </li>
     )

@@ -6,7 +6,12 @@
 import { act, renderHook } from '@testing-library/react'
 import { useBubblesSpot } from '@/hooks/useBubblesSpot'
 import { summarizePlaces, emptyPlaceSummaries } from '@/lib/kitchen/places'
-import { startGuidedCookSession, endCookSession } from '@/lib/cook-session'
+import { startGuidedCookSession, endCookSession, clearActiveCookSession } from '@/lib/cook-session'
+import {
+  startMealCookSession,
+  endMealCookSession,
+  clearActiveMealCookSession,
+} from '@/lib/meal-cook-session'
 
 const TODAY = '2026-10-01'
 const wilting = () => summarizePlaces([{ location: 'fridge', expiry_date: '2026-10-02' }], TODAY)
@@ -72,5 +77,33 @@ describe('useBubblesSpot (#752)', () => {
       window.dispatchEvent(new Event('focus'))
     })
     expect(result.current.cooking).toBe(false)
+  })
+
+  // Issue #837: the `storage` event only reaches OTHER tabs, so a cook ended in
+  // this tab (the home card's "I finished it", any end path) must tell the scene
+  // itself. Each case below ends the session with no event dispatched by the test.
+  describe('a cook ended in this same tab (#837)', () => {
+    const mealStart = () => startMealCookSession('m-1', ['d-1'], Date.now(), ['sig'])
+
+    it.each([
+      ['a guided cook is marked cooked (endCookSession)', () => startGuidedCookSession('r1'), () => endCookSession('r1')],
+      ['a guided cook is abandoned (clearActiveCookSession)', () => startGuidedCookSession('r1'), () => clearActiveCookSession('r1')],
+      ['a meal cook is marked cooked or its pantry update skipped (endMealCookSession)', mealStart, () => endMealCookSession('m-1')],
+      ['a meal cook is abandoned (clearActiveMealCookSession)', mealStart, () => clearActiveMealCookSession('m-1')],
+    ])('stops cooking when %s', (_name, start, end) => {
+      start()
+      const { result } = renderHook(() => useBubblesSpot({ places: wilting() }))
+      expect(result.current).toEqual({ spot: 'stove', cooking: true })
+
+      act(() => end())
+      expect(result.current).toEqual({ spot: 'fridge', cooking: false })
+    })
+
+    it('starts cooking when a cook begins in this tab', () => {
+      const { result } = renderHook(() => useBubblesSpot({ places: null }))
+      expect(result.current.cooking).toBe(false)
+      act(() => startGuidedCookSession('r1'))
+      expect(result.current.cooking).toBe(true)
+    })
   })
 })

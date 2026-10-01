@@ -9,6 +9,7 @@
  */
 
 import { useState, type ReactNode } from 'react'
+import Link from 'next/link'
 import { motion } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
 import { useMotionConfig, useReactionVariants } from '@/lib/motion'
@@ -166,8 +167,8 @@ type AddState = 'idle' | 'adding' | 'added' | 'error'
  * - added: crossfades to "N on your grocery list" with a tick that pops;
  * - failed: the line wiggles once and offers the key again.
  *
- * The grocery list is per-browser and has no page yet (issue #497), so the
- * confirmation carries no "View list" link. Remount with a new `key` when the
+ * The grocery list is per-browser (`lib/grocery-store.ts`); the confirmation
+ * links to its page, `/grocery` (issue #497). Remount with a new `key` when the
  * item list changes.
  */
 export function ToBuyLine({
@@ -225,6 +226,12 @@ export function ToBuyLine({
         <span>
           <b>{items.length} on your grocery list</b>
         </span>
+        <Link
+          href="/grocery"
+          className="inline-flex min-h-[44px] items-center font-extrabold underline underline-offset-[3px]"
+        >
+          View list
+        </Link>
       </motion.div>
     )
   }

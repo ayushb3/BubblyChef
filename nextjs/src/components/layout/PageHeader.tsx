@@ -17,6 +17,8 @@
  *    until the client clock is known); the line keeps its height either way, so
  *    nothing shifts. `eyebrowTestId` is a test hook for it.
  *  - `children`: the controls, laid out in a right-aligned row.
+ *  - `className`: extra classes for the `<header>` (the kitchen adds
+ *    `relative z-10` so its bubbles "+N" tag paints over the wall below).
  */
 import type { ReactNode } from 'react'
 
@@ -24,12 +26,21 @@ export interface PageHeaderProps {
   eyebrow: string
   title: string
   eyebrowTestId?: string
+  className?: string
   children?: ReactNode
 }
 
-export default function PageHeader({ eyebrow, title, eyebrowTestId, children }: PageHeaderProps) {
+export default function PageHeader({
+  eyebrow,
+  title,
+  eyebrowTestId,
+  className,
+  children,
+}: PageHeaderProps) {
   return (
-    <header className="flex min-h-[58px] flex-wrap items-center justify-between gap-x-2 gap-y-1 px-4 py-1.5 max-[359px]:px-3">
+    <header
+      className={`flex min-h-[58px] flex-wrap items-center justify-between gap-x-2 gap-y-1 px-4 py-1.5 max-[359px]:px-3${className ? ` ${className}` : ''}`}
+    >
       <div className="min-w-fit flex-1">
         <p
           data-testid={eyebrowTestId}

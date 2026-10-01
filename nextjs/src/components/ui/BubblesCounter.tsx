@@ -16,7 +16,10 @@ import { useCountUp, useMotionConfig, useReactionVariants } from '@/lib/motion'
  *
  * When `value` rises it pops (scale 1 -> 1.12 -> 1, 260 ms), the digits count
  * up from the old value (~600 ms, at most 30 ticks, eased out) and a "+N" tag
- * rises 16px and fades (700 ms). It does none of that on first render or on a
+ * rises 16px and fades (700 ms). The tag hangs off the counter's bottom-right
+ * corner, not out to its left: to the left is the header's title, and a wide
+ * balance pushed the tag onto it (issue #839). Under the counter it always sits
+ * inside the counter's own width. It does none of that on first render or on a
  * drop. With reduced motion the number swaps once and "+N" fades in place.
  * The accessible name is always the final value ("240 bubbles"), never the
  * in-between digits.
@@ -96,7 +99,7 @@ export default function BubblesCounter({ value, className, testId }: BubblesCoun
           key={riseKey}
           aria-hidden="true"
           data-testid="bubbles-counter-rise"
-          className="font-pixel pointer-events-none absolute top-0 right-[calc(100%+8px)] border-2 border-[color:var(--color-text)] px-[5px] text-sm leading-[18px] font-bold whitespace-nowrap text-[color:var(--color-text)] shadow-[2px_2px_0_var(--color-text)]"
+          className="font-pixel pointer-events-none absolute top-[calc(100%+8px)] right-0 border-2 border-[color:var(--color-text)] px-[5px] text-sm leading-[18px] font-bold whitespace-nowrap text-[color:var(--color-text)] shadow-[2px_2px_0_var(--color-text)]"
           style={{ background: 'var(--color-accent)' }}
           initial={reduced ? { opacity: 0 } : { opacity: 1, y: 0 }}
           animate={reduced ? { opacity: [0, 1, 1, 0] } : { opacity: 0, y: -16 }}
