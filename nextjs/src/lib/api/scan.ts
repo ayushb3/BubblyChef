@@ -37,6 +37,56 @@ export class ScanError extends Error {
 export const SCAN_CLIENT_TIMEOUT_CODE = 'client_timeout'
 
 /**
+ * Codes this client derives itself, for failures where the AI service never
+ * got to send one (issue #642): the fetch threw, the proxy/platform answered
+ * with a bare status or a non-JSON body, or the file was refused before any
+ * upload. The copy for each lives in `lib/scan-error-copy.ts`.
+ */
+export const SCAN_NETWORK_ERROR_CODE = 'scan_network_error'
+export const SCAN_NOT_AN_IMAGE_CODE = 'scan_not_an_image'
+
+/**
+ * Fall back to the HTTP status when an error response carries no sanitized
+ * code — e.g. a platform-generated HTML 502/504, a 429, or an expired
+ * session. A code the AI service did send always wins over this.
+ */
+function codeForStatus(status: number): string {
+  switch (status) {
+    case 401:
+      return 'scan_auth_expired'
+    case 413:
+      return 'scan_file_too_large'
+    case 429:
+      return 'scan_rate_limited'
+    case 408:
+    case 504:
+      return 'scan_timeout'
+    case 502:
+    case 503:
+      return 'vision_provider_unavailable'
+    default:
+      return 'scan_failed'
+  }
+}
+
+/** Coerce a 200 body into a `ScanResult`, or throw if it is not one. */
+function toScanResult(body: unknown): ScanResult {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new ScanError('Malformed scan response', 'scan_failed')
+  }
+  const b = body as Partial<ScanResult>
+  const list = (v: unknown) => (Array.isArray(v) ? v : [])
+  return {
+    ocr_text: typeof b.ocr_text === 'string' ? b.ocr_text : '',
+    ready_to_add: list(b.ready_to_add),
+    needs_review: list(b.needs_review),
+    skipped: list(b.skipped),
+    total_items: typeof b.total_items === 'number' ? b.total_items : 0,
+    warnings: list(b.warnings),
+  }
+}
+
+/**
  * Resize image to stay under the upload limit.
  * Scales down progressively until the file is small enough.
  */
@@ -80,6 +130,12 @@ export async function uploadReceipt(
   file: File,
   options?: { preprocess?: boolean; preprocess_mode?: string; signal?: AbortSignal },
 ): Promise<ScanResult> {
+  // Refuse a clearly-not-an-image file before spending an upload on it. An
+  // empty MIME type is let through: some pickers report none for HEIC.
+  if (file.type && !file.type.startsWith('image/')) {
+    throw new ScanError('Not an image', SCAN_NOT_AN_IMAGE_CODE)
+  }
+
   const formData = new FormData()
   formData.append('file', await compressImage(file))
   if (options?.preprocess !== undefined) {
@@ -104,13 +160,20 @@ export async function uploadReceipt(
     })
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Scan failed' }))
-      const message: string = err.error ?? `Scan failed: ${res.status}`
-      const code: string | undefined = err.code
-      throw new ScanError(message, code ?? 'scan_failed')
+      const err = await res.json().catch(() => null)
+      const message: string = err?.error ?? `Scan failed: ${res.status}`
+      const code: string | undefined = err?.code
+      throw new ScanError(message, code ?? codeForStatus(res.status))
     }
 
-    return await res.json()
+    // A 200 with a non-JSON / wrong-shaped body is a failure the user should
+    // see as a friendly one, not a raw SyntaxError or a TypeError downstream.
+    // (Abort mid-read is still an AbortError, handled in the catch below.)
+    const body: unknown = await res.json().catch((e: unknown) => {
+      if ((e as DOMException)?.name === 'AbortError') throw e
+      throw new ScanError('Malformed scan response', 'scan_failed')
+    })
+    return toScanResult(body)
   } catch (err) {
     // Covers an abort firing at any point in the request — while `fetch`
     // itself is still in flight, or while the response body is still being
@@ -121,7 +184,9 @@ export async function uploadReceipt(
     if ((err as DOMException)?.name === 'AbortError') {
       throw new ScanError('Scan timed out', SCAN_CLIENT_TIMEOUT_CODE)
     }
-    throw err
+    // `fetch` itself throwing is a network failure (offline, DNS, the
+    // connection dropping) — never let the raw TypeError reach a caller.
+    throw new ScanError('Network error', SCAN_NETWORK_ERROR_CODE)
   } finally {
     clearTimeout(timer)
     options?.signal?.removeEventListener('abort', onExternalAbort)

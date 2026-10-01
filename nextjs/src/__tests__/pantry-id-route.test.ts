@@ -22,10 +22,11 @@ jest.mock('@/lib/response-helpers', () => ({
 
 jest.mock('@/lib/api/ai-proxy', () => ({
   normalizeBaseUnit: jest.fn(),
+  estimateExpiry: jest.fn(),
 }))
 
 import { requireAuth } from '@/lib/response-helpers'
-import { normalizeBaseUnit } from '@/lib/api/ai-proxy'
+import { normalizeBaseUnit, estimateExpiry } from '@/lib/api/ai-proxy'
 
 const mockNormalize = normalizeBaseUnit as jest.Mock
 
@@ -154,6 +155,16 @@ describe('PUT /api/pantry/[id] estimated_expiry clearing (#380)', () => {
     await PUT(request, { params: Promise.resolve({ id: 'item-1' }) })
 
     expect(storedUpdates.current.estimated_expiry).toBeUndefined()
+  })
+
+  it('#705 guard: an edit that clears the expiry stays cleared — PUT never re-estimates', async () => {
+    const storedUpdates = { current: {} as Record<string, unknown> }
+    ;(requireAuth as jest.Mock).mockResolvedValue([makeSupabaseMock(storedUpdates), mockUser])
+
+    await PUT(makeRequest({ expiry_date: null }), { params: Promise.resolve({ id: 'item-1' }) })
+
+    expect(storedUpdates.current.expiry_date).toBeNull()
+    expect(estimateExpiry).not.toHaveBeenCalled()
   })
 })
 

@@ -16,7 +16,6 @@ import AskBubblesOverlay, { type AskBubblesAmendment } from '@/components/cook/A
 import { fetchMeal, requestMealCookProposal, confirmMealCook, MealCookError } from '@/lib/api/meals'
 import { dishStepSignaturesForMeal, schedulerDishesForMeal } from '@/lib/meal-dishes'
 import { formatClockTime } from '@/lib/meal-anchor'
-import { localDateString } from '@/lib/date'
 import {
   cookedDishIds,
   buildMealCookRequest,
@@ -556,7 +555,6 @@ export default function MealCookPage() {
         cook_ref: session.cook_id ?? '',
         recipe_ids: cookedIds,
         deductions,
-        date: localDateString(),
       })
       // Success, `already_confirmed` included — the server's claim already
       // decided nothing double-deducts; end the session and invalidate.

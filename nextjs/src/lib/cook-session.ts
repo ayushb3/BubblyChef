@@ -1,3 +1,7 @@
+import type { MealCookIngredient } from '@/types/meals'
+import { isMealCookIngredient } from '@/lib/meal-cook-session'
+import { sanitizeMealCookIngredients } from '@/lib/meal-cook-deduction'
+
 /**
  * Issue #440 — cook-session lifecycle, tracked independently of any single
  * page's component state.
@@ -99,11 +103,42 @@
  *     bookmark, browser back/forward from elsewhere, or simply returning to
  *     /recipes later — so a saved session there should surface as a
  *     dismissible "Resume cooking?" banner instead of silently reopening.
+ *
+ * --- Issues #489 + #490 — a confirmed mid-cook amendment --------------------
+ *
+ * A chat amendment ("no cream, use a roux" -> "Update what I'm cooking") used to
+ * live only in the chat page's React state: "Finished cooking" still deducted
+ * the stored recipe, and a reload dropped it. `saveAmendedCook` /
+ * `getAmendedCook` / `clearAmendedCook` give it a persisted home next to the
+ * rest of the single-recipe cook session, single-slot for the same reason
+ * `ActiveCookSession` is: one cook is in progress at a time.
+ *
+ * It holds the same thing the meal cook-along keeps per dish (#654): the
+ * model's FULL replacement list as `MealCookIngredient`s, validated by the
+ * same `isMealCookIngredient` and cleaned by the same
+ * `sanitizeMealCookIngredients`. `CookModal` hands it to `cookRecipe` as the
+ * `ingredients` override, so the deduction matches what was cooked.
+ *
+ * It is an overlay on the cook, never an edit of the recipe: the saved row is
+ * not touched. So it is keyed by recipe id, expires (an abandoned cook must not
+ * deduct its substitutions days later), and is cleared by `endCookSession` (a
+ * confirmed deduction), by `startCookSession` / `startGuidedCookSession` (a
+ * fresh cook of the recipe begins from the original) and by the chat page when
+ * the cook is dismissed. `clearActiveCookSession` deliberately does NOT clear
+ * it: the guided flow calls that on its way to the deduction sheet, which still
+ * needs the amended list.
  */
 
 const ENDED_KEY = 'bubblychef:cook:endedRecipeId'
 const SESSION_KEY = 'bubblychef:cook:activeSession'
 const FLOW_OPEN_KEY = 'bubblychef:cook:guidedFlowOpen'
+const AMENDED_KEY = 'bubblychef:cook:amendedCook'
+
+/**
+ * How long an amendment stays valid. A cook is an evening, not a week: past
+ * this the amendment is a leftover of an abandoned cook and is ignored.
+ */
+const AMENDED_TTL_MS = 12 * 60 * 60 * 1000
 
 /**
  * Cap on how many "ended" recipe ids are retained. This is a `localStorage`
@@ -228,6 +263,9 @@ export function startCookSession(recipeId: string): void {
   if (ids.includes(recipeId)) {
     writeEndedRecipeIds(ids.filter((id) => id !== recipeId))
   }
+  // A fresh cook starts from the recipe as written (#489): an amendment left by
+  // an abandoned earlier cook of this recipe must not follow it.
+  clearAmendedCook(recipeId)
 }
 
 /**
@@ -266,6 +304,10 @@ export function endCookSession(recipeId: string): void {
   if (active && active.recipeId === recipeId) {
     writeActiveSession(null)
   }
+
+  // #489 — the amendment was part of the cook that just ended; a later cook of
+  // this recipe starts from the original list.
+  clearAmendedCook(recipeId)
 }
 
 /**
@@ -373,5 +415,101 @@ export function wasGuidedFlowOpen(recipeId: string): boolean {
     return window.sessionStorage.getItem(FLOW_OPEN_KEY) === recipeId
   } catch {
     return false
+  }
+}
+
+// ─── Amended ingredients (#489 + #490) ───────────────────────────────────────
+
+/** A confirmed mid-cook amendment, as persisted. */
+export interface AmendedCook {
+  recipeId: string
+  recipeTitle: string
+  /** The model's FULL replacement list, not a diff. */
+  ingredients: MealCookIngredient[]
+  changeSummary: string | null
+  savedAtMs: number
+}
+
+function readAmendedCook(): AmendedCook | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(AMENDED_KEY)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    const a = parsed as Record<string, unknown>
+    if (typeof a.recipeId !== 'string') return null
+    if (!Array.isArray(a.ingredients) || a.ingredients.length === 0) return null
+    if (!a.ingredients.every(isMealCookIngredient)) return null
+    if (typeof a.savedAtMs !== 'number' || !Number.isFinite(a.savedAtMs)) return null
+    return {
+      recipeId: a.recipeId,
+      recipeTitle: typeof a.recipeTitle === 'string' ? a.recipeTitle : '',
+      ingredients: a.ingredients,
+      changeSummary: typeof a.changeSummary === 'string' ? a.changeSummary : null,
+      savedAtMs: a.savedAtMs,
+    }
+  } catch {
+    // Storage unavailable or corrupt — behave as if nothing was amended.
+    return null
+  }
+}
+
+/**
+ * Persists the confirmed amendment for `recipeId`. The list is cleaned first
+ * (blank-named lines dropped); when nothing usable is left nothing is written.
+ * A no-op for a recipe whose cook already ended: there is no cook to amend.
+ */
+export function saveAmendedCook(
+  recipeId: string,
+  amendment: { title?: string; ingredients: MealCookIngredient[]; changeSummary?: string | null },
+): void {
+  if (typeof window === 'undefined' || isCookSessionEnded(recipeId)) return
+  const cleaned = sanitizeMealCookIngredients(amendment.ingredients).filter(
+    (ing): ing is MealCookIngredient => typeof ing !== 'string',
+  )
+  if (cleaned.length === 0) return
+  const record: AmendedCook = {
+    recipeId,
+    recipeTitle: amendment.title ?? '',
+    ingredients: cleaned,
+    changeSummary: amendment.changeSummary ?? null,
+    savedAtMs: Date.now(),
+  }
+  try {
+    window.localStorage.setItem(AMENDED_KEY, JSON.stringify(record))
+  } catch {
+    // Best effort — worst case a reload loses the amendment, the pre-#490
+    // behaviour, not a new failure mode.
+  }
+}
+
+/**
+ * The amendment on record for `recipeId`, or `null`: none was saved, it was
+ * saved for a different recipe, it expired, the recipe's cook already ended, or
+ * the stored value is corrupt.
+ */
+export function getAmendedCook(recipeId: string): AmendedCook | null {
+  const record = readAmendedCook()
+  if (!record || record.recipeId !== recipeId) return null
+  if (Date.now() - record.savedAtMs > AMENDED_TTL_MS) return null
+  if (isCookSessionEnded(recipeId)) return null
+  return record
+}
+
+/** Just the amended list for `recipeId`, or `null` (see `getAmendedCook`). */
+export function getAmendedIngredients(recipeId: string): MealCookIngredient[] | null {
+  return getAmendedCook(recipeId)?.ingredients ?? null
+}
+
+/** Drops the amendment, but only when it is the one on record for `recipeId`. */
+export function clearAmendedCook(recipeId: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    const record = readAmendedCook()
+    if (record && record.recipeId !== recipeId) return
+    window.localStorage.removeItem(AMENDED_KEY)
+  } catch {
+    // Best effort.
   }
 }

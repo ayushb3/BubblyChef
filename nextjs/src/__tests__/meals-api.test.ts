@@ -9,9 +9,11 @@ import {
   fetchSideAlternatives,
   requestMealCookProposal,
   confirmMealCook,
+  deleteMeal,
   MealCookError,
 } from '@/lib/api/meals'
 import type { MealCookRequest, MealCookConfirmRequest } from '@/types/meals'
+import { clientTimeZone } from '@/lib/date'
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return { ok, status, json: async () => body } as Response
@@ -125,7 +127,6 @@ describe('confirmMealCook', () => {
     cook_ref: 'abc123',
     recipe_ids: ['r1'],
     deductions: [],
-    date: '2026-09-29',
   }
 
   it('resolves with the parsed response on success', async () => {
@@ -141,6 +142,16 @@ describe('confirmMealCook', () => {
     }
     fetchMock.mockResolvedValue(jsonResponse(body))
     await expect(confirmMealCook(req)).resolves.toEqual(body)
+  })
+
+  it('sends the IANA zone, not a date, for the proxy to key awards on (#550)', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ success: true, cooked_on: '2026-09-29' }))
+
+    await confirmMealCook(req)
+
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(sent).toEqual({ ...req, tz: clientTimeZone() })
+    expect(sent).not.toHaveProperty('date')
   })
 
   it('throws MealCookError with the confirm_in_progress kind on a 409', async () => {
@@ -173,5 +184,21 @@ describe("aiErrorMessage's pre-#654 callers stay unchanged (S1)", () => {
     } catch (err) {
       expect(err).not.toBeInstanceOf(MealCookError)
     }
+  })
+})
+
+describe('deleteMeal (issue #675)', () => {
+  it('sends DELETE to the meal route and resolves on success', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ deleted: true }))
+
+    await expect(deleteMeal('meal 1')).resolves.toBeUndefined()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/meals/meal%201', { method: 'DELETE' })
+  })
+
+  it('throws the server message on a non-OK response (a missing meal is a 404)', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'Meal not found' }, false, 404))
+
+    await expect(deleteMeal('gone')).rejects.toThrow('Meal not found')
   })
 })

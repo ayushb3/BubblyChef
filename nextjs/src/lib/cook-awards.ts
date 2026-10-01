@@ -4,17 +4,14 @@
  * (`app/api/ai/recipes/cook/confirm/route.ts`) and the new meal confirm
  * proxy (`app/api/ai/meals/cook/confirm/route.ts`). Before this, the recipe
  * proxy built its own `${recipe_id}:${today}` / `${pantry_item_id}:${today}`
- * strings inline — pulling that out here means the meal proxy (and PR #595's
- * later rebase, see the module doc below) key everything the same way
- * instead of drifting.
+ * strings inline — pulling that out here means both proxies key everything
+ * the same way instead of drifting.
  *
- * PR #595, *fix(bubbles): key daily_visit/cook_confirm/rescue on one exact
- * local date* (open), rewrites the recipe proxy's keying to use the client's
- * validated local date instead of the server's UTC `today`, and adds a
- * cooldown gate. Decision (issue #654 spec, review 2): this module lands
- * first, and #595 rebases its keying change onto `cookAwardRefs` afterward —
- * the cooldown gate stays in the recipe route itself (a gate, not a key), so
- * it doesn't belong in here.
+ * Issue #550: the recipe proxy passes `keyDate` = the ONE accepted local date
+ * from `resolveLedgerDate` (`lib/ledger-date.ts`) — the server's clock in the
+ * account's stored zone — so `cook_confirm` and `rescue` agree with
+ * `daily_visit`. The meal proxy passes the local date, in that same zone, of
+ * the claim's own instant (`cooked_at`), so a replay still lands on one key.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'

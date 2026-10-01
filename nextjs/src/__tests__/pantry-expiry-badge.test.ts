@@ -6,7 +6,7 @@
  * hand. Cosmetic only — must never change the badge's colour/urgency tier or
  * the day count itself.
  */
-import { expiryBadge } from '@/app/pantry/page'
+import { expiryBadge } from '@/lib/pantry-expiry-display'
 
 describe('expiryBadge', () => {
   it('returns nothing for an undated item', () => {

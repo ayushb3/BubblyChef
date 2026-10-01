@@ -15,7 +15,8 @@ import type {
   DeductionItem,
   EnsureStepsResponse,
 } from '@/types/recipes'
-import { localDateString } from '@/lib/date'
+import type { MealCookIngredient } from '@/types/meals'
+import { clientTimeZone } from '@/lib/date'
 
 /**
  * Fetch a single saved recipe by id (Next.js CRUD route, not the AI service).
@@ -74,12 +75,23 @@ export async function refineRecipe(
 /**
  * Fetch a CookProposal for a recipe — matches ingredients against the user's pantry.
  * No writes happen here; call confirmCook() to apply.
+ *
+ * `ingredients` is the list as cooked (#489): after a confirmed mid-cook
+ * amendment the pantry is matched against THAT list instead of the stored
+ * recipe's, the same per-dish override the meal cook takes. Empty or omitted
+ * means "the stored recipe". The saved recipe is never changed either way.
  */
-export async function cookRecipe(recipeId: string): Promise<CookProposal> {
+export async function cookRecipe(
+  recipeId: string,
+  ingredients?: MealCookIngredient[] | null,
+): Promise<CookProposal> {
   const res = await fetch('/api/ai/recipes/cook', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ recipe_id: recipeId }),
+    body: JSON.stringify({
+      recipe_id: recipeId,
+      ...(ingredients && ingredients.length > 0 ? { ingredients } : {}),
+    }),
   })
 
   if (!res.ok) {
@@ -119,9 +131,9 @@ export async function confirmCook(
   const res = await fetch('/api/ai/recipes/cook/confirm', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    // The client's own local date, used server-side to key `rescue` bubbles
-    // awards for expiring-soon deducted items (#524).
-    body: JSON.stringify({ recipe_id: recipeId, deductions, date: localDateString() }),
+    // The client's IANA zone (#550), not a date: the server keys `rescue` bubbles
+    // awards for expiring-soon deducted items on its own clock (#524).
+    body: JSON.stringify({ recipe_id: recipeId, deductions, tz: clientTimeZone() }),
   })
 
   if (!res.ok) {

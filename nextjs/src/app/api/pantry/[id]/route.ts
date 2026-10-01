@@ -3,6 +3,7 @@ import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
 import { normalizeBaseUnit } from '@/lib/api/ai-proxy'
 import { enrichPantryItem } from '@/lib/pantry-helpers'
 import type { PantryItemRow } from '@/lib/pantry-helpers'
+import { isNoRowError } from '@/lib/supabase/errors'
 
 export async function GET(
   _request: Request,
@@ -84,7 +85,7 @@ export async function PUT(
         .single()
       // `.single()` reports "no row" as PGRST116; anything else is a real
       // failure and must not masquerade as a missing item.
-      if (readError && readError.code !== 'PGRST116') return errorResponse(readError.message)
+      if (readError && !isNoRowError(readError)) return errorResponse(readError.message)
       if (readError || !row) return notFound('Pantry item')
       // `!== undefined`, not `??`: an explicit `category: null` in the body is
       // the caller's value and must not be replaced by the row's old one.
@@ -113,6 +114,9 @@ export async function PUT(
     .select()
     .single()
 
+  // `.single()` reports a missing (or another user's) row as PGRST116: a 404,
+  // not a server error (#682).
+  if (isNoRowError(error)) return notFound('Pantry item')
   if (error) return errorResponse(error.message)
   if (!data) return notFound('Pantry item')
 

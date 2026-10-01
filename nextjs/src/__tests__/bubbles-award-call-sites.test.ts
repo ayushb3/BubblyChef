@@ -20,7 +20,11 @@
  * not just that *some* insert happened.
  */
 
-const mockUser = { id: 'user-1' }
+/** Stored ledger zone (#550): UTC, so the real-clock `today` below is also the local date. */
+const mockUser = {
+  id: 'user-1',
+  app_metadata: { ledger_tz: 'UTC', ledger_tz_set_at: '2026-01-01T00:00:00.000Z' },
+}
 
 const upsertMock = jest.fn(() => {
   throw new Error('bubble_events insert boom')
@@ -279,7 +283,7 @@ describe('bubbles award never blocks the underlying write', () => {
     )
   })
 
-  it('POST /api/ai/recipes/cook/confirm still deducts and still awards cook_confirm (server-dated) when the date field is missing (#524 review)', async () => {
+  it('POST /api/ai/recipes/cook/confirm still deducts and still awards cook_confirm (keyed on the stored-zone local date) when the date field is missing (#524 review, #550)', async () => {
     // `cook_confirm` predates #524 and must stay unconditional on `recipe_id`
     // — only the newer `rescue` bonus is allowed to depend on a usable
     // client-local `date`. With no deductions there's nothing to rescue
@@ -598,6 +602,24 @@ describe('bubbles award never blocks the underlying write', () => {
       )
     })
 
+    it('keys rescue on the account\'s local date, not a date the client sends (#550)', async () => {
+      mockRequireAuth.mockResolvedValue([makeResolveSupabase(inTwoDays), mockUser])
+
+      const { POST } = await import('@/app/api/pantry/[id]/resolve/route')
+      await POST(
+        new Request('http://localhost/api/pantry/item-1/resolve', {
+          method: 'POST',
+          body: JSON.stringify({ outcome: 'used', date: '2031-01-01', tz: 'Pacific/Kiritimati' }),
+        }),
+        { params: Promise.resolve({ id: 'item-1' }) },
+      )
+
+      expect(upsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'rescue', ref_key: `item-1:${today}` }),
+        expect.anything(),
+      )
+    })
+
     it('does not award rescue for a tossed item, even if it was expiring soon', async () => {
       mockRequireAuth.mockResolvedValue([makeResolveSupabase(inTwoDays), mockUser])
 
@@ -656,8 +678,8 @@ describe('bubbles award never blocks the underlying write', () => {
       )
     })
 
-    it('still resolves (and skips the rescue award) when the date field is missing', async () => {
-      mockRequireAuth.mockResolvedValue([makeResolveSupabase(inTwoDays), mockUser])
+    it('still resolves (and skips the rescue award) when the account has no known time zone and the client sent none (#550)', async () => {
+      mockRequireAuth.mockResolvedValue([makeResolveSupabase(inTwoDays), { id: 'user-1', app_metadata: {} }])
 
       const { POST } = await import('@/app/api/pantry/[id]/resolve/route')
       const res = await POST(

@@ -338,6 +338,7 @@ async def meal_cook_confirm(
                 "recipes_marked_cooked": [],
                 "meal_times_cooked": claim.times_cooked,
                 "cooked_on": claim.cooked_on.isoformat(),
+                "cooked_at": claim.cooked_at.isoformat() if claim.cooked_at else None,
             }
         if claim.outcome == "replay_in_progress":
             raise HTTPException(
@@ -406,6 +407,7 @@ async def meal_cook_confirm(
             "recipes_marked_cooked": marked,
             "meal_times_cooked": claim.times_cooked,
             "cooked_on": claim.cooked_on.isoformat(),
+            "cooked_at": claim.cooked_at.isoformat() if claim.cooked_at else None,
         }
 
     except HTTPException:

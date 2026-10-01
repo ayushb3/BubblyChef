@@ -10,8 +10,10 @@ Two router changes on `workflows/router.py`:
   which both `/v1/chat/stream` and the non-streaming `/v1/chat` run through)
   detects an amendment after the stream completes and before `done`, but only
   for a `cooking_help` turn carrying a *readable* request-context cook pin (a
-  full `cooking_recipe` dict) — never for an id-only pin, the session-snapshot
-  pin alone, or a non-cooking_help intent.
+  full `cooking_recipe` dict) — never for an id-only pin or a non-cooking_help
+  intent. (Originally also "never for the session-snapshot pin alone"; issue
+  #489 widened it to a COOKING session's snapshot, see
+  test_issue_489_490_cook_amendment.py.)
 
 Both changes share `_request_cook_pin`, extracted from `_resolve_cook_context`'s
 existing full-dict test so the two call sites and the legacy cook-handoff path
@@ -235,7 +237,10 @@ _CLASSIFIED_BASE = {
     "conversation_history": [],
     "warnings": [],
     "errors": [],
-    "session_mode": "cooking",
+    # Not a COOKING session: the no-pin / id-only cases below must see NO readable
+    # pin at all. (Issue #489 widened detection to a COOKING session's own snapshot;
+    # that is covered in test_issue_489_490_cook_amendment.py.)
+    "session_mode": "default",
     "session": None,
 }
 

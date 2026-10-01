@@ -249,7 +249,7 @@ export function ensureCookId(session: MealCookSession): MealCookSession {
   return { ...session, cook_id: `legacy-${Math.trunc(session.started_at_ms)}` }
 }
 
-function isMealCookIngredient(v: unknown): v is MealCookIngredient {
+export function isMealCookIngredient(v: unknown): v is MealCookIngredient {
   if (!v || typeof v !== 'object') return false
   const ing = v as Record<string, unknown>
   if (typeof ing.name !== 'string' || ing.name.trim() === '') return false

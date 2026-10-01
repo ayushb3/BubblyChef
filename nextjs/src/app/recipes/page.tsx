@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import BubblesHeader from '@/components/layout/BubblesHeader'
 import RecipeBookLoader from '@/components/recipes/RecipeBookLoader'
 import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
@@ -7,7 +8,10 @@ export default function RecipesPage() {
     <main className="min-h-screen pb-24" style={{ background: 'var(--color-bg)' }}>
       <BubblesHeader rightSlot={<ProfileHeaderButton />} />
       <div className="max-w-3xl mx-auto px-4 pt-4">
-        <RecipeBookLoader />
+        {/* RecipeBookLoader reads `?tab=` (issue #675), which needs a Suspense boundary. */}
+        <Suspense>
+          <RecipeBookLoader />
+        </Suspense>
       </div>
     </main>
   )

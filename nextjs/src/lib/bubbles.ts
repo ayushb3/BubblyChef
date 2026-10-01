@@ -48,8 +48,9 @@ export type BubbleEventType = keyof typeof BUBBLE_AMOUNTS
  *
  * `refKey` is what makes the award idempotent for this event type — see the
  * ref_key conventions documented in the 00011 migration (pantry item id,
- * recipe id, `<recipe_id>:<date>` for a cook, the client's local date for a
- * daily visit, etc).
+ * recipe id, `<recipe_id>:<date>` for a cook, the account's local date for a
+ * daily visit, etc). Since #550 every date here is the ONE accepted local
+ * date from `resolveLedgerDate` (`lib/ledger-date.ts`), never a client value.
  *
  * Returns the amount actually awarded, or `0` when the award was a duplicate
  * (swallowed by `ignoreDuplicates`) or the insert failed for any other
