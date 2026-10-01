@@ -624,3 +624,20 @@ async def replace_duplicate_options(
         else:
             still_shared = still_shared or _key(options[idx])[0]
     return VarietyOutcome(result, still_shared)
+
+
+# ---------------------------------------------------------------------------
+# Dishes to avoid: the recipe-generate path (issue #878)
+# ---------------------------------------------------------------------------
+
+
+def avoidable_titles(titles: Iterable[str], input_text: str) -> list[str]:
+    """`titles` minus those the user's own message names, in order.
+
+    The same "the request wins" rule `drop_repeated_options` applies after the fact, applied
+    before the prompt is built: a title whose every word is in `input_text` ("make my tomato
+    chickpea stew again") is not listed as a dish to avoid. A title the message only partly
+    names ("a warming stew") stays listed.
+    """
+    request_words = frozenset(_tokens(input_text))
+    return [t for t in titles if not (w := _title_words(t)) or not w <= request_words]

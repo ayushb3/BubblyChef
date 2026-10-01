@@ -1591,6 +1591,38 @@ async def _profile_allergies(state: WorkflowState) -> list[str]:
     return list(exclusions.allergies)
 
 
+_AVOID_TITLE_COUNT = 10
+
+
+async def _avoid_titles_block(state: WorkflowState) -> str:
+    """The "dishes to avoid repeating" prompt block for a recipe suggestion (issue #878),
+    the same block the meal option prompt carries (issue #852), or "" for none.
+
+    The user's recent saved and cooked titles, minus any their own message names: an
+    explicit "make my chickpea stew again" is never blocked. Best-effort like the meal
+    path's read: no user, no history, a failing repo or one without the method all yield
+    no block rather than breaking the turn. A bare `MagicMock` repo (older tests) raises
+    `TypeError` on the await and lands in the same place.
+    """
+    user_id = state.get("user_id") or ""
+    if not user_id:
+        return ""
+    try:
+        repo = await get_repository()
+        titles = await repo.get_recent_dish_titles(user_id, limit=_AVOID_TITLE_COUNT)
+    except Exception as e:
+        logger.debug("Could not fetch recent dish titles to avoid: %s", e)
+        return ""
+    if not isinstance(titles, list):
+        return ""
+    # Imported here: `workflows.meal`'s package init imports `meal.nodes`, which imports
+    # this module, so a top-level import is a cycle.
+    from bubbly_chef.workflows.meal.variety import avoid_titles_block, avoidable_titles
+
+    usable = [t for t in titles if isinstance(t, str) and t.strip()]
+    return avoid_titles_block(avoidable_titles(usable, state.get("input_text") or ""))
+
+
 def _allergen_refusal_state(
     state: WorkflowState, violation: AllergenViolation, what: str
 ) -> WorkflowState:
@@ -1753,6 +1785,7 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         + system_prompt
         + pantry_context
         + constraints_str
+        + await _avoid_titles_block(state)
         + "\n\n"
         + history_context
         + f"User: {input_text}\n\nSuggest 3-4 recipes:"
@@ -2026,6 +2059,10 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
         context=context,
     )
     prompt += allergy_never_block(allergies)
+    # A fresh request (extract ran this turn) avoids repeating a saved dish; a brainstorm
+    # pick is the user choosing an idea, so it is never second-guessed (issue #878).
+    if state.get("constraints_extracted"):
+        prompt += await _avoid_titles_block(state)
 
     ai_manager = get_ai_manager()
 

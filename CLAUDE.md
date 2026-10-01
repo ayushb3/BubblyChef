@@ -182,6 +182,7 @@ POST  /v1/chat/stream                    # SSE — the path the UI actually uses
 POST  /v1/chat                           # non-streaming fallback
 GET   /v1/chat/history/{conversation_id}
 GET   /v1/chat/sessions
+DELETE /v1/chat/history/{conversation_id}/unanswered   # Dismiss on a failed send: drops the trailing user turn with no reply (#871)
 
 # Scan (OCR + AI parse)
 POST  /v1/scan/receipt

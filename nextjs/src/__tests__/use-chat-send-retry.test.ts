@@ -17,6 +17,7 @@ jest.mock('@/lib/api/chat', () => ({
   streamChatMessage: jest.fn(),
   applyPantryProposal: jest.fn(),
   rejectPantryProposal: jest.fn(),
+  dismissUnansweredTurn: jest.fn().mockResolvedValue(true),
 }))
 
 const mockStream = streamChatMessage as jest.MockedFunction<typeof streamChatMessage>
