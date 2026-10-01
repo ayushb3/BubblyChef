@@ -116,6 +116,11 @@ def allergen_terms(entry: str) -> frozenset[str]:
 # Labels whose "-free" says nothing about the allergen: lactose-free milk is still milk.
 _NEVER_CLEARS = frozenset({"lactose"})
 
+# Cereal labels clear only their own allergy, never a narrower or different one. Gluten-free
+# products can contain wheat (Codex "gluten-free wheat starch"), so `gluten-free` does not
+# clear a wheat allergy and `wheat-free` does not clear a gluten one.
+_OWN_ONLY = frozenset({"gluten", "wheat"})
+
 # Plain non-wheat flours: "almond flour" is not the wheat the group expansion means.
 _NON_WHEAT_FLOUR = (
     "almond|coconut|rice|corn|maize|chickpea|gram|tapioca|potato|cassava|buckwheat|sorghum|"
@@ -132,16 +137,13 @@ def _qualifier_labels(allergy: str) -> frozenset[str]:
     """The labels whose `<label>-free` clears a match of `allergy`'s terms."""
     cleaned = " ".join(allergy.strip().lower().split())
     own = {cleaned, _singular(cleaned)}
-    own_key = norm_label(_singular(cleaned))
     mine = allergen_terms(allergy)
     labels = set(own)
     for key, group in ALLERGEN_GROUPS.items():
-        if key in _NEVER_CLEARS:
+        if key in _NEVER_CLEARS or key in _OWN_ONLY:
             continue
         if mine <= group | {key}:
             labels.add(key.replace("-", " "))
-    if own_key == "wheat":
-        labels.add("gluten")  # gluten-free is labelled wheat-free
     return frozenset(label for label in labels if label)
 
 

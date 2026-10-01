@@ -46,7 +46,6 @@ from bubbly_chef.workflows.recipe.nodes import score_and_rank
         ("gluten", "pasta (gluten-free)"),
         ("gluten", "bread, gluten-free"),
         ("wheat", "wheat-free bread"),
-        ("wheat", "gluten-free pasta"),
         ("egg", "egg-free mayonnaise"),
         ("dairy", "dairy-free cheese"),
         ("dairy", "dairy-free yoghurt"),
@@ -81,6 +80,11 @@ def test_a_qualified_phrase_does_not_name_the_allergy(allergy: str, text: str) -
         ("egg", "egg-free mayonnaise and eggs"),
         ("dairy", "dairy-free cheese or butter"),
         ("nuts", "peanut-free almond butter"),
+        # gluten-free products can contain wheat (e.g. "gluten-free wheat starch"), so
+        # only an explicit wheat-free qualifier clears a wheat allergy
+        ("wheat", "gluten-free wheat starch"),
+        ("wheat", "gluten-free pasta"),
+        ("wheat", "gluten-free bread"),
         # a qualifier for a different allergen says nothing about this one
         ("gluten", "wheat-free pasta"),
         ("dairy", "lactose-free milk"),
