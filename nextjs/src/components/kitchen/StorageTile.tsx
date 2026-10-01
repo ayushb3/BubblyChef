@@ -17,11 +17,10 @@
  *  - `StorageRow`: `highlight` marks the typed text in the name, and `where`
  *    adds the "Fridge · Meat and fish" line a search result carries. `select`
  *    makes it a checkbox row (select mode, issue #750); `resolve` adds the old
- *    Pantry page's actions (Used up / Tossed buttons, "Cook this", or the swipe).
+ *    Pantry page's actions (the cook / used it / tossed icon keys, or the swipe).
  *  - `ExpiryPill` renders nothing for food that is not expiring or expired.
  */
 import type { CSSProperties } from 'react'
-import Link from 'next/link'
 import ResolveActions from '@/components/pantry/ResolveActions'
 import SwipeToResolve from '@/components/pantry/SwipeToResolve'
 import type { ResolveOutcome } from '@/lib/api/pantry'
@@ -197,7 +196,7 @@ const ROW_BORDER = 'border-b border-[color:var(--color-border)]'
  *  - `select`: a checkbox row (select mode), tap to tick. The real checkbox is
  *    visually hidden so a screen reader and the keyboard get a native control;
  *  - `resolve`: the pantry page's resolve actions, in place. Food that needs
- *    using shows Used up / Tossed (and Cook this); everything else resolves by
+ *    using shows the cook / used it / tossed icon keys; everything else resolves by
  *    the graduated swipe, which keeps ordinary rows clean (#140).
  */
 export function StorageRow({
@@ -285,24 +284,13 @@ export function StorageRow({
     return (
       <li className={ROW_BORDER}>
         {button}
-        {/* One strip under the row: Cook this, Used it, Tossed. */}
+        {/* One strip under the row: three icon keys, cook / used it / tossed (#813). */}
         <ResolveActions
           variant="pills"
           itemName={item.name}
           pending={resolve.pending}
           onResolve={resolve.onResolve}
-          leading={
-            resolve.cookHref && (
-              <Link
-                href={resolve.cookHref}
-                aria-label={`Cook this ${item.name}`}
-                // A full 44px tap target around the small label (WCAG 2.5.5).
-                className={`flex min-h-[44px] flex-1 items-center justify-center rounded-full border-2 border-[color:var(--color-text)] bg-[color:var(--color-primary)] px-2 text-center text-xs font-extrabold whitespace-nowrap text-[color:var(--color-text)] shadow-[0_2px_0_var(--color-text)] active:translate-y-px ${ROW_FOCUS}`}
-              >
-                🍳 Cook this
-              </Link>
-            )
-          }
+          cookHref={resolve.cookHref}
         />
       </li>
     )
