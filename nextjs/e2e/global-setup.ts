@@ -83,7 +83,7 @@ async function globalSetup(config: FullConfig) {
   const finalUrl = page.url();
   if (finalUrl.includes('/login')) {
     throw new Error(
-      `Auth setup failed — redirected to login. Cookie "${cookieName}" was not recognized by middleware.`
+      `Auth setup failed — redirected to login. Cookie "${cookieName}" was not recognized by the auth proxy.`
     );
   }
 

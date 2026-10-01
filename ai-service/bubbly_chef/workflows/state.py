@@ -174,6 +174,19 @@ class WorkflowState(TypedDict, total=False):
     profile_allergies: list[str]
     dislikes_set_aside: list[str]
     profile_excluded: list[str]
+    # Issue #687. `diet_change_mentioned` is the classifier's flag that the message
+    # talks about dropping a diet; route_by_intent sends a flagged general_chat /
+    # cooking_help turn to apply_diet_change. That node sets `diet_change_applied`
+    # when the structured extraction really changed something (else the turn falls
+    # back to the ordinary chat reply) and hands the session's remaining constraints
+    # to update_session_node as `diet_change_constraints` after a conversation-scope
+    # removal. All per-turn, never persisted as such.
+    diet_change_mentioned: bool
+    diet_change_applied: bool
+    # The diet sentence of a flagged turn the extraction acted on; the general_chat or
+    # cooking_help reply that follows prepends it.
+    diet_change_notice: str
+    diet_change_constraints: dict[str, Any] | None
     web_search_result: dict[str, Any] | None
     ingredient_availability: list[dict[str, Any]]
 

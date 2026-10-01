@@ -95,6 +95,31 @@ def allergens_named(allergies: Iterable[str], *fields: str) -> list[str]:
     return named
 
 
+def allergies_behind_diet_label(label: str, allergies: Iterable[str]) -> list[str]:
+    """The allergies a "X-free" diet label stands in front of ("nut-free" -> peanut, almond).
+
+    A chat diet label like "nut-free" or "no dairy" and a profile allergy are the same
+    fact said two ways, and the allergy is the one that is hard (#500). A label that
+    isn't an exclusion label ("vegan", "keto") stands in front of no allergy. Used so
+    a chat message dropping such a label can't be read as dropping the allergy.
+    """
+    key = norm_label(label)
+    for prefix in ("no-", "without-"):
+        key = key.removeprefix(prefix)
+    for suffix in ("-free", "-allergy", "-allergic", "-intolerant"):
+        key = key.removesuffix(suffix)
+    if key == norm_label(label):
+        return []
+    label_terms = allergen_terms(key.replace("-", " "))
+    named: list[str] = []
+    for allergy in allergies:
+        if not norm_label(allergy):
+            continue
+        if allergen_terms(allergy) & label_terms:
+            named.append(allergy)
+    return named
+
+
 def drop_naming_allergen(items: Iterable[str], allergies: Iterable[str]) -> list[str]:
     """`items` without any entry that names one of `allergies`, order preserved."""
     allergy_list = list(allergies)

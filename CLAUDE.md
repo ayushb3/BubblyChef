@@ -476,7 +476,7 @@ the same credential differently.
   fixing the baselined errors themselves is issue #128
 - `tenacity` is imported by `tools/llm_client.py` but not declared in
   `ai-service/pyproject.toml`; it resolves transitively through langchain — issue #130
-- Duplicate pantry rows under-report available stock in the cook flow — issue #127
+- Pantry lots (#356): each add of a food is its own row with its own expiry, and the cook matcher sums them through the base unit. Chat `use`/`update`/`remove` still act on one lot (the soonest), not across all of them; the pantry list shows the lots as separate rows
 - `ruff` is pinned `<0.16`; the newer default rule set reports 144 findings — issue #129
 - No unit conversion (can't deduct "3 eggs" from "1 dozen eggs") — issue #6
 - `mutating` state in RecipeBook — buttons not yet `disabled={mutating}`
