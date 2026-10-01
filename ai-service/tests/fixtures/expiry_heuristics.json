@@ -1,0 +1,105 @@
+{
+  "shelf_life_days": {
+    "produce": {
+      "fridge": 7,
+      "counter": 5,
+      "freezer": 180,
+      "pantry": 5
+    },
+    "dairy": {
+      "fridge": 14,
+      "freezer": 90,
+      "counter": 1,
+      "pantry": 1
+    },
+    "meat": {
+      "fridge": 3,
+      "freezer": 120,
+      "counter": 0,
+      "pantry": 0
+    },
+    "seafood": {
+      "fridge": 2,
+      "freezer": 90,
+      "counter": 0,
+      "pantry": 0
+    },
+    "frozen": {
+      "freezer": 180,
+      "fridge": 3,
+      "counter": 0,
+      "pantry": 0
+    },
+    "canned": {
+      "pantry": 730,
+      "fridge": 730,
+      "freezer": 730,
+      "counter": 730
+    },
+    "dry_goods": {
+      "pantry": 365,
+      "fridge": 365,
+      "freezer": 365,
+      "counter": 365
+    },
+    "condiments": {
+      "fridge": 180,
+      "pantry": 90,
+      "freezer": 365,
+      "counter": 30
+    },
+    "beverages": {
+      "fridge": 14,
+      "pantry": 180,
+      "freezer": 365,
+      "counter": 7
+    },
+    "snacks": {
+      "pantry": 90,
+      "fridge": 90,
+      "freezer": 180,
+      "counter": 30
+    },
+    "bakery": {
+      "counter": 5,
+      "pantry": 7,
+      "fridge": 10,
+      "freezer": 90
+    },
+    "other": {
+      "fridge": 7,
+      "pantry": 30,
+      "freezer": 90,
+      "counter": 7
+    }
+  },
+  "specific_items": {
+    "milk": 10,
+    "eggs": 21,
+    "bread": 7,
+    "bananas": 5,
+    "avocado": 4,
+    "lettuce": 5,
+    "spinach": 5,
+    "ground beef": 2,
+    "chicken breast": 2,
+    "yogurt": 14,
+    "butter": 30,
+    "cheese": 21
+  },
+  "default_storage": {
+    "produce": "fridge",
+    "dairy": "fridge",
+    "meat": "fridge",
+    "seafood": "fridge",
+    "frozen": "freezer",
+    "canned": "pantry",
+    "dry_goods": "pantry",
+    "condiments": "fridge",
+    "beverages": "fridge",
+    "snacks": "pantry",
+    "bakery": "counter",
+    "other": "pantry"
+  },
+  "fallback_days": 30
+}
