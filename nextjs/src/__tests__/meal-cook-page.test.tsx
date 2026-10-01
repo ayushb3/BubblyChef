@@ -409,6 +409,65 @@ describe('MealCookPage — hands-off timer wiring', () => {
   })
 })
 
+describe('MealCookPage — finished timer chips (issue #757)', () => {
+  // Boil pasta and Simmer sauce are done (Simmer's 8-minute timer finished), and
+  // the session is old enough that Plate up is the active hands-on card.
+  function seedFinishedSimmer(status: CookingTimer['status'] = 'completed') {
+    seedSession(Date.now() - 20 * 60_000, {
+      'r-main:0': { status: 'done', started_at_minutes: 0, extra_minutes: 0, ended_at_minutes: 5 },
+      'r-main:1': { status: 'done', started_at_minutes: 5, extra_minutes: 0, ended_at_minutes: 13, timer_id: 'timer-1' },
+    })
+    mockTimers = [
+      {
+        id: 'timer-1',
+        label: 'Simmer sauce',
+        durationSeconds: 480,
+        remainingSeconds: status === 'completed' ? 0 : 60,
+        status,
+      },
+    ]
+  }
+
+  async function renderOnPlateUp() {
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Plate up')).toBeInTheDocument())
+    await waitForStepStatus('r-main:2', 'running')
+  }
+
+  it('keeps the finished chip while the cook is still on the step after it', async () => {
+    seedFinishedSimmer()
+    await renderOnPlateUp()
+    expect(mockDismiss).not.toHaveBeenCalled()
+  })
+
+  it('clears the finished chip once the cook finishes the next step', async () => {
+    seedFinishedSimmer()
+    await renderOnPlateUp()
+    act(() => {
+      screen.getByRole('button', { name: 'Done' }).click()
+    })
+    expect(mockDismiss).toHaveBeenCalledWith('timer-1')
+  })
+
+  it('clears the finished chip when the cook skips the next step', async () => {
+    seedFinishedSimmer()
+    await renderOnPlateUp()
+    act(() => {
+      screen.getByRole('button', { name: 'Skip' }).click()
+    })
+    expect(mockDismiss).toHaveBeenCalledWith('timer-1')
+  })
+
+  it('does not clear a timer that is still running when the cook moves on', async () => {
+    seedFinishedSimmer('running')
+    await renderOnPlateUp()
+    act(() => {
+      screen.getByRole('button', { name: 'Done' }).click()
+    })
+    expect(mockDismiss).not.toHaveBeenCalled()
+  })
+})
+
 describe('MealCookPage — timeline sheet', () => {
   it('opens showing clock times and progress markers for done and current steps', async () => {
     // Session started 5 minutes ago — Boil pasta done on time at 5, and
