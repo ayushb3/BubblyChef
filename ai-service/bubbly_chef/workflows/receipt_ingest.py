@@ -12,11 +12,15 @@ from datetime import date
 from langgraph.graph import END, StateGraph
 
 from bubbly_chef.api.deps import get_ai_manager
+from bubbly_chef.domain.normalizer import (
+    normalize_food_name,
+    normalize_to_base_unit,
+    resolve_category,
+)
 from bubbly_chef.models.base import ProposalEnvelope
 from bubbly_chef.models.pantry import (
     PantryProposal,
 )
-from bubbly_chef.domain.normalizer import normalize_food_name, normalize_to_base_unit, resolve_category
 from bubbly_chef.prompts.ingest import (
     RECEIPT_PARSE_SYSTEM_PROMPT,
     RECEIPT_PARSE_USER_PROMPT_TEMPLATE,

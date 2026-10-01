@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable, Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
