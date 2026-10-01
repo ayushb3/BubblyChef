@@ -148,7 +148,7 @@ describe('TimerDock over guided cook (issue #657)', () => {
     const dock = screen.getByTestId('timer-dock')
     expect(dock).toHaveAttribute('data-raised', 'false')
     expect(dock.className).toContain('z-40')
-    expect(dock.style.bottom).toContain('64px')
+    expect(dock.style.bottom).toContain('88px')
   })
 
   it('stays z-40 with no provider (isolated renders unchanged)', () => {
