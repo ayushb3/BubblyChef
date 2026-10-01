@@ -34,7 +34,7 @@ def _mock_structured_ai() -> Any:
         return_value=LLMRecipeResult(
             title="Tomato Garlic Spaghetti",
             description="d",
-            ingredients=[],
+            ingredients=[{"name": "rice"}],
             instructions=["step"],
         )
     )

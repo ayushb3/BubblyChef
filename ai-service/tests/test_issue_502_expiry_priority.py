@@ -550,7 +550,10 @@ def _grounded_ai() -> Any:
     ai = MagicMock()
     ai.complete = AsyncMock(
         return_value=LLMRecipeResult(
-            title="Chicken Bake", description="d", ingredients=[], instructions=["step"]
+            title="Chicken Bake",
+            description="d",
+            ingredients=[{"name": "rice"}],
+            instructions=["step"],
         )
     )
     return patch(
@@ -637,14 +640,18 @@ class TestGenerateRecipeService:
     @pytest.mark.parametrize("level", LEVELS)
     async def test_the_level_shapes_the_rendered_prompt(self, level: str) -> None:
         from bubbly_chef.models.pantry import PantryItem
-        from bubbly_chef.services.recipe_generator import AIRecipeOutput, generate_recipe
+        from bubbly_chef.services.recipe_generator import (
+            AIRecipeIngredient,
+            AIRecipeOutput,
+            generate_recipe,
+        )
 
         ai = MagicMock()
         ai.complete = AsyncMock(
             return_value=AIRecipeOutput(
                 title="Chicken Bake",
                 description="d",
-                ingredients=[],
+                ingredients=[AIRecipeIngredient(name="rice")],
                 instructions=["step"],
             )
         )
@@ -727,12 +734,15 @@ class TestGenerateRoute:
     async def test_the_route_reads_the_profile_level_into_the_prompt(self, level: str) -> None:
         from bubbly_chef.api.routes.recipes_ai import GenerateRequest, generate_recipe
         from bubbly_chef.services.food_exclusions import FoodExclusions
-        from bubbly_chef.services.recipe_generator import AIRecipeOutput
+        from bubbly_chef.services.recipe_generator import AIRecipeIngredient, AIRecipeOutput
 
         ai = MagicMock()
         ai.complete = AsyncMock(
             return_value=AIRecipeOutput(
-                title="Noodles", description="d", ingredients=[], instructions=["cook"]
+                title="Noodles",
+                description="d",
+                ingredients=[AIRecipeIngredient(name="noodles")],
+                instructions=["cook"],
             )
         )
         repo = MagicMock()
