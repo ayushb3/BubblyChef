@@ -23,7 +23,7 @@ import { useTour } from './TourProvider'
 import { bulkAddPantryItems, fetchPantryItems } from '@/lib/api/pantry'
 import { fetchHouseholdSize, saveHouseholdSize } from '@/lib/api/profile'
 import { HOUSEHOLD_SIZES, householdSizeLabel } from '@/lib/household'
-import { STAPLE_GROUPS, stapleKey, staplesToBulkItems } from '@/lib/staples'
+import { ALL_STAPLES, STAPLE_GROUPS, stapleKey, staplesToBulkItems } from '@/lib/staples'
 
 const ADD_ERROR = "Couldn't add your staples. Nothing was added, so try again in a moment."
 const HOUSEHOLD_ERROR = "Couldn't save your household size. Nothing was added, so try again."
@@ -71,6 +71,11 @@ function StaplesSheet() {
     }
     return names
   }, [pantry.data])
+
+  const inKitchenCount = useMemo(
+    () => ALL_STAPLES.filter((s) => inKitchen.has(stapleKey(s.name))).length,
+    [inKitchen],
+  )
 
   // Ticked staples that are not already stocked: what "Add N" really adds.
   const toAdd = useMemo(() => {
@@ -148,7 +153,7 @@ function StaplesSheet() {
       onClose={skip}
       closeDisabled={submitting}
       title="Tick what you usually have"
-      subtitle="So Bubbles can plan from day one. Skip any time."
+      subtitle="Nothing is added until you tap Add."
       icon={<BubblesMascot state="happy" size={36} animate={false} />}
       testId="staples-step"
       footer={
@@ -203,6 +208,12 @@ function StaplesSheet() {
             ))}
           </div>
         </section>
+
+        {inKitchenCount > 0 && (
+          <p className="-mb-2 text-xs font-bold text-[color:var(--color-text)]">
+            Faded ones are already in your kitchen.
+          </p>
+        )}
 
         {STAPLE_GROUPS.map((group) => (
           <section key={group.id} aria-labelledby={`staples-${group.id}`}>

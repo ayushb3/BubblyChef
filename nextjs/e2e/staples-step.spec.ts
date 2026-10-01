@@ -19,7 +19,11 @@ interface Captured {
 async function stubNetwork(page: Page): Promise<Captured> {
   const captured: Captured = { bulkBodies: [], userPuts: [] }
 
-  await page.route('**/v1/**', (route) => route.fulfill({ status: 503, body: 'blocked in test' }))
+  // The AI service's routes all sit under /v1 (Supabase's own /auth/v1/ must not match).
+  await page.route(
+    (url) => url.pathname.startsWith('/v1/'),
+    (route) => route.fulfill({ status: 503, body: 'blocked in test' }),
+  )
 
   await page.route('**/api/pantry/bulk', async (route) => {
     if (route.request().method() !== 'POST') return route.fallback()
@@ -72,7 +76,8 @@ test.describe('first-run staples step (#853)', () => {
     expect(items.find((i) => i.name === 'Eggs')?.no_expiry).toBeUndefined()
 
     expect(captured.userPuts).toContainEqual({ household_size: 3 })
-    expect(captured.userPuts).toContainEqual({ staples_step_done: true })
+    // The seen-flag write is fire-and-forget after the sheet closes.
+    await expect.poll(() => captured.userPuts).toContainEqual({ staples_step_done: true })
   })
 
   test('skip adds nothing, saves nothing, and still starts the tour', async ({ page }) => {
@@ -86,7 +91,7 @@ test.describe('first-run staples step (#853)', () => {
 
     await expect(page.getByText(TOUR_COPY)).toBeVisible({ timeout: 10_000 })
     expect(captured.bulkBodies).toHaveLength(0)
+    await expect.poll(() => captured.userPuts).toContainEqual({ staples_step_done: true })
     expect(captured.userPuts.some((d) => 'household_size' in d)).toBe(false)
-    expect(captured.userPuts).toContainEqual({ staples_step_done: true })
   })
 })

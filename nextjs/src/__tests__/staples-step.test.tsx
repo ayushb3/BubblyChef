@@ -263,6 +263,7 @@ describe('reopened from Profile', () => {
       expect(within(sheet()).queryByRole('button', { name: 'Olive oil' })).toBeNull(),
     )
     expect(within(sheet()).getByRole('button', { name: 'Salt' })).toBeTruthy()
+    expect(within(sheet()).getByText(/already in your kitchen/i)).toBeTruthy()
 
     await user.click(within(sheet()).getByRole('button', { name: 'Salt' }))
     await user.click(screen.getByRole('button', { name: 'Add 1' }))
