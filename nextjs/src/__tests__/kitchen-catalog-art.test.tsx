@@ -30,3 +30,28 @@ describe('CATALOG art renders (#748)', () => {
     expect(img.tagName === 'IMG' || (img.textContent ?? '').length > 0).toBe(true)
   })
 })
+
+describe('CATALOG pixel art (#751)', () => {
+  it.each(CATALOG.map((d) => [d.id, d] as const))('%s has art and renders it as an image', (_id, d) => {
+    expect(d.art).toBeTruthy()
+    render(<KitchenScene unlocked={[{ id: d.id, slot: d.slot }]} onOpenPlace={jest.fn()} />)
+    const slot = screen.getByTestId(`kitchen-slot-${d.slot}`)
+    const img = screen.getByRole('img', { name: d.name })
+    expect(img.tagName).toBe('IMG')
+    expect(slot).toContainElement(img)
+  })
+
+  it('falls back to the emoji when an entry\'s art is removed', () => {
+    const d = CATALOG.find((e) => e.id === 'counter_kettle')!
+    const art = d.art
+    try {
+      d.art = undefined
+      render(<KitchenScene unlocked={[{ id: d.id, slot: d.slot }]} onOpenPlace={jest.fn()} />)
+      const glyph = screen.getByRole('img', { name: d.name })
+      expect(glyph.tagName).not.toBe('IMG')
+      expect(glyph).toHaveTextContent(d.emoji)
+    } finally {
+      d.art = art
+    }
+  })
+})
