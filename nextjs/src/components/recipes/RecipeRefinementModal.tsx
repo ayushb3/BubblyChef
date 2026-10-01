@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import { refineRecipe } from '@/lib/api/recipes'
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
+import PixelSheet from '@/components/ui/PixelSheet'
 
 interface RefinementHistoryEntry {
   prompt: string
@@ -33,8 +33,6 @@ export default function RecipeRefinementModal({
   const [allergyWarning, setAllergyWarning] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-  useModalFocusTrap(isOpen, onClose, panelRef)
 
   // Reset state when modal opens with a new recipe
   useEffect(() => {
@@ -101,314 +99,237 @@ export default function RecipeRefinementModal({
   const hasChanges = history.length > 0
 
   return (
-    <AnimatePresence>
-      {isOpen && (
+    <PixelSheet
+      open={isOpen}
+      onClose={onClose}
+      title="Refine with AI"
+      titleId="recipe-refinement-modal-title"
+      footer={
         <>
-          {/* Backdrop */}
-          <motion.div
-            key="backdrop"
-            className="fixed inset-0 z-[60]"
-            style={{ background: 'rgba(92,74,90,0.35)', backdropFilter: 'blur(2px)' }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={onClose}
-          />
-
-          {/* Modal — slide up from bottom */}
-          <motion.div
-            key="modal"
-            ref={panelRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="recipe-refinement-modal-title"
-            tabIndex={-1}
-            className="fixed inset-x-0 bottom-0 z-[60] flex flex-col rounded-t-3xl overflow-hidden outline-none"
-            style={{
-              background: 'var(--color-bg)',
-              maxHeight: '92dvh',
-              boxShadow: '0 -8px 40px rgba(92,74,90,0.18)',
-            }}
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-          >
-            {/* Drag handle */}
-            <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
-              <div
-                className="w-10 h-1 rounded-full"
-                style={{ background: 'var(--color-border)' }}
-              />
-            </div>
-
-            {/* Header */}
-            <div
-              className="flex items-center justify-between px-5 py-3 border-b flex-shrink-0"
-              style={{ borderColor: 'var(--color-border)' }}
-            >
-              <h2
-                id="recipe-refinement-modal-title"
-                className="text-lg font-extrabold"
-                style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
-              >
-                Refine with AI
-              </h2>
-              <button
-                onClick={onClose}
-                className="w-8 h-8 rounded-full flex items-center justify-center transition-opacity hover:opacity-70 active:scale-95"
-                style={{ background: 'var(--color-surface)', color: 'var(--color-muted)' }}
-                aria-label="Close"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  viewBox="0 0 16 16"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path d="M2 2l12 12M14 2L2 14" strokeLinecap="round" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Scrollable body */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 min-h-0">
-              {/* Current recipe preview */}
-              <div
-                className="rounded-2xl p-4"
+          {/* Error */}
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                className="mb-3 px-4 py-2 rounded-xl text-sm font-semibold"
                 style={{
-                  background: 'var(--color-surface)',
-                  border: '1.5px solid var(--color-border)',
+                  background: '#fff5f5',
+                  border: '1.5px solid #f5c0c0',
+                  color: '#e05252',
+                  fontFamily: 'Nunito, sans-serif',
                 }}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
               >
-                <p
-                  className="font-extrabold text-base leading-tight"
-                  style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
-                >
-                  {recipeTitle}
-                </p>
-                <div className="flex gap-3 mt-1">
-                  <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
-                    {ingredientsCount} ingredient{ingredientsCount !== 1 ? 's' : ''}
-                  </span>
-                  <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
-                    {instructionsCount} step{instructionsCount !== 1 ? 's' : ''}
-                  </span>
-                  {hasChanges && (
-                    <span
-                      className="text-xs font-bold"
-                      style={{ color: 'var(--color-accent)' }}
-                    >
-                      {history.length} refinement{history.length !== 1 ? 's' : ''} applied
-                    </span>
-                  )}
-                </div>
-              </div>
+                {error}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-              {/* Refinement history */}
-              {history.length > 0 && (
-                <div>
-                  <p
-                    className="text-xs font-bold uppercase tracking-wider mb-2"
-                    style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
-                  >
-                    History
-                  </p>
-                  <ul className="space-y-2">
-                    <AnimatePresence initial={false}>
-                      {history.map((entry, i) => (
-                        <motion.li
-                          key={i}
-                          className="flex items-start justify-between gap-2 rounded-xl px-3 py-2"
-                          style={{
-                            background: 'var(--color-surface)',
-                            border: '1px solid var(--color-border)',
-                          }}
-                          initial={{ opacity: 0, y: -6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          <span
-                            className="text-sm leading-snug flex-1"
-                            style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
-                          >
-                            {entry.prompt}
-                          </span>
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
-                            <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
-                              {entry.appliedAt}
-                            </span>
-                            <span
-                              className="text-xs font-bold px-1.5 py-0.5 rounded-full"
-                              style={{
-                                background: '#e6f9f0',
-                                color: '#2d7a56',
-                              }}
-                            >
-                              Applied
-                            </span>
-                          </div>
-                        </motion.li>
-                      ))}
-                    </AnimatePresence>
-                  </ul>
-                </div>
-              )}
-
-              {/* Allergy notice (#500): the saved recipe still has an ingredient on the
-                  user's allergy list. One line, shown as-is from the server. */}
-              {allergyWarning && (
-                <p
-                  role="status"
-                  className="rounded-xl px-4 py-2 text-sm font-semibold"
-                  style={{
-                    background: '#fff8ee',
-                    border: '1.5px solid #f5d9a8',
-                    color: '#a8651a',
-                    fontFamily: 'Nunito, sans-serif',
-                  }}
-                >
-                  {allergyWarning}
-                </p>
-              )}
-
-              {/* Refining — AI wait, mirrors the CookModal/RecipeImportModal loading
-                  convention (thinking Bubbles, not a bare spinner) */}
-              {refining && (
-                <div
-                  role="status"
-                  aria-live="polite"
-                  className="flex items-center gap-2.5 rounded-2xl px-4 py-3"
-                  style={{
-                    background: 'var(--color-surface)',
-                    border: '1.5px solid var(--color-border)',
-                  }}
-                >
-                  <BubblesMascot state="thinking" size={28} />
-                  <p
-                    className="text-sm font-semibold"
-                    style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
-                  >
-                    Refining your recipe…
-                  </p>
-                </div>
-              )}
-
-              {/* Empty history hint */}
-              {!refining && history.length === 0 && (
-                <p
-                  className="text-sm text-center py-4"
-                  style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
-                >
-                  Type a refinement below — e.g. &ldquo;make it vegetarian&rdquo; or &ldquo;reduce cook time&rdquo;
-                </p>
-              )}
-            </div>
-
-            {/* Error */}
-            <AnimatePresence>
-              {error && (
-                <motion.div
-                  className="mx-5 mb-2 px-4 py-2 rounded-xl text-sm font-semibold"
-                  style={{
-                    background: '#fff5f5',
-                    border: '1.5px solid #f5c0c0',
-                    color: '#e05252',
-                    fontFamily: 'Nunito, sans-serif',
-                  }}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                >
-                  {error}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Input area */}
-            <div
-              className="flex-shrink-0 px-4 py-3 border-t"
+          {/* Refinement input row */}
+          <div className="flex gap-2 mb-3">
+            <input
+              ref={inputRef}
+              type="text"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="e.g. make it vegan, less spicy..."
+              disabled={refining}
+              className="flex-1 rounded-full px-4 py-2.5 text-sm disabled:opacity-50"
               style={{
-                borderColor: 'var(--color-border)',
-                background: 'var(--color-surface)',
-                paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+                background: 'var(--color-bg)',
+                border: '1.5px solid var(--color-border)',
+                color: 'var(--color-text)',
+                fontFamily: 'Nunito, sans-serif',
               }}
+              aria-label="Refinement prompt"
+            />
+            <SpringButton
+              onClick={handleRefine}
+              disabled={!prompt.trim() || refining}
+              className="px-4 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 active:scale-95"
+              style={{ background: 'var(--color-primary)' } as React.CSSProperties}
             >
-              {/* Refinement input row */}
-              <div className="flex gap-2 mb-3">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="e.g. make it vegan, less spicy..."
-                  disabled={refining}
-                  className="flex-1 rounded-full px-4 py-2.5 text-sm disabled:opacity-50"
-                  style={{
-                    background: 'var(--color-bg)',
-                    border: '1.5px solid var(--color-border)',
-                    color: 'var(--color-text)',
-                    fontFamily: 'Nunito, sans-serif',
-                  }}
-                  aria-label="Refinement prompt"
-                />
-                <SpringButton
-                  onClick={handleRefine}
-                  disabled={!prompt.trim() || refining}
-                  className="px-4 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 active:scale-95"
-                  style={{ background: 'var(--color-primary)' } as React.CSSProperties}
-                >
-                  {refining ? (
-                    <>
-                      <svg
-                        className="w-3.5 h-3.5 animate-spin"
-                        fill="none"
-                        viewBox="0 0 16 16"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                      >
-                        <path d="M8 2a6 6 0 100 12A6 6 0 008 2z" strokeOpacity={0.3} />
-                        <path d="M8 2a6 6 0 016 6" strokeLinecap="round" />
-                      </svg>
-                      Refining...
-                    </>
-                  ) : (
-                    'Send'
-                  )}
-                </SpringButton>
-              </div>
+              {refining ? (
+                <>
+                  <svg
+                    className="w-3.5 h-3.5 animate-spin"
+                    fill="none"
+                    viewBox="0 0 16 16"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path d="M8 2a6 6 0 100 12A6 6 0 008 2z" strokeOpacity={0.3} />
+                    <path d="M8 2a6 6 0 016 6" strokeLinecap="round" />
+                  </svg>
+                  Refining...
+                </>
+              ) : (
+                'Send'
+              )}
+            </SpringButton>
+          </div>
 
-              {/* Save / Discard row */}
-              <div className="flex gap-2">
-                <SpringButton
-                  onClick={handleSave}
-                  disabled={!hasChanges || saving}
-                  variant="primary"
-                  className="flex-1 py-2.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
-                >
-                  {saving ? 'Saving...' : 'Save Changes'}
-                </SpringButton>
-                <SpringButton
-                  onClick={onClose}
-                  className="flex-1 py-2.5 rounded-full text-sm font-bold active:scale-95"
-                  style={
-                    {
-                      background: 'var(--color-bg)',
-                      color: 'var(--color-muted)',
-                      border: '1.5px solid var(--color-border)',
-                    } as React.CSSProperties
-                  }
-                >
-                  Discard
-                </SpringButton>
-              </div>
-            </div>
-          </motion.div>
+          {/* Save / Discard row */}
+          <div className="flex gap-2">
+            <SpringButton
+              onClick={handleSave}
+              disabled={!hasChanges || saving}
+              variant="primary"
+              className="flex-1 py-2.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
+            </SpringButton>
+            <SpringButton
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-full text-sm font-bold active:scale-95"
+              style={
+                {
+                  background: 'var(--color-bg)',
+                  color: 'var(--color-muted)',
+                  border: '1.5px solid var(--color-border)',
+                } as React.CSSProperties
+              }
+            >
+              Discard
+            </SpringButton>
+          </div>
         </>
-      )}
-    </AnimatePresence>
+      }
+    >
+      <div className="space-y-4">
+        {/* Current recipe preview */}
+        <div
+          className="rounded-2xl p-4"
+          style={{
+            background: 'var(--color-surface)',
+            border: '1.5px solid var(--color-border)',
+          }}
+        >
+          <p
+            className="font-extrabold text-base leading-tight"
+            style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+          >
+            {recipeTitle}
+          </p>
+          <div className="flex gap-3 mt-1">
+            <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
+              {ingredientsCount} ingredient{ingredientsCount !== 1 ? 's' : ''}
+            </span>
+            <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
+              {instructionsCount} step{instructionsCount !== 1 ? 's' : ''}
+            </span>
+            {hasChanges && (
+              <span
+                className="text-xs font-bold"
+                style={{ color: 'var(--color-accent)' }}
+              >
+                {history.length} refinement{history.length !== 1 ? 's' : ''} applied
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Refinement history */}
+        {history.length > 0 && (
+          <div>
+            <p
+              className="text-xs font-bold uppercase tracking-wider mb-2"
+              style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+            >
+              History
+            </p>
+            <ul className="space-y-2">
+              <AnimatePresence initial={false}>
+                {history.map((entry, i) => (
+                  <motion.li
+                    key={i}
+                    className="flex items-start justify-between gap-2 rounded-xl px-3 py-2"
+                    style={{
+                      background: 'var(--color-surface)',
+                      border: '1px solid var(--color-border)',
+                    }}
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <span
+                      className="text-sm leading-snug flex-1"
+                      style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+                    >
+                      {entry.prompt}
+                    </span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
+                        {entry.appliedAt}
+                      </span>
+                      <span
+                        className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+                        style={{
+                          background: '#e6f9f0',
+                          color: '#2d7a56',
+                        }}
+                      >
+                        Applied
+                      </span>
+                    </div>
+                  </motion.li>
+                ))}
+              </AnimatePresence>
+            </ul>
+          </div>
+        )}
+
+        {/* Allergy notice (#500): the saved recipe still has an ingredient on the
+            user's allergy list. One line, shown as-is from the server. */}
+        {allergyWarning && (
+          <p
+            role="status"
+            className="rounded-xl px-4 py-2 text-sm font-semibold"
+            style={{
+              background: '#fff8ee',
+              border: '1.5px solid #f5d9a8',
+              color: '#a8651a',
+              fontFamily: 'Nunito, sans-serif',
+            }}
+          >
+            {allergyWarning}
+          </p>
+        )}
+
+        {/* Refining — AI wait, mirrors the CookModal/RecipeImportModal loading
+            convention (thinking Bubbles, not a bare spinner) */}
+        {refining && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex items-center gap-2.5 rounded-2xl px-4 py-3"
+            style={{
+              background: 'var(--color-surface)',
+              border: '1.5px solid var(--color-border)',
+            }}
+          >
+            <BubblesMascot state="thinking" size={28} />
+            <p
+              className="text-sm font-semibold"
+              style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+            >
+              Refining your recipe…
+            </p>
+          </div>
+        )}
+
+        {/* Empty history hint */}
+        {!refining && history.length === 0 && (
+          <p
+            className="text-sm text-center py-4"
+            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+          >
+            Type a refinement below — e.g. &ldquo;make it vegetarian&rdquo; or &ldquo;reduce cook time&rdquo;
+          </p>
+        )}
+      </div>
+    </PixelSheet>
   )
 }
