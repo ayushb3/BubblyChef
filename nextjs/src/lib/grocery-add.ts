@@ -7,6 +7,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client'
+import type { ManualLineInput } from '@/lib/grocery'
 import { addMissingToGroceryList, addToGroceryList } from '@/lib/grocery-store'
 
 async function currentUserId(): Promise<string> {
@@ -17,7 +18,12 @@ async function currentUserId(): Promise<string> {
   return user.id
 }
 
-export async function addItemsToMyGroceryList(items: string[]): Promise<void> {
+/**
+ * Items are bare names or entries with an amount, unit and category (issue
+ * #868): a recipe card's key adds what the meal page's line adds, and an amount
+ * already on a list line is never overwritten (`addMissingToGroceryList`).
+ */
+export async function addItemsToMyGroceryList(items: Array<string | ManualLineInput>): Promise<void> {
   addMissingToGroceryList(await currentUserId(), items)
 }
 

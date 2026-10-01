@@ -638,9 +638,18 @@ export function CookReviewBody({
 
       {/* Seasonings with no amount — one quiet line, not counted anywhere (#756) */}
       {(() => {
+        // One mention per food: de-duplicate by name, case-insensitively, keeping the
+        // order (and casing) of first appearance (#867).
+        const seen = new Set<string>()
         const toTasteNames = proposal.matches
           .filter((m: IngredientMatch) => m.status === 'to_taste')
           .map((m: IngredientMatch) => m.ingredient_name)
+          .filter((name: string) => {
+            const key = name.trim().toLowerCase()
+            if (seen.has(key)) return false
+            seen.add(key)
+            return true
+          })
         if (toTasteNames.length === 0) return null
         return (
           <p

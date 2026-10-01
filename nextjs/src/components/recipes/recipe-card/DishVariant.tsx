@@ -18,6 +18,7 @@
 import { useId, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { ingredientParts } from '@/lib/recipe-helpers'
+import type { ManualLineInput } from '@/lib/grocery'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import Chip from '@/components/ui/Chip'
 import { tagForRow } from '@/components/recipes/ingredient-tags'
@@ -59,8 +60,13 @@ export interface DishCardProps {
   expiring?: string[]
   /** What this dish needs that the pantry lacks. Omit when unknown: the line is hidden, not "nothing". */
   toBuy?: string[]
+  /**
+   * What the "Add to grocery list" key adds, one per name in `toBuy` in the same
+   * order, each with its amount, unit and category (issue #868). Omit for bare names.
+   */
+  toBuyEntries?: Array<string | ManualLineInput>
   /** Overrides the default write to the browser grocery list. */
-  onAddToGrocery?: (items: string[]) => void | Promise<void>
+  onAddToGrocery?: (items: Array<string | ManualLineInput>) => void | Promise<void>
   /**
    * How the pantry covers each ingredient (issue #784), aligned to `ingredients`
    * (`rowMatches[i]` is row `i`'s match): an expanded row wears a food tag
@@ -85,6 +91,7 @@ export default function DishVariant({
   defaultExpanded,
   expiring = [],
   toBuy,
+  toBuyEntries,
   onAddToGrocery,
   rowMatches,
 }: DishCardProps) {
@@ -206,7 +213,7 @@ export default function DishVariant({
         )}
 
         {toBuy !== undefined && (
-          <ToBuyLine key={toBuy.join('|')} items={toBuy} onAdd={onAddToGrocery} />
+          <ToBuyLine key={toBuy.join('|')} items={toBuy} entries={toBuyEntries} onAdd={onAddToGrocery} />
         )}
 
         <div className="flex flex-wrap items-center gap-2">
