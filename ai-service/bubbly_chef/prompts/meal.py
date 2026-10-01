@@ -67,7 +67,9 @@ Rules:
 - The options must be genuinely different from one another -- different \
 mains, not the same dish with a swapped side. Each option's main has to \
 differ from the other options' mains in its main protein or its cuisine; \
-three variations on one stew are one option, not three.
+three variations on one stew are one option, not three. Even when the pantry \
+is mostly one protein, at most two options may be built on it, and set each \
+option's cuisine.
 - If "Must use" ingredients are listed, every option must actually use them \
 -- this overrides every other preference.
 """
@@ -159,7 +161,8 @@ whole minutes.
 Rules:
 - The options must be genuinely different from one another. Each option's \
 main has to differ from the other options' mains in its main protein or its \
-cuisine; three variations on one stew are one option, not three.
+cuisine; three variations on one stew are one option, not three. At most two \
+options may share a main protein, and set each option's cuisine.
 - If "Must use" ingredients are listed, every option must actually use them.
 - Treat salt, pepper and cooking oil as on hand. Every dish must be properly \
 seasoned, never bland: put the seasonings that define its flavour (e.g. \
@@ -379,6 +382,17 @@ MEAL_OPTIONS_AVOID_BLOCK = (
     "\nDishes the user already has saved or has cooked recently: {titles}. Don't "
     "suggest any of these or a close variant of one -- offer something new. If the "
     "user's own request names one of them, that request wins."
+)
+
+# The one bounded replacement call (issue #877), appended to the option prompt when two
+# options shared a main protein and cuisine. `{kept}` is the options that stay, one line
+# each; `{count}` how many are missing; `{avoid}` the protein(s) to steer away from.
+MEAL_OPTIONS_REPLACE_BLOCK = (
+    "\n\nREPLACEMENT ROUND. These options are settled and stay exactly as they are: {kept}. "
+    "{count} more option(s) are needed, so ignore \"Propose 3\" above and propose exactly "
+    "{count}. Each new option's main dish must be built on a main protein other than "
+    "{avoid}, and must differ from every settled option. "
+    "Keep every rule above, including seasoning and the pantry."
 )
 
 # Added to the option prompt when a typed message changes the meal on screen (issue

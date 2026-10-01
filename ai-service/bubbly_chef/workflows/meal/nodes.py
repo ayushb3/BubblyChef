@@ -60,6 +60,7 @@ from bubbly_chef.models.meal import (
     MealDishOutlineLLM,
     MealFixedMainEcho,
     MealOption,
+    MealOptionLLM,
     MealOptionsLLMResult,
     MealOptionsProposal,
     MealPlanSessionState,
@@ -110,6 +111,11 @@ from bubbly_chef.workflows.meal.refine import merge_refinement_constraints, name
 from bubbly_chef.workflows.meal.variety import (
     avoid_titles_block,
     drop_repeated_options,
+    exempt_proteins,
+    repeats_avoided_title,
+    replace_duplicate_options,
+    shared_protein_among,
+    shared_protein_note,
     strip_unsupported_claims,
     unsupported_claims,
 )
@@ -1230,14 +1236,50 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     kept_raw = {
         id(o) for o in drop_repeated_options(result.options[:3], avoid_titles, input_text)
     }
-    options: list[MealOption] = []
-    seen_fixed_dishes: set[tuple[str, ...]] = set()
+    candidates: list[tuple[int, MealOptionLLM]] = []
     for idx, raw_option in enumerate(result.options[:3], start=1):
-        if id(raw_option) not in kept_raw:
+        if id(raw_option) in kept_raw:
+            candidates.append((idx, raw_option))
+        else:
             logger.info(
                 "meal_options_stage: dropping option %r -- repeats a recent dish", raw_option.title
             )
-            continue
+
+    # Two options with the same main protein and cuisine are one option twice (#877): keep
+    # the first, ask ONCE for replacements. A fixed main fixes the dish, so nothing to vary.
+    # A protein the user asked for is exempt, read from the structured constraints: the raw
+    # message can name a protein to refuse it ("no chicken tonight").
+    wanted_proteins = [
+        *(constraints.get("must_use_ingredients") or []),
+        *(constraints.get("preferred_ingredients") or []),
+    ]
+    refused_proteins = list(constraints.get("excluded_ingredients") or [])
+    check_variety = outline is None and len(candidates) > 1
+    if check_variety:
+
+        async def _propose_replacements(extra: str) -> list[MealOptionLLM]:
+            answer = await _propose(extra)
+            return list(answer.options) if isinstance(answer, MealOptionsLLMResult) else []
+
+        def _usable_replacement(candidate: MealOptionLLM) -> bool:
+            return (
+                not option_allergens(candidate, allergies)
+                and not repeats_avoided_title(candidate, avoid_titles, input_text)
+                and _normalize_option_dishes(candidate.dishes) is not None
+            )
+
+        varied = await replace_duplicate_options(
+            [o for _, o in candidates],
+            wanted_ingredients=wanted_proteins,
+            excluded_ingredients=refused_proteins,
+            propose=_propose_replacements,
+            accept=_usable_replacement,
+        )
+        candidates = [(idx, o) for (idx, _), o in zip(candidates, varied.options, strict=True)]
+
+    options: list[MealOption] = []
+    seen_fixed_dishes: set[tuple[str, ...]] = set()
+    for idx, raw_option in candidates:
         option_title: str = raw_option.title
         option_blurb: str | None = raw_option.blurb
         dishes: list[MealDishOutline] | None
@@ -1307,6 +1349,16 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         2: "Here are two meal ideas!",
         3: "Here are three meal ideas!",
     }.get(len(options), "Here are some meal ideas!")
+    if check_variety:
+        # Judged on what actually ships: options are still dropped after the replacement
+        # step (no valid side, to-buy cap), and a repeat whose twin is gone is no repeat.
+        raw_by_id = {f"opt_{idx}": o for idx, o in candidates}
+        shipped_raw = [raw_by_id[o.option_id] for o in options if o.option_id in raw_by_id]
+        shared = shared_protein_among(
+            shipped_raw, exempt_proteins(wanted_proteins, refused_proteins)
+        )
+        if shared is not None:
+            assistant_message += shared_protein_note(shared)
     if fixed_resolved is not None and outline is not None:
         fixed_echo = MealFixedMainEcho(
             recipe_id=fixed_resolved.linked_recipe_id, title=outline.name
