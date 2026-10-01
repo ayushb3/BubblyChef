@@ -129,8 +129,16 @@ test.describe('smoke — health', () => {
  * check. Throws when the reply is the AI-unavailable one. `streamReply` is
  * captured from the network (`/v1/chat/stream`), so the same function checks
  * the live service and, with `page.route`, a stubbed stream.
+ *
+ * `expectStreamingState: false` is for stubbed streams: a stub is fulfilled in
+ * one shot, so the transient Stop button can come and go between Playwright's
+ * polls. Skipping it there keeps the stubbed tests deterministic (a flake in
+ * the smoke project auto-reverts a merge); the live test keeps the check.
  */
-async function sendChatMessageAndExpectRealReply(page: Page): Promise<void> {
+async function sendChatMessageAndExpectRealReply(
+  page: Page,
+  { expectStreamingState = true }: { expectStreamingState?: boolean } = {},
+): Promise<void> {
   await page.goto('/chat');
 
   const input = page.getByLabel('Message Bubbles');
@@ -140,8 +148,10 @@ async function sendChatMessageAndExpectRealReply(page: Page): Promise<void> {
   const streamReply = page.waitForResponse((res) => res.url().includes('/v1/chat/stream'));
   await page.getByRole('button', { name: 'Send', exact: true }).click();
 
-  // Streaming starts (Send becomes Stop) ...
-  await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeVisible({ timeout: 10_000 });
+  if (expectStreamingState) {
+    // Streaming starts (Send becomes Stop) ...
+    await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeVisible({ timeout: 10_000 });
+  }
   // ... and finishes (Stop reverts to Send). Generous timeout: against the live
   // service this is a real LLM call.
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeVisible({ timeout: 60_000 });
@@ -149,6 +159,9 @@ async function sendChatMessageAndExpectRealReply(page: Page): Promise<void> {
   // An assistant message arrived...
   const assistantBubble = page.getByTestId('chat-message-assistant').last();
   await expect(assistantBubble).toBeVisible();
+  // Auto-waits for text: without the Stop-button check (stubs), Send can read as
+  // visible just before the first render of the reply.
+  await expect(assistantBubble).toHaveText(/\S/);
   const content = (await assistantBubble.textContent()) ?? '';
   expect(content.trim().length).toBeGreaterThan(0);
 
@@ -197,26 +210,37 @@ async function stubChatStream(page: Page, body: string): Promise<void> {
   );
 }
 
-const AUTH_UNAVAILABLE_TEXT = AI_UNAVAILABLE_COPY.find((copy) => copy.includes("can't sign in"))!;
+// Fails loudly if the copy is reworded, instead of stubbing `undefined` and
+// breaking the tests below with a confusing message.
+function authUnavailableText(): string {
+  const text = AI_UNAVAILABLE_COPY.find((copy) => copy.includes("can't sign in"));
+  if (!text) {
+    throw new Error('No "can\'t sign in" entry in AI_UNAVAILABLE_COPY; update this stub after a copy change.');
+  }
+  return text;
+}
+
+// A stub is fulfilled in one shot, so skip the transient Stop-button check.
+const STUBBED = { expectStreamingState: false };
 
 test.describe('smoke — AI round trip check (stubbed stream)', () => {
   test('passes on a normal reply', async ({ page }) => {
     await stubChatStream(page, envelopeStream('Try a garlic and olive oil spaghetti.', { follow_ups_pending: false }));
-    await sendChatMessageAndExpectRealReply(page);
+    await sendChatMessageAndExpectRealReply(page, STUBBED);
   });
 
   test('fails on the AI-unavailable reply (canned text + ai_error_kind)', async ({ page }) => {
-    await stubChatStream(page, envelopeStream(AUTH_UNAVAILABLE_TEXT, { ai_error_kind: 'auth' }));
-    await expect(sendChatMessageAndExpectRealReply(page)).rejects.toThrow(/AI unavailable/);
+    await stubChatStream(page, envelopeStream(authUnavailableText(), { ai_error_kind: 'auth' }));
+    await expect(sendChatMessageAndExpectRealReply(page, STUBBED)).rejects.toThrow(/AI unavailable/);
   });
 
   test('fails on ai_error_kind alone, whatever the reply text says', async ({ page }) => {
     await stubChatStream(page, envelopeStream('Something reworded.', { ai_error_kind: 'quota_exhausted' }));
-    await expect(sendChatMessageAndExpectRealReply(page)).rejects.toThrow(/ai_error_kind="quota_exhausted"/);
+    await expect(sendChatMessageAndExpectRealReply(page, STUBBED)).rejects.toThrow(/ai_error_kind="quota_exhausted"/);
   });
 
   test('fails on the canned text alone, when the server sends no ai_error_kind', async ({ page }) => {
-    await stubChatStream(page, envelopeStream(AUTH_UNAVAILABLE_TEXT));
-    await expect(sendChatMessageAndExpectRealReply(page)).rejects.toThrow(/canned AI-unavailable message/);
+    await stubChatStream(page, envelopeStream(authUnavailableText()));
+    await expect(sendChatMessageAndExpectRealReply(page, STUBBED)).rejects.toThrow(/canned AI-unavailable message/);
   });
 });
