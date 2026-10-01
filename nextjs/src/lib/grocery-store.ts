@@ -147,15 +147,19 @@ export function addToGroceryList(
  * a pantry item's "Add to list" (the user just asked for it again). A ticked
  * line from a recipe's missing items means it was bought at the shop, so it is
  * left ticked; unticked and new names are added (or adopted) as usual. Writes
- * nothing when every name is already ticked.
+ * nothing when every name is already ticked. An item may carry its amount, unit
+ * and category (issue #850), which `addManualLines` keeps on the line.
  */
-export function addMissingToGroceryList(userId: string, names: string[]): void {
+export function addMissingToGroceryList(
+  userId: string,
+  items: Array<string | ManualLineInput>
+): void {
   const ticked = new Set(
     loadGroceryLines(userId)
       .filter((l) => l.checked)
       .map((l) => l.key)
   )
-  const fresh = names.filter((n) => !ticked.has(groceryFoodKey(n)))
+  const fresh = items.filter((i) => !ticked.has(groceryFoodKey(typeof i === 'string' ? i : i.name)))
   if (fresh.length > 0) addToGroceryList(userId, fresh)
 }
 

@@ -20,10 +20,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from bubbly_chef.domain.normalizer import normalize_food_name
+from bubbly_chef.domain.normalizer import normalize_food_name, normalize_unit, resolve_category
 from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.repository.supabase_repo import SupabaseRepository
-from bubbly_chef.services.ingredient_match import missing_line_names
+from bubbly_chef.services.ingredient_match import missing_lines
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,30 @@ class ToBuyItem(BaseModel):
     dish_names: list[str] = Field(
         description="That dish's own wording of the food, parallel to `dish_positions`"
     )
+    quantity: float | None = Field(
+        default=None,
+        description=(
+            "How much the meal lacks (issue #850). Nothing usable is on hand for a listed food, "
+            "so this is the recipe amount, summed across dishes that count it in the same unit. "
+            "None when the recipe gives no amount"
+        ),
+    )
+    unit: str | None = Field(default=None, description="The unit of `quantity`, as the recipe wrote it")
+    category: str | None = Field(
+        default=None, description="The food's category when the catalog knows it (issue #850)"
+    )
+
+
+def _amount(raw: Any) -> float | None:
+    """A recipe quantity as a positive float, or None (absent, zero, or not a number)."""
+    if isinstance(raw, bool) or not isinstance(raw, int | float):
+        return None
+    value = float(raw)
+    return value if value > 0 else None
+
+
+def _same_unit(a: str | None, b: str | None) -> bool:
+    return normalize_unit(a or "") == normalize_unit(b or "")
 
 
 def to_buy_items_for_dishes(dishes: list[dict[str, Any]], pantry: list[Any]) -> list[ToBuyItem]:
@@ -82,16 +106,33 @@ def to_buy_items_for_dishes(dishes: list[dict[str, Any]], pantry: list[Any]) -> 
         ingredients = _matcher_ingredients(recipe.get("ingredients") or [])
         if not ingredients:
             continue
-        for name in missing_line_names(ingredients, pantry):
+        for line in missing_lines(ingredients, pantry):
+            name = line["name"]
             key = normalize_food_name(name).lower().strip()
             if not key:
                 continue
+            quantity = _amount(line.get("quantity"))
+            unit = str(line.get("unit") or "").strip() or None
             item = by_key.get(key)
             if item is None:
-                by_key[key] = ToBuyItem(name=name, dish_positions=[dish_position], dish_names=[name])
+                by_key[key] = ToBuyItem(
+                    name=name,
+                    dish_positions=[dish_position],
+                    dish_names=[name],
+                    quantity=quantity,
+                    unit=unit if quantity is not None else None,
+                    category=resolve_category(name),
+                )
             elif dish_position not in item.dish_positions:
                 item.dish_positions.append(dish_position)
                 item.dish_names.append(name)
+                # Add the amounts up only when they count the food the same way;
+                # otherwise keep the first dish's (the list line is editable).
+                if quantity is not None:
+                    if item.quantity is None:
+                        item.quantity, item.unit = quantity, unit
+                    elif _same_unit(item.unit, unit):
+                        item.quantity += quantity
     return list(by_key.values())
 
 

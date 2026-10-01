@@ -99,7 +99,11 @@ def match_ingredient_lines(lines: list[Any], pantry: list[PantryItem]) -> list[L
     name, so the result always lines up with the input. Expired and emptied
     pantry rows are not stock.
     """
-    parsed = [_as_line(raw) for raw in lines]
+    return _match_parsed([_as_line(raw) for raw in lines], pantry)
+
+
+def _match_parsed(parsed: list[dict[str, Any]], pantry: list[PantryItem]) -> list[LineMatch]:
+    """`match_ingredient_lines` over lines already in `{name, quantity, unit}` form."""
     stocked = filter_usable_pantry_items(pantry)
     proposal = match_ingredients(
         recipe_id=_NO_RECIPE,
@@ -157,3 +161,17 @@ def missing_line_names(lines: list[Any], pantry: list[PantryItem]) -> list[str]:
     food tag says "To buy" (issue #805).
     """
     return [m.name for m in match_ingredient_lines(lines, pantry) if m.status == "missing" and m.name]
+
+
+def missing_lines(lines: list[Any], pantry: list[PantryItem]) -> list[dict[str, Any]]:
+    """The `{name, quantity, unit}` of each line that resolves to `missing`, in input order.
+
+    `missing_line_names` plus what the line asked for (issue #850). Nothing usable
+    is on hand for a `missing` line, so its amount is also how much is lacking.
+    """
+    parsed = [_as_line(raw) for raw in lines]
+    return [
+        line
+        for line, m in zip(parsed, _match_parsed(parsed, pantry), strict=True)
+        if m.status == "missing" and m.name
+    ]
