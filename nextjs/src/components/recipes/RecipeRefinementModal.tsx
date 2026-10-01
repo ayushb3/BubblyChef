@@ -30,6 +30,7 @@ export default function RecipeRefinementModal({
   const [prompt, setPrompt] = useState('')
   const [refining, setRefining] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [allergyWarning, setAllergyWarning] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -42,6 +43,7 @@ export default function RecipeRefinementModal({
       setHistory([])
       setPrompt('')
       setError(null)
+      setAllergyWarning(null)
       setSaving(false)
       setTimeout(() => inputRef.current?.focus(), 300)
     }
@@ -56,6 +58,8 @@ export default function RecipeRefinementModal({
       const result = await refineRecipe({ recipe: currentRecipe, prompt: trimmed })
       const updatedRecipe = result.recipe as unknown as Record<string, unknown>
       setCurrentRecipe(updatedRecipe)
+      // Per refine: the notice describes the recipe as it stands after this change.
+      setAllergyWarning(result.allergy_warning ?? null)
       setHistory((prev) => [
         ...prev,
         {
@@ -251,6 +255,23 @@ export default function RecipeRefinementModal({
                     </AnimatePresence>
                   </ul>
                 </div>
+              )}
+
+              {/* Allergy notice (#500): the saved recipe still has an ingredient on the
+                  user's allergy list. One line, shown as-is from the server. */}
+              {allergyWarning && (
+                <p
+                  role="status"
+                  className="rounded-xl px-4 py-2 text-sm font-semibold"
+                  style={{
+                    background: '#fff8ee',
+                    border: '1.5px solid #f5d9a8',
+                    color: '#a8651a',
+                    fontFamily: 'Nunito, sans-serif',
+                  }}
+                >
+                  {allergyWarning}
+                </p>
               )}
 
               {/* Refining — AI wait, mirrors the CookModal/RecipeImportModal loading

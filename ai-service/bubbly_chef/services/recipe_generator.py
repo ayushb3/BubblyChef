@@ -2,18 +2,25 @@
 
 import asyncio
 import logging
-from typing import Any, TypeVar
+from typing import Any, NamedTuple, TypeVar
 
 from pydantic import BaseModel, Field
 
 from bubbly_chef.ai import AIManager
 from bubbly_chef.ai.provider import StructuredOutputError
+from bubbly_chef.domain.expiry_priority import DEFAULT_EXPIRY_PRIORITY, ExpiryPriority
 from bubbly_chef.domain.normalizer import normalize_food_name
 from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.models.recipe import Ingredient, RecipeCard, StepMetadata, build_structured_steps
-from bubbly_chef.prompts.recipe import RECIPE_FOLLOWUP_PROMPT, RECIPE_GENERATION_PROMPT
+from bubbly_chef.prompts.recipe import RECIPE_FOLLOWUP_PROMPT, recipe_generation_prompt
+from bubbly_chef.services.allergen_guard import (
+    allergen_card_warning,
+    card_allergens,
+    generate_allergen_safe,
+)
+from bubbly_chef.services.food_exclusions import allergy_never_block
 from bubbly_chef.services.recipe_refine import (
     AppliedEdits,
     RefineEdits,
@@ -83,8 +90,10 @@ class AIRecipeRefineOutput(AIRecipeOutput):
     removed: list[str] = Field(
         default_factory=list,
         description=(
-            "Names of previous-recipe ingredients the user's request takes out, copied "
-            "exactly as written on the previous recipe. Empty when it removes nothing."
+            "Names of previous-recipe ingredients the user's request takes out: the "
+            "ingredient name alone as the previous recipe names it, without its amount, "
+            "unit or preparation (\"cheddar cheese\", not \"250 g cheddar cheese\"). "
+            "Empty when it removes nothing."
         ),
     )
     changed: list[AIRecipeIngredient] = Field(
@@ -133,6 +142,9 @@ class GenerateRecipeResponse(BaseModel):
     have_count: int
     partial_count: int
     pantry_match_score: float = Field(ge=0.0, le=1.0)
+    # Set when a refine of the user's own recipe leaves an allergen they put there on
+    # the card (#500): the card is kept as made and this says so.
+    allergy_warning: str | None = None
 
 
 def format_pantry_for_prompt(pantry_items: list[PantryItem]) -> str:
@@ -191,6 +203,9 @@ def format_constraints(constraints: dict[str, Any] | None) -> str:
             parts.append(f"- Dietary requirements: {', '.join(dietary)}")
         else:
             parts.append(f"- Dietary requirements: {dietary}")
+    excluded = constraints.get("excluded_ingredients")
+    if excluded:
+        parts.append(f"- Leave out: {', '.join(excluded)}")
     if constraints.get("use_expiring"):
         parts.append("- Prioritize using expiring ingredients")
     if constraints.get("servings"):
@@ -382,6 +397,10 @@ async def _complete_recipe(
     raise StructuredOutputError("Failed to generate recipe")  # pragma: no cover
 
 
+def _ingredient_key(name: str) -> str:
+    return " ".join(name.lower().split())
+
+
 def _to_ingredient(ing: AIRecipeIngredient) -> Ingredient:
     return Ingredient(
         name=ing.name,
@@ -494,12 +513,23 @@ def _stale_steps_prompt(
     )
 
 
+class _Produced(NamedTuple):
+    """One complete generation attempt, before the allergen guard has looked at it."""
+
+    result: AIRecipeOutput
+    instructions: list[str]
+    steps_meta: list[StepMetadata]
+    ingredients: list[Ingredient]
+
+
 async def generate_recipe(
     prompt: str,
     pantry_items: list[PantryItem],
     ai_manager: AIManager,
     constraints: dict[str, Any] | None = None,
     previous_recipe: RecipeCard | None = None,
+    allergies: list[str] | None = None,
+    expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY,
 ) -> GenerateRecipeResponse:
     """
     Generate a recipe using AI based on prompt and pantry context.
@@ -512,12 +542,19 @@ async def generate_recipe(
         ai_manager: AI manager for LLM calls
         constraints: Optional constraints (max_time, cuisine, dietary)
         previous_recipe: Previous recipe for follow-up modifications
+        allergies: The user's profile allergies (#500). Named in the prompt as a hard
+            "NEVER include", and enforced after generation: a card that names one is
+            regenerated once, then `AllergenViolation` is raised.
+        expiry_priority: The user's expiry-priority setting (#502). Shapes the
+            "Items Expiring Soon" section of a fresh generation (Off drops it); a
+            follow-up (`previous_recipe`) prompt has no such section.
 
     Returns:
         Generated recipe with ingredient availability status
 
     Raises:
         StructuredOutputError: If AI fails after all retries
+        AllergenViolation: If the card still names an allergen after one regeneration
     """
     # Expired and zero-quantity rows are not stock. This is the engine behind
     # /v1/recipes/refine and the chat refine node, where a refinement offered
@@ -540,65 +577,114 @@ async def generate_recipe(
             dietary_requirements=format_followup_dietary(constraints),
         )
     else:
-        full_prompt = RECIPE_GENERATION_PROMPT.format(
+        full_prompt = recipe_generation_prompt(expiry_priority).format(
             pantry_items_formatted=pantry_formatted,
             expiring_items=expiring_formatted,
             user_prompt=prompt,
             constraints=constraints_formatted,
         )
 
-    result: AIRecipeOutput
-    if previous_recipe is None:
-        result = await _complete_recipe(ai_manager, full_prompt, AIRecipeOutput)
-        instructions = list(result.instructions)
-        steps_meta = list(result.steps)
-        ingredients = [_to_ingredient(ing) for ing in result.ingredients]
-    else:
-        result = await _complete_recipe(ai_manager, full_prompt, AIRecipeRefineOutput)
-        instructions = list(result.instructions)
-        steps_meta = list(result.steps)
+    allergy_list = list(allergies or [])
+    full_prompt += allergy_never_block(allergy_list)
 
-        # A refine is an edit: the ingredient list is the previous card's plus
-        # the model's reported edits, never its regenerated list (#579, #535).
-        edits = _edits_for_refine(previous_recipe, result, prompt)
-        applied = _apply_refine_edits(previous_recipe, edits)
+    async def _produce(extra: str) -> _Produced:
+        attempt_prompt = full_prompt + extra
+        result: AIRecipeOutput
+        if previous_recipe is None:
+            result = await _complete_recipe(ai_manager, attempt_prompt, AIRecipeOutput)
+            instructions = list(result.instructions)
+            steps_meta = list(result.steps)
+            ingredients = [_to_ingredient(ing) for ing in result.ingredients]
+        else:
+            result = await _complete_recipe(ai_manager, attempt_prompt, AIRecipeRefineOutput)
+            instructions = list(result.instructions)
+            steps_meta = list(result.steps)
 
-        # The steps may be rewritten, but not to cook a removed ingredient. One
-        # corrective re-ask; whatever still names it after that is dropped.
-        stale = _stale_instruction_indices(instructions, applied, edits)
-        if stale:
-            retry_prompt = _stale_steps_prompt(full_prompt, applied, instructions, stale)
-            try:
-                retried = await _complete_recipe(ai_manager, retry_prompt, AIRecipeRefineOutput)
-            except StructuredOutputError:
-                logger.warning("Refine re-ask for stale steps failed; dropping the steps instead")
-            else:
-                # The re-ask is about the steps: its edit list extends the first
-                # answer's and can never undo a removal it made.
-                edits = edits.carried_into(_reported_edits(retried), applied.removed)
-                applied = _apply_refine_edits(previous_recipe, edits)
-                result = retried
-                instructions = list(retried.instructions)
-                steps_meta = list(retried.steps)
+            # A refine is an edit: the ingredient list is the previous card's plus
+            # the model's reported edits, never its regenerated list (#579, #535).
+            edits = _edits_for_refine(previous_recipe, result, prompt)
+            applied = _apply_refine_edits(previous_recipe, edits)
+
+            # The steps may be rewritten, but not to cook a removed ingredient. One
+            # corrective re-ask; whatever still names it after that is dropped.
             stale = _stale_instruction_indices(instructions, applied, edits)
             if stale:
-                kept = [t for i, t in enumerate(instructions) if i not in stale]
-                if kept:
+                retry_prompt = _stale_steps_prompt(attempt_prompt, applied, instructions, stale)
+                try:
+                    retried = await _complete_recipe(ai_manager, retry_prompt, AIRecipeRefineOutput)
+                except StructuredOutputError:
                     logger.warning(
-                        "Dropping %d refined step(s) that still name a removed ingredient",
-                        len(stale),
+                        "Refine re-ask for stale steps failed; dropping the steps instead"
                     )
-                    instructions = kept
-                    # Step metadata is positional (depends_on indexes into it), so
-                    # after a drop it can't be realigned: leave steps unstructured.
-                    steps_meta = []
                 else:
-                    # Every step names it: dropping them all would leave a card
-                    # with nothing to cook from, so keep them and say so.
-                    logger.warning(
-                        "Every refined step still names a removed ingredient; keeping them"
-                    )
-        ingredients = applied.ingredients
+                    # The re-ask is about the steps: its edit list extends the first
+                    # answer's and can never undo a removal it made.
+                    edits = edits.carried_into(_reported_edits(retried), applied.removed)
+                    applied = _apply_refine_edits(previous_recipe, edits)
+                    result = retried
+                    instructions = list(retried.instructions)
+                    steps_meta = list(retried.steps)
+                stale = _stale_instruction_indices(instructions, applied, edits)
+                if stale:
+                    kept = [t for i, t in enumerate(instructions) if i not in stale]
+                    if kept:
+                        logger.warning(
+                            "Dropping %d refined step(s) that still name a removed ingredient",
+                            len(stale),
+                        )
+                        instructions = kept
+                        # Step metadata is positional (depends_on indexes into it), so
+                        # after a drop it can't be realigned: leave steps unstructured.
+                        steps_meta = []
+                    else:
+                        # Every step names it: dropping them all would leave a card
+                        # with nothing to cook from, so keep them and say so.
+                        logger.warning(
+                            "Every refined step still names a removed ingredient; keeping them"
+                        )
+            ingredients = applied.ingredients
+        return _Produced(result, instructions, steps_meta, ingredients)
+
+    # A refine edits the user's own card, so an allergen already on it (they saved
+    # the recipe before listing the allergy) stays as they made it: the guard rejects
+    # only what the refine would ADD. Rejected alternative: refusing every refine of
+    # such a recipe, which makes "make it spicier" impossible on a saved satay.
+    prior_names = (
+        {_ingredient_key(i.name) for i in previous_recipe.ingredients}
+        if previous_recipe is not None
+        else set()
+    )
+    prior_allergens = (
+        card_allergens(
+            allergy_list, previous_recipe.title, [i.name for i in previous_recipe.ingredients]
+        )
+        if previous_recipe is not None
+        else []
+    )
+
+    def _named_allergens(candidate: _Produced) -> list[str]:
+        # The FINAL card, after a refine's edit list is applied: an allergen the model
+        # `added` lands on it exactly as a regenerated one would (#500).
+        if previous_recipe is None:
+            return card_allergens(
+                allergy_list, candidate.result.title, [i.name for i in candidate.ingredients]
+            )
+        introduced = [
+            i.name for i in candidate.ingredients if _ingredient_key(i.name) not in prior_names
+        ]
+        in_title = [
+            a
+            for a in card_allergens(allergy_list, candidate.result.title, [])
+            if a not in prior_allergens
+        ]
+        return list(dict.fromkeys([*in_title, *card_allergens(allergy_list, "", introduced)]))
+
+    # The model is not the only line of defence against an allergen (#500).
+    produced = await generate_allergen_safe(_produce, _named_allergens, allergy_list)
+    result = produced.result
+    instructions = produced.instructions
+    steps_meta = produced.steps_meta
+    ingredients = produced.ingredients
 
     # Calculate total time
     total_time = None
@@ -636,6 +722,8 @@ async def generate_recipe(
     # Calculate match score
     match_score = calculate_pantry_match_score(statuses)
 
+    # Only ever non-empty on a refine: a fresh card that names an allergen never gets here.
+    carried = card_allergens(allergy_list, recipe.title, [i.name for i in recipe.ingredients])
     return GenerateRecipeResponse(
         recipe=recipe,
         ingredients_status=statuses,
@@ -643,4 +731,5 @@ async def generate_recipe(
         have_count=have_count,
         partial_count=partial_count,
         pantry_match_score=match_score,
+        allergy_warning=allergen_card_warning(carried) or None,
     )

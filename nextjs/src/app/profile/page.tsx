@@ -2,7 +2,14 @@ import { createClient } from '@/lib/supabase/server'
 import SaveAccountBanner from '@/components/auth/SaveAccountBanner'
 import SignOutButton from '@/components/auth/SignOutButton'
 import DisplayNameField from '@/components/profile/DisplayNameField'
+import CookingExclusions from '@/components/profile/CookingExclusions'
 import DietaryPreferences from '@/components/profile/DietaryPreferences'
+import ExpiryPriorityControl from '@/components/profile/ExpiryPriorityControl'
+import {
+  coerceExpiryPriority,
+  DEFAULT_EXPIRY_PRIORITY,
+  type ExpiryPriority,
+} from '@/lib/expiry-priority'
 import TakeTourButton from '@/components/profile/TakeTourButton'
 import { isGuestUser } from '@/lib/auth/guest'
 import ThemePicker from '@/components/ui/ThemePicker'
@@ -20,15 +27,27 @@ export default async function ProfilePage() {
   // not an error, so profileId/initialSelected fall back to null/[].
   let profileId: string | null = null
   let initialDietaryPreferences: string[] = []
+  let initialAllergies: string[] = []
+  let initialDislikes: string[] = []
+  let initialExpiryPriority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY
   if (user) {
+    // `select('*')`, not a named column list: the allergies / dislikes columns
+    // come from migration 00018 (#500), and naming a column that doesn't exist yet
+    // would fail the whole read and lose the dietary chips too. A row without them
+    // simply reads as empty.
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('id, dietary_preferences')
+      .select('*')
       .eq('user_id', user.id)
       .single()
     if (profile) {
       profileId = profile.id as string
       initialDietaryPreferences = (profile.dietary_preferences as string[] | null) ?? []
+      initialAllergies = (profile.allergies as string[] | null) ?? []
+      initialDislikes = (profile.disliked_ingredients as string[] | null) ?? []
+      // A row without the column (migration 00018 not applied) or with an unknown
+      // value reads as Gentle, the level everyone had before the setting existed.
+      initialExpiryPriority = coerceExpiryPriority(profile.expiry_priority)
     }
   }
 
@@ -88,6 +107,21 @@ export default async function ProfilePage() {
             Dietary Preferences
           </p>
           <DietaryPreferences profileId={profileId} initialSelected={initialDietaryPreferences} />
+          <div className="mt-4">
+            <CookingExclusions
+              profileId={profileId}
+              initialAllergies={initialAllergies}
+              initialDislikes={initialDislikes}
+            />
+          </div>
+        </section>
+
+        {/* Expiry priority (#502) — how hard suggestions push food that's about to expire */}
+        <section>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">
+            Expiring Food
+          </p>
+          <ExpiryPriorityControl profileId={profileId} initialValue={initialExpiryPriority} />
         </section>
 
         {/* Help — replay the first-run coach-mark tour (#390) */}

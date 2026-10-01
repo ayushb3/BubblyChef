@@ -10,7 +10,7 @@
  */
 
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
 const getUser = jest.fn()
 const onAuthStateChange = jest.fn()
@@ -96,5 +96,53 @@ describe('SaveAccountBanner', () => {
     fireEvent.click(screen.getByRole('button', { name: /save my account/i }))
 
     expect(await screen.findByText(/email already in use/i)).toBeInTheDocument()
+  })
+})
+
+describe('SaveAccountBanner guest expiry notice (#519)', () => {
+  it('tells a guest up front that an unused guest account is removed after 30 days, with a sign-in link', async () => {
+    getUser.mockResolvedValue({ data: { user: { is_anonymous: true } } })
+
+    render(<SaveAccountBanner persistent />)
+
+    const notice = await screen.findByTestId('guest-expiry-notice')
+    expect(notice).toHaveTextContent(/30 days/i)
+    expect(notice).toHaveTextContent(/without a visit/i)
+    const link = within(notice).getByRole('link', { name: /sign in/i })
+    expect(link).toHaveAttribute('href', '/login')
+  })
+
+  it('shows the notice when a non-persistent card is expanded', async () => {
+    getUser.mockResolvedValue({ data: { user: { is_anonymous: true } } })
+
+    render(<SaveAccountBanner />)
+    expect(screen.queryByTestId('guest-expiry-notice')).not.toBeInTheDocument()
+
+    fireEvent.click(await screen.findByText(/save your account/i))
+
+    expect(await screen.findByTestId('guest-expiry-notice')).toHaveTextContent(/30 days/i)
+  })
+
+  it('does not show the notice to a real, signed-in user', async () => {
+    getUser.mockResolvedValue({ data: { user: { is_anonymous: false } } })
+
+    render(<SaveAccountBanner persistent />)
+
+    await waitFor(() => expect(getUser).toHaveBeenCalled())
+    expect(screen.queryByTestId('guest-expiry-notice')).not.toBeInTheDocument()
+  })
+
+  it('drops the notice once the guest has saved their account (check-your-email state)', async () => {
+    getUser.mockResolvedValue({ data: { user: { is_anonymous: true } } })
+    updateUser.mockResolvedValue({ data: { user: { is_anonymous: true } }, error: null })
+
+    render(<SaveAccountBanner persistent />)
+
+    fireEvent.change(await screen.findByLabelText('Email'), { target: { value: 'g@example.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'hunter22' } })
+    fireEvent.click(screen.getByRole('button', { name: /save my account/i }))
+
+    expect(await screen.findByText(/check your inbox/i)).toBeInTheDocument()
+    expect(screen.queryByTestId('guest-expiry-notice')).not.toBeInTheDocument()
   })
 })

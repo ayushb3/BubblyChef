@@ -466,6 +466,15 @@ def normalize_unit(unit: str) -> str:
     return _UNIT_ALIASES.get(normalized, normalized)
 
 
+def is_unit_word(word: str) -> bool:
+    """True when *word* is one of the unit spellings `normalize_unit` knows.
+
+    Size adjectives ("large") are not units here, even though `normalize_unit`
+    tolerates them in a unit field.
+    """
+    return word.lower().strip() in _UNIT_ALIASES
+
+
 # ── Unit → ml conversions ──────────────────────────────────────────────────
 _TO_ML: dict[str, float] = {
     "ml": 1.0,

@@ -15,11 +15,18 @@ from typing import Any, NamedTuple
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.ai.provider import user_message_for_failure
 from bubbly_chef.api.deps import get_ai_manager
+from bubbly_chef.domain.allergens import allergens_named
 from bubbly_chef.domain.diet_terms import (
     FORBIDDEN_FOODS,
     join_fields,
     names_forbidden_food,
     norm_label,
+)
+from bubbly_chef.domain.expiry_priority import (
+    DEFAULT_EXPIRY_PRIORITY,
+    ExpiryPriority,
+    coerce_expiry_priority,
+    urgency_weights,
 )
 from bubbly_chef.domain.normalizer import normalize_food_name
 from bubbly_chef.domain.staples import is_staple
@@ -40,6 +47,9 @@ from bubbly_chef.prompts.recipe import (
     REMEMBERED_DIETS_PROFILE_PREFIX,
     _MODE_SYSTEM_PROMPTS,
     _RECIPE_MODE_PANTRY_LINE,
+    brainstorm_system_prompt,
+    expiring_context_label,
+    grounded_recipe_system_prompt,
 )
 # Re-exported for callers that import these off this module (e.g.
 # workflows/recipe/__init__.py) — `as`-aliasing makes the re-export explicit
@@ -52,9 +62,22 @@ from bubbly_chef.prompts.recipe import (
     RECIPE_CONSTRAINTS_SYSTEM_PROMPT as RECIPE_CONSTRAINTS_SYSTEM_PROMPT,
 )
 from bubbly_chef.repository.supabase_repo import get_repository
+from bubbly_chef.services.allergen_guard import (
+    AllergenViolation,
+    allergen_refusal_message,
+    allergen_safe_note,
+    card_allergens,
+    generate_allergen_safe,
+)
 from bubbly_chef.services.dietary_preferences import get_stored_dietary_preferences
+from bubbly_chef.services.expiry_priority import get_stored_expiry_priority
+from bubbly_chef.services.food_exclusions import (
+    allergy_never_block,
+    get_stored_food_exclusions,
+)
 from bubbly_chef.services.recipe_generator import generate_recipe as _generate_recipe_followup
 from bubbly_chef.tools.web_search import search_recipe
+from bubbly_chef.workflows.recipe.exclusions import apply_food_exclusions, union_case_insensitive
 from bubbly_chef.workflows.recipe.diet_change import diet_change_reply, resolve_diet_change
 from bubbly_chef.workflows.recipe.refine_diet import added_clauses, added_text, negated_text
 from bubbly_chef.workflows.state import (
@@ -127,6 +150,23 @@ CUISINE_INGREDIENTS: dict[str, set[str]] = {
 # =============================================================================
 # Recipe Grounding — Helpers
 # =============================================================================
+
+
+def _llm_ingredient_names(result: LLMRecipeResult) -> list[str]:
+    """Every food an LLM card's ingredient list names, substitutes included (#500).
+
+    The allergen guard reads these: a suggested substitute is still something the
+    card tells the user they may cook with. Tolerates the plain-string and
+    `ingredient`-keyed shapes `generate_grounded_recipe` also accepts.
+    """
+    names: list[str] = []
+    for ing in result.ingredients:
+        if isinstance(ing, str):
+            names.append(ing)
+        elif isinstance(ing, dict):
+            names.append(str(ing.get("name") or ing.get("ingredient") or ""))
+            names.extend(str(s) for s in ing.get("substitutes") or [])
+    return [n for n in names if n]
 
 
 def _format_pantry_item_for_prompt(item: dict[str, Any]) -> str:
@@ -561,29 +601,43 @@ def extract_selected_recipe_by_name(
 def score_and_rank(
     pantry_items: list[dict[str, Any]],
     constraints: dict[str, Any],
+    allergies: list[str] | None = None,
+    expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY,
 ) -> list[dict[str, Any]]:
     """
     Deterministically score and rank pantry items for recipe grounding.
 
     Scoring:
     - item in must_use_ingredients: +20 (also tagged `_must_use`)
-    - days_until_expiry <= 3: +4
-    - days_until_expiry <= 7: +2
+    - days_until_expiry <= 3: +4 (Gentle, the default; Aggressive +8; Off 0)
+    - days_until_expiry <= 7: +2 (Gentle, the default; Aggressive +5; Off 0)
     - item in preferred_ingredients: +5
     - item name matches cuisine keywords: +3
     - item in excluded_ingredients: -100
+    - item naming one of `allergies` (#500): removed outright, so a stocked allergen is
+      never offered to the model as an ingredient to cook with
 
     Expiry is now a tiebreaker, not the dominant axis. A strong cuisine +
     preference match (3 + 5 = 8) outranks a bare expiring item with no fit
     (4), aligning the ranking with the softened prompt wording from #288/#336.
     Must-use (20) still dominates everything; within the must-use group,
     expiry urgency still orders items.
+
+    `expiry_priority` is the profile's expiry-priority setting (#502). Off awards no
+    urgency points, so the ranking is what it would be if nothing were expiring;
+    expired stock is still flagged `_expired` at every level.
     """
+    near_points, soon_points = urgency_weights(expiry_priority)
     cuisine = (constraints.get("cuisine") or "").lower()
     preferred = {p.lower() for p in (constraints.get("preferred_ingredients") or [])}
     excluded = {e.lower() for e in (constraints.get("excluded_ingredients") or [])}
     must_use = {m.lower() for m in (constraints.get("must_use_ingredients") or [])}
     cuisine_keywords = CUISINE_INGREDIENTS.get(cuisine, set())
+
+    if allergies:
+        pantry_items = [
+            i for i in pantry_items if not allergens_named(allergies, str(i.get("name") or ""))
+        ]
 
     today = date.today()
     scored = []
@@ -598,7 +652,7 @@ def score_and_rank(
         if is_must_use:
             score += 20
 
-        # Expiry urgency  # TODO(#395): Off=skip this block entirely; Aggressive=raise weights (+8/+5 instead of +4/+2)
+        # Expiry urgency, scaled by the user's expiry priority (#502).
         expiry_str = item.get("expiry_date")
         if expiry_str:
             try:
@@ -612,9 +666,9 @@ def score_and_rank(
                 if days_left < 0:
                     is_expired = True
                 elif days_left <= 3:
-                    score += 4
+                    score += near_points
                 elif days_left <= 7:
-                    score += 2
+                    score += soon_points
             except (ValueError, TypeError):
                 pass
 
@@ -638,6 +692,17 @@ def score_and_rank(
     # Filter out excluded items (negative score)
     scored = [s for s in scored if s.get("_score", 0) >= 0]
     return scored[:15]
+
+
+async def _expiry_priority(state: WorkflowState) -> ExpiryPriority:
+    """The user's expiry priority: this turn's, if a node already read it, else the profile's.
+
+    Gentle when there is no profile, no such column yet, or the read fails (#502).
+    """
+    stored = state.get("expiry_priority")
+    if stored is not None:
+        return coerce_expiry_priority(stored)
+    return await get_stored_expiry_priority(state.get("user_id") or "")
 
 
 def _days_until_expiry(item: dict[str, Any]) -> int | None:
@@ -933,7 +998,15 @@ def constraints_to_persist(state: WorkflowState) -> dict[str, Any] | None:
         for label in (constraints or {}).get("dietary") or []
         if _norm_label(label) not in stored_keys or _norm_label(label) in conversation_keys
     ]
-    return {**(constraints or {}), "dietary": _dedupe_labels([*fresh, *session, *kept_final])}
+    persisted = {**(constraints or {}), "dietary": _dedupe_labels([*fresh, *session, *kept_final])}
+    # An exclusion only the profile supplied (#500) is read again next turn; writing
+    # it into the session would keep it after the profile drops it.
+    from_profile = {x.strip().lower() for x in state.get("profile_excluded") or []}
+    if from_profile and persisted.get("excluded_ingredients"):
+        persisted["excluded_ingredients"] = [
+            x for x in persisted["excluded_ingredients"] if x.strip().lower() not in from_profile
+        ]
+    return persisted
 
 
 def _tag_key(tag: str) -> str:
@@ -963,6 +1036,9 @@ class RefineDiet(NamedTuple):
     exclusions_set_aside_now: list[str]
     diets_restored: list[str]
     exclusions_restored: list[str]
+    # The profile allergies (#500): always sent, never set aside by a tweak, and what
+    # the caller's post-generation guard enforces.
+    allergies: tuple[str, ...] = ()
 
 
 async def refine_dietary_constraints(
@@ -1001,6 +1077,7 @@ async def refine_dietary_constraints(
     from, the refined card's carried lists.
     """
     stored = await get_stored_dietary_preferences(user_id)
+    food_exclusions = await get_stored_food_exclusions(user_id)
     prior = prior or {}
     labels = _dedupe_labels([*stored, *(prior.get("dietary") or [])])
 
@@ -1056,7 +1133,13 @@ async def refine_dietary_constraints(
     excluded: list[str] = []
     exclusions_set_aside_now: list[str] = []
     exclusions_restored: list[str] = []
-    prior_excluded = list(prior.get("excluded_ingredients") or [])
+    # A profile dislike rides the same set-aside rules as an exclusion the user typed
+    # (#500): dropped when the tweak adds it ("add cilantro on top"), carried on the
+    # card so later tweaks don't quietly re-exclude it, restored when negated. An
+    # allergy is not in this list; it is appended after the loop and nothing drops it.
+    prior_excluded = union_case_insensitive(
+        list(prior.get("excluded_ingredients") or []), list(food_exclusions.dislikes)
+    )
     prior_keys = {str(e).strip().lower() for e in prior_excluded}
     carried_only = [
         x
@@ -1076,13 +1159,19 @@ async def refine_dietary_constraints(
             continue
         excluded.append(entry)
 
+    excluded = union_case_insensitive(excluded, list(food_exclusions.allergies))
     constraints: dict[str, Any] = {}
     if kept:
         constraints["dietary"] = kept
     if excluded:
         constraints["excluded_ingredients"] = excluded
     return RefineDiet(
-        constraints, set_aside_now, exclusions_set_aside_now, diets_restored, exclusions_restored
+        constraints,
+        set_aside_now,
+        exclusions_set_aside_now,
+        diets_restored,
+        exclusions_restored,
+        food_exclusions.allergies,
     )
 
 
@@ -1175,14 +1264,21 @@ async def apply_diet_change(state: WorkflowState) -> WorkflowState:
     prior = _prior_constraints_from_state(state)
     session_held = list((prior or {}).get("dietary") or [])
     stored_dietary = await get_stored_dietary_preferences(state.get("user_id") or "")
-    if not session_held and not stored_dietary:
+    # Profile allergies (#500) are not a diet chat can drop: a removal of "nut-free"
+    # while the profile says peanut is answered "kept", never applied.
+    allergies = list((await get_stored_food_exclusions(state.get("user_id") or "")).allergies)
+    if not session_held and not stored_dietary and not allergies:
         # Nothing remembered anywhere, so there is nothing a removal could clear.
         return state
 
     extracted = await _extract_constraints(input_text, session_held, stored_dietary)
     changes = DietChanges.model_validate(extracted.get("diet_changes") or {})
     outcome = resolve_diet_change(
-        changes, session_held, stored_dietary, list(extracted.get("dietary") or [])
+        changes,
+        session_held,
+        stored_dietary,
+        list(extracted.get("dietary") or []),
+        allergies,
     )
     if not outcome.acted:
         return state
@@ -1275,7 +1371,14 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
     # Issue #687: what the extractor said about dropping a diet. Applied only to the
     # conversation's own diet, never to the profile's, and never decided from the
     # message text (see `diet_change.resolve_diet_change`).
-    diet_outcome = resolve_diet_change(diet_changes, session_held, stored_dietary, fresh_dietary)
+    food_exclusions = await get_stored_food_exclusions(state.get("user_id") or "")
+    diet_outcome = resolve_diet_change(
+        diet_changes,
+        session_held,
+        stored_dietary,
+        fresh_dietary,
+        list(food_exclusions.allergies),
+    )
     if diet_outcome.acted:
         logger.info(
             "Diet change from structured extraction: dropped=%s relaxed=%s kept_by_profile=%s",
@@ -1328,9 +1431,23 @@ async def extract_recipe_constraints(state: WorkflowState) -> WorkflowState:
     elif inherited or diet_outcome.dropped:
         constraints["dietary"] = requested_dietary
 
+    # Profile allergies and dislikes (#500): merged into `excluded_ingredients` on
+    # every turn, from the profile, never from what the session remembered.
+    applied = apply_food_exclusions(constraints, food_exclusions, input_text)
+    constraints = applied.constraints
+
     return {
         **state,
         "recipe_constraints": constraints,
+        # Per-turn, never persisted (#502): the profile's expiry priority, read once
+        # here so scoring, brainstorm and the recipe card all see the same level.
+        "expiry_priority": await _expiry_priority(state),
+        # Per-turn markers, never persisted (#500): the allergies the guard enforces,
+        # the dislikes this message set aside, and which `excluded_ingredients`
+        # entries came from the profile (`constraints_to_persist` leaves them out).
+        "profile_allergies": applied.allergies,
+        "dislikes_set_aside": applied.dislikes_set_aside,
+        "profile_excluded": applied.profile_excluded,
         # Per-turn markers, never persisted (#544, #685): research_recipe reads
         # `constraints_extracted` to know the stored diet was already combined with
         # this turn's message; the three diet lists feed research's
@@ -1368,10 +1485,17 @@ async def score_pantry_ingredients(state: WorkflowState) -> WorkflowState:
     # ranked pool, so no prompt-builder downstream can list them as available
     # (#443). Rows expiring today or later stay in and still get the urgency
     # bonus in score_and_rank.
-    scored = score_and_rank(filter_usable_pantry_rows(pantry_items), constraints)
+    expiry_priority = await _expiry_priority(state)
+    scored = score_and_rank(
+        filter_usable_pantry_rows(pantry_items),
+        constraints,
+        state.get("profile_allergies"),
+        expiry_priority,
+    )
 
     return {
         **state,
+        "expiry_priority": expiry_priority,
         "scored_pantry_items": scored,
     }
 
@@ -1406,12 +1530,43 @@ def _format_history_context(state: WorkflowState, max_turns: int = 40) -> str:
     return "\n".join(lines) + "\n\n"
 
 
+async def _profile_allergies(state: WorkflowState) -> list[str]:
+    """The user's allergies: this turn's, if extraction already read them, else the profile's."""
+    stored = state.get("profile_allergies")
+    if stored is not None:
+        return list(stored)
+    exclusions = await get_stored_food_exclusions(state.get("user_id") or "")
+    return list(exclusions.allergies)
+
+
+def _allergen_refusal_state(
+    state: WorkflowState, violation: AllergenViolation, what: str
+) -> WorkflowState:
+    """The honest reply when generation still names an allergen after one regeneration (#500).
+
+    A plain chat reply with no proposal: nothing that names an allergen is ever returned.
+    """
+    return {
+        **state,
+        "intent": Intent.GENERAL_CHAT.value,
+        "assistant_message": allergen_refusal_message(violation.allergens, what),
+        "next_action": NextAction.NONE.value,
+        "proposal": None,
+        "requires_review": False,
+        "confidence": 1.0,
+        "errors": state.get("errors", []) + [f"Allergen guard: {violation}"],
+        "workflow_status": WorkflowStatus.COMPLETED.value,
+    }
+
+
 async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
     """Node: Generate 3-4 recipe ideas based on pantry + constraints."""
     input_text = state.get("input_text", "")
     scored_items: list[dict[str, Any]] = state.get("scored_pantry_items") or []
     constraints: dict[str, Any] = state.get("recipe_constraints") or {}
     pantry_grounded = is_pantry_grounded(constraints)
+    expiry_priority = await _expiry_priority(state) if pantry_grounded else DEFAULT_EXPIRY_PRIORITY
+    expiring_label = expiring_context_label(expiry_priority)
 
     # Build ingredient summary for the prompt
     if not pantry_grounded:
@@ -1437,10 +1592,16 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         rest = [
             i for i in usable_items if not i.get("_must_use") and not i.get("_expired")
         ]
-        expiring = [
-            i for i in rest
-            if (d := _days_until_expiry(i)) is not None and 0 <= d <= 7
-        ]
+        # Off (#502): no "Expiring soon" block at all, so expiring items are simply
+        # listed with the rest of what's available.
+        expiring = (
+            [
+                i for i in rest
+                if (d := _days_until_expiry(i)) is not None and 0 <= d <= 7
+            ]
+            if expiring_label
+            else []
+        )
         supporting = [i for i in rest if i not in expiring]
         expiring_str = ", ".join(i.get("name", "") for i in expiring[:5])
         supporting_str = ", ".join(i.get("name", "") for i in supporting[:10])
@@ -1448,7 +1609,8 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         if must_use:
             must_use_str = ", ".join(i.get("name", "") for i in must_use[:5])
             pantry_context += f"\nMust use (the user asked to cook with these): {must_use_str}"
-        pantry_context += f"\nExpiring soon (weave in where it fits, not mandatory): {expiring_str or 'none'}"  # TODO(#395): suppress entirely when expiry_priority==Off; strengthen label when Aggressive
+        if expiring_label:
+            pantry_context += f"\n{expiring_label}: {expiring_str or 'none'}"
         pantry_context += f"\nOther available: {supporting_str or 'none'}"
     elif not constraints.get("must_use_ingredients"):
         # Reaching this branch means pantry_grounded is True, scored_items is
@@ -1524,11 +1686,15 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         )
     if constraints.get("excluded_ingredients"):
         constraints_str += f"\nExclude: {', '.join(constraints['excluded_ingredients'])}"
+    allergies = await _profile_allergies(state)
+    constraints_str += allergy_never_block(allergies)
 
     history_context = _format_history_context(state)
     mode_prefix = _get_mode_prefix(state, pantry_grounded=pantry_grounded)
     system_prompt = (
-        BRAINSTORM_SYSTEM_PROMPT if pantry_grounded else BRAINSTORM_SYSTEM_PROMPT_NO_PANTRY
+        brainstorm_system_prompt(expiry_priority)
+        if pantry_grounded
+        else BRAINSTORM_SYSTEM_PROMPT_NO_PANTRY
     )
     prompt = (
         mode_prefix
@@ -1541,11 +1707,21 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
     )
 
     ai_manager = get_ai_manager()
+
+    async def _brainstorm(extra: str) -> str:
+        result = await ai_manager.complete(prompt=prompt + extra, temperature=0.7)
+        return result if isinstance(result, str) else getattr(result, "response", str(result))
+
     try:
-        result = await ai_manager.complete(prompt=prompt, temperature=0.7)
-        response_text = (
-            result if isinstance(result, str) else getattr(result, "response", str(result))
+        # The guard reads the idea names (the bold titles), the concrete thing offered:
+        # a closing note like "I left out the peanuts" isn't an idea (#500).
+        response_text = await generate_allergen_safe(
+            _brainstorm,
+            lambda text: allergens_named(allergies, *re.findall(r"\*\*(.+?)\*\*", text)),
+            allergies,
         )
+    except AllergenViolation as e:
+        return {**_allergen_refusal_state(state, e, "recipe ideas for that"), "brainstorm_ideas": []}
     except NoProviderAvailableError as e:
         response_text = user_message_for_failure(e.kind, e.configured)
     except Exception as e:
@@ -1631,7 +1807,22 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
             constraints = {**constraints, "dietary": dietary}
         elif "dietary" in constraints:
             constraints = {k: v for k, v in constraints.items() if k != "dietary"}
+        # Profile allergies and dislikes (#500), re-read on the pick path exactly as
+        # extract does on the direct one. The picked name stands in for the message:
+        # picking "Cilantro Lime Chicken" is an explicit ask for a disliked cilantro,
+        # never for an allergen.
+        applied = apply_food_exclusions(
+            constraints, await get_stored_food_exclusions(state.get("user_id") or ""), recipe_name
+        )
+        constraints = applied.constraints
+        profile_allergies = applied.allergies
+        dislikes_set_aside = applied.dislikes_set_aside
+        profile_excluded = applied.profile_excluded
     else:
+        # extract already folded the profile in and left these in state.
+        profile_allergies = list(state.get("profile_allergies") or [])
+        dislikes_set_aside = list(state.get("dislikes_set_aside") or [])
+        profile_excluded = list(state.get("profile_excluded") or [])
         # The direct path -- extract already combined the stored diet with this
         # turn's message, so leave `dietary` alone. Its conversation labels were
         # handed over in state.
@@ -1652,6 +1843,11 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
         "dietary_set_aside": dietary_set_aside,
         "session_dietary": session_dietary,
         "stored_dietary": stored_dietary,
+        "profile_allergies": profile_allergies,
+        "dislikes_set_aside": dislikes_set_aside,
+        "profile_excluded": profile_excluded,
+        # Read here on the pick path (extract didn't run) so the card sees the level (#502).
+        "expiry_priority": await _expiry_priority(state),
         "web_search_result": search_result.model_dump() if search_result else None,
     }
 
@@ -1664,6 +1860,8 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
     scored_items: list[dict[str, Any]] = state.get("scored_pantry_items") or []
     web_result: dict[str, Any] | None = state.get("web_search_result")
     pantry_grounded = is_pantry_grounded(constraints)
+    allergies = await _profile_allergies(state)
+    expiry_priority = await _expiry_priority(state) if pantry_grounded else DEFAULT_EXPIRY_PRIORITY
 
     # If pantry wasn't scored yet (direct recipe_card path), try to load & score now.
     # Skipped entirely when the user opted out — this is the path that would
@@ -1678,7 +1876,9 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
             except Exception as e:
                 logger.warning("Could not fetch pantry for recipe generation: %s", e)
         if pantry_snapshot:
-            scored_items = score_and_rank(filter_usable_pantry_rows(pantry_snapshot), constraints)
+            scored_items = score_and_rank(
+                filter_usable_pantry_rows(pantry_snapshot), constraints, allergies, expiry_priority
+            )
 
     # This is the path that told a user to cook "fresh spinach from your
     # pantry" from a row that was expired at quantity 0 (#443): expired stock
@@ -1686,6 +1886,11 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
     # the "Supporting ingredients available" line. Nothing below may see a
     # row that isn't cookable stock.
     scored_items = filter_usable_pantry_rows(scored_items)
+    if allergies:
+        # Pre-scored state can't smuggle a stocked allergen back in as an ingredient (#500).
+        scored_items = [
+            i for i in scored_items if not allergens_named(allergies, str(i.get("name") or ""))
+        ]
 
     # Must-use names come from the constraint itself so ingredients the user
     # named but doesn't have in the pantry still bind the recipe.
@@ -1695,11 +1900,24 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
         if item.get("_must_use") and name and name not in must_use_names:
             must_use_names.append(name)
 
-    priority_items = [_format_pantry_item_for_prompt(i) for i in scored_items if i.get("_score", 0) >= 5]
-    supporting_items = [
-        _format_pantry_item_for_prompt(i) for i in scored_items
-        if 0 <= i.get("_score", 0) < 5
-    ]
+    if expiry_priority == "off":
+        # Off (#502): there is no "Priority ingredients (expiring soon)" line, so nothing
+        # is singled out; every cookable item is listed as available (must-use items
+        # already have their own line).
+        priority_items: list[str] = []
+        supporting_items = [
+            _format_pantry_item_for_prompt(i)
+            for i in scored_items
+            if not i.get("_must_use") and i.get("_score", 0) >= 0
+        ]
+    else:
+        priority_items = [
+            _format_pantry_item_for_prompt(i) for i in scored_items if i.get("_score", 0) >= 5
+        ]
+        supporting_items = [
+            _format_pantry_item_for_prompt(i) for i in scored_items
+            if 0 <= i.get("_score", 0) < 5
+        ]
 
     context = ""
     if web_result and web_result.get("snippet"):
@@ -1715,7 +1933,7 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
     preferred_ingredients_str = (
         ", ".join(constraints.get("preferred_ingredients") or []) or "none specified"
     )
-    prompt = GROUNDED_RECIPE_SYSTEM_PROMPT.format(
+    prompt = grounded_recipe_system_prompt(expiry_priority).format(
         recipe_name=recipe_name,
         constraints_json=constraints_json,
         must_use_items=", ".join(must_use_names[:5]) or "none specified",
@@ -1724,17 +1942,31 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
         supporting_items=", ".join(supporting_items[:10]) or "none",
         context=context,
     )
+    prompt += allergy_never_block(allergies)
 
     ai_manager = get_ai_manager()
-    try:
+
+    async def _generate(extra: str) -> LLMRecipeResult:
         result = await ai_manager.complete(
-            prompt=prompt,
+            prompt=prompt + extra,
             response_schema=LLMRecipeResult,
             temperature=0.5,
         )
         if not isinstance(result, LLMRecipeResult):
             raise ValueError("Unexpected response type from AI provider")
-        llm_result = result
+        return result
+
+    try:
+        # The model is not the only line of defence against an allergen (#500): a card
+        # that names one is regenerated once, then refused.
+        llm_result = await generate_allergen_safe(
+            _generate,
+            lambda r: card_allergens(allergies, r.title, _llm_ingredient_names(r)),
+            allergies,
+        )
+    except AllergenViolation as e:
+        logger.warning("Grounded recipe refused by the allergen guard: %s", e)
+        return _allergen_refusal_state(state, e, f"'{recipe_name}'")
     except NoProviderAvailableError as e:
         logger.error("Grounded recipe generation failed: %s", e)
         return {
@@ -1815,6 +2047,7 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
         difficulty=llm_result.difficulty,
         tips=llm_result.tips,
         diets_set_aside=list(state.get("dietary_set_aside") or []),
+        exclusions_set_aside=list(state.get("dislikes_set_aside") or []),
     )
     logger.info(
         "Recipe card generated",
@@ -1896,7 +2129,7 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
         field_confidences={},
         warnings=state.get("warnings", []),
         errors=state.get("errors", []),
-        assistant_message=f"Here's a recipe for {recipe_card.title}!",
+        assistant_message=f"Here's a recipe for {recipe_card.title}!{allergen_safe_note(allergies)}",
         request_id=state.get("request_id"),
         workflow_id=state.get("workflow_id"),
     )
@@ -1980,7 +2213,12 @@ async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
             ai_manager=ai_manager,
             previous_recipe=previous_recipe,
             constraints=refine_constraints,
+            allergies=list(decision.allergies),
         )
+    except AllergenViolation as e:
+        # The pinned card stays as it was: nothing that names an allergen is returned (#500).
+        logger.warning("Recipe refinement refused by the allergen guard: %s", e)
+        return _allergen_refusal_state(state, e, f"that change to '{previous_recipe.title}'")
     except NoProviderAvailableError as e:
         logger.error("Recipe refinement failed: %s", e)
         return {
@@ -2047,13 +2285,25 @@ async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
         available_ingredients=available,
     )
 
+    # "I kept out X" only for allergens that really are out of the card: one the user's own
+    # recipe still carries is named by the warning instead, never both (#500).
+    carried = card_allergens(
+        list(decision.allergies),
+        refined_recipe.title,
+        [i.name for i in refined_recipe.ingredients],
+    )
+    kept_out = [a for a in decision.allergies if a not in carried]
+
     envelope = create_recipe_envelope(
         proposal=proposal,
         confidence=0.9,
         field_confidences={},
         warnings=state.get("warnings", []),
         errors=state.get("errors", []),
-        assistant_message=f"Updated {refined_recipe.title}!",
+        assistant_message=(
+            f"Updated {refined_recipe.title}!{allergen_safe_note(kept_out)}"
+            + (f" {result.allergy_warning}" if result.allergy_warning else "")
+        ),
         request_id=state.get("request_id"),
         workflow_id=state.get("workflow_id"),
     )
