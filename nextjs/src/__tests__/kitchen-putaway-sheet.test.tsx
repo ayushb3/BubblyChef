@@ -202,7 +202,7 @@ describe('nothing is written before the tap', () => {
     // Skipped lines are never written.
     expect(payload.map((p) => p.name)).not.toContain('Bag fee')
     expect(payload.every((p) => p.source === 'scan')).toBe(true)
-    await waitFor(() => expect(onPutAway).toHaveBeenCalledWith(11))
+    await waitFor(() => expect(onPutAway).toHaveBeenCalledWith(11, expect.any(Array)))
   })
 
   it('clears the pending scan after a successful write and closes the sheet', async () => {
@@ -214,6 +214,55 @@ describe('nothing is written before the tap', () => {
 
     await waitFor(() => expect(readPendingPutAway()).toBeNull())
     expect(onClose).toHaveBeenCalled()
+  })
+
+  // Issue #754: the hop-into-place animation is handed what it needs, once the
+  // write has succeeded: the written items in list order, each with its place,
+  // its emoji and where its row was on screen.
+  it('hands the flight the written items in list order, each with its place and its row', async () => {
+    mockBulkAdd.mockResolvedValue({ count: 9, items: [] })
+    const onPutAway = jest.fn()
+    renderSheet(SCAN, { onPutAway })
+
+    const rect = jest
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: Element) {
+        const milk = this.hasAttribute('data-putaway-item') && this.textContent?.includes('Milk')
+        return (
+          milk ? { left: 40, top: 300, width: 60, height: 20, right: 100, bottom: 320 } : { left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 }
+        ) as DOMRect
+      })
+    fireEvent.click(screen.getByRole('button', { name: 'Put away 9 items' }))
+    await waitFor(() => expect(onPutAway).toHaveBeenCalledTimes(1))
+    rect.mockRestore()
+
+    const [count, hops] = onPutAway.mock.calls[0]
+    expect(count).toBe(9)
+    // List order: the groups as the sheet shows them (fridge, freezer, shelves, basket).
+    expect(hops.map((h: { name: string }) => h.name)).toEqual([
+      'Chicken thighs', 'Milk', 'Feta', 'Lemons', 'Peas', 'Orzo', 'Chickpeas', 'Bananas', 'Garlic',
+    ])
+    expect(hops.map((h: { place: string }) => h.place)).toEqual([
+      'fridge', 'fridge', 'fridge', 'fridge', 'freezer', 'shelves', 'shelves', 'basket', 'basket',
+    ])
+    const milk = hops.find((h: { name: string }) => h.name === 'Milk')
+    expect(milk.emoji).toBe('🥛')
+    expect(milk.from).toEqual({ x: 70, y: 310 })
+  })
+
+  it('hands over the places the items were written to, not the ones the scan guessed', async () => {
+    mockBulkAdd.mockResolvedValue({ count: 9, items: [] })
+    const onPutAway = jest.fn()
+    renderSheet(SCAN, { onPutAway })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Basket items' }))
+    const row = screen.getByRole('group', { name: 'Edit Bananas' })
+    fireEvent.click(within(row).getByRole('radio', { name: 'Fridge' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Done editing Basket' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Put away/ }))
+
+    await waitFor(() => expect(onPutAway).toHaveBeenCalledTimes(1))
+    const hops: Array<{ name: string; place: string }> = onPutAway.mock.calls[0][1]
+    expect(hops.find((h) => h.name === 'Bananas')?.place).toBe('fridge')
   })
 
   it('sends one write for a double tap', async () => {
@@ -509,7 +558,7 @@ describe('a failed write', () => {
     mockBulkAdd.mockResolvedValue({ count: 9, items: [] })
     fireEvent.click(screen.getByRole('button', { name: 'Put away 9 items' }))
     await waitFor(() => expect(readPendingPutAway()).toBeNull())
-    expect(onPutAway).toHaveBeenCalledWith(9)
+    expect(onPutAway).toHaveBeenCalledWith(9, expect.any(Array))
   })
 
   it('a second failure wiggles again', async () => {

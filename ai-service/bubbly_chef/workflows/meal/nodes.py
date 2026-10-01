@@ -46,6 +46,7 @@ from bubbly_chef.ai.provider import user_message_for_failure
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.domain.allergens import allergens_named
 from bubbly_chef.domain.diet_terms import join_fields, norm_label
+from bubbly_chef.domain.expiry_priority import DEFAULT_EXPIRY_PRIORITY, ExpiryPriority
 from bubbly_chef.domain.kitchen_limits import map_kitchen_limits_to_tags
 from bubbly_chef.domain.staples import NEVER_TO_BUY, shoppable
 from bubbly_chef.domain.stock import filter_usable_pantry_items, filter_usable_pantry_rows
@@ -67,7 +68,6 @@ from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.models.recipe import Ingredient, RecipeCard, build_structured_steps
 from bubbly_chef.prompts.meal import (
     MEAL_DISH_EXPANSION_SYSTEM_PROMPT,
-    MEAL_DISH_PANTRY_BLOCK,
     MEAL_DISH_PANTRY_BLOCK_NO_PANTRY,
     MEAL_FOLLOW_UPS_NO_PANTRY_RULE,
     MEAL_OPTIONS_FIXED_MAIN_BLOCK,
@@ -75,10 +75,12 @@ from bubbly_chef.prompts.meal import (
     MEAL_OPTIONS_FIXED_MAIN_FOLLOW_UPS_RULE,
     MEAL_OPTIONS_FOLLOW_UPS_RULES,
     MEAL_OPTIONS_PREVIOUS_BLOCK,
-    MEAL_OPTIONS_SYSTEM_PROMPT,
     MEAL_OPTIONS_SYSTEM_PROMPT_NO_PANTRY,
     MEAL_READY_FOLLOW_UPS_RULES,
+    meal_dish_pantry_block,
+    meal_options_system_prompt,
 )
+from bubbly_chef.prompts.recipe import expiring_context_label
 from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.services.allergen_guard import (
     AllergenViolation,
@@ -87,6 +89,7 @@ from bubbly_chef.services.allergen_guard import (
     generate_allergen_safe,
 )
 from bubbly_chef.services.cook_matcher import match_ingredients
+from bubbly_chef.services.expiry_priority import get_stored_expiry_priority
 from bubbly_chef.services.food_exclusions import allergy_never_block, get_stored_food_exclusions
 from bubbly_chef.workflows.meal.fixed_main import (
     MEAL_FIXED_MAIN_KEY,
@@ -104,6 +107,7 @@ from bubbly_chef.workflows.recipe.nodes import (
     _combine_dietary_preferences,
     _days_until_expiry,
     _dietary_contradicted,
+    _expiry_priority,
     _format_pantry_item_for_prompt,
     _llm_ingredient_names,
     extract_recipe_constraints,
@@ -466,15 +470,25 @@ def _format_meal_constraints(constraints: dict[str, Any], kitchen_limits: list[s
     return parts
 
 
-def _meal_pantry_context(scored_items: list[dict[str, Any]]) -> str:
+def _meal_pantry_context(
+    scored_items: list[dict[str, Any]],
+    expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY,
+) -> str:
     """Mirrors `workflows.recipe.nodes.brainstorm_recipe_ideas`'s pantry block:
-    must-use, expiring-soon (gentle wording, issue #288), then the rest."""
+    must-use, expiring-soon (worded per the expiry-priority level, issues #288 and
+    #718), then the rest. Off has no expiring-soon block: those items are listed
+    with the rest of what's available."""
     if not scored_items:
         return ""
     usable_items = filter_usable_pantry_rows(scored_items)
     must_use = [i for i in usable_items if i.get("_must_use")]
     rest = [i for i in usable_items if not i.get("_must_use") and not i.get("_expired")]
-    expiring = [i for i in rest if (d := _days_until_expiry(i)) is not None and 0 <= d <= 7]
+    expiring_label = expiring_context_label(expiry_priority)
+    expiring = (
+        [i for i in rest if (d := _days_until_expiry(i)) is not None and 0 <= d <= 7]
+        if expiring_label is not None
+        else []
+    )
     supporting = [i for i in rest if i not in expiring]
 
     context = ""
@@ -483,8 +497,9 @@ def _meal_pantry_context(scored_items: list[dict[str, Any]]) -> str:
             f"\nMust use (the user asked to cook with these): "
             f"{', '.join(i.get('name', '') for i in must_use[:5])}"
         )
-    expiring_str = ", ".join(i.get("name", "") for i in expiring[:5]) or "none"
-    context += f"\nExpiring soon (weave in where it fits, not mandatory): {expiring_str}"
+    if expiring_label is not None:
+        expiring_str = ", ".join(i.get("name", "") for i in expiring[:5]) or "none"
+        context += f"\n{expiring_label}: {expiring_str}"
     supporting_str = ", ".join(i.get("name", "") for i in supporting[:15]) or "none"
     context += f"\nOther available: {supporting_str}"
     return context
@@ -1021,9 +1036,16 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     constraints_str = _format_meal_constraints(
         constraints, kitchen_limit_phrases
     ) + allergy_never_block(allergies)
-    pantry_context = _meal_pantry_context(scored_items) if pantry_grounded else ""
+    # The profile's expiry priority (#502) shapes the options prompt too (#718). Read
+    # only for a pantry-grounded turn: the opt-out prompt carries no expiring rule.
+    expiry_priority = (
+        await _expiry_priority(scored_state) if pantry_grounded else DEFAULT_EXPIRY_PRIORITY
+    )
+    pantry_context = _meal_pantry_context(scored_items, expiry_priority) if pantry_grounded else ""
     system_prompt = (
-        MEAL_OPTIONS_SYSTEM_PROMPT if pantry_grounded else MEAL_OPTIONS_SYSTEM_PROMPT_NO_PANTRY
+        meal_options_system_prompt(expiry_priority)
+        if pantry_grounded
+        else MEAL_OPTIONS_SYSTEM_PROMPT_NO_PANTRY
     )
 
     previous_block = ""
@@ -1230,9 +1252,37 @@ def _score_items_for_dish_prompt(
     pantry_items: list[PantryItem],
     constraints: dict[str, Any],
     allergies: list[str] | None = None,
+    expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY,
 ) -> list[dict[str, Any]]:
     rows = [it.model_dump(mode="json") for it in pantry_items]
-    return score_and_rank(rows, constraints, allergies)
+    return score_and_rank(rows, constraints, allergies, expiry_priority)
+
+
+def _dish_pantry_block(
+    scored_items: list[dict[str, Any]],
+    expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY,
+) -> str:
+    """The grounded `{pantry_block}` text for a dish prompt, per expiry-priority level (#718).
+
+    Shared by the pick stage and the meal screen's side swap / add. Off singles
+    nothing out: every cookable item is listed as plain stock (Off scores no urgency
+    points, so a preference-matched item would otherwise be mislabelled "expiring").
+    """
+    if expiry_priority == "off":
+        stock = [_format_pantry_item_for_prompt(i) for i in scored_items if i.get("_score", 0) >= 0]
+        return meal_dish_pantry_block("off").format(
+            priority_items="", supporting_items=", ".join(stock[:18]) or "none"
+        )
+    priority_items = [
+        _format_pantry_item_for_prompt(i) for i in scored_items if i.get("_score", 0) >= 5
+    ]
+    supporting_items = [
+        _format_pantry_item_for_prompt(i) for i in scored_items if 0 <= i.get("_score", 0) < 5
+    ]
+    return meal_dish_pantry_block(expiry_priority).format(
+        priority_items=", ".join(priority_items[:8]) or "none specified",
+        supporting_items=", ".join(supporting_items[:10]) or "none",
+    )
 
 
 async def _expand_dish_result(
@@ -1246,6 +1296,7 @@ async def _expand_dish_result(
     *,
     with_follow_ups: bool = False,
     allergies: list[str] | None = None,
+    expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY,
 ) -> LLMRecipeResult:
     """One grounded, meal-aware recipe generation for a single dish.
 
@@ -1253,6 +1304,8 @@ async def _expand_dish_result(
     than duplicate the main) and the exclusive-equipment tags in play, and
     asks for the meal's servings exactly. With `pantry_grounded` false (the
     user opted out, issue #287) no pantry item reaches the prompt.
+    `expiry_priority` (issues #502, #718) words the pantry block: Off has no
+    expiring-items emphasis, Aggressive a stronger one.
 
     `with_follow_ups=True` (issue #651) uses `MealDishLLMResult` instead of
     plain `LLMRecipeResult` and appends `MEAL_READY_FOLLOW_UPS_RULES` (plus
@@ -1267,13 +1320,6 @@ async def _expand_dish_result(
         else "none — this is the only dish"
     )
 
-    priority_items = [
-        _format_pantry_item_for_prompt(i) for i in scored_items if i.get("_score", 0) >= 5
-    ]
-    supporting_items = [
-        _format_pantry_item_for_prompt(i) for i in scored_items if 0 <= i.get("_score", 0) < 5
-    ]
-
     constraints_json = json.dumps(
         {
             k: v
@@ -1283,10 +1329,7 @@ async def _expand_dish_result(
     )
 
     pantry_block = (
-        MEAL_DISH_PANTRY_BLOCK.format(
-            priority_items=", ".join(priority_items[:8]) or "none specified",
-            supporting_items=", ".join(supporting_items[:10]) or "none",
-        )
+        _dish_pantry_block(scored_items, expiry_priority)
         if pantry_grounded
         else MEAL_DISH_PANTRY_BLOCK_NO_PANTRY
     )
@@ -1337,6 +1380,7 @@ async def _expand_dish(
     scored_items: list[dict[str, Any]],
     pantry_grounded: bool = True,
     allergies: list[str] | None = None,
+    expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY,
 ) -> RecipeCard:
     """`_expand_dish_result`, built into a `RecipeCard` (issue #650's original
     signature -- `workflows/meal/sides.py` needs a `RecipeCard`, never a
@@ -1351,6 +1395,7 @@ async def _expand_dish(
         scored_items,
         pantry_grounded,
         allergies=allergies,
+        expiry_priority=expiry_priority,
     )
     return _recipe_card_from_llm_result(result, servings)
 
@@ -1402,8 +1447,15 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
     # Re-read from the profile, never trusted from the retained echo (#500): an allergy
     # added after the options were shown still binds the dishes built from them.
     allergies = list((await get_stored_food_exclusions(user_id)).allergies)
+    # Likewise the expiry priority (#502, #718): the profile's current setting, not the
+    # one in force when the options were shown.
+    expiry_priority = (
+        await get_stored_expiry_priority(user_id) if pantry_grounded else DEFAULT_EXPIRY_PRIORITY
+    )
     scored_items = (
-        _score_items_for_dish_prompt(pantry_items, constraints_echo.recipe_constraints, allergies)
+        _score_items_for_dish_prompt(
+            pantry_items, constraints_echo.recipe_constraints, allergies, expiry_priority
+        )
         if pantry_grounded
         else []
     )
@@ -1429,6 +1481,7 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
                     pantry_grounded,
                     with_follow_ups=(position == pill_position),
                     allergies=allergies,
+                    expiry_priority=expiry_priority,
                 )
                 for position, dish in enumerate(option.dishes)
                 if position >= first_generated
