@@ -40,7 +40,8 @@ describe('RecipeCard chat variant', () => {
     render(<RecipeCard variant="chat" recipe={RECIPE} onAddToGrocery={onAddToGrocery} />)
     expect(screen.getByText('1 to buy:')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Add to grocery list' }))
-    expect(onAddToGrocery).toHaveBeenCalledWith(['Lemon'])
+    // With the recipe's own amount for it (issue #868), not a bare name.
+    expect(onAddToGrocery).toHaveBeenCalledWith([{ name: 'lemon', quantity: 1, unit: null }])
     expect(await screen.findByRole('status')).toHaveTextContent('1 on your grocery list')
   })
 

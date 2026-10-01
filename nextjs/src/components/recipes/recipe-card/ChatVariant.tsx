@@ -19,6 +19,8 @@ import SpringButton from '@/components/ui/SpringButton'
 import { useMotionConfig } from '@/lib/motion'
 import { titleCase } from '@/lib/format'
 import { ingredientParts } from '@/lib/recipe-helpers'
+import type { ManualLineInput } from '@/lib/grocery'
+import { toBuyEntriesFromRecipe } from '@/lib/meal-to-buy'
 import type { ChatRecipeData, IngredientAvailability } from '@/types/chat'
 import { CARD_FRAME, MetaPill, Minutes, TITLE_FONT, ToBuyLine } from './parts'
 
@@ -45,7 +47,7 @@ export interface ChatCardProps {
   /** Disables that button (the page passes `isStreaming`). */
   makeMealDisabled?: boolean
   /** Overrides the default write to the browser grocery list. */
-  onAddToGrocery?: (items: string[]) => void | Promise<void>
+  onAddToGrocery?: (items: Array<string | ManualLineInput>) => void | Promise<void>
 }
 
 function totalMinutes(recipe: ChatRecipeData): number | null {
@@ -194,7 +196,14 @@ export default function ChatVariant({
           </div>
         )}
 
-        {toBuy !== undefined && <ToBuyLine key={toBuy.join('|')} items={toBuy} onAdd={onAddToGrocery} />}
+        {toBuy !== undefined && (
+          <ToBuyLine
+            key={toBuy.join('|')}
+            items={toBuy}
+            entries={toBuyEntriesFromRecipe(recipe)}
+            onAdd={onAddToGrocery}
+          />
+        )}
 
         {recipe.instructions && recipe.instructions.length > 0 && (
           <div>
