@@ -9,6 +9,9 @@ import FadeInView from '@/components/ui/FadeInView'
 import SpringButton from '@/components/ui/SpringButton'
 import RecipeRefinementModal from '@/components/recipes/RecipeRefinementModal'
 import RecipeSteps from '@/components/recipes/RecipeSteps'
+import Chip from '@/components/ui/Chip'
+import { tagForIngredient } from '@/components/recipes/ingredient-tags'
+import { useIngredientMatches } from '@/hooks/useIngredientMatches'
 import { ingredientParts } from '@/lib/recipe-helpers'
 import { makeMealHref } from '@/lib/chat-seed'
 import type { GeneratedRecipe } from '@/types/recipes'
@@ -63,6 +66,9 @@ export default function RecipeDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [showRefinementModal, setShowRefinementModal] = useState(false)
+
+  // Food tags on the ingredient rows (issue #784). Loading or a failed call is no tags.
+  const ingredientMatches = useIngredientMatches(recipe?.ingredients ?? [])
 
   const fetchRecipe = useCallback(async () => {
     if (!id) return
@@ -336,6 +342,7 @@ export default function RecipeDetailPage() {
                   {recipe.ingredients.map((ing, i) => {
                     const checked = checkedIngredients.has(i)
                     const { label, preparation, optional } = ingredientParts(ing)
+                    const tag = tagForIngredient(label, ingredientMatches)
                     return (
                       <motion.label
                         key={i}
@@ -374,7 +381,7 @@ export default function RecipeDetailPage() {
                           </div>
                         </div>
                         <span
-                          className="text-sm leading-6 transition-colors"
+                          className="min-w-0 flex-1 text-sm leading-6 transition-colors"
                           style={{
                             color: checked ? 'var(--color-muted)' : 'var(--color-text)',
                             textDecoration: checked ? 'line-through' : 'none',
@@ -394,6 +401,13 @@ export default function RecipeDetailPage() {
                             </span>
                           )}
                         </span>
+                        {tag && (
+                          <span data-testid="ingredient-tag" className="flex-shrink-0">
+                            <Chip tone={tag.tone} size="sm">
+                              {tag.label}
+                            </Chip>
+                          </span>
+                        )}
                       </motion.label>
                     )
                   })}
