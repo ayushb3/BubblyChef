@@ -132,7 +132,7 @@ export function StorageListToolbar({
   return (
     <div className="flex min-h-[44px] items-center justify-between gap-2">
       {filters ? (
-        <div className="flex min-w-0 gap-2 overflow-x-auto py-0.5 pr-1">
+        <div className="flex min-w-0 flex-wrap gap-2 py-0.5 pr-1">
           <FacetDropdown
             triggerEmoji="🗂️"
             triggerLabel="Category"

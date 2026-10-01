@@ -287,11 +287,17 @@ export default function StorageSheet<T extends StoredItem>({
 
   const changeQuery = (value: string) => {
     // A new set of rows is on screen: nothing carries over.
-    if (value.trim().length > 0 !== searching) leaveSelect()
+    if (value.trim().length > 0 !== searching) {
+      leaveSelect()
+      setNotice(null)
+    }
     setQuery(value)
   }
   const changeView = (next: StorageView) => {
-    if (next !== view) leaveSelect()
+    if (next !== view) {
+      leaveSelect()
+      setNotice(null)
+    }
     onViewChange(next)
   }
 

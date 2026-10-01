@@ -85,12 +85,16 @@ export default function FacetDropdown({
         className={
           iconOnly
             ? 'relative w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform'
-            : 'relative min-h-[44px] px-4 rounded-full flex items-center gap-1.5 text-sm font-semibold active:scale-95 transition-transform whitespace-nowrap'
+            : 'relative min-h-[44px] px-3.5 rounded-full flex items-center gap-1.5 text-[13px] font-extrabold active:scale-95 transition-transform whitespace-nowrap'
         }
+        // Drawn like the storage sheet's other controls (issue #750): a 2 px ink
+        // edge and a hard 2 px shadow; a chosen filter fills with the theme's
+        // primary, with ink text (white on a pastel primary fails contrast).
         style={{
-          background: hasSelection ? 'var(--color-primary)' : 'var(--color-bg)',
-          color: hasSelection ? '#fff' : 'var(--color-text)',
-          border: '1px solid var(--color-border)',
+          background: hasSelection ? 'var(--color-primary)' : 'var(--color-surface)',
+          color: 'var(--color-text)',
+          border: '2px solid var(--color-text)',
+          boxShadow: '0 2px 0 var(--color-text)',
         }}
       >
         {triggerEmoji && <span aria-hidden="true">{triggerEmoji}</span>}
@@ -117,11 +121,11 @@ export default function FacetDropdown({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: -4 }}
             transition={springs.snappy}
-            className="absolute left-0 top-12 z-20 rounded-2xl overflow-hidden overflow-y-auto"
+            className="absolute left-0 top-12 z-20 rounded-xl overflow-hidden overflow-y-auto"
             style={{
               background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              boxShadow: 'var(--shadow-pop)',
+              border: '2px solid var(--color-text)',
+              boxShadow: '0 3px 0 var(--color-text)',
               minWidth: '180px',
               maxHeight: '260px',
             }}
@@ -137,8 +141,8 @@ export default function FacetDropdown({
                   aria-pressed={isActive}
                   onClick={() => toggleValue(value)}
                   // py-3 keeps rows at 44px tall, matching ThemePicker.
-                  className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-semibold hover:bg-[var(--color-bg)] transition-colors"
-                  style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+                  className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-bold hover:bg-[var(--color-bg)] transition-colors"
+                  style={{ color: 'var(--color-text)' }}
                 >
                   {emoji && <span aria-hidden="true">{emoji}</span>}
                   <span className="flex-1">{label}</span>

@@ -285,20 +285,24 @@ export function StorageRow({
     return (
       <li className={ROW_BORDER}>
         {button}
-        {resolve.cookHref && (
-          <Link
-            href={resolve.cookHref}
-            aria-label={`Cook this ${item.name}`}
-            // A full 44px tap target around the small label (WCAG 2.5.5).
-            className={`flex min-h-[44px] items-center justify-center border-t border-[color:var(--color-border)] px-3 text-center text-xs font-semibold text-[color:var(--color-primary-dark)] ${ROW_FOCUS}`}
-          >
-            🍳 Cook this
-          </Link>
-        )}
+        {/* One strip under the row: Cook this, Used it, Tossed. */}
         <ResolveActions
+          variant="pills"
           itemName={item.name}
           pending={resolve.pending}
           onResolve={resolve.onResolve}
+          leading={
+            resolve.cookHref && (
+              <Link
+                href={resolve.cookHref}
+                aria-label={`Cook this ${item.name}`}
+                // A full 44px tap target around the small label (WCAG 2.5.5).
+                className={`flex min-h-[44px] flex-1 items-center justify-center rounded-full border-2 border-[color:var(--color-text)] bg-[color:var(--color-primary)] px-2 text-center text-xs font-extrabold whitespace-nowrap text-[color:var(--color-text)] shadow-[0_2px_0_var(--color-text)] active:translate-y-px ${ROW_FOCUS}`}
+              >
+                🍳 Cook this
+              </Link>
+            )
+          }
         />
       </li>
     )
