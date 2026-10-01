@@ -21,8 +21,6 @@ review, and it acts as `bubblychef-bot` so its PRs are attributable. Run it with
 Workflow tool (`name: "agent-loop"`, `args: {issue: <n>}`).
 Use this skill instead only when working an issue interactively with Ayush, and in
 that case still open the PR as the bot (`WORKFLOW.md` §7, "The agent loop").
-The loop still tiers PRs by the deleted `.github/CODEOWNERS` and assumes the
-retired fail-to-pass CI job — issue #645.
 
 ## Run budget — check as you go, not at the end
 

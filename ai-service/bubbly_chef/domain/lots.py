@@ -5,7 +5,10 @@ can hold 2 onions bought last week and 3 bought today as two rows. Everything
 that asks "how much do I have" sums the rows, and everything that uses some
 up takes the lot that will go off first. This module is the one place that
 says which lot that is and what a lot is worth in the base unit, so the cook
-matcher and the repository's deduction can't disagree.
+matcher and the repository's deduction can't disagree. Chat `use` and cook
+deduction both spend in `fresh_first_key` order, which keeps an expired lot
+behind every fresh one (#756, #767). `soonest_first_key` only picks the single
+row a by-name update acts on.
 """
 
 from __future__ import annotations
@@ -41,6 +44,31 @@ def soonest_first_key(item: PantryItem) -> tuple[bool, bool, date, float, str]:
     )
 
 
+def fresh_first_key(
+    item: PantryItem, today: date | None = None
+) -> tuple[bool, bool, bool, date, float, str]:
+    """Sort key for spending lots: fresh lots first, expired lots only after them (#756).
+
+    Stocked lots before empty ones, then lots that have not expired (a lot
+    expiring today is still fresh, matching `PantryItem.is_expired`) before
+    expired ones, then the soonest expiry with undated lots last, then the older
+    purchase, then the id. An expired lot is not usable stock while a fresh one
+    exists, but it is still spent when it is all there is.
+
+    Shared by cook deduction and chat `use` (#767), so the two cannot disagree.
+    """
+    today = today or date.today()
+    expired = item.expiry_date is not None and item.expiry_date < today
+    return (
+        item.quantity <= 0,
+        expired,
+        item.expiry_date is None,
+        item.expiry_date or date.max,
+        item.created_at.timestamp(),
+        str(item.id),
+    )
+
+
 def lot_base(item: PantryItem) -> tuple[float | None, str | None]:
     """A lot's quantity in its base unit, derived when the row carries none.
 
@@ -54,4 +82,53 @@ def lot_base(item: PantryItem) -> tuple[float | None, str | None]:
     return normalize_to_base_unit(
         name=lot_food_key(item.name), quantity=item.quantity, unit=item.unit
     )
+
+
+_PLAN_EPSILON = 1e-6
+
+
+def plan_lot_deduction(
+    pantry_items: list[PantryItem], named_id: object, qty: float
+) -> dict[str, float]:
+    """The per-lot split a deduction of `qty` (base unit) from `named_id` will make (#756).
+
+    Mirrors `SupabaseRepository.deduct_pantry_item`: the named lot first, up to what
+    it holds, then the food's other stocked lots of the same base unit in
+    `fresh_first_key` order. Returns `{lot id: base amount}` for the lots that would
+    actually be touched; `{}` when the named lot has no base unit to deduct in (the
+    repository refuses that deduction too). Pure, so a review can ask "will this
+    reach an expired lot" without writing anything.
+    """
+    named = next((i for i in pantry_items if str(i.id) == str(named_id)), None)
+    if named is None or qty <= _PLAN_EPSILON:
+        return {}
+    named_qty, base_unit = lot_base(named)
+    if named_qty is None or base_unit is None:
+        return {}
+
+    split: dict[str, float] = {}
+    take = min(qty, named_qty)
+    if take > 0:
+        split[str(named.id)] = take
+    remainder = qty - named_qty
+
+    food = lot_food_key(named.name)
+    others = sorted(
+        (
+            i
+            for i in pantry_items
+            if i.id != named.id and i.quantity > 0 and lot_food_key(i.name) == food
+        ),
+        key=fresh_first_key,
+    )
+    for lot in others:
+        if remainder <= _PLAN_EPSILON:
+            break
+        lot_qty, lot_unit = lot_base(lot)
+        if lot_qty is None or lot_qty <= 0 or lot_unit != base_unit:
+            continue
+        take = min(remainder, lot_qty)
+        split[str(lot.id)] = take
+        remainder -= take
+    return split
 

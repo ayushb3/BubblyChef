@@ -27,8 +27,8 @@ from __future__ import annotations
 import logging
 
 from bubbly_chef.api.ingest_dispatcher import IngestPayload, dispatcher
-from bubbly_chef.models.recipe import RecipeCardProposal
 from bubbly_chef.models.base import ProposalEnvelope
+from bubbly_chef.models.recipe import RecipeCardProposal
 from bubbly_chef.services.recipe_url_ingestor import ingest_recipe_from_url
 from bubbly_chef.workflows.state import create_recipe_envelope
 

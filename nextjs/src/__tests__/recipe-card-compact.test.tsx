@@ -1,5 +1,5 @@
 /**
- * Issue #650 — the compact meal card in chat: Open meal, Save meal, and the
+ * Issue #650 / #744 — the compact meal card in chat: Open meal, Save meal, and the
  * "a second tap never creates a second meal" guard (asserted at the
  * component level as "the button disables the instant it's tapped, and
  * onOpenMeal/onSaveMeal each fire at most once per render" — the actual
@@ -7,8 +7,30 @@
  * covered by `chat-meal-card-actions.test.tsx`).
  */
 import { fireEvent, render, screen } from '@testing-library/react'
-import CompactMealCard from '@/components/chat/CompactMealCard'
+import RecipeCard, { compactPropsFromProposal, type CompactCardProps } from '@/components/recipes/RecipeCard'
 import type { MealProposal } from '@/types/chat'
+
+/**
+ * Issue #744: the old CompactMealCard is the `compact` variant of the one recipe
+ * card. This adapter keeps these behaviour tests on the old prop names so they
+ * run unchanged against the new card.
+ */
+function CompactMealCard({
+  proposal,
+  onOpenMeal,
+  onSaveMeal,
+  ...rest
+}: { proposal: MealProposal; onOpenMeal: () => void; onSaveMeal: () => void } & Partial<CompactCardProps>) {
+  return (
+    <RecipeCard
+      variant="compact"
+      {...compactPropsFromProposal(proposal)}
+      onOpen={onOpenMeal}
+      onSave={onSaveMeal}
+      {...rest}
+    />
+  )
+}
 
 const PROPOSAL: MealProposal = {
   proposal_type: 'meal',
@@ -36,24 +58,23 @@ describe('CompactMealCard', () => {
     ;(Element.prototype.scrollIntoView as jest.Mock).mockClear()
   })
 
-  it('renders the title and every dish with its role', () => {
+  it('renders the title and every dish, main first', () => {
     render(<CompactMealCard proposal={PROPOSAL} onOpenMeal={jest.fn()} onSaveMeal={jest.fn()} />)
     expect(screen.getByText('Lemon chicken dinner')).toBeInTheDocument()
-    expect(screen.getByText('Lemon butter chicken')).toBeInTheDocument()
-    expect(screen.getByText('Buttered orzo')).toBeInTheDocument()
-    expect(screen.getByText('main')).toBeInTheDocument()
-    expect(screen.getByText('side')).toBeInTheDocument()
+    // One meta line (the board's compact card has no per-dish role tags).
+    expect(screen.getByText('Lemon butter chicken · Buttered orzo')).toBeInTheDocument()
   })
 
   it('shows missing ingredients when present', () => {
     render(<CompactMealCard proposal={PROPOSAL} onOpenMeal={jest.fn()} onSaveMeal={jest.fn()} />)
-    expect(screen.getByText(/To buy: parsley/)).toBeInTheDocument()
+    expect(screen.getByText('1 to buy')).toBeInTheDocument()
+    expect(screen.getByText(/parsley/)).toBeInTheDocument()
   })
 
   it('calls onOpenMeal when Open meal is tapped', () => {
     const onOpenMeal = jest.fn()
     render(<CompactMealCard proposal={PROPOSAL} onOpenMeal={onOpenMeal} onSaveMeal={jest.fn()} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Open meal' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Open meal/ }))
     expect(onOpenMeal).toHaveBeenCalledTimes(1)
   })
 
