@@ -4,7 +4,7 @@
  * only the positions moved.
  */
 import { SLOTS, SLOT_KEYS } from '@/lib/kitchen/slots'
-import { PLACE_BOXES } from '@/components/kitchen/KitchenWall'
+import { PLACE_BOXES, PLACE_CONTENT, TAG_UNITS } from '@/components/kitchen/KitchenWall'
 
 const OLD_SLOT_KEYS = [
   'wall_shelf',
@@ -49,24 +49,35 @@ describe('SLOTS on the wall (#748)', () => {
     }
   })
 
+  // Rects in percent of the wall, from wall units.
+  const pct = (x: number, y: number, w: number, h: number) => ({
+    x: (x / 96) * 100,
+    y: (y / 80) * 100,
+    w: (w / 96) * 100,
+    h: (h / 80) * 100,
+  })
+  // Touching edges are not an overlap (EPS absorbs float and rounding noise).
+  const EPS = 0.05
+  const hits = (a: { x: number; y: number; w: number; h: number }, b: typeof a) =>
+    a.x < b.x + b.w - EPS && b.x < a.x + a.w - EPS && a.y < b.y + b.h - EPS && b.y < a.y + a.h - EPS
+
   it('keeps every slot clear of the place tags (a decoration never hides a label)', () => {
-    // A tag is drawn at 13px pixel type and is 24px tall (5.9 wall units). Widths
-    // are measured off board A at 390px wide, in wall units, rounded up.
-    const TAG_H = 6
-    const TAG_W = { fridge: 19, freezer: 19, shelves: 16, basket: 19, chalkboard: 22 }
-    const WALL_W = 96
-    const WALL_H = 80
     for (const [name, { tag, anchorRight }] of Object.entries(PLACE_BOXES)) {
-      const width = TAG_W[name as keyof typeof TAG_W]
+      const width = TAG_UNITS.w[name as keyof typeof TAG_UNITS.w]
       // `tag[0]` is the left edge, or the right edge for a right-anchored tag.
       const left = anchorRight ? tag[0] - width : tag[0]
-      const tx = (left / WALL_W) * 100
-      const ty = (tag[1] / WALL_H) * 100
-      const tw = (width / WALL_W) * 100
-      const th = (TAG_H / WALL_H) * 100
+      const rect = pct(left, tag[1], width, TAG_UNITS.h)
       for (const s of SLOTS) {
-        const overlap = s.x < tx + tw && tx < s.x + s.w && s.y < ty + th && ty < s.y + s.h
-        expect([name, s.key, overlap]).toEqual([name, s.key, false])
+        expect([name, s.key, hits(s, rect)]).toEqual([name, s.key, false])
+      }
+    }
+  })
+
+  it('keeps every slot clear of what each place draws (a decoration never covers the contents)', () => {
+    for (const [name, box] of Object.entries(PLACE_CONTENT)) {
+      const rect = pct(...box)
+      for (const s of SLOTS) {
+        expect([name, s.key, hits(s, rect)]).toEqual([name, s.key, false])
       }
     }
   })

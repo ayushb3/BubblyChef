@@ -72,6 +72,27 @@ export const PLACE_BOXES: Record<
   chalkboard: { box: [73.6, 13, 21.4, 22.5], tag: [94.5, 29.54], anchorRight: true },
 }
 
+/**
+ * What each place draws, in wall units: the objects a decoration must never
+ * cover (the fridge body, the freezer drawer and its frozen bags, the jars on
+ * the shelf, the basket's fruit, the door's chalkboard). Tags are separate: see
+ * `PLACE_BOXES` and `TAG_UNITS`. `kitchen-slots.test.ts` checks every decoration
+ * slot against both.
+ */
+export const PLACE_CONTENT: Record<PlaceKey | 'chalkboard', WallBox> = {
+  fridge: [4, 12, 20, 29],
+  freezer: [4, 41, 20, 17],
+  shelves: [27, 22, 42, 11],
+  basket: [59, 33, 14, 12],
+  chalkboard: [76, 13, 19, 22],
+}
+
+/** A tag is 24px tall at 13px type (5.9 units); widths are measured off board A at 390px, rounded up. */
+export const TAG_UNITS = {
+  h: 6,
+  w: { fridge: 19, freezer: 19, shelves: 16, basket: 19, chalkboard: 22 },
+} as const
+
 const PAINT = WALL_PAINT.map(([fill, layer, rects]) => ({ fill, layer, d: rectsToPath(rects) }))
 
 const PCT = (n: number, of: number) => `${Math.round((n / of) * 10000) / 100}%`

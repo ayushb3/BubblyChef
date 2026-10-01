@@ -16,8 +16,9 @@
  *   ceiling, right of window:  hanging_plant (68-76, 0-13), lights (78-96, 0-12)
  *   wall, left of window:      wall_art (25-36, 11-22)
  *   window, right pane:        window_sill (51.5-61.5, 11-22)
- *   wall, right of curtain:    wall_shelf (68-76, 14-29), a small wall shelf
- *   fridge, freezer drawer:    fridge_door (7-21, 47.5-55.5)
+ *   wall, right of curtain:    wall_shelf (69.5-76, 14-29), a small wall shelf
+ *   top of the fridge:         fridge_door (6-22, 0-4.3), the only free strip: the
+ *                              fridge is a cut-away and the freezer drawer is a place
  *   worktop, left of the pot:  counter_left (26.5-34.5, 39-44.5),
  *                              counter_right (35-43, 39-44.5)
  *   stove, on the burner:      stove_top (47.5-58.5, 33-44)
@@ -27,7 +28,9 @@
  * The wall is busy, so a few boxes are small (the counter pair is about 32 x 22
  * px at 390 px wide); the emoji (and later the sprite) is sized to fit the box.
  * Boxes may overlap the drawn room (the stove slot sits over the pot) but never
- * a place's label, and decorations take no taps, so a place stays tappable.
+ * a place's label or what it draws (the fridge, the freezer drawer, the jars, the
+ * basket, the chalkboard); `kitchen-slots.test.ts` enforces it. Decorations take
+ * no taps, so a place stays tappable.
  */
 export interface Slot {
   key: string
@@ -64,10 +67,10 @@ export const SLOTS: Slot[] = [
   { key: 'lights', label: 'Lights', ...at(78, 0, 18, 12) },
   { key: 'wall_art', label: 'Wall art', ...at(25, 11, 11, 11) },
   { key: 'window_sill', label: 'Window sill', ...at(51.5, 11, 10, 11) },
-  { key: 'wall_shelf', label: 'Wall shelf', ...at(68, 14, 8, 15) },
+  { key: 'wall_shelf', label: 'Wall shelf', ...at(69.5, 14, 6.5, 15) },
 
   // Fridge, worktop and stove
-  { key: 'fridge_door', label: 'Fridge door', ...at(7, 47.5, 14, 8) },
+  { key: 'fridge_door', label: 'Fridge door', ...at(6, 0, 16, 4.3) },
   { key: 'counter_left', label: 'Counter (left)', ...at(26.5, 39, 8, 5.5) },
   { key: 'counter_right', label: 'Counter (right)', ...at(35, 39, 8, 5.5) },
   { key: 'stove_top', label: 'Stove top', ...at(47.5, 33, 11, 11) },
