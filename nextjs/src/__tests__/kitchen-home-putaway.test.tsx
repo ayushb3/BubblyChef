@@ -5,10 +5,15 @@
  * pending scan clears and the counts refresh. Leaving keeps the scan pending, and
  * a reload (a fresh mount) reopens it.
  *
+ * Issue #754: after the write succeeds each item hops from the sheet to its own
+ * place, the tags tick +1, +2... as each lands, and the real counts settle when it
+ * is over (or at once on a tap, or under reduced motion). A failed write plays
+ * nothing.
+ *
  * The pantry fetches are mocked and so is the bulk write. No model is called.
  */
 import React from 'react'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import HeroHome from '@/components/dashboard/HeroHome'
 import {
@@ -20,6 +25,11 @@ import {
 import * as pantryApi from '@/lib/api/pantry'
 import type { ScanResult } from '@/types/scan'
 
+let mockReduced = false
+jest.mock('framer-motion', () => ({
+  ...jest.requireActual('framer-motion'),
+  useReducedMotion: () => mockReduced,
+}))
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ replace: jest.fn(), push: jest.fn(), refresh: jest.fn() }),
   useSearchParams: () => new URLSearchParams(''),
@@ -65,6 +75,8 @@ const SCAN: ScanResult = {
 
 let pantryItems: Array<Record<string, unknown>>
 let fetchSpy: jest.Mock
+// While set, the pantry read waits for it (a slow refresh after the flight).
+let pantryGate: Promise<void> | null = null
 
 function mockFetch() {
   fetchSpy = jest.fn(async (input: RequestInfo | URL) => {
@@ -73,6 +85,7 @@ function mockFetch() {
     if (url.includes('/api/bubbles')) return jsonResponse({ balance: 0, recent: [], streak_weeks: 0 })
     if (url.includes('/api/pantry/expiring')) return jsonResponse({ items: [], count: 0 })
     if (url.includes('/api/pantry')) {
+      if (pantryGate) await pantryGate
       return jsonResponse({ items: pantryItems, total_count: pantryItems.length })
     }
     return jsonResponse({ recipes: [], total_count: 0 })
@@ -97,6 +110,8 @@ const originalFetch = global.fetch
 const originalScrollTo = window.scrollTo
 
 beforeEach(() => {
+  pantryGate = null
+  mockReduced = false
   jest.clearAllMocks()
   window.localStorage.clear()
   window.scrollTo = jest.fn() as unknown as typeof window.scrollTo
@@ -197,9 +212,14 @@ describe('with a scan waiting', () => {
     await waitFor(() => expect(readPendingPutAway()).toBeNull())
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 
+    // The items hop into place (below); a tap jumps to where it ends.
+    fireEvent.pointerDown(document.body)
+
     // Counts refreshed (a second pantry load), and the badges gave way to them.
-    expect(pantryFetchCount()).toBe(2)
-    expect(screen.getByRole('button', { name: /^Fridge/ })).toHaveTextContent('Fridge 3')
+    await waitFor(() => expect(pantryFetchCount()).toBe(2))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^Fridge/ })).toHaveTextContent('Fridge 3'),
+    )
     expect(screen.getByRole('button', { name: /^Fridge/ })).not.toHaveTextContent('+')
     // Bubbles has left the door.
     expect(screen.getByTestId('kitchen-wall')).not.toHaveAttribute(
@@ -218,6 +238,12 @@ describe('with a scan waiting', () => {
     expect(screen.getByRole('dialog', { name: 'Put the shopping away?' })).toBeInTheDocument()
     expect(readPendingPutAway()).not.toBeNull()
     expect(screen.getByRole('button', { name: /^Fridge/ })).toHaveTextContent('Fridge +2')
+    // A failed write never animates: nothing flew, and nothing is queued to.
+    expect(screen.queryByTestId('put-away-chip')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('put-away-flight')).not.toBeInTheDocument()
+    await new Promise((r) => setTimeout(r, 400))
+    expect(screen.queryByTestId('put-away-chip')).not.toBeInTheDocument()
+    expect(pantryFetchCount()).toBe(1)
   })
 
   it('Discard clears the scan, closes the sheet and takes the badges away', async () => {
@@ -258,4 +284,143 @@ describe('with a scan waiting', () => {
     expect(await screen.findByRole('dialog', { name: 'Put the shopping away?' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /Going in 5/ })).toBeInTheDocument()
   })
+})
+
+// Issue #754: the hop into place, on the real home. Timers are real (a few
+// seconds at most): the flight is deterministic and bounded.
+describe('the items hop into their places after a successful put-away', () => {
+  function fridgeButton() {
+    return screen.getByRole('button', { name: /^Fridge/ })
+  }
+  function written(names: string[], location: string) {
+    return names.map((name, i) => ({
+      id: `w-${location}-${i}`, name, category: 'other', location, quantity: 1, unit: 'item', expiry_date: null,
+    }))
+  }
+
+  beforeEach(() => {
+    savePendingPutAway(pendingFromScan(SCAN))
+    mockBulkAdd.mockResolvedValue({ count: 5, items: [] })
+  })
+
+  async function putAway5() {
+    renderHome()
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(pantryFetchCount()).toBe(1))
+    // What the refresh will read once the write has landed.
+    pantryItems = [
+      ...pantryItems,
+      ...written(['Milk', 'Eggs'], 'fridge'),
+      ...written(['Peas'], 'freezer'),
+      ...written(['Spaghetti'], 'pantry'),
+      ...written(['Bananas'], 'counter'),
+    ]
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Put away 5 items' }))
+  }
+
+  it('flies each item, ticks the tags up as they land, then settles the real counts', async () => {
+    await putAway5()
+
+    // On their way: chips in the air, the sheet gone, the pending scan cleared.
+    expect((await screen.findAllByTestId('put-away-chip')).length).toBeGreaterThan(0)
+    expect(readPendingPutAway()).toBeNull()
+
+    // The first landing: the fridge reads +1. The real counts are held back, not yet re-read.
+    await waitFor(() => expect(fridgeButton()).toHaveTextContent('Fridge +1'))
+    expect(pantryFetchCount()).toBe(1)
+    await waitFor(() => expect(fridgeButton()).toHaveTextContent('Fridge +2'))
+    expect(
+      screen.getByTestId('kitchen-wall').querySelector('[data-testid="incoming-sparkles"][data-place="fridge"]'),
+    ).not.toBeNull()
+
+    // Then it settles: the real counts, no +N, the chips gone.
+    await waitFor(() => expect(fridgeButton()).toHaveTextContent('Fridge 3'), { timeout: 4000 })
+    expect(fridgeButton()).not.toHaveTextContent('+')
+    expect(screen.getByRole('button', { name: /^Freezer/ })).toHaveTextContent('Freezer 1')
+    expect(screen.getByRole('button', { name: /^Shelves/ })).toHaveTextContent('Shelves 2')
+    expect(screen.getByRole('button', { name: /^Basket/ })).toHaveTextContent('Basket 1')
+    expect(screen.queryByTestId('put-away-chip')).not.toBeInTheDocument()
+    expect(pantryFetchCount()).toBe(2)
+  }, 10000)
+
+  it('a tap during the animation jumps straight to the end state', async () => {
+    await putAway5()
+    await screen.findAllByTestId('put-away-chip')
+    expect(fridgeButton()).not.toHaveTextContent('Fridge 3')
+
+    fireEvent.pointerDown(document.body)
+
+    await waitFor(() => expect(fridgeButton()).toHaveTextContent('Fridge 3'))
+    expect(screen.queryByTestId('put-away-chip')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Basket/ })).toHaveTextContent('Basket 1')
+    expect(pantryFetchCount()).toBe(2)
+  })
+
+  it('keeps the +N until the real counts are read, never flashing the old numbers', async () => {
+    await putAway5()
+    await screen.findAllByTestId('put-away-chip')
+    // The refresh after the flight is slow.
+    let release!: () => void
+    pantryGate = new Promise<void>((r) => { release = r })
+
+    fireEvent.pointerDown(document.body)
+
+    // The flight is over, but the tags still read what landed, not the stale 1.
+    await waitFor(() => expect(screen.queryByTestId('put-away-chip')).not.toBeInTheDocument())
+    expect(fridgeButton()).toHaveTextContent('Fridge +2')
+    expect(fridgeButton()).not.toHaveTextContent('Fridge 1')
+
+    await act(async () => release())
+    await waitFor(() => expect(fridgeButton()).toHaveTextContent('Fridge 3'))
+    expect(fridgeButton()).not.toHaveTextContent('+')
+  })
+
+  it('under reduced motion nothing flies: the counts just update', async () => {
+    mockReduced = true
+    await putAway5()
+
+    await waitFor(() => expect(fridgeButton()).toHaveTextContent('Fridge 3'))
+    expect(screen.queryByTestId('put-away-chip')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('put-away-flight')).not.toBeInTheDocument()
+    expect(screen.getByTestId('kitchen-wall').querySelectorAll('[style*="translate"]').length).toBe(0)
+    expect(pantryFetchCount()).toBe(2)
+  })
+
+  it('lands 11 items one by one with each place ending correct', async () => {
+    const names = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `${prefix}${i}`)
+    const big: ScanResult = {
+      ...SCAN,
+      ready_to_add: [
+        ...names('F', 4).map((n) => scanned(n, 'fridge')),
+        ...names('Z', 2).map((n) => scanned(n, 'freezer')),
+        ...names('S', 3).map((n) => scanned(n, 'pantry')),
+        ...names('B', 2).map((n) => scanned(n, 'counter')),
+      ],
+      needs_review: [],
+      skipped: [],
+    }
+    window.localStorage.clear()
+    savePendingPutAway(pendingFromScan(big))
+    mockBulkAdd.mockResolvedValue({ count: 11, items: [] })
+
+    renderHome()
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(pantryFetchCount()).toBe(1))
+    pantryItems = [
+      ...pantryItems,
+      ...written(names('F', 4), 'fridge'),
+      ...written(names('Z', 2), 'freezer'),
+      ...written(names('S', 3), 'pantry'),
+      ...written(names('B', 2), 'counter'),
+    ]
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Put away 11 items' }))
+
+    // Mid-flight the tags read the running +N.
+    await waitFor(() => expect(fridgeButton()).toHaveTextContent('Fridge +2'))
+    // And it ends, inside the time budget, with every place's count right.
+    await waitFor(() => expect(fridgeButton()).toHaveTextContent('Fridge 5'), { timeout: 5000 })
+    expect(screen.getByRole('button', { name: /^Freezer/ })).toHaveTextContent('Freezer 2')
+    expect(screen.getByRole('button', { name: /^Shelves/ })).toHaveTextContent('Shelves 4')
+    expect(screen.getByRole('button', { name: /^Basket/ })).toHaveTextContent('Basket 2')
+  }, 12000)
 })

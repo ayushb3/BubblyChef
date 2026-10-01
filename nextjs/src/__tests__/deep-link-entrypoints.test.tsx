@@ -233,7 +233,7 @@ describe('expiring pantry rows in the storage sheet List (#138)', () => {
   it('offers "Cook this" on expiring items only — not expired, not far-future', () => {
     renderPantry()
 
-    const cookLinks = screen.getAllByRole('link', { name: /^Cook this/i })
+    const cookLinks = screen.getAllByRole('link', { name: /^Cook something with/i })
     const names = cookLinks.map((l) => hrefParams(l).get('use'))
 
     // spinach (days=1) is urgent — gets "Cook this"
@@ -247,7 +247,7 @@ describe('expiring pantry rows in the storage sheet List (#138)', () => {
   it('scopes the link to that item, expiry included', () => {
     renderPantry()
 
-    const link = screen.getByRole('link', { name: /Cook this spinach/i })
+    const link = screen.getByRole('link', { name: /Cook something with spinach/i })
     const params = hrefParams(link)
     expect(link.getAttribute('href')).toMatch(/^\/chat\?/)
     expect(params.get('use')).toBe('spinach')
@@ -269,7 +269,7 @@ describe('expiring pantry rows in the storage sheet List (#138)', () => {
   it('gives "Cook this" a 44px tap target (WCAG 2.5.5)', () => {
     renderPantry()
 
-    const link = screen.getByRole('link', { name: /Cook this spinach/i })
+    const link = screen.getByRole('link', { name: /Cook something with spinach/i })
     expect(link.className).toContain('min-h-[44px]')
   })
 
@@ -277,7 +277,7 @@ describe('expiring pantry rows in the storage sheet List (#138)', () => {
     renderPantry()
 
     const editButton = screen.getByRole('button', { name: /^Spinach/ })
-    const link = screen.getByRole('link', { name: /Cook this spinach/i })
+    const link = screen.getByRole('link', { name: /Cook something with spinach/i })
 
     for (const el of [editButton, link]) {
       expect(el?.className).toMatch(/focus-visible:outline-2/)
