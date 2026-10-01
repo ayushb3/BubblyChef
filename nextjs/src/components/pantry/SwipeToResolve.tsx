@@ -43,6 +43,14 @@ export interface SwipeToResolveProps {
   itemName: string
   onResolve: (outcome: ResolveOutcome) => void
   pending?: boolean
+  /** Classes for the clipping wrapper. Default: the pantry card's rounded corners. */
+  className?: string
+  /**
+   * Classes for the sliding layer, which must be opaque so it hides the action
+   * layer beneath it. Default: the card surface; a flat list row passes the
+   * sheet's own background.
+   */
+  contentClassName?: string
   children: React.ReactNode
 }
 
@@ -75,6 +83,8 @@ export default function SwipeToResolve({
   itemName,
   onResolve,
   pending = false,
+  className = 'rounded-2xl',
+  contentClassName = 'bg-[var(--color-surface)]',
   children,
 }: SwipeToResolveProps) {
   const [revealed, setRevealed] = useState<Revealed>(null)
@@ -103,7 +113,7 @@ export default function SwipeToResolve({
   const dragEnabled = !pending && !prefersReduced
 
   return (
-    <div className="relative overflow-hidden rounded-2xl">
+    <div className={`relative overflow-hidden ${className}`} data-testid="swipe-to-resolve">
       {/* Action layer, revealed as the card slides off it. aria-hidden because
           the buttons below are the accessible path; a screen-reader user should
           never be asked to perform a drag. */}
@@ -131,7 +141,7 @@ export default function SwipeToResolve({
                 : 0,
         }}
         transition={springs.snappy}
-        className="relative bg-[var(--color-surface)] touch-pan-y"
+        className={`relative touch-pan-y ${contentClassName}`}
       >
         {children}
       </motion.div>

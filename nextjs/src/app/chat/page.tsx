@@ -713,7 +713,7 @@ function ChatSurface() {
         if (proposal) handleOpenMeal(msgId, proposal)
         break
       case 'open_scan':
-        router.push('/pantry?add=scan')
+        router.push('/?add=scan')
         break
     }
   }
@@ -1004,7 +1004,7 @@ function ChatSurface() {
                 onChipTap={(chip) => handleSuggestionClick(chip.message)}
                 onChipAction={(action) => {
                   // The starter row's only action pill is the scan pill.
-                  if (action === 'open_scan') router.push('/pantry?add=scan')
+                  if (action === 'open_scan') router.push('/?add=scan')
                 }}
               />
             )}

@@ -15,11 +15,15 @@ import { kitchenEyebrow } from '@/lib/kitchen/eyebrow'
 import {
   PLACE_KEYS,
   kitchenStock,
+  placeLocation,
+  storageSheetHref,
+  type ExpiryFacet,
   summarizePlaces,
   type KitchenStock,
   type PlaceKey,
   type PlaceSummaries,
 } from '@/lib/kitchen/places'
+import { movePantryItems, resolvePantryItems } from '@/lib/api/pantry'
 import { fetchDashboardDaily } from '@/lib/api/dashboard'
 import type { DashboardTip, DashboardSuggestion } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
@@ -29,7 +33,7 @@ import { useBubbles } from '@/lib/api/bubbles'
 import KitchenScene from '@/components/kitchen/KitchenScene'
 import StorageSheet, { isStorageView, type StorageView } from '@/components/kitchen/StorageSheet'
 import EditItemModal from '@/components/pantry/AddItemModal'
-import PantryAddSheet from '@/components/pantry/PantryAddSheet'
+import PantryAddSheet, { type PantryAddTab } from '@/components/pantry/PantryAddSheet'
 import PixelBubbles from '@/components/kitchen/PixelBubbles'
 import { sceneLabel } from '@/lib/kitchen/bubbles-spot'
 import { useBubblesSpot } from '@/hooks/useBubblesSpot'
@@ -307,13 +311,13 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
   // The urgent-item CTA deep-links into a chat seeded with that ingredient
   // (#138), so one tap lands on a recipe that actually uses it.
   const heroAction = totalCount === 0
-    ? { label: 'Scan receipt', href: '/pantry?add=scan' }
+    ? { label: 'Scan receipt', href: '/scan' }
     : suggestion
       ? { label: 'Open recipe', href: `/recipes/${suggestion.recipe_id}` }
       : urgentItem
         ? { label: 'Find a recipe', href: cookThisHref(urgentItem.name, urgentItem.expiry_date) }
         : expiringCount > 0
-          ? { label: 'View pantry', href: '/pantry' }
+          ? { label: 'View pantry', href: storageSheetHref({ expiry: ['expiring', 'expired'] }) }
           : { label: 'Ask Bubbles', href: '/chat' }
 
   // Measure whether the clamped tip actually overflows. Runs once the tip has
@@ -332,14 +336,23 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
 
   // Storage sheet (issue #749): tapping a place opens it on that place. The
   // `?place=fridge&view=scene|list` deep link opens it directly, on load or when
-  // the URL changes under a mounted home.
+  // the URL changes under a mounted home. `&expiry=expiring,expired` starts the
+  // List with the expiry filter on (#750: where the old /pantry/use-soon lands).
+  // `?add=scan|type` opens the add sheet on that tab (#750: where the old
+  // /pantry?add= lands).
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
-  const [sheet, setSheet] = useState<{ place: PlaceKey; view: StorageView } | null>(null)
+  const [sheet, setSheet] = useState<{
+    place: PlaceKey
+    view: StorageView
+    expiry?: ExpiryFacet[]
+  } | null>(null)
   const [editItem, setEditItem] = useState<EnrichedPantryItem | null>(null)
-  const [addPlace, setAddPlace] = useState<PlaceKey | null>(null)
+  const [addSheet, setAddSheet] = useState<{ tab: PantryAddTab; place?: PlaceKey } | null>(null)
   const linkedPlace = searchParams.get('place')
   const linkedView = searchParams.get('view')
+  const linkedExpiry = searchParams.get('expiry')
+  const linkedAdd = searchParams.get('add')
   useEffect(() => {
     if (!PLACE_KEYS.includes(linkedPlace as PlaceKey)) return
     // The URL is an external system being synced into React, which is what an
@@ -348,13 +361,25 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     setSheet({
       place: linkedPlace as PlaceKey,
       view: isStorageView(linkedView) ? linkedView : 'scene',
+      expiry: (linkedExpiry ?? '')
+        .split(',')
+        .filter((v): v is ExpiryFacet => v === 'expiring' || v === 'expired'),
     })
-  }, [linkedPlace, linkedView])
+  }, [linkedPlace, linkedView, linkedExpiry])
+  useEffect(() => {
+    if (linkedAdd !== 'scan' && linkedAdd !== 'type') return
+    // Same: the address is the cause, and the sheet is closable afterwards.
+    setAddSheet({ tab: linkedAdd })
+  }, [linkedAdd])
 
   const closeSheet = () => {
     setSheet(null)
     // A deep-linked visit must not reopen on refresh.
-    if (linkedPlace || linkedView) router.replace('/', { scroll: false })
+    if (linkedPlace || linkedView || linkedExpiry) router.replace('/', { scroll: false })
+  }
+  const closeAddSheet = () => {
+    setAddSheet(null)
+    if (linkedAdd) router.replace('/', { scroll: false })
   }
 
   // The pantry changed behind the sheet: re-read the home's own copy, and mark
@@ -363,6 +388,19 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     reload()
     queryClient.invalidateQueries({ queryKey: ['pantry'] })
     queryClient.invalidateQueries({ queryKey: ['bubbles'] })
+  }
+
+  // The List's bulk edits and per-row resolves: the existing per-item endpoints,
+  // one item at a time. The rows are re-read when anything went through.
+  const movePantry = async (ids: string[], place: PlaceKey) => {
+    const result = await movePantryItems(ids, placeLocation(place))
+    if (result.done.length > 0) pantryChanged()
+    return result
+  }
+  const resolvePantry = async (ids: string[], outcome: 'used' | 'tossed') => {
+    const result = await resolvePantryItems(ids, outcome)
+    if (result.done.length > 0) pantryChanged()
+    return result
   }
 
   const pantryStatus = loading ? 'loading' : items ? 'ready' : 'error'
@@ -573,9 +611,10 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
           the edit or add sheet is on top: two sheets cannot both hold focus. */}
       <StorageSheet
         open={sheet !== null}
-        suspended={editItem !== null || addPlace !== null}
+        suspended={editItem !== null || addSheet !== null}
         place={sheet?.place ?? 'fridge'}
         view={sheet?.view ?? 'scene'}
+        initialExpiry={sheet?.expiry}
         items={items}
         status={pantryStatus}
         palette={kitchenTheme.wall}
@@ -583,7 +622,9 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         onViewChange={(view) => setSheet((s) => (s ? { ...s, view } : s))}
         onClose={closeSheet}
         onEdit={setEditItem}
-        onAdd={setAddPlace}
+        onAdd={(place) => setAddSheet({ tab: 'type', place })}
+        onMove={movePantry}
+        onResolve={resolvePantry}
         onRetry={reload}
       />
       <EditItemModal
@@ -595,10 +636,10 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         editItem={editItem}
       />
       <PantryAddSheet
-        isOpen={addPlace !== null}
-        onClose={() => setAddPlace(null)}
-        initialTab="type"
-        place={addPlace ?? undefined}
+        isOpen={addSheet !== null}
+        onClose={closeAddSheet}
+        initialTab={addSheet?.tab ?? 'type'}
+        place={addSheet?.place}
         onItemsAdded={pantryChanged}
       />
     </div>

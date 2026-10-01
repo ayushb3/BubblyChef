@@ -253,9 +253,10 @@ test.describe('guest walkthrough (issue #518)', () => {
     await expect(page.getByText('Drop your receipt here')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/Something went wrong/)).toHaveCount(0);
 
+    // The old Use Soon address lands on the kitchen's List with the expiry filter on (#750).
     await page.goto('/pantry/use-soon');
     await expect(page).not.toHaveURL(/\/login/);
-    await expect(page.getByRole('heading', { name: 'Use Soon' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true', { timeout: 10_000 });
     await expect(page.getByText(/Something went wrong/)).toHaveCount(0);
 
     await page.goto(`/recipes/${savedRecipeId}`);

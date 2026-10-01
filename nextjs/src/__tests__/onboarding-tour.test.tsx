@@ -78,18 +78,18 @@ describe('TOUR_STEPS definitions', () => {
   it('5 steps defined with correct ids in order', () => {
     expect(TOUR_STEPS.map((s) => s.id)).toEqual([
       'hero',
-      'nav-pantry',
+      'fridge',
       'nav-chat',
       'nav-recipes',
       'profile',
     ])
   })
 
-  it('placement is above for bottom-nav steps, below for header/hero', () => {
+  it('placement is above for bottom-nav steps, below for header/hero/fridge', () => {
     const above = TOUR_STEPS.filter((s) => s.placement === 'above').map((s) => s.id)
     const below = TOUR_STEPS.filter((s) => s.placement === 'below').map((s) => s.id)
-    expect(above).toEqual(['nav-pantry', 'nav-chat', 'nav-recipes'])
-    expect(below).toEqual(['hero', 'profile'])
+    expect(above).toEqual(['nav-chat', 'nav-recipes'])
+    expect(below).toEqual(['hero', 'fridge', 'profile'])
   })
 })
 
@@ -266,7 +266,7 @@ describe('TourOverlay: positioning', () => {
     })
     Object.assign(window, { innerWidth: 375, innerHeight: 812 })
     for (const s of TOUR_STEPS) boxes[s.id] = { x: 20, y: 200, width: 100, height: 50 }
-    boxes['nav-pantry'] = { x: 94, y: 746, width: 94, height: 66 }
+    boxes['nav-chat'] = { x: 94, y: 746, width: 94, height: 66 }
     Element.prototype.getBoundingClientRect = function (this: Element) {
       const id = this.getAttribute('data-tour')
       const b = id ? boxes[id] : undefined
@@ -315,15 +315,15 @@ describe('TourOverlay: positioning', () => {
       )
     })
     await settle(50)
-    const pantryIndex = TOUR_STEPS.findIndex((s) => s.id === 'nav-pantry')
-    for (let i = 0; i < pantryIndex; i++) {
+    const navIndex = TOUR_STEPS.findIndex((s) => s.id === 'nav-chat')
+    for (let i = 0; i < navIndex; i++) {
       await act(async () => {
         screen.getByTestId('next').click()
       })
       await settle(30)
     }
     const dialog = screen.getByRole('dialog', {
-      name: `Onboarding tour step ${pantryIndex + 1} of ${TOUR_STEPS.length}`,
+      name: `Onboarding tour step ${navIndex + 1} of ${TOUR_STEPS.length}`,
     })
     // Spotlight top = 746 - PAD(8) = 738; the tooltip's bottom edge sits 8px above it.
     expect(dialog.style.bottom).toBe(`${812 - 738 + 8}px`)
@@ -381,7 +381,7 @@ describe('TourOverlay: positioning', () => {
           <div data-testid="step-index">{stepIndex}</div>
           {/* /profile has the bottom nav + profile button, but no home targets */}
           {mockPathname === '/' && <div data-tour="hero" />}
-          <div data-tour="nav-pantry" />
+          <div data-tour="nav-chat" />
           <div data-tour="profile" />
         </div>
       )
