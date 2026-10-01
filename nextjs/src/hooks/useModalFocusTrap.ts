@@ -15,6 +15,11 @@ import { useEffect, useRef } from 'react'
  * once. Callers still own their own `role="dialog"` / `aria-modal` /
  * `aria-labelledby` markup since that is tied to their own heading ids.
  *
+ * Issue #742: `components/ui/PixelSheet.tsx` now calls this hook for every
+ * bottom sheet, so a sheet migrated onto it (AddItemModal, PantryAddSheet,
+ * CookModal, MealTimelineSheet, MealCookSheet) no longer calls it directly.
+ * The hook itself is unchanged.
+ *
  * Two call shapes, matching the two ways modals exist in this codebase:
  *  - Stays-mounted sheets (`EditItemModal`, `PantryAddSheet`,
  *    `RecipeRefinementModal`) pass their own `isOpen` prop through — the

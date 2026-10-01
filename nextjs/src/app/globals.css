@@ -66,7 +66,8 @@
      * shadows/backdrops automatically adopt the active theme palette. */
     --shadow-soft: 0 4px 24px color-mix(in srgb, var(--color-primary) 15%, transparent);
     --shadow-pop: 0 8px 32px color-mix(in srgb, var(--color-primary) 25%, transparent);
-    --color-backdrop: color-mix(in srgb, var(--color-text) 18%, transparent);
+    /* Scrim is ink at 28% (Signature Panel board; PixelSheet, issue #742). Was 18%. */
+    --color-backdrop: color-mix(in srgb, var(--color-text) 28%, transparent);
     --color-hero-overlay: linear-gradient(
       to top,
       color-mix(in srgb, black 72%, transparent) 0%,

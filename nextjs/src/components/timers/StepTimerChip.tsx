@@ -16,9 +16,11 @@ import { parseDurations, deriveStepLabel, formatDuration } from '@/lib/timers'
 export interface StepTimerChipsProps {
   stepText: string
   className?: string
+  /** Issue #757 — called with the new timer's id, so the caller can tie it to its step. */
+  onStart?: (timerId: string) => void
 }
 
-export default function StepTimerChips({ stepText, className }: StepTimerChipsProps) {
+export default function StepTimerChips({ stepText, className, onStart }: StepTimerChipsProps) {
   const { start } = useCookingTimers()
   const durations = parseDurations(stepText)
 
@@ -32,12 +34,13 @@ export default function StepTimerChips({ stepText, className }: StepTimerChipsPr
         <button
           key={`${d.seconds}-${i}`}
           type="button"
-          onClick={() =>
-            start(
+          onClick={() => {
+            const id = start(
               `${stepLabel} · ${formatDuration(d.seconds)}${d.rangeNote ? ` (${d.rangeNote})` : ''}`,
               d.seconds,
             )
-          }
+            onStart?.(id)
+          }}
           className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold active:scale-95 transition-transform"
           style={{
             background: 'var(--color-bg)',
@@ -68,12 +71,15 @@ export interface StructuredStepTimerChipProps {
   label: string
   durationMinutes: number
   className?: string
+  /** Issue #757 — called with the new timer's id, so the caller can tie it to its step. */
+  onStart?: (timerId: string) => void
 }
 
 export function StructuredStepTimerChip({
   label,
   durationMinutes,
   className,
+  onStart,
 }: StructuredStepTimerChipProps) {
   const { start } = useCookingTimers()
   const seconds = Math.max(1, Math.round(durationMinutes * 60))
@@ -86,7 +92,7 @@ export function StructuredStepTimerChip({
     <span className={`inline-flex flex-wrap items-center gap-1.5 ${className ?? ''}`}>
       <button
         type="button"
-        onClick={() => start(`${label} · ${durationText}`, seconds)}
+        onClick={() => onStart?.(start(`${label} · ${durationText}`, seconds))}
         className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold active:scale-95 transition-transform"
         style={{
           background: 'var(--color-bg)',

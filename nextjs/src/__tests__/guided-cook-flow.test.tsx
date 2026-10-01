@@ -18,7 +18,7 @@
  */
 
 import React from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // ─── Mock heavy deps ──────────────────────────────────────────────────────────
@@ -530,5 +530,77 @@ describe('GuidedCookFlow — regex fallback while structured steps are missing (
 
     await waitFor(() => expect(onStepsResolved).toHaveBeenCalledTimes(1))
     expect(onStepsResolved).toHaveBeenCalledWith(STRUCTURED_STEPS)
+  })
+})
+
+// ─── Finished timer chips (issue #757) ────────────────────────────────────────
+
+describe('GuidedCookFlow — finished timer chips leave the dock (issue #757)', () => {
+  function TimerStatuses() {
+    const { timers } = useCookingTimers()
+    return (
+      <ul data-testid="dock-timers">
+        {timers.map((t) => (
+          <li key={t.id}>{`${t.label}:${t.status}`}</li>
+        ))}
+      </ul>
+    )
+  }
+
+  function renderWithDock() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={client}>
+        <CookingTimersProvider>
+          <GuidedCookFlow recipe={{ ...RECIPE, steps: STRUCTURED_STEPS }} onExit={jest.fn()} />
+          <TimerStatuses />
+        </CookingTimersProvider>
+      </QueryClientProvider>,
+    )
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear()
+    jest.useFakeTimers()
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  function startStepOneTimerAndLetItFinish() {
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // skip prep -> step 1 (5 min, hands-off)
+    fireEvent.click(screen.getByTestId('structured-step-timer-chip'))
+    act(() => {
+      jest.advanceTimersByTime(5 * 60 * 1000 + 2000)
+    })
+    expect(screen.getByTestId('dock-timers')).toHaveTextContent('Step label 1 · 5 min:completed')
+  }
+
+  it('keeps a finished chip while the cook is still on the step that owns it', () => {
+    renderWithDock()
+    startStepOneTimerAndLetItFinish()
+    expect(screen.getByTestId('dock-timers')).toHaveTextContent('completed')
+  })
+
+  it('clears the finished chip when the cook moves to the next step', () => {
+    renderWithDock()
+    startStepOneTimerAndLetItFinish()
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // step 2
+    expect(screen.getByTestId('dock-timers')).toBeEmptyDOMElement()
+  })
+
+  it('leaves a running timer alone when the cook moves on', () => {
+    renderWithDock()
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // step 1
+    fireEvent.click(screen.getByTestId('structured-step-timer-chip'))
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // step 2
+    expect(screen.getByTestId('dock-timers')).toHaveTextContent('Step label 1 · 5 min:running')
+  })
+
+  it('going Back does not clear a finished chip', () => {
+    renderWithDock()
+    startStepOneTimerAndLetItFinish()
+    fireEvent.click(screen.getByTestId('guided-cook-back'))
+    expect(screen.getByTestId('dock-timers')).toHaveTextContent('completed')
   })
 })

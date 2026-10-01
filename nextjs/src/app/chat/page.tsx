@@ -56,6 +56,8 @@ import type {
 import {
   getBrainstormIdeas,
   getSavedRecipeMatches,
+  getSavedMealMatches,
+  savedMealToProposal,
   getClarificationSuggestions,
   getFollowUpSuggestions,
   getAiErrorKind,
@@ -951,6 +953,7 @@ function ChatSurface() {
                 onConfirmChoice={handleConfirmChoice}
                 onStageText={handleStageText}
                 onPickMealOption={handlePickMealOption}
+                onOpenSavedMeal={(mealId) => router.push(`/meals/${mealId}`)}
                 onOpenMeal={(proposal) => handleOpenMeal(msg.id, proposal)}
                 onSaveMeal={(proposal) => handleSaveMeal(msg.id, proposal)}
                 mealOpenState={mealOpenStates[msg.id] ?? 'idle'}
@@ -1153,6 +1156,8 @@ interface MessageRendererProps {
   onStageText: (text: string) => void
   /** Meal chat (issue #650) — a tap on an option card. */
   onPickMealOption: (option: MealOption) => void
+  /** A saved meal from the lookup (issue #760): open the existing meal by id. */
+  onOpenSavedMeal: (mealId: string) => void
   /** Compact meal card — Open meal / Save meal. */
   onOpenMeal: (proposal: MealProposal) => void
   onSaveMeal: (proposal: MealProposal) => void
@@ -1197,6 +1202,7 @@ function MessageRenderer({
   onConfirmChoice,
   onStageText,
   onPickMealOption,
+  onOpenSavedMeal,
   onOpenMeal,
   onSaveMeal,
   mealOpenState,
@@ -1343,7 +1349,10 @@ function MessageRenderer({
   // regression the issue didn't ask for (PR #614 review, finding 2).
   if (intent === 'saved_recipe_lookup') {
     const matches = getSavedRecipeMatches(message.response)
-    if (matches.length > 0) {
+    // Saved meals (issue #760) lead: the user said "dinner"/"meal". Each is an
+    // existing row, so the card opens it by id and its Save is already done.
+    const mealMatches = getSavedMealMatches(message.response)
+    if (matches.length > 0 || mealMatches.length > 0) {
       return (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -1354,12 +1363,23 @@ function MessageRenderer({
             <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
             <div className="flex flex-col gap-2 items-start">
               {message.content && <MessageBubble message={message} />}
-              <SavedRecipeMatches
-                matches={matches}
-                onSelect={onPickSavedRecipe}
-                onMakeMeal={makeMealAvailable ? onMakeMealFromMatch : undefined}
-                disabled={!isLastSettledAssistant}
-              />
+              {mealMatches.map((meal) => (
+                <CompactMealCard
+                  key={meal.id}
+                  proposal={savedMealToProposal(meal)}
+                  onOpenMeal={() => onOpenSavedMeal(meal.id)}
+                  onSaveMeal={() => {}}
+                  saveState="saved"
+                />
+              ))}
+              {matches.length > 0 && (
+                <SavedRecipeMatches
+                  matches={matches}
+                  onSelect={onPickSavedRecipe}
+                  onMakeMeal={makeMealAvailable ? onMakeMealFromMatch : undefined}
+                  disabled={!isLastSettledAssistant}
+                />
+              )}
             </div>
           </div>
           {isLastSettledAssistant && !isFollowUpsPending(message.response) && (

@@ -1,0 +1,7 @@
+## Re-review (round 2) — PR #721, *pantry slot undo*
+
+The undo path needs a product call I cannot make from the diff.
+
+**Verdict: `needs a human`**
+
+<!-- verdict: needs-human -->
