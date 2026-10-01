@@ -4,7 +4,7 @@ Feeds `bubbly_chef.workflows.recipe.nodes` (the pantry-grounded recipe
 workflow: `extract_recipe_constraints`, `brainstorm_recipe_ideas`,
 `generate_grounded_recipe`) and `bubbly_chef.services.recipe_generator`
 (the standalone/legacy recipe-generation + follow-up service). Edits here are
-CODEOWNERS-gated: prompt wording changes model behavior even though the test
+fresh-context reviewed and `verify`-checked: prompt wording changes model behavior even though the test
 suite can stay green.
 """
 

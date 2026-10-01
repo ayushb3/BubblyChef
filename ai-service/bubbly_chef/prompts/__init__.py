@@ -5,10 +5,10 @@ grouped by domain (router, chat, recipe, pantry, ingest, cook, recipe_url,
 dashboard). The code that builds/sends prompts stays where it always lived
 (workflows/, services/); it imports the constants from here.
 
-CODEOWNERS-gated: this is the one path in ai-service/ where a change is
+Review-gated: this is the one path in ai-service/ where a change is
 reviewed as a behavior change, not a refactor. mypy/ruff/pytest all pass on a
-prompt edit that quietly makes the model worse — human review is the only
-gate that catches that.
+prompt edit that quietly makes the model worse — a fresh-context review plus a
+`verify` run on the affected output is what catches that.
 """
 
 from bubbly_chef.prompts.chat import (
