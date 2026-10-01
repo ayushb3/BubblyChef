@@ -106,6 +106,22 @@ def allergen_refusal_message(allergens: list[str], what: str) -> str:
     )
 
 
+def allergen_card_warning(allergens: list[str]) -> str:
+    """One line for a card that still carries an allergen the user put there.
+
+    A refine of the user's own saved recipe keeps its ingredients as the user made
+    them (#500): the guard only rejects what the refine would ADD, so an allergen
+    already on the card stays and is called out here instead. Empty when none.
+    """
+    if not allergens:
+        return ""
+    listed = ", ".join(allergens)
+    return (
+        f"This recipe contains {listed}, which "
+        f"{'is' if len(allergens) == 1 else 'are'} on your allergy list."
+    )
+
+
 def allergen_safe_note(allergies: list[str]) -> str:
     """One line for a card reply: what was checked, so the user can see why.
 

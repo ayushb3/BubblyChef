@@ -456,6 +456,9 @@ BUBBLY_OLLAMA_BASE_URL=http://localhost:11434   # optional
 BUBBLY_AUTO_ADD_CONFIDENCE_THRESHOLD=0.8
 BUBBLY_REVIEW_CONFIDENCE_THRESHOLD=0.5
 BUBBLY_CORS_ORIGINS=["http://localhost:3000"]
+BUBBLY_HEALTH_GENERATION_PROBE_TTL_SECONDS=3600   # optional — /health/ai runs a tiny real generation, a successful result cached this long (single-flight); 0 disables the probe and /health/ai only checks reachability
+BUBBLY_HEALTH_GENERATION_PROBE_FAILURE_TTL_SECONDS=60   # optional — a FAILED probe is cached only this long so /health/ai recovers soon after an outage; 0 re-probes every call
+BUBBLY_HEALTH_GENERATION_PROBE_MAX_OUTPUT_TOKENS=16   # optional — token cap on that probe (16 leaves room for thinking tokens on a thinking model)
 BUBBLY_GIT_SHA=...                      # optional — deployed commit SHA, surfaced on /health and /health/ai for post-merge smoke tests; falls back to Railway's own RAILWAY_GIT_COMMIT_SHA, then "unknown"
 ```
 
@@ -476,7 +479,7 @@ the same credential differently.
   fixing the baselined errors themselves is issue #128
 - `tenacity` is imported by `tools/llm_client.py` but not declared in
   `ai-service/pyproject.toml`; it resolves transitively through langchain — issue #130
-- Duplicate pantry rows under-report available stock in the cook flow — issue #127
+- Pantry lots (#356): each add of a food is its own row with its own expiry, and the cook matcher sums them through the base unit. Chat `use` spends across lots soonest-expiry first and `remove` clears every lot (#711); chat `update` still edits one lot (the soonest stocked); the pantry list shows the lots as separate rows
 - `ruff` is pinned `<0.16`; the newer default rule set reports 144 findings — issue #129
 - No unit conversion (can't deduct "3 eggs" from "1 dozen eggs") — issue #6
 - `mutating` state in RecipeBook — buttons not yet `disabled={mutating}`

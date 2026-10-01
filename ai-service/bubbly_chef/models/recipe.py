@@ -310,6 +310,43 @@ class RecipeCard(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class DietChanges(BaseModel):
+    """A diet the user asked chat to stop applying, as the extractor reports it (#687).
+
+    The only thing that ever clears a remembered diet. Code acts on this field and
+    never on the message text: pattern-matching "not vegetarian" misfired on "I'm not
+    a vegetarian but my partner is", "we're not vegan tonight", "no longer vegan?" and
+    "that's not vegetarian!". Filled only by an explicit, first-person, declarative
+    removal; left empty for everything else, because keeping a diet is the safe
+    direction. Never applied to the profile's dietary preferences.
+    """
+
+    remove: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Diet labels the user says they no longer follow, worded as the user said "
+            "them or as the remembered diets below name them"
+        ),
+    )
+    scope: Literal["conversation", "this_request"] = Field(
+        default="this_request",
+        description=(
+            "'conversation' for a lasting change ('I'm not vegetarian any more'); "
+            "'this_request' for a one-off ('just tonight', 'this once')"
+        ),
+    )
+
+    @field_validator("scope", mode="before")
+    @classmethod
+    def _unknown_scope_is_this_request(cls, value: Any) -> Any:
+        """An unknown scope is read as the narrow one, not as a failed extraction.
+
+        A failed validation would throw away every other constraint the model
+        extracted for the turn, and would fall back to the wider reading.
+        """
+        return value if value in ("conversation", "this_request") else "this_request"
+
+
 class RecipeConstraints(BaseModel):
     """Extracted from user message via small structured LLM call."""
 
@@ -352,6 +389,17 @@ class RecipeConstraints(BaseModel):
             "and carried on a meal's constraints so the scheduler can keep steps "
             "that share equipment from overlapping. Not an equipment model -- only "
             "what the user actually stated."
+        ),
+    )
+
+    diet_changes: DietChanges | None = Field(
+        default=None,
+        description=(
+            "Set ONLY when the user plainly says, about themselves, that they no longer "
+            "follow a diet (issue #687). Null for everything else, including someone "
+            "else's diet, questions, complaints about a dish, and one-off dish choices "
+            "that name no diet change. A per-turn instruction: it is read once by "
+            "extract_recipe_constraints and never persisted in the session."
         ),
     )
 

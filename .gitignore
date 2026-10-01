@@ -100,3 +100,6 @@ Thumbs.db
 
 # Local verify stack (scripts/dev/stack.sh): pids and logs
 .verify/
+
+# Expiry backfill undo logs (#183) -- local run artifacts
+backfill_expiry_undo_*.jsonl

@@ -11,7 +11,8 @@ import ResolveActions from '@/components/pantry/ResolveActions'
 import { getFoodEmoji } from '@/lib/food-emoji'
 import { titleCase } from '@/lib/format'
 import { cookThisHref } from '@/lib/chat-seed'
-import { daysUntilExpiry, estimatedExpirySuffix } from '@/lib/pantry-helpers'
+import { daysUntilExpiry } from '@/lib/pantry-helpers'
+import { needsAttention, urgencySort, urgencyTier } from '@/lib/pantry-expiry-display'
 import { resolvePantryItem, type ResolveOutcome } from '@/lib/api/pantry'
 import type { PantryItem } from '@/types/pantry'
 
@@ -26,49 +27,6 @@ import type { PantryItem } from '@/types/pantry'
  * here keeps that endpoint's contract intact for its other callers and reuses a
  * cache the pantry page has usually already warmed.
  */
-
-/** Expired first (most negative), then soonest to expire. */
-export function urgencySort(a: PantryItem, b: PantryItem): number {
-  const da = daysUntilExpiry(a.expiry_date)
-  const db = daysUntilExpiry(b.expiry_date)
-  if (da === null) return 1
-  if (db === null) return -1
-  return da - db
-}
-
-export function needsAttention(item: PantryItem): boolean {
-  const days = daysUntilExpiry(item.expiry_date)
-  return days !== null && days <= 3
-}
-
-// `estimated` appends a subtle " · est." suffix (#182) when the expiry date
-// is a heuristic guess rather than one read from a receipt/label or entered
-// by hand — a provenance signal, so it must not affect the tier's colouring.
-export function urgencyTier(days: number | null, estimated?: boolean) {
-  if (days === null) return null
-  const suffix = estimatedExpirySuffix(estimated)
-  if (days < 0) {
-    const ago = Math.abs(days)
-    return {
-      label: (ago === 1 ? 'Expired yesterday' : `Expired ${ago}d ago`) + suffix,
-      color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]',
-    }
-  }
-  if (days === 0)
-    return {
-      label: `Today${suffix}`,
-      color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]',
-    }
-  if (days === 1)
-    return {
-      label: `Tomorrow${suffix}`,
-      color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]',
-    }
-  return {
-    label: `${days} days left${suffix}`,
-    color: 'bg-[var(--color-expiring)] text-[var(--color-expiring-text)]',
-  }
-}
 
 export default function UseSoonPage() {
   const queryClient = useQueryClient()

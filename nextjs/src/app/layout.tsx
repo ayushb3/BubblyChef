@@ -62,7 +62,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-screen bg-[var(--color-bg)]" style={{ fontFamily: 'Nunito, sans-serif' }}>
+      <body className="min-h-screen bg-[var(--color-bg)]">
         <Providers>
           <main className="pb-20"><PageTransition>{children}</PageTransition></main>
           <BottomNav />

@@ -1,7 +1,11 @@
 import { type NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 
-export async function middleware(request: NextRequest) {
+// The Next.js `proxy` file convention (renamed from `middleware` in Next 16,
+// issue #337). This is the app's only auth gate for page routes: it refreshes
+// the Supabase session cookie and starts/redirects visitors per
+// `lib/supabase/auth-routing.ts`. `proxy` always runs on the Node.js runtime.
+export async function proxy(request: NextRequest) {
   return await updateSession(request)
 }
 

@@ -6,7 +6,7 @@
  * excludes already-expired stock (#239) because it answers a different question.
  */
 
-import { needsAttention, urgencySort, urgencyTier } from '@/app/pantry/use-soon/page'
+import { needsAttention, urgencySort, urgencyTier } from '@/lib/pantry-expiry-display'
 import type { PantryItem } from '@/types/pantry'
 
 /** An item expiring `days` from today, as a local date string. */

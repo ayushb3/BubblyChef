@@ -32,7 +32,8 @@ export async function POST(request: Request) {
   // Fill in category and expiry for items the user left at defaults (#177, #158).
   // Also derive base units at write time (#224).
   // All three come from the AI service's Python catalog/heuristic (single source of
-  // truth); failures fall back to 'other'/null and never block the add.
+  // truth); category/base-unit failures fall back to 'other'/null, and an expiry
+  // failure falls back to a local deterministic estimate (#705). None block the add.
   const rows = await Promise.all(
     items.map(async (item) => {
       const category =

@@ -15,6 +15,11 @@ interface RecipeDeleteConfirmProps {
    * extra.
    */
   mealTitles?: string[]
+  /**
+   * Extra line under the prompt — the meal page (issue #675) reuses this
+   * confirm to say what a meal delete keeps and what it ends.
+   */
+  note?: string
 }
 
 export default function RecipeDeleteConfirm({
@@ -23,6 +28,7 @@ export default function RecipeDeleteConfirm({
   onCancel,
   deleting,
   mealTitles = [],
+  note,
 }: RecipeDeleteConfirmProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   // This swaps in for whatever "Delete" trigger opened it (usually inside an
@@ -84,6 +90,11 @@ export default function RecipeDeleteConfirm({
           Cancel
         </button>
       </div>
+      {note && (
+        <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+          {note}
+        </p>
+      )}
       {mealTitles.length > 0 && (
         <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
           Used in {mealTitles.length === 1 ? 'meal' : 'meals'}: {mealTitles.join(', ')}.

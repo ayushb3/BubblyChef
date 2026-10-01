@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, notFound } from '@/lib/response-helpers'
 import { isExpiryPriority } from '@/lib/expiry-priority'
 import { sanitizeTermList } from '@/lib/profile-lists'
+import { isNoRowError } from '@/lib/supabase/errors'
 
 export async function GET(
   _request: Request,
@@ -64,6 +65,8 @@ export async function PUT(
     .select()
     .single()
 
+  // A missing (or another user's) row is PGRST116 from `.single()`: 404 (#682).
+  if (isNoRowError(error)) return notFound('Profile')
   if (error) return errorResponse(error.message)
   if (!data) return notFound('Profile')
 

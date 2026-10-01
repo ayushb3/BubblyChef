@@ -47,7 +47,9 @@ export async function POST(request: Request) {
     body.category || (await estimateCategory(body.name as string)) || 'other'
 
   // Estimate an expiry when the user didn't supply one (#158) — same Python
-  // heuristic as the AI paths, via the AI service. Falls back to null on error.
+  // heuristic as the AI paths, via the AI service. If that call fails, a local
+  // deterministic estimate by category/location stands in (#705), so the row is
+  // never saved with a null expiry just because the service was down.
   const expiry =
     body.expiry_date ||
     (await estimateExpiry({

@@ -38,6 +38,13 @@ T = TypeVar("T", bound=BaseModel)
 # instead of keying off words that appear in both cases.
 _QUOTA_ID_RE = re.compile(r'"quotaId"\s*:\s*"([^"]+)"', re.IGNORECASE)
 
+# A project-level *spending cap* 429 ("Your project has exceeded its monthly
+# spending cap") is RESOURCE_EXHAUSTED with no QuotaFailure/quotaId detail at
+# all, so the quotaId check can't see it and it fell through to
+# "rate_limited" — "try again in a minute" for an outage that lasts until the
+# cap is raised or resets (#576).
+_SPEND_CAP_RE = re.compile(r"spend(?:ing)?\s+cap", re.IGNORECASE)
+
 # A missing or revoked Gemini API key surfaces as HTTP 400 INVALID_ARGUMENT
 # (reason `API_KEY_INVALID`, message "API key not valid") — not 401/403 like
 # most auth failures. A bare 400-means-bad_request mapping puts the most
@@ -57,6 +64,8 @@ def _classify_http_error(status_code: int, body: str) -> ProviderFailureKind:
             from a plain per-minute rate-limit 429).
     """
     if status_code == 429:
+        if _SPEND_CAP_RE.search(body):
+            return "quota_exhausted"
         quota_match = _QUOTA_ID_RE.search(body)
         if quota_match:
             quota_id = quota_match.group(1).lower()
@@ -161,6 +170,7 @@ class GeminiProvider(AIProvider):
         prompt: str,
         response_schema: type[T] | None = None,
         temperature: float = 0.7,
+        max_output_tokens: int | None = None,
     ) -> T | str:
         """Generate completion using Gemini API."""
 
@@ -189,6 +199,9 @@ Return ONLY the JSON, no markdown formatting or extra text."""
         # If structured output, request JSON mime type
         if response_schema:
             generation_config["responseMimeType"] = "application/json"
+
+        if max_output_tokens is not None:
+            generation_config["maxOutputTokens"] = max_output_tokens
 
         payload: dict[str, Any] = {
             "contents": [{"parts": [{"text": full_prompt}]}],
