@@ -106,12 +106,20 @@ def create_app() -> FastAPI:
         # reflects the real config (incl. the dev SAP-proxy provider).
         from bubbly_chef.api.deps import get_ai_manager
 
-        status = await get_ai_manager().health_check()
+        # Always HTTP 200, even when the probe fails: Railway's deploy
+        # healthcheck polls this path, and a spend cap must not block a deploy.
+        # The outage shows in the body (`ai_available`, `generation_probe`).
+        status = await get_ai_manager().health_check(
+            generation_probe_ttl_seconds=settings.health_generation_probe_ttl_seconds,
+            generation_probe_max_output_tokens=settings.health_generation_probe_max_output_tokens,
+            generation_probe_failure_ttl_seconds=settings.health_generation_probe_failure_ttl_seconds,
+        )
         return {
             "status": "ok",
             "service": "ai-microservice",
             "ai_available": status["healthy"],
             "providers": status["providers"],
+            "generation_probe": status.get("generation_probe"),
             "last_failure_kind": status.get("last_failure_kind"),
             "last_failure_at": status.get("last_failure_at"),
             "version": build_info(),
