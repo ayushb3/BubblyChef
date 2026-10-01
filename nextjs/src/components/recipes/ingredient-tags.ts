@@ -49,6 +49,16 @@ export function pantryTag(match: IngredientMatch): PantryTag | null {
 }
 
 /**
+ * The tag for ingredient row `i` when the matches are aligned to the rows
+ * (`useIngredientMatches`, issue #784): two lines of one food each get their own.
+ * A `null` entry (a row nothing was asked about) has no tag.
+ */
+export function tagForRow(rows: (IngredientMatch | null)[] | undefined, i: number): PantryTag | null {
+  const match = rows?.[i]
+  return match ? pantryTag(match) : null
+}
+
+/**
  * The tag for one ingredient row, found by name: the match whose ingredient
  * name appears in the row's label ("400 g tomatoes" ↔ "tomatoes"); the longest
  * name wins when several do ("tomato paste" over "tomato").

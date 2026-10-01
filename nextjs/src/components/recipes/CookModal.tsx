@@ -239,6 +239,8 @@ export default function CookModal({
       const res = await confirmCook(recipeId, deductions)
       const skippedNow = skippedDeductionNames(proposal, res?.deductions_skipped ?? [])
       queryClient.invalidateQueries({ queryKey: ['bubbles'] })
+      // The deduction changed the pantry: refresh pantry-derived views (food tags, #784).
+      queryClient.invalidateQueries({ queryKey: ['pantry'] })
       // #440 — the deduction just landed, so this cook session is over
       // regardless of which page/flow confirmed it. Recorded outside React
       // state because the non-draft branch below navigates to a fresh mount
