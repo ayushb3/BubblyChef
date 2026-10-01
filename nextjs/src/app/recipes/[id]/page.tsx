@@ -10,7 +10,7 @@ import SpringButton from '@/components/ui/SpringButton'
 import RecipeRefinementModal from '@/components/recipes/RecipeRefinementModal'
 import RecipeSteps from '@/components/recipes/RecipeSteps'
 import Chip from '@/components/ui/Chip'
-import { tagForIngredient } from '@/components/recipes/ingredient-tags'
+import { tagForRow } from '@/components/recipes/ingredient-tags'
 import { useIngredientMatches } from '@/hooks/useIngredientMatches'
 import { ingredientParts } from '@/lib/recipe-helpers'
 import { makeMealHref } from '@/lib/chat-seed'
@@ -68,7 +68,7 @@ export default function RecipeDetailPage() {
   const [showRefinementModal, setShowRefinementModal] = useState(false)
 
   // Food tags on the ingredient rows (issue #784). Loading or a failed call is no tags.
-  const ingredientMatches = useIngredientMatches(recipe?.ingredients ?? [])
+  const rowMatches = useIngredientMatches(recipe?.ingredients ?? [])
 
   const fetchRecipe = useCallback(async () => {
     if (!id) return
@@ -342,7 +342,7 @@ export default function RecipeDetailPage() {
                   {recipe.ingredients.map((ing, i) => {
                     const checked = checkedIngredients.has(i)
                     const { label, preparation, optional } = ingredientParts(ing)
-                    const tag = tagForIngredient(label, ingredientMatches)
+                    const tag = tagForRow(rowMatches, i)
                     return (
                       <motion.label
                         key={i}

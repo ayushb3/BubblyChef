@@ -81,6 +81,20 @@ class TestStatuses:
             "low",
         ]
 
+    def test_two_lines_of_one_food_each_keep_their_own_status(self) -> None:
+        # "2 eggs" takes both eggs, so "1 egg" is the one that is short; the
+        # client aligns by row, so each line must carry its own answer.
+        got = match_ingredient_lines(["2 eggs", "1 egg"], [_pantry("eggs", 2)])
+        assert [m.status for m in got] == ["have", "low"]
+        assert got[1].shortfall == pytest.approx(1)
+        assert got[1].pantry_qty_available == pytest.approx(0)
+
+    def test_expired_only_stock_matches_the_to_buy_list_not_the_cook_flow(self) -> None:
+        # Deliberate (#784): the tags agree with the meal screen's "N to buy" line,
+        # which drops expired rows, so expired-only stock reads missing.
+        got = match_ingredient_lines([_line("milk", 1, "l")], [_pantry("milk", 1, "l", expires_in=-3)])
+        assert got[0].status == "missing"
+
     def test_uses_the_synonym_path(self) -> None:
         assert _statuses([_line("spaghetti", 200, "g")], [_pantry("pasta", 500, "g")]) == ["have"]
 
@@ -187,6 +201,25 @@ class TestRoute:
         assert [m["status"] for m in body] == ["have", "low", "missing"]
         assert body[0]["pantry_food"] == "flour"
         assert body[2]["pantry_food"] is None
+
+    @pytest.mark.asyncio
+    async def test_each_match_carries_exactly_the_fields_the_client_reads(
+        self, client: AsyncClient, monkeypatch
+    ) -> None:
+        # The Next.js client (lib/api/ingredient-match.ts) reads these keys; a rename
+        # here must fail a test rather than silently drop the tags.
+        repo = _repo([_pantry("eggs", 2)])
+        monkeypatch.setattr(f"{_ROUTE}.get_repository", AsyncMock(return_value=repo))
+        res = await client.post(
+            "/v1/pantry/match-ingredients", json={"ingredients": ["2 eggs", "1 egg"]}
+        )
+        matches = res.json()["matches"]
+        assert all(
+            set(m) == {"name", "status", "pantry_food", "basis", "pantry_qty_available", "shortfall"}
+            for m in matches
+        )
+        assert matches[0]["name"] == "eggs"  # the server's parsed name, not the line "2 eggs"
+        assert [m["status"] for m in matches] == ["have", "low"]
 
     @pytest.mark.asyncio
     async def test_reads_only_the_callers_pantry_and_writes_nothing(

@@ -20,7 +20,7 @@ import Link from 'next/link'
 import { ingredientParts } from '@/lib/recipe-helpers'
 import type { Recipe } from '@/components/recipes/RecipePage'
 import Chip from '@/components/ui/Chip'
-import { tagForIngredient } from '@/components/recipes/ingredient-tags'
+import { tagForRow } from '@/components/recipes/ingredient-tags'
 import type { IngredientMatch, RecipeIngredient, Step } from '@/types/recipes'
 import { dishPastel, ROLE_LABEL, type DishRole } from './dishPastel'
 import {
@@ -62,10 +62,11 @@ export interface DishCardProps {
   /** Overrides the default write to the browser grocery list. */
   onAddToGrocery?: (items: string[]) => void | Promise<void>
   /**
-   * How the pantry covers each ingredient (issue #784): an expanded row wears a
-   * food tag ("In pantry", "Short ½", "Staple"). Omit when unknown: no tags.
+   * How the pantry covers each ingredient (issue #784), aligned to `ingredients`
+   * (`rowMatches[i]` is row `i`'s match): an expanded row wears a food tag
+   * ("In pantry", "Short ½", "Staple"). Omit when unknown: no tags.
    */
-  ingredientMatches?: IngredientMatch[]
+  rowMatches?: (IngredientMatch | null)[]
 }
 
 const KEY_INGREDIENT_COUNT = 4
@@ -85,7 +86,7 @@ export default function DishVariant({
   expiring = [],
   toBuy,
   onAddToGrocery,
-  ingredientMatches,
+  rowMatches,
 }: DishCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded ?? role === 'main')
   const detailsId = useId()
@@ -138,7 +139,7 @@ export default function DishVariant({
                 <ul>
                   {ingredients.map((ing, i) => {
                     const { name, quantityText, preparation } = ingredientParts(ing)
-                    const tag = tagForIngredient(name, ingredientMatches)
+                    const tag = tagForRow(rowMatches, i)
                     return (
                       <li
                         key={i}

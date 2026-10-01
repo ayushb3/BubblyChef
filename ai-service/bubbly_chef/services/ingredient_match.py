@@ -8,10 +8,18 @@ with no LLM aliases): the same synonym table, the same base-unit sum across a
 food's lots (#356), and the same running total when two lines draw on one food.
 Nothing here calls a model or writes.
 
+Stock set. The matching is the cook matcher's, but the pantry it matches against
+is NOT the cook flow's: expired and emptied rows are dropped first
+(`filter_usable_pantry_items`), exactly as the meal screen's to-buy list does
+(`services/grocery.py`). That is deliberate: the tags and the "N to buy" line on
+one screen must agree. The cook flow keeps expired lots (behind fresh ones) in
+its stock, so a food whose only stock is expired reads `missing` here and is
+listed to buy, where cook would still match it.
+
 Status mapping, from the cook matcher's statuses:
 
 - `missing`  -> missing: nothing usable in the pantry (expired and empty rows
-  don't count), and not a culinary staple.
+  don't count, see above), and not a culinary staple.
 - `shortfall` -> low: the pantry holds less than the line needs after unit
   conversion within the same dimension.
 - everything else -> have: enough stock (`ready`), no amount asked for or "to

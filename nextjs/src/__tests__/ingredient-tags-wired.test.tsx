@@ -75,6 +75,38 @@ describe('recipe page food tags', () => {
   })
 })
 
+describe('staleness', () => {
+  it('a pantry invalidation (add, edit, delete, cook confirm) refetches the match and updates the tags', async () => {
+    fetchMock.mockResolvedValueOnce(reply(MATCHES))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <PantryRecipeDetail recipe={recipe} />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.getAllByTestId('ingredient-tag')).toHaveLength(2))
+
+    // The user then restocks butter: the next match says it is covered.
+    fetchMock.mockResolvedValueOnce(
+      reply({
+        matches: [
+          MATCHES.matches[0],
+          { name: 'butter', status: 'have', pantry_food: 'butter', basis: 'pantry' },
+          MATCHES.matches[2],
+        ],
+      }),
+    )
+    await client.invalidateQueries({ queryKey: ['pantry'] })
+    await waitFor(() =>
+      expect(screen.getAllByTestId('ingredient-tag').map((t) => t.textContent)).toEqual([
+        'In pantry',
+        'In pantry',
+      ]),
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+})
+
 describe('meal dish card food tags', () => {
   const ingredients = [{ name: 'onions', quantity: 2 }, { name: 'butter', quantity: 100, unit: 'g' }]
   const matches = [
@@ -82,7 +114,7 @@ describe('meal dish card food tags', () => {
     { ingredient_name: 'butter', status: 'shortfall', pantry_qty_available: 50, shortfall: 50 },
   ] as never
 
-  it('wears a tag on an expanded ingredient row when matches are given', () => {
+  it('wears a tag on an expanded ingredient row when row matches are given', () => {
     render(
       <RecipeCard
         variant="dish"
@@ -90,7 +122,7 @@ describe('meal dish card food tags', () => {
         title="Soup"
         ingredients={ingredients}
         instructions={['Cook.']}
-        ingredientMatches={matches}
+        rowMatches={matches}
       />,
     )
     expect(screen.getAllByTestId('ingredient-tag').map((t) => t.textContent)).toEqual([

@@ -62,6 +62,24 @@ describe('RecipeDetailPage food tags (#784)', () => {
     ])
   })
 
+  it('two lines of one food each get their own tag (2 eggs in stock: "2 eggs" is covered, "1 egg" is short)', async () => {
+    global.fetch = jest.fn((url: string) =>
+      Promise.resolve(
+        url.startsWith('/api/ai/pantry/match-ingredients')
+          ? reply({
+              matches: [
+                { name: 'eggs', status: 'have', pantry_food: 'eggs', basis: 'pantry', pantry_qty_available: 2, shortfall: null },
+                { name: 'egg', status: 'low', pantry_food: 'eggs', basis: 'pantry', pantry_qty_available: 0, shortfall: 1 },
+              ],
+            })
+          : reply({ ...RECIPE, ingredients: ['2 eggs', '1 egg'] }),
+      ),
+    ) as unknown as typeof fetch
+    renderPage()
+    await waitFor(() => expect(screen.getAllByTestId('ingredient-tag')).toHaveLength(2))
+    expect(screen.getAllByTestId('ingredient-tag').map((t) => t.textContent)).toEqual(['In pantry', 'Short'])
+  })
+
   it('renders the ingredients with no tags and no error when the call fails', async () => {
     mockFetch(() => reply({ detail: 'down' }, 502))
     renderPage()

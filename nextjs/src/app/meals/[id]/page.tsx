@@ -993,7 +993,7 @@ function DishSection({
   const scale = recipeServings > 0 ? mealServings / recipeServings : 1
   const scaled = scaledIngredients(dish.recipe.ingredients, scale)
   // Food tags on the ingredient rows (issue #784). A failed call is no tags.
-  const ingredientMatches = useIngredientMatches(scaled)
+  const rowMatches = useIngredientMatches(scaled)
   const stepsEstimated = !dish.recipe.steps || dish.recipe.steps.length === 0
   const isSide = dish.role === 'side'
   const rowIsHere = row?.target.kind === 'swap' && row.target.position === dish.position
@@ -1010,7 +1010,7 @@ function DishSection({
           minutes={dishMinutes(dish.recipe)}
           href={`/recipes/${dish.recipe.id}`}
           ingredients={scaled}
-          ingredientMatches={ingredientMatches}
+          rowMatches={rowMatches}
           instructions={dish.recipe.instructions}
           steps={dish.recipe.steps ?? fallbackSteps(dish.recipe.instructions)}
           stepsEstimated={stepsEstimated}
