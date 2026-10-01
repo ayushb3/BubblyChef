@@ -9,7 +9,6 @@ import { useState } from 'react'
 import { MOCK_RECIPE } from './mock'
 import { DeductionPreview, TimerChip, DoneState } from './shared'
 
-const FONT = { fontFamily: 'Nunito, sans-serif' } as const
 
 export default function VariantD() {
   const steps = MOCK_RECIPE.steps
@@ -20,7 +19,7 @@ export default function VariantD() {
 
   if (exited)
     return (
-      <div className="min-h-screen flex items-center justify-center text-sm" style={{ background: 'var(--color-bg)', color: 'var(--color-muted)', ...FONT }}>
+      <div className="font-sans min-h-screen flex items-center justify-center text-sm" style={{ background: 'var(--color-bg)', color: 'var(--color-muted)' }}>
         ← back in chat, banner cleared. (switch variant below to reset)
       </div>
     )
@@ -28,7 +27,7 @@ export default function VariantD() {
   const step = steps[idx]
 
   return (
-    <div className="min-h-screen relative overflow-hidden" style={{ background: 'var(--color-bg)', ...FONT }}>
+    <div className="font-sans min-h-screen relative overflow-hidden" style={{ background: 'var(--color-bg)' }}>
       {/* faux chat thread behind the sheet */}
       <div className="max-w-[480px] mx-auto px-4 pt-6 pb-[340px] space-y-3">
         <FauxBubble who="bot">Cooking {MOCK_RECIPE.title} {MOCK_RECIPE.emoji} — I’m here if a step needs a hand.</FauxBubble>

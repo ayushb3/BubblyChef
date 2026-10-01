@@ -86,8 +86,8 @@ export default function BubblePop() {
             }
             exit={{ opacity: 0 }}
             transition={{ duration: prefersReducedMotion ? 0.8 : 1, ease: 'easeOut' }}
-            className="block whitespace-nowrap rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-base font-extrabold shadow-md"
-            style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans block whitespace-nowrap rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-base font-extrabold shadow-md"
+            style={{ color: 'var(--color-text)' }}
           >
             🫧 +{pop.delta}
           </motion.span>

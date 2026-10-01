@@ -19,7 +19,6 @@ import { useState } from 'react'
 import { MOCK_RECIPE, notableNote } from './mock'
 import { TimerChip, DeductionPreview, DoneState } from './shared'
 
-const FONT = { fontFamily: 'Nunito, sans-serif' } as const
 const PREP = -1
 
 export default function VariantE() {
@@ -30,7 +29,7 @@ export default function VariantE() {
 
   if (exited)
     return (
-      <div className="min-h-screen flex items-center justify-center text-sm" style={{ background: 'var(--color-bg)', color: 'var(--color-muted)', ...FONT }}>
+      <div className="font-sans min-h-screen flex items-center justify-center text-sm" style={{ background: 'var(--color-bg)', color: 'var(--color-muted)' }}>
         ← back in chat, banner cleared. (switch variant below to reset)
       </div>
     )
@@ -40,7 +39,7 @@ export default function VariantE() {
   const step = !isPrep && !isDone ? steps[idx] : null
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: 'var(--color-bg)', ...FONT }}>
+    <div className="font-sans min-h-screen flex flex-col" style={{ background: 'var(--color-bg)' }}>
       {/* header: title + progress dots that fill ✓ (A) */}
       {!isDone && (
         <div className="max-w-[480px] w-full mx-auto px-5 pt-5">
@@ -60,7 +59,7 @@ export default function VariantE() {
                     height: 16,
                     fontSize: 10,
                     fontWeight: 800,
-                    color: '#fff',
+                    color: 'var(--color-on-primary)',
                     background: complete ? 'var(--color-accent-dark)' : currentDot ? 'var(--color-primary-dark)' : 'var(--color-border)',
                   }}
                 >

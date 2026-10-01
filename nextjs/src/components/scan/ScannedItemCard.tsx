@@ -185,7 +185,7 @@ export default function ScannedItemCard({
             min={0}
             step={0.1}
             onChange={(e) => update('quantity', parseFloat(e.target.value) || 0)}
-            className="w-full text-sm text-[var(--color-text)] bg-[var(--color-bg,#FFF0F5)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:border-[var(--color-primary)] transition-colors"
+            className="w-full text-sm text-[var(--color-text)] bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:border-[var(--color-primary)] transition-colors"
           />
         </div>
         <div className="flex-1">
@@ -195,7 +195,7 @@ export default function ScannedItemCard({
             aria-label="Unit"
             value={item.unit}
             onChange={(e) => update('unit', e.target.value)}
-            className="w-full text-sm text-[var(--color-text)] bg-[var(--color-bg,#FFF0F5)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:border-[var(--color-primary)] transition-colors"
+            className="w-full text-sm text-[var(--color-text)] bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:border-[var(--color-primary)] transition-colors"
             placeholder="pcs, g, ml…"
           />
         </div>
@@ -211,7 +211,7 @@ export default function ScannedItemCard({
           aria-label="Category"
           value={item.category}
           onChange={(e) => update('category', e.target.value)}
-          className="w-full text-sm text-[var(--color-text)] bg-[var(--color-bg,#FFF0F5)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:border-[var(--color-primary)] transition-colors"
+          className="w-full text-sm text-[var(--color-text)] bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl px-2 py-1.5 focus:border-[var(--color-primary)] transition-colors"
         >
           {CATEGORIES.map((c) => (
             <option key={c} value={c}>

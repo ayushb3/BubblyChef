@@ -110,12 +110,11 @@ export default function RecipeRefinementModal({
           <AnimatePresence>
             {error && (
               <motion.div
-                className="mb-3 px-4 py-2 rounded-xl text-sm font-semibold"
+                className="font-sans mb-3 px-4 py-2 rounded-xl text-sm font-semibold"
                 style={{
-                  background: '#fff5f5',
-                  border: '1.5px solid #f5c0c0',
-                  color: '#e05252',
-                  fontFamily: 'Nunito, sans-serif',
+                  background: 'var(--color-error-bg)',
+                  border: '1.5px solid var(--color-error-border)',
+                  color: 'var(--color-error-text)',
                 }}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -136,12 +135,11 @@ export default function RecipeRefinementModal({
               onKeyDown={handleKeyDown}
               placeholder="e.g. make it vegan, less spicy..."
               disabled={refining}
-              className="flex-1 rounded-full px-4 py-2.5 text-sm disabled:opacity-50"
+              className="font-sans flex-1 rounded-full px-4 py-2.5 text-sm disabled:opacity-50"
               style={{
                 background: 'var(--color-bg)',
                 border: '1.5px solid var(--color-border)',
                 color: 'var(--color-text)',
-                fontFamily: 'Nunito, sans-serif',
               }}
               aria-label="Refinement prompt"
             />
@@ -208,8 +206,8 @@ export default function RecipeRefinementModal({
           }}
         >
           <p
-            className="font-extrabold text-base leading-tight"
-            style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans font-extrabold text-base leading-tight"
+            style={{ color: 'var(--color-text)' }}
           >
             {recipeTitle}
           </p>
@@ -235,8 +233,8 @@ export default function RecipeRefinementModal({
         {history.length > 0 && (
           <div>
             <p
-              className="text-xs font-bold uppercase tracking-wider mb-2"
-              style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+              className="font-sans text-xs font-bold uppercase tracking-wider mb-2"
+              style={{ color: 'var(--color-muted)' }}
             >
               History
             </p>
@@ -255,8 +253,8 @@ export default function RecipeRefinementModal({
                     transition={{ duration: 0.2 }}
                   >
                     <span
-                      className="text-sm leading-snug flex-1"
-                      style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+                      className="font-sans text-sm leading-snug flex-1"
+                      style={{ color: 'var(--color-text)' }}
                     >
                       {entry.prompt}
                     </span>
@@ -267,8 +265,8 @@ export default function RecipeRefinementModal({
                       <span
                         className="text-xs font-bold px-1.5 py-0.5 rounded-full"
                         style={{
-                          background: '#e6f9f0',
-                          color: '#2d7a56',
+                          background: 'var(--color-success-bg)',
+                          color: 'var(--color-success-text)',
                         }}
                       >
                         Applied
@@ -286,12 +284,11 @@ export default function RecipeRefinementModal({
         {allergyWarning && (
           <p
             role="status"
-            className="rounded-xl px-4 py-2 text-sm font-semibold"
+            className="font-sans rounded-xl px-4 py-2 text-sm font-semibold"
             style={{
-              background: '#fff8ee',
-              border: '1.5px solid #f5d9a8',
-              color: '#a8651a',
-              fontFamily: 'Nunito, sans-serif',
+              background: 'var(--color-warn-bg)',
+              border: '1.5px solid var(--color-warn-border)',
+              color: 'var(--color-warn-text)',
             }}
           >
             {allergyWarning}
@@ -312,8 +309,8 @@ export default function RecipeRefinementModal({
           >
             <BubblesMascot state="thinking" size={28} />
             <p
-              className="text-sm font-semibold"
-              style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+              className="font-sans text-sm font-semibold"
+              style={{ color: 'var(--color-text)' }}
             >
               Refining your recipe…
             </p>
@@ -323,8 +320,8 @@ export default function RecipeRefinementModal({
         {/* Empty history hint */}
         {!refining && history.length === 0 && (
           <p
-            className="text-sm text-center py-4"
-            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-sm text-center py-4"
+            style={{ color: 'var(--color-muted)' }}
           >
             Type a refinement below — e.g. &ldquo;make it vegetarian&rdquo; or &ldquo;reduce cook time&rdquo;
           </p>

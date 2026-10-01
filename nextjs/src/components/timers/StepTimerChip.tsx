@@ -41,12 +41,11 @@ export default function StepTimerChips({ stepText, className, onStart }: StepTim
             )
             onStart?.(id)
           }}
-          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold active:scale-95 transition-transform"
+          className="font-sans inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold active:scale-95 transition-transform"
           style={{
             background: 'var(--color-bg)',
             color: 'var(--color-primary-dark)',
             border: '1px solid var(--color-border)',
-            fontFamily: 'Nunito, sans-serif',
           }}
           aria-label={`Start a ${d.label} timer for ${stepLabel}`}
           title={`Start timer: ${d.label}`}
@@ -93,12 +92,11 @@ export function StructuredStepTimerChip({
       <button
         type="button"
         onClick={() => onStart?.(start(`${label} · ${durationText}`, seconds))}
-        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold active:scale-95 transition-transform"
+        className="font-sans inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold active:scale-95 transition-transform"
         style={{
           background: 'var(--color-bg)',
           color: 'var(--color-primary-dark)',
           border: '1px solid var(--color-border)',
-          fontFamily: 'Nunito, sans-serif',
         }}
         aria-label={`Start a ${durationText} timer for ${label}`}
         title={`Start timer: ${label}`}

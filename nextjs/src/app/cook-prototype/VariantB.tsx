@@ -8,7 +8,6 @@ import { useState } from 'react'
 import { MOCK_RECIPE } from './mock'
 import { DeductionPreview, TimerChip, DoneState } from './shared'
 
-const FONT = { fontFamily: 'Nunito, sans-serif' } as const
 // -1 = mise-en-place preview screen, 0..n-1 = steps, n = done
 const PREP = -1
 
@@ -24,7 +23,7 @@ export default function VariantB() {
   const step = !isPrep && !isDone ? steps[idx] : null
 
   return (
-    <div className="min-h-screen flex flex-col pb-24" style={{ background: 'var(--color-bg)', ...FONT }}>
+    <div className="font-sans min-h-screen flex flex-col pb-24" style={{ background: 'var(--color-bg)' }}>
       <div className="max-w-[480px] w-full mx-auto flex-1 flex flex-col px-5 pt-6">
         {/* progress dots */}
         {!isDone && (
@@ -98,7 +97,7 @@ export default function VariantB() {
 
 function ExitedNote() {
   return (
-    <div className="min-h-screen flex items-center justify-center text-sm" style={{ background: 'var(--color-bg)', color: 'var(--color-muted)', ...FONT }}>
+    <div className="font-sans min-h-screen flex items-center justify-center text-sm" style={{ background: 'var(--color-bg)', color: 'var(--color-muted)' }}>
       ← back in chat, banner cleared. (switch variant below to reset)
     </div>
   )

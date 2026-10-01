@@ -8,7 +8,6 @@ import { useState } from 'react'
 import { MOCK_RECIPE } from './mock'
 import { DeductionPreview, TimerChip, LockedRecipeCard, DoneState } from './shared'
 
-const FONT = { fontFamily: 'Nunito, sans-serif' } as const
 
 export default function VariantA() {
   const [done, setDone] = useState<Set<number>>(new Set())
@@ -28,7 +27,7 @@ export default function VariantA() {
     })
 
   return (
-    <div className="min-h-screen pb-24" style={{ background: 'var(--color-bg)', ...FONT }}>
+    <div className="font-sans min-h-screen pb-24" style={{ background: 'var(--color-bg)' }}>
       <div className="max-w-[480px] mx-auto px-4 pt-4 space-y-3">
         <LockedRecipeCard />
 
@@ -74,7 +73,7 @@ export default function VariantA() {
                       className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
                       style={{
                         background: isDone ? 'var(--color-accent-dark)' : isCurrent ? 'var(--color-primary)' : 'var(--color-bg)',
-                        color: isDone ? '#fff' : 'var(--color-text)',
+                        color: isDone ? 'var(--color-on-primary)' : 'var(--color-text)',
                         border: '1px solid var(--color-border)',
                       }}
                     >
@@ -97,7 +96,7 @@ export default function VariantA() {
 
 function ExitedNote() {
   return (
-    <div className="min-h-screen flex items-center justify-center text-sm" style={{ background: 'var(--color-bg)', color: 'var(--color-muted)', ...FONT }}>
+    <div className="font-sans min-h-screen flex items-center justify-center text-sm" style={{ background: 'var(--color-bg)', color: 'var(--color-muted)' }}>
       ← back in chat, banner cleared. (switch variant below to reset)
     </div>
   )
