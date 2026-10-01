@@ -9,7 +9,8 @@
  *
  * The text area is the open control (a button calling `onOpen`); with no `onOpen`
  * the card is only a header, as on the opened recipe. The heart and the menu are
- * siblings of that control, never inside it, and are each 44 px. `busy` disables
+ * siblings of that control, never inside it, and are each 44 px. A row clamps its
+ * title to two lines; the header (no `onOpen`) shows it whole. `busy` disables
  * both while a save is in flight; opening stays available.
  */
 
@@ -116,7 +117,9 @@ export default function SavedVariant({
         )}
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className={`${TITLE_FONT} line-clamp-2 text-[17px] leading-[22px] font-bold break-words`}>
+        <span
+          className={`${TITLE_FONT} ${onOpen ? 'line-clamp-2 ' : ''}text-[17px] leading-[22px] font-bold break-words`}
+        >
           {title}
         </span>
         {meta.length > 0 && (

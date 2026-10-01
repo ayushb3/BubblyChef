@@ -106,9 +106,15 @@ describe('RecipeCard variant="saved"', () => {
     expect(screen.getByTestId('recipe-card-saved')).toHaveTextContent('🍳')
   })
 
-  it('keeps a very long title inside the card (clamped, not overflowing)', () => {
+  it('keeps a very long title inside a list row (clamped, not overflowing)', () => {
+    const long = 'Slow-roasted '.repeat(20).trim()
+    render(<Saved title={long} onOpen={jest.fn()} />)
+    expect(screen.getByText(long)).toHaveClass('line-clamp-2')
+  })
+
+  it('shows the whole title when the card is the opened recipe header (no onOpen)', () => {
     const long = 'Slow-roasted '.repeat(20).trim()
     render(<Saved title={long} />)
-    expect(screen.getByText(long)).toHaveClass('line-clamp-2')
+    expect(screen.getByText(long)).not.toHaveClass('line-clamp-2')
   })
 })
