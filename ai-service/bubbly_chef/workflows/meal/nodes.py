@@ -695,6 +695,8 @@ def _meal_unavailable_state(state: WorkflowState, error: NoProviderAvailableErro
         **state,
         "intent": Intent.GENERAL_CHAT.value,
         "assistant_message": user_message_for_failure(error.kind, error.configured),
+        "ai_failure_kind": error.kind,
+        "ai_failure_configured": error.configured,
         "next_action": NextAction.NONE.value,
         "proposal": None,
         "requires_review": False,

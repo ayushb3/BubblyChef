@@ -526,6 +526,16 @@ export function isFollowUpsPending(response?: ChatResponse | null): boolean {
   return response?.metadata?.follow_ups_pending === true
 }
 
+/**
+ * The kind of AI failure a canned reply stands for (issue #732), from
+ * `metadata.ai_error_kind` — e.g. `quota_exhausted`, `timeout`, `not_configured`.
+ * Null for an ordinary answer (or an older server that doesn't send it).
+ */
+export function getAiErrorKind(response?: ChatResponse | null): string | null {
+  const raw = response?.metadata?.ai_error_kind
+  return typeof raw === 'string' && raw.length > 0 ? raw : null
+}
+
 export function getFollowUpSuggestions(response?: ChatResponse | null): string[] {
   const raw = response?.metadata?.follow_up_suggestions
   if (!Array.isArray(raw)) return []

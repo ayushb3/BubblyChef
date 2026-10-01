@@ -393,6 +393,9 @@ Return ONLY the JSON, no markdown formatting or extra text."""
             async with self._client.stream(
                 "POST", url, json=payload, headers=self._headers()
             ) as response:
+                if response.is_error:
+                    # Read the error body before the stream closes; see GeminiProvider (#732).
+                    await response.aread()
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if not line.startswith("data: "):
@@ -410,7 +413,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
                         continue
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
-                error_body = e.response.text[:500] if hasattr(e.response, "text") else str(e)
+                error_body = e.response.text[:500]
                 logger.warning(
                     f"Anthropic [{self.model}] stream hit 429 rate limit, cascading: "
                     f"{error_body[:200]}"
