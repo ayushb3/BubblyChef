@@ -20,9 +20,13 @@
  * Contract for later tickets (the hooks exist, nothing is built behind them):
  *  - `onOpenPlace(place)`: the storage sheet (issue #749) opens here. Until
  *    then `HeroHome` sends the tap to the existing pantry page.
- *  - `spritesLayer`: SVG nodes in wall units, painted over the room (category
- *    sprites and the wilting items, issue #751). Until it lands, a place that
- *    has items shows the board's static stock instead (`wall-art.ts` layers).
+ *  - `spritesLayer`: SVG nodes in wall units, painted over the room: the category
+ *    sprites and the wilting items (issue #751, `sprites/KitchenSprites`). When
+ *    it is given, the board's static stock (`wall-art.ts` layers) is not drawn;
+ *    without it, a place that has items shows that static stock.
+ *  - `tagsLayer`: HTML over the room for the wilting items' pixel-lettered tags
+ *    (issue #751, `sprites/WiltTags`). Painted above Bubbles, below the place
+ *    buttons, and it takes no taps.
  *  - `bubblesLayer`: SVG nodes in wall units (the pixel Bubbles and the stove's
  *    steam, `PixelBubbles`, issue #752). Painted in a second SVG of its own, on
  *    the same 96 x 80 grid, over the decorations (Bubbles walks in front of the
@@ -193,8 +197,10 @@ export interface KitchenWallProps {
   onOpenPlace: (place: PlaceKey) => void
   /** The existing plan-dinner chat link (`planDinnerHref()`). */
   planDinnerHref: string
-  /** Issue #751: category sprites over the room, in wall units. */
+  /** Issue #751: category sprites over the room, in wall units. Replaces the static stock. */
   spritesLayer?: ReactNode
+  /** Issue #751: the wilting items' tags, HTML in percent of the wall. Takes no taps. */
+  tagsLayer?: ReactNode
   /** Issue #752: pixel Bubbles and the stove's steam, in wall units, over the decorations. */
   bubblesLayer?: ReactNode
   /**
@@ -219,6 +225,7 @@ export default function KitchenWall({
   onOpenPlace,
   planDinnerHref,
   spritesLayer,
+  tagsLayer,
   bubblesLayer,
   sceneLabel,
   incoming = null,
@@ -239,18 +246,22 @@ export default function KitchenWall({
 
   // A place's stock is drawn only when it has items; the herb pot (a plant
   // on the sill) comes with the first item, so an empty first-visit kitchen is
-  // the board's empty state (A5).
+  // the board's empty state (A5). The board's static stock (milk and cheese, the
+  // jars, the apples) only stands in until the real sprites are supplied (#751).
+  const drawsOwnStock = spritesLayer != null
   const visible = useMemo(() => {
     const on = new Set<WallLayer>(['base'])
     if (places) {
-      if (places.fridge.count > 0) on.add('fridge')
-      if (places.freezer.count > 0) on.add('freezer')
-      if (places.shelves.count > 0) on.add('shelves')
-      if (places.basket.count > 0) on.add('basket')
+      if (!drawsOwnStock) {
+        if (places.fridge.count > 0) on.add('fridge')
+        if (places.freezer.count > 0) on.add('freezer')
+        if (places.shelves.count > 0) on.add('shelves')
+        if (places.basket.count > 0) on.add('basket')
+      }
       if (PLACES.some((p) => places[p.key].count > 0)) on.add('herbs')
     }
     return on
-  }, [places])
+  }, [places, drawsOwnStock])
 
   return (
     <div
@@ -301,6 +312,9 @@ export default function KitchenWall({
           {bubblesLayer}
         </svg>
       )}
+
+      {/* The wilting tags (#751): over Bubbles, so a tag is never covered. */}
+      {tagsLayer}
 
       {PLACES.map((p) => {
         const { box } = PLACE_BOXES[p.key]

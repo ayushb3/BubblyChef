@@ -12,9 +12,11 @@
  * `Decoration.art` when the catalog entry has one, else its `emoji` (from
  * `lib/kitchen/catalog.ts`), or nothing when empty. (The dashed placeholder
  * outlines went with the old flat scene: on the wall, twelve empty boxes would
- * read as clutter. Issue #751 draws each decoration as pixel art through the
- * same `art` field, so the emoji fallback stays.) The wall box always renders at
- * its final size, loading or not, so nothing shifts once data arrives.
+ * read as clutter. Since issue #751 every catalog entry has pixel art through
+ * that `art` field, and the emoji stays as the fallback for an entry whose art
+ * is removed.) The wall box always renders at its final size, loading or not,
+ * so nothing shifts once data arrives. The category sprites and wilting items
+ * (`stock`, issue #751) are drawn by `sprites/KitchenSprites`.
  *
  * `unlocked` rows are looked up by `id` against `CATALOG` and by `slot` against
  * `SLOTS`; a row that matches neither is dropped silently (a stale or renamed
@@ -34,9 +36,11 @@ import type { ReactNode } from 'react'
 import { SLOTS } from '@/lib/kitchen/slots'
 import { CATALOG, type Decoration } from '@/lib/kitchen/catalog'
 import { getDefaultKitchenTheme, type KitchenTheme } from '@/lib/kitchen/themes'
-import type { PlaceKey, PlaceSummaries } from '@/lib/kitchen/places'
+import type { KitchenStock, PlaceKey, PlaceSummaries } from '@/lib/kitchen/places'
+import { layoutStock } from '@/lib/kitchen/sprite-layout'
 import { planDinnerHref as defaultPlanDinnerHref } from '@/lib/chat-seed'
 import KitchenWall from '@/components/kitchen/KitchenWall'
+import { KitchenSprites, WiltTags } from '@/components/kitchen/sprites/KitchenSprites'
 
 export interface UnlockedDecoration {
   id: string
@@ -54,7 +58,12 @@ export interface KitchenSceneProps {
   onOpenPlace: (place: PlaceKey) => void
   /** Defaults to the existing plan-dinner chat link. */
   planDinnerHref?: string
-  /** Hooks for issues #751 and #752; see `KitchenWall`. */
+  /**
+   * What each place draws (issue #751): its category sprites and up to 3 wilting
+   * items, from `kitchenStock`. `null` or unset while the pantry is unknown.
+   */
+  stock?: KitchenStock | null
+  /** Hooks for issues #751 and #752; see `KitchenWall`. A given `spritesLayer` wins over `stock`. */
   spritesLayer?: ReactNode
   bubblesLayer?: ReactNode
   /** The scene's accessible label; describes where Bubbles is. See `KitchenWall`. */
@@ -79,11 +88,15 @@ export default function KitchenScene({
   places = null,
   onOpenPlace,
   planDinnerHref = defaultPlanDinnerHref(),
+  stock = null,
   spritesLayer,
   bubblesLayer,
   sceneLabel,
   incoming = null,
 }: KitchenSceneProps) {
+  // The sprites and the wilting tags, positioned on the wall (#751). `null`
+  // stock (loading, or the pantry failed) draws none: never a made-up empty.
+  const placed = stock ? layoutStock(stock) : null
   // Build slot -> decoration lookup from the rows that actually resolve. A row
   // whose id isn't in the catalog, or whose slot isn't one of SLOTS', is
   // dropped here rather than thrown on — the source data (a decorations
@@ -110,7 +123,8 @@ export default function KitchenScene({
         places={places}
         onOpenPlace={onOpenPlace}
         planDinnerHref={planDinnerHref}
-        spritesLayer={spritesLayer}
+        spritesLayer={spritesLayer ?? (placed ? <KitchenSprites sprites={placed.sprites} /> : undefined)}
+        tagsLayer={placed ? <WiltTags tags={placed.tags} /> : undefined}
         bubblesLayer={bubblesLayer}
         sceneLabel={sceneLabel}
         incoming={incoming}
@@ -153,7 +167,8 @@ export default function KitchenScene({
                   alt={decoration.name}
                   fill
                   sizes="120px"
-                  className="object-contain"
+                  // Pixel art stays hard-edged at any size, bought raster art included.
+                  className="object-contain [image-rendering:pixelated]"
                 />
               ) : (
                 <span className="leading-none" style={{ fontSize }} role="img" aria-label={decoration.name}>
