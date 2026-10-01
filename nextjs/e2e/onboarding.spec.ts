@@ -29,10 +29,10 @@ freshTest.describe('onboarding / TC1: first-run auto-open', () => {
 })
 
 // ---------------------------------------------------------------------------
-// TC2: Next through all 6 steps; final button reads "Done"
+// TC2: Next through all 5 steps; final button reads "Done"
 // ---------------------------------------------------------------------------
 freshTest.describe('onboarding / TC2: full step navigation', () => {
-  freshTest('next through all 6 steps; last control reads Done', async ({ page }) => {
+  freshTest('next through all 5 steps; last control reads Done', async ({ page }) => {
     // Stub updateUser so the test doesn't write to real DB.
     await page.route('**/auth/v1/user**', async (route) => {
       if (route.request().method() === 'PUT') {
@@ -45,10 +45,12 @@ freshTest.describe('onboarding / TC2: full step navigation', () => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
+    // Mirrors TOUR_STEPS (components/onboarding/steps.ts). The Pantry-tab step
+    // became "tap the fridge" when the Pantry tab went (#750), and the dead
+    // quick-actions step was dropped (#748).
     const steps = [
       "Hi! I'm Bubbles, your kitchen assistant.",
-      'Quick actions: see what to use soon, scan a receipt, or ask me anything.',
-      'Your pantry lives here — tap + Add Item inside it to scan a receipt.',
+      'Your food lives in the kitchen — tap the fridge to see what’s inside.',
       'Ask me anything about cooking, anytime.',
       'Browse and save recipes here.',
       'Your profile and settings — re-take this tour here whenever you like.',

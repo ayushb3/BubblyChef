@@ -78,7 +78,9 @@ unauthenticatedTest.describe('sign-out / AC2: protected routes start a guest ses
   // Use a completely empty storage state — no cookies, no localStorage tokens.
   unauthenticatedTest.use({ storageState: { cookies: [], origins: [] } });
 
-  const protectedRoutes = ['/pantry', '/recipes', '/chat', '/profile', '/scan'];
+  // '/' is the kitchen home, where the pantry lives now: /pantry only redirects
+  // there (#750), so it can no longer be asserted as "stays on the route".
+  const protectedRoutes = ['/', '/recipes', '/chat', '/profile', '/scan'];
 
   for (const route of protectedRoutes) {
     unauthenticatedTest(
