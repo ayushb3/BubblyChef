@@ -125,11 +125,20 @@ _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 # "make a pasta dinner" and "what's for dinner?" have neither "again" nor a
 # saved/made reference and are untouched.
 _MEAL_WORD = r"(?:dinner|meal|lunch|supper)s?"
+_GROUP = (
+    r"(?:\d+|one|two|three|four|five|six|seven|eight|ten|me|us|the\s+family|"
+    r"my\s+family|my\s+partner|friends|guests|company|a\s+crowd|a\s+couple)"
+)
+# Filler words between the meal word and "I made" may be an adjective or a dish
+# ("the cozy pasta dinner I made") or a head count ("the dinner for two I made"), but
+# never a preposition: "dinner with the chicken I cooked last night" is a question
+# about tonight's dinner that merely mentions a past cook (#772 review).
+_SAVED_FILLER = r"(?:for\s+" + _GROUP + r"\s+)?(?:(?!(?:with|for|using|from|in|on|at|to|of)\b)\w+\s+){0,3}?"
 _SAVED_MEAL_LOOKUP_RE = re.compile(
     rf"^\s*(?:please\s+)?(?:(?:can|could|will|would)\s+you\s+)?"
     rf"(?:make|cook|have|do|repeat|redo|plan)\b.*\b{_MEAL_WORD}\b.*\bagain\b"
     rf"|\bsaved\s+(?:\w+\s+){{0,3}}{_MEAL_WORD}\b"
-    rf"|\b{_MEAL_WORD}\s+(?:\w+\s+){{0,3}}?(?:that\s+)?(?:i|we)\s+(?:made|saved|cooked)\b",
+    rf"|\b{_MEAL_WORD}\s+{_SAVED_FILLER}(?:that\s+)?(?:i|we)\s+(?:made|saved|cooked)\b",
     re.IGNORECASE,
 )
 
@@ -139,7 +148,7 @@ _SAVED_MEAL_LOOKUP_RE = re.compile(
 # brainstorm, so the unambiguous shapes are routed to meal_plan deterministically,
 # the same seam as the saved-meal rule above (which runs first, so "make that
 # dinner for two again" still reaches the lookup). Three shapes:
-#   1. "plan ... dinner/lunch/meal"
+#   1. "plan [a] <descriptive> dinner/lunch/meal [for N]"
 #   2. "<meal word> for <N or a group>", with only descriptive words before the meal
 #      word ("dinner for two", "a cozy Italian dinner for 2")
 #   3. a bare occasion ask: only descriptive words, then the meal word, then the end
@@ -157,22 +166,40 @@ _DESCRIPTIVE = (
     r"mediterranean|spanish|american)"
 )
 _MODIFIERS = rf"(?:{_DESCRIPTIVE}[,\s]+){{0,4}}"
-_GROUP = (
-    r"(?:\d+|one|two|three|four|five|six|seven|eight|ten|me|us|the\s+family|"
-    r"my\s+family|my\s+partner|friends|guests|company|a\s+crowd|a\s+couple)"
+_ARTICLE = r"(?:(?:a|an|the|my|our)\s+)?"
+# Every shape is anchored at the start of the message and must read as a request,
+# not a mention: "can I freeze the dinner for 4?", "my family loved the dinner for 6"
+# and "help me plan my shopping list for dinner" all contain the words but are not
+# asks for a meal. The deterministic rules skip the model, so when in doubt they
+# do not match and the classifier (with its few-shots) decides.
+_ASK_LEAD = (
+    r"^\s*(?:please\s+)?(?:(?:can|could|would|will)\s+you\s+)?"
+    r"(?:(?:i|we)\s+(?:want|need|would\s+like)\s+|(?:i|we)'d\s+(?:like|love)\s+|"
+    r"(?:give|get|make|cook|find|show)\s+(?:me|us)\s+|"
+    r"what(?:'s|\s+is)\s+|(?:what|how)\s+about\s+)?"
+)
+_PLAN_LEAD = r"^\s*(?:please\s+)?(?:(?:can|could|would|will)\s+you\s+)?(?:help\s+me\s+)?(?:let's\s+)?"
+_ASK_END = (
+    r"(?:\s+(?:tonight|today|please))*\s*"
+    r"(?:[,.;:!?]|$|\s+(?:using|with|from|i|we)\b)"
 )
 _WHOLE_MEAL_RE = re.compile(
-    rf"\bplan\b(?:\s+[\w'-]+){{0,6}}?\s+{_MEAL_WORD}\b"
-    rf"|(?:^|\b(?:a|an|the|my|our)\s+){_MODIFIERS}{_MEAL_WORD}\s+for\s+{_GROUP}\b"
-    rf"|^\s*(?:(?:a|an)\s+)?{_MODIFIERS}(?:dinner|lunch|supper)(?:\s+tonight)?"
-    rf"\s*(?:[,.;:!?]|$|\s+(?:using|with|from|i|we)\b)",
+    # "plan [a] <descriptive> dinner [for N]" - "plan" as the verb, then the meal.
+    rf"{_PLAN_LEAD}plan\s+{_ARTICLE}{_MODIFIERS}{_MEAL_WORD}(?:\s+for\s+{_GROUP})?{_ASK_END}"
+    # "[a] <descriptive> dinner for N [and X]"
+    rf"|{_ASK_LEAD}{_ARTICLE}{_MODIFIERS}{_MEAL_WORD}\s+for\s+{_GROUP}"
+    rf"(?:\s+and\s+\w+(?:\s+\w+)?)?{_ASK_END}"
+    # "[an] easy weeknight dinner[, ...]" - descriptive words only, then the meal.
+    rf"|{_ASK_LEAD}(?:(?:a|an)\s+)?{_MODIFIERS}(?:dinner|lunch|supper){_ASK_END}",
     re.IGNORECASE,
 )
 # Words that say the user wants a recipe, a list of ideas or one dish, or is
-# referring back to something - never a request for a whole meal.
+# asking about, storing, shopping for or referring back to a meal - never a request
+# for a whole meal.
 _NOT_A_WHOLE_MEAL_RE = re.compile(
     r"\b(?:recipes?|ideas?|something|anything|how|why|again|saved|"
-    r"made|cooked|last\s+(?:week|time))\b",
+    r"made|cooked|ate|eaten|loved|enjoyed|was|were|freez\w*|stor(?:e|ed|age)|"
+    r"reheat\w*|shopping|groceries|grocery|list|yesterday|last\s+(?:week|time|night))\b",
     re.IGNORECASE,
 )
 

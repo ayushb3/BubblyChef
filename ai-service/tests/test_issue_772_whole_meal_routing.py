@@ -117,6 +117,54 @@ async def test_single_recipe_and_brainstorm_asks_are_left_to_the_classifier(
 
 
 # ---------------------------------------------------------------------------
+# Near misses: a message that merely MENTIONS a meal is not an ask for one.
+# The rules skip the model, so a false positive cannot be recovered - these must
+# reach the classifier (review of PR #775).
+# ---------------------------------------------------------------------------
+
+_NEAR_MISSES = [
+    # From the review.
+    "can I freeze the dinner for 4?",
+    "is this enough for a meal for two?",
+    "my family loved the dinner for 6",
+    "can you help me plan my shopping list for dinner?",
+    "what should I make for dinner with the chicken I cooked last night?",
+    # Questions about a dinner.
+    "how long can the dinner for 4 sit out?",
+    "is a meal for two too much chicken?",
+    "does the dinner for two reheat well?",
+    # Storage and leftovers.
+    "where should I store the leftover dinner for 6?",
+    "can I reheat last night's dinner for two?",
+    # Past meals.
+    "the dinner for 4 last night was great",
+    "we had a lovely meal for two yesterday",
+    "I cooked dinner for the family and it was good",
+    "that was an easy weeknight dinner, thanks",
+    # Shopping and planning nouns.
+    "my plan for dinner is pasta",
+    "help me plan the grocery run for the dinner for 4",
+    "what's the plan for dinner?",
+    "plan dinner for the whole week",
+    "plan a dinner party menu for 8",
+    # Dishes and ideas.
+    "a lasagna dinner for 6",
+    "ideas for a dinner for two",
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", _NEAR_MISSES)
+async def test_a_mention_of_a_meal_is_left_to_the_classifier(text: str) -> None:
+    patcher, ai = _llm_says("cooking_help")
+    with patcher:
+        result = await classify_intent(_state(text))
+
+    assert result["intent"] == Intent.COOKING_HELP.value
+    ai.complete.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # The two rule sets (#760 meal-again, #772 whole-meal) must not collide
 # ---------------------------------------------------------------------------
 
@@ -141,6 +189,25 @@ async def test_meal_again_phrasing_still_reaches_the_saved_lookup(text: str) -> 
 
     assert result["intent"] == Intent.SAVED_RECIPE_LOOKUP.value
     ai.complete.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
+        "what should I make for dinner with the chicken I cooked last night?",
+        "a dinner for the chicken I cooked",
+        "lunch using the sauce we made",
+        "dinner from the rice I made yesterday",
+    ],
+)
+async def test_a_past_cook_mentioned_inside_a_question_is_not_a_saved_lookup(text: str) -> None:
+    patcher, ai = _llm_says("recipe_brainstorm")
+    with patcher:
+        result = await classify_intent(_state(text))
+
+    assert result["intent"] == Intent.RECIPE_BRAINSTORM.value
+    ai.complete.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
