@@ -6,6 +6,9 @@
 import React from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 
+// Reduced motion is driven per test. The stub mirrors the `animate` prop onto a
+// data attribute so the pop's motion shape can be asserted.
+let mockReduced = false
 jest.mock('framer-motion', () => {
   const MOTION_ONLY_PROPS = ['initial', 'animate', 'exit', 'transition']
   function passthrough(Tag: string) {
@@ -16,6 +19,10 @@ jest.mock('framer-motion', () => {
       const domProps = Object.fromEntries(
         Object.entries(rest).filter(([key]) => !MOTION_ONLY_PROPS.includes(key)),
       )
+      const animate = (rest as { animate?: unknown }).animate
+      if (typeof animate === 'object' && animate !== null) {
+        domProps['data-animate'] = JSON.stringify(animate)
+      }
       return React.createElement(Tag, domProps, children)
     }
     MotionStub.displayName = `motion.${Tag}`
@@ -25,7 +32,7 @@ jest.mock('framer-motion', () => {
   return {
     motion,
     AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    useReducedMotion: () => false,
+    useReducedMotion: () => mockReduced,
   }
 })
 
@@ -48,6 +55,7 @@ function setBalance(balance: number | undefined) {
 describe('BubblePop (#525)', () => {
   beforeEach(() => {
     mockPathname = '/'
+    mockReduced = false
   })
 
   afterEach(() => {
@@ -70,6 +78,33 @@ describe('BubblePop (#525)', () => {
 
     await waitFor(() => expect(screen.getByTestId('bubble-pop')).toBeInTheDocument())
     expect(screen.getByTestId('bubble-pop').textContent).toContain('+5')
+  })
+
+  it('rises as it fades under full motion (issue #525)', async () => {
+    mockReduced = false
+    setBalance(10)
+    const { rerender } = render(<BubblePop />)
+    setBalance(15)
+    rerender(<BubblePop />)
+
+    const pop = await screen.findByTestId('bubble-pop')
+    const animate = JSON.parse(pop.getAttribute('data-animate') ?? '{}')
+    expect(animate).toHaveProperty('y', -40)
+    expect(animate).toHaveProperty('opacity')
+  })
+
+  it('fades in place, with no rise, under reduced motion (issue #525)', async () => {
+    mockReduced = true
+    setBalance(10)
+    const { rerender } = render(<BubblePop />)
+    setBalance(15)
+    rerender(<BubblePop />)
+
+    const pop = await screen.findByTestId('bubble-pop')
+    expect(pop).toHaveTextContent('+5')
+    const animate = JSON.parse(pop.getAttribute('data-animate') ?? '{}')
+    expect(animate).toHaveProperty('opacity')
+    expect(animate).not.toHaveProperty('y')
   })
 
   it('does not pop when the balance decreases', () => {

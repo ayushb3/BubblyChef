@@ -70,6 +70,7 @@ import type { SavedRecipeMatch } from '@/types/chat'
 import {
   resolveChips,
   resolveAiErrorChips,
+  resolveSendFailureChips,
   COOKING_CHIPS,
   type ChipConfig,
   type ChipAction,
@@ -152,6 +153,8 @@ function ChatSurface() {
     sendMessage,
     sendChipMessage,
     sendConfirmChoice,
+    retryFailedSend,
+    dismissFailedSend,
     cancelStream,
     startNewChat,
     approveProposal,
@@ -711,6 +714,17 @@ function ChatSurface() {
       case 'open_scan':
         router.push('/?add=scan')
         break
+      case 'retry_send':
+        retryFailedSend(msgId)
+        break
+      case 'dismiss_send': {
+        // The unsent text goes back in the input (#847), unless the user has
+        // already started typing something else there.
+        const text = dismissFailedSend(msgId)
+        if (text) setInput((prev) => prev || text)
+        inputRef.current?.focus()
+        break
+      }
     }
   }
 
@@ -1021,15 +1035,20 @@ function ChatSurface() {
           </div>
         )}
       </div>
+      {/* The pill gets its own row between the thread and the input, so it
+          never sits over a card's text (#847). The row shrinks the scroll area
+          while it shows; it appears only when the thread is off its end. */}
       {showJump && (
-        <button
-          type="button"
-          data-testid="jump-to-latest"
-          onClick={jumpToLatest}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md px-3 py-1.5 rounded-full hover:bg-[var(--color-border)] transition-colors"
-        >
-          Jump to latest ↓
-        </button>
+        <div className="flex flex-shrink-0 justify-center py-1.5">
+          <button
+            type="button"
+            data-testid="jump-to-latest"
+            onClick={jumpToLatest}
+            className="text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md px-3 py-1.5 rounded-full hover:bg-[var(--color-border)] transition-colors"
+          >
+            Jump to latest ↓
+          </button>
+        </div>
       )}
       </div>
 
@@ -1245,6 +1264,30 @@ function MessageRenderer({
   const mascotState = isLastAssistant && isStreaming ? 'thinking' : 'happy'
   const intent = message.intent ?? message.response?.intent
 
+  // A send that never completed (#847): Retry first, then Dismiss. No generic
+  // follow-ups, which would only fail the same way.
+  if (message.sendFailure) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      >
+        <div className="flex items-end gap-2">
+          <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+          <MessageBubble message={message} />
+        </div>
+        {isLastSettledAssistant && (
+          <PostMessageChips
+            chips={resolveSendFailureChips()}
+            onChipTap={onChipTap}
+            onChipAction={onChipAction}
+          />
+        )}
+      </motion.div>
+    )
+  }
+
   // A canned AI-failure reply (#732): no normal follow-ups, which would only
   // fail the same way, and at most one "Try again" that resends the last message.
   const aiErrorKind = getAiErrorKind(message.response)
@@ -1423,7 +1466,11 @@ function MessageRenderer({
   // retry affordance, same as every other intent.
   if (intent === 'meal_plan') {
     const proposal = message.response?.proposal
-    if (message.response?.next_action === 'pick_meal' && isMealOptionsProposal(proposal)) {
+    // Drawn for every option set, picked or not (#847): a restored thread carries
+    // `pick_meal` only on the newest unpicked set, and older or picked sets must
+    // still show their cards, read-only.
+    if (isMealOptionsProposal(proposal)) {
+      const pickable = message.response?.next_action === 'pick_meal' && isLastSettledAssistant
       return (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -1447,7 +1494,7 @@ function MessageRenderer({
                       option={option}
                       index={i}
                       onSelect={onPickMealOption}
-                      disabled={!isLastSettledAssistant}
+                      disabled={!pickable}
                     />
                   ))}
                 </div>

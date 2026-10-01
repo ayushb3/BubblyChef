@@ -100,6 +100,9 @@ export async function resolvePantryItem(
     // The client's IANA zone (#550), not a date: the server keys a `rescue`
     // bubbles award on its own clock in the account's stored zone (#524).
     body: JSON.stringify({ outcome, tz: clientTimeZone() }),
+    // A deferred "Used it" (#851) can fire as the page closes; keepalive lets the
+    // request outlive it.
+    keepalive: true,
   })
 
   if (!res.ok) {

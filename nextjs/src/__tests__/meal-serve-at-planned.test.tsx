@@ -53,6 +53,7 @@ jest.mock('@/lib/api/recipes', () => ({
 
 jest.mock('@/lib/api/grocery', () => ({
   fetchMealToBuy: jest.fn().mockRejectedValue(new Error('offline')),
+  fetchMealToBuyDetail: jest.fn().mockRejectedValue(new Error('offline')),
 }))
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports

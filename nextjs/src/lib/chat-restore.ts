@@ -42,6 +42,8 @@ import {
   proposalActionKey,
   readPantryActions,
   readProposalReview,
+  isMealOptionsProposal,
+  isMealProposal,
   readTurnRequestId,
 } from '@/types/chat'
 
@@ -124,6 +126,7 @@ function buildResponse(
   conversationId: string,
   proposal: ChatResponse['proposal'],
   clarifications?: TermSuggestion[],
+  nextAction: ChatResponse['next_action'] = 'none',
 ): ChatResponse {
   const metadata = isRecord(turn.metadata)
     ? {
@@ -148,7 +151,7 @@ function buildResponse(
     // fabricated 1.0 that a future confidence indicator would trust.
     confidence: { overall: 0 },
     requires_review: false,
-    next_action: 'none',
+    next_action: nextAction,
   } as ChatResponse
 }
 
@@ -335,6 +338,17 @@ function restore(turns: ConversationHistoryTurn[], conversationId: string): Rest
     }
   }
 
+  // ── Meal options still waiting for a pick (#847) ───────────────────────────
+  // Only the newest option set can be picked, and only if no `meal` turn follows
+  // it: a pick answers with one, a "different options" ask answers with a newer
+  // set. Everything else restores as `none` and the page draws it read-only.
+  let pickableOptionsIdx = -1
+  turns.forEach((turn, i) => {
+    if (turn.role !== 'assistant') return
+    if (isMealOptionsProposal(turn.proposal)) pickableOptionsIdx = i
+    else if (isMealProposal(turn.proposal)) pickableOptionsIdx = -1
+  })
+
   // ── Assemble the messages ──────────────────────────────────────────────────
   const messages = turns.map((turn, i): ChatMessage => {
     const base = textOnly(turn, ids[i])
@@ -346,7 +360,16 @@ function restore(turns: ConversationHistoryTurn[], conversationId: string): Rest
     }
     // Recipe and brainstorm cards are read-only, so they restore fully.
     if (turn.role === 'assistant' && (turn.proposal || turn.metadata)) {
-      return { ...base, response: buildResponse(turn, conversationId, turn.proposal ?? null) }
+      return {
+        ...base,
+        response: buildResponse(
+          turn,
+          conversationId,
+          turn.proposal ?? null,
+          undefined,
+          i === pickableOptionsIdx ? 'pick_meal' : 'none',
+        ),
+      }
     }
     return base
   })
