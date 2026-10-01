@@ -7,7 +7,21 @@ human-paced taps. Every write was reverted afterwards. The captions are drawn
 by the recording script, not the app, and there is no sound.
 
 These are compressed copies (390 px wide). Per-ticket demos and the full-size
-originals live outside the repo.
+originals live outside the repo. The older per-flow recordings are one level up,
+in [`demos/`](../README.md).
+
+## Regenerating
+
+These are not scripted in the repo, unlike the flow recordings in `demos/`. Each was
+a one-off Playwright run (`recordVideo` with human-paced taps and overlaid
+captions), recorded by an agent in its session scratchpad and then restored
+against a snapshot of the e2e user's rows. To re-record one, follow the scenes
+listed below on a production build (`scripts/dev/stack.sh up`) with the same
+viewport, then shrink it for the repo:
+
+```bash
+ffmpeg -i <recording>.mp4 -vf "scale=390:-2" -c:v libx264 -preset slow -crf 30 -an -movflags +faststart demos/milestones/<name>.mp4
+```
 
 | Goal | File | Length | Recorded |
 |---|---|---|---|
