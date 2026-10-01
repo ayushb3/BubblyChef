@@ -50,6 +50,7 @@ from bubbly_chef.prompts.router import (
     DIET_CHANGE_FLAG_PROMPT,
     INTENT_CLASSIFICATION_SYSTEM_PROMPT,
     INTENT_CLASSIFICATION_USER_PROMPT,
+    MEAL_PLAN_ROUTING_PROMPT,
     MODE_BIAS_RECIPE_PICKED_PROMPT,
     MODE_BIAS_RECIPE_BROWSING_PROMPT,
     MODE_BIAS_COOKING_PROMPT,
@@ -126,11 +127,60 @@ _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 _MEAL_WORD = r"(?:dinner|meal|lunch|supper)s?"
 _SAVED_MEAL_LOOKUP_RE = re.compile(
     rf"^\s*(?:please\s+)?(?:(?:can|could|will|would)\s+you\s+)?"
-    rf"(?:make|cook|have|do|repeat|redo)\b.*\b{_MEAL_WORD}\b.*\bagain\b"
+    rf"(?:make|cook|have|do|repeat|redo|plan)\b.*\b{_MEAL_WORD}\b.*\bagain\b"
     rf"|\bsaved\s+(?:\w+\s+){{0,3}}{_MEAL_WORD}\b"
-    rf"|\b{_MEAL_WORD}\s+(?:that\s+)?(?:i|we)\s+(?:made|saved|cooked)\b",
+    rf"|\b{_MEAL_WORD}\s+(?:\w+\s+){{0,3}}?(?:that\s+)?(?:i|we)\s+(?:made|saved|cooked)\b",
     re.IGNORECASE,
 )
+
+# A clear whole-meal ask (issue #772): "plan a cozy Italian dinner for two",
+# "easy weeknight dinner, I only have eggs and rice", "a meal for 2 tonight".
+# The router used to key on "tonight" and sent these to a single recipe card or a
+# brainstorm, so the unambiguous shapes are routed to meal_plan deterministically,
+# the same seam as the saved-meal rule above (which runs first, so "make that
+# dinner for two again" still reaches the lookup). Three shapes:
+#   1. "plan ... dinner/lunch/meal"
+#   2. "<meal word> for <N or a group>", with only descriptive words before the meal
+#      word ("dinner for two", "a cozy Italian dinner for 2")
+#   3. a bare occasion ask: only descriptive words, then the meal word, then the end
+#      of the message or a clause ("easy weeknight dinner, I only have ...")
+# Descriptive words are an allow-list on purpose: any other word before the meal word
+# is a dish ("a pasta dinner for two" names pasta) and stays with the classifier, as
+# does anything asking for a recipe, ideas or "something" ("recipe for dinner for two",
+# "something for dinner"), which keeps a quick "recipe for X" from becoming a
+# three-option meal.
+_DESCRIPTIVE = (
+    r"(?:easy|quick|simple|fast|cozy|cosy|light|healthy|cheap|fancy|romantic|nice|"
+    r"special|hearty|comforting|casual|budget|vegetarian|vegan|"
+    r"weeknight|weekend|weekday|friday|saturday|sunday|date[- ]night|family|"
+    r"italian|mexican|thai|indian|french|japanese|chinese|greek|korean|"
+    r"mediterranean|spanish|american)"
+)
+_MODIFIERS = rf"(?:{_DESCRIPTIVE}[,\s]+){{0,4}}"
+_GROUP = (
+    r"(?:\d+|one|two|three|four|five|six|seven|eight|ten|me|us|the\s+family|"
+    r"my\s+family|my\s+partner|friends|guests|company|a\s+crowd|a\s+couple)"
+)
+_WHOLE_MEAL_RE = re.compile(
+    rf"\bplan\b(?:\s+[\w'-]+){{0,6}}?\s+{_MEAL_WORD}\b"
+    rf"|(?:^|\b(?:a|an|the|my|our)\s+){_MODIFIERS}{_MEAL_WORD}\s+for\s+{_GROUP}\b"
+    rf"|^\s*(?:(?:a|an)\s+)?{_MODIFIERS}(?:dinner|lunch|supper)(?:\s+tonight)?"
+    rf"\s*(?:[,.;:!?]|$|\s+(?:using|with|from|i|we)\b)",
+    re.IGNORECASE,
+)
+# Words that say the user wants a recipe, a list of ideas or one dish, or is
+# referring back to something - never a request for a whole meal.
+_NOT_A_WHOLE_MEAL_RE = re.compile(
+    r"\b(?:recipes?|ideas?|something|anything|how|why|again|saved|"
+    r"made|cooked|last\s+(?:week|time))\b",
+    re.IGNORECASE,
+)
+
+
+def _is_whole_meal_ask(text: str) -> bool:
+    """True for an unambiguous whole-meal request (#772); see `_WHOLE_MEAL_RE`."""
+    return bool(_WHOLE_MEAL_RE.search(text)) and not _NOT_A_WHOLE_MEAL_RE.search(text)
+
 
 # Rolling cap on session.pending_proposal's two lists — bounds how much
 # cross-turn pantry context a single conversation can accumulate in
@@ -318,6 +368,9 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
     5. URL shortcut — unambiguous recipe_ingest (no LLM).
     5a. Saved-meal phrasing ("make that pasta dinner again") — saved_recipe_lookup
        (#760), no LLM; skipped while COOKING.
+    5b. Clear whole-meal ask ("plan a cozy dinner for two", "a meal for 2",
+       "easy weeknight dinner") — meal_plan (#772), no LLM; skipped while COOKING
+       or with a recipe picked. Runs after 5a, so meal-again phrasing wins.
     6. Brainstorm set re-pick — re-pick from stored set without regeneration.
     7. LLM classifier — with session-mode bias injected into the prompt.
        Post-classify logic then:
@@ -480,6 +533,24 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "detected_entities": [],
         }
 
+    # ── Priority 3c: a clear whole-meal ask (#772) — deterministic, no LLM ──
+    # After 3b so "make that dinner for two again" is still a saved lookup. Skipped
+    # mid-cook (the COOKING gate owns the message) and while a recipe is picked, where
+    # "dinner for 4" is far likelier a scaling tweak than a new meal.
+    if (
+        session_mode != SessionMode.COOKING.value
+        and not _session_has_picked_recipe(state)
+        and _is_whole_meal_ask(input_text)
+    ):
+        logger.info("classify_intent: whole-meal phrasing — meal_plan shortcut")
+        return {
+            **state,
+            "intent": Intent.MEAL_PLAN.value,
+            "intent_confidence": 0.95,
+            "intent_reasoning": "Whole-meal phrasing — meal_plan shortcut",
+            "detected_entities": [],
+        }
+
     # ── Priority 4: Brainstorm set re-pick (before LLM) ──
     # Retain brainstorm_ideas across follow-ups; re-pick with no regeneration (Q6).
     # Fires when the last assistant turn was a brainstorm OR (history truncated)
@@ -580,6 +651,7 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
     prompt = (
         INTENT_CLASSIFICATION_SYSTEM_PROMPT
         + mode_bias_section
+        + MEAL_PLAN_ROUTING_PROMPT
         + DIET_CHANGE_FLAG_PROMPT
         + "\n\n"
         + INTENT_CLASSIFICATION_USER_PROMPT.format(text=input_text)
