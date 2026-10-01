@@ -173,29 +173,45 @@ describe('storage places: the Place field, and no other location surface (#397, 
     expect(selects.map((s) => s.getAttribute('aria-label'))).toEqual(['Unit', 'Category'])
   })
 
-  // Now checks: the scan review card has no Location select, only Category,
-  // and the card never edits `item.location` (the backend-derived value
-  // rides through untouched).
-  it('ScannedItemCard shows no storage-location select', () => {
+  // REWRITTEN for issue #753 (put-away's Fix brings the place back, as the
+  // Goal 2 spec says it would: "the edit sheet, the add sheet's place and
+  // put-away's Fix"). It used to pin that the scan card has no Location select
+  // and never edits `item.location`. Now: the card still has no Location
+  // *select* (the place is a four-way radio group in the Fix editor, named for
+  // the place rather than a stored value), it shows where the item is headed
+  // ("→ Basket" for a stored `counter`), and `location` changes only through
+  // that picker, to the stored value of the place chosen.
+  it('ScannedItemCard shows where the item is headed, and moves it only through the Fix picker', () => {
     const onChange = jest.fn()
     render(
-      <ScannedItemCard
-        item={scanned('counter')}
-        checked
-        onChange={onChange}
-        onDismiss={() => {}}
-        onCheckedChange={() => {}}
-      />,
+      <ul>
+        <ScannedItemCard
+          item={scanned('counter')}
+          editing
+          onFix={() => {}}
+          onYes={() => {}}
+          onChange={onChange}
+          onLeaveOut={() => {}}
+        />
+      </ul>,
     )
+    expect(screen.getByText('→ Basket')).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: /^location$/i })).not.toBeInTheDocument()
     expect(screen.queryByText(/^location$/i)).not.toBeInTheDocument()
-    const selects = screen.getAllByRole('combobox').filter((el) => el.tagName === 'SELECT')
-    expect(selects.map((s) => s.getAttribute('aria-label'))).toEqual(['Category'])
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Category' }), {
-      target: { value: 'dairy' },
-    })
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ category: 'dairy', location: 'counter' }))
+    const places = screen.getByRole('radiogroup', { name: 'Place' })
+    expect(within(places).getAllByRole('radio').map((r) => r.textContent)).toEqual([
+      'Fridge',
+      'Freezer',
+      'Shelves',
+      'Basket',
+    ])
+    expect(within(places).getByRole('radio', { name: 'Basket' })).toBeChecked()
+
+    fireEvent.click(within(places).getByRole('radio', { name: 'Shelves' }))
+    // The stored value of the place, and nothing else about the item changes.
+    expect(onChange).toHaveBeenCalledWith({ ...scanned('counter'), location: 'pantry' })
   })
 
   // Now checks: the shared vocabulary module is gone and nothing under

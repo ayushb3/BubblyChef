@@ -7,7 +7,7 @@
  * Home canvas, on the signature `PixelSheet`.
  *
  * Top to bottom:
- *  - header: the place's mini sprite, its name and "23 items · 3 to use soon",
+ *  - header: the place's mini sprite (its live stock, as the wall draws it), its name and "23 items · 3 to use soon",
  *    and the close button (all `PixelSheet`);
  *  - search: one field over every place, "Search all 65 items". While there is
  *    a query the tabs and views give way to the results, grouped by place, each
@@ -72,6 +72,7 @@ import {
   categoryGroups,
   categoryHeading,
   itemsInPlace,
+  kitchenStock,
   pickUseFirst,
   placeDef,
   placeForLocation,
@@ -225,6 +226,9 @@ export default function StorageSheet<T extends StoredItem>({
   const rows = useMemo(() => items ?? [], [items])
   const today = todayProp ?? localDateString()
   const summaries = useMemo(() => summarizePlaces(rows, today), [rows, today])
+  // What the wall draws in each place, so the place icons show the same sprites
+  // (issue #794). Unknown (no rows yet) draws the empty room, as the wall does.
+  const stock = useMemo(() => (items ? kitchenStock(rows, today) : null), [items, rows, today])
   const def = placeDef(place)
   const summary = summaries[place]
   const searching = query.trim().length > 0
@@ -668,7 +672,7 @@ export default function StorageSheet<T extends StoredItem>({
                 style={{ borderColor: PIXEL_INK }}
               >
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center">
-                  <PlaceSprite place={g.key} palette={palette} />
+                  <PlaceSprite place={g.key} palette={palette} stock={stock} />
                 </span>
                 {g.label} <span className="tabular-nums">{g.items.length}</span>
               </h3>
@@ -701,6 +705,7 @@ export default function StorageSheet<T extends StoredItem>({
         items={listRows}
         today={today}
         palette={palette}
+        stock={stock}
         idPrefix={`${uid}-lst`}
         filtersActive={filtersActive}
         onClearFilters={() => {
@@ -717,7 +722,7 @@ export default function StorageSheet<T extends StoredItem>({
     body = (
       <div className="flex flex-col items-center gap-1 py-10 text-center text-[color:var(--color-text)]">
         <div aria-hidden="true" className="mb-2 h-16 w-16">
-          <PlaceSprite place={place} palette={palette} />
+          <PlaceSprite place={place} palette={palette} stock={stock} />
         </div>
         <p className="text-base font-bold">Nothing in the {def.label.toLowerCase()} yet.</p>
         <p className="text-sm font-semibold opacity-80">Add something with the button below.</p>
@@ -779,7 +784,7 @@ export default function StorageSheet<T extends StoredItem>({
     title: def.label,
     titleId: 'storage-sheet-title',
     subtitle,
-    icon: <PlaceSprite place={place} palette={palette} />,
+    icon: <PlaceSprite place={place} palette={palette} stock={stock} />,
     subheader,
     footer,
     panelClassName: 'h-[84dvh]',
