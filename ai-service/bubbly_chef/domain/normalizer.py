@@ -617,8 +617,15 @@ _TO_COUNT: dict[str, float] = {
 # "stick" is absent on purpose: it is a piece unit whose dimension depends on
 # the ingredient (butter is 113 g, celery is not), so it resolves through
 # PIECE_WEIGHTS_G or not at all.
+#
+# "whole" converts to count but is kept out of the dimension map (#756): it is a
+# size word ("1 whole chicken breast"), not a measure, so against a weighed or
+# measured row it must stay the quiet `imprecise` "Have it" rather than become a
+# unit conflict with an empty quantity box. Count against count still converts.
+_COUNT_UNITS_WITHOUT_DIMENSION: frozenset[str] = frozenset({"whole"})
+
 _UNIT_DIMENSION: dict[str, str] = {
-    **{unit: "count" for unit in _TO_COUNT},
+    **{unit: "count" for unit in _TO_COUNT if unit not in _COUNT_UNITS_WITHOUT_DIMENSION},
     **{unit: "ml" for unit in _TO_ML},
     **{unit: "g" for unit in _TO_G},
 }

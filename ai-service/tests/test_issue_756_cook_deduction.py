@@ -112,6 +112,36 @@ class TestEqualAmountsAreReady:
         assert m.status == "ready"
         assert m.shortfall is None
 
+    @pytest.mark.parametrize(("pantry_unit", "base_unit"), [("g", "g"), ("ml", "ml")])
+    def test_whole_against_a_weighed_or_measured_row_stays_the_quiet_have_it(
+        self, pantry_unit: str, base_unit: str
+    ) -> None:
+        # "1 whole chicken breast" vs "500 g": we have it, we can't say how much the
+        # recipe uses. Not a unit conflict with an empty box to fill (#756 review).
+        pantry = [_item("chicken breast", 500.0, pantry_unit, base=500.0, base_unit=base_unit)]
+
+        proposal = _match(pantry, [{"name": "chicken breast", "quantity": 1.0, "unit": "whole"}])
+
+        (m,) = proposal.matches
+        assert m.status == "imprecise"
+        assert m.deduct_qty is None
+        assert proposal.unit_conflicts == []
+
+    @pytest.mark.parametrize("recipe_unit", ["count", "item", "each", "piece"])
+    @pytest.mark.parametrize(("pantry_unit", "base_unit"), [("g", "g"), ("ml", "ml")])
+    def test_the_other_count_units_against_a_weighed_row_are_unchanged(
+        self, recipe_unit: str, pantry_unit: str, base_unit: str
+    ) -> None:
+        # Pinned so the class is explicit: these were already a unit conflict on main
+        # (test_mass_vs_count_stays_unit_conflict) and #756 does not touch that.
+        pantry = [_item("chicken breast", 500.0, pantry_unit, base=500.0, base_unit=base_unit)]
+
+        proposal = _match(pantry, [{"name": "chicken breast", "quantity": 1.0, "unit": recipe_unit}])
+
+        (m,) = proposal.matches
+        assert m.status == "unit_conflict"
+        assert m.deduct_qty is None
+
     def test_a_genuinely_larger_amount_is_still_a_shortfall(self) -> None:
         pantry = [_item("sourdough", 1.0, "loaf")]
 

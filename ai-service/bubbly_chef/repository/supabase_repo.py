@@ -1292,7 +1292,8 @@ class SupabaseRepository:
     async def _carry_deduction_to_lots(
         self, user_id: str, item_id: str, food: str, base_unit: str, remainder: float
     ) -> None:
-        """Spend `remainder` (in `base_unit`) on the other lots of `food`, soonest first."""
+        """Spend `remainder` (in `base_unit`) on the other lots of `food`, fresh lots
+        soonest-expiry first, expired lots only after them (#756)."""
         result = self.client.table("pantry_items").select("*").eq("user_id", user_id).execute()
         lots: list[tuple[PantryItem, float]] = []
         for row in _as_rows(result.data):
