@@ -11,7 +11,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import { addManualLines, setLineChecked } from '@/lib/grocery'
-import { loadGroceryLines, saveGroceryLines } from '@/lib/grocery-store'
+import { loadGroceryDismissed, loadGroceryLines, saveGroceryLines } from '@/lib/grocery-store'
 
 const mockGetUser = jest.fn()
 jest.mock('@/lib/supabase/client', () => ({
@@ -37,9 +37,9 @@ import GroceryPage from '@/app/grocery/page'
 const USER = 'user-1'
 
 const PANTRY = [
-  { name: 'eggs', category: 'dairy', quantity: 0, unit: 'item', days_until_expiry: null, is_expired: false },
-  { name: 'milk', category: 'dairy', quantity: 1, unit: 'L', days_until_expiry: 1, is_expired: false },
-  { name: 'rice', category: 'dry_goods', quantity: 3, unit: 'kg', days_until_expiry: 200, is_expired: false },
+  { id: 'e1', name: 'eggs', category: 'dairy', quantity: 0, unit: 'item', days_until_expiry: null, is_expired: false },
+  { id: 'm1', name: 'milk', category: 'dairy', quantity: 1, unit: 'L', days_until_expiry: 1, is_expired: false },
+  { id: 'r1', name: 'rice', category: 'dry_goods', quantity: 3, unit: 'kg', days_until_expiry: 200, is_expired: false },
 ]
 
 function renderPage() {
@@ -345,6 +345,116 @@ describe('/grocery: Share', () => {
     renderPage()
     await ready()
     expect(screen.getByRole('button', { name: /share/i })).toBeDisabled()
+  })
+})
+
+describe('/grocery: a removed suggestion stays gone', () => {
+  const eggs = (id: string, quantity: number) => ({
+    id,
+    name: 'eggs',
+    category: 'dairy',
+    quantity,
+    unit: 'item',
+    days_until_expiry: null,
+    is_expired: false,
+  })
+  const milk = PANTRY[1]
+  const rice = PANTRY[2]
+  const hasEggs = () => screen.queryByRole('checkbox', { name: /eggs/i }) !== null
+  const regenerate = async () => {
+    fireEvent.click(screen.getByRole('button', { name: /regenerate/i }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /regenerate/i })).toBeEnabled())
+  }
+
+  it('does not come back when the page is opened again, or on Regenerate', async () => {
+    const first = renderPage()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: /remove eggs/i }))
+    first.unmount()
+
+    renderPage()
+    await ready()
+    expect(hasEggs()).toBe(false)
+    expect(screen.getByRole('checkbox', { name: /milk/i })).toBeInTheDocument()
+    await regenerate()
+    expect(hasEggs()).toBe(false)
+  })
+
+  it('comes back when the food is restocked and runs out again (a new lot)', async () => {
+    renderPage()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: /remove eggs/i }))
+
+    mockFetchPantry.mockResolvedValue([eggs('e1', 0), eggs('e2', 12), milk, rice])
+    await regenerate()
+    expect(hasEggs()).toBe(false)
+
+    mockFetchPantry.mockResolvedValue([eggs('e1', 0), eggs('e2', 0), milk, rice])
+    await regenerate()
+    await waitFor(() => expect(hasEggs()).toBe(true))
+  })
+
+  it('comes back when the same lot is topped up and later runs out again', async () => {
+    renderPage()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: /remove eggs/i }))
+
+    mockFetchPantry.mockResolvedValue([eggs('e1', 12), milk, rice])
+    await regenerate()
+    expect(hasEggs()).toBe(false)
+
+    mockFetchPantry.mockResolvedValue([eggs('e1', 0), milk, rice])
+    await regenerate()
+    await waitFor(() => expect(hasEggs()).toBe(true))
+  })
+
+  it('applies to "Clear got it" the same way', async () => {
+    const first = renderPage()
+    await ready()
+    fireEvent.click(screen.getByRole('checkbox', { name: /eggs/i }))
+    fireEvent.click(screen.getByRole('button', { name: /clear got it/i }))
+    first.unmount()
+
+    renderPage()
+    await ready()
+    expect(hasEggs()).toBe(false)
+
+    mockFetchPantry.mockResolvedValue([eggs('e1', 0), eggs('e2', 12), milk, rice])
+    await regenerate()
+    mockFetchPantry.mockResolvedValue([eggs('e1', 0), eggs('e2', 0), milk, rice])
+    await regenerate()
+    await waitFor(() => expect(hasEggs()).toBe(true))
+  })
+
+  it('leaves a food the user typed in simply gone, with nothing recorded', async () => {
+    saveGroceryLines(USER, addManualLines([], ['paper towels']))
+    const first = renderPage()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: /remove paper towels/i }))
+    first.unmount()
+
+    expect(loadGroceryDismissed(USER)).toEqual([])
+    renderPage()
+    await ready()
+    expect(screen.queryByRole('checkbox', { name: /paper towels/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('/grocery: why a line is there is announced', () => {
+  it('names the reason in the checkbox label', async () => {
+    renderPage()
+    await ready()
+    expect(screen.getByRole('checkbox', { name: 'Eggs, ran out' })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Milk, replace soon' })).toBeInTheDocument()
+  })
+
+  it('names only the food for a line the user added or ticked', async () => {
+    saveGroceryLines(USER, addManualLines([], ['paper towels']))
+    renderPage()
+    await ready()
+    expect(screen.getByRole('checkbox', { name: 'Paper Towels' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Eggs, ran out' }))
+    expect(screen.getByRole('checkbox', { name: 'Eggs' })).toBeChecked()
   })
 })
 

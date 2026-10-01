@@ -21,11 +21,14 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchPantryItems } from '@/lib/api/pantry'
+import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
 import {
   addManualLines,
   clearCheckedLines,
   countToBuy,
+  dismissalsFor,
   formatGroceryShareText,
+  pruneDismissals,
   regenerateGroceryList,
   removeLine,
   setLineChecked,
@@ -34,13 +37,29 @@ import {
 } from '@/lib/grocery'
 import { shareGroceryText, type ShareResult } from '@/lib/grocery-share'
 import {
+  loadGroceryDismissed,
   loadGroceryLines,
   parseGroceryLines,
   readGroceryRaw,
   saveGroceryLines,
+  saveGroceryState,
   subscribeGrocery,
 } from '@/lib/grocery-store'
 import { fetchUserId } from '@/hooks/useGroceryCount'
+
+/**
+ * Regenerate the saved list from the pantry rows and save it: ticked and added
+ * lines kept, dismissed suggestions skipped, and dismissals the pantry no
+ * longer suggests (the food is back in stock) forgotten.
+ */
+function regenerateFrom(userId: string, rows: EnrichedPantryItem[]): void {
+  const dismissed = loadGroceryDismissed(userId)
+  saveGroceryState(
+    userId,
+    regenerateGroceryList(loadGroceryLines(userId), rows, dismissed),
+    pruneDismissals(dismissed, rows),
+  )
+}
 
 export type GroceryStatus = 'loading' | 'ready' | 'signed-out'
 
@@ -91,7 +110,7 @@ export function useGroceryList(): UseGroceryListResult {
   useEffect(() => {
     if (seeded || !userId) return
     if (pantryData) {
-      saveGroceryLines(userId, regenerateGroceryList(loadGroceryLines(userId), pantryData))
+      regenerateFrom(userId, pantryData)
       setSeeded(true)
     } else if (pantryFailed) {
       setSeeded(true)
@@ -115,9 +134,41 @@ export function useGroceryList(): UseGroceryListResult {
       edit((l) => updateLine(l, key, { quantity, unit })),
     [edit],
   )
-  const remove = useCallback((key: string) => edit((l) => removeLine(l, key)), [edit])
+  // Removing a line the pantry is suggesting also dismisses that suggestion (its
+  // fingerprint goes in the same record), so the next regenerate doesn't put it
+  // straight back. A food the user typed in has no suggestion: it is just gone.
+  const editAndDismiss = useCallback(
+    (
+      keysOf: (current: GroceryLine[]) => string[],
+      fn: (current: GroceryLine[]) => GroceryLine[],
+    ) => {
+      if (!userId) return
+      const current = loadGroceryLines(userId)
+      const dismissed = [
+        ...loadGroceryDismissed(userId),
+        ...dismissalsFor(keysOf(current), pantryData ?? []),
+      ]
+      saveGroceryState(userId, fn(current), dismissed)
+    },
+    [userId, pantryData],
+  )
+  const remove = useCallback(
+    (key: string) =>
+      editAndDismiss(
+        () => [key],
+        (l) => removeLine(l, key),
+      ),
+    [editAndDismiss],
+  )
   const add = useCallback((name: string) => edit((l) => addManualLines(l, [name])), [edit])
-  const clearChecked = useCallback(() => edit(clearCheckedLines), [edit])
+  const clearChecked = useCallback(
+    () =>
+      editAndDismiss(
+        (l) => l.filter((x) => x.checked).map((x) => x.key),
+        clearCheckedLines,
+      ),
+    [editAndDismiss],
+  )
 
   const regenerate = useCallback(async () => {
     if (!userId || regenerating) return
@@ -127,16 +178,13 @@ export function useGroceryList(): UseGroceryListResult {
       // A failed refetch still hands back the last good data, so check the status.
       const res = await pantry.refetch()
       if (res.isError || !res.data) setRegenFailed(true)
-      else {
-        const rows = res.data
-        edit((l) => regenerateGroceryList(l, rows))
-      }
+      else regenerateFrom(userId, res.data)
     } catch {
       setRegenFailed(true)
     } finally {
       setRegenerating(false)
     }
-  }, [userId, regenerating, pantry, edit])
+  }, [userId, regenerating, pantry])
 
   const share = useCallback(async () => {
     const text = formatGroceryShareText(lines)

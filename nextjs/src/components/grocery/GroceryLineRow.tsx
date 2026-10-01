@@ -112,7 +112,9 @@ export default function GroceryLineRow({
           type="checkbox"
           checked={line.checked}
           onChange={(e) => onToggle(e.target.checked)}
-          aria-label={name}
+          // The chip below is hidden from assistive tech (it is drawn text), so the
+          // reason rides on the checkbox's own name: "Eggs, ran out".
+          aria-label={reason ? `${name}, ${reason.toLowerCase()}` : name}
           className="sr-only"
         />
         <span

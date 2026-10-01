@@ -9,8 +9,8 @@ import React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import NotificationBell from '@/components/layout/NotificationBell'
-import { addManualLines, setLineChecked } from '@/lib/grocery'
-import { saveGroceryLines } from '@/lib/grocery-store'
+import { addManualLines, dismissalsFor, setLineChecked } from '@/lib/grocery'
+import { saveGroceryLines, saveGroceryState } from '@/lib/grocery-store'
 
 const mockGetUser = jest.fn()
 jest.mock('@/lib/supabase/client', () => ({
@@ -84,6 +84,25 @@ describe('NotificationBell: grocery pointer', () => {
     expect(
       await screen.findByRole('link', { name: /1 item on your grocery list/i }),
     ).toHaveAttribute('href', '/grocery')
+  })
+
+  it('does not count a suggestion the user dismissed on the page', async () => {
+    const pantryRow = {
+      id: 'e',
+      name: 'eggs',
+      category: 'dairy',
+      quantity: 0,
+      unit: 'item',
+      expiry_date: null,
+      days_until_expiry: null,
+      is_expired: false,
+    }
+    saveGroceryState('u1', [], dismissalsFor(['egg'], [pantryRow]))
+    mockFetch([pantryRow])
+    renderBell()
+    fireEvent.click(screen.getByTestId('notification-bell'))
+    await screen.findByText(/eggs is out of stock/i)
+    expect(screen.queryByRole('link', { name: /grocery list/i })).not.toBeInTheDocument()
   })
 
   it('shows no pointer when the list is empty', async () => {

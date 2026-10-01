@@ -23,7 +23,12 @@ import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { fetchPantryItems } from '@/lib/api/pantry'
 import { countToBuy, regenerateGroceryList } from '@/lib/grocery'
-import { parseGroceryLines, readGroceryRaw, subscribeGrocery } from '@/lib/grocery-store'
+import {
+  parseGroceryDismissed,
+  parseGroceryLines,
+  readGroceryRaw,
+  subscribeGrocery,
+} from '@/lib/grocery-store'
 
 /** Who the grocery list belongs to (shared with the meal screen's "N to buy" line, issue #745). */
 export async function fetchUserId(): Promise<string | null> {
@@ -57,7 +62,9 @@ export function useGroceryCount(): UseGroceryCountResult {
   const count = useMemo(() => {
     if (!userId) return 0
     const saved = parseGroceryLines(raw)
-    return countToBuy(pantry.data ? regenerateGroceryList(saved, pantry.data) : saved)
+    return countToBuy(
+      pantry.data ? regenerateGroceryList(saved, pantry.data, parseGroceryDismissed(raw)) : saved,
+    )
   }, [userId, raw, pantry.data])
 
   const loading = user.isLoading || (userId !== '' && pantry.isLoading)

@@ -9,8 +9,8 @@ import React from 'react'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-import { addToGroceryList, saveGroceryLines } from '@/lib/grocery-store'
-import { addManualLines, setLineChecked } from '@/lib/grocery'
+import { addToGroceryList, saveGroceryLines, saveGroceryState } from '@/lib/grocery-store'
+import { addManualLines, dismissalsFor, setLineChecked } from '@/lib/grocery'
 
 const mockGetUser = jest.fn()
 jest.mock('@/lib/supabase/client', () => ({
@@ -73,6 +73,13 @@ describe('useGroceryCount', () => {
       addToGroceryList(ALICE, ['basil'])
     })
     await waitFor(() => expect(result.current.count).toBe(3))
+  })
+
+  it('does not count a suggestion the user dismissed', async () => {
+    saveGroceryState(ALICE, [], dismissalsFor(['egg'], PANTRY))
+    const { result } = renderHook(() => useGroceryCount(), { wrapper: wrapper() })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.count).toBe(1) // milk only
   })
 
   it("ignores another user's saved list", async () => {

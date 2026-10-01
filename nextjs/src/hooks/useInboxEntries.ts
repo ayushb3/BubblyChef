@@ -31,7 +31,12 @@ import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchPantryItems } from '@/lib/api/pantry'
 import { countToBuy, regenerateGroceryList } from '@/lib/grocery'
-import { parseGroceryLines, readGroceryRaw, subscribeGrocery } from '@/lib/grocery-store'
+import {
+  parseGroceryDismissed,
+  parseGroceryLines,
+  readGroceryRaw,
+  subscribeGrocery,
+} from '@/lib/grocery-store'
 import { fetchUserId } from '@/hooks/useGroceryCount'
 import { fetchRecipeCookMeta } from '@/lib/api/recipes'
 import { useCookingTimers } from '@/lib/useCookingTimers'
@@ -105,7 +110,13 @@ export function useInboxEntries(): UseInboxEntriesResult {
   const groceryCount = useMemo(
     () =>
       data && userId
-        ? countToBuy(regenerateGroceryList(parseGroceryLines(groceryRaw), data.pantryItems))
+        ? countToBuy(
+            regenerateGroceryList(
+              parseGroceryLines(groceryRaw),
+              data.pantryItems,
+              parseGroceryDismissed(groceryRaw),
+            ),
+          )
         : undefined,
     [data, userId, groceryRaw],
   )
