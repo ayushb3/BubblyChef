@@ -25,6 +25,7 @@ import {
 import { ensureSteps } from '@/lib/api/recipes'
 import { fetchMealToBuy } from '@/lib/api/grocery'
 import { attributeToBuy } from '@/lib/meal-to-buy'
+import { useIngredientMatches } from '@/hooks/useIngredientMatches'
 import { ingredientParts } from '@/lib/recipe-helpers'
 import { scaledIngredients } from '@/lib/recipe-helpers'
 import { scheduleMeal } from '@/lib/meal-scheduler'
@@ -990,6 +991,9 @@ function DishSection({
 }) {
   const recipeServings = dish.recipe.servings && dish.recipe.servings > 0 ? dish.recipe.servings : mealServings
   const scale = recipeServings > 0 ? mealServings / recipeServings : 1
+  const scaled = scaledIngredients(dish.recipe.ingredients, scale)
+  // Food tags on the ingredient rows (issue #784). A failed call is no tags.
+  const ingredientMatches = useIngredientMatches(scaled)
   const stepsEstimated = !dish.recipe.steps || dish.recipe.steps.length === 0
   const isSide = dish.role === 'side'
   const rowIsHere = row?.target.kind === 'swap' && row.target.position === dish.position
@@ -1005,7 +1009,8 @@ function DishSection({
           title={dish.recipe.title}
           minutes={dishMinutes(dish.recipe)}
           href={`/recipes/${dish.recipe.id}`}
-          ingredients={scaledIngredients(dish.recipe.ingredients, scale)}
+          ingredients={scaled}
+          ingredientMatches={ingredientMatches}
           instructions={dish.recipe.instructions}
           steps={dish.recipe.steps ?? fallbackSteps(dish.recipe.instructions)}
           stepsEstimated={stepsEstimated}

@@ -31,6 +31,9 @@ from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.services.cook_matcher import _parse_ingredient_string, match_ingredients
 
 LineStatus = Literal["have", "low", "missing"]
+# What a `have` rests on: stock in the pantry, a staple the cook flow presumes on
+# hand ("assumed", not in the pantry), or a line with no amount ("to_taste").
+LineBasis = Literal["pantry", "assumed", "to_taste", "none"]
 
 # The matcher only uses the recipe id as a label on the proposal it builds.
 _NO_RECIPE = "00000000-0000-0000-0000-000000000000"
@@ -43,6 +46,17 @@ class LineMatch(BaseModel):
     status: LineStatus
     pantry_food: str | None = Field(
         default=None, description="The pantry food that covers the line, when one was matched"
+    )
+    basis: LineBasis = Field(
+        default="none",
+        description="pantry=stocked, assumed=staple presumed on hand, to_taste=no amount, none=missing",
+    )
+    pantry_qty_available: float | None = Field(
+        default=None,
+        description="Stock left for this line in the base unit, when it could be measured",
+    )
+    shortfall: float | None = Field(
+        default=None, description="How much is lacking, in the base unit; only set when low"
     )
 
 
@@ -94,11 +108,22 @@ def match_ingredient_lines(lines: list[Any], pantry: list[PantryItem]) -> list[L
             out.append(LineMatch(name=name, status="missing"))
             continue
         match = next(matches)
+        basis: LineBasis = (
+            "assumed"
+            if match.status == "assumed"
+            else "to_taste"
+            if match.status == "to_taste"
+            else "pantry"
+        )
+        low = match.status == "shortfall"
         out.append(
             LineMatch(
                 name=name,
-                status="low" if match.status == "shortfall" else "have",
+                status="low" if low else "have",
                 pantry_food=match.pantry_item_name,
+                basis=basis,
+                pantry_qty_available=match.pantry_qty_available,
+                shortfall=match.shortfall if low else None,
             )
         )
     return out

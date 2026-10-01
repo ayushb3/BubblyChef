@@ -1,9 +1,12 @@
 /**
- * Issue #784: the ingredient-to-pantry match client. Any failure rejects, so the
- * recipe card can render its lines without tags instead of an error.
+ * Issue #784: the ingredient-to-pantry match client. It answers in the cook
+ * proposal's `IngredientMatch` shape (so the food tags read it as they read a
+ * cook proposal), and any failure rejects so the recipe card can render its
+ * lines without tags instead of an error.
  */
 
 import { fetchIngredientMatches } from '@/lib/api/ingredient-match'
+import { pantryTag } from '@/components/recipes/ingredient-tags'
 
 function reply(body: unknown, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body }
@@ -22,14 +25,15 @@ describe('fetchIngredientMatches', () => {
     fetchMock.mockResolvedValue(
       reply({
         matches: [
-          { name: 'flour', status: 'have', pantry_food: 'plain flour' },
-          { name: 'saffron', status: 'missing', pantry_food: null },
+          { name: 'flour', status: 'have', pantry_food: 'plain flour', basis: 'pantry' },
+          { name: 'saffron', status: 'missing', pantry_food: null, basis: 'none' },
         ],
       })
     )
-    expect(await fetchIngredientMatches(lines)).toEqual([
-      { status: 'have', pantryFood: 'plain flour' },
-      { status: 'missing', pantryFood: null },
+    const got = await fetchIngredientMatches(lines)
+    expect(got.map((m) => [m.ingredient_name, m.status, m.pantry_item_name])).toEqual([
+      ['flour', 'ready', 'plain flour'],
+      ['saffron', 'missing', null],
     ])
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe('/api/ai/pantry/match-ingredients')
@@ -40,6 +44,27 @@ describe('fetchIngredientMatches', () => {
         { name: 'saffron', quantity: null, unit: null },
       ],
     })
+  })
+
+  it('passes free-text lines through as they are', async () => {
+    fetchMock.mockResolvedValue(reply({ matches: [{ name: 'flour', status: 'have', basis: 'pantry' }] }))
+    await fetchIngredientMatches(['200 g flour'])
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ ingredients: ['200 g flour'] })
+  })
+
+  it('maps low / staple / to-taste onto the statuses the food tags understand', async () => {
+    fetchMock.mockResolvedValue(
+      reply({
+        matches: [
+          { name: 'butter', status: 'low', pantry_food: 'butter', basis: 'pantry', pantry_qty_available: 50, shortfall: 50 },
+          { name: 'salt', status: 'have', basis: 'assumed' },
+          { name: 'salt and pepper', status: 'have', basis: 'to_taste' },
+        ],
+      })
+    )
+    const got = await fetchIngredientMatches(['butter', 'salt', 'salt and pepper'])
+    expect(got.map((m) => m.status)).toEqual(['shortfall', 'assumed', 'to_taste'])
+    expect(got.map((m) => pantryTag(m)?.label ?? null)).toEqual(['Short ½', 'Staple', null])
   })
 
   it('does not call the network for no lines', async () => {

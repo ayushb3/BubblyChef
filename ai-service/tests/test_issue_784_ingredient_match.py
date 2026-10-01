@@ -102,6 +102,22 @@ class TestStatuses:
         got = match_ingredient_lines([_line("salt", 1, "tsp")], [])
         assert got[0].status == "have"
         assert got[0].pantry_food is None
+        assert got[0].basis == "assumed"
+
+    def test_basis_and_amounts_tell_the_tag_why(self) -> None:
+        got = match_ingredient_lines(
+            [
+                _line("butter", 150, "g"),  # 50 g on hand
+                _line("flour", 100, "g"),
+                _line("salt and pepper", None, "to taste"),
+                _line("saffron", 1, "g"),
+            ],
+            [_pantry("butter", 50, "g"), _pantry("flour", 500, "g")],
+        )
+        assert [m.basis for m in got] == ["pantry", "pantry", "to_taste", "none"]
+        assert got[0].shortfall == pytest.approx(100)
+        assert got[0].pantry_qty_available == pytest.approx(50)
+        assert got[1].shortfall is None
 
     def test_expired_or_empty_stock_does_not_count(self) -> None:
         pantry = [_pantry("eggs", 0), _pantry("pasta", 500, "g", expires_in=-2)]

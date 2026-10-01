@@ -19,7 +19,9 @@ import { useId, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { ingredientParts } from '@/lib/recipe-helpers'
 import type { Recipe } from '@/components/recipes/RecipePage'
-import type { RecipeIngredient, Step } from '@/types/recipes'
+import Chip from '@/components/ui/Chip'
+import { tagForIngredient } from '@/components/recipes/ingredient-tags'
+import type { IngredientMatch, RecipeIngredient, Step } from '@/types/recipes'
 import { dishPastel, ROLE_LABEL, type DishRole } from './dishPastel'
 import {
   CARD_FRAME,
@@ -59,6 +61,11 @@ export interface DishCardProps {
   toBuy?: string[]
   /** Overrides the default write to the browser grocery list. */
   onAddToGrocery?: (items: string[]) => void | Promise<void>
+  /**
+   * How the pantry covers each ingredient (issue #784): an expanded row wears a
+   * food tag ("In pantry", "Short ½", "Staple"). Omit when unknown: no tags.
+   */
+  ingredientMatches?: IngredientMatch[]
 }
 
 const KEY_INGREDIENT_COUNT = 4
@@ -78,6 +85,7 @@ export default function DishVariant({
   expiring = [],
   toBuy,
   onAddToGrocery,
+  ingredientMatches,
 }: DishCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded ?? role === 'main')
   const detailsId = useId()
@@ -130,6 +138,7 @@ export default function DishVariant({
                 <ul>
                   {ingredients.map((ing, i) => {
                     const { name, quantityText, preparation } = ingredientParts(ing)
+                    const tag = tagForIngredient(name, ingredientMatches)
                     return (
                       <li
                         key={i}
@@ -144,6 +153,13 @@ export default function DishVariant({
                             <span className="font-semibold text-[var(--color-muted)]">, {preparation}</span>
                           )}
                         </span>
+                        {tag && (
+                          <span data-testid="ingredient-tag" className="shrink-0">
+                            <Chip tone={tag.tone} size="sm">
+                              {tag.label}
+                            </Chip>
+                          </span>
+                        )}
                       </li>
                     )
                   })}
