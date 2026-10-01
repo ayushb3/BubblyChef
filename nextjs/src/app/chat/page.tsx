@@ -30,7 +30,13 @@ import { checkAIHealth } from '@/lib/api/chat'
 import { fetchRecipe, promoteRecipeDraft } from '@/lib/api/recipes'
 import { createMeal, updateMeal } from '@/lib/api/meals'
 import { buildCreateMealPayload, fixedMainForCard } from '@/lib/meal-chat-helpers'
-import { cookingContextForId, cookingPinContext, deriveChatSeed, makeMealMessage } from '@/lib/chat-seed'
+import {
+  cookingContextForId,
+  cookingPinContext,
+  deriveChatSeed,
+  makeMealMessage,
+  type ChatSeed,
+} from '@/lib/chat-seed'
 import {
   startCookSession,
   isCookSessionEnded,
@@ -70,6 +76,7 @@ import type { SavedRecipeMatch } from '@/types/chat'
 import {
   resolveChips,
   resolveAiErrorChips,
+  resolveSendFailureChips,
   COOKING_CHIPS,
   type ChipConfig,
   type ChipAction,
@@ -109,6 +116,18 @@ export default function ChatPage() {
   )
 }
 
+/**
+ * Drops a consumed one-shot param (`?ask=`, `?plan=`, `?new=1`, ...) from the
+ * address bar so a refresh doesn't act on it again (#854). `history.replaceState`
+ * rather than `router.replace`: it is synchronous and also works on a hard load,
+ * where the router is not yet ready when the mount effect runs (a `router.replace`
+ * there is dropped and the URL keeps the param). Next syncs `useSearchParams`
+ * with it. The current history state is passed through so Next's own is kept.
+ */
+function dropSeedParams() {
+  window.history.replaceState(window.history.state, '', '/chat')
+}
+
 function ChatSurface() {
   // Root layout's <body> is `min-h-screen` (100vh), which on iOS Safari is taller
   // than 100dvh while the toolbar is showing — enough to give the document a few
@@ -130,10 +149,30 @@ function ChatSurface() {
   // Deep-link seeds: /chat?tip=… (#143) and /chat?use=…&expires=… (#138).
   // Null for a bare /chat, which is what keeps the bottom-nav entry a clean,
   // empty conversation. The cook handoff wins if both are somehow present.
-  const seed = useMemo(
+  const urlSeed = useMemo(
     () => (cookingRecipeId ? null : deriveChatSeed(searchParams)),
     [cookingRecipeId, searchParams],
   )
+  // The seed params are one-shot (#854): once the auto-send fires they are
+  // stripped from the URL so a refresh doesn't send again. The seed itself is
+  // held here so its card (and the no-resume rule) outlive the stripped URL.
+  const [heldSeed, setHeldSeed] = useState<ChatSeed | null>(urlSeed)
+  // Adjusting state while rendering, the documented pattern for state derived
+  // from a prop: it keeps up with a seed that arrives or changes in the URL.
+  if (urlSeed && urlSeed.key !== heldSeed?.key) setHeldSeed(urlSeed)
+  const seed = urlSeed ?? heldSeed
+
+  // `/chat?new=1` (#854): Home's "What's for dinner?" submitted empty. No seed
+  // and nothing to send, but the visit is for planning, so it opens a fresh
+  // conversation with the starter chips instead of resuming the last thread.
+  // Read once at mount and then stripped from the URL, so a refresh resumes.
+  const [freshChat] = useState(() => searchParams.get('new') === '1')
+  const freshStrippedRef = useRef(false)
+  useEffect(() => {
+    if (!freshChat || freshStrippedRef.current) return
+    freshStrippedRef.current = true
+    dropSeedParams()
+  }, [freshChat])
 
   // #265 — a deep link that seeds a purpose-built first message (or the cook
   // handoff) should start a fresh conversation rather than silently resuming
@@ -152,6 +191,8 @@ function ChatSurface() {
     sendMessage,
     sendChipMessage,
     sendConfirmChoice,
+    retryFailedSend,
+    dismissFailedSend,
     cancelStream,
     startNewChat,
     approveProposal,
@@ -159,7 +200,7 @@ function ChatSurface() {
     updateProposalActions,
     applyAmendment,
     dismissAmendment,
-  } = useChat({ skipResume: Boolean(seed) || Boolean(cookingRecipeId) })
+  } = useChat({ skipResume: Boolean(seed) || Boolean(cookingRecipeId) || freshChat })
 
   const [input, setInput] = useState('')
   const [aiAvailable, setAiAvailable] = useState(true)
@@ -352,18 +393,20 @@ function ChatSurface() {
   // as client context, and the must-use ingredient is recovered by an LLM pass
   // over the message itself.
   useEffect(() => {
-    if (!seed || seedSentRef.current) return
+    if (!urlSeed || seedSentRef.current) return
     seedSentRef.current = true
+    // Consumed: drop its params from the URL (`heldSeed` keeps the card) (#854).
+    dropSeedParams()
     // The seed *is* the first message, so the cook-context slot is spent.
     contextSentRef.current = true
     // `seed.context` (issue #651, §8) is unset for `tip`/`use`/`plan`; the
     // `meal` seed sets it (`meal_fixed_main`), and it rides along here.
-    if (seed.context) {
-      sendMessage(seed.message, seed.context)
+    if (urlSeed.context) {
+      sendMessage(urlSeed.message, urlSeed.context)
     } else {
-      sendMessage(seed.message)
+      sendMessage(urlSeed.message)
     }
-  }, [seed, sendMessage])
+  }, [urlSeed, sendMessage])
 
   const dismissSeedCard = () => {
     // Hide immediately, then drop the params so a refresh doesn't resurrect the
@@ -711,6 +754,17 @@ function ChatSurface() {
       case 'open_scan':
         router.push('/?add=scan')
         break
+      case 'retry_send':
+        retryFailedSend(msgId)
+        break
+      case 'dismiss_send': {
+        // The unsent text goes back in the input (#847), unless the user has
+        // already started typing something else there.
+        const text = dismissFailedSend(msgId)
+        if (text) setInput((prev) => prev || text)
+        inputRef.current?.focus()
+        break
+      }
     }
   }
 
@@ -1021,15 +1075,20 @@ function ChatSurface() {
           </div>
         )}
       </div>
+      {/* The pill gets its own row between the thread and the input, so it
+          never sits over a card's text (#847). The row shrinks the scroll area
+          while it shows; it appears only when the thread is off its end. */}
       {showJump && (
-        <button
-          type="button"
-          data-testid="jump-to-latest"
-          onClick={jumpToLatest}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md px-3 py-1.5 rounded-full hover:bg-[var(--color-border)] transition-colors"
-        >
-          Jump to latest ↓
-        </button>
+        <div className="flex flex-shrink-0 justify-center py-1.5">
+          <button
+            type="button"
+            data-testid="jump-to-latest"
+            onClick={jumpToLatest}
+            className="text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md px-3 py-1.5 rounded-full hover:bg-[var(--color-border)] transition-colors"
+          >
+            Jump to latest ↓
+          </button>
+        </div>
       )}
       </div>
 
@@ -1245,6 +1304,30 @@ function MessageRenderer({
   const mascotState = isLastAssistant && isStreaming ? 'thinking' : 'happy'
   const intent = message.intent ?? message.response?.intent
 
+  // A send that never completed (#847): Retry first, then Dismiss. No generic
+  // follow-ups, which would only fail the same way.
+  if (message.sendFailure) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      >
+        <div className="flex items-end gap-2">
+          <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+          <MessageBubble message={message} />
+        </div>
+        {isLastSettledAssistant && (
+          <PostMessageChips
+            chips={resolveSendFailureChips()}
+            onChipTap={onChipTap}
+            onChipAction={onChipAction}
+          />
+        )}
+      </motion.div>
+    )
+  }
+
   // A canned AI-failure reply (#732): no normal follow-ups, which would only
   // fail the same way, and at most one "Try again" that resends the last message.
   const aiErrorKind = getAiErrorKind(message.response)
@@ -1423,7 +1506,11 @@ function MessageRenderer({
   // retry affordance, same as every other intent.
   if (intent === 'meal_plan') {
     const proposal = message.response?.proposal
-    if (message.response?.next_action === 'pick_meal' && isMealOptionsProposal(proposal)) {
+    // Drawn for every option set, picked or not (#847): a restored thread carries
+    // `pick_meal` only on the newest unpicked set, and older or picked sets must
+    // still show their cards, read-only.
+    if (isMealOptionsProposal(proposal)) {
+      const pickable = message.response?.next_action === 'pick_meal' && isLastSettledAssistant
       return (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -1447,7 +1534,7 @@ function MessageRenderer({
                       option={option}
                       index={i}
                       onSelect={onPickMealOption}
-                      disabled={!isLastSettledAssistant}
+                      disabled={!pickable}
                     />
                   ))}
                 </div>

@@ -281,6 +281,42 @@ describe('GET /api/chat/starter-context', () => {
 
     expect(await servingsFor([])).toBe(2)
   })
+
+  // Household size (#853): the user's own answer beats the guess learned from cooked meals.
+  describe('household size in user_metadata (#853)', () => {
+    async function servingsWith(
+      metadata: Record<string, unknown> | undefined,
+      rows: Array<{ servings: number | null; last_cooked_at: string | null }> = [],
+    ) {
+      mockRequireAuth.mockResolvedValue([
+        supabaseWith(baseResults({ meals: [{ data: rows, error: null }] })),
+        { ...mockUser, user_metadata: metadata },
+      ])
+      const { GET } = await import('@/app/api/chat/starter-context/route')
+      return (await (await GET()).json()).default_servings
+    }
+
+    it('uses the household size when there is no cooking history', async () => {
+      expect(await servingsWith({ household_size: 4 })).toBe(4)
+    })
+
+    it('uses the household size over what was learned from cooked meals', async () => {
+      expect(
+        await servingsWith({ household_size: 3 }, [{ servings: 2, last_cooked_at: '2026-09-28' }]),
+      ).toBe(3)
+    })
+
+    it.each([0, 21, 2.5, '4', null])('ignores an unusable household size %p', async (bad) => {
+      expect(
+        await servingsWith({ household_size: bad }, [{ servings: 5, last_cooked_at: '2026-09-28' }]),
+      ).toBe(5)
+    })
+
+    it('falls back to the learned default (then 2) when no household size is set', async () => {
+      expect(await servingsWith(undefined)).toBe(2)
+      expect(await servingsWith({}, [{ servings: 6, last_cooked_at: '2026-09-28' }])).toBe(6)
+    })
+  })
 })
 
 // ─── fetchStarterContext (§11) ──────────────────────────────────────────────

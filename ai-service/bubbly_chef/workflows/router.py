@@ -77,7 +77,12 @@ from bubbly_chef.workflows.chat.nodes import (
     suggest_follow_ups,
 )
 from bubbly_chef.workflows.meal.fixed_main import has_fixed_main
-from bubbly_chef.workflows.meal.nodes import meal_options_stage, meal_pick_stage
+from bubbly_chef.workflows.meal.nodes import (
+    _retained_meal_plan_state,
+    meal_options_stage,
+    meal_pick_stage,
+)
+from bubbly_chef.workflows.meal.refine import is_about_the_meal, is_meal_refinement_phrase
 from bubbly_chef.workflows.pantry.nodes import (
     apply_expiry_heuristics,
     check_for_duplicates,
@@ -251,6 +256,38 @@ def _session_has_picked_recipe(state: WorkflowState) -> bool:
     return bool(metadata.get("picked_recipe"))
 
 
+def _meal_on_screen(state: WorkflowState) -> bool:
+    """True when the last assistant turn was a meal reply (the option cards or a picked
+    meal) and the session still holds that meal's options (#846).
+
+    That is the only time a typed "something quicker" is a change to a meal rather than
+    a question or a new request: the meal's own retained state is what the change is
+    applied to. Not mid-cook, where the COOKING gate owns what a message means.
+    """
+    if state.get("session_mode") == SessionMode.COOKING.value:
+        return False
+    for turn in reversed(state.get("conversation_history") or []):
+        if turn.get("role") == "assistant":
+            if turn.get("intent") != Intent.MEAL_PLAN.value:
+                return False
+            return _retained_meal_plan_state(state) is not None
+    return False
+
+
+def _meal_refinement_state(
+    state: WorkflowState, confidence: float, reasoning: str
+) -> WorkflowState:
+    """The classified state for a typed refinement of the meal on screen (#846)."""
+    return {
+        **state,
+        "intent": Intent.MEAL_PLAN.value,
+        "intent_confidence": confidence,
+        "intent_reasoning": reasoning,
+        "detected_entities": [],
+        "meal_refinement": True,
+    }
+
+
 # =============================================================================
 # Graph Nodes
 # =============================================================================
@@ -395,6 +432,10 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
     5. URL shortcut — unambiguous recipe_ingest (no LLM).
     5a. Saved-meal phrasing ("make that pasta dinner again") — saved_recipe_lookup
        (#760), no LLM; skipped while COOKING.
+    5a-2. Refinement of the meal on screen ("something quicker, no butter") right after a
+       meal reply — meal_plan with `meal_refinement` (#846), no LLM; a recipe edit read
+       by the LLM in that spot is sent there too. Runs before 5b so the retained
+       constraints are inherited.
     5b. Clear whole-meal ask ("plan a cozy dinner for two", "a meal for 2",
        "easy weeknight dinner") — meal_plan (#772), no LLM; skipped while COOKING
        or with a recipe picked. Runs after 5a, so meal-again phrasing wins.
@@ -560,6 +601,19 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "detected_entities": [],
         }
 
+    # ── Priority 3b-2: refining the meal on screen (#846) — deterministic, no LLM ──
+    # "no, something quicker, I don't have butter" right after a meal reply changes that
+    # meal. Without this it read as a recipe edit, and with no pinned recipe to edit it
+    # fell through to a generic "what do you have?" reply. A refinement re-runs the meal
+    # option stage with the retained constraints and the pantry (route_by_intent sends
+    # meal_plan there whenever meal_option_id is absent). Before 3c so the retained
+    # constraints are inherited rather than a fresh brief started.
+    if _meal_on_screen(state) and is_meal_refinement_phrase(input_text):
+        logger.info("classify_intent: meal refinement phrasing — meal_plan refinement shortcut")
+        return _meal_refinement_state(
+            state, 0.95, "Refinement of the meal on screen — meal_plan refinement shortcut"
+        )
+
     # ── Priority 3c: a clear whole-meal ask (#772) — deterministic, no LLM ──
     # After 3b so "make that dinner for two again" is still a saved lookup. Skipped
     # mid-cook (the COOKING gate owns the message) and while a recipe is picked, where
@@ -722,6 +776,22 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             f"(source=llm, confidence={confidence}, llm_intent={result.intent})"
         )
         logger.debug(f"LLM reasoning: {result.reasoning}, entities: {result.entities}")
+
+        # A recipe edit read with a meal on screen (#846): with no pinned recipe for an
+        # edit to land on, it is a change to the meal, not a recipe_card turn. Narrow on
+        # purpose: a pinned recipe keeps its edit, and a question, a substitution question
+        # or a request for another dish or recipe ("a recipe for banana pancakes") keeps
+        # the classifier's routing.
+        if (
+            intent == Intent.RECIPE_CARD.value
+            and _meal_on_screen(state)
+            and not _session_has_picked_recipe(state)
+            and is_about_the_meal(input_text)
+        ):
+            logger.info("classify_intent: recipe edit with a meal on screen → meal refinement")
+            return _meal_refinement_state(
+                state, confidence, f"Meal on screen, read as a recipe edit: {result.reasoning}"
+            )
 
         # ── Post-classify: mode-aware adjustments ─────────────────────────────
 
