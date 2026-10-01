@@ -69,6 +69,8 @@ from bubbly_chef.models.recipe import Ingredient, RecipeCard, build_structured_s
 from bubbly_chef.prompts.meal import (
     MEAL_DISH_EXPANSION_SYSTEM_PROMPT,
     MEAL_DISH_PANTRY_BLOCK_NO_PANTRY,
+    MEAL_DISH_PROMISED_INGREDIENTS_RULE,
+    MEAL_DISH_SEASONING_RULE,
     MEAL_FOLLOW_UPS_NO_PANTRY_RULE,
     MEAL_OPTIONS_FIXED_MAIN_BLOCK,
     MEAL_OPTIONS_FIXED_MAIN_NO_REPEAT_RULE,
@@ -104,6 +106,12 @@ from bubbly_chef.workflows.meal.fixed_main import (
     stored_dietary_preferences,
 )
 from bubbly_chef.workflows.meal.refine import merge_refinement_constraints, names_overlap
+from bubbly_chef.workflows.meal.variety import (
+    avoid_titles_block,
+    drop_repeated_options,
+    strip_unsupported_claims,
+    unsupported_claims,
+)
 from bubbly_chef.workflows.recipe.exclusions import apply_food_exclusions
 from bubbly_chef.workflows.recipe.nodes import (
     _combine_dietary_preferences,
@@ -442,6 +450,25 @@ async def _recent_cuisine_hint(user_id: str) -> str:
         + ". Lean gently toward them when an option fits naturally -- never force it, "
         "and don't mention this preference to the user."
     )
+
+
+_AVOID_TITLE_COUNT = 10
+
+
+async def _recent_dish_titles(user_id: str) -> list[str]:
+    """The user's last few saved and cooked recipe/meal titles, the "dishes to avoid
+    repeating" for the option prompt (issue #852). Best-effort like the cuisine hint: any
+    failure, or a repo without the method, yields no titles rather than breaking the turn
+    (the #650 tests' bare `MagicMock` repo raises `TypeError` on the await)."""
+    try:
+        repo = await get_repository()
+        titles = await repo.get_recent_dish_titles(user_id, limit=_AVOID_TITLE_COUNT)
+    except Exception as e:
+        logger.debug("Could not fetch recent dish titles to avoid: %s", e)
+        return []
+    if not isinstance(titles, list):
+        return []
+    return [t for t in titles if isinstance(t, str) and t.strip()]
 
 
 def _format_meal_constraints(constraints: dict[str, Any], kitchen_limits: list[str]) -> str:
@@ -1050,6 +1077,10 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     # The fixed main has already decided the cuisine, so the recent-cuisine
     # weighting is skipped (the one exception to PR A's cuisine-hint behaviour).
     cuisine_hint = await _recent_cuisine_hint(user_id) if user_id and fixed_resolved is None else ""
+    # Dishes to avoid repeating (#852). A fixed main fixes the dish, so nothing to vary.
+    avoid_titles = (
+        await _recent_dish_titles(user_id) if user_id and fixed_resolved is None else []
+    )
     constraints_str = _format_meal_constraints(
         constraints, kitchen_limit_phrases
     ) + allergy_never_block(allergies)
@@ -1117,6 +1148,7 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         + pantry_context
         + constraints_str
         + cuisine_hint
+        + avoid_titles_block(avoid_titles)
         + previous_block
         + fixed_block
         + follow_ups_rules
@@ -1172,9 +1204,19 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
             i for i in pantry_items if not any(names_overlap(i.name, n) for n in turn_unavailable)
         ]
 
+    pantry_names = [i.name for i in pantry_items]
+    # An option whose main repeats a recent dish is dropped (#852), never emptying the set.
+    kept_raw = {
+        id(o) for o in drop_repeated_options(result.options[:3], avoid_titles, input_text)
+    }
     options: list[MealOption] = []
     seen_fixed_dishes: set[tuple[str, ...]] = set()
     for idx, raw_option in enumerate(result.options[:3], start=1):
+        if id(raw_option) not in kept_raw:
+            logger.info(
+                "meal_options_stage: dropping option %r -- repeats a recent dish", raw_option.title
+            )
+            continue
         option_title: str = raw_option.title
         option_blurb: str | None = raw_option.blurb
         dishes: list[MealDishOutline] | None
@@ -1200,6 +1242,15 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
                 logger.info("meal_options_stage: dropping option %r -- duplicate", raw_option.title)
                 continue
             seen_fixed_dishes.add(dish_key)
+        # A blurb may only name what the option's dishes contain (#852): the claim is
+        # dropped in code, not by a second model call. A title can't be edited the same
+        # way, so one that overreaches is logged.
+        supported = [n for d in dishes for n in (d.name, *d.key_ingredients)]
+        option_blurb = strip_unsupported_claims(option_blurb, supported, pantry_names)
+        if overreach := unsupported_claims(option_title, supported, pantry_names):
+            logger.info(
+                "meal_options_stage: title %r names %s no dish has", option_title, overreach
+            )
         coverage: MealCoverage | None = None
         rescues: list[str] = []
         if pantry_grounded:
@@ -1376,6 +1427,13 @@ async def _expand_dish_result(
         prompt += MEAL_READY_FOLLOW_UPS_RULES
         if not pantry_grounded:
             prompt += MEAL_FOLLOW_UPS_NO_PANTRY_RULE
+
+    # What the option card promised, and a seasoning bar the recipe has to meet (#852).
+    if dish.key_ingredients:
+        prompt += MEAL_DISH_PROMISED_INGREDIENTS_RULE.format(
+            ingredients=", ".join(dish.key_ingredients)
+        )
+    prompt += MEAL_DISH_SEASONING_RULE
 
     allergy_list = list(allergies or [])
     prompt += allergy_never_block(allergy_list)
