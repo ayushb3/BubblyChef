@@ -1,0 +1,14 @@
+{
+  "store": "Grocery Mart",
+  "notes": "Clean thermal receipt on a wooden table. 8 food lines; Subtotal, Tax, TOTAL and DEBIT are not items. Quantity is only printed on some lines (1 DZ, 1 GAL, 1 BUNCH, 1 LB); the rest are one purchase each.",
+  "items": [
+    {"name": "eggs", "quantity": [1, 12]},
+    {"name": "whole milk", "quantity": 1},
+    {"name": "bananas", "quantity": 1},
+    {"name": "gala apples", "quantity": 1},
+    {"name": "carrots", "quantity": 1},
+    {"name": "cheddar cheese", "quantity": 1},
+    {"name": "spaghetti pasta", "quantity": 1},
+    {"name": "chicken breasts", "quantity": 1}
+  ]
+}
