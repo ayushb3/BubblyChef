@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
+import SpringButton from '@/components/ui/SpringButton'
+import ScanFailureNotice from '@/components/scan/ScanFailureNotice'
 import { useFileDropzone } from '@/hooks/useFileDropzone'
 import { uploadReceipt, ScanError } from '@/lib/api/scan'
 import { isEmptyScan } from '@/lib/scan-helpers'
-import { scanErrorCopy, SCAN_NO_ITEMS_CODE } from '@/lib/scan-error-copy'
+import { GENERIC_SCAN_ERROR_CODE, SCAN_NO_ITEMS_CODE } from '@/lib/scan-error-copy'
 import type { ScanResult } from '@/types/scan'
 
 /**
@@ -104,7 +106,7 @@ export default function ScanTab({ onParsed, onProcessingChange }: ScanTabProps) 
       ) {
         // The scan worked but found nothing: say so, rather than handing an
         // empty scan to put-away (#642).
-        setError(scanErrorCopy(SCAN_NO_ITEMS_CODE))
+        setError(SCAN_NO_ITEMS_CODE)
         setState('upload')
         if (inputRef.current) inputRef.current.value = ''
         return
@@ -118,8 +120,7 @@ export default function ScanTab({ onParsed, onProcessingChange }: ScanTabProps) 
       // anything unrecognized (issue #396). This also covers the
       // client-side upload timeout (issue #402): it comes back as a
       // `ScanError` and must land here, not in some separate stuck state.
-      const code = err instanceof ScanError ? err.code : undefined
-      setError(scanErrorCopy(code))
+      setError(err instanceof ScanError ? err.code : GENERIC_SCAN_ERROR_CODE)
       setState('upload')
       // Retrying the same receipt is the obvious next move after a transient
       // failure, but `onChange` doesn't fire for an unchanged value — so
@@ -153,11 +154,7 @@ export default function ScanTab({ onParsed, onProcessingChange }: ScanTabProps) 
 
   return (
     <div>
-      {error && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 rounded-2xl text-sm">
-          {error}
-        </div>
-      )}
+      {error && <ScanFailureNotice code={error} onRetry={() => inputRef.current?.click()} />}
 
       <AnimatePresence mode="wait">
         {state === 'upload' && (
@@ -229,13 +226,11 @@ export default function ScanTab({ onParsed, onProcessingChange }: ScanTabProps) 
               <p className="font-semibold text-[var(--color-text)]">Scanning receipt…</p>
             </div>
             <p className="text-sm text-[var(--color-muted)] mt-2">Bubbles is reading your items</p>
-            <button
-              type="button"
-              onClick={handleCancelScan}
-              className="mt-4 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] underline transition-colors"
-            >
-              Cancel scan
-            </button>
+            <div className="mt-4 flex justify-center">
+              <SpringButton variant="secondary" size="sm" onClick={handleCancelScan}>
+                Cancel scan
+              </SpringButton>
+            </div>
           </motion.div>
         )}
 
