@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState } from 'react'
 import { type Recipe } from './RecipePage'
 import { ingredientLabel, ingredientRowsToPayload, type IngredientRow } from '@/lib/recipe-helpers'
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
+import PixelSheet from '@/components/ui/PixelSheet'
 
 const toStepStr = (s: string | { text?: string; step?: string }): string =>
   typeof s === 'string' ? s : (s.text ?? s.step ?? '')
@@ -28,14 +27,12 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
     (recipe.instructions ?? []).map(toStepStr)
   )
   const [saving, setSaving] = useState(false)
-  const panelRef = useRef<HTMLDivElement>(null)
-  // Close is blocked while saving/disabled — this hook still traps Tab and
-  // restores focus, it just won't ever fire onClose via Escape in that state
-  // because handleClose below is a no-op then, same as the header/footer
-  // buttons.
-  useModalFocusTrap(true, () => {
-    if (!saving && !disabled) onClose()
-  }, panelRef)
+  // Close is blocked while saving/disabled. PixelSheet routes Escape, the
+  // scrim, the header X and drag-dismiss through this one guarded close.
+  const closeBlocked = saving || disabled
+  const handleClose = () => {
+    if (!closeBlocked) onClose()
+  }
 
   const updateItem = (
     setter: React.Dispatch<React.SetStateAction<string[]>>,
@@ -76,256 +73,199 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
   }
 
   return (
-    <AnimatePresence>
-      <>
-        {/* Backdrop */}
-        <motion.div
-          key="edit-backdrop"
-          className="fixed inset-0 z-[60]"
-          style={{ background: 'rgba(0,0,0,0.4)' }}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          onClick={saving || disabled ? undefined : onClose}
-        />
-
-        {/* Modal panel */}
-        <motion.div
-          key="edit-panel"
-          ref={panelRef}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="recipe-edit-modal-title"
-          tabIndex={-1}
-          className="fixed inset-x-4 top-1/2 z-[60] rounded-2xl overflow-hidden outline-none"
-          style={{
-            background: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            boxShadow: '0 8px 40px rgba(0,0,0,0.18)',
-            maxWidth: '440px',
-            marginInline: 'auto',
-            transform: 'translateY(-50%)',
-          }}
-          initial={{ y: 'calc(-50% + 20px)', opacity: 0 }}
-          animate={{ y: '-50%', opacity: 1 }}
-          exit={{ y: 'calc(-50% + 20px)', opacity: 0 }}
-          transition={{ type: 'spring', stiffness: 360, damping: 30 }}
-        >
-          {/* Header */}
-          <div
-            className="flex items-center justify-between px-5 py-3 border-b"
-            style={{ borderColor: 'var(--color-border)' }}
+    <PixelSheet
+      open
+      onClose={handleClose}
+      title="Edit Recipe"
+      titleId="recipe-edit-modal-title"
+      closeDisabled={closeBlocked}
+      footer={
+        <div className="flex gap-3">
+          <button
+            onClick={handleSave}
+            disabled={saving || disabled || !title.trim()}
+            className="flex-1 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
+            style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
           >
-            <h2
-              id="recipe-edit-modal-title"
-              className="text-base font-extrabold"
-              style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
-            >
-              Edit Recipe
-            </h2>
-            <button
-              onClick={saving || disabled ? undefined : onClose}
-              disabled={saving || disabled}
-              className="w-8 h-8 rounded-full flex items-center justify-center transition-opacity hover:opacity-70 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{ background: 'var(--color-bg)', color: 'var(--color-muted)' }}
-              aria-label="Close"
-            >
-              ✕
-            </button>
-          </div>
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+          <button
+            onClick={handleClose}
+            disabled={saving || disabled}
+            className="flex-1 py-2.5 rounded-full text-sm font-bold disabled:opacity-50 active:scale-95 transition-transform"
+            style={{
+              background: 'var(--color-bg)',
+              border: '1.5px solid var(--color-border)',
+              color: 'var(--color-muted)',
+              fontFamily: 'Nunito, sans-serif',
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      }
+    >
+      {/* Body */}
+      <div className="space-y-4">
+        {/* Title */}
+        <div>
+          <label
+            className="text-xs font-semibold block mb-1"
+            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+          >
+            Title
+          </label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)]"
+            style={{
+              background: 'var(--color-bg)',
+              border: '1.5px solid var(--color-border)',
+              color: 'var(--color-text)',
+              fontFamily: 'Nunito, sans-serif',
+            }}
+          />
+        </div>
 
-          {/* Body */}
-          <div className="px-5 py-4 space-y-4 overflow-y-auto" style={{ maxHeight: '60vh' }}>
-            {/* Title */}
-            <div>
-              <label
-                className="text-xs font-semibold block mb-1"
-                style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
-              >
-                Title
-              </label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)]"
-                style={{
-                  background: 'var(--color-bg)',
-                  border: '1.5px solid var(--color-border)',
-                  color: 'var(--color-text)',
-                  fontFamily: 'Nunito, sans-serif',
-                }}
-              />
-            </div>
+        {/* Description */}
+        <div>
+          <label
+            className="text-xs font-semibold block mb-1"
+            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+          >
+            Description
+          </label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            className="w-full rounded-xl px-4 py-2.5 text-sm resize-none border focus:border-[var(--color-primary)]"
+            style={{
+              background: 'var(--color-bg)',
+              border: '1.5px solid var(--color-border)',
+              color: 'var(--color-text)',
+              fontFamily: 'Nunito, sans-serif',
+            }}
+          />
+        </div>
 
-            {/* Description */}
-            <div>
-              <label
-                className="text-xs font-semibold block mb-1"
-                style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
-              >
-                Description
-              </label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={3}
-                className="w-full rounded-xl px-4 py-2.5 text-sm resize-none border focus:border-[var(--color-primary)]"
-                style={{
-                  background: 'var(--color-bg)',
-                  border: '1.5px solid var(--color-border)',
-                  color: 'var(--color-text)',
-                  fontFamily: 'Nunito, sans-serif',
-                }}
-              />
-            </div>
+        {/* Tags */}
+        <div>
+          <label
+            className="text-xs font-semibold block mb-1"
+            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+          >
+            Tags
+          </label>
+          <input
+            type="text"
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            placeholder="comma-separated"
+            className="w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)]"
+            style={{
+              background: 'var(--color-bg)',
+              border: '1.5px solid var(--color-border)',
+              color: 'var(--color-text)',
+              fontFamily: 'Nunito, sans-serif',
+            }}
+          />
+        </div>
 
-            {/* Tags */}
-            <div>
-              <label
-                className="text-xs font-semibold block mb-1"
-                style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
-              >
-                Tags
-              </label>
-              <input
-                type="text"
-                value={tags}
-                onChange={(e) => setTags(e.target.value)}
-                placeholder="comma-separated"
-                className="w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)]"
-                style={{
-                  background: 'var(--color-bg)',
-                  border: '1.5px solid var(--color-border)',
-                  color: 'var(--color-text)',
-                  fontFamily: 'Nunito, sans-serif',
-                }}
-              />
-            </div>
-
-            {/* Ingredients */}
-            <div>
-              <label
-                className="text-xs font-semibold block mb-1"
-                style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
-              >
-                Ingredients
-              </label>
-              <div className="space-y-1.5">
-                {ingredientRows.map((row, i) => (
-                  <div key={i} className="flex gap-2 items-center">
-                    <input
-                      type="text"
-                      value={row.text}
-                      onChange={(e) => updateIngredient(i, e.target.value)}
-                      className="flex-1 rounded-xl px-3 py-2 text-sm border focus:border-[var(--color-primary)]"
-                      style={{
-                        background: 'var(--color-bg)',
-                        border: '1.5px solid var(--color-border)',
-                        color: 'var(--color-text)',
-                        fontFamily: 'Nunito, sans-serif',
-                      }}
-                    />
-                    <button
-                      onClick={() => removeIngredient(i)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-xs hover:opacity-70 flex-shrink-0"
-                      style={{ background: 'var(--color-bg)', color: 'var(--color-muted)', border: '1.5px solid var(--color-border)' }}
-                      aria-label="Remove ingredient"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
+        {/* Ingredients */}
+        <div>
+          <label
+            className="text-xs font-semibold block mb-1"
+            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+          >
+            Ingredients
+          </label>
+          <div className="space-y-1.5">
+            {ingredientRows.map((row, i) => (
+              <div key={i} className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={row.text}
+                  onChange={(e) => updateIngredient(i, e.target.value)}
+                  className="flex-1 rounded-xl px-3 py-2 text-sm border focus:border-[var(--color-primary)]"
+                  style={{
+                    background: 'var(--color-bg)',
+                    border: '1.5px solid var(--color-border)',
+                    color: 'var(--color-text)',
+                    fontFamily: 'Nunito, sans-serif',
+                  }}
+                />
                 <button
-                  onClick={addIngredient}
-                  className="text-xs font-bold px-3 py-1.5 rounded-full"
-                  style={{ color: 'var(--color-primary)', background: 'var(--color-bg)', border: '1.5px solid var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+                  onClick={() => removeIngredient(i)}
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-xs hover:opacity-70 flex-shrink-0"
+                  style={{ background: 'var(--color-bg)', color: 'var(--color-muted)', border: '1.5px solid var(--color-border)' }}
+                  aria-label="Remove ingredient"
                 >
-                  + Add ingredient
+                  ✕
                 </button>
               </div>
-            </div>
+            ))}
+            <button
+              onClick={addIngredient}
+              className="text-xs font-bold px-3 py-1.5 rounded-full"
+              style={{ color: 'var(--color-primary)', background: 'var(--color-bg)', border: '1.5px solid var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+            >
+              + Add ingredient
+            </button>
+          </div>
+        </div>
 
-            {/* Instructions */}
-            <div>
-              <label
-                className="text-xs font-semibold block mb-1"
-                style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
-              >
-                Instructions
-              </label>
-              <div className="space-y-1.5">
-                {instructions.map((step, i) => (
-                  <div key={i} className="flex gap-2 items-start">
-                    <span
-                      className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-2"
-                      style={{ background: 'var(--color-primary)', color: '#fff', fontFamily: 'Nunito, sans-serif' }}
-                    >
-                      {i + 1}
-                    </span>
-                    <textarea
-                      value={step}
-                      onChange={(e) => updateItem(setInstructions, i, e.target.value)}
-                      rows={2}
-                      className="flex-1 rounded-xl px-3 py-2 text-sm resize-none border focus:border-[var(--color-primary)]"
-                      style={{
-                        background: 'var(--color-bg)',
-                        border: '1.5px solid var(--color-border)',
-                        color: 'var(--color-text)',
-                        fontFamily: 'Nunito, sans-serif',
-                      }}
-                    />
-                    <button
-                      onClick={() => removeItem(setInstructions, i)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-xs hover:opacity-70 flex-shrink-0 mt-1"
-                      style={{ background: 'var(--color-bg)', color: 'var(--color-muted)', border: '1.5px solid var(--color-border)' }}
-                      aria-label="Remove step"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-                <button
-                  onClick={() => addItem(setInstructions)}
-                  className="text-xs font-bold px-3 py-1.5 rounded-full"
-                  style={{ color: 'var(--color-primary)', background: 'var(--color-bg)', border: '1.5px solid var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+        {/* Instructions */}
+        <div>
+          <label
+            className="text-xs font-semibold block mb-1"
+            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+          >
+            Instructions
+          </label>
+          <div className="space-y-1.5">
+            {instructions.map((step, i) => (
+              <div key={i} className="flex gap-2 items-start">
+                <span
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-2"
+                  style={{ background: 'var(--color-primary)', color: '#fff', fontFamily: 'Nunito, sans-serif' }}
                 >
-                  + Add step
+                  {i + 1}
+                </span>
+                <textarea
+                  value={step}
+                  onChange={(e) => updateItem(setInstructions, i, e.target.value)}
+                  rows={2}
+                  className="flex-1 rounded-xl px-3 py-2 text-sm resize-none border focus:border-[var(--color-primary)]"
+                  style={{
+                    background: 'var(--color-bg)',
+                    border: '1.5px solid var(--color-border)',
+                    color: 'var(--color-text)',
+                    fontFamily: 'Nunito, sans-serif',
+                  }}
+                />
+                <button
+                  onClick={() => removeItem(setInstructions, i)}
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-xs hover:opacity-70 flex-shrink-0 mt-1"
+                  style={{ background: 'var(--color-bg)', color: 'var(--color-muted)', border: '1.5px solid var(--color-border)' }}
+                  aria-label="Remove step"
+                >
+                  ✕
                 </button>
               </div>
-            </div>
-          </div>
-
-          {/* Footer actions */}
-          <div
-            className="flex gap-3 px-5 py-4 border-t"
-            style={{ borderColor: 'var(--color-border)' }}
-          >
+            ))}
             <button
-              onClick={handleSave}
-              disabled={saving || disabled || !title.trim()}
-              className="flex-1 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
-              style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+              onClick={() => addItem(setInstructions)}
+              className="text-xs font-bold px-3 py-1.5 rounded-full"
+              style={{ color: 'var(--color-primary)', background: 'var(--color-bg)', border: '1.5px solid var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
             >
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-            <button
-              onClick={saving || disabled ? undefined : onClose}
-              disabled={saving || disabled}
-              className="flex-1 py-2.5 rounded-full text-sm font-bold disabled:opacity-50 active:scale-95 transition-transform"
-              style={{
-                background: 'var(--color-bg)',
-                border: '1.5px solid var(--color-border)',
-                color: 'var(--color-muted)',
-                fontFamily: 'Nunito, sans-serif',
-              }}
-            >
-              Cancel
+              + Add step
             </button>
           </div>
-        </motion.div>
-      </>
-    </AnimatePresence>
+        </div>
+      </div>
+    </PixelSheet>
   )
 }
