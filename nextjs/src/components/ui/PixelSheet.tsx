@@ -77,6 +77,18 @@ export interface PixelSheetProps {
   /** Stacking layer: `'cook'` sits above the full-screen cook surface. */
   layer?: PixelLayer
   /**
+   * Cap the sheet's height (a CSS length). Default `90dvh`. A sheet that must
+   * leave part of the page visible above it (put-away, over the kitchen scene,
+   * issue #753) sets it from where that part ends.
+   */
+  maxHeight?: string
+  /**
+   * Draw the dimming scrim (default true). Off for a sheet whose point is the
+   * page behind it staying legible (put-away: the +N badges and Bubbles at the
+   * door). A tap outside still closes.
+   */
+  scrim?: boolean
+  /**
    * Extra classes for the sheet itself. A tall sheet that must not change height
    * as its content does (the storage sheet, issue #749) passes `h-[84dvh]`; the
    * 90dvh cap still applies.
@@ -203,6 +215,8 @@ export default function PixelSheet({
   footer,
   initialFocus,
   layer,
+  maxHeight,
+  scrim = true,
   panelClassName,
   testId,
   backdropTestId,
@@ -298,6 +312,7 @@ export default function PixelSheet({
       onClose={onClose}
       panelRef={panelRef}
       layer={layer}
+      scrim={scrim}
       testId={backdropTestId}
     >
       <motion.div
@@ -313,6 +328,7 @@ export default function PixelSheet({
           background: 'var(--color-bg)',
           color: PIXEL_INK,
           borderColor: PIXEL_INK,
+          ...(maxHeight ? { maxHeight } : {}),
         }}
         {...sheetMotion}
       >

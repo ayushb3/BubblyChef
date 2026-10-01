@@ -61,7 +61,7 @@ it('an abandoned scan settling does not clear processing while a newer scan is r
 
   // Scan A starts, then the sheet is closed (ScanTab A unmounts) before it settles.
   const { container: containerA, unmount: unmountA } = render(
-    <ScanTab onItemsReady={jest.fn()} onProcessingChange={onProcessingChange} />,
+    <ScanTab onParsed={jest.fn()} onProcessingChange={onProcessingChange} />,
   )
   selectFile(containerA)
   await waitFor(() => expect(mockUploadReceipt).toHaveBeenCalledTimes(1))
@@ -72,7 +72,7 @@ it('an abandoned scan settling does not clear processing while a newer scan is r
   // The sheet reopens: a fresh ScanTab mount (B), sharing the same
   // onProcessingChange callback (it lives on the persistent parent).
   const { container: containerB } = render(
-    <ScanTab onItemsReady={jest.fn()} onProcessingChange={onProcessingChange} />,
+    <ScanTab onParsed={jest.fn()} onProcessingChange={onProcessingChange} />,
   )
   selectFile(containerB)
   await waitFor(() => expect(mockUploadReceipt).toHaveBeenCalledTimes(2))

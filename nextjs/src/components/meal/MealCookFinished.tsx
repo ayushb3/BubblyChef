@@ -2,13 +2,23 @@
 
 /**
  * Issue #654 — the cook-along's finished screen: what to do with a finished
- * meal cook. Same rounded-card / pill-button shell as `GuidedCookFlow`'s
- * `DoneState` — no new visual language.
+ * meal cook.
  *
  * Superseded from issue #653's single "Back to meal" action: with a
  * deduction to offer (`canDeduct`), the primary action is "Mark meal as
  * cooked" and the secondary is "Skip pantry update" — see contract §5.
+ *
+ * Issue #812: drawn in the cook flow's own pixel language — a `PixelPanel`
+ * (the same frame as the Now card) holding a celebrating Bubbles, with both
+ * actions as `SpringButton` keycaps (primary + secondary), not a flat pill and
+ * an underlined link. Behaviour is unchanged. Bubbles' celebrate bounce and
+ * sparkles already stand down under reduced motion (`BubblesMascot`), and the
+ * panel's entrance becomes a plain fade.
  */
+
+import BubblesMascot from '@/components/ui/BubblesMascot'
+import PixelPanel from '@/components/ui/PixelPanel'
+import SpringButton from '@/components/ui/SpringButton'
 
 export interface MealCookFinishedProps {
   mealTitle: string
@@ -30,63 +40,56 @@ export default function MealCookFinished({
   onFinishWithoutPantry,
 }: MealCookFinishedProps) {
   return (
-    <section
-      className="font-sans rounded-3xl text-center py-8 px-6"
-      style={{ background: 'var(--color-surface)', border: '1.5px solid var(--color-border)' }}
+    <PixelPanel
+      as="section"
+      entrance
+      contentClassName="px-6 py-8 text-center"
+      className="font-sans"
       data-testid="meal-cook-finished"
     >
-      <h2 className="text-xl font-extrabold mb-1" style={{ color: 'var(--color-text)' }}>
+      <div className="mb-3 flex justify-center">
+        <BubblesMascot state="celebrate" size={96} />
+      </div>
+      <h2 className="mb-1 text-xl font-extrabold text-[color:var(--color-text)]">
         Dinner&apos;s ready! 🎉
       </h2>
-      <p className="text-sm mb-2" style={{ color: 'var(--color-muted)' }}>
-        {mealTitle} is all done.
-      </p>
+      <p className="mb-2 text-sm text-[color:var(--color-muted)]">{mealTitle} is all done.</p>
 
       {canDeduct ? (
         <>
           {skippedDishTitles.length > 0 && (
-            <p className="text-xs mb-4" style={{ color: 'var(--color-muted)' }} data-testid="meal-cook-finished-skipped-note">
+            <p
+              className="mb-4 text-xs text-[color:var(--color-muted)]"
+              data-testid="meal-cook-finished-skipped-note"
+            >
               {skippedDishTitles.map((t) => `‹${t}›`).join(', ')} was skipped, so it won&apos;t be taken from
               your pantry.
             </p>
           )}
-          <div className="flex flex-col gap-2 items-center">
-            <button
-              type="button"
-              onClick={onMarkCooked}
-              className="min-h-[44px] rounded-full px-6 font-bold text-sm active:scale-95 transition-transform"
-              style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
-              aria-label="Mark meal as cooked"
-            >
+          <div className="mt-5 flex flex-col gap-3">
+            <SpringButton variant="primary" fullWidth onClick={onMarkCooked} aria-label="Mark meal as cooked">
               Mark meal as cooked
-            </button>
-            <button
-              type="button"
+            </SpringButton>
+            <SpringButton
+              variant="secondary"
+              fullWidth
               onClick={onFinishWithoutPantry}
-              className="min-h-[44px] px-4 font-semibold text-sm underline active:scale-95 transition-transform"
-              style={{ color: 'var(--color-muted)' }}
               aria-label="Skip pantry update"
             >
               Skip pantry update
-            </button>
+            </SpringButton>
           </div>
         </>
       ) : (
         <>
-          <p className="text-sm mb-5" style={{ color: 'var(--color-muted)' }}>
+          <p className="mb-5 text-sm text-[color:var(--color-muted)]">
             Nothing was cooked, so there&apos;s nothing to take from your pantry.
           </p>
-          <button
-            type="button"
-            onClick={onFinishWithoutPantry}
-            className="min-h-[44px] rounded-full px-6 font-bold text-sm active:scale-95 transition-transform"
-            style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
-            aria-label="Back to meal"
-          >
+          <SpringButton variant="primary" fullWidth onClick={onFinishWithoutPantry} aria-label="Back to meal">
             Back to meal
-          </button>
+          </SpringButton>
         </>
       )}
-    </section>
+    </PixelPanel>
   )
 }

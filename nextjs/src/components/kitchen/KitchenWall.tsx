@@ -39,8 +39,10 @@
  * Places with no data yet (`places === null`: loading, or the pantry failed to
  * load) show their name only and draw no stock; never a made-up zero.
  */
-import { useMemo, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useMemo, type CSSProperties, type ReactNode } from 'react'
 import Link from 'next/link'
+import { motion, useAnimationControls } from 'framer-motion'
+import { useReactionVariants } from '@/lib/motion'
 import { WALL_PAINT, rectsToPath, type WallLayer } from '@/lib/kitchen/wall-art'
 import { WALL_H, WALL_W } from '@/lib/kitchen/slots'
 import {
@@ -134,22 +136,76 @@ function tagStyle(
 const HIT = 'absolute block cursor-pointer active:bg-white/25 hover:bg-white/15'
 
 /** The pixel-lettered tag: the world's own type (Pixelify), Nunito numerals. */
-function WallTag({ label, count, style }: { label: string; count?: number; style: CSSProperties }) {
+function WallTag({
+  label,
+  count,
+  incoming,
+  bounce = 0,
+  style,
+}: {
+  label: string
+  count?: number
+  /** Shopping waiting to be put away here (issue #753): reads "+N" in place of the count. */
+  incoming?: number
+  /**
+   * Issue #754: how many items have landed here. Each rise plays the landing
+   * bounce (the world's `bounce` reaction: a 2 px hop in 3 stepped frames; under
+   * reduced motion it holds still and only the number changes).
+   */
+  bounce?: number
+  style: CSSProperties
+}) {
+  const coming = incoming !== undefined && incoming > 0
+  const { bounce: bounceVariants } = useReactionVariants()
+  const controls = useAnimationControls()
+  useEffect(() => {
+    if (bounce > 0) void controls.start('play')
+  }, [bounce, controls])
   return (
-    <span
+    <motion.span
       aria-hidden="true"
+      data-bounces={bounce}
+      variants={bounceVariants}
+      initial="idle"
+      animate={controls}
       style={style}
       className="font-pixel absolute border-2 border-[color:var(--color-text)] bg-[color:var(--color-surface)] px-1.5 py-0.5 text-[13px] leading-4 font-medium whitespace-nowrap text-[color:var(--color-text)] shadow-[2px_2px_0_var(--color-text)]"
     >
       {label}
-      {count !== undefined && count > 0 && (
+      {coming ? (
         <>
           {' '}
-          <span className="font-sans font-extrabold tabular-nums">{count}</span>
+          <span className="font-sans font-extrabold tabular-nums">+{incoming}</span>
         </>
+      ) : (
+        count !== undefined &&
+        count > 0 && (
+          <>
+            {' '}
+            <span className="font-sans font-extrabold tabular-nums">{count}</span>
+          </>
+        )
       )}
-    </span>
+    </motion.span>
   )
+}
+
+/**
+ * Where a place's sparkle pair sits while shopping is headed to it (issue #753),
+ * as the centres of its two plus marks, in wall units: the board A3's marks,
+ * converted from its 390 px render (4.0625 px a unit). The first is ink, the
+ * second the pink accent.
+ */
+const SPARKLES: Record<PlaceKey, readonly [readonly [number, number], readonly [number, number]]> = {
+  fridge: [[21.2, 12.3], [26.1, 13.8]],
+  freezer: [[21.7, 44.3], [26.6, 45.8]],
+  shelves: [[56.1, 19.7], [61, 21.2]],
+  basket: [[64.5, 31.5], [69.4, 33]],
+}
+
+/** A 5 x 5 pixel plus mark centred on (cx, cy), cells of half a unit. */
+function plusRects(cx: number, cy: number): string {
+  return `${cx - 0.25},${cy - 1.25},0.5,2.5 ${cx - 1.25},${cy - 0.25},2.5,0.5`
 }
 
 export interface KitchenWallProps {
@@ -171,6 +227,18 @@ export interface KitchenWallProps {
    * buttons, which stay individually named and reachable.
    */
   sceneLabel?: string
+  /**
+   * Shopping waiting to be put away, per place (issue #753, board A3): a place
+   * with N > 0 reads "<Place> +N" on its tag, with a sparkle pair beside it.
+   * `null` / `undefined`: nothing waiting, the tags show their counts.
+   */
+  incoming?: Record<PlaceKey, number> | null
+  /**
+   * The put-away flight's landings (issue #754): items landed so far per place.
+   * Each rise plays that place's tag bounce. Pass the same record as `incoming`
+   * while the flight runs, so the tag ticks up (+1, +2, ...) as each lands.
+   */
+  bounce?: Record<PlaceKey, number> | null
   /** The decoration slots. Absolutely positioned, in percent of the wall. */
   children?: ReactNode
 }
@@ -184,6 +252,8 @@ export default function KitchenWall({
   tagsLayer,
   bubblesLayer,
   sceneLabel,
+  incoming = null,
+  bounce = null,
   children,
 }: KitchenWallProps) {
   const vars = {
@@ -238,6 +308,17 @@ export default function KitchenWall({
           visible.has(p.layer) ? <path key={i} d={p.d} style={{ fill: p.fill }} /> : null,
         )}
         {spritesLayer}
+        {/* Shopping on its way (#753): a sparkle pair by each place it is headed to. */}
+        {incoming &&
+          PLACES.filter((p) => incoming[p.key] > 0).map((p) => (
+            <g key={p.key} data-testid="incoming-sparkles" data-place={p.key}>
+              <path d={rectsToPath(plusRects(...SPARKLES[p.key][0]))} style={{ fill: 'var(--color-text)' }} />
+              <path
+                d={rectsToPath(plusRects(...SPARKLES[p.key][1]))}
+                style={{ fill: 'var(--color-primary-dark)' }}
+              />
+            </g>
+          ))}
       </svg>
 
       {/* Decorations sit under the places, so a tag is never covered. */}
@@ -263,6 +344,8 @@ export default function KitchenWall({
       {PLACES.map((p) => {
         const { box } = PLACE_BOXES[p.key]
         const summary = places ? places[p.key] : null
+        const coming = incoming?.[p.key] ?? 0
+        const name = placeAccessibleName(p.label, summary)
         return (
           <button
             key={p.key}
@@ -270,12 +353,18 @@ export default function KitchenWall({
             data-place={p.key}
             // The onboarding tour's pantry step points at the fridge (#750).
             data-tour={p.key === 'fridge' ? 'fridge' : undefined}
-            aria-label={placeAccessibleName(p.label, summary)}
+            aria-label={coming > 0 ? `${name}, ${coming} coming in` : name}
             onClick={() => onOpenPlace(p.key)}
             className={HIT}
             style={boxStyle(box)}
           >
-            <WallTag label={p.label} count={summary?.count} style={tagStyle(box, PLACE_BOXES[p.key])} />
+            <WallTag
+              label={p.label}
+              count={summary?.count}
+              incoming={coming}
+              bounce={bounce?.[p.key] ?? 0}
+              style={tagStyle(box, PLACE_BOXES[p.key])}
+            />
           </button>
         )
       })}
