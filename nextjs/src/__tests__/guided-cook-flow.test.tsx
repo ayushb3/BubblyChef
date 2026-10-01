@@ -657,3 +657,64 @@ describe('GuidedCookFlow — finished timer chips leave the dock (issue #757)', 
     expect(screen.getByTestId('dock-timers')).toHaveTextContent('completed')
   })
 })
+
+// ─── Issue #825 — the steps and footer wear the meal cook's pixel language ─────
+
+describe('GuidedCookFlow — pixel step UI (issue #825)', () => {
+  it('draws the prep card and each step card as a PixelPanel', () => {
+    renderFlow()
+    expect(screen.getByTestId('guided-cook-prep')).toHaveAttribute('data-pixel-panel')
+    fireEvent.click(screen.getByTestId('guided-cook-next'))
+    expect(screen.getByTestId('guided-cook-step-1')).toHaveAttribute('data-pixel-panel')
+  })
+
+  it('draws Back / Next as secondary / primary keycaps on every screen', () => {
+    renderFlow()
+    expect(screen.getByTestId('guided-cook-back')).toHaveAttribute('data-keycap', 'secondary')
+    expect(screen.getByTestId('guided-cook-next')).toHaveAttribute('data-keycap', 'primary')
+    fireEvent.click(screen.getByTestId('guided-cook-next'))
+    expect(screen.getByTestId('guided-cook-back')).toHaveAttribute('data-keycap', 'secondary')
+    expect(screen.getByTestId('guided-cook-back')).toBeEnabled()
+  })
+
+  it('keeps Back disabled on the prep screen', () => {
+    renderFlow()
+    expect(screen.getByTestId('guided-cook-back')).toBeDisabled()
+  })
+
+  it('draws Ask Bubbles as a secondary keycap that still names the step', () => {
+    renderFlow()
+    fireEvent.click(screen.getByTestId('guided-cook-next'))
+    const ask = screen.getByTestId('guided-cook-ask-bubbles')
+    expect(ask).toHaveAttribute('data-keycap', 'secondary')
+    expect(ask).toHaveAccessibleName('Ask Bubbles about this step')
+  })
+
+  it('shows the hands-on / hands-off chip for a structured step, like the meal cook', () => {
+    renderFlow({ steps: STRUCTURED_STEPS })
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // step 1: hands-off
+    expect(screen.getByTestId('guided-cook-step-badge')).toHaveTextContent('Hands-off')
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // step 2: hands-on
+    expect(screen.getByTestId('guided-cook-step-badge')).toHaveTextContent('Hands-on')
+  })
+
+  it('shows no hands chip while a step has no structured data', () => {
+    renderFlow()
+    fireEvent.click(screen.getByTestId('guided-cook-next'))
+    expect(screen.queryByTestId('guided-cook-step-badge')).not.toBeInTheDocument()
+  })
+
+  it('draws the structured timer start as a keycap', () => {
+    renderFlow({ steps: STRUCTURED_STEPS })
+    fireEvent.click(screen.getByTestId('guided-cook-next'))
+    expect(screen.getByTestId('structured-step-timer-chip')).toHaveAttribute('data-keycap', 'secondary')
+  })
+
+  it('draws the regex-fallback timer start as a keycap', () => {
+    renderFlow()
+    fireEvent.click(screen.getByTestId('guided-cook-next'))
+    fireEvent.click(screen.getByTestId('guided-cook-next'))
+    fireEvent.click(screen.getByTestId('guided-cook-next')) // step 3: "simmer for 8 minutes"
+    expect(screen.getByTestId('step-timer-chip')).toHaveAttribute('data-keycap', 'secondary')
+  })
+})

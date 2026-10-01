@@ -191,7 +191,8 @@ test.describe('guest walkthrough (issue #518)', () => {
     await expect(page).not.toHaveURL(/\/login/);
     await page.getByRole('button', { name: 'Import recipe from URL' }).click();
     await expect(page.getByRole('heading', { name: /Import from URL/ })).toBeVisible();
-    await page.getByPlaceholder(/https:\/\/www\.allrecipes\.com/).fill(IMPORT_URL);
+    // The field now takes a recipe page or a YouTube link (#528).
+    await page.getByPlaceholder('Recipe page or YouTube link...').fill(IMPORT_URL);
     await page.getByRole('button', { name: 'Import', exact: true }).click();
 
     // RecipeImportModal hands off to RecipeEditModal (review/edit before the
