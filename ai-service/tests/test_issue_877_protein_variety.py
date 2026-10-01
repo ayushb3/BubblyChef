@@ -155,11 +155,16 @@ class TestReplaceDuplicateOptions:
         options: list[MealOptionLLM],
         proposer: _Proposer,
         *,
-        request_text: str = "Plan dinner",
+        wanted: Sequence[str] = (),
+        excluded: Sequence[str] = (),
         accept: Any = _accept_all_sync,
     ) -> Any:
         return await replace_duplicate_options(
-            options, request_text=request_text, propose=proposer, accept=accept
+            options,
+            wanted_ingredients=wanted,
+            excluded_ingredients=excluded,
+            propose=proposer,
+            accept=accept,
         )
 
     async def test_distinct_options_make_no_call(self) -> None:
@@ -251,12 +256,31 @@ class TestReplaceDuplicateOptions:
         assert outcome.options == [first, second]
         assert outcome.shared_protein == "chicken"
 
-    async def test_asking_for_the_protein_by_name_is_not_policed(self) -> None:
+    async def test_a_wanted_protein_is_not_policed(self) -> None:
         proposer = _Proposer([_beef()])
         options = [_chicken("A"), _chicken("B"), _chicken("C")]
-        outcome = await self._run(options, proposer, request_text="Use up my chicken thighs")
+        outcome = await self._run(options, proposer, wanted=["chicken thighs"])
         assert proposer.extras == []
         assert outcome.options == options
+
+    async def test_an_excluded_protein_exempts_nothing(self) -> None:
+        proposer = _Proposer([_beef()])
+        options = [_chicken("A"), _chicken("B"), _chicken("C")]
+        outcome = await self._run(options, proposer, excluded=["chicken"])
+        assert len(proposer.extras) == 1
+        assert _beef() in outcome.options
+
+    async def test_excluded_wins_over_wanted_for_the_same_protein(self) -> None:
+        proposer = _Proposer([_beef()])
+        options = [_chicken("A"), _chicken("B"), _chicken("C")]
+        await self._run(options, proposer, wanted=["chicken"], excluded=["chicken"])
+        assert len(proposer.extras) == 1
+
+    async def test_wanting_one_protein_does_not_exempt_another(self) -> None:
+        proposer = _Proposer([_fish()])
+        options = [_chicken("A"), _chicken("B"), _chicken("C")]
+        await self._run(options, proposer, wanted=["rice"])
+        assert len(proposer.extras) == 1
 
     async def test_a_single_option_is_left_alone(self) -> None:
         proposer = _Proposer([])
@@ -285,8 +309,11 @@ def _pantry() -> list[PantryItem]:
     return [PantryItem(name=n, category=FoodCategory.OTHER, quantity=4.0) for n in names]
 
 
-def _scripted_ai(*answers: MealOptionsLLMResult | Exception) -> MagicMock:
-    """Answers the option-stage call in order; constraint extraction returns nothing."""
+def _scripted_ai(
+    *answers: MealOptionsLLMResult | Exception, extraction: RecipeConstraints | None = None
+) -> MagicMock:
+    """Answers the option-stage call in order; constraint extraction returns `extraction`
+    (nothing by default)."""
     queue = list(answers)
 
     async def _complete(*, prompt: str, response_schema: type, temperature: float = 0.7) -> Any:
@@ -296,7 +323,7 @@ def _scripted_ai(*answers: MealOptionsLLMResult | Exception) -> MagicMock:
                 raise nxt
             return nxt
         if response_schema is RecipeConstraints:
-            return RecipeConstraints()
+            return extraction or RecipeConstraints()
         raise AssertionError(f"Unexpected model call: {response_schema!r}")
 
     ai = MagicMock()
@@ -388,12 +415,63 @@ class TestOptionStage:
         assert "Coconut Fish Curry" in _mains(out)
         assert len(out["proposal"].options) == 3
 
-    async def test_naming_the_protein_in_the_request_makes_no_replacement_call(self) -> None:
+    async def test_use_up_the_chicken_exempts_chicken(self) -> None:
         three = MealOptionsLLMResult(options=[_chicken("A"), _chicken("B"), _chicken("C")])
-        ai = _scripted_ai(three)
-        out = await _stage(ai, input_text="Dinner with my chicken thighs please")
+        ai = _scripted_ai(three, extraction=RecipeConstraints(must_use_ingredients=["chicken"]))
+        out = await _stage(ai, input_text="Use up the chicken")
         assert len(_option_calls(ai)) == 1
         assert out["assistant_message"] == "Here are three meal ideas!"
+
+    async def test_a_preferred_protein_is_exempt_too(self) -> None:
+        three = MealOptionsLLMResult(options=[_chicken("A"), _chicken("B"), _chicken("C")])
+        ai = _scripted_ai(three, extraction=RecipeConstraints(preferred_ingredients=["chicken"]))
+        await _stage(ai, input_text="Something with chicken")
+        assert len(_option_calls(ai)) == 1
+
+    async def test_no_chicken_tonight_does_not_switch_the_guard_off(self) -> None:
+        # The message names chicken in order to refuse it: it must not exempt chicken.
+        three = MealOptionsLLMResult(options=[_chicken("A"), _chicken("B"), _chicken("C")])
+        ai = _scripted_ai(
+            three,
+            MealOptionsLLMResult(options=[_beef()]),
+            extraction=RecipeConstraints(excluded_ingredients=["chicken"]),
+        )
+        out = await _stage(ai, input_text="Dinner but no chicken tonight")
+        assert len(_option_calls(ai)) == 2
+        assert "Beef Tacos" in _mains(out)
+
+    async def test_no_chicken_tonight_even_when_extraction_misses_the_exclusion(self) -> None:
+        # Nothing structured exempts chicken, so the raw words cannot either.
+        three = MealOptionsLLMResult(options=[_chicken("A"), _chicken("B"), _chicken("C")])
+        ai = _scripted_ai(three, MealOptionsLLMResult(options=[_beef()]))
+        await _stage(ai, input_text="Dinner but no chicken tonight")
+        assert len(_option_calls(ai)) == 2
+
+    async def test_no_note_when_the_unreplaced_repeat_is_dropped_before_shipping(self) -> None:
+        # C repeats A (same protein and cuisine), the replacement call fails, and C is then
+        # cut by the to-buy cap. The shipped set is varied, so the reply must not say otherwise.
+        far = _opt(
+            "C",
+            "Saffron Chicken",
+            ["chicken thighs", "saffron", "sumac", "tahini", "harissa"],
+            cuisine="Italian",
+        )
+        ai = _scripted_ai(
+            MealOptionsLLMResult(options=[_chicken("A"), _fish(), far]),
+            RuntimeError("provider down"),
+        )
+        out = await _stage(ai)
+        assert len(_option_calls(ai)) == 2
+        assert _mains(out) == ["A Chicken", "Coconut Fish Curry"]
+        assert out["assistant_message"] == "Here are two meal ideas!"
+
+    async def test_the_note_stays_when_the_repeat_ships(self) -> None:
+        ai = _scripted_ai(
+            MealOptionsLLMResult(options=[_chicken("A"), _fish(), _chicken("C")]),
+            RuntimeError("provider down"),
+        )
+        out = await _stage(ai)
+        assert "chicken" in out["assistant_message"]
 
     async def test_the_option_schema_asks_for_a_cuisine(self) -> None:
         assert "cuisine" in MealOptionLLM.model_json_schema()["properties"]

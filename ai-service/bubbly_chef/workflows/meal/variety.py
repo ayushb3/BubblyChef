@@ -531,10 +531,42 @@ def _describe(option: _KeyedOption) -> str:
     )
 
 
+def exempt_proteins(
+    wanted_ingredients: Iterable[str], excluded_ingredients: Iterable[str] = ()
+) -> frozenset[str]:
+    """The proteins the user asked for ("use up my chicken"), which are not policed.
+
+    Built from the turn's structured constraints (must-use and preferred ingredients), never
+    from the raw message: "no chicken tonight" names chicken in order to refuse it. A protein
+    the user excluded never exempts anything, even when it is also listed as wanted.
+    """
+    wanted = {p for text in wanted_ingredients for p in _proteins_in(text)}
+    refused = {p for text in excluded_ingredients for p in _proteins_in(text)}
+    return frozenset(wanted - refused)
+
+
+def _exempt_key(option: _KeyedOption, exempt: frozenset[str]) -> tuple[str, str]:
+    protein, cuisine = option_key(option)
+    return (NO_PROTEIN if protein in exempt else protein), cuisine
+
+
+def shared_protein_among(options: Sequence[_K], exempt: frozenset[str] = frozenset()) -> str | None:
+    """The protein an option repeats from an earlier one in `options`, or None when the set
+    is varied. Judged on the set as given, so callers pass what will actually ship."""
+    keys: list[tuple[str, str]] = []
+    for option in options:
+        key = _exempt_key(option, exempt)
+        if _clashes(key, keys):
+            return key[0]
+        keys.append(key)
+    return None
+
+
 async def replace_duplicate_options(
     options: Sequence[_K],
     *,
-    request_text: str,
+    wanted_ingredients: Iterable[str] = (),
+    excluded_ingredients: Iterable[str] = (),
     propose: Callable[[str], Awaitable[Sequence[_K]]],
     accept: Callable[[_K], bool],
 ) -> VarietyOutcome[_K]:
@@ -545,13 +577,13 @@ async def replace_duplicate_options(
     `accept` vets a replacement for what the model is not trusted with (allergens, an
     avoided title). A replacement that is rejected, still a duplicate or never arrives
     leaves the original option in place and is reported in `shared_protein`: never a
-    second call, never fewer options. A protein the user's own words name is not policed.
+    second call, never fewer options. A protein the user asked for is not policed (see
+    `exempt_proteins`).
     """
-    exempt = frozenset(_proteins_in(request_text))
+    exempt = exempt_proteins(wanted_ingredients, excluded_ingredients)
 
     def _key(option: _K) -> tuple[str, str]:
-        protein, cuisine = option_key(option)
-        return (NO_PROTEIN if protein in exempt else protein), cuisine
+        return _exempt_key(option, exempt)
 
     keys: list[tuple[str, str]] = []
     duplicates: list[int] = []

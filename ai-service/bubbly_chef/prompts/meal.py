@@ -389,7 +389,7 @@ MEAL_OPTIONS_AVOID_BLOCK = (
 # each; `{count}` how many are missing; `{avoid}` the protein(s) to steer away from.
 MEAL_OPTIONS_REPLACE_BLOCK = (
     "\n\nREPLACEMENT ROUND. These options are settled and stay exactly as they are: {kept}. "
-    "{count} more option(s) are needed, so ignore \"Propose 3\" below and propose exactly "
+    "{count} more option(s) are needed, so ignore \"Propose 3\" above and propose exactly "
     "{count}. Each new option's main dish must be built on a main protein other than "
     "{avoid}, and must differ from every settled option. "
     "Keep every rule above, including seasoning and the pantry."

@@ -111,8 +111,10 @@ from bubbly_chef.workflows.meal.refine import merge_refinement_constraints, name
 from bubbly_chef.workflows.meal.variety import (
     avoid_titles_block,
     drop_repeated_options,
+    exempt_proteins,
     repeats_avoided_title,
     replace_duplicate_options,
+    shared_protein_among,
     shared_protein_note,
     strip_unsupported_claims,
     unsupported_claims,
@@ -1245,8 +1247,15 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
 
     # Two options with the same main protein and cuisine are one option twice (#877): keep
     # the first, ask ONCE for replacements. A fixed main fixes the dish, so nothing to vary.
-    shared_protein: str | None = None
-    if outline is None and len(candidates) > 1:
+    # A protein the user asked for is exempt, read from the structured constraints: the raw
+    # message can name a protein to refuse it ("no chicken tonight").
+    wanted_proteins = [
+        *(constraints.get("must_use_ingredients") or []),
+        *(constraints.get("preferred_ingredients") or []),
+    ]
+    refused_proteins = list(constraints.get("excluded_ingredients") or [])
+    check_variety = outline is None and len(candidates) > 1
+    if check_variety:
 
         async def _propose_replacements(extra: str) -> list[MealOptionLLM]:
             answer = await _propose(extra)
@@ -1261,12 +1270,12 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
 
         varied = await replace_duplicate_options(
             [o for _, o in candidates],
-            request_text=" ".join([input_text, *(constraints.get("must_use_ingredients") or [])]),
+            wanted_ingredients=wanted_proteins,
+            excluded_ingredients=refused_proteins,
             propose=_propose_replacements,
             accept=_usable_replacement,
         )
         candidates = [(idx, o) for (idx, _), o in zip(candidates, varied.options, strict=True)]
-        shared_protein = varied.shared_protein
 
     options: list[MealOption] = []
     seen_fixed_dishes: set[tuple[str, ...]] = set()
@@ -1340,8 +1349,16 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         2: "Here are two meal ideas!",
         3: "Here are three meal ideas!",
     }.get(len(options), "Here are some meal ideas!")
-    if shared_protein is not None and len(options) > 1:
-        assistant_message += shared_protein_note(shared_protein)
+    if check_variety:
+        # Judged on what actually ships: options are still dropped after the replacement
+        # step (no valid side, to-buy cap), and a repeat whose twin is gone is no repeat.
+        raw_by_id = {f"opt_{idx}": o for idx, o in candidates}
+        shipped_raw = [raw_by_id[o.option_id] for o in options if o.option_id in raw_by_id]
+        shared = shared_protein_among(
+            shipped_raw, exempt_proteins(wanted_proteins, refused_proteins)
+        )
+        if shared is not None:
+            assistant_message += shared_protein_note(shared)
     if fixed_resolved is not None and outline is not None:
         fixed_echo = MealFixedMainEcho(
             recipe_id=fixed_resolved.linked_recipe_id, title=outline.name
