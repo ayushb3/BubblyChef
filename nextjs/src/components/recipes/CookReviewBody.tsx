@@ -83,10 +83,15 @@ function isQuietLine(m: IngredientMatch): boolean {
   return m.status === 'assumed' || m.status === 'to_taste'
 }
 
-function formatQty(qty: number | null, unit: string | null): string {
+/**
+ * `approximate` marks an amount worked out from a typical weight, density or can
+ * size rather than an exact conversion. It is still deducted; "≈" says so.
+ */
+function formatQty(qty: number | null, unit: string | null, approximate = false): string {
   if (qty == null) return '—'
   const rounded = Math.round(qty * 100) / 100
-  return unit ? `${rounded} ${unit}` : String(rounded)
+  const text = unit ? `${rounded} ${unit}` : String(rounded)
+  return approximate ? `≈ ${text}` : text
 }
 
 /**
@@ -589,6 +594,10 @@ export function CookReviewBody({
                           placeholder="qty"
                           aria-label={`Deduct quantity for ${m.ingredient_name}`}
                         />
+                      ) : m.approximate && m.deduct_qty != null ? (
+                        <span title="An estimate, worked out from a typical size or weight">
+                          {formatQty(m.deduct_qty, m.base_unit, true)}
+                        </span>
                       ) : (
                         formatQty(m.deduct_qty, m.base_unit)
                       )}
@@ -713,8 +722,8 @@ export function CookDeductionSummary({ summary, mode }: CookDeductionSummaryProp
       )}
       {imprecise.length > 0 && (
         <p className="text-[var(--color-muted)] mt-0.5">
-          You have {imprecise.map((s) => s.name).join(', ')} — we can&apos;t tell how
-          much of a pack the recipe uses, so the quantity is left as it is.
+          You have {imprecise.map((s) => s.name).join(', ')} — we couldn&apos;t work out
+          how much the recipe uses, so the quantity is left as it is.
         </p>
       )}
       {summary.compoundDeductions.length > 0 && (
