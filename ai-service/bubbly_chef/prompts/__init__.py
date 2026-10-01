@@ -11,17 +11,17 @@ prompt edit that quietly makes the model worse — human review is the only
 gate that catches that.
 """
 
+from bubbly_chef.prompts.chat import (
+    GENERAL_CHAT_SYSTEM_PROMPT,
+    GENERAL_CHAT_USER_PROMPT,
+    MODE_SYSTEM_PROMPTS,
+)
 from bubbly_chef.prompts.ingest import (
     PRODUCT_PARSE_SYSTEM_PROMPT,
     PRODUCT_PARSE_USER_PROMPT_TEMPLATE,
     RECEIPT_PARSE_PROMPT,
     RECEIPT_PARSE_SYSTEM_PROMPT,
     RECEIPT_PARSE_USER_PROMPT_TEMPLATE,
-)
-from bubbly_chef.prompts.chat import (
-    GENERAL_CHAT_SYSTEM_PROMPT,
-    GENERAL_CHAT_USER_PROMPT,
-    MODE_SYSTEM_PROMPTS,
 )
 from bubbly_chef.prompts.pantry import (
     PANTRY_PARSE_SYSTEM_PROMPT,
@@ -41,6 +41,7 @@ from bubbly_chef.prompts.recipe import (
 )
 from bubbly_chef.prompts.router import (
     DIET_CHANGE_FLAG_PROMPT,
+    MEAL_PLAN_ROUTING_PROMPT,
     INTENT_CLASSIFICATION_SYSTEM_PROMPT,
     INTENT_CLASSIFICATION_USER_PROMPT,
     MODE_BIAS_COOKING_PROMPT,
@@ -53,6 +54,7 @@ __all__ = [
     "BRAINSTORM_SYSTEM_PROMPT",
     "BRAINSTORM_SYSTEM_PROMPT_NO_PANTRY",
     "DIET_CHANGE_FLAG_PROMPT",
+    "MEAL_PLAN_ROUTING_PROMPT",
     "GENERAL_CHAT_SYSTEM_PROMPT",
     "GENERAL_CHAT_USER_PROMPT",
     "GROUNDED_RECIPE_SYSTEM_PROMPT",

@@ -188,6 +188,29 @@ DIET_CHANGE_FLAG_PROMPT = (
     "dish."
 )
 
+# Appended to the classifier prompt by `classify_intent`, NOT part of
+# INTENT_CLASSIFICATION_SYSTEM_PROMPT: that constant's hash pins the captured intent
+# fixtures, and these few-shots only sharpen one boundary (#772). The unambiguous
+# whole-meal phrasings ("plan ... dinner", "a meal for 2", "easy weeknight dinner")
+# never reach the model - a deterministic rule in `classify_intent` takes them - so
+# this covers the borderline asks and keeps the single-recipe asks where they were.
+MEAL_PLAN_ROUTING_PROMPT = (
+    "\n\nWHOLE-MEAL ASKS: a request for a whole meal - a main plus sides for an "
+    "occasion, however casually phrased - is meal_plan, NOT recipe_card (which is only "
+    "for picking or tweaking a recipe already on screen) and NOT recipe_brainstorm "
+    "(which is only for an open list of ideas):\n"
+    "- 'plan a cozy Italian dinner for two' → meal_plan\n"
+    "- 'easy weeknight dinner, I only have eggs and rice' → meal_plan\n"
+    "- 'a meal for 2 tonight, using only eggs and rice' → meal_plan\n"
+    "- 'something that's a whole meal in one bowl' → meal_plan "
+    "(the whole meal is the ask)\n"
+    "These stay as they are - the user wants one dish or a list of ideas, not a meal:\n"
+    "- 'a recipe for lemon pasta' → recipe_generation\n"
+    "- 'ideas for using up spinach' → recipe_brainstorm\n"
+    "- 'dinner ideas' → recipe_brainstorm\n"
+    "- 'a quick pasta recipe for dinner' → recipe_generation"
+)
+
 MODE_BIAS_COOKING_PROMPT = (
     "\n\nSESSION CONTEXT: The user is actively cooking a recipe. "
     "Bias toward 'cooking_help' for questions about technique, timing, or substitutions. "
