@@ -133,16 +133,17 @@ describe('saved lookup renders a saved meal as the compact meal card (issue #760
     currentMessages = [lookupMessage({ saved_recipe_matches: [], saved_meal_matches: [MEAL_MATCH] })]
     renderChat()
 
-    expect(await screen.findByRole('heading', { name: 'Cozy Pasta Night' })).toBeInTheDocument()
-    expect(screen.getByText('Lemon Pasta')).toBeInTheDocument()
-    expect(screen.getByText('Green Salad')).toBeInTheDocument()
+    // Issue #744: the compact card is one button, so the title is not a heading, and the
+    // dishes share one meta line.
+    expect(await screen.findByText('Cozy Pasta Night')).toBeInTheDocument()
+    expect(screen.getByText('Lemon Pasta · Green Salad')).toBeInTheDocument()
   })
 
   it('Open meal goes to the existing meal and creates nothing', async () => {
     currentMessages = [lookupMessage({ saved_recipe_matches: [], saved_meal_matches: [MEAL_MATCH] })]
     renderChat()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Open meal' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Open meal/ }))
 
     expect(routerPush).toHaveBeenCalledWith('/meals/meal-1')
     expect(createMeal).not.toHaveBeenCalled()
@@ -169,7 +170,7 @@ describe('saved lookup renders a saved meal as the compact meal card (issue #760
     ]
     renderChat()
 
-    const meal = await screen.findByRole('heading', { name: 'Cozy Pasta Night' })
+    const meal = await screen.findByText('Cozy Pasta Night')
     const recipe = screen.getByRole('button', { name: 'Show options for Pasta Bake' })
     expect(
       meal.compareDocumentPosition(recipe) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -188,7 +189,7 @@ describe('saved lookup renders a saved meal as the compact meal card (issue #760
     renderChat()
 
     expect(await screen.findByRole('button', { name: 'Show options for Pasta Bake' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Open meal' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Open meal/ })).not.toBeInTheDocument()
   })
 })
 
