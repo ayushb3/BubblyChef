@@ -12,13 +12,12 @@
  *
  * Opens a bottom sheet listing every `KITCHEN_THEMES` entry: unlocked ones
  * are selectable pill buttons, locked ones are greyed with "🫧 N to unlock".
- * Follows the same backdrop + drag-dismiss + focus-trap shape as
- * `PantryAddSheet`/`ThemePicker`.
+ * The sheet is a `PixelSheet` (issue #743): backdrop, focus trap, Escape,
+ * drag-dismiss and the close button all come from it.
  */
-import { useEffect, useRef } from 'react'
-import { motion, AnimatePresence, useDragControls } from 'framer-motion'
+import { useEffect } from 'react'
 import { KITCHEN_THEMES, type KitchenTheme } from '@/lib/kitchen/themes'
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
+import PixelSheet from '@/components/ui/PixelSheet'
 
 export interface KitchenThemePickerProps {
   isOpen: boolean
@@ -53,9 +52,6 @@ export default function KitchenThemePicker({
   error = null,
   clearError,
 }: KitchenThemePickerProps) {
-  const panelRef = useRef<HTMLDivElement>(null)
-  const dragControls = useDragControls()
-
   // Scope the error banner to this open — a failed save from a previous
   // visit must not still be sitting there, `role="alert"`, the next time
   // the sheet opens (#598 review, finding 2).
@@ -63,7 +59,6 @@ export default function KitchenThemePicker({
     if (isOpen) clearError?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
-  useModalFocusTrap(isOpen, onClose, panelRef)
 
   return (
     <>
@@ -80,86 +75,33 @@ export default function KitchenThemePicker({
         <span aria-hidden="true">🎨</span>
       </button>
 
-      <AnimatePresence>
-        {isOpen && (
-          <>
-            <motion.div
-              className="fixed inset-0 bg-black/40 z-[60]"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={onClose}
+      <PixelSheet
+        open={isOpen}
+        onClose={onClose}
+        title="Kitchen theme"
+        titleId="kitchen-theme-picker-title"
+        subheader={
+          error ? (
+            <p className="text-xs text-center text-[#ff9aa2]" role="alert">
+              {error}
+            </p>
+          ) : undefined
+        }
+      >
+        <div className="flex flex-col gap-2">
+          {KITCHEN_THEMES.map((theme) => (
+            <ThemeRow
+              key={theme.key}
+              theme={theme}
+              isActive={theme.key === currentThemeKey}
+              isUnlocked={unlockedKeys.has(theme.key)}
+              balance={balance}
+              saving={saving}
+              onSelect={() => onSelect(theme.key)}
             />
-            <motion.div
-              ref={panelRef}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="kitchen-theme-picker-title"
-              tabIndex={-1}
-              className="fixed bottom-16 left-0 right-0 z-[60] rounded-t-3xl flex flex-col select-none outline-none"
-              style={{ background: 'var(--color-surface)', maxHeight: 'calc(80vh - 64px)' }}
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 320 }}
-              drag="y"
-              dragControls={dragControls}
-              dragListener={false}
-              dragConstraints={{ top: 0, bottom: 0 }}
-              dragElastic={{ top: 0, bottom: 0.3 }}
-              onDragEnd={(_e, info) => {
-                if (info.offset.y > 80 || info.velocity.y > 500) onClose()
-              }}
-            >
-              <div
-                className="flex justify-center pt-3 pb-1 flex-shrink-0 cursor-grab active:cursor-grabbing touch-none"
-                onPointerDown={(e) => dragControls.start(e)}
-              >
-                <div className="w-10 h-1 rounded-full bg-[var(--color-border)]" />
-              </div>
-
-              <div className="px-6 pb-3 flex-shrink-0">
-                <div className="flex items-center justify-between">
-                  <h2
-                    id="kitchen-theme-picker-title"
-                    className="text-lg font-extrabold text-[var(--color-text)]"
-                  >
-                    Kitchen theme
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors text-xl leading-none px-1"
-                    aria-label="Close"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-
-              {error && (
-                <p className="px-6 pb-2 text-xs text-center text-[#ff9aa2]" role="alert">
-                  {error}
-                </p>
-              )}
-
-              <div className="flex-1 overflow-y-auto px-6 pb-6 min-h-0 flex flex-col gap-2">
-                {KITCHEN_THEMES.map((theme) => (
-                  <ThemeRow
-                    key={theme.key}
-                    theme={theme}
-                    isActive={theme.key === currentThemeKey}
-                    isUnlocked={unlockedKeys.has(theme.key)}
-                    balance={balance}
-                    saving={saving}
-                    onSelect={() => onSelect(theme.key)}
-                  />
-                ))}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+          ))}
+        </div>
+      </PixelSheet>
     </>
   )
 }

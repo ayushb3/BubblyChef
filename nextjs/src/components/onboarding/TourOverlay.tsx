@@ -1,12 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { usePathname } from 'next/navigation'
 import SpringButton from '@/components/ui/SpringButton'
 import { TOUR_STEPS } from './steps'
 import { useTour } from './TourProvider'
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
+import { PixelModalLayer } from '@/components/ui/PixelSheet'
 
 const PAD = 8
 const RADIUS = 16
@@ -191,8 +191,9 @@ export function TourOverlay() {
     if (!isOpen) skippedStepRef.current = null
   }, [isOpen])
 
-  // Keyboard / focus trap — Esc = Skip.
-  useModalFocusTrap(isOpen, closeTour, tooltipRef as React.RefObject<HTMLElement | null>)
+  // Keyboard / focus trap — Esc = Skip. The trap, the Escape handling and the
+  // click-swallowing backdrop come from PixelModalLayer (issue #743), the same
+  // layer PixelSheet is built on; the spotlight and the tooltip stay here.
 
   // Tooltip vertical position: above or below the spotlight. 'above' anchors
   // the tooltip's bottom edge to the spotlight's top via `bottom` rather than a
@@ -230,148 +231,144 @@ export function TourOverlay() {
   const maskId = 'tour-spotlight-mask'
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/*
-           * Full-viewport pointer-events-capturing backdrop (z-[60]).
-           * Sits above BottomNav (z-50) and swallows ALL clicks including
-           * those on the spotlight cutout — the cutout is visual only.
-           * This prevents the user from accidentally navigating away
-           * by tapping dimmed bottom-nav tabs or other interactive elements.
-           */}
-          <div
-            className="fixed inset-0 z-[60]"
-            aria-hidden="true"
-            onClick={(e) => e.stopPropagation()}
-          />
-
-          {/* SVG dim overlay with spotlight cutout (pointer-events-none; backdrop above captures) */}
-          <svg
-            className="fixed inset-0 z-[61] pointer-events-none"
-            width={vp.w || '100%'}
-            height={vp.h || '100%'}
-            aria-hidden="true"
-          >
-            <defs>
-              <mask id={maskId}>
-                {/* White = show dim; black = transparent (the spotlight hole) */}
-                <rect width="100%" height="100%" fill="white" />
-                <rect
-                  x={rect.x}
-                  y={rect.y}
-                  width={rect.width}
-                  height={rect.height}
-                  rx={RADIUS}
-                  fill="black"
-                />
-              </mask>
-            </defs>
-            <rect
-              width="100%"
-              height="100%"
-              fill="black"
-              opacity={0.55}
-              mask={`url(#${maskId})`}
-            />
-          </svg>
-
-          {/* Spotlight border ring (decorative) */}
-          <svg
-            className="fixed inset-0 z-[62] pointer-events-none"
-            width={vp.w || '100%'}
-            height={vp.h || '100%'}
-            aria-hidden="true"
-          >
+    <PixelModalLayer
+      open={isOpen}
+      onClose={() => void closeTour()}
+      panelRef={tooltipRef as React.RefObject<HTMLElement | null>}
+      // The tour draws its own dim, with the spotlight cut out of it.
+      scrim={false}
+      // Full-viewport layer above BottomNav (z-50) that swallows ALL clicks,
+      // including those on the spotlight cutout (the cutout is visual only),
+      // so a tap on a dimmed tab or control can't navigate away mid-tour.
+      dismissOnScrimTap={false}
+      // The tour never locked scrolling: it scrolls targets into view itself.
+      lockPageScroll={false}
+      alignEnd={false}
+    >
+      {/* SVG dim overlay with spotlight cutout (pointer-events-none; backdrop above captures) */}
+      <svg
+        className="fixed inset-0 z-[61] pointer-events-none"
+        width={vp.w || '100%'}
+        height={vp.h || '100%'}
+        aria-hidden="true"
+      >
+        <defs>
+          <mask id={maskId}>
+            {/* White = show dim; black = transparent (the spotlight hole) */}
+            <rect width="100%" height="100%" fill="white" />
             <rect
               x={rect.x}
               y={rect.y}
               width={rect.width}
               height={rect.height}
               rx={RADIUS}
-              fill="none"
-              stroke="white"
-              strokeWidth={2}
-              strokeOpacity={0.5}
+              fill="black"
             />
-          </svg>
+          </mask>
+        </defs>
+        <rect
+          width="100%"
+          height="100%"
+          fill="black"
+          opacity={0.55}
+          mask={`url(#${maskId})`}
+        />
+      </svg>
 
-          {/* Tooltip — z-[63] so it is above backdrop + dim overlay */}
-          <motion.div
-            ref={tooltipRef}
-            key={`tour-tooltip-${stepIndex}`}
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Onboarding tour step ${stepIndex + 1} of ${totalSteps}`}
-            className="fixed z-[63]"
-            style={{
-              ...tooltipVertical,
-              left: tooltipLeft,
-              width: TOOLTIP_WIDTH,
-            }}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            variants={tooltipVariants}
-            transition={{ duration: prefersReduced ? 0 : 0.2 }}
-          >
-            <div
-              className="rounded-2xl p-4 shadow-xl border border-white/20"
-              style={{ background: 'var(--color-surface)' }}
+      {/* Spotlight border ring (decorative) */}
+      <svg
+        className="fixed inset-0 z-[62] pointer-events-none"
+        width={vp.w || '100%'}
+        height={vp.h || '100%'}
+        aria-hidden="true"
+      >
+        <rect
+          x={rect.x}
+          y={rect.y}
+          width={rect.width}
+          height={rect.height}
+          rx={RADIUS}
+          fill="none"
+          stroke="white"
+          strokeWidth={2}
+          strokeOpacity={0.5}
+        />
+      </svg>
+
+      {/* Tooltip — z-[63] so it is above backdrop + dim overlay */}
+      <motion.div
+        ref={tooltipRef}
+        key={`tour-tooltip-${stepIndex}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Onboarding tour step ${stepIndex + 1} of ${totalSteps}`}
+        className="fixed z-[63]"
+        style={{
+          ...tooltipVertical,
+          left: tooltipLeft,
+          width: TOOLTIP_WIDTH,
+        }}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        variants={tooltipVariants}
+        transition={{ duration: prefersReduced ? 0 : 0.2 }}
+      >
+        <div
+          className="rounded-2xl p-4 shadow-xl border border-white/20"
+          style={{ background: 'var(--color-surface)' }}
+        >
+          {/* Step copy */}
+          <p className="text-sm font-medium text-[var(--color-text)] leading-snug mb-3">
+            {step?.copy}
+          </p>
+
+          {/* Step dots */}
+          <div className="flex items-center gap-1.5 mb-3" aria-hidden="true">
+            {Array.from({ length: totalSteps }).map((_, i) => (
+              <span
+                key={i}
+                className="rounded-full transition-all duration-200"
+                style={{
+                  width: i === stepIndex ? 16 : 6,
+                  height: 6,
+                  background:
+                    i === stepIndex
+                      ? 'var(--color-primary)'
+                      : 'var(--color-border)',
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Controls */}
+          <div className="flex items-center gap-2">
+            {stepIndex > 0 && (
+              <SpringButton
+                onClick={goBack}
+                className="text-xs font-semibold px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[var(--color-muted)] bg-[var(--color-surface)]"
+              >
+                Back
+              </SpringButton>
+            )}
+            <div className="flex-1" />
+            <SpringButton
+              variant="plain"
+              onClick={() => void closeTour()}
+              className="text-xs font-medium text-[var(--color-muted)] bg-transparent px-2 py-1.5"
             >
-              {/* Step copy */}
-              <p className="text-sm font-medium text-[var(--color-text)] leading-snug mb-3">
-                {step?.copy}
-              </p>
-
-              {/* Step dots */}
-              <div className="flex items-center gap-1.5 mb-3" aria-hidden="true">
-                {Array.from({ length: totalSteps }).map((_, i) => (
-                  <span
-                    key={i}
-                    className="rounded-full transition-all duration-200"
-                    style={{
-                      width: i === stepIndex ? 16 : 6,
-                      height: 6,
-                      background:
-                        i === stepIndex
-                          ? 'var(--color-primary)'
-                          : 'var(--color-border)',
-                    }}
-                  />
-                ))}
-              </div>
-
-              {/* Controls */}
-              <div className="flex items-center gap-2">
-                {stepIndex > 0 && (
-                  <SpringButton
-                    onClick={goBack}
-                    className="text-xs font-semibold px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[var(--color-muted)] bg-[var(--color-surface)]"
-                  >
-                    Back
-                  </SpringButton>
-                )}
-                <div className="flex-1" />
-                <SpringButton
-                  variant="plain"
-                  onClick={() => void closeTour()}
-                  className="text-xs font-medium text-[var(--color-muted)] bg-transparent px-2 py-1.5"
-                >
-                  Skip
-                </SpringButton>
-                <SpringButton
-                  onClick={() => void goNext()}
-                  className="text-xs font-semibold px-4 py-1.5 rounded-full text-white"
-                  style={{ background: 'var(--color-primary)' }}
-                >
-                  {isLast ? 'Done' : 'Next'}
-                </SpringButton>
-              </div>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+              Skip
+            </SpringButton>
+            <SpringButton
+              onClick={() => void goNext()}
+              className="text-xs font-semibold px-4 py-1.5 rounded-full text-white"
+              style={{ background: 'var(--color-primary)' }}
+            >
+              {isLast ? 'Done' : 'Next'}
+            </SpringButton>
+          </div>
+        </div>
+      </motion.div>
+    </PixelModalLayer>
   )
 }
