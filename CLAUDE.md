@@ -120,7 +120,7 @@ BubblyChef/
 
 | Path | Page | Notes |
 |---|---|---|
-| `/` | Dashboard | Expiring items widget, quick actions |
+| `/` | Dashboard | Expiring items widget, quick actions. Tapping a storage place on the kitchen wall opens its storage sheet; `/?place=fridge&view=scene\|list` opens one directly (issue #749) |
 | `/pantry` | Pantry | Browse/manage all items |
 | `/recipes` | Recipe library | Search, save, edit, favourite |
 | `/chat` | Chat | AI assistant — general or recipe mode |
