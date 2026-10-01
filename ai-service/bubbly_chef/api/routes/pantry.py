@@ -4,6 +4,7 @@ Exposes:
 - POST /v1/pantry/estimate-expiry      — estimate an expiry date for an item
 - POST /v1/pantry/estimate-category    — categorize an item name via the catalog
 - POST /v1/pantry/normalize-base-unit  — derive quantity_base / unit_base (#224)
+- POST /v1/pantry/match-ingredients    — have / low / missing per recipe line (#784)
 
 The expiry heuristic (`tools/expiry`) and catalog categorizer
 (`domain/catalog`) are Python-only and are the single source of truth shared by
@@ -20,6 +21,8 @@ from pydantic import BaseModel, Field
 from bubbly_chef.api.auth import get_current_user_id
 from bubbly_chef.domain.normalizer import normalize_to_base_unit, resolve_category
 from bubbly_chef.models.pantry import FoodCategory, StorageLocation
+from bubbly_chef.repository.supabase_repo import get_repository
+from bubbly_chef.services.ingredient_match import LineMatch, match_ingredient_lines
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 
 logger = logging.getLogger(__name__)
@@ -175,3 +178,54 @@ async def normalize_base_unit(
         category=request.category,
     )
     return NormalizeBaseUnitResponse(quantity_base=qty_base, unit_base=ub)
+
+
+# ---------------------------------------------------------------------------
+# Match recipe ingredient lines against the pantry (#784)
+# ---------------------------------------------------------------------------
+
+_MAX_LINES = 200
+
+
+class IngredientLine(BaseModel):
+    name: str = Field(default="", max_length=200)
+    quantity: float | None = None
+    unit: str | None = Field(default=None, max_length=50)
+
+
+class MatchIngredientsRequest(BaseModel):
+    ingredients: list[IngredientLine | str] = Field(
+        max_length=_MAX_LINES,
+        description='Recipe lines: {name, quantity, unit} objects or free text ("200 g flour")',
+    )
+
+
+class MatchIngredientsResponse(BaseModel):
+    matches: list[LineMatch] = Field(description="One entry per input line, in the same order")
+
+
+@router.post(
+    "/match-ingredients",
+    summary="Have / low / missing for each recipe ingredient line (read-only, #784)",
+    response_model=MatchIngredientsResponse,
+    responses={
+        200: {"description": "One status per input line"},
+        401: {"description": "Missing or invalid JWT"},
+    },
+)
+async def match_ingredients_route(
+    request: MatchIngredientsRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> MatchIngredientsResponse:
+    """Tag recipe lines against the caller's pantry for the recipe card's food tags.
+
+    Deterministic (the cook matcher's synonym path and base-unit lot sum; no
+    model call) and read-only. Reads only the caller's pantry.
+    """
+    repo = await get_repository()
+    pantry = await repo.get_all_pantry_items(user_id)
+    lines: list[object] = [
+        line.model_dump() if isinstance(line, IngredientLine) else line
+        for line in request.ingredients
+    ]
+    return MatchIngredientsResponse(matches=match_ingredient_lines(lines, pantry))
