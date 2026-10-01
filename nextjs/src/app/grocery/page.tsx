@@ -218,7 +218,7 @@ export default function GroceryPage() {
         open={manualText !== null}
         onClose={() => setManualText(null)}
         title="Copy your list"
-        subtitle="Sharing isn't available here, so copy it from below."
+        subtitle="Sharing isn't available. Copy it here."
       >
         <textarea
           readOnly

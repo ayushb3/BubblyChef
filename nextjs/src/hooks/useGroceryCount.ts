@@ -2,9 +2,10 @@
 
 /**
  * `useGroceryCount()` — how many items are on the user's grocery list (issue
- * #497 / Spec B.5). Exposed for Spec B.4's inbox ("N items on your list → view
- * list"); nothing wires it in yet because the `/grocery` page it would link to
- * is held for the redesign.
+ * #497 / Spec B.5). Exposed for callers that want the count on its own; the
+ * notification bell computes the same number inside `useInboxEntries` from the
+ * pantry rows it already fetches (no second request), and the `/grocery` page
+ * (`useGroceryList`) shows exactly this after its on-open regenerate.
  *
  * The count is what the list shows after a Regenerate: the saved list (checked
  * and manual lines kept) merged with what the pantry says is depleted or
