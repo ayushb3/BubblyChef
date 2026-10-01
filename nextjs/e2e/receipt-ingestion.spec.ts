@@ -269,7 +269,9 @@ test.describe('3b — receipt ingestion (stubbed, CI-safe)', () => {
     // Issue #856. Screenshots only when a verify run asks for them.
     const shots = process.env.VERIFY_SHOTS_DIR;
     const shot = async (name: string) => {
-      if (shots) await page.screenshot({ path: path.join(shots, `${name}.png`) });
+      if (!shots) return;
+      await page.waitForTimeout(900); // let the sheets finish sliding
+      await page.screenshot({ path: path.join(shots, `${name}.png`) });
     };
     let bulkCalls = 0;
 
