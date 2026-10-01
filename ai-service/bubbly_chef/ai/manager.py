@@ -426,6 +426,67 @@ class AIManager:
             configured=bool(self.providers),
         )
 
+    async def video_complete(
+        self,
+        prompt: str,
+        video_url: str,
+        response_schema: type[T] | None = None,
+        temperature: float = 0.3,
+    ) -> T | str:
+        """
+        Generate a completion from a video (public URL) + text prompt.
+
+        Mirrors ``vision_complete``: tries video-capable providers in order and
+        skips the rest (issue #528). Today that is Gemini only; Ollama has no
+        video path, so with Gemini down this raises rather than guessing.
+
+        Raises:
+            NoProviderAvailableError: If no video-capable provider is available.
+        """
+        errors: list[str] = []
+        failure_kinds: list[str] = []
+        start_time = datetime.now()
+
+        for provider in self.providers:
+            if not provider.supports_video or self._gated_out(provider, failure_kinds):
+                continue
+            try:
+                logger.info(
+                    f"AI video request starting on [{provider.name}] "
+                    f"(schema={response_schema is not None})"
+                )
+
+                result = await provider.video_complete(
+                    prompt=prompt,
+                    video_url=video_url,
+                    response_schema=response_schema,
+                    temperature=temperature,
+                )
+                self._current_provider = provider
+                self._clear_failure()
+
+                elapsed = (datetime.now() - start_time).total_seconds()
+                logger.info(f"AI video request completed on [{provider.name}] in {elapsed:.2f}s")
+                return result
+
+            except ProviderUnavailableError as e:
+                errors.append(self._record_failure(provider, e))
+                failure_kinds.append(e.kind)
+                continue
+            except Exception as e:
+                logger.error(
+                    f"AI video [{provider.name}] unexpected error: {e}",
+                    exc_info=True,
+                )
+                errors.append(f"{provider.name}: {e}")
+                continue
+
+        raise NoProviderAvailableError(
+            f"No video-capable provider available. Errors: {errors}",
+            kind=self._finalize_failure(failure_kinds),
+            configured=bool(self.providers),
+        )
+
     async def complete_with_tools(
         self,
         messages: list[dict[str, Any]],

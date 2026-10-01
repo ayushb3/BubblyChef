@@ -377,6 +377,9 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         'thekitchn.com': 'The Kitchn',
         'simplyrecipes.com': 'Simply Recipes',
         'smittenkitchen.com': 'Smitten Kitchen',
+        'youtube.com': 'YouTube',
+        'm.youtube.com': 'YouTube',
+        'youtu.be': 'YouTube',
       }
       platform = PLATFORM_NAMES[hostname] ?? hostname
     } catch {
