@@ -16,10 +16,11 @@ export interface PantryItem {
   name: string
   category: string
   /**
-   * Kitchen location (`fridge` / `freezer` / `pantry` / `counter`). The row
-   * still carries it and the list route still returns it, but nothing in the
-   * UI shows, filters by or edits it any more (issue #397) — it only existed
-   * for the on-hold kitchen scene (PR #124).
+   * Kitchen location (`fridge` / `freezer` / `pantry` / `counter`): the storage
+   * place on the kitchen wall (`lib/kitchen/places.ts` maps it to Fridge /
+   * Freezer / Shelves / Basket). Shown and edited through the storage sheet and
+   * the edit sheet's Place field (issue #749). Issue #397 had removed the field
+   * while the gamified kitchen was on hold.
    */
   location: string
   quantity: number

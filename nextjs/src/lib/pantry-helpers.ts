@@ -10,9 +10,9 @@ export interface PantryItemRow {
   name_normalized: string
   category: string
   /**
-   * Kitchen location (`fridge` / `freezer` / `pantry` / `counter`). Still a
-   * column and still returned, but no longer surfaced or editable anywhere in
-   * the UI (issue #397) — it fed the on-hold kitchen scene (PR #124).
+   * Kitchen location (`fridge` / `freezer` / `pantry` / `counter`): which
+   * storage place on the kitchen wall the row is in (`lib/kitchen/places.ts`;
+   * the storage sheet and the edit sheet's Place field, issue #749).
    */
   location: string
   quantity: number

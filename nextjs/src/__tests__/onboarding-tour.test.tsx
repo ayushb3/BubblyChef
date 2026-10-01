@@ -54,7 +54,7 @@ beforeAll(() => {
     }),
   })
   // jsdom does not implement scrollIntoView; measureTarget calls it on
-  // non-fixed targets (e.g. the quick-actions step).
+  // non-fixed targets (e.g. the hero step).
   Element.prototype.scrollIntoView = jest.fn()
 })
 
@@ -75,10 +75,9 @@ describe('TOUR_STEPS definitions', () => {
     }
   })
 
-  it('6 steps defined with correct ids in order', () => {
+  it('5 steps defined with correct ids in order', () => {
     expect(TOUR_STEPS.map((s) => s.id)).toEqual([
       'hero',
-      'quick-actions',
       'nav-pantry',
       'nav-chat',
       'nav-recipes',
@@ -90,7 +89,7 @@ describe('TOUR_STEPS definitions', () => {
     const above = TOUR_STEPS.filter((s) => s.placement === 'above').map((s) => s.id)
     const below = TOUR_STEPS.filter((s) => s.placement === 'below').map((s) => s.id)
     expect(above).toEqual(['nav-pantry', 'nav-chat', 'nav-recipes'])
-    expect(below).toEqual(['hero', 'quick-actions', 'profile'])
+    expect(below).toEqual(['hero', 'profile'])
   })
 })
 
@@ -162,7 +161,7 @@ describe('TourOverlay: auto-skip missing target', () => {
           <div data-testid="is-open">{String(isOpen)}</div>
           <div data-testid="step-index">{stepIndex}</div>
           {/* step-1 target present so the auto-skip stops at index 1 */}
-          <div data-tour="quick-actions" />
+          <div data-tour={TOUR_STEPS[1].id} />
         </div>
       )
     }
@@ -332,9 +331,9 @@ describe('TourOverlay: positioning', () => {
   })
 
   it("flips a 'below' card above its target when it wouldn't fit on a short screen", async () => {
-    // ~iPhone SE in Safari: quick-actions near the bottom of a 560px viewport.
+    // ~iPhone SE in Safari: the hero card near the bottom of a 560px viewport.
     Object.assign(window, { innerHeight: 560 })
-    boxes['quick-actions'] = { x: 16, y: 380, width: 343, height: 107 }
+    boxes['hero'] = { x: 16, y: 380, width: 343, height: 107 }
     await act(async () => {
       render(
         <TourProvider>
@@ -343,13 +342,9 @@ describe('TourOverlay: positioning', () => {
         </TourProvider>,
       )
     })
-    await settle(50)
-    await act(async () => {
-      screen.getByTestId('next').click()
-    })
     await settle(300)
     const dialog = screen.getByRole('dialog', {
-      name: `Onboarding tour step 2 of ${TOUR_STEPS.length}`,
+      name: `Onboarding tour step 1 of ${TOUR_STEPS.length}`,
     })
     // Below would start at 380+107+8+8 = 503 and run off a 560px screen.
     expect(dialog.style.top).toBe('')

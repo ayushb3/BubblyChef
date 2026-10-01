@@ -11,10 +11,10 @@
  *
  * Keys match the art prompt pack (`art/kitchen/PROMPTS.md` on branch
  * `art/v1-assets`, issue #527): `pastel`, `cozy_cottage`, `night_kitchen`,
- * `seasonal`. `background` is a CSS gradient placeholder today, built from
- * that pack's per-theme palette notes; it can point at
- * `/kitchen/themes/<key>.png` once the real art lands without changing this
- * module's shape.
+ * `seasonal`. `background` is a CSS gradient placeholder from that pack's
+ * per-theme palette notes. Since the pixel wall (#748) the scene no longer
+ * paints it: the wall is drawn in code and a theme recolours it through its
+ * `wall` palette. `background` stays for any caller that wants a swatch.
  *
  * Unlocks are derived from the lifetime bubbles balance (#520) — no table,
  * no migration (`unlockedThemes`/`isThemeUnlocked`). The *selected* theme is
@@ -24,6 +24,35 @@
  * lives (`user_metadata.username`, read in `app/page.tsx`) — this works for
  * guests too, who have no `user_profiles` row.
  */
+
+/**
+ * The wall's palette (issue #748). Every colour of the pixel kitchen wall that
+ * a theme recolours; the food, wood and steel in the scene keep their own
+ * colours. Values are CSS colours (hex or `var(--color-*)`): the scene writes
+ * them to `--wall-*` custom properties, so a theme change repaints the wall and
+ * touches nothing else, and decorations stay exactly where they are.
+ */
+export interface WallPalette {
+  /** The wall behind everything. */
+  base: string
+  /** The thin vertical stripes. */
+  stripe: string
+  /** Baseboard, lamp shade and curtain folds. */
+  trim: string
+  /** Outlines and the darkest pixels. */
+  ink: string
+  /** Curtains and cabinet fronts. */
+  soft: string
+  /** The fridge body. */
+  appliance: string
+  /** The fridge's shaded side. */
+  applianceDark: string
+  /** The floor and its checker tiles. */
+  floor: string
+  floorTile: string
+  /** The window glass. */
+  glass: string
+}
 
 export interface KitchenTheme {
   key: string
@@ -41,6 +70,8 @@ export interface KitchenTheme {
     wall: string
     accent: string
   }
+  /** The pixel wall's palette (#748). */
+  wall: WallPalette
   /** Shown in the unlock toast and the picker's locked rows. */
   emoji: string
 }
@@ -52,6 +83,20 @@ export const KITCHEN_THEMES: KitchenTheme[] = [
     threshold: 0,
     background: 'linear-gradient(160deg, #fff9f5 0%, #ffb5c5 55%, #c9b5e8 100%)',
     palette: { wall: '#fff9f5', accent: '#ffb5c5' },
+    // The default wall is the board's own: it follows the app's theme
+    // variables, so the Sakura / Mint / ... app themes still tint it.
+    wall: {
+      base: 'var(--color-border)',
+      stripe: 'var(--color-bg)',
+      trim: 'var(--color-primary-dark)',
+      ink: 'var(--color-text)',
+      soft: 'var(--color-primary)',
+      appliance: 'var(--color-accent)',
+      applianceDark: 'var(--color-accent-dark)',
+      floor: '#f3dcc4',
+      floorTile: '#ead0b4',
+      glass: '#cfe8ff',
+    },
     emoji: '🌸',
   },
   {
@@ -60,6 +105,18 @@ export const KITCHEN_THEMES: KitchenTheme[] = [
     threshold: 500,
     background: 'linear-gradient(160deg, #fff3e0 0%, #ffdab3 55%, #ff9aa2 100%)',
     palette: { wall: '#ffdab3', accent: '#ff9aa2' },
+    wall: {
+      base: '#f6d3ab',
+      stripe: '#fff0dc',
+      trim: '#e0707a',
+      ink: '#5a3d32',
+      soft: '#ff9aa2',
+      appliance: '#d3e6c3',
+      applianceDark: '#9fc48c',
+      floor: '#e8cba2',
+      floorTile: '#dcbb8f',
+      glass: '#cfe8ff',
+    },
     emoji: '🏡',
   },
   {
@@ -68,6 +125,18 @@ export const KITCHEN_THEMES: KitchenTheme[] = [
     threshold: 900,
     background: 'linear-gradient(160deg, #2e2a4a 0%, #4b3f72 55%, #c9b5e8 100%)',
     palette: { wall: '#4b3f72', accent: '#c9b5e8' },
+    wall: {
+      base: '#4b3f72',
+      stripe: '#584b83',
+      trim: '#9a82d6',
+      ink: '#1f1a33',
+      soft: '#7a68b0',
+      appliance: '#8fa0dc',
+      applianceDark: '#6577bd',
+      floor: '#3b3460',
+      floorTile: '#332c52',
+      glass: '#2f2b5e',
+    },
     emoji: '🌙',
   },
   {
@@ -76,6 +145,18 @@ export const KITCHEN_THEMES: KitchenTheme[] = [
     threshold: 1400,
     background: 'linear-gradient(160deg, #ffffff 0%, #a8d8f0 55%, #c9b5e8 100%)',
     palette: { wall: '#a8d8f0', accent: '#c9b5e8' },
+    wall: {
+      base: '#a8d8f0',
+      stripe: '#d3edfa',
+      trim: '#8f7fd0',
+      ink: '#3d4768',
+      soft: '#c9b5e8',
+      appliance: '#eaf4fb',
+      applianceDark: '#9cc7e3',
+      floor: '#e7ecf3',
+      floorTile: '#d8e0ea',
+      glass: '#eaf7ff',
+    },
     emoji: '❄️',
   },
 ]
