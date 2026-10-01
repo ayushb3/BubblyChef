@@ -80,12 +80,14 @@ def _as_line(raw: Any) -> dict[str, Any]:
         return {
             "name": str(parsed.get("name") or "").strip(),
             "quantity": parsed.get("quantity"),
+            "quantity_max": parsed.get("quantity_max"),
             "unit": parsed.get("unit"),
         }
     if isinstance(raw, dict):
         return {
             "name": str(raw.get("name") or "").strip(),
             "quantity": raw.get("quantity"),
+            "quantity_max": raw.get("quantity_max"),
             "unit": raw.get("unit"),
         }
     return {"name": "", "quantity": None, "unit": None}

@@ -5,12 +5,18 @@ pantry row's package unit (loaf, bunch, head, item) counts packages containing
 an unknown number of those pieces. The two used to compare as bare counts,
 which reported a shortfall and deducted the entire package. They now resolve to
 status="imprecise": the ingredient is satisfied and nothing is deducted.
+
+Where the food has a typical weight for both the piece and the package (garlic: a
+5 g clove, a ~50 g head) they now convert instead, approximately; see
+docs/adr/0005. Everything without that figure keeps the behaviour below.
 """
 
 from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+
+import pytest
 
 from bubbly_chef.domain.normalizer import (
     PACKAGE_UNITS,
@@ -92,14 +98,20 @@ class TestImpreciseMatches:
         assert proposal.matches[0].status == "imprecise"
         assert proposal.matches[0].deduct_qty is None
 
-    def test_cloves_against_a_head_deducts_nothing(self) -> None:
+    def test_cloves_against_a_head_convert_through_the_typical_weights(self) -> None:
+        """Superseded for garlic: a head is about ten 5 g cloves, so 2 cloves are 0.2 of
+        a head, deducted and flagged approximate. Bread and basil below still have no
+        figure for the package and stay imprecise (docs/adr/0005)."""
         pantry = [_make_item("garlic", 1.0, "head", qty_base=1.0, unit_base="count")]
         ingredients = [{"name": "garlic", "quantity": 2.0, "unit": "cloves"}]
 
         proposal = match_ingredients(RECIPE_ID, RECIPE_TITLE, ingredients, pantry)
 
-        assert proposal.matches[0].status == "imprecise"
-        assert proposal.matches[0].deduct_qty is None
+        match = proposal.matches[0]
+        assert match.status == "ready"
+        assert match.deduct_qty == pytest.approx(0.2)
+        assert match.base_unit == "count"
+        assert match.approximate is True
 
     def test_imprecise_is_not_a_unit_conflict_and_not_missing(self) -> None:
         pantry = [_make_item("bread", 1.0, "loaf", qty_base=1.0, unit_base="count")]

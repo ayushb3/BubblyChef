@@ -18,6 +18,7 @@ from supabase import Client, create_client
 from bubbly_chef.config import settings
 from bubbly_chef.domain.lots import fresh_first_key, lot_base, lot_food_key, soonest_first_key
 from bubbly_chef.domain.normalizer import (
+    effective_unit,
     normalize_food_name,
     normalize_to_base_unit,
     normalize_unit,
@@ -1392,7 +1393,10 @@ class SupabaseRepository:
                 # than the one it was computed from.
                 name=normalize_food_name(str(row.get("name") or "")).lower().strip(),
                 quantity=current_qty,
-                unit=str(row.get("unit") or ""),
+                # A size the name states ("tomatoes 28 oz" as "1 can") is part of
+                # the unit, exactly as lots.lot_base reads it, so the deduction is
+                # in the same base the matcher worked out.
+                unit=effective_unit(str(row.get("name") or ""), str(row.get("unit") or "")),
             )
             if derived_base is not None and derived_unit is not None:
                 # Persist the derived values alongside the deduction so the row

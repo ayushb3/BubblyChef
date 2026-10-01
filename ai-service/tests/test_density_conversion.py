@@ -69,7 +69,7 @@ class TestPieceWeights:
     """piece_weight_g() only answers for (unit, ingredient) pairs it knows."""
 
     def test_known_pairs(self) -> None:
-        assert piece_weight_g("clove", "garlic") == 3.0
+        assert piece_weight_g("clove", "garlic") == 5.0
         assert piece_weight_g("stick", "butter") == 113.0
         assert piece_weight_g("slice", "bread") == 28.0
 
@@ -195,7 +195,7 @@ class TestPieceUnitConversion:
 
     def test_clove_of_garlic_to_grams(self) -> None:
         qty, unit = normalize_to_base_unit("garlic", 2.0, "cloves", target_unit="g")
-        assert (qty, unit) == (6.0, "g")
+        assert (qty, unit) == (10.0, "g")
 
     def test_slices_of_bread_to_grams(self) -> None:
         qty, unit = normalize_to_base_unit("bread", 4.0, "slices", target_unit="g")
