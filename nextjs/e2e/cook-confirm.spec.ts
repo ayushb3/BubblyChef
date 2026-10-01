@@ -180,14 +180,15 @@ async function walkGuidedCookFlowToDeduct(page, instructionCount: number) {
 /**
  * Opens the recipe book and the cook modal.
  *
- * RecipeBook renders the cook button twice (the mobile and desktop layouts both
- * mount), so this scopes to the first — the assertion is "the cook affordance is
- * reachable", not "there is exactly one".
+ * The Recipes tab lists recipe cards (issue #801); the cook button is on the
+ * opened recipe, so open the card first.
  */
 async function openCookModal(page) {
   await page.goto('/recipes');
   await expect(page.getByText('E2E Rice Bowl').first()).toBeVisible({ timeout: 10_000 });
-  await page.getByRole('button', { name: 'Cook this recipe' }).first().click();
+  // The Recipes tab lists recipe cards (issue #801); open one to reach its cook button.
+  await page.getByRole('button', { name: 'Open recipe: E2E Rice Bowl' }).click();
+  await page.getByRole('button', { name: 'Cook this recipe' }).click();
   await walkGuidedCookFlowToDeduct(page, STUB_RECIPE.instructions.length);
 }
 
@@ -408,7 +409,8 @@ test.describe('4a — cook confirm (live, opt-in)', () => {
     try {
       await page.goto('/recipes');
       await expect(page.getByText('E2E Deduction Probe').first()).toBeVisible({ timeout: 15_000 });
-      await page.getByRole('button', { name: 'Cook this recipe' }).first().click();
+      await page.getByRole('button', { name: 'Open recipe: E2E Deduction Probe' }).click();
+      await page.getByRole('button', { name: 'Cook this recipe' }).click();
 
       // Issue #263 rewired "Cook this recipe" to open GuidedCookFlow first —
       // walk it to CookModal the same way the stubbed (4b) suite does.

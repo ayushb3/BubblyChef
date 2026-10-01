@@ -15,6 +15,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from '../fixtures/auth';
 import { AI_UNAVAILABLE_COPY, assertChatReplyIsNotAiUnavailable } from '../support/ai-unavailable';
+import { findItemInStorageSheet } from '../support/storage-sheet';
 
 // ---------------------------------------------------------------------------
 // (a) + (b) + (d) — sign-in reuse, pantry loads, recipes loads
@@ -49,42 +50,46 @@ test.describe('smoke — navigation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// (c) — add a pantry item via the real UI, then delete it
+// (c) — add a pantry item via the real UI, find it in the storage sheet, then delete it
 // ---------------------------------------------------------------------------
 
 test.describe('smoke — pantry add/delete', () => {
-  test('add a pantry item through the Manual tab, then delete it', async ({ page }) => {
+  test('add a pantry item through the Manual tab, find it in the storage sheet, then delete it', async ({ page }) => {
     // Clearly-marked, timestamp-unique name — self-cleaning even if a run
     // gets interrupted before the delete step, a leftover is unmistakably a
     // smoke-test artifact and safe to remove by hand.
     const itemName = `smoke-${Date.now()}`;
 
     // ?add=type opens the Add sheet straight to the manual-entry tab (mirrors
-    // ?add=scan in receipt-ingestion.spec.ts — see HeroHome's `add`
-    // param handling; /pantry?add=type redirects to /?add=type).
-    await page.goto('/pantry?add=type');
+    // ?add=scan in receipt-ingestion.spec.ts — see HeroHome's `add` param
+    // handling). Straight to `/`: /pantry only redirects here (#750).
+    await page.goto('/?add=type');
     await expect(page.getByRole('heading', { name: 'Add to Pantry' })).toBeVisible();
 
     await page.getByLabel('Item name').fill(itemName);
     await page.getByRole('button', { name: /Add 1 Item/ }).click();
 
-    // Sheet closes on success.
+    // Sheet closes on success (after the short "Added!" celebration).
     await expect(page.getByRole('heading', { name: 'Add to Pantry' })).not.toBeVisible({ timeout: 10_000 });
 
-    // Item shows up in the grid. titleCase() capitalizes the leading letter,
-    // so match case-insensitively rather than assuming exact casing.
-    const itemCard = page.getByText(new RegExp(itemName, 'i'));
-    await expect(itemCard).toBeVisible({ timeout: 10_000 });
+    // The pantry grid is gone (#750): the item lives in a storage sheet. Open
+    // one and search every place for it — a freehand add lands in a default
+    // place this test should not depend on.
+    const itemRow = await findItemInStorageSheet(page, itemName);
+    await expect(itemRow).toBeVisible({ timeout: 10_000 });
 
-    // Delete it: clicking the card opens the single-item edit modal, which has
-    // a two-step delete confirm (AddItemModal.tsx).
-    await itemCard.click();
+    // Delete it: tapping the row opens the single-item edit sheet, which has a
+    // two-step delete confirm (AddItemModal.tsx).
+    await itemRow.click();
     await expect(page.getByRole('heading', { name: 'Edit Item' })).toBeVisible();
     await page.getByRole('button', { name: 'Delete', exact: true }).click();
     await page.getByRole('button', { name: 'Confirm Delete' }).click();
 
+    // The edit sheet closes and the storage sheet comes back with its search
+    // text still in place; the row is gone from it.
     await expect(page.getByRole('heading', { name: 'Edit Item' })).not.toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(new RegExp(itemName, 'i'))).not.toBeVisible({ timeout: 10_000 });
+    await expect(page.getByPlaceholder(/^Search all/)).toBeVisible({ timeout: 10_000 });
+    await expect(itemRow).toHaveCount(0, { timeout: 10_000 });
   });
 });
 

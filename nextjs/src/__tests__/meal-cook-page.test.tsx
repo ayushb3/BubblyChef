@@ -1106,6 +1106,34 @@ describe('MealCookPage — Ask Bubbles (issue #654 PR B, §3/§6)', () => {
     expect(streamChatMessageMock.mock.calls[1][0].conversation_id).toBe(conversationId)
   })
 
+  it('sends the stored planning constraints of the meal as context.meal_constraints (#814)', async () => {
+    const constraints = {
+      kitchen_limits: ['one pan'],
+      exclusive_tags: ['pan'],
+      recipe_constraints: { dietary: ['dairy-free'], excluded_ingredients: ['peanuts'] },
+    }
+    const meal = baseMeal({
+      constraints,
+      dishes: [{ role: 'main', position: 0, recipe: PASTA_WITH_INGREDIENTS }],
+    })
+    fetchMeal.mockResolvedValue(meal)
+    seedSession(Date.now())
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Boil pasta')).toBeInTheDocument())
+    act(() => {
+      screen.getByTestId('meal-now-card-ask-bubbles').click()
+    })
+
+    queueChatResponse(baseChatResponse())
+    act(() => {
+      sendOverlayMessage('can I use butter?')
+    })
+    const request = streamChatMessageMock.mock.calls[0][0]
+    expect(request.context.meal_constraints).toEqual(constraints)
+    // The cook's own conversation: never the meal's planning conversation id.
+    expect(request.conversation_id).not.toBe(meal.id)
+  })
+
   it('applying an amendment then asking again sends the amended list', async () => {
     const meal = baseMeal({ dishes: [{ role: 'main', position: 0, recipe: PASTA_WITH_INGREDIENTS }] })
     fetchMeal.mockResolvedValue(meal)

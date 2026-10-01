@@ -240,6 +240,7 @@ describe('one PixelSheet (source guard)', () => {
       .map(rel)
       .sort()
     expect(hits).toEqual([
+      'kitchen/PutAwayFlight.tsx', // pointer-events-none effects layer for the hop animation (#754), never a modal
       'onboarding/TourOverlay.tsx', // spotlight dim + ring (the cut-out is the tour's own)
       'recipes/GuidedCookFlow.tsx', // full-screen cook surface, not a sheet
       'ui/PixelSheet.tsx',

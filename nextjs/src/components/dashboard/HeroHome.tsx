@@ -37,6 +37,11 @@ import PantryAddSheet, { type PantryAddTab } from '@/components/pantry/PantryAdd
 import PixelBubbles from '@/components/kitchen/PixelBubbles'
 import { sceneLabel } from '@/lib/kitchen/bubbles-spot'
 import { useBubblesSpot } from '@/hooks/useBubblesSpot'
+import PutAwaySheet from '@/components/kitchen/PutAwaySheet'
+import PutAwayFlight, { type PutAwayHop } from '@/components/kitchen/PutAwayFlight'
+import SpringButton from '@/components/ui/SpringButton'
+import { usePendingPutAway } from '@/hooks/usePendingPutAway'
+import { incomingByPlace, pendingLineCount } from '@/lib/kitchen/pending-putaway'
 import KitchenHeader from '@/components/kitchen/KitchenHeader'
 import UnlockOffer from '@/components/kitchen/UnlockOffer'
 import KitchenThemePicker from '@/components/kitchen/KitchenThemePicker'
@@ -132,10 +137,18 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     items: null,
   })
 
+  // After a successful put-away (#754) the items hop from the sheet to their
+  // places. While they do, the tags read the running +N (`landed`, ticking up as
+  // each lands) and the real counts are held back: they are re-read when it ends.
+  const [flightHops, setFlightHops] = useState<PutAwayHop[] | null>(null)
+  const [landed, setLanded] = useState<Record<PlaceKey, number> | null>(null)
+
   // The pantry, dashboard and expiring reads. `reload` runs it again behind an
   // open sheet (an edit or an add changed the rows): the skeletons are the first
   // load's only, so the home does not flash while the counts catch up.
   const [reloadTick, setReloadTick] = useState(0)
+  // Set when the flight ends: the next read drops the running +N (see `fetchAll`).
+  const settleLanded = useRef(false)
   const reload = useCallback(() => setReloadTick((n) => n + 1), [])
 
   useEffect(() => {
@@ -200,6 +213,13 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         // silent
       } finally {
         setLoading(false)
+        // The put-away flight is over and its counts are now re-read (#754):
+        // only now do the tags drop the running +N for the real counts, so they
+        // never flash the old numbers in between.
+        if (settleLanded.current) {
+          settleLanded.current = false
+          setLanded(null)
+        }
       }
     }
     fetchAll()
@@ -241,11 +261,32 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
   // Kitchen scene (#521): `decorations` rows use `name`/`decoration_type`;
   // KitchenScene expects `id`/`slot`. The balance is `null` until `/api/bubbles`
   // answers, so the header hides its counter rather than flashing a `0`.
-  // The pixel Bubbles (#752): the door while a scan or put-away is open (nothing
-  // on home opens one yet: the put-away sheet wires `scanOpen`), the stove while
-  // a cook is on record in storage, the fridge when food is going off, else the
-  // stove.
-  const { spot: bubblesSpot, cooking } = useBubblesSpot({ places })
+  // Put-away (#753): a parsed scan waits in local storage until it is put away
+  // or discarded. While one does, shopping is headed to the places (their +N
+  // badges) and Bubbles stands at the door. The sheet opens over the scene when
+  // home mounts with one pending (a reload) and whenever a new scan is saved,
+  // from wherever it was scanned (the add sheet saves it and closes itself, so no
+  // mount point can forget the hand-off). Edits keep `savedAt`, so they never
+  // reopen a sheet the user closed.
+  const pending = usePendingPutAway()
+  const incoming = landed ?? (pending ? incomingByPlace(pending) : null)
+  const [putAwayOpen, setPutAwayOpen] = useState(false)
+  const putAwayOfferedAt = useRef<string | null>(null)
+  const pendingSavedAt = pending?.savedAt ?? null
+  useEffect(() => {
+    if (pendingSavedAt && pendingSavedAt !== putAwayOfferedAt.current) {
+      putAwayOfferedAt.current = pendingSavedAt
+      setPutAwayOpen(true)
+    } else if (!pendingSavedAt) {
+      putAwayOfferedAt.current = null
+      setPutAwayOpen(false)
+    }
+  }, [pendingSavedAt])
+
+  // The pixel Bubbles (#752): the door while a scan or put-away is open, the
+  // stove while a cook is on record in storage, the fridge when food is going
+  // off, else the stove.
+  const { spot: bubblesSpot, cooking } = useBubblesSpot({ places, scanOpen: pending !== null })
   const { data: decorationsData, isLoading: decorationsLoading } = useDecorations()
   const { data: bubblesData } = useBubbles()
   const balance = bubblesData?.balance ?? null
@@ -425,7 +466,51 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         planDinnerHref={planDinnerHref()}
         bubblesLayer={<PixelBubbles spot={bubblesSpot} cooking={cooking} />}
         sceneLabel={sceneLabel(bubblesSpot, cooking)}
+        incoming={incoming}
+        bounce={landed}
       />
+
+      {/* A scan waiting to be put away, with its sheet closed: the way back in
+          until the Bubbles card (#755) offers it. */}
+      {pending && !putAwayOpen && (
+        <div
+          className="flex min-h-11 items-center justify-between gap-3 px-4 pt-3"
+          data-testid="put-away-waiting"
+        >
+          <p className="min-w-0 text-sm font-bold text-[color:var(--color-text)] tabular-nums">
+            Shopping is waiting at the door
+            <span className="block text-xs">
+              {pendingLineCount(pending)} {pendingLineCount(pending) === 1 ? 'item' : 'items'}
+            </span>
+          </p>
+          <SpringButton size="sm" onClick={() => setPutAwayOpen(true)}>
+            Put it away
+          </SpringButton>
+        </div>
+      )}
+
+      <PutAwaySheet
+        open={putAwayOpen}
+        record={pending}
+        onClose={() => setPutAwayOpen(false)}
+        onPutAway={(_count, hops) => {
+          // The write succeeded: play the hop into place, then refresh the counts.
+          setLanded(null)
+          setFlightHops(hops)
+        }}
+      />
+      {flightHops && (
+        <PutAwayFlight
+          hops={flightHops}
+          onLanded={setLanded}
+          onDone={() => {
+            // Re-read the counts; the +N stays until they are in (see `fetchAll`).
+            settleLanded.current = true
+            setFlightHops(null)
+            pantryChanged()
+          }}
+        />
+      )}
 
       {/* Under the wall: the pantry count on the left, the streak (#524) and the
           theme picker trigger (#523) on the right. */}
