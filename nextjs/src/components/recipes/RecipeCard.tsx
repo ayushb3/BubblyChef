@@ -7,7 +7,7 @@
  * board: a 2 px ink frame, 16 px radius, a pastel header band in a meal, ink text
  * on every fill, Quicksand titles, 44 px touch targets.
  *
- * One component, four variants, chosen by `variant`. Each variant's props are
+ * One component, five variants, chosen by `variant`. Each variant's props are
  * the old card's props, so the call sites change by one word:
  *
  * - `option`  (chat: three dinners) `option`, `onSelect`, `disabled`, `index`.
@@ -22,6 +22,10 @@
  * - `compact` (the saved-meal row, and the meal card in chat) `title`,
  *   `dishes`, `servings`, `toBuy`, `href` or `onOpen`, optionally `onSave`.
  *
+ * - `saved`   (the library's recipe row, issue #801) `title`, `thumbnailUrl`,
+ *   `minutes`, `servings`, `cuisine`, `difficulty`, `tags`, `favorite`,
+ *   `onOpen`, `onToggleFavorite`, `onEdit`, `onDelete`, `busy`.
+ *
  * Zero sides is a first-class state: an option with only a main reads "no side",
  * and a dish card never assumes a side exists.
  */
@@ -31,14 +35,16 @@ import ChatVariant, { type ChatCardProps } from './recipe-card/ChatVariant'
 import CompactVariant, { type CompactCardProps } from './recipe-card/CompactVariant'
 import DishVariant, { type DishCardProps } from './recipe-card/DishVariant'
 import OptionVariant, { type OptionCardProps } from './recipe-card/OptionVariant'
+import SavedVariant, { type SavedCardProps } from './recipe-card/SavedVariant'
 
 export type RecipeCardProps =
   | ({ variant: 'option' } & OptionCardProps)
   | ({ variant: 'dish' } & DishCardProps)
   | ({ variant: 'chat' } & ChatCardProps)
   | ({ variant: 'compact' } & CompactCardProps)
+  | ({ variant: 'saved' } & SavedCardProps)
 
-export type { ChatCardProps, CompactCardProps, DishCardProps, OptionCardProps }
+export type { ChatCardProps, CompactCardProps, DishCardProps, OptionCardProps, SavedCardProps }
 
 export default function RecipeCard(props: RecipeCardProps) {
   // `variant` rides along in the spread; the variants ignore it.
@@ -51,6 +57,8 @@ export default function RecipeCard(props: RecipeCardProps) {
       return <ChatVariant {...props} />
     case 'compact':
       return <CompactVariant {...props} />
+    case 'saved':
+      return <SavedVariant {...props} />
   }
 }
 
