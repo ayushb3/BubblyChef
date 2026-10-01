@@ -22,6 +22,17 @@ class UserProfile(BaseModel):
         default_factory=list,
         description="Dietary preferences (e.g., vegetarian, gluten-free, vegan)",
     )
+    allergies: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Allergies (e.g. peanut, shellfish): a hard 'never suggest' (issue #500). "
+            "Never overridden by a message; enforced by a post-generation guard."
+        ),
+    )
+    disliked_ingredients: list[str] = Field(
+        default_factory=list,
+        description="Ingredients to leave out of suggestions unless a message asks for one (#500)",
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -47,6 +58,8 @@ class CreateUserProfileRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=100)
     avatar_url: str | None = None
     dietary_preferences: list[str] = Field(default_factory=list)
+    allergies: list[str] = Field(default_factory=list)
+    disliked_ingredients: list[str] = Field(default_factory=list)
 
 
 class UpdateUserProfileRequest(BaseModel):
@@ -57,3 +70,5 @@ class UpdateUserProfileRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=100)
     avatar_url: str | None = None
     dietary_preferences: list[str] | None = None
+    allergies: list[str] | None = None
+    disliked_ingredients: list[str] | None = None
