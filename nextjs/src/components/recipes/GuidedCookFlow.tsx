@@ -17,20 +17,21 @@
  *  - Step ⏱ chips (issue #495 / Spec B.3) — real, functional timers replacing
  *    the old non-functional placeholder.
  *
- * Wiring to Spec 0 session state (issue #410):
- *  The Ask-Bubbles overlay sends a pre-canned context message over the real
- *  chat stream but does NOT pin the recipe to a persisted conversation here —
- *  the backend does read a structured `ChatRequest.context` field
- *  (`models/requests.py`) and the streaming route passes it through; this
- *  single-recipe cook flow just chooses to send none, unlike the meal cook
- *  page's pinned overlay (issue #654 PR B). Full session-pinned wiring for
- *  *this* flow is stubbed with TODO(#410) comments below.
+ * Ask Bubbles context (issues #410, #814):
+ *  The overlay sends the step-framed question over the real chat stream, plus
+ *  `context.cooking_recipe` (this recipe's ingredient lines) and one
+ *  `conversation_id` minted per cook session, so the model sees the dish and
+ *  remembers earlier questions even if the overlay is closed and reopened. It
+ *  is deliberately not the meal cook's `pinned` mode: that mode renders
+ *  amendment cards, and a single recipe has no ingredient store to apply one to.
  */
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import BubblesMascot from '@/components/ui/BubblesMascot'
+import PixelPanel from '@/components/ui/PixelPanel'
+import SpringButton from '@/components/ui/SpringButton'
 import { ingredientLabel } from '@/lib/recipe-helpers'
 import { useMotionConfig } from '@/lib/motion'
 import { ensureSteps } from '@/lib/api/recipes'
@@ -215,13 +216,11 @@ function ProgressDots({ steps, idx }: { steps: CookStep[]; idx: number }) {
 
 function DoneState({ recipe, onExit, onFinish }: { recipe: Recipe; onExit: () => void; onFinish?: () => void }) {
   return (
-    <div
-      className="font-sans rounded-3xl text-center py-8 px-6"
-      style={{
-        background: 'var(--color-surface)',
-        border: '1px solid var(--color-border)',
-        boxShadow: 'var(--shadow-soft)',
-      }}
+    // Issue #812: same PixelPanel + keycaps as the meal cook's finish screen.
+    <PixelPanel
+      as="div"
+      contentClassName="px-6 py-8 text-center"
+      className="font-sans"
       data-testid="guided-cook-done"
     >
       <div className="flex justify-center mb-3">
@@ -239,29 +238,22 @@ function DoneState({ recipe, onExit, onFinish }: { recipe: Recipe; onExit: () =>
       {/* Primary action: hand off to the CookModal deduction flow so the
           guided path ends where the pantry gets updated (issue #263). Falls
           back to a plain exit when no deduction handoff is wired. */}
-      {onFinish && (
-        <button
-          onClick={onFinish}
-          className="rounded-full px-6 py-2.5 font-bold text-sm active:scale-95 transition-transform mb-3 w-full"
-          style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
-          data-testid="guided-cook-deduct"
+      <div className="flex flex-col gap-3">
+        {onFinish && (
+          <SpringButton variant="primary" fullWidth onClick={onFinish} data-testid="guided-cook-deduct">
+            Update my pantry 🧺
+          </SpringButton>
+        )}
+        <SpringButton
+          variant={onFinish ? 'secondary' : 'primary'}
+          fullWidth
+          onClick={onExit}
+          data-testid="guided-cook-exit"
         >
-          Update my pantry 🧺
-        </button>
-      )}
-      <button
-        onClick={onExit}
-        className="rounded-full px-6 py-2.5 font-bold text-sm active:scale-95 transition-transform"
-        style={
-          onFinish
-            ? { background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }
-            : { background: 'var(--color-primary)', color: 'var(--color-text)' }
-        }
-        data-testid="guided-cook-exit"
-      >
-        {onFinish ? 'Skip for now' : 'Back to recipe'}
-      </button>
-    </div>
+          {onFinish ? 'Skip for now' : 'Back to recipe'}
+        </SpringButton>
+      </div>
+    </PixelPanel>
   )
 }
 
@@ -309,6 +301,9 @@ export default function GuidedCookFlow({
   const { springs } = useMotionConfig()
   const [idx, setIdx] = useState<number>(initialStep ?? PREP)
   const [chatOpen, setChatOpen] = useState(false)
+  // One conversation per cook session (issue #814): minted once, so Ask Bubbles
+  // keeps its memory across open/close. Lazy initializer, not a render-time ref write.
+  const [askConversationId] = useState(() => crypto.randomUUID())
   // True from the moment Ask Bubbles opens until its exit animation finishes
   // (AnimatePresence `onExitComplete`), so the dock stays under the fading
   // overlay instead of flashing over it.
@@ -656,6 +651,12 @@ export default function GuidedCookFlow({
               stepText={step.text}
               recipeTitle={recipe.title}
               onClose={() => setChatOpen(false)}
+              conversationId={askConversationId}
+              cookContext={{
+                recipe_id: recipe.id,
+                title: recipe.title,
+                ingredients: recipe.ingredients.map((ing) => ingredientLabel(ing)).filter(Boolean),
+              }}
             />
           </motion.div>
         )}

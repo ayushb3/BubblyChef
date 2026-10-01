@@ -135,6 +135,10 @@ COOKING_RECIPE_KEY = "cooking_recipe"
 # the DB. Avoids the client fetch/send race that could pin an empty context.
 COOKING_RECIPE_ID_KEY = "cooking_recipe_id"
 
+# `cooking_recipe.amendable: false` (issue #814) opts a pin out of amendment
+# detection. Absent or any other value keeps the default: detection runs.
+COOKING_RECIPE_AMENDABLE_KEY = "amendable"
+
 # Ingredient lines kept out of the prompt beyond this — long imported recipes
 # would otherwise crowd out the pantry and history context.
 MAX_PROMPT_INGREDIENTS = 25
@@ -191,11 +195,77 @@ def normalize_cooking_recipe(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# A meal cook (issue #814) sends the meal's stored planning constraints here, so a
+# "no dairy, my kid is allergic" said while planning still applies mid-cook.
+MEAL_CONSTRAINTS_KEY = "meal_constraints"
+
+# Caps for the client-supplied constraints: a handful of short phrases is all the
+# prompt needs, and this is untrusted input going into a prompt.
+_MAX_CONSTRAINT_ITEMS = 12
+_MAX_CONSTRAINT_ITEM_CHARS = 60
+
+
+def _constraint_phrases(raw: Any) -> list[str]:
+    """Return the short, non-empty string items of a client-sent list (capped)."""
+    if not isinstance(raw, list):
+        return []
+    phrases = [
+        item.strip()[:_MAX_CONSTRAINT_ITEM_CHARS]
+        for item in raw
+        if isinstance(item, str) and item.strip()
+    ]
+    return phrases[:_MAX_CONSTRAINT_ITEMS]
+
+
+def format_meal_constraints_context(state: WorkflowState) -> str:
+    """Format a meal's planning constraints as read-only background for a cook turn.
+
+    Reads `context["meal_constraints"]` -- the meal's stored `MealConstraints`
+    (`{kitchen_limits, recipe_constraints}`), sent by the meal cook page. Only a
+    whitelist of fields is rendered (diet, excluded ingredients, skill, time,
+    kitchen limits), each coerced and capped. The cook Q&A is never merged into
+    the planning conversation; this is a one-way read. Returns "" when there is
+    nothing usable, so callers can concatenate it unconditionally.
+    """
+    context = state.get("context") or {}
+    raw = context.get(MEAL_CONSTRAINTS_KEY)
+    if not isinstance(raw, dict):
+        return ""
+    recipe_constraints = raw.get("recipe_constraints")
+    if not isinstance(recipe_constraints, dict):
+        recipe_constraints = {}
+
+    lines: list[str] = []
+    if dietary := _constraint_phrases(recipe_constraints.get("dietary")):
+        lines.append("Dietary needs: " + ", ".join(dietary))
+    if excluded := _constraint_phrases(recipe_constraints.get("excluded_ingredients")):
+        lines.append(
+            "Never include or recommend (excluded, possibly an allergy): " + ", ".join(excluded)
+        )
+    skill = recipe_constraints.get("skill_level")
+    if isinstance(skill, str) and skill.strip():
+        lines.append(f"Cook's skill level: {skill.strip()[:_MAX_CONSTRAINT_ITEM_CHARS]}")
+    minutes = recipe_constraints.get("max_time_minutes")
+    if isinstance(minutes, int) and not isinstance(minutes, bool) and minutes > 0:
+        lines.append(f"Time limit: {minutes} minutes")
+    if limits := _constraint_phrases(raw.get("kitchen_limits")):
+        lines.append("Kitchen limits: " + ", ".join(limits))
+    if not lines:
+        return ""
+
+    return (
+        "\n\nBackground from planning this meal (read-only; the user set these earlier "
+        "and has not repeated them now, so keep respecting them in every answer, "
+        "including substitutions):\n" + "\n".join(f"- {line}" for line in lines)
+    )
+
+
 def format_cooking_recipe_context(state: WorkflowState) -> str:
     """Format the actively-cooked recipe as a compact prompt block.
 
     Returns an empty string when nothing is pinned, so callers can concatenate
-    it unconditionally.
+    it unconditionally. A meal cook's planning constraints (#814) ride along
+    only when a dish is pinned.
     """
     raw = get_cooking_recipe(state)
     if not raw:
@@ -218,7 +288,7 @@ def format_cooking_recipe_context(state: WorkflowState) -> str:
         " Assume their questions are about this dish — technique, timing,"
         " substitutions — unless they clearly change the subject."
     )
-    return block
+    return block + format_meal_constraints_context(state)
 
 
 async def format_dietary_context(state: WorkflowState) -> str:
@@ -649,6 +719,12 @@ async def _detect_amendment(
     raw_recipe = get_cooking_recipe(state)
     if not raw_recipe:
         # No pinned recipe — amendment detection is not applicable.
+        return None
+    if raw_recipe.get(COOKING_RECIPE_AMENDABLE_KEY) is False:
+        # The client opted this pin out (issue #814): a single-recipe cook has no
+        # ingredient store to apply an amendment to, so the extra model call would
+        # be paid for and thrown away. Only an explicit `false` opts out; every
+        # other pin (meal cook, chat page, session snapshot) keeps detection.
         return None
 
     recipe = normalize_cooking_recipe(raw_recipe)
