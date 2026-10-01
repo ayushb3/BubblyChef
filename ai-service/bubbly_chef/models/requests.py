@@ -122,6 +122,18 @@ class RejectResponse(BaseModel):
 # =============================================================================
 
 
+class DismissUnansweredTurnRequest(BaseModel):
+    """Body of ``DELETE /v1/chat/history/{conversation_id}/unanswered`` (#871).
+
+    `content` is the text of the failed send being dismissed (what `ChatRequest.message`
+    carried). The turn is deleted only if it is the newest stored message.
+    """
+
+    content: str = Field(
+        description="Exact text of the dismissed user turn", min_length=1, max_length=10000
+    )
+
+
 class ChatRequest(BaseModel):
     """
     Request body for the /v1/chat endpoint.

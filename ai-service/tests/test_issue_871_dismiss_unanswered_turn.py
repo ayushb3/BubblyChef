@@ -6,7 +6,10 @@ bubble on the client only; on reload the turn came back under no reply.
 
 ``DELETE /v1/chat/history/{conversation_id}/unanswered`` removes the
 conversation's newest stored message, but only when it is a user turn (so no
-assistant reply follows it), and only for the calling user.
+assistant reply follows it), its text equals the dismissed text (the same exact
+comparison #847's dedupe uses), and only for the calling user. The text check
+matters when the failed send never reached the server: the newest stored turn is
+then an older, unrelated one, which must survive.
 """
 
 from __future__ import annotations
@@ -101,8 +104,15 @@ def _repo(rows: list[dict[str, Any]]) -> tuple[SupabaseRepository, _Store]:
     return repo, store
 
 
-async def _dismiss(repo: SupabaseRepository, user_id: str = "u1", conv: str = "c1") -> bool:
-    return await repo.delete_unanswered_user_turn(user_id=user_id, conversation_id=conv)
+async def _dismiss(
+    repo: SupabaseRepository,
+    content: str = "plan dinner",
+    user_id: str = "u1",
+    conv: str = "c1",
+) -> bool:
+    return await repo.delete_unanswered_user_turn(
+        user_id=user_id, conversation_id=conv, content=content
+    )
 
 
 @pytest.mark.asyncio
@@ -124,8 +134,24 @@ class TestDeleteUnansweredUserTurn:
         """Earlier unanswered turns are real history; only the newest goes."""
         repo, store = _repo([_row("user", "first"), _row("user", "second")])
 
-        assert await _dismiss(repo) is True
+        assert await _dismiss(repo, content="second") is True
         assert [r["content"] for r in store.rows] == ["first"]
+
+    async def test_older_unrelated_turn_is_left_alone_when_the_text_differs(self) -> None:
+        """The failed send never reached the server, so the newest stored turn is an
+        older one with other text. Deleting it would lose the user's message."""
+        repo, store = _repo([_row("assistant", "hi!"), _row("user", "an older question")])
+
+        assert await _dismiss(repo, content="plan dinner") is False
+        assert [r["content"] for r in store.rows] == ["hi!", "an older question"]
+        assert store.deletes == 0
+
+    async def test_text_must_match_exactly_like_the_847_dedupe(self) -> None:
+        repo, store = _repo([_row("user", "plan dinner")])
+
+        assert await _dismiss(repo, content="Plan dinner") is False
+        assert await _dismiss(repo, content="plan dinner ") is False
+        assert len(store.rows) == 1
 
     async def test_another_users_trailing_turn_is_never_touched(self) -> None:
         repo, store = _repo([_row("user", "plan dinner", user_id="someone-else")])
@@ -171,6 +197,12 @@ async def client() -> AsyncIterator[AsyncClient]:
         yield ac
 
 
+async def _delete(client: AsyncClient, body: dict[str, Any]) -> Any:
+    return await client.request(
+        "DELETE", f"/v1/chat/history/{TEST_CONV_ID}/unanswered", json=body
+    )
+
+
 @pytest.mark.asyncio
 class TestDismissRoute:
     async def test_route_scopes_the_delete_to_the_authenticated_user(
@@ -183,13 +215,27 @@ class TestDismissRoute:
             new_callable=AsyncMock,
             return_value=repo,
         ):
-            res = await client.delete(f"/v1/chat/history/{TEST_CONV_ID}/unanswered")
+            res = await _delete(client, {"content": "plan dinner"})
 
         assert res.status_code == 200
         assert res.json() == {"deleted": True}
         repo.delete_unanswered_user_turn.assert_awaited_once_with(
-            user_id=TEST_USER_ID, conversation_id=TEST_CONV_ID
+            user_id=TEST_USER_ID, conversation_id=TEST_CONV_ID, content="plan dinner"
         )
+
+    async def test_route_rejects_a_missing_or_empty_text(self, client: AsyncClient) -> None:
+        repo = AsyncMock()
+        with patch(
+            "bubbly_chef.api.routes.chat.get_repository",
+            new_callable=AsyncMock,
+            return_value=repo,
+        ):
+            missing = await _delete(client, {})
+            empty = await _delete(client, {"content": ""})
+
+        assert missing.status_code == 422
+        assert empty.status_code == 422
+        repo.delete_unanswered_user_turn.assert_not_called()
 
     async def test_route_reports_nothing_deleted(self, client: AsyncClient) -> None:
         repo = AsyncMock()
@@ -199,7 +245,7 @@ class TestDismissRoute:
             new_callable=AsyncMock,
             return_value=repo,
         ):
-            res = await client.delete(f"/v1/chat/history/{TEST_CONV_ID}/unanswered")
+            res = await _delete(client, {"content": "plan dinner"})
 
         assert res.status_code == 200
         assert res.json() == {"deleted": False}
@@ -212,13 +258,13 @@ class TestDismissRoute:
             new_callable=AsyncMock,
             return_value=repo,
         ):
-            res = await client.delete(f"/v1/chat/history/{TEST_CONV_ID}/unanswered")
+            res = await _delete(client, {"content": "plan dinner"})
 
         assert res.status_code == 500
 
     async def test_route_requires_auth(self) -> None:
         app = create_app()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            res = await ac.delete(f"/v1/chat/history/{TEST_CONV_ID}/unanswered")
+            res = await _delete(ac, {"content": "plan dinner"})
 
         assert res.status_code in (401, 403)

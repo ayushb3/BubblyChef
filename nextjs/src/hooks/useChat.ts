@@ -917,6 +917,7 @@ export function useChat(options?: UseChatOptions) {
    *
    * The AI service stored the user turn before the reply failed, so Dismiss also
    * asks it to delete that unanswered turn (#871); otherwise it returns on reload.
+   * The dismissed text goes along so the service deletes only a matching turn.
    * Fire and forget: if the call fails the bubble is still gone and the turn is
    * simply restored on the next reload, as it was before.
    */
@@ -926,7 +927,7 @@ export function useChat(options?: UseChatOptions) {
       if (!failure) return null
       const convId = conversationIdRef.current
       if (convId) {
-        dismissUnansweredTurn(convId).catch((err: unknown) => {
+        dismissUnansweredTurn(convId, failure.text).catch((err: unknown) => {
           console.warn('[useChat] Could not delete the dismissed turn:', err)
         })
       }

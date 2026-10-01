@@ -1572,20 +1572,26 @@ class SupabaseRepository:
         rows = _as_rows(result.data)
         return bool(rows) and rows[0].get("role") == "user" and rows[0].get("content") == content
 
-    async def delete_unanswered_user_turn(self, user_id: str, conversation_id: str) -> bool:
+    async def delete_unanswered_user_turn(
+        self, user_id: str, conversation_id: str, content: str
+    ) -> bool:
         """Delete the conversation's newest stored message, but only when it is a
-        user turn (so no assistant reply follows it). Returns whether a row went.
+        user turn (so no assistant reply follows it) whose text is exactly
+        `content`. Returns whether a row went.
 
         Issue #871: a user turn is saved BEFORE its reply streams, so a failed
         send leaves it stored with no reply. Dismissing the failed send on the
-        client calls this so the turn does not come back on reload. A newest row
-        that is an assistant turn (the send did get answered) is left alone, as
-        is every other user's and every other conversation's row: both
-        `user_id` and `conversation_id` are filtered on the lookup and the delete.
+        client calls this so the turn does not come back on reload. The text must
+        match (the same exact comparison as #847's dedupe): a send that never
+        reached the server leaves an older, unrelated unanswered turn as the
+        newest row, and that one is real history. A newest row that is an
+        assistant turn (the send did get answered) is left alone, as is every
+        other user's and every other conversation's row: both `user_id` and
+        `conversation_id` are filtered on the lookup and the delete.
         """
         result = (
             self.client.table("conversation_history")
-            .select("id,role")
+            .select("id,role,content")
             .eq("user_id", user_id)
             .eq("conversation_id", conversation_id)
             .order("created_at", desc=True)
@@ -1593,7 +1599,7 @@ class SupabaseRepository:
             .execute()
         )
         rows = _as_rows(result.data)
-        if not rows or rows[0].get("role") != "user":
+        if not rows or rows[0].get("role") != "user" or rows[0].get("content") != content:
             return False
         deleted = (
             self.client.table("conversation_history")

@@ -55,8 +55,24 @@ describe('useChat -- Dismiss deletes the stored unanswered turn (#871)', () => {
     })
 
     expect(mockDismiss).toHaveBeenCalledTimes(1)
-    expect(mockDismiss).toHaveBeenCalledWith(conversationId)
+    expect(mockDismiss).toHaveBeenCalledWith(conversationId, 'plan dinner')
     expect(result.current.messages).toHaveLength(0)
+  })
+
+  it('sends the exact text that was sent, so the server only deletes that turn', async () => {
+    failNextStream()
+    const { result } = renderHook(() => useChat(), { wrapper })
+    await act(async () => {
+      // Surrounding whitespace is trimmed before sending; the dismissed text is what was sent.
+      result.current.sendMessage('  plan dinner  ')
+    })
+
+    await act(async () => {
+      result.current.dismissFailedSend(result.current.messages[1].id)
+    })
+
+    expect(mockStream.mock.calls[0][0].message).toBe('plan dinner')
+    expect(mockDismiss.mock.calls[0][1]).toBe('plan dinner')
   })
 
   it('still clears the bubble and returns the text when the delete call fails', async () => {

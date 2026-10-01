@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from bubbly_chef.api.auth import get_current_user_id
-from bubbly_chef.models.requests import ChatRequest
+from bubbly_chef.models.requests import ChatRequest, DismissUnansweredTurnRequest
 from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.services.proposal_review import (
     is_amendment_proposal_turn,
@@ -312,24 +312,27 @@ async def get_history(
     "/history/{conversation_id}/unanswered",
     summary="Delete the conversation's trailing unanswered user turn",
     responses={
-        200: {"description": "`{deleted: bool}` -- false when there was no such turn"},
+        200: {"description": "`{deleted: bool}` -- false when no such turn matched the text"},
         401: {"description": "Missing or invalid JWT"},
     },
 )
 async def delete_unanswered_turn(
     conversation_id: str,
+    body: DismissUnansweredTurnRequest,
     user_id: str = Depends(get_current_user_id),
 ) -> dict[str, bool]:
     """Back Dismiss on a failed chat send (#871).
 
     The user turn is saved before the reply streams, so a failed send leaves it
     stored with no reply. This removes the conversation's newest message only if
-    it is a user turn, so an answered turn is never touched.
+    it is a user turn whose text equals `body.content`, so an answered turn, or an
+    older unrelated one (when the failed send never reached the server), is never
+    touched.
     """
     try:
         repo = await get_repository()
         deleted = await repo.delete_unanswered_user_turn(
-            user_id=user_id, conversation_id=conversation_id
+            user_id=user_id, conversation_id=conversation_id, content=body.content
         )
     except Exception as e:
         logger.error(f"Failed to delete unanswered turn: {e}", exc_info=True)
