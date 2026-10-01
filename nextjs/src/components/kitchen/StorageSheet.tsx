@@ -66,7 +66,7 @@ import { StorageRow, StorageTile } from '@/components/kitchen/StorageTile'
 import type { BulkEditResult, ResolveOutcome } from '@/lib/api/pantry'
 import { cookThisHref, planDinnerHref } from '@/lib/chat-seed'
 import { localDateString } from '@/lib/date'
-import { titleCase } from '@/lib/format'
+import { formatAmount, titleCase } from '@/lib/format'
 import {
   PLACES,
   categoryGroups,
@@ -121,6 +121,18 @@ export interface StorageSheetProps<T extends StoredItem> {
   onMove: (ids: string[], place: PlaceKey) => Promise<BulkResult>
   /** Record "used up" or "tossed" on rows (the existing per-item resolve). */
   onResolve: (ids: string[], outcome: 'used' | 'tossed') => Promise<BulkResult>
+  /**
+   * "Used it" on one row (issue #851). When given, the tap hands the item here
+   * instead of resolving it on the spot: the parent queues the write behind an
+   * undo window and hides the row, and the sheet shows no notice of its own (the
+   * undo toast speaks). Omitted: the row resolves through `onResolve` at once.
+   */
+  onUsedUp?: (item: T) => void
+  /**
+   * Set a row's quantity (issue #851, "Used some": the sheet works out what is
+   * left). Rejects when it could not. Omitted: rows show no "Used some" key.
+   */
+  onSetQuantity?: (item: T, quantity: number) => Promise<void>
   /**
    * Put one item on the grocery list (issue #497). Rejects when it could not.
    * Omitted: rows show no "Add to list" key.
@@ -191,6 +203,8 @@ export default function StorageSheet<T extends StoredItem>({
   onAdd,
   onMove,
   onResolve,
+  onUsedUp,
+  onSetQuantity,
   onAddToList,
   onRetry,
 }: StorageSheetProps<T>) {
@@ -341,6 +355,11 @@ export default function StorageSheet<T extends StoredItem>({
   const resolveOne = async (item: T, outcome: ResolveOutcome) => {
     if (outcome !== 'used' && outcome !== 'tossed') return
     setNotice(null)
+    // "Used it" with an undo (#851): the parent hides the row and the toast speaks.
+    if (outcome === 'used' && onUsedUp) {
+      onUsedUp(item)
+      return
+    }
     setBusy((prev) => new Set(prev).add(item.id))
     const result = await safely(() => onResolve([item.id], outcome), [item.id])
     setBusy((prev) => {
@@ -354,6 +373,28 @@ export default function StorageSheet<T extends StoredItem>({
         ? { kind: 'error', text: `Couldn’t update ${name}. Try again.` }
         : { kind: 'ok', text: `${name} marked as ${outcome === 'used' ? 'used up' : 'tossed'}.` },
     )
+  }
+
+  // "Used some" (#851): `used` is how much of the quantity went; what is left stays.
+  const usedSome = async (item: T, used: number) => {
+    if (!onSetQuantity) return
+    setNotice(null)
+    setBusy((prev) => new Set(prev).add(item.id))
+    const name = titleCase(item.name)
+    // Rounded so 1 - 0.3 reads 0.7, not 0.7000000000000001.
+    const left = Math.max(0, Math.round((item.quantity - used) * 1000) / 1000)
+    try {
+      await onSetQuantity(item, left)
+      setNotice({ kind: 'ok', text: `${name}: ${formatAmount(left, item.unit)} left.` })
+    } catch {
+      setNotice({ kind: 'error', text: `Couldn’t update ${name}. Try again.` })
+    } finally {
+      setBusy((prev) => {
+        const next = new Set(prev)
+        next.delete(item.id)
+        return next
+      })
+    }
   }
 
   const addToList = async (item: T) => {
@@ -433,6 +474,7 @@ export default function StorageSheet<T extends StoredItem>({
         showButtons: soon || isExpired(days) || !!prefersReduced,
         cookHref: soon ? cookThisHref(item.name, item.expiry_date) : undefined,
         onAddToList: onAddToList ? () => void addToList(item) : undefined,
+        onUseSome: onSetQuantity ? (used: number) => void usedSome(item, used) : undefined,
         onResolve: (outcome: ResolveOutcome) => void resolveOne(item, outcome),
       },
     }

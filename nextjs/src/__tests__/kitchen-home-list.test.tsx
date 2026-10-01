@@ -8,6 +8,7 @@ import React from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import HeroHome from '@/components/dashboard/HeroHome'
+import { resetDeferredResolvesForTests, setUndoWindowMsForTests } from '@/lib/pantry-undo'
 
 const replaceSpy = jest.fn()
 let mockParams = new URLSearchParams('')
@@ -100,10 +101,14 @@ beforeEach(() => {
   log = { puts: [], resolves: [] }
   mockParams = new URLSearchParams('')
   replaceSpy.mockClear()
+  // "Used it" waits out an undo window (#851); a short one keeps these on real timers.
+  resetDeferredResolvesForTests()
+  setUndoWindowMsForTests(50)
   mockApi(rows, log)
 })
 afterEach(() => {
   global.fetch = originalFetch
+  resetDeferredResolvesForTests()
 })
 
 async function openList() {

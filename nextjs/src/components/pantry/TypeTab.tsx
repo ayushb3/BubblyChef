@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import AddItemRow, { type ManualRow } from './AddItemRow'
 import AddItemRowSummary from './AddItemRowSummary'
 import type { AddItem } from './PantryAddSheet'
+import { parsePantryList, splitPantryList } from '@/lib/pantry-quick-add'
 
 function newRow(): ManualRow {
   return {
@@ -96,6 +97,51 @@ export default function TypeTab({ onItemsReady }: TypeTabProps) {
     handleChange(next.length === 0 ? [newRow()] : next)
   }
 
+  // Issue #851: a list typed into the name field ("eggs, milk, 2 lb chicken") becomes
+  // one review row per piece, each with its own quantity and unit. Run when the
+  // user leaves the field or presses Enter, never mid-keystroke, so nothing splits
+  // under their cursor. A single entry ("2 lb chicken") is read the same way, but
+  // only while the row's quantity and unit are still the defaults and the name is
+  // freehand (a catalog pick carries a location): a hand-set amount always wins.
+  // Returns whether it replaced the row.
+  const splitListRow = (row: ManualRow): boolean => {
+    const at = rows.findIndex((r) => r.id === row.id)
+    if (at < 0) return false
+    const pieces = splitPantryList(row.name)
+    const untouched = row.quantity === 1 && row.unit === 'item' && !row.storage_location
+    if (pieces.length === 0 || (pieces.length === 1 && !untouched)) return false
+    const parsed = parsePantryList(row.name)
+    if (
+      parsed.length === 1 &&
+      parsed[0].name === row.name.trim() &&
+      parsed[0].quantity === 1 &&
+      parsed[0].unit === 'item'
+    ) {
+      return false // nothing to read out of it
+    }
+    const fresh: ManualRow[] = parsed.map((p) => ({
+      ...newRow(),
+      name: p.name,
+      quantity: p.quantity,
+      unit: p.unit,
+    }))
+    // Review rows start as compact summaries (tap to edit), like any filled row.
+    setCollapsedIds((prev) => {
+      const next = new Set(prev)
+      next.delete(row.id)
+      fresh.forEach((r) => next.add(r.id))
+      return next
+    })
+    handleChange([...rows.slice(0, at), ...fresh, ...rows.slice(at + 1)])
+    return true
+  }
+
+  const handleNameKeyDown = (row: ManualRow, e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Enter' || e.defaultPrevented) return
+    if (!(e.target instanceof HTMLInputElement) || e.target.getAttribute('aria-label') !== 'Item name') return
+    if (splitListRow(row)) e.preventDefault()
+  }
+
   const handleAddRow = () => {
     // Collapse every currently-filled row into a summary — only the row
     // being added (and any still-empty row) stays fully expanded. Doesn't
@@ -122,6 +168,14 @@ export default function TypeTab({ onItemsReady }: TypeTabProps) {
   }
 
   const handleRowBlur = (row: ManualRow, e: React.FocusEvent<HTMLDivElement>) => {
+    // Only the name field turns typed text into rows; other fields leaving is just a blur.
+    if (
+      e.target instanceof HTMLInputElement &&
+      e.target.getAttribute('aria-label') === 'Item name' &&
+      splitListRow(row)
+    ) {
+      return
+    }
     // A row that isn't filled has nothing to summarize and would hide its
     // own missing name behind a collapse — never auto-collapse it.
     if (!isFilled(row)) return
@@ -147,7 +201,7 @@ export default function TypeTab({ onItemsReady }: TypeTabProps) {
   return (
     <div className="space-y-3">
       <p className="text-xs text-[var(--color-muted)] pb-1">
-        Fill in each item below. Only rows with a name will be added.
+        Fill in each item below, or type a list like “eggs, milk, 2 lb chicken” in the name. Only rows with a name will be added.
       </p>
 
       {rows.map((row, i) => {
@@ -182,6 +236,7 @@ export default function TypeTab({ onItemsReady }: TypeTabProps) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.15 }}
             onBlur={(e) => handleRowBlur(row, e)}
+            onKeyDown={(e) => handleNameKeyDown(row, e)}
           >
             <AddItemRow
               row={row}
