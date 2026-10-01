@@ -93,6 +93,10 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
           ? { repeat: Infinity, duration: 1.1, ease: 'easeInOut' }
           : { type: 'spring', stiffness: 500, damping: 30 }
       }
+      // Issue #757 — a finished chip clears when tapped (the other way it
+      // goes is the cook moving past the step that owns it). Running and
+      // paused chips are not tappable: they have their own controls.
+      onClick={isCompleted ? () => dismiss(timer.id) : undefined}
       // Collapsed: a compact pill in the dock's single scrolling row, which
       // must not shrink (issue #664). Expanded: one full-width row per timer.
       className={

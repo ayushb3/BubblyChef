@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import { type Recipe } from './RecipePage'
@@ -17,14 +17,27 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_url: "That doesn't look like a valid URL.",
   fetch_failed: "We couldn't reach that page. Check the URL and try again.",
   paywalled: "That page is behind a paywall and can't be imported.",
-  not_a_recipe: "We couldn't find a recipe on that page.",
+  not_a_recipe: "We couldn't find a recipe in that link.",
+  // Typed reasons for YouTube video import (issue #528)
+  video_unavailable: "We couldn't open that video. It may be private, age-restricted or removed.",
+  video_timeout: 'That took too long. Please try again in a moment.',
+  video_failed: "We couldn't watch that video right now. Please try again in a moment.",
 }
+
+// A video import is Gemini watching the clip, which takes longer than reading a
+// page. The server gives up well inside this (60s video call); this is the
+// backstop so the modal can never spin forever if the request hangs.
+const IMPORT_TIMEOUT_MS = 90_000
+
+const isYouTubeUrl = (s: string) => /^https?:\/\/(www\.|m\.)?(youtube\.com|youtu\.be)\//i.test(s.trim())
 
 export default function RecipeImportModal({ onImported, onClose }: RecipeImportModalProps) {
   const [url, setUrl] = useState('')
   const [state, setState] = useState<ImportState>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const panelRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => abortRef.current?.abort(), [])
   useModalFocusTrap(true, () => {
     if (state !== 'loading') onClose()
   }, panelRef)
@@ -49,11 +62,20 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
     setState('loading')
     setErrorMsg('')
 
+    const controller = new AbortController()
+    abortRef.current = controller
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, IMPORT_TIMEOUT_MS)
+
     try {
       const res = await fetch('/api/recipes/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: trimmed }),
+        signal: controller.signal,
       })
 
       if (!res.ok) {
@@ -74,8 +96,12 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
       }
       onImported(recipe, trimmed)
     } catch {
-      setErrorMsg(ERROR_MESSAGES.fetch_failed)
+      // Unmounted (aborted by the cleanup): nothing left to update.
+      if (controller.signal.aborted && !timedOut) return
+      setErrorMsg(timedOut ? ERROR_MESSAGES.video_timeout : ERROR_MESSAGES.fetch_failed)
       setState('error')
+    } finally {
+      clearTimeout(timer)
     }
   }
 
@@ -149,7 +175,8 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
               className="text-xs text-[var(--color-muted)]"
               style={{ fontFamily: 'Nunito, sans-serif' }}
             >
-              Browse a site, copy the recipe URL, and paste it below.
+              Browse a site, copy the recipe URL (or a YouTube recipe video, Shorts work too),
+              and paste it below.
             </p>
             <div className="flex flex-wrap gap-1.5">
               {[
@@ -188,7 +215,7 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
                 if (state === 'error') setState('idle')
               }}
               onKeyDown={handleKeyDown}
-              placeholder="https://www.allrecipes.com/recipe/..."
+              placeholder="Recipe page or YouTube link..."
               disabled={state === 'loading'}
               autoFocus
               className="w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)] disabled:opacity-50"
@@ -215,7 +242,9 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
                 style={{ fontFamily: 'Nunito, sans-serif' }}
               >
                 <BubblesMascot state="thinking" size={20} />
-                Extracting recipe…
+                {isYouTubeUrl(url)
+                  ? 'Watching the video… this can take up to a minute'
+                  : 'Extracting recipe…'}
               </p>
             )}
           </div>

@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     # AI providers
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.1-flash-lite"
+    # Optional second Gemini key (issue #737), ideally from its own Google
+    # project with its own spend cap. Registered after the primary and before
+    # Ollama, and tried only when the primary fails with quota_exhausted, auth
+    # or rate_limited. Empty (the default) means no second provider at all.
+    gemini_fallback_api_key: str = ""
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"
@@ -37,6 +42,13 @@ class Settings(BaseSettings):
     gemini_vision_timeout_seconds: float = Field(default=18.0, gt=0)
     gemini_vision_max_retries: int = Field(default=1, ge=0)
     gemini_vision_retry_backoff_seconds: float = Field(default=1.0, ge=0)
+
+    # Gemini video (YouTube recipe import) — issue #528. Gemini watches the
+    # video from its URL, which takes noticeably longer than a text or image
+    # call, so it gets its own per-call timeout. One attempt only: a retry
+    # would double a slow, billed call. The recipe import modal gives up at
+    # 90s (nextjs RecipeImportModal), so this stays comfortably under it.
+    gemini_video_timeout_seconds: float = Field(default=60.0, gt=0)
 
     # Whole-request budget for POST /v1/scan/receipt — issue #481. A scan is
     # two AI calls in one HTTP request: the vision/OCR leg above, then a
