@@ -13,6 +13,7 @@ import {
 import TakeTourButton from '@/components/profile/TakeTourButton'
 import { isGuestUser } from '@/lib/auth/guest'
 import ThemePicker from '@/components/ui/ThemePicker'
+import BubblesMascot from '@/components/ui/BubblesMascot'
 
 export default async function ProfilePage() {
   const supabase = await createClient()
@@ -57,14 +58,7 @@ export default async function ProfilePage() {
       <div className="relative">
         <div className="chowder-panel h-28" />
         <div className="absolute left-1/2 -translate-x-1/2 bottom-0 translate-y-1/2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/mascot/bubbles-happy.png"
-            alt="Bubbles"
-            width={80}
-            height={80}
-            style={{ width: 80, height: 80, objectFit: 'contain' }}
-          />
+          <BubblesMascot state="happy" size={80} />
         </div>
       </div>
 
