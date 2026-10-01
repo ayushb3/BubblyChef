@@ -13,6 +13,7 @@
  */
 
 import { groceryFoodKey } from '@/lib/grocery'
+import type { MealToBuyDetail } from '@/lib/api/grocery'
 
 export interface DishIngredientNames {
   position: number
@@ -33,6 +34,27 @@ export function attributeToBuy(toBuy: string[], dishes: DishIngredientNames[]): 
     for (const d of keysByDish) {
       if (d.keys.has(key)) result.get(d.position)!.push(name)
     }
+  }
+  return result
+}
+
+/**
+ * position -> the names a dish card's "N to buy" line shows (issue #805).
+ *
+ * The service says which dishes need each food (`items[].dishPositions`), keyed by
+ * its own "same food" rule, so "fresh basil" in one dish and "basil" in another are
+ * one entry on both cards; each card shows the name as that dish wrote it. This does
+ * no name matching of its own. Only when the service sent no `items` (an older
+ * service during a deploy) does it fall back to `attributeToBuy`'s name matching.
+ * Every dish gets an entry (possibly empty); a position no dish has is dropped.
+ */
+export function toBuyByDish(detail: MealToBuyDetail, dishes: DishIngredientNames[]): Map<number, string[]> {
+  if (!detail.items) return attributeToBuy(detail.names, dishes)
+  const result = new Map<number, string[]>(dishes.map((d) => [d.position, []]))
+  for (const item of detail.items) {
+    item.dishPositions.forEach((position, i) => {
+      result.get(position)?.push(item.dishNames[i] || item.name)
+    })
   }
   return result
 }

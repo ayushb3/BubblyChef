@@ -180,22 +180,56 @@ class TestTagAndToBuyAgree:
     async def test_each_dish_card_lists_every_one_of_its_to_buy_rows(
         self, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # A card's "N to buy" summary is the meal's to-buy foods that the dish itself
-        # lists (the client attributes by food, to EVERY dish that lists it). So per
-        # card: the foods of the dish's rows tagged To buy must equal the dish's foods
-        # that are on the meal list. The onion is missing in both dishes, listed once.
+        # Per card, read straight off the response (no client-side re-matching): the
+        # names the service attributes to this dish's position must be exactly the
+        # dish's rows tagged To buy. The onion is missing in both dishes, listed once.
         _wire(monkeypatch, _meal(), _stock())
         per_dish = await _rows_per_dish(client, _meal())
         res = await client.post("/v1/grocery/meal-to-buy", json={"meal_id": "meal-1"})
-        listed = {_key(n) for n in res.json()["to_buy"]}
-        assert [_key(n) for n in res.json()["to_buy"]].count("onion") == 1
+        body = res.json()
+        assert [_key(n) for n in body["to_buy"]].count("onion") == 1
+        assert [i["name"] for i in body["items"]] == body["to_buy"]
 
-        for rows in per_dish:
-            to_buy_rows = {_key(name) for name, status in rows if status == "missing"}
-            on_card = {_key(name) for name, _ in rows} & listed
-            assert to_buy_rows == on_card
-        assert "onion" in {_key(n) for n, st in per_dish[0] if st == "missing"}
-        assert "onion" in {_key(n) for n, st in per_dish[1] if st == "missing"}
+        for position, rows in enumerate(per_dish):
+            on_card = sorted(
+                dish_name
+                for item in body["items"]
+                for pos, dish_name in zip(item["dish_positions"], item["dish_names"], strict=True)
+                if pos == position
+            )
+            to_buy_rows = sorted({name for name, status in rows if status == "missing"})
+            assert on_card == to_buy_rows
+        assert "onion" in {n for n, st in per_dish[0] if st == "missing"}
+        assert "onion" in {n for n, st in per_dish[1] if st == "missing"}
+
+    @pytest.mark.asyncio
+    async def test_a_food_spelled_differently_in_two_dishes_is_one_entry_on_both(
+        self, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # "fresh basil" and "basil" are one food (normalize_food_name drops "fresh"):
+        # the list has one entry, attributed to both dishes, each under its own wording.
+        meal = _meal()
+        meal["dishes"][0]["recipe"]["ingredients"].append(
+            {"name": "fresh basil", "quantity": 1, "unit": "bunch"}
+        )
+        meal["dishes"][1]["recipe"]["ingredients"].append(
+            {"name": "basil", "quantity": 1, "unit": "bunch"}
+        )
+        _wire(monkeypatch, meal, _stock())
+        res = await client.post("/v1/grocery/meal-to-buy", json={"meal_id": "meal-1"})
+        body = res.json()
+        basil = [i for i in body["items"] if _key(i["name"]) == "basil"]
+        assert len(basil) == 1
+        assert basil[0] == {
+            "name": "fresh basil",
+            "dish_positions": [0, 1],
+            "dish_names": ["fresh basil", "basil"],
+        }
+        assert [_key(n) for n in body["to_buy"]].count("basil") == 1
+        # And each dish's own row for it is tagged To buy, so each card has to list it.
+        per_dish = await _rows_per_dish(client, meal)
+        assert ("fresh basil", "missing") in per_dish[0]
+        assert ("basil", "missing") in per_dish[1]
 
     @pytest.mark.asyncio
     async def test_the_fixture_resolves_as_expected(
