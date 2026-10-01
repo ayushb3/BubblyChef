@@ -113,7 +113,11 @@ describe.each(ENTRY_POINTS)('$name', ({ mount }) => {
 
     // Every control is live: the keycap, and the dropzone it sits above.
     expect(within(notice).getByRole('button', { name: /choose a photo/i })).toBeEnabled()
-    expect(screen.getByText(/Drop your receipt here/).closest('button')).toBeEnabled()
+    // Both entry points (#840): the zone is a pixel panel holding its own keycap.
+    const zone = screen.getByText(/Drop your receipt here/).closest('[data-pixel-panel]')
+    expect(
+      within(zone as HTMLElement).getByRole('button', { name: /choose a photo/i }),
+    ).toBeEnabled()
 
     // Copy only: no raw server text, no error code, no spinner left behind.
     expect(document.body.textContent).not.toContain(RAW)

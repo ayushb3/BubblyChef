@@ -187,11 +187,12 @@ describe('ScanTab drag-and-drop', () => {
     const onParsed = jest.fn()
     render(<ScanTab onParsed={onParsed} />)
 
-    const dropzone = screen.getByText(/Drop your receipt here/).closest('button')
+    // The drop target is the pixel panel (#840); it is no longer a button.
+    const dropzone = screen.getByText(/Drop your receipt here/).closest('[data-pixel-panel]')
     expect(dropzone).not.toBeNull()
 
     const file = new File(['bytes'], 'receipt.png', { type: 'image/png' })
-    fireEvent.drop(dropzone as HTMLButtonElement, {
+    fireEvent.drop(dropzone as HTMLElement, {
       dataTransfer: { files: [file], types: ['Files'] },
     })
 
@@ -204,7 +205,7 @@ describe('ScanTab drag-and-drop', () => {
 
   it('shows an armed visual state on dragenter and clears it on dragleave', () => {
     render(<ScanTab onParsed={jest.fn()} />)
-    const dropzone = screen.getByText(/Drop your receipt here/).closest('button') as HTMLButtonElement
+    const dropzone = screen.getByText(/Drop your receipt here/).closest('[data-pixel-panel]') as HTMLElement
 
     fireEvent.dragEnter(dropzone, { dataTransfer: { types: ['Files'] } })
     expect(screen.getByText(/Drop it here!/)).toBeInTheDocument()
