@@ -327,6 +327,18 @@ MEAL_OPTIONS_PREVIOUS_BLOCK = (
     "it; otherwise suggest meals different from all of them."
 )
 
+# Added to the option prompt when a typed message changes the meal on screen (issue
+# #846), so the model reads it as an adjustment of what is already agreed rather than a
+# fresh brief. The constraints and pantry above already carry the saved state.
+MEAL_OPTIONS_REFINEMENT_BLOCK = (
+    "\nThe user is refining the meals above, not starting over. Every constraint and "
+    "pantry item listed above still applies; their latest message changes something on "
+    "top of that. Follow it literally -- \"quicker\" means a shorter total time than "
+    "the meals already shown, \"fewer dishes\" means fewer dishes in each option, and an "
+    "ingredient they don't have or don't want appears in no dish. Answer with new "
+    "meal options; never ask what ingredients they have, you already know."
+)
+
 # Inserted after MEAL_OPTIONS_PREVIOUS_BLOCK when a "Make it a meal" flow fixes
 # the main dish (issue #651 PR B). `{title}` is the outline name with `"`
 # replaced by `'` so a title can't close the quotes; `{cuisine_part}` is

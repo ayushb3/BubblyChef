@@ -75,6 +75,7 @@ from bubbly_chef.prompts.meal import (
     MEAL_OPTIONS_FIXED_MAIN_FOLLOW_UPS_RULE,
     MEAL_OPTIONS_FOLLOW_UPS_RULES,
     MEAL_OPTIONS_PREVIOUS_BLOCK,
+    MEAL_OPTIONS_REFINEMENT_BLOCK,
     MEAL_OPTIONS_SYSTEM_PROMPT_NO_PANTRY,
     MEAL_READY_FOLLOW_UPS_RULES,
     meal_dish_pantry_block,
@@ -102,6 +103,7 @@ from bubbly_chef.workflows.meal.fixed_main import (
     resolve_fixed_main,
     stored_dietary_preferences,
 )
+from bubbly_chef.workflows.meal.refine import merge_refinement_constraints, names_overlap
 from bubbly_chef.workflows.recipe.exclusions import apply_food_exclusions
 from bubbly_chef.workflows.recipe.nodes import (
     _combine_dietary_preferences,
@@ -936,10 +938,20 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     user_id = state.get("user_id") or ""
     context = state.get("context") or {}
     is_followup = context.get("meal_followup") is True
+    # A typed change to the meal on screen (#846) inherits the retained meal exactly as
+    # a pill tap does; `_finish_refinement` below then applies this turn's own change.
+    is_refinement = state.get("meal_refinement") is True
     fresh_fixed = has_fixed_main(context)
     # A fresh fixed-main turn never inherits a retained meal, even with
     # meal_followup also set.
-    retained_state = _retained_meal_plan_state(state) if is_followup and not fresh_fixed else None
+    retained_state = (
+        _retained_meal_plan_state(state)
+        if (is_followup or is_refinement) and not fresh_fixed
+        else None
+    )
+    # Ingredients this turn says are unavailable or unwanted; kept out of the pantry
+    # context and the coverage count for this turn. Never written to the pantry.
+    turn_unavailable: list[str] = []
 
     fixed_resolved: ResolvedFixedMain | None = None
     if fresh_fixed:
@@ -984,6 +996,11 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         constraints = _finish_meal_followup_constraints(
             retained_constraints, merged_constraints, input_text
         )
+        if is_refinement:
+            refined, turn_unavailable = merge_refinement_constraints(
+                retained_constraints, merged_constraints, input_text
+            )
+            constraints = {**constraints, **refined}
         if fixed_resolved is not None:
             constraints = _drop_diets_the_main_contradicts(
                 constraints,
@@ -1062,6 +1079,8 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
             if earlier:
                 options_text += ". Earlier: " + "; ".join(earlier)
             previous_block = MEAL_OPTIONS_PREVIOUS_BLOCK.format(options=options_text)
+        if is_refinement:
+            previous_block += MEAL_OPTIONS_REFINEMENT_BLOCK
 
     outline: MealDishOutline | None = None
     fixed_block = ""
@@ -1147,6 +1166,11 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     # Pantry opt-out (#287): match nothing, so the cards claim no pantry use,
     # flag no rescues, and no option is dropped for its to-buy count.
     pantry_items = await _pantry_items_for_matching(user_id) if pantry_grounded else []
+    if turn_unavailable:
+        # "I don't have butter": it is not stock for this turn's coverage either.
+        pantry_items = [
+            i for i in pantry_items if not any(names_overlap(i.name, n) for n in turn_unavailable)
+        ]
 
     options: list[MealOption] = []
     seen_fixed_dishes: set[tuple[str, ...]] = set()
@@ -1544,10 +1568,16 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
     # answer against (#651 §5b) -- replaces the old "Here's your {title}!".
     main_title = dish_titles[0] if dish_titles else option.title
     side_titles = dish_titles[1:]
+    # The title says it once when the option and its main share a name (#846).
+    named = (
+        option.title
+        if _dish_name_key(main_title) == _dish_name_key(option.title)
+        else f"{option.title}: {main_title}"
+    )
     assistant_message = (
-        f"Here's your {option.title}: {main_title} with {' and '.join(side_titles)}!"
+        f"Here's your {named} with {' and '.join(side_titles)}!"
         if side_titles
-        else f"Here's your {option.title}: {main_title}!"
+        else f"Here's your {named}!"
     )
 
     return {
