@@ -154,6 +154,13 @@ export interface IngredientMatch {
   status: IngredientMatchStatus
   shortfall: number | null
   /**
+   * True when `deduct_qty` rests on a typical figure rather than an exact
+   * conversion (an onion is ~150 g, a cup of flour ~127 g, a can of tomatoes
+   * 14.5 oz). It is still deducted; the review shows it as "≈". Absent on
+   * older responses, which means exact.
+   */
+  approximate?: boolean
+  /**
    * A substitute with too little stock is status 'shortfall' but still
    * match_type 'substitute', so the swap note shows alongside the shortfall.
    */

@@ -48,12 +48,23 @@ class IngredientMatch(BaseModel):
             "deduct_qty is None, unit_conflict=can't compare, "
             "missing=not in pantry, "
             "assumed=a culinary staple presumed on hand even though it's not in the pantry, "
-            "to_taste=a seasoning line with no amount (\"salt and pepper\", \"to taste\") — "
+            "to_taste=a seasoning line with no amount (\"salt and pepper\", \"to taste\") "
+            "or a trace one (\"a pinch of salt\", \"a dash of hot sauce\") — "
             "never matched to a pantry row, nothing is deducted or asked for (#756)"
         )
     )
     shortfall: float | None = Field(
         default=None, description="How much is missing (base unit), only set when status==shortfall"
+    )
+    approximate: bool = Field(
+        default=False,
+        description=(
+            "True when deduct_qty rests on a typical figure rather than an exact "
+            "conversion: a piece weight (an onion is ~150 g), a density (a cup of "
+            "flour is ~127 g) or a typical container size (a can of tomatoes is "
+            "14.5 oz). It is still deducted; the review shows it as \"about\". "
+            "False for exact conversions and for every status that deducts nothing."
+        ),
     )
 
     # How the pantry item was found, recorded separately from status. A substitute
@@ -251,6 +262,14 @@ class MealCookIngredient(BaseModel):
 
     name: str = Field(description="Ingredient name, as sent by the client")
     quantity: float | None = Field(default=None)
+    quantity_max: float | None = Field(
+        default=None,
+        description=(
+            "Upper bound when the line is a range (\"1-2 cloves\"): `quantity` is then the "
+            "midpoint, deducted; this is what the pantry is checked against. Ignored "
+            "unless greater than `quantity`."
+        ),
+    )
     unit: str | None = Field(default=None)
     optional: bool = Field(default=False)
     notes: str | None = Field(default=None)
@@ -303,6 +322,9 @@ class MealCookSource(BaseModel):
     # ready/substitute): None.
     required_base_qty: float | None = None
     status: IngredientMatchStatus = Field(description="This dish's own status, before merging")
+    approximate: bool = Field(
+        default=False, description="This dish's own required_base_qty is an estimate"
+    )
     match_type: IngredientMatchType = "exact"
     substitution_note: str | None = None
 
