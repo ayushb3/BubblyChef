@@ -5,9 +5,7 @@ import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import PageHeader from '@/components/layout/PageHeader'
 import NotificationBell from '@/components/layout/NotificationBell'
-import BubblesMascot from '@/components/ui/BubblesMascot'
-import PixelPanel from '@/components/ui/PixelPanel'
-import SpringButton, { PixelDots } from '@/components/ui/SpringButton'
+import ScanDropzone, { ScanHandoffPanel, ScanProcessingPanel } from '@/components/scan/ScanDropzone'
 import ScanFailureNotice from '@/components/scan/ScanFailureNotice'
 import { useFileDropzone } from '@/hooks/useFileDropzone'
 import { useScanHandOff } from '@/hooks/useScanHandOff'
@@ -148,35 +146,12 @@ export default function ScanPage() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.25 }}
             >
-              {/* The panel is the drop target; the keycap is the tap target (a
-                  button can't hold a button, so the zone is no longer one). */}
-              <PixelPanel
-                {...dropzoneHandlers}
-                data-drag-active={isDragActive || undefined}
-                className={`text-center transition-transform motion-reduce:transition-none ${
-                  isDragActive ? 'scale-[1.02]' : ''
-                }`}
-                contentClassName="p-6"
-              >
-                <div className="flex justify-center mb-3">
-                  <BubblesMascot state={isDragActive ? 'surprised' : 'happy'} size={72} />
-                </div>
-                <p className="font-extrabold text-[var(--color-text)] mb-1">
-                  {isDragActive ? 'Drop it here!' : 'Drop your receipt here'}
-                </p>
-                <p className="text-sm text-[var(--color-muted)] mb-4">
-                  Bubbles reads the items; nothing goes in until you say so.
-                </p>
-                {/* After a failure the notice above carries the primary key; this
-                    one steps back so there is a single primary action. */}
-                <SpringButton
-                  variant={error ? 'secondary' : 'primary'}
-                  fullWidth
-                  onClick={() => inputRef.current?.click()}
-                >
-                  Choose a photo
-                </SpringButton>
-              </PixelPanel>
+              <ScanDropzone
+                isDragActive={isDragActive}
+                dropzoneHandlers={dropzoneHandlers}
+                onChoose={() => inputRef.current?.click()}
+                hasError={!!error}
+              />
 
               <input
                 ref={inputRef}
@@ -199,29 +174,7 @@ export default function ScanPage() {
               exit={{ opacity: 0, scale: 0.97 }}
               transition={{ duration: 0.25 }}
             >
-              <PixelPanel className="text-center" contentClassName="p-6">
-                {preview && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={preview}
-                    alt="Receipt preview"
-                    className="mb-4 max-h-48 w-full border-[3px] border-[var(--color-text)] bg-[var(--color-bg)] object-contain"
-                  />
-                )}
-                <div className="flex justify-center mb-3">
-                  <BubblesMascot state="thinking" size={64} />
-                </div>
-                <div className="flex items-center justify-center gap-3 text-[var(--color-text)]">
-                  <PixelDots />
-                  <p className="font-extrabold">Scanning receipt…</p>
-                </div>
-                <p className="text-sm text-[var(--color-muted)] mt-2">Bubbles is reading your items</p>
-                <div className="mt-4 flex justify-center">
-                  <SpringButton variant="secondary" size="sm" onClick={handleCancelScan}>
-                    Cancel scan
-                  </SpringButton>
-                </div>
-              </PixelPanel>
+              <ScanProcessingPanel preview={preview} onCancel={handleCancelScan} />
             </motion.div>
           )}
 
@@ -234,14 +187,7 @@ export default function ScanPage() {
               transition={{ duration: 0.25 }}
               role="status"
             >
-              <PixelPanel className="text-center" contentClassName="p-6">
-                <div className="flex justify-center mb-3">
-                  <BubblesMascot state="happy" size={72} />
-                </div>
-                <p className="font-extrabold text-[var(--color-text)]">
-                  Taking your shopping to the kitchen…
-                </p>
-              </PixelPanel>
+              <ScanHandoffPanel />
             </motion.div>
           )}
         </AnimatePresence>
