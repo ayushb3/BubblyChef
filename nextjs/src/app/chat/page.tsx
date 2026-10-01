@@ -1039,7 +1039,8 @@ function ChatSurface() {
         {isStreaming ? (
           <SpringButton
             onClick={cancelStream}
-            className="bg-[var(--color-muted)] text-white font-semibold px-4 py-2.5 rounded-full"
+            variant="secondary"
+            className="px-4 py-2.5"
           >
             Stop
           </SpringButton>

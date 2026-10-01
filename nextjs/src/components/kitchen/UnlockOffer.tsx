@@ -89,6 +89,7 @@ export default function UnlockOffer() {
               const isPicking = mutation.isPending && claimedId === option.id
               return (
                 <SpringButton
+                  variant="plain"
                   key={option.id}
                   onClick={() => handlePick(option.id)}
                   disabled={mutation.isPending}
