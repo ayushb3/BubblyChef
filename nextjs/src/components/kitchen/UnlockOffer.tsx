@@ -113,7 +113,7 @@ export default function UnlockOffer() {
             })}
           </div>
           {error && (
-            <p className="mt-2 text-xs text-center text-[#ff9aa2]" role="alert">
+            <p className="mt-2 text-xs text-center text-[var(--color-coral)]" role="alert">
               {error}
             </p>
           )}

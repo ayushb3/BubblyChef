@@ -717,8 +717,8 @@ export default function MealCookPage() {
       >
         <BubblesMascot state="thinking" size={80} />
         <p
-          className="text-sm font-semibold"
-          style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans text-sm font-semibold"
+          style={{ color: 'var(--color-muted)' }}
         >
           Loading...
         </p>
@@ -740,8 +740,8 @@ export default function MealCookPage() {
       >
         <BubblesMascot state="surprised" size={90} />
         <h1
-          className="text-xl font-extrabold text-center"
-          style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans text-xl font-extrabold text-center"
+          style={{ color: 'var(--color-text)' }}
         >
           Meal not found
         </h1>
@@ -751,8 +751,8 @@ export default function MealCookPage() {
 
   return (
     <main
-      className="min-h-screen pb-24"
-      style={{ background: 'var(--color-bg)', fontFamily: 'Nunito, sans-serif' }}
+      className="font-sans min-h-screen pb-24"
+      style={{ background: 'var(--color-bg)' }}
     >
       <div className="max-w-2xl mx-auto px-4 pt-6 flex flex-col gap-4">
         <div className="flex items-center justify-between gap-3">

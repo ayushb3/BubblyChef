@@ -74,7 +74,7 @@ export default function DietaryPreferences({ profileId, initialSelected }: Dieta
       </div>
       <p className="mt-2 text-xs h-4" aria-live="polite">
         {status === 'saved' && <span className="text-[var(--color-primary)]">Saved!</span>}
-        {status === 'error' && <span className="text-[#ff9aa2]">{errorMessage}</span>}
+        {status === 'error' && <span className="text-[var(--color-coral)]">{errorMessage}</span>}
       </p>
     </div>
   )

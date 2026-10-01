@@ -538,8 +538,8 @@ export default function MealDetailPage() {
       >
         <BubblesMascot state="thinking" size={80} />
         <p
-          className="text-sm font-semibold"
-          style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans text-sm font-semibold"
+          style={{ color: 'var(--color-muted)' }}
         >
           Loading meal...
         </p>
@@ -561,21 +561,21 @@ export default function MealDetailPage() {
       >
         <BubblesMascot state="surprised" size={90} />
         <h1
-          className="text-xl font-extrabold text-center"
-          style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans text-xl font-extrabold text-center"
+          style={{ color: 'var(--color-text)' }}
         >
           Meal not found
         </h1>
         <p
-          className="text-sm text-center"
-          style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans text-sm text-center"
+          style={{ color: 'var(--color-muted)' }}
         >
           This meal doesn&apos;t exist or was deleted.
         </p>
         <Link
           href="/recipes"
-          className="mt-2 px-6 py-2 rounded-full font-bold text-white text-sm"
-          style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans mt-2 px-6 py-2 rounded-full font-bold text-white text-sm"
+          style={{ background: 'var(--color-primary)' }}
         >
           Back to Recipes
         </Link>
@@ -587,8 +587,8 @@ export default function MealDetailPage() {
 
   return (
     <main
-      className="min-h-screen pb-24"
-      style={{ background: 'var(--color-bg)', fontFamily: 'Nunito, sans-serif' }}
+      className="font-sans min-h-screen pb-24"
+      style={{ background: 'var(--color-bg)' }}
     >
       <div className="max-w-2xl mx-auto px-4 pt-6 flex flex-col gap-6">
         {/* Header row */}
@@ -921,8 +921,8 @@ export default function MealDetailPage() {
               disabled={dishOpInFlight}
               className="self-start min-h-[44px] px-4 rounded-full text-sm font-bold disabled:opacity-40"
               style={{
-                color: 'var(--color-coral, #ff9aa2)',
-                border: '1.5px solid var(--color-coral, #ff9aa2)',
+                color: 'var(--color-coral)',
+                border: '1.5px solid var(--color-coral)',
                 background: 'transparent',
               }}
             >
@@ -1053,14 +1053,14 @@ function DishSection({
                   // controlsDisabled covers a pending remove and any swap/add in flight.
                   disabled={controlsDisabled}
                   className="min-h-[44px] px-4 rounded-full text-xs font-bold text-white disabled:opacity-60"
-                  style={{ background: 'var(--color-coral, #ff9aa2)' }}
+                  style={{ background: 'var(--color-coral)' }}
                 >
                   {removePending ? 'Removing…' : 'Remove'}
                 </button>
               </div>
             </div>
             {removeError && (
-              <p className="text-xs" role="alert" style={{ color: 'var(--color-coral, #ff9aa2)' }}>
+              <p className="text-xs" role="alert" style={{ color: 'var(--color-coral)' }}>
                 {removeError}
               </p>
             )}

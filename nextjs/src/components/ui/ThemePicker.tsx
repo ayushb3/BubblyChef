@@ -129,8 +129,8 @@ export default function ThemePicker() {
                     setOpen(false)
                   }}
                   // py-3 + 20px swatch puts each row at 44px tall.
-                  className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-semibold hover:bg-[var(--color-bg)] transition-colors"
-                  style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+                  className="font-sans w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-semibold hover:bg-[var(--color-bg)] transition-colors"
+                  style={{ color: 'var(--color-text)' }}
                 >
                   <span
                     aria-hidden="true"

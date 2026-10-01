@@ -89,7 +89,7 @@ export default function FacetDropdown({
         }
         style={{
           background: hasSelection ? 'var(--color-primary)' : 'var(--color-bg)',
-          color: hasSelection ? '#fff' : 'var(--color-text)',
+          color: hasSelection ? 'var(--color-on-primary)' : 'var(--color-text)',
           border: '1px solid var(--color-border)',
         }}
       >
@@ -137,8 +137,8 @@ export default function FacetDropdown({
                   aria-pressed={isActive}
                   onClick={() => toggleValue(value)}
                   // py-3 keeps rows at 44px tall, matching ThemePicker.
-                  className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-semibold hover:bg-[var(--color-bg)] transition-colors"
-                  style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+                  className="font-sans w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-semibold hover:bg-[var(--color-bg)] transition-colors"
+                  style={{ color: 'var(--color-text)' }}
                 >
                   {emoji && <span aria-hidden="true">{emoji}</span>}
                   <span className="flex-1">{label}</span>

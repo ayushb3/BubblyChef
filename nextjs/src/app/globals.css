@@ -36,6 +36,31 @@
     --color-dish-side-1: #B5EAD7; /* pastel mint */
     --color-dish-side-2: #FFDAB3; /* pastel peach */
     /* --- end issue #741 --- */
+
+    /* --- issue #747: tokens for the colours the token sweep found written as
+       hex in components. Same values the hex literals had, so the swap is
+       invisible; theme-invariant like the signal tokens above. A new component
+       that needs a colour reaches for a token here or at the top, never a hex
+       (the eslint token guard fails the build otherwise). --- */
+    --color-on-primary: #FFFFFF;  /* text/icons on a primary or primary-dark fill */
+    --color-coral: #FF9AA2;       /* soft error text and borders, favourite heart */
+    --color-ink: #1A1A1A;         /* dark floating controls (dev prototype switcher) */
+    --color-charcoal: #4A4A4A;    /* soft-charcoal body copy on cards */
+    --color-danger: #D9534F;      /* "missing" tone */
+    --color-error-bg: #FFF5F5;
+    --color-error-border: #F5C0C0;
+    --color-error-text: #E05252;
+    --color-success-bg: #E6F9F0;
+    --color-success-text: #2D7A56;
+    --color-warn-bg: #FFF8EE;
+    --color-warn-border: #F5D9A8;
+    --color-warn-text: #A8651A;
+    --color-warn-icon: #F59E0B;   /* the ⚠ glyph */
+    --color-tip-bg: #FFFBEA;
+    --color-tip-border: #FFE9A0;
+    --color-tip-title: #B58A00;
+    --color-tip-text: #6B5600;
+    /* --- end issue #747 --- */
     /*
      * Semantic signal tokens (fresh / expiring / expired) are intentionally
      * theme-invariant — red = bad and green = good across all five themes,

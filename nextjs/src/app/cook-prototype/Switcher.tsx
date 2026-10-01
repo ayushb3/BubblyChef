@@ -37,7 +37,7 @@ export default function Switcher() {
   return (
     <div
       className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-1 rounded-full px-2 py-1.5"
-      style={{ background: '#1a1a1a', color: '#fff', boxShadow: '0 6px 24px rgba(0,0,0,.35)' }}
+      style={{ background: 'var(--color-ink)', color: 'var(--color-on-primary)', boxShadow: '0 6px 24px rgba(0,0,0,.35)' }}
     >
       <button onClick={() => go(prev)} className="px-2 text-lg leading-none" aria-label="Previous variant">
         ←

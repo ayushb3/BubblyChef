@@ -18,12 +18,11 @@ import type { GeneratedRecipe } from '@/types/recipes'
 function MetaBadge({ icon, label }: { icon: string; label: string }) {
   return (
     <span
-      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border"
+      className="font-sans inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border"
       style={{
         background: 'var(--color-surface)',
         borderColor: 'var(--color-border)',
         color: 'var(--color-text)',
-        fontFamily: 'Nunito, sans-serif',
       }}
     >
       <span>{icon}</span>
@@ -37,11 +36,10 @@ function MetaBadge({ icon, label }: { icon: string; label: string }) {
 function DietaryPill({ tag }: { tag: string }) {
   return (
     <span
-      className="inline-block px-3 py-1 rounded-full text-xs font-bold"
+      className="font-sans inline-block px-3 py-1 rounded-full text-xs font-bold"
       style={{
         background: 'var(--color-accent)',
-        color: '#fff',
-        fontFamily: 'Nunito, sans-serif',
+        color: 'var(--color-on-primary)',
       }}
     >
       {tag}
@@ -143,8 +141,8 @@ export default function RecipeDetailPage() {
       >
         <BubblesMascot state="thinking" size={80} />
         <p
-          className="text-sm font-semibold"
-          style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans text-sm font-semibold"
+          style={{ color: 'var(--color-muted)' }}
         >
           Loading recipe...
         </p>
@@ -161,14 +159,14 @@ export default function RecipeDetailPage() {
       >
         <BubblesMascot state="surprised" size={90} />
         <h1
-          className="text-xl font-extrabold text-center"
-          style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans text-xl font-extrabold text-center"
+          style={{ color: 'var(--color-text)' }}
         >
           {error === 'not_found' ? 'Recipe not found' : 'Could not load recipe'}
         </h1>
         <p
-          className="text-sm text-center"
-          style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans text-sm text-center"
+          style={{ color: 'var(--color-muted)' }}
         >
           {error === 'not_found'
             ? "This recipe doesn't exist or was deleted."
@@ -176,8 +174,8 @@ export default function RecipeDetailPage() {
         </p>
         <Link
           href="/recipes"
-          className="mt-2 px-6 py-2 rounded-full font-bold text-white text-sm"
-          style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans mt-2 px-6 py-2 rounded-full font-bold text-white text-sm"
+          style={{ background: 'var(--color-primary)' }}
         >
           Back to Recipes
         </Link>
@@ -189,8 +187,8 @@ export default function RecipeDetailPage() {
   return (
     <>
       <main
-        className="min-h-screen pb-24"
-        style={{ background: 'var(--color-bg)', fontFamily: 'Nunito, sans-serif' }}
+        className="font-sans min-h-screen pb-24"
+        style={{ background: 'var(--color-bg)' }}
       >
         <div className="max-w-2xl mx-auto px-4 pt-6">
           {/* Header row */}
@@ -284,11 +282,11 @@ export default function RecipeDetailPage() {
                 transition={{ duration: 0.18 }}
                 className="mb-5 p-4 rounded-2xl border flex flex-col gap-2"
                 style={{
-                  background: '#fff5f5',
-                  borderColor: '#f5c0c0',
+                  background: 'var(--color-error-bg)',
+                  borderColor: 'var(--color-error-border)',
                 }}
               >
-                <p className="text-sm font-bold" style={{ color: '#e05252' }}>
+                <p className="text-sm font-bold" style={{ color: 'var(--color-error-text)' }}>
                   Are you sure you want to delete this recipe?
                 </p>
                 <div className="flex gap-2">
@@ -424,18 +422,18 @@ export default function RecipeDetailPage() {
                 <div
                   className="rounded-3xl p-4"
                   style={{
-                    background: '#fffbea',
-                    border: '1.5px solid #ffe9a0',
+                    background: 'var(--color-tip-bg)',
+                    border: '1.5px solid var(--color-tip-border)',
                   }}
                 >
-                  <h2 className="text-base font-extrabold mb-2" style={{ color: '#b58a00' }}>
+                  <h2 className="text-base font-extrabold mb-2" style={{ color: 'var(--color-tip-title)' }}>
                     Tips
                   </h2>
                   <ul className="space-y-1">
                     {recipe.tips.map((tip, i) => (
                       <li key={i} className="text-sm flex items-start gap-2">
                         <span>💡</span>
-                        <span style={{ color: '#6b5600' }}>{tip}</span>
+                        <span style={{ color: 'var(--color-tip-text)' }}>{tip}</span>
                       </li>
                     ))}
                   </ul>

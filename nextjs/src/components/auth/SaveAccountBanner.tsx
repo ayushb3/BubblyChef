@@ -215,7 +215,7 @@ export default function SaveAccountBanner({ persistent = false }: SaveAccountBan
               className="w-full px-4 py-2.5 rounded-2xl border border-[var(--color-border)] bg-white text-[var(--color-text)] focus:border-[var(--color-accent)] transition-colors placeholder:text-[var(--color-muted)] text-sm"
             />
             {error && (
-              <p className="text-sm text-[#ff9aa2] bg-[#ff9aa2]/10 px-4 py-2 rounded-2xl">
+              <p className="text-sm text-[var(--color-coral)] bg-[var(--color-coral)]/10 px-4 py-2 rounded-2xl">
                 {error}
               </p>
             )}

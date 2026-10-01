@@ -64,9 +64,8 @@ export default function RecipeDetail({ recipe, ingredientMatches }: RecipeDetail
   return (
     <>
       <div
-        className="px-5 py-4 text-sm text-[var(--color-text)]"
+        className="font-sans px-5 py-4 text-sm text-[var(--color-text)]"
         style={{
-        fontFamily: 'Nunito, sans-serif',
         backgroundImage:
           'repeating-linear-gradient(transparent, transparent 27px, var(--color-border) 27px, var(--color-border) 28px)',
         backgroundSize: `100% ${LINE_HEIGHT}px`,
@@ -89,8 +88,8 @@ export default function RecipeDetail({ recipe, ingredientMatches }: RecipeDetail
       {recipe.ingredients.length > 0 && (
         <div className="mb-6">
           <h3
-            className="font-extrabold text-base"
-            style={{ lineHeight: `${LINE_HEIGHT}px`, fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans font-extrabold text-base"
+            style={{ lineHeight: `${LINE_HEIGHT}px` }}
           >
             Ingredients
           </h3>
@@ -133,12 +132,11 @@ export default function RecipeDetail({ recipe, ingredientMatches }: RecipeDetail
             href={recipe.source_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold no-underline hover:opacity-80 transition-opacity"
+            className="font-sans inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold no-underline hover:opacity-80 transition-opacity"
             style={{
               background: 'var(--color-bg)',
               border: '1.5px solid var(--color-border)',
               color: 'var(--color-muted)',
-              fontFamily: 'Nunito, sans-serif',
             }}
           >
             🔗 {recipe.source_platform ?? recipe.source_title ?? 'View original'}

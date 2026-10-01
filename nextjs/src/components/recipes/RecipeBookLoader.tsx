@@ -47,11 +47,10 @@ export default function RecipeBookLoader() {
             role="tab"
             aria-selected={tab === t}
             onClick={() => setTab(t)}
-            className="px-4 py-1.5 rounded-full text-sm font-bold transition-colors"
+            className="font-sans px-4 py-1.5 rounded-full text-sm font-bold transition-colors"
             style={{
-              fontFamily: 'Nunito, sans-serif',
               background: tab === t ? 'var(--color-primary)' : 'var(--color-surface)',
-              color: tab === t ? '#fff' : 'var(--color-muted)',
+              color: tab === t ? 'var(--color-on-primary)' : 'var(--color-muted)',
               border: tab === t ? 'none' : '1px solid var(--color-border)',
             }}
           >
@@ -65,7 +64,7 @@ export default function RecipeBookLoader() {
       ) : loading ? (
         <div className="flex flex-col items-center justify-center min-h-[300px] gap-3">
           <span className="text-4xl animate-bounce">📖</span>
-          <p className="text-sm text-[var(--color-muted)]" style={{ fontFamily: 'Nunito, sans-serif' }}>
+          <p className="font-sans text-sm text-[var(--color-muted)]">
             Opening your recipe book…
           </p>
         </div>

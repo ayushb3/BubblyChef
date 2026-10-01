@@ -187,8 +187,7 @@ export default function MealCookSheet({
               <button
                 onClick={guardedClose}
                 disabled={state === 'confirming'}
-                className="flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform disabled:opacity-50"
-                style={{ fontFamily: 'Nunito, sans-serif' }}
+                className="font-sans flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -198,14 +197,13 @@ export default function MealCookSheet({
                 /* Demoted to a secondary treatment while rows are unresolved,
                    same pattern as CookModal's "Cook anyway" (#245). */
                 className={[
-                  'flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold active:scale-95 transition-transform disabled:opacity-50',
+                  'font-sans flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold active:scale-95 transition-transform disabled:opacity-50',
                   hasUnresolved
                     ? 'border-2 border-[var(--color-primary-dark)] text-[var(--color-primary-dark)]'
                     : 'text-white',
                 ].join(' ')}
                 style={{
                   background: hasUnresolved ? 'transparent' : 'var(--color-primary-dark)',
-                  fontFamily: 'Nunito, sans-serif',
                 }}
               >
                 {state === 'confirming' ? 'Saving...' : hasUnresolved ? 'Update anyway' : 'Update pantry'}
@@ -217,16 +215,16 @@ export default function MealCookSheet({
             {errorKind ? (
               <button
                 onClick={onBackToMeal}
-                className="flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
-                style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
+                className="font-sans flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
+                style={{ background: 'var(--color-primary-dark)' }}
               >
                 Back to meal
               </button>
             ) : (
               <button
                 onClick={onRetry}
-                className="flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
-                style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
+                className="font-sans flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
+                style={{ background: 'var(--color-primary-dark)' }}
               >
                 Retry
               </button>
@@ -243,8 +241,7 @@ export default function MealCookSheet({
             style={{ borderColor: 'var(--color-primary)', borderTopColor: 'transparent' }}
           />
           <p
-            className="text-sm font-semibold text-[var(--color-text)]"
-            style={{ fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-sm font-semibold text-[var(--color-text)]"
           >
             Checking your pantry against the whole meal…
           </p>
@@ -253,7 +250,7 @@ export default function MealCookSheet({
 
       {state === 'error' && (
         <div className="py-8 text-center" role="alert">
-          <p className="text-sm font-semibold text-red-500" style={{ fontFamily: 'Nunito, sans-serif' }}>
+          <p className="font-sans text-sm font-semibold text-red-500">
             {errorMessage || 'Something went wrong. Please try again.'}
           </p>
         </div>
@@ -263,8 +260,7 @@ export default function MealCookSheet({
         <div className="py-8 text-center flex flex-col items-center gap-3">
           <BubblesMascot state="celebrate" size={80} />
           <p
-            className="text-sm font-extrabold text-[var(--color-text)]"
-            style={{ fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-sm font-extrabold text-[var(--color-text)]"
           >
             Pantry updated!
           </p>
@@ -275,8 +271,8 @@ export default function MealCookSheet({
                 type="button"
                 ref={backToMealRef}
                 onClick={onBackToMeal}
-                className="min-h-[44px] px-6 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
-                style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
+                className="font-sans min-h-[44px] px-6 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
+                style={{ background: 'var(--color-primary-dark)' }}
                 data-testid="meal-cook-sheet-back-to-meal"
               >
                 Back to meal
