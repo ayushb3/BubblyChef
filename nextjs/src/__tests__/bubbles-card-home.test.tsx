@@ -187,6 +187,47 @@ describe('case 1: something in progress', () => {
     await waitFor(() => expect(getActiveMealCookSession()).toBeNull())
   })
 
+  it('"I finished it" on a guided cook ends it in the scene too: the steam stops, no reload (#837)', async () => {
+    startGuidedCookSession('r-lemon')
+    saveCookProgress('r-lemon', 3)
+    mockWorld()
+    renderHome()
+
+    const c = await card()
+    expect(screen.getByTestId('stove-steam')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: /Bubbles is at the stove, cooking/ })).toBeInTheDocument()
+
+    fireEvent.click(within(c).getByRole('button', { name: 'I finished it' }))
+    await waitFor(() => expect(screen.queryByTestId('stove-steam')).toBeNull())
+    expect(screen.getByRole('group', { name: /Bubbles is at the stove\./ })).toBeInTheDocument()
+  })
+
+  it('"I finished it" on a meal cook-along ends it in the scene too (#837)', async () => {
+    const meal = {
+      id: 'm-1',
+      user_id: 'u',
+      title: 'Pasta night',
+      description: null,
+      servings: 2,
+      constraints: { kitchen_limits: [], exclusive_tags: [], recipe_constraints: {} },
+      is_draft: false,
+      source_type: 'chat',
+      last_cooked_at: null,
+      times_cooked: 0,
+      created_at: 't',
+      updated_at: 't',
+      dishes: [{ role: 'main', position: 0, recipe: { ...LEMON_PASTA, id: 'd-1', steps: null } }],
+    } as unknown as Meal
+    startMealCookSession('m-1', ['d-1'], Date.now(), dishStepSignaturesForMeal(meal))
+    mockWorld({ meal })
+    renderHome()
+
+    const c = await card()
+    expect(screen.getByTestId('stove-steam')).toBeInTheDocument()
+    fireEvent.click(within(c).getByRole('button', { name: 'I finished it' }))
+    await waitFor(() => expect(screen.queryByTestId('stove-steam')).toBeNull())
+  })
+
   it('a recipe that cannot be fetched gives no cook card, and the next case shows', async () => {
     startGuidedCookSession('gone')
     saveCookProgress('gone', 1)

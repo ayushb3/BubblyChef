@@ -27,6 +27,7 @@ import {
   getActiveMealCookSession,
   type MealCookSession,
 } from '@/lib/meal-cook-session'
+import { subscribeCookSessionChanges } from '@/lib/cook-session-signal'
 import { timerIdsToDismiss } from '@/lib/meal-cook-stream'
 import { useCookingTimers } from '@/lib/useCookingTimers'
 import { fetchRecipe } from '@/lib/api/recipes'
@@ -50,14 +51,7 @@ export function useCookResume(): { cook: CookResume | null; ready: boolean; fini
   useEffect(() => {
     const read = () => setSessions(readSessions())
     read()
-    window.addEventListener('storage', read)
-    window.addEventListener('focus', read)
-    document.addEventListener('visibilitychange', read)
-    return () => {
-      window.removeEventListener('storage', read)
-      window.removeEventListener('focus', read)
-      document.removeEventListener('visibilitychange', read)
-    }
+    return subscribeCookSessionChanges(read)
   }, [])
 
   const mealId = sessions?.meal?.meal_id ?? null

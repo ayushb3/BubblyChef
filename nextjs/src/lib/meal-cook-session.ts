@@ -39,6 +39,7 @@
 
 import type { MealCookIngredient } from '@/types/meals'
 import { clearPlannedTonight } from '@/lib/kitchen/planned-tonight'
+import { notifyCookSessionChanged } from '@/lib/cook-session-signal'
 
 export interface MealCookStepRecord {
   status: 'done' | 'skipped' | 'running'
@@ -166,6 +167,7 @@ function writeActiveSession(session: MealCookSession | null): void {
     } else {
       window.localStorage.setItem(ACTIVE_KEY, JSON.stringify(session))
     }
+    notifyCookSessionChanged()
   } catch {
     // Best effort — worst case a reload loses the in-progress cook, same
     // degraded-not-broken posture as `cook-session.ts`.
@@ -189,6 +191,7 @@ function writeEndedMealIds(ids: string[]): void {
   if (typeof window === 'undefined') return
   try {
     window.localStorage.setItem(ENDED_KEY, JSON.stringify(ids))
+    notifyCookSessionChanged()
   } catch {
     // Best effort — worst case the "Resume cooking?" banner reappears for an
     // already-finished meal, which is a downgrade, not a new failure mode.
