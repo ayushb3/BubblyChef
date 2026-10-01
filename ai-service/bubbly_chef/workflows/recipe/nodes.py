@@ -1006,6 +1006,10 @@ def constraints_to_persist(state: WorkflowState) -> dict[str, Any] | None:
         persisted["excluded_ingredients"] = [
             x for x in persisted["excluded_ingredients"] if x.strip().lower() not in from_profile
         ]
+    if state.get("brainstorm_ideas") and state.get("next_action") == NextAction.PICK_RECIPE.value:
+        # A brainstorm's options are waiting for a pick: the pick continues this
+        # request, so it keeps the foods the request named (issue #719).
+        return persisted
     final_dietary = list((constraints or {}).get("dietary") or [])
     return _without_turn_scoped_foods(persisted, state, final_dietary)
 
@@ -1246,6 +1250,13 @@ def _prior_constraints_from_state(state: WorkflowState) -> dict[str, Any] | None
         return None
     prior = metadata.get("recipe_constraints")
     return prior if isinstance(prior, dict) else None
+
+
+def _brainstorm_pending(state: WorkflowState) -> bool:
+    """True when the session still holds a brainstorm's options awaiting a pick (#719)."""
+    session = state.get("session")
+    metadata = session.get("metadata") if isinstance(session, dict) else None
+    return isinstance(metadata, dict) and bool(metadata.get("brainstorm_ideas"))
 
 
 def _constraints_prompt(input_text: str, session_held: list[str], stored: list[str]) -> str:
@@ -1815,12 +1826,20 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
     if not state.get("constraints_extracted"):
         # A brainstorm pick (or the defensive case): extract did not run this
         # turn, so re-check the diet ourselves rather than blindly re-applying
-        # the stored one (#544). The picked name is the only text checked; `{}`
-        # is passed for the constraints so a stored must_use of "chicken" from
-        # the brainstorm turn doesn't count as this pick naming chicken. A diet
-        # set aside for a "Chicken Tikka" pick stays set aside, and one set
+        # the stored one (#544). The picked name is the only message text checked.
+        # A diet set aside for a "Chicken Tikka" pick stays set aside, and one set
         # aside by the brainstorm reasserts once the pick stops contradicting
         # it (the #394 design).
+        #
+        # The exception is the food the brainstorm request itself asked for
+        # (issue #719): "give me some chicken ideas" under a Vegetarian diet is
+        # still a chicken request when the user picks "Honey Garlic Thighs", whose
+        # title doesn't say chicken. The session keeps those foods while the
+        # brainstorm's options are pending (`constraints_to_persist`), so while
+        # they are pending the foods are read here as part of the pick and keep the
+        # diet set aside. Without pending options a stored must_use food doesn't
+        # count as the pick naming it. Once the pick is made they are no longer
+        # persisted.
         #
         # The same filter applies to the rehydrated conversation diet, not only
         # the stored one: a session "Vegetarian" doesn't survive a "Chicken
@@ -1828,11 +1847,27 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
         rehydrated_dietary = list(constraints.get("dietary") or [])
         session_dietary = rehydrated_dietary
         name_lower = recipe_name.lower()
+        request_foods = (
+            {
+                key: constraints[key]
+                for key in ("must_use_ingredients", "preferred_ingredients")
+                if constraints.get(key)
+            }
+            if _brainstorm_pending(state)
+            else {}
+        )
+        foods_text = join_fields(
+            *request_foods.get("must_use_ingredients", []),
+            *request_foods.get("preferred_ingredients", []),
+        )
         rehydrated_kept = [
-            label for label in rehydrated_dietary if not _dietary_contradicted(label, name_lower)
+            label
+            for label in rehydrated_dietary
+            if not _dietary_contradicted(label, name_lower)
+            and not _dietary_contradicted(label, foods_text)
         ]
         dietary = _combine_dietary_preferences(
-            stored_dietary, rehydrated_kept, {}, recipe_name
+            stored_dietary, rehydrated_kept, request_foods, recipe_name
         )
         if dietary != rehydrated_dietary:
             logger.info(

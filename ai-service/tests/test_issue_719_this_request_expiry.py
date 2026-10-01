@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bubbly_chef.models.base import Intent
+from bubbly_chef.models.base import Intent, NextAction
 from bubbly_chef.models.recipe import DietChanges, RecipeCard, RecipeConstraints
 from bubbly_chef.models.session import ConversationSession
 from bubbly_chef.services.recipe_generator import GenerateRecipeResponse, IngredientStatus
@@ -260,3 +260,82 @@ async def test_naming_the_food_again_still_sets_the_diet_aside_for_that_turn() -
 
     assert not second["recipe_constraints"].get("dietary")
     assert _card_of(second).diets_set_aside == ["Vegetarian"]
+
+
+# ---------------------------------------------------------------------------
+# must_use_ingredients is turn-scoped the same way as preferred_ingredients
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_must_use_food_that_set_the_diet_aside_is_not_remembered() -> None:
+    stored = ["Vegetarian"]
+    first = await _turn(
+        "use up my chicken tonight",
+        None,
+        RecipeConstraints(must_use_ingredients=["chicken", "rice"]),
+        stored,
+    )
+    assert _card_of(first).diets_set_aside == ["Vegetarian"]
+
+    nxt = await _save(first)
+
+    persisted = nxt["metadata"]["recipe_constraints"]
+    assert persisted["must_use_ingredients"] == ["rice"]
+    second = await _turn("something quick", nxt, None, stored)
+    assert second["recipe_constraints"]["dietary"] == ["Vegetarian"]
+    assert "chicken" not in (second["recipe_constraints"].get("must_use_ingredients") or [])
+
+
+# ---------------------------------------------------------------------------
+# brainstorm -> pick is one request: the food the brainstorm asked for survives
+# until the pick, whose title may not name it
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["must_use_ingredients", "preferred_ingredients"])
+async def test_a_pick_keeps_the_food_the_brainstorm_asked_for(field: str) -> None:
+    stored = ["Vegetarian"]
+    ai = _FakeAI(RecipeConstraints(**{field: ["chicken"]}))
+
+    # Turn 1: "give me some chicken ideas" under a stored Vegetarian diet.
+    with _env(stored, ai):
+        brainstorm: Any = _state("give me some chicken ideas", None)
+        brainstorm = await extract_recipe_constraints(brainstorm)
+    saved = ConversationSession(conversation_id="conv-719")
+    repo = MagicMock()
+    repo.get_or_create_session = AsyncMock(return_value=saved)
+    repo.update_session = AsyncMock(return_value=None)
+    with patch(f"{_ROUTER}.get_repository", AsyncMock(return_value=repo)):
+        await update_session_node(
+            {
+                **brainstorm,
+                "intent": Intent.RECIPE_BRAINSTORM.value,
+                "next_action": NextAction.PICK_RECIPE.value,
+                "brainstorm_ideas": ["Honey Garlic Thighs", "Lemon Herb Drumsticks"],
+                "conversation_id": "conv-719",
+            }  # type: ignore[typeddict-item]
+        )
+    persisted: ConversationSession = repo.update_session.await_args.args[1]
+    session = {"metadata": persisted.metadata.model_dump(mode="json")}
+    assert session["metadata"]["recipe_constraints"][field] == ["chicken"]
+
+    # Turn 2: pick a dish whose title does not name chicken.
+    with _env(stored, _FakeAI()):
+        pick: Any = _state("Honey Garlic Thighs", session)
+        pick["selected_recipe_name"] = "Honey Garlic Thighs"
+        pick = await research_recipe(pick)
+        pick = await generate_grounded_recipe(pick)
+
+    assert "dietary" not in pick["recipe_constraints"]
+    assert pick["recipe_constraints"][field] == ["chicken"]
+    assert _card_of(pick).diets_set_aside == ["Vegetarian"]
+
+    # And the pick ends it: the next turn gets Vegetarian back, without the chicken.
+    nxt = await _save(pick)
+    assert field not in nxt["metadata"]["recipe_constraints"] or not nxt["metadata"][
+        "recipe_constraints"
+    ][field]
+    after = await _turn("something quick", nxt, None, stored)
+    assert after["recipe_constraints"]["dietary"] == ["Vegetarian"]
