@@ -3,14 +3,13 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
-import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import { cookRecipe, confirmCook } from '@/lib/api/recipes'
 import type { CookProposal } from '@/types/recipes'
 import type { MealCookIngredient } from '@/types/meals'
 import { skippedDeductionNames, skippedTotal, type SkippedDeductionNames } from '@/lib/cook-skipped'
 import SkippedDeductionsNotice from '@/components/cook/SkippedDeductionsNotice'
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
+import PixelSheet from '@/components/ui/PixelSheet'
 import { endCookSession, isCookSessionEnded } from '@/lib/cook-session'
 import {
   CookReviewBody,
@@ -133,7 +132,6 @@ export default function CookModal({
       mountedRef.current = false
     }
   }, [])
-  const panelRef = useRef<HTMLDivElement>(null)
 
   // The amendment is snapshotted when the sheet opens for this recipe (and mode),
   // and never re-read. Confirming ends the cook, which clears the stored
@@ -171,7 +169,6 @@ export default function CookModal({
     if (pausedForNotice) continueToChat()
     else onClose()
   }
-  useModalFocusTrap(true, dismiss, panelRef)
 
   // The notice pauses the redirect, so the Continue pill is what the cook acts
   // on next: move focus to it as the state appears (keyboard and screen-reader
@@ -263,264 +260,204 @@ export default function CookModal({
   }
 
   return (
-    <AnimatePresence>
-      {/* Backdrop */}
-      <motion.div
-        className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center"
-        style={{ background: 'rgba(0,0,0,0.4)' }}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={(e: React.MouseEvent<HTMLDivElement>) => {
-          if (e.target === e.currentTarget) dismiss()
-        }}
-      >
-        {/* Sheet */}
-        <motion.div
-          ref={panelRef}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="cook-modal-title"
-          tabIndex={-1}
-          className="w-full max-w-md mx-2 mb-4 sm:mb-0 rounded-2xl overflow-hidden flex flex-col outline-none"
-          style={{
-            background: 'var(--color-surface)',
-            boxShadow: '0 8px 32px color-mix(in srgb, var(--color-primary) 25%, transparent)',
-            maxHeight: '85vh',
-          }}
-          initial={{ y: 60, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 60, opacity: 0 }}
-          transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-        >
-          {/* Header */}
-          <div
-            className="px-5 py-4 flex items-center justify-between flex-shrink-0 border-b border-[var(--color-border)]"
-            style={{ background: 'var(--color-bg)' }}
-          >
-            <div>
-              <h2
-                id="cook-modal-title"
-                className="text-base font-extrabold text-[var(--color-text)]"
+    <PixelSheet
+      open
+      onClose={dismiss}
+      title={mode === 'preview' ? "What you'll use" : 'Mark as cooked'}
+      titleId="cook-modal-title"
+      subtitle={recipeTitle}
+      footer={
+        state === 'review' || state === 'confirming' ? (
+          <div className="flex flex-col gap-2.5">
+            {/* What will actually happen, stated before the button that does it.
+                In confirm mode a partial deduction is a warning; in preview
+                nothing is being written, so the same numbers are just a plan. */}
+            {summary && <CookDeductionSummary summary={summary} mode={mode} />}
+
+            <div className="flex gap-2">
+              <button
+                onClick={onClose}
+                disabled={state === 'confirming'}
+                className="flex-1 py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform disabled:opacity-50"
                 style={{ fontFamily: 'Nunito, sans-serif' }}
               >
-                {mode === 'preview' ? "What you'll use" : 'Mark as cooked'}
-              </h2>
-              <p
-                className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-1"
-                style={{ fontFamily: 'Nunito, sans-serif' }}
-              >
-                {recipeTitle}
-              </p>
-            </div>
-            <button
-              onClick={dismiss}
-              className="text-[var(--color-muted)] hover:text-[var(--color-text)] text-xl leading-none px-1 min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
-              aria-label="Close"
-            >
-              ✕
-            </button>
-          </div>
-
-          {/* Body */}
-          <div className="flex-1 overflow-y-auto px-5 py-4">
-            {state === 'loading' && (
-              <div role="status" aria-live="polite" className="flex flex-col gap-4 py-2">
-                <span className="sr-only">Matching recipe ingredients against your pantry</span>
-
-                <div className="flex items-center gap-2.5">
-                  <BubblesMascot state="thinking" size={32} />
-                  <div
-                    className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin motion-reduce:animate-none shrink-0"
-                    style={{ borderColor: 'var(--color-primary)', borderTopColor: 'transparent' }}
-                  />
-                  <p
-                    className="text-sm font-semibold text-[var(--color-text)]"
-                    style={{ fontFamily: 'Nunito, sans-serif' }}
-                  >
-                    {LOADING_STAGES[loadingStage].label}
-                  </p>
-                </div>
-
-                {/* Skeleton rows standing in for the match table. Gives the wait a
-                    shape that matches what arrives, so the modal doesn't jump
-                    from a centred spinner to a dense table (#245 / audit B8). */}
-                <div className="flex flex-col gap-2" aria-hidden="true">
-                  {SKELETON_ROWS.map((width, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <div
-                        className={`h-3 ${PULSE} flex-1`}
-                        style={{ ...PULSE_BG, maxWidth: width }}
-                      />
-                      <div className={`h-3 w-12 ${PULSE}`} style={PULSE_BG} />
-                      <div className={`h-4 w-14 rounded-full ${PULSE}`} style={PULSE_BG} />
-                    </div>
-                  ))}
-                </div>
-
-                <p
-                  className="text-xs text-[var(--color-muted)]"
-                  style={{ fontFamily: 'Nunito, sans-serif' }}
-                >
-                  {LOADING_STAGES[loadingStage].hint}
-                </p>
-              </div>
-            )}
-
-            {state === 'error' && (
-              <div className="py-8 text-center">
-                <p className="text-sm font-semibold text-red-500" style={{ fontFamily: 'Nunito, sans-serif' }}>
-                  {errorMsg || 'Something went wrong. Please try again.'}
-                </p>
-              </div>
-            )}
-
-            {state === 'success' && (
-              <div className="py-8 text-center flex flex-col items-center gap-3">
-                <BubblesMascot state="celebrate" size={80} />
-                <p
-                  className="text-sm font-extrabold text-[var(--color-text)]"
-                  style={{ fontFamily: 'Nunito, sans-serif' }}
-                >
-                  Pantry updated!
-                </p>
-                {showSkippedNotice && (
-                  <SkippedDeductionsNotice names={skipped.names} unnamed={skipped.unnamed} total={skipped.total} />
-                )}
-                {isDraft ? (
-                  <>
-                    <p
-                      className="text-sm text-[var(--color-muted)]"
-                      style={{ fontFamily: 'Nunito, sans-serif' }}
-                    >
-                      Add <span className="font-semibold">{recipeTitle}</span> to your library?
-                    </p>
-                    <div className="flex gap-2 w-full mt-1">
-                      <button
-                        onClick={() => { onCooked(); onClose() }}
-                        className="flex-1 py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform"
-                        style={{ fontFamily: 'Nunito, sans-serif' }}
-                      >
-                        Not now
-                      </button>
-                      <button
-                        onClick={async () => {
-                          if (!onAddToLibrary) return
-                          setAddingToLibrary(true)
-                          try { await onAddToLibrary() } finally { setAddingToLibrary(false) }
-                          onCooked(); onClose()
-                        }}
-                        disabled={addingToLibrary}
-                        className="flex-1 py-2 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
-                        style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
-                      >
-                        {addingToLibrary ? 'Saving...' : 'Add to library'}
-                      </button>
-                    </div>
-                  </>
-                ) : pausedForNotice ? (
-                  <button
-                    type="button"
-                    ref={continueRef}
-                    onClick={continueToChat}
-                    className="min-h-[44px] px-6 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
-                    style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
-                    data-testid="cook-modal-continue"
-                  >
-                    Continue
-                  </button>
-                ) : (
-                  <p
-                    className="text-xs text-[var(--color-muted)] mt-1"
-                    style={{ fontFamily: 'Nunito, sans-serif' }}
-                  >
-                    Ingredients deducted — taking you to chat.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {(state === 'review' || state === 'confirming') && proposal && amendedList && (
-              <p
-                data-testid="cook-modal-amended-note"
-                className="mb-3 rounded-xl bg-[var(--color-bg)] px-3 py-2 text-xs text-[var(--color-muted)]"
-                style={{ fontFamily: 'Nunito, sans-serif' }}
-              >
-                Using your changes to this recipe. Your saved recipe stays as it was.
-              </p>
-            )}
-            {(state === 'review' || state === 'confirming') && proposal && (
-              <CookReviewBody
-                proposal={proposal}
-                overrides={overrides}
-                onOverrideChange={(key, value) =>
-                  setOverrides((prev: Record<string, string>) => ({ ...prev, [key]: value }))
-                }
-                expiredDismissed={expiredDismissed}
-                onDismissExpired={() => setExpiredDismissed(true)}
-              />
-            )}
-          </div>
-
-          {/* Footer actions */}
-          {(state === 'review' || state === 'confirming') && (
-            <div
-              className="px-5 py-3 flex flex-col gap-2.5 flex-shrink-0 border-t border-[var(--color-border)]"
-              style={{ background: 'var(--color-bg)' }}
-            >
-              {/* What will actually happen, stated before the button that does it.
-                  In confirm mode a partial deduction is a warning; in preview
-                  nothing is being written, so the same numbers are just a plan. */}
-              {summary && <CookDeductionSummary summary={summary} mode={mode} />}
-
-              <div className="flex gap-2">
+                {mode === 'preview' ? 'Back' : 'Cancel'}
+              </button>
+              {mode === 'preview' ? (
                 <button
-                  onClick={onClose}
+                  onClick={onStartCooking}
+                  className="flex-1 py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
+                  style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
+                >
+                  Start cooking →
+                </button>
+              ) : (
+                <button
+                  onClick={handleConfirm}
                   disabled={state === 'confirming'}
-                  className="flex-1 py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform disabled:opacity-50"
+                  /* Demoted to a secondary treatment while rows are unresolved:
+                     confirming then silently drops them, so it should not look
+                     like the obviously-correct action (#245). Still reachable —
+                     some quantities genuinely cannot be measured. */
+                  className={[
+                    'flex-1 py-2 rounded-full text-sm font-bold active:scale-95 transition-transform disabled:opacity-50',
+                    hasUnresolved
+                      ? 'border-2 border-[var(--color-primary-dark)] text-[var(--color-primary-dark)]'
+                      : 'text-white',
+                  ].join(' ')}
+                  style={{
+                    background: hasUnresolved ? 'transparent' : 'var(--color-primary-dark)',
+                    fontFamily: 'Nunito, sans-serif',
+                  }}
+                >
+                  {state === 'confirming'
+                    ? 'Saving...'
+                    : hasUnresolved
+                    ? 'Cook anyway'
+                    : 'Yes, I cooked this'}
+                </button>
+              )}
+            </div>
+          </div>
+        ) : null
+      }
+    >
+      {state === 'loading' && (
+        <div role="status" aria-live="polite" className="flex flex-col gap-4 py-2">
+          <span className="sr-only">Matching recipe ingredients against your pantry</span>
+
+          <div className="flex items-center gap-2.5">
+            <BubblesMascot state="thinking" size={32} />
+            <div
+              className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin motion-reduce:animate-none shrink-0"
+              style={{ borderColor: 'var(--color-primary)', borderTopColor: 'transparent' }}
+            />
+            <p
+              className="text-sm font-semibold text-[var(--color-text)]"
+              style={{ fontFamily: 'Nunito, sans-serif' }}
+            >
+              {LOADING_STAGES[loadingStage].label}
+            </p>
+          </div>
+
+          {/* Skeleton rows standing in for the match table. Gives the wait a
+              shape that matches what arrives, so the modal doesn't jump
+              from a centred spinner to a dense table (#245 / audit B8). */}
+          <div className="flex flex-col gap-2" aria-hidden="true">
+            {SKELETON_ROWS.map((width, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div
+                  className={`h-3 ${PULSE} flex-1`}
+                  style={{ ...PULSE_BG, maxWidth: width }}
+                />
+                <div className={`h-3 w-12 ${PULSE}`} style={PULSE_BG} />
+                <div className={`h-4 w-14 rounded-full ${PULSE}`} style={PULSE_BG} />
+              </div>
+            ))}
+          </div>
+
+          <p
+            className="text-xs text-[var(--color-muted)]"
+            style={{ fontFamily: 'Nunito, sans-serif' }}
+          >
+            {LOADING_STAGES[loadingStage].hint}
+          </p>
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="py-8 text-center">
+          <p className="text-sm font-semibold text-red-500" style={{ fontFamily: 'Nunito, sans-serif' }}>
+            {errorMsg || 'Something went wrong. Please try again.'}
+          </p>
+        </div>
+      )}
+
+      {state === 'success' && (
+        <div className="py-8 text-center flex flex-col items-center gap-3">
+          <BubblesMascot state="celebrate" size={80} />
+          <p
+            className="text-sm font-extrabold text-[var(--color-text)]"
+            style={{ fontFamily: 'Nunito, sans-serif' }}
+          >
+            Pantry updated!
+          </p>
+          {showSkippedNotice && (
+            <SkippedDeductionsNotice names={skipped.names} unnamed={skipped.unnamed} total={skipped.total} />
+          )}
+          {isDraft ? (
+            <>
+              <p
+                className="text-sm text-[var(--color-muted)]"
+                style={{ fontFamily: 'Nunito, sans-serif' }}
+              >
+                Add <span className="font-semibold">{recipeTitle}</span> to your library?
+              </p>
+              <div className="flex gap-2 w-full mt-1">
+                <button
+                  onClick={() => { onCooked(); onClose() }}
+                  className="flex-1 py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform"
                   style={{ fontFamily: 'Nunito, sans-serif' }}
                 >
-                  {mode === 'preview' ? 'Back' : 'Cancel'}
+                  Not now
                 </button>
-                {mode === 'preview' ? (
-                  <button
-                    onClick={onStartCooking}
-                    className="flex-1 py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
-                    style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
-                  >
-                    Start cooking →
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleConfirm}
-                    disabled={state === 'confirming'}
-                    /* Demoted to a secondary treatment while rows are unresolved:
-                       confirming then silently drops them, so it should not look
-                       like the obviously-correct action (#245). Still reachable —
-                       some quantities genuinely cannot be measured. */
-                    className={[
-                      'flex-1 py-2 rounded-full text-sm font-bold active:scale-95 transition-transform disabled:opacity-50',
-                      hasUnresolved
-                        ? 'border-2 border-[var(--color-primary-dark)] text-[var(--color-primary-dark)]'
-                        : 'text-white',
-                    ].join(' ')}
-                    style={{
-                      background: hasUnresolved ? 'transparent' : 'var(--color-primary-dark)',
-                      fontFamily: 'Nunito, sans-serif',
-                    }}
-                  >
-                    {state === 'confirming'
-                      ? 'Saving...'
-                      : hasUnresolved
-                      ? 'Cook anyway'
-                      : 'Yes, I cooked this'}
-                  </button>
-                )}
+                <button
+                  onClick={async () => {
+                    if (!onAddToLibrary) return
+                    setAddingToLibrary(true)
+                    try { await onAddToLibrary() } finally { setAddingToLibrary(false) }
+                    onCooked(); onClose()
+                  }}
+                  disabled={addingToLibrary}
+                  className="flex-1 py-2 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
+                  style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
+                >
+                  {addingToLibrary ? 'Saving...' : 'Add to library'}
+                </button>
               </div>
-            </div>
+            </>
+          ) : pausedForNotice ? (
+            <button
+              type="button"
+              ref={continueRef}
+              onClick={continueToChat}
+              className="min-h-[44px] px-6 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
+              style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
+              data-testid="cook-modal-continue"
+            >
+              Continue
+            </button>
+          ) : (
+            <p
+              className="text-xs text-[var(--color-muted)] mt-1"
+              style={{ fontFamily: 'Nunito, sans-serif' }}
+            >
+              Ingredients deducted — taking you to chat.
+            </p>
           )}
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+        </div>
+      )}
+
+      {(state === 'review' || state === 'confirming') && proposal && amendedList && (
+        <p
+          data-testid="cook-modal-amended-note"
+          className="mb-3 rounded-xl bg-[var(--color-bg)] px-3 py-2 text-xs text-[var(--color-muted)]"
+          style={{ fontFamily: 'Nunito, sans-serif' }}
+        >
+          Using your changes to this recipe. Your saved recipe stays as it was.
+        </p>
+      )}
+      {(state === 'review' || state === 'confirming') && proposal && (
+        <CookReviewBody
+          proposal={proposal}
+          overrides={overrides}
+          onOverrideChange={(key, value) =>
+            setOverrides((prev: Record<string, string>) => ({ ...prev, [key]: value }))
+          }
+          expiredDismissed={expiredDismissed}
+          onDismissExpired={() => setExpiredDismissed(true)}
+        />
+      )}
+    </PixelSheet>
   )
 }

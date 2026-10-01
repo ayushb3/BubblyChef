@@ -19,7 +19,7 @@ describe('KitchenScene (#521)', () => {
       const el = screen.getByTestId(`kitchen-slot-${slot.key}`)
       expect(el.getAttribute('data-filled')).toBe('false')
     }
-    expect(screen.getByTestId('kitchen-bubbles-balance')).toHaveTextContent('🫧 0')
+    expect(screen.getByTestId('kitchen-bubbles-balance')).toHaveAttribute('aria-label', '0 bubbles')
   })
 
   it('renders some filled and some empty slots when partially unlocked', () => {
@@ -42,7 +42,8 @@ describe('KitchenScene (#521)', () => {
       const el = screen.getByTestId(`kitchen-slot-${slot.key}`)
       expect(el.getAttribute('data-filled')).toBe(filledKeys.has(slot.key) ? 'true' : 'false')
     }
-    expect(screen.getByTestId('kitchen-bubbles-balance')).toHaveTextContent('🫧 7')
+    expect(screen.getByTestId('kitchen-bubbles-balance')).toHaveAttribute('aria-label', '7 bubbles')
+    expect(screen.getByTestId('kitchen-bubbles-balance')).toHaveTextContent('7')
   })
 
   it('renders every slot filled when one catalog entry per slot is unlocked', () => {

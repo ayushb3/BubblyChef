@@ -386,8 +386,8 @@ export default function RecipeRefinementModal({
                 <SpringButton
                   onClick={handleSave}
                   disabled={!hasChanges || saving}
-                  className="flex-1 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
-                  style={{ background: 'var(--color-accent)' } as React.CSSProperties}
+                  variant="primary"
+                  className="flex-1 py-2.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
                 >
                   {saving ? 'Saving...' : 'Save Changes'}
                 </SpringButton>

@@ -5,6 +5,9 @@
   --color-foreground: #5C4A5A;
   --font-sans: var(--font-nunito);
   --font-mono: var(--font-geist-mono);
+  /* issue #741: pixel lettering. World-only text (scene tags, the chalkboard,
+     the bubbles counter). Becomes the `font-pixel` utility. */
+  --font-pixel: var(--font-pixelify), "Pixelify Sans", Nunito, sans-serif;
 }
 
 @layer base {
@@ -25,6 +28,14 @@
     --color-expiring-text: #7B5A00;
     --color-fresh: #DCFCE7;
     --color-fresh-text: #166534;
+
+    /* --- issue #741: dish pastels. One colour per dish role, carried through
+       its card and its timeline column. Theme-invariant like the expiry
+       tokens: "main" is always pink in every theme. --- */
+    --color-dish-main: #FFB5C5;   /* pastel pink */
+    --color-dish-side-1: #B5EAD7; /* pastel mint */
+    --color-dish-side-2: #FFDAB3; /* pastel peach */
+    /* --- end issue #741 --- */
     /*
      * Semantic signal tokens (fresh / expiring / expired) are intentionally
      * theme-invariant — red = bad and green = good across all five themes,
@@ -55,7 +66,8 @@
      * shadows/backdrops automatically adopt the active theme palette. */
     --shadow-soft: 0 4px 24px color-mix(in srgb, var(--color-primary) 15%, transparent);
     --shadow-pop: 0 8px 32px color-mix(in srgb, var(--color-primary) 25%, transparent);
-    --color-backdrop: color-mix(in srgb, var(--color-text) 18%, transparent);
+    /* Scrim is ink at 28% (Signature Panel board; PixelSheet, issue #742). Was 18%. */
+    --color-backdrop: color-mix(in srgb, var(--color-text) 28%, transparent);
     --color-hero-overlay: linear-gradient(
       to top,
       color-mix(in srgb, black 72%, transparent) 0%,
