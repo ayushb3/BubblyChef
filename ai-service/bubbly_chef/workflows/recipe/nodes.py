@@ -1006,7 +1006,46 @@ def constraints_to_persist(state: WorkflowState) -> dict[str, Any] | None:
         persisted["excluded_ingredients"] = [
             x for x in persisted["excluded_ingredients"] if x.strip().lower() not in from_profile
         ]
-    return persisted
+    final_dietary = list((constraints or {}).get("dietary") or [])
+    return _without_turn_scoped_foods(persisted, state, final_dietary)
+
+
+def _without_turn_scoped_foods(
+    persisted: dict[str, Any], state: WorkflowState, final_dietary: list[str]
+) -> dict[str, Any]:
+    """`persisted` minus the foods that set a diet aside on this turn (issue #719).
+
+    `final_dietary` is the diet this turn's reply was generated under (not the
+    persisted one, which puts a set-aside session diet back).
+
+    A diet set aside because this turn named a food it forbids ("we're not vegan
+    tonight, can I use butter?", "chicken curry" under a stored Vegetarian) is
+    set aside for this reply only. The food was recorded as a preferred or
+    must-use ingredient, and persisting it would hand it to every later turn,
+    whose diet check reads the merged ingredients and would set the diet aside
+    again for as long as the session lives: the one-turn relaxation of #687 would
+    never expire.
+
+    So the foods the set-aside labels forbid are left out of what the session
+    remembers. Foods that don't clash with the diet are kept. Refining the same
+    card is unaffected: it reads the card's own `diets_set_aside` and ingredients,
+    not these lists, so it keeps the diet set aside. A new request sees neither the
+    food nor the set-aside.
+    """
+    held = [*(state.get("stored_dietary") or []), *(state.get("session_dietary") or [])]
+    set_aside = _diets_set_aside(held, final_dietary)
+    if not set_aside:
+        return persisted
+    result = dict(persisted)
+    for key in ("preferred_ingredients", "must_use_ingredients"):
+        foods = persisted.get(key)
+        if foods:
+            result[key] = [
+                food
+                for food in foods
+                if not any(_dietary_contradicted(label, str(food)) for label in set_aside)
+            ]
+    return result
 
 
 def _tag_key(tag: str) -> str:
