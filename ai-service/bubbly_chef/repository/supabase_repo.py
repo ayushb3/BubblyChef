@@ -16,6 +16,7 @@ from postgrest.types import JSON
 from supabase import Client, create_client
 
 from bubbly_chef.config import settings
+from bubbly_chef.domain.household import coerce_household_size
 from bubbly_chef.domain.lots import fresh_first_key, lot_base, lot_food_key, soonest_first_key
 from bubbly_chef.domain.normalizer import (
     effective_unit,
@@ -1744,6 +1745,45 @@ class SupabaseRepository:
         if result.data:
             return _as_row(result.data[0])
         return None
+
+    async def get_household_size(self, user_id: str) -> int | None:
+        """How many people the user cooks for, or None when they never said (#874).
+
+        Source of truth is the auth user's `user_metadata.household_size`, which
+        the first-run staples step and the Profile entry write (#853). It is read
+        with the service role (`auth.admin.get_user_by_id`) rather than from the
+        request's JWT claims: the access token carries the metadata as of its
+        last refresh, so a size set a minute ago would be missing from it. When
+        the metadata has no usable size, `user_profiles.household_size` is the
+        fallback; when both are set the metadata wins.
+
+        Both reads are scoped by `user_id`. Never raises: each source degrades
+        to "not set" on any error, so the caller falls through to the learned
+        servings rather than failing the turn.
+        """
+        try:
+            response = self.client.auth.admin.get_user_by_id(user_id)
+            user = getattr(response, "user", None)
+            metadata = getattr(user, "user_metadata", None)
+            if isinstance(metadata, dict):
+                size = coerce_household_size(metadata.get("household_size"))
+                if size is not None:
+                    return size
+        except Exception as e:
+            logger.warning(f"Could not read household size from auth for user {user_id}: {e}")
+
+        try:
+            result = (
+                self.client.table("user_profiles")
+                .select("household_size")
+                .eq("user_id", user_id)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning(f"Could not read household size from profile for user {user_id}: {e}")
+            return None
+        rows = _as_rows(result.data or [])
+        return coerce_household_size(rows[0].get("household_size")) if rows else None
 
     # =========================================================================
     # Meals (issue #650) -- read-only from ai-service. Full meal CRUD lives
