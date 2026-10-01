@@ -19,7 +19,11 @@ listed to buy, where cook would still match it.
 Status mapping, from the cook matcher's statuses:
 
 - `missing`  -> missing: nothing usable in the pantry (expired and empty rows
-  don't count, see above), and not a culinary staple.
+  don't count, see above), and not a culinary staple. This is also exactly what
+  the meal's to-buy line lists (`missing_names`, issue #805): the screen draws
+  `missing` as "To buy", so the two can't disagree. Water and ice, which nobody
+  shops for (`NEVER_TO_BUY`), are `have` (assumed) instead, so no row says "To buy"
+  for something the line leaves out.
 - `shortfall` -> low: the pantry holds less than the line needs after unit
   conversion within the same dimension.
 - everything else -> have: enough stock (`ready`), no amount asked for or "to
@@ -34,6 +38,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from bubbly_chef.domain.staples import shoppable
 from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.services.cook_matcher import _parse_ingredient_string, match_ingredients
@@ -112,8 +117,15 @@ def match_ingredient_lines(lines: list[Any], pantry: list[PantryItem]) -> list[L
     out: list[LineMatch] = []
     for line in parsed:
         name = line["name"]
-        if not name or name in missing_names:
+        if not name:
             out.append(LineMatch(name=name, status="missing"))
+            continue
+        if name in missing_names:
+            # Nobody shops for water or ice, so the to-buy line never lists them (#805).
+            if shoppable([name]):
+                out.append(LineMatch(name=name, status="missing"))
+            else:
+                out.append(LineMatch(name=name, status="have", basis="assumed"))
             continue
         match = next(matches)
         basis: LineBasis = (
@@ -135,3 +147,13 @@ def match_ingredient_lines(lines: list[Any], pantry: list[PantryItem]) -> list[L
             )
         )
     return out
+
+
+def missing_line_names(lines: list[Any], pantry: list[PantryItem]) -> list[str]:
+    """Names of the lines that resolve to `missing`, in input order.
+
+    The to-buy line's source (`services/grocery.py`). It reads `match_ingredient_lines`
+    rather than running the matcher itself, so a line is to buy exactly when its
+    food tag says "To buy" (issue #805).
+    """
+    return [m.name for m in match_ingredient_lines(lines, pantry) if m.status == "missing" and m.name]

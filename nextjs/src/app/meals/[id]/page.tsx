@@ -23,8 +23,8 @@ import {
   type SideAlternativeOutline,
 } from '@/lib/api/meals'
 import { ensureSteps } from '@/lib/api/recipes'
-import { fetchMealToBuy } from '@/lib/api/grocery'
-import { attributeToBuy } from '@/lib/meal-to-buy'
+import { fetchMealToBuyDetail } from '@/lib/api/grocery'
+import { toBuyByDish } from '@/lib/meal-to-buy'
 import { useIngredientMatches } from '@/hooks/useIngredientMatches'
 import { ingredientParts } from '@/lib/recipe-helpers'
 import { scaledIngredients } from '@/lib/recipe-helpers'
@@ -286,12 +286,13 @@ export default function MealDetailPage() {
   const dishIds = useMemo(() => dishesSorted.map((d) => d.recipe.id), [dishesSorted])
 
   // Each dish card's "N to buy" line (issue #744). The AI service computes the
-  // meal's missing foods against the current pantry (deterministic, read-only);
-  // they are attributed to the dish that lists them. A failure just hides the
-  // lines: the cards never show a made-up "nothing to buy".
+  // meal's missing foods against the current pantry (deterministic, read-only)
+  // and says which dishes need each one (issue #805), so a food missing in two
+  // dishes is on both cards. A failure just hides the lines: the cards never show
+  // a made-up "nothing to buy".
   const { data: mealToBuy } = useQuery({
     queryKey: ['meal-to-buy', id, dishIds.join(',')],
-    queryFn: () => fetchMealToBuy(id),
+    queryFn: () => fetchMealToBuyDetail(id),
     enabled: Boolean(id) && !deleted && dishIds.length > 0,
     retry: false,
     staleTime: 60_000,
@@ -299,7 +300,7 @@ export default function MealDetailPage() {
   const toBuyByPosition = useMemo(
     () =>
       mealToBuy
-        ? attributeToBuy(
+        ? toBuyByDish(
             mealToBuy,
             dishesSorted.map((d) => ({
               position: d.position,

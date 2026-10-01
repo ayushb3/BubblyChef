@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from bubbly_chef.api.auth import get_current_user_id
 from bubbly_chef.repository.supabase_repo import get_repository
-from bubbly_chef.services.grocery import MealNotFoundError, meal_to_buy
+from bubbly_chef.services.grocery import MealNotFoundError, ToBuyItem, meal_to_buy_items
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,13 @@ class MealToBuyResponse(BaseModel):
     """Response for POST /v1/grocery/meal-to-buy."""
 
     to_buy: list[str] = Field(description="What the meal needs that the pantry lacks, once each")
+    items: list[ToBuyItem] = Field(
+        default_factory=list,
+        description=(
+            "The same foods, in the same order, each with the dishes (by position) that need it "
+            "and that dish's own wording (issue #805). Additive: `to_buy` is unchanged."
+        ),
+    )
 
 
 @router.post(
@@ -53,7 +60,7 @@ async def meal_to_buy_route(
     logger.info(f"Grocery meal-to-buy: user={user_id}, meal={request.meal_id}")
     repo = await get_repository()
     try:
-        names = await meal_to_buy(repo, user_id, request.meal_id)
+        items = await meal_to_buy_items(repo, user_id, request.meal_id)
     except MealNotFoundError as e:
         raise HTTPException(status_code=404, detail="Meal not found") from e
-    return MealToBuyResponse(to_buy=names)
+    return MealToBuyResponse(to_buy=[item.name for item in items], items=items)
