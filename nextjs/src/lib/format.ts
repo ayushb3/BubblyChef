@@ -27,3 +27,15 @@ export function titleCase(name: string): string {
     })
     .join(' ')
 }
+
+/**
+ * A pantry amount as a tile or row shows it: "1 head", "2 L", "4". The unit
+ * "item" is filler (the form's default), so it is dropped rather than read out
+ * as "4 item". Float noise from arithmetic ("1.2000000001") is trimmed.
+ */
+export function formatAmount(quantity: number, unit: string | null | undefined): string {
+  const qty = Number.isFinite(quantity) ? String(Number(quantity.toFixed(2))) : ''
+  const u = (unit ?? '').trim()
+  if (!u || u.toLowerCase() === 'item' || u.toLowerCase() === 'items') return qty
+  return `${qty} ${u}`
+}

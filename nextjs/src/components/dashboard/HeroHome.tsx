@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Lightbulb } from '@phosphor-icons/react/dist/ssr'
 import BubblesMascot from '@/components/ui/BubblesMascot'
@@ -11,7 +12,7 @@ import { titleCase } from '@/lib/format'
 import { useMotionConfig } from '@/lib/motion'
 import { cookThisHref, planDinnerHref, tipChatHref } from '@/lib/chat-seed'
 import { kitchenEyebrow } from '@/lib/kitchen/eyebrow'
-import { summarizePlaces, type PlaceSummaries } from '@/lib/kitchen/places'
+import { PLACE_KEYS, summarizePlaces, type PlaceKey, type PlaceSummaries } from '@/lib/kitchen/places'
 import { fetchDashboardDaily } from '@/lib/api/dashboard'
 import type { DashboardTip, DashboardSuggestion } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
@@ -19,6 +20,9 @@ import { estimatedExpirySuffix } from '@/lib/pantry-helpers'
 import { useDecorations } from '@/lib/api/kitchen'
 import { useBubbles } from '@/lib/api/bubbles'
 import KitchenScene from '@/components/kitchen/KitchenScene'
+import StorageSheet, { isStorageView, type StorageView } from '@/components/kitchen/StorageSheet'
+import EditItemModal from '@/components/pantry/AddItemModal'
+import PantryAddSheet from '@/components/pantry/PantryAddSheet'
 import PixelBubbles from '@/components/kitchen/PixelBubbles'
 import { sceneLabel } from '@/lib/kitchen/bubbles-spot'
 import { useBubblesSpot } from '@/hooks/useBubblesSpot'
@@ -42,6 +46,8 @@ interface HomeData {
   hasUnusedExpired: boolean
   /** Per-place counts for the wall; `null` until the pantry loads, and if it fails to. */
   places: PlaceSummaries | null
+  /** Every pantry row, for the storage sheet; `null` until the pantry loads, and if it fails to. */
+  items: EnrichedPantryItem[] | null
 }
 
 // Client-side fallback only — used when `GET /v1/dashboard/daily` (#225, #168)
@@ -113,75 +119,80 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     suggestion: null,
     hasUnusedExpired: false,
     places: null,
+    items: null,
   })
 
-  // Loads everything the home shows. Also run after a put-away (issue #753), so
-  // the place counts reflect what was just put in.
-  const loadHome = useCallback(async () => {
-    try {
-      const [pantryRes, expiringRes, dashboardDaily] = await Promise.all([
-        fetch('/api/pantry'),
-        fetch('/api/pantry/expiring?days=3'),
-        // Failure here degrades to the static FALLBACK_TIPS list and no
-        // suggestion card — it must never take down the rest of the hero.
-        fetchDashboardDaily().catch(() => null),
-      ])
-      const [pantryData, expiringData] = await Promise.all([
-        pantryRes.ok ? pantryRes.json() : { items: [], total_count: 0 },
-        expiringRes.ok ? expiringRes.json() : { items: [], count: 0 },
-      ])
-
-      const allItems: EnrichedPantryItem[] = pantryData.items ?? []
-      const expiringItems: EnrichedPantryItem[] = expiringData.items ?? []
-
-      // Both windows need a lower bound. days_until_expiry goes negative once an
-      // item is past its date, so an unbounded `<= n` also matches food that
-      // expired weeks ago — which made the hero announce a long-expired item as
-      // "expires tomorrow" and inflated the "expiring" count with dead stock.
-      // Expired items are deliberately excluded here rather than relabelled:
-      // they are still surfaced on /pantry with an "Expired" badge, and #146
-      // already established that they should not get a cook-this-now CTA.
-      const urgentItem =
-        expiringItems.find(
-          (item) =>
-            item.days_until_expiry !== null &&
-            item.days_until_expiry >= 0 &&
-            item.days_until_expiry <= 1
-        ) ?? null
-
-      const expiringCount = allItems.filter(
-        (item) =>
-          item.is_expiring_soon ||
-          (item.days_until_expiry !== null &&
-            item.days_until_expiry >= 0 &&
-            item.days_until_expiry <= 7)
-      ).length
-
-      // #525 — Bubbles goes "worried" when there's expired food sitting
-      // unused (still has quantity) rather than already used up or cleared.
-      const hasUnusedExpired = allItems.some((item) => item.is_expired && item.quantity > 0)
-
-      setData({
-        totalCount: pantryData.total_count ?? allItems.length,
-        expiringCount,
-        urgentItem,
-        tip: dashboardDaily?.tip ?? null,
-        suggestion: dashboardDaily?.suggestion ?? null,
-        hasUnusedExpired,
-        // A failed pantry fetch is "unknown", not "empty": the wall then shows
-        // names only rather than claiming four empty places.
-        places: pantryRes.ok ? summarizePlaces(allItems) : null,
-      })
-    } catch {
-      // silent
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  // The pantry, dashboard and expiring reads. `reload` runs it again behind an
+  // open sheet (an edit or an add changed the rows): the skeletons are the first
+  // load's only, so the home does not flash while the counts catch up.
+  const [reloadTick, setReloadTick] = useState(0)
+  const reload = useCallback(() => setReloadTick((n) => n + 1), [])
 
   useEffect(() => {
-    void loadHome()
-  }, [loadHome])
+    const fetchAll = async () => {
+      try {
+        const [pantryRes, expiringRes, dashboardDaily] = await Promise.all([
+          fetch('/api/pantry'),
+          fetch('/api/pantry/expiring?days=3'),
+          // Failure here degrades to the static FALLBACK_TIPS list and no
+          // suggestion card — it must never take down the rest of the hero.
+          fetchDashboardDaily().catch(() => null),
+        ])
+        const [pantryData, expiringData] = await Promise.all([
+          pantryRes.ok ? pantryRes.json() : { items: [], total_count: 0 },
+          expiringRes.ok ? expiringRes.json() : { items: [], count: 0 },
+        ])
+
+        const allItems: EnrichedPantryItem[] = pantryData.items ?? []
+        const expiringItems: EnrichedPantryItem[] = expiringData.items ?? []
+
+        // Both windows need a lower bound. days_until_expiry goes negative once an
+        // item is past its date, so an unbounded `<= n` also matches food that
+        // expired weeks ago — which made the hero announce a long-expired item as
+        // "expires tomorrow" and inflated the "expiring" count with dead stock.
+        // Expired items are deliberately excluded here rather than relabelled:
+        // they are still surfaced on /pantry with an "Expired" badge, and #146
+        // already established that they should not get a cook-this-now CTA.
+        const urgentItem =
+          expiringItems.find(
+            (item) =>
+              item.days_until_expiry !== null &&
+              item.days_until_expiry >= 0 &&
+              item.days_until_expiry <= 1
+          ) ?? null
+
+        const expiringCount = allItems.filter(
+          (item) =>
+            item.is_expiring_soon ||
+            (item.days_until_expiry !== null &&
+              item.days_until_expiry >= 0 &&
+              item.days_until_expiry <= 7)
+        ).length
+
+        // #525 — Bubbles goes "worried" when there's expired food sitting
+        // unused (still has quantity) rather than already used up or cleared.
+        const hasUnusedExpired = allItems.some((item) => item.is_expired && item.quantity > 0)
+
+        setData({
+          totalCount: pantryData.total_count ?? allItems.length,
+          expiringCount,
+          urgentItem,
+          tip: dashboardDaily?.tip ?? null,
+          suggestion: dashboardDaily?.suggestion ?? null,
+          hasUnusedExpired,
+          // A failed pantry fetch is "unknown", not "empty": the wall then shows
+          // names only rather than claiming four empty places.
+          places: pantryRes.ok ? summarizePlaces(allItems) : null,
+          items: pantryRes.ok ? allItems : null,
+        })
+      } catch {
+        // silent
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchAll()
+  }, [reloadTick])
 
   // The header's weekday / part-of-day eyebrow and the fallback tip are derived
   // from the *client's* clock, which can disagree with the server's. We follow
@@ -212,6 +223,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     suggestion,
     hasUnusedExpired,
     places,
+    items,
   } = data
 
   // Kitchen scene (#521): `decorations` rows use `name`/`decoration_type`;
@@ -327,9 +339,42 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     return () => window.removeEventListener('resize', measure)
   }, [loading, tipExpanded, tip])
 
-  // Tapping a place opens its storage sheet (issue #749). Until that lands it
-  // goes to the existing pantry page.
-  const openPlace = () => router.push('/pantry')
+  // Storage sheet (issue #749): tapping a place opens it on that place. The
+  // `?place=fridge&view=scene|list` deep link opens it directly, on load or when
+  // the URL changes under a mounted home.
+  const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
+  const [sheet, setSheet] = useState<{ place: PlaceKey; view: StorageView } | null>(null)
+  const [editItem, setEditItem] = useState<EnrichedPantryItem | null>(null)
+  const [addPlace, setAddPlace] = useState<PlaceKey | null>(null)
+  const linkedPlace = searchParams.get('place')
+  const linkedView = searchParams.get('view')
+  useEffect(() => {
+    if (!PLACE_KEYS.includes(linkedPlace as PlaceKey)) return
+    // The URL is an external system being synced into React, which is what an
+    // effect is for. It cannot be derived state: the user closes the sheet, and
+    // once opened its visibility belongs to the component, not the param.
+    setSheet({
+      place: linkedPlace as PlaceKey,
+      view: isStorageView(linkedView) ? linkedView : 'scene',
+    })
+  }, [linkedPlace, linkedView])
+
+  const closeSheet = () => {
+    setSheet(null)
+    // A deep-linked visit must not reopen on refresh.
+    if (linkedPlace || linkedView) router.replace('/', { scroll: false })
+  }
+
+  // The pantry changed behind the sheet: re-read the home's own copy, and mark
+  // the pantry page's cache and the Bubbles balance (an add earns) stale.
+  const pantryChanged = () => {
+    reload()
+    queryClient.invalidateQueries({ queryKey: ['pantry'] })
+    queryClient.invalidateQueries({ queryKey: ['bubbles'] })
+  }
+
+  const pantryStatus = loading ? 'loading' : items ? 'ready' : 'error'
 
   const mascotState = hasUnusedExpired ? 'worried' : !suggestion && urgentItem ? 'surprised' : 'happy'
 
@@ -346,7 +391,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         loading={decorationsLoading}
         theme={kitchenTheme}
         places={places}
-        onOpenPlace={openPlace}
+        onOpenPlace={(place) => setSheet({ place, view: 'scene' })}
         planDinnerHref={planDinnerHref()}
         bubblesLayer={<PixelBubbles spot={bubblesSpot} cooking={cooking} />}
         sceneLabel={sceneLabel(bubblesSpot, cooking)}
@@ -376,7 +421,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         open={putAwayOpen}
         record={pending}
         onClose={() => setPutAwayOpen(false)}
-        onPutAway={loadHome}
+        onPutAway={pantryChanged}
       />
 
       {/* Under the wall: the pantry count on the left, the streak (#524) and the
@@ -558,6 +603,39 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
       </FadeInView>
 
       </div>
+
+      {/* The storage sheet (#749). It steps aside, keeping its search text, while
+          the edit or add sheet is on top: two sheets cannot both hold focus. */}
+      <StorageSheet
+        open={sheet !== null}
+        suspended={editItem !== null || addPlace !== null}
+        place={sheet?.place ?? 'fridge'}
+        view={sheet?.view ?? 'scene'}
+        items={items}
+        status={pantryStatus}
+        palette={kitchenTheme.wall}
+        onPlaceChange={(place) => setSheet((s) => (s ? { ...s, place } : s))}
+        onViewChange={(view) => setSheet((s) => (s ? { ...s, view } : s))}
+        onClose={closeSheet}
+        onEdit={setEditItem}
+        onAdd={setAddPlace}
+        onRetry={reload}
+      />
+      <EditItemModal
+        isOpen={editItem !== null}
+        onClose={() => {
+          setEditItem(null)
+          pantryChanged()
+        }}
+        editItem={editItem}
+      />
+      <PantryAddSheet
+        isOpen={addPlace !== null}
+        onClose={() => setAddPlace(null)}
+        initialTab="type"
+        place={addPlace ?? undefined}
+        onItemsAdded={pantryChanged}
+      />
     </div>
   )
 }

@@ -88,6 +88,12 @@ export interface PixelSheetProps {
    * door). A tap outside still closes.
    */
   scrim?: boolean
+  /**
+   * Extra classes for the sheet itself. A tall sheet that must not change height
+   * as its content does (the storage sheet, issue #749) passes `h-[84dvh]`; the
+   * 90dvh cap still applies.
+   */
+  panelClassName?: string
   testId?: string
   backdropTestId?: string
   children?: ReactNode
@@ -211,6 +217,7 @@ export default function PixelSheet({
   layer,
   maxHeight,
   scrim = true,
+  panelClassName,
   testId,
   backdropTestId,
   children,
@@ -316,7 +323,7 @@ export default function PixelSheet({
         aria-labelledby={ariaLabel ? undefined : headingId}
         tabIndex={-1}
         data-testid={testId}
-        className="relative flex max-h-[90dvh] w-full max-w-lg flex-col rounded-t-[24px] border-solid border-t-[3px] outline-none sm:border-x-[3px]"
+        className={`relative flex max-h-[90dvh] w-full max-w-lg flex-col rounded-t-[24px] border-solid border-t-[3px] outline-none sm:border-x-[3px]${panelClassName ? ` ${panelClassName}` : ''}`}
         style={{
           background: 'var(--color-bg)',
           color: PIXEL_INK,

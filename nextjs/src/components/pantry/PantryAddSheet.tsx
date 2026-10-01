@@ -8,6 +8,7 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 import { bulkAddPantryItems } from '@/lib/api/pantry'
 import PixelSheet from '@/components/ui/PixelSheet'
 import type { ScanResult } from '@/types/scan'
+import { placeDef, placeLocation, type PlaceKey } from '@/lib/kitchen/places'
 
 export interface AddItem {
   name: string
@@ -34,6 +35,14 @@ interface PantryAddSheetProps {
    * scan; its own confirm key is for the Manual tab's rows.
    */
   onScanParsed?: (result: ScanResult) => void
+  /**
+   * The storage place being added to (issue #749: the storage sheet's "Add to
+   * the freezer"). Typed items save with that place's location. A scan is not
+   * flattened into it: it is handed off (`onScanParsed`) and put away by place,
+   * each item to the place the AI derived for it, since a receipt mixes fridge,
+   * freezer and shelf food.
+   */
+  place?: PlaceKey
 }
 
 export default function PantryAddSheet({
@@ -42,6 +51,7 @@ export default function PantryAddSheet({
   initialTab = 'scan',
   onItemsAdded,
   onScanParsed,
+  place,
 }: PantryAddSheetProps) {
   const [activeTab, setActiveTab] = useState<PantryAddTab>(initialTab)
   const [typeItems, setTypeItems] = useState<AddItem[]>([])
@@ -123,7 +133,14 @@ export default function PantryAddSheet({
     setError(null)
 
     try {
-      await bulkAddPantryItems(allItems)
+      // A preset place decides where typed items live, over a catalog pick's
+      // own default (milk -> fridge): the user said where they are putting it.
+      const toSave = place
+        ? [
+            ...typeItems.map((item) => ({ ...item, storage_location: placeLocation(place) })),
+          ]
+        : allItems
+      await bulkAddPantryItems(toSave)
 
       // Refetch the pantry list behind the sheet right away — only the
       // sheet's own close waits for the celebration (issue #525).
@@ -147,6 +164,9 @@ export default function PantryAddSheet({
       onClose={handleClose}
       title="Add to Pantry"
       titleId="pantry-add-sheet-title"
+      subtitle={
+        place && activeTab === 'type' ? `Adding to the ${placeDef(place).label.toLowerCase()}` : undefined
+      }
       subheader={
         /* Tab switcher */
         <div className="flex gap-2">
