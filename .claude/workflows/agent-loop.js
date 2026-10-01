@@ -1,18 +1,18 @@
 export const meta = {
   name: 'agent-loop',
   description: 'Take one ready-for-agent issue to a reviewed PR opened as bubblychef-bot: plan, decide, reproduce, implement, verify, review, ship, respond to the GitHub review',
-  whenToUse: 'One issue per run. args: {issue: <number>}. Optional: shadow (default true), dryRun (stop after Decide). See docs/plans/2026-09-17-autonomous-agent-loop.md.',
+  whenToUse: 'One issue per run. args: {issue: <number>}. Optional: shadow (default false; true = never request auto-merge), dryRun (stop after Decide). See docs/plans/2026-09-17-autonomous-agent-loop.md.',
   phases: [
     { title: 'Preflight', detail: 'environment + bot identity, kill switch, daily cap, issue readiness, classify' },
     { title: 'Setup', detail: "fresh branch from main in the session's own checkout" },
     { title: 'Plan', detail: 'dev role reads issue, lessons and code; lists open questions' },
-    { title: 'Decide', detail: 'Opus decides each open question, or escalates to Ayush' },
+    { title: 'Decide', detail: 'Opus decides each open question as a logged, reversible call; only v1 scope or spend goes to Ayush' },
     { title: 'Reproduce', detail: 'bugs: failing test first, before-screenshots (small non-visible bugs do this inside Implement)' },
     { title: 'Implement', detail: 'implement and pass quality gates, max 2 attempts' },
     { title: 'Verify', detail: 'run the real app and walk the flow (verify skill)' },
     { title: 'Review', detail: 'fresh-context Opus review, up to 3 fix rounds' },
     { title: 'Ship', detail: 'commit and PR as bubblychef-bot; or the blocked path' },
-    { title: 'Respond', detail: 'read the GitHub review and answer it, max 2 fix rounds (small tier: left to the required verdict check); then finish' },
+    { title: 'Respond', detail: 'read the GitHub review and answer it, max 2 fix rounds (small tier: left to the required verdict check); then finish and request auto-merge' },
   ],
 }
 
@@ -24,18 +24,24 @@ export const meta = {
 // forever, and a run that can't finish leaves a draft PR saying where it stuck
 // rather than a silent half-done branch.
 //
-// Hard rules encoded below, not left to any agent's discretion:
-//   - Never merges, and in shadow mode never requests auto-merge.
-//   - PRs, pushes and commits are made as bubblychef-bot, never as ayushb3.
-//     GitHub skips code-owner review when the author is the only code owner, so
-//     a PR opened as ayushb3 would bypass the protected-path gate entirely.
-//   - Questions touching a protected path, or changing product behaviour beyond
-//     the issue, go to Ayush. Everything else the decision agent settles.
+// Hard rules encoded below, not left to any agent's discretion. The merge policy is
+// WORKFLOW.md section 6: Claude merges on green required checks, a claude[bot]
+// "looks mergeable" for the head, and a passing verify for anything user-visible.
+//   - The loop never merges directly. It requests GitHub auto-merge, once, in Finish,
+//     and only when those three conditions hold; GitHub then still waits for every
+//     required check. With args.shadow = true it never requests auto-merge at all.
+//   - PRs, pushes and commits are made as bubblychef-bot, never as ayushb3, so loop
+//     PRs are attributable and the "Claude review verdict" check (which keys on the
+//     agent-loop label the bot's PRs carry) applies to them.
+//   - A product call the issue leaves open is settled by the decision agent and
+//     logged in the PR body with the alternative it rejected. Only a change to v1
+//     scope, or anything that costs money, goes to Ayush.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const A = args || {}
 const ISSUE = Number(A.issue)
-const SHADOW = A.shadow !== false
+// Opt-in: a run that should open its PR but leave the merge to a human.
+const SHADOW = A.shadow === true
 const DRY_RUN = A.dryRun === true
 
 if (!Number.isInteger(ISSUE) || ISSUE <= 0) throw new Error('args.issue must be an issue number')
@@ -52,17 +58,16 @@ const MAX_REVIEW_ROUNDS = 3
 // Every issue used to run the same pipeline. Measured on small frontend fixes
 // (runs for #405/#406, see the PR that added this), the stages that don't earn their
 // cost on a small change are: a separate Reproduce agent for a bug nobody can see
-// (the CI fail-to-pass job already enforces that its test fails on main), and Respond,
+// (the implementer still writes the failing test first, inside Implement), and Respond,
 // a second review that waits up to ~25 min for the GitHub reviewer after the in-loop
 // Opus review already passed. The tier is decided HERE, in code, from what Plan says
 // and then from the real diff. It can only go UP during a run, never down.
-//   small     — at most SMALL_MAX_LINES changed lines, SMALL_MAX_FILES files, no
-//               protected path. Skips the two stages above. Verify still always runs.
+//   small     — at most SMALL_MAX_LINES changed lines and SMALL_MAX_FILES files.
+//               Skips the two stages above. Verify still always runs.
 //   standard  — anything else; the full pipeline.
-//   protected — touches a .github/CODEOWNERS path; the full pipeline. Never small.
 // An unknown size (an agent that didn't report it) is standard, not small.
 // Limits set from real loop PRs: #464, #468, #471 and #537 (up to ~370 lines, mostly
-// tests) are small; #536 (959 lines, 13 files, a prompts/ path) is not.
+// tests) are small; #536 (959 lines, 13 files) is not.
 // Verify screenshots under docs/media/ don't count toward the file limit: they're
 // evidence, not code, and a user-visible fix commits two to eight of them.
 const SMALL_MAX_LINES = 500
@@ -75,14 +80,13 @@ const codeFiles = paths => (paths || []).filter(p => !p.startsWith(MEDIA_DIR))
 // If main doesn't require it, skipping the wait would let auto-merge land unreviewed, so
 // a small run then waits like any other.
 const VERDICT_GATE = 'Claude review verdict'
-const TIER_RANK = { small: 0, standard: 1, protected: 2 }
+const TIER_RANK = { small: 0, standard: 1 }
 
-function sizeTier({ lines, files, protectedPaths }) {
-  if (protectedPaths.length) return { tier: 'protected', why: `touches protected path(s): ${protectedPaths.join(', ')}` }
+function sizeTier({ lines, files }) {
   if (!Number.isInteger(lines) || lines < 0) return { tier: 'standard', why: 'diff size unknown' }
   if (lines > SMALL_MAX_LINES) return { tier: 'standard', why: `${lines} changed lines > ${SMALL_MAX_LINES}` }
   if (files > SMALL_MAX_FILES) return { tier: 'standard', why: `${files} files > ${SMALL_MAX_FILES}` }
-  return { tier: 'small', why: `${lines} lines, ${files} files, no protected paths` }
+  return { tier: 'small', why: `${lines} lines, ${files} files` }
 }
 
 // Plumbing stages run as the lean `loop-runner` agent (.claude/agents/loop-runner.md):
@@ -93,7 +97,7 @@ function sizeTier({ lines, files, protectedPaths }) {
 const RUNNER = 'loop-runner'
 
 // How every agent acts as the bot. Kept in one place so no stage improvises it.
-const AS_BOT = `
+const AS_BOT_IDENTITY = `
 ACTING AS THE BOT — follow exactly; never use Ayush's identity for writes.
 - GitHub CLI writes (PRs, comments, labels): prefix with
     GH_TOKEN= GITHUB_TOKEN= GH_CONFIG_DIR="$HOME/.config/gh-bubblychef-bot" gh ...
@@ -102,8 +106,10 @@ ACTING AS THE BOT — follow exactly; never use Ayush's identity for writes.
   the write lands as its owner instead of the bot. Clear them on every bot command.
 - Commits: git -c user.name="bubblychef-bot" -c user.email="330798838+bubblychef-bot@users.noreply.github.com" commit ...
 - Pushes: git -c credential.helper= -c 'credential.helper=!f() { GH_TOKEN= GITHUB_TOKEN= GH_CONFIG_DIR="$HOME/.config/gh-bubblychef-bot" gh auth git-credential "$@"; }; f' push ...
-- NEVER run \`gh auth setup-git\`, never change global git config, never merge a PR,
-  never run \`gh pr merge\` in any form.`
+- NEVER run \`gh auth setup-git\` and never change global git config.`
+// Every stage but Finish: only Finish may request auto-merge, after the conditions are checked in code.
+const AS_BOT = `${AS_BOT_IDENTITY}
+- Never merge a PR and never run \`gh pr merge\` in any form.`
 
 const WORKTREE_RULES = (wt) => `
 Work ONLY inside the checkout at: ${wt.path}, on branch ${wt.branch}. Do not switch branches
@@ -115,10 +121,10 @@ agents have already made in this repo.`
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 // The loop's central safety property is that every write lands as bubblychef-bot.
-// GitHub skips code-owner review when the PR author is the only code owner, so a run
-// that quietly falls back to Ayush's identity bypasses the protected-path gate while
-// looking like a clean run. That is worse than not running at all, so the identity is
-// PROBED before anything else and the run stops unless it resolves to the bot.
+// A run that quietly falls back to Ayush's identity opens PRs that look like his, which
+// loses the attribution and the `agent-loop` accounting (the daily cap counts the bot's
+// PRs). That is worse than not running at all, so the identity is PROBED before
+// anything else and the run stops unless it resolves to the bot.
 //
 // This is deliberately separate from the Preflight facts: it answers "can this
 // environment run the loop at all", which is a different question from "should this
@@ -194,7 +200,6 @@ const PLAN = {
   properties: {
     plan: { type: 'string', description: 'the approach, concretely, in steps' },
     filesToChange: { type: 'array', items: { type: 'string' } },
-    protectedPaths: { type: 'array', items: { type: 'string' }, description: 'files in the plan that match a .github/CODEOWNERS entry' },
     expectedChangedLines: { type: 'integer', description: 'your estimate of added + deleted lines in the finished diff, tests included' },
     userVisible: { type: 'boolean', description: 'can a user see or trigger the change in the app?' },
     questions: {
@@ -210,7 +215,7 @@ const PLAN = {
       },
     },
   },
-  required: ['plan', 'filesToChange', 'protectedPaths', 'expectedChangedLines', 'userVisible', 'questions'],
+  required: ['plan', 'filesToChange', 'expectedChangedLines', 'userVisible', 'questions'],
 }
 
 const DECISION = {
@@ -218,10 +223,11 @@ const DECISION = {
   properties: {
     decision: { type: 'string' },
     reasoning: { type: 'string' },
+    rejectedAlternative: { type: 'string', description: 'the option you did not pick, and why; logged in the PR body so the call is reversible' },
     escalate: { type: 'boolean' },
     escalateReason: { type: 'string', description: 'empty unless escalate' },
   },
-  required: ['decision', 'reasoning', 'escalate', 'escalateReason'],
+  required: ['decision', 'reasoning', 'rejectedAlternative', 'escalate', 'escalateReason'],
 }
 
 const REPRO = {
@@ -244,9 +250,8 @@ const IMPLEMENT = {
     summary: { type: 'string', description: 'what you changed, in behavioural terms' },
     filesChanged: { type: 'array', items: { type: 'string' } },
     linesChanged: { type: 'integer', description: 'insertions + deletions from git diff --shortstat origin/main...HEAD' },
-    protectedPaths: { type: 'array', items: { type: 'string' }, description: 'files in git diff --name-only origin/main...HEAD matching .github/CODEOWNERS' },
   },
-  required: ['gatesPassed', 'gateOutput', 'summary', 'filesChanged', 'linesChanged', 'protectedPaths'],
+  required: ['gatesPassed', 'gateOutput', 'summary', 'filesChanged', 'linesChanged'],
 }
 
 const VERIFY = {
@@ -288,7 +293,7 @@ const GH_REVIEW = {
   type: 'object',
   properties: {
     reviewRan: { type: 'boolean', description: 'a GitHub review run for the head commit finished and posted a review' },
-    verdict: { type: 'string', enum: ['looks mergeable', 'needs changes', 'needs a human', 'none'] },
+    verdict: { type: 'string', enum: ['looks mergeable', 'needs changes', 'needs a human', 'none'], description: 'the verdict scripts/merge/parse-verdict.sh printed for the review summary; "none" when it printed unknown' },
     findings: {
       type: 'array',
       items: {
@@ -308,32 +313,41 @@ const GH_REVIEW = {
   required: ['reviewRan', 'verdict', 'findings', 'note', 'reviewedSha'],
 }
 
+// WORKFLOW.md section 6: a PR that changes CI, the gates or agent configuration is named
+// in the sprint doc, so the human can see when the rules themselves change. This is
+// visibility, not a gate: it never blocks or tiers anything.
+const RULE_CHANGE_PATHS = {
+  type: 'array',
+  items: { type: 'string' },
+  description: 'files in git diff --name-only origin/main...HEAD under .github/, .claude/ (settings, hooks, agents, workflows), scripts/agent-gates/ or scripts/merge/; [] if none',
+}
+
 const SHIP = {
   type: 'object',
   properties: {
     prUrl: { type: 'string' },
     prNumber: { type: 'integer' },
     headSha: { type: 'string', description: 'full SHA of the commit you pushed (git rev-parse HEAD after pushing)' },
-    protectedPaths: { type: 'array', items: { type: 'string' } },
+    ruleChangePaths: RULE_CHANGE_PATHS,
     linesChanged: { type: 'integer', description: 'insertions + deletions from git diff --shortstat origin/main...HEAD' },
     filesChanged: { type: 'integer', description: 'number of files in git diff --name-only origin/main...HEAD, NOT counting files under docs/media/' },
     wouldAutoMerge: { type: 'boolean' },
     lessonsProposed: { type: 'array', items: { type: 'string' } },
   },
-  required: ['prUrl', 'prNumber', 'headSha', 'protectedPaths', 'linesChanged', 'filesChanged', 'wouldAutoMerge', 'lessonsProposed'],
+  required: ['prUrl', 'prNumber', 'headSha', 'ruleChangePaths', 'linesChanged', 'filesChanged', 'wouldAutoMerge', 'lessonsProposed'],
 }
 
 // A Respond fix round. Like FIX, plus what it pushed, so the next review read can be
-// pinned to that exact commit (never a previous round's review), and the protected
-// paths of the WHOLE diff after the fix (a fix can touch a protected file).
+// pinned to that exact commit (never a previous round's review), and the rule-change
+// paths of the WHOLE diff after the fix (a fix can touch CI or agent config).
 const RESPOND_FIX = {
   type: 'object',
   properties: {
     ...FIX.properties,
     pushedSha: { type: 'string', description: 'full SHA you pushed, or "" if you committed nothing (e.g. every finding disputed)' },
-    protectedPaths: { type: 'array', items: { type: 'string' }, description: 'files in git diff --name-only origin/main...HEAD matching .github/CODEOWNERS, after your fix' },
+    ruleChangePaths: RULE_CHANGE_PATHS,
   },
-  required: [...FIX.required, 'pushedSha', 'protectedPaths'],
+  required: [...FIX.required, 'pushedSha', 'ruleChangePaths'],
 }
 
 const FINISH = {
@@ -407,8 +421,8 @@ const envStop =
       'See issue #474.'
   : cap.botLogin !== BOT_LOGIN
     ? `environment: writes would be attributed to ${cap.botLogin ? `"${cap.botLogin}"` : 'an unresolved identity'}, ` +
-      `not ${BOT_LOGIN}. GitHub skips code-owner review when the PR author is the only code owner, ` +
-      `so this run would open PRs that silently bypass the protected-path gate. Probe said: ${cap.probe}. ` +
+      `not ${BOT_LOGIN}, so this run would open PRs that look like a human's and drop out of the ` +
+      `agent-loop daily cap and verdict gate. Probe said: ${cap.probe}. ` +
       'See issue #474.'
   : ''
 // Both Preflight gates end the same way, so the shape lives in one place: a third
@@ -525,14 +539,14 @@ const plan = await agent(
   `${WORKTREE_RULES(wt)}
 
 Plan the change for issue #${ISSUE}: "${pre.title}". Do not write code yet.
-Read the issue in full (gh issue view ${ISSUE} --repo ${REPO} --comments), the code it
-concerns, and .github/CODEOWNERS.
+Read the issue in full (gh issue view ${ISSUE} --repo ${REPO} --comments) and the code it
+concerns.
 
 Issue summary: ${pre.summary}
 
 Return:
 - plan: concrete steps.
-- filesToChange, and which of them match a CODEOWNERS entry (protectedPaths).
+- filesToChange.
 - userVisible: can a user see or trigger this in the app?
 - questions: ONLY genuine ambiguities the issue does not settle and that change
   what you would build. For each, the options and your own take. Do not invent
@@ -541,18 +555,19 @@ Return:
   literally describes, even when you are confident it is correct: for example, the
   fix also changes what gets saved, which items are selected by default, or copy the
   user sees elsewhere. Frame it as "should we also <change>?", with your take. The
-  decision step routes those to Ayush. (Issue #406's fix also stopped medium-confidence
-  scanned items being added automatically; nobody was asked, and in non-shadow mode it
-  would have merged unseen.)`,
+  decision step settles each one as a reversible product call and logs it, with the
+  alternative it rejected, in the PR body, so the change is seen rather than slipped in.
+  (Issue #406's fix also stopped medium-confidence scanned items being added automatically;
+  nobody was asked and nothing said so.)`,
   { label: 'plan', phase: 'Plan', schema: PLAN, agentType: pre.devRole },
 )
 if (!plan) return await blocked(wt, 'Plan', 'plan agent died', pre)
-log(`Plan: ${plan.filesToChange.length} files, ${plan.protectedPaths.length} protected, ${plan.questions.length} open questions`)
+log(`Plan: ${plan.filesToChange.length} files, ${plan.questions.length} open questions`)
 
 // The tier starts from Plan's estimate and is re-checked against the real diff after
 // Implement and again at Ship. raiseTier never lowers it: a change that turns out bigger
 // than planned gets the fuller pipeline, one that turns out smaller keeps what it had.
-let tier = sizeTier({ lines: plan.expectedChangedLines, files: codeFiles(plan.filesToChange).length, protectedPaths: plan.protectedPaths })
+let tier = sizeTier({ lines: plan.expectedChangedLines, files: codeFiles(plan.filesToChange).length })
 const tierLog = [`plan: ${tier.tier} (${tier.why})`]
 log(`Tier: ${tier.tier} — ${tier.why}`)
 function raiseTier(stage, facts) {
@@ -565,9 +580,11 @@ function raiseTier(stage, facts) {
 }
 
 // ── Decide ───────────────────────────────────────────────────────────────────
-// A strong model settles ambiguity with the implementer's view as input. It
-// escalates to Ayush only for protected areas or product behaviour the issue
-// doesn't describe — those need him at merge anyway, so asking up front is cheaper.
+// A strong model settles ambiguity with the implementer's view as input. Product calls,
+// including a change a user would notice beyond what the issue describes, are reversible
+// (WORKFLOW.md section 6): it decides them, and the PR body logs each with the alternative
+// it rejected. It escalates to Ayush only for a change to v1 scope or anything that costs
+// money, because those are the two things section 6 keeps for him.
 // One agent per open question, in every tier, so a clear issue runs no Decide agent at all.
 phase('Decide')
 if (!plan.questions.length) log('Decide: no open questions, no decision agents run')
@@ -577,7 +594,6 @@ issue #${ISSUE} ("${pre.title}") hit an ambiguity the issue does not settle.
 
 Issue summary: ${pre.summary}
 The plan: ${plan.plan}
-Protected paths in the plan: ${plan.protectedPaths.join(', ') || 'none'}
 
 Question: ${q.question}
 Options: ${q.options.map((o, j) => `(${j + 1}) ${o}`).join('  ')}
@@ -586,10 +602,11 @@ The implementer's take: ${q.implementerTake}
 Read whatever you need (the issue with comments via gh, CONTEXT.md, docs/adr/, the code)
 and decide. Weigh the implementer's take but do not defer to it.
 
-Set escalate=true ONLY if deciding either (a) requires changing a path in
-.github/CODEOWNERS (migrations, auth, ai-service/bubbly_chef/prompts/, .github/,
-.claude/ config, dependency manifests, deploy config), or (b) changes product
-behaviour a user would notice beyond what the issue describes. Otherwise decide.`,
+Set escalate=true ONLY if deciding either (a) changes v1 scope (what the product is meant
+to include or leave out), or (b) commits to anything that costs money (a paid service, a
+plan upgrade, a higher model spend). Everything else is a reversible product call, even
+when a user would notice it: decide it, and name the option you rejected in
+rejectedAlternative, because the PR body logs it.`,
   { agentType: RUNNER, label: `decide-${i + 1}`, phase: 'Decide', schema: DECISION, model: 'opus', effort: 'high' },
 )))
 const settled = decisions.map((d, i) => d && ({ ...d, question: plan.questions[i].question, implementerTake: plan.questions[i].implementerTake }))
@@ -626,7 +643,7 @@ if (DRY_RUN) {
 
 // ── Reproduce (bugs only) ────────────────────────────────────────────────────
 // A small bug nobody can see skips this stage: the implementer writes the failing test
-// first, in the same agent, and the CI fail-to-pass job checks it fails on main. A
+// first, in the same agent, and confirms it fails on the unfixed code. A
 // user-visible bug always reproduces here, because the before-screenshots have to be
 // taken on the unfixed code.
 let repro = null
@@ -701,7 +718,7 @@ Implement issue #${ISSUE}: "${pre.title}".
 Plan: ${plan.plan}
 ${DECIDED}
 ${repro ? `A failing test already reproduces the bug: ${repro.testFiles.join(', ')}. Make it pass by fixing the cause. Do not weaken, skip or delete it.`
-  : reproduceInImplement ? `This is a bug. BEFORE changing any code, write the smallest unit test that reproduces it (Jest for nextjs, pytest for ai-service), run it, and confirm it FAILS on the current code for the reason the bug describes. Only then fix the cause. The CI fail-to-pass job re-runs your test against main and fails the PR if it passes there.`
+  : reproduceInImplement ? `This is a bug. BEFORE changing any code, write the smallest unit test that reproduces it (Jest for nextjs, pytest for ai-service), run it, and confirm it FAILS on the current code for the reason the bug describes. Only then fix the cause. Nothing re-runs the test against main in CI, so that red-then-green check is yours: report it in your summary.`
   : 'Add tests for the new behaviour alongside the code.'}
 ${feedback ? `\nThis is attempt ${attempt}. The previous attempt failed:\n${feedback}\nFix the cause, not the symptom.` : ''}
 
@@ -711,12 +728,11 @@ note it in your summary instead of fixing it. Never delete or skip an existing t
 ${GATES}
 
 When the gates pass, commit as the bot with a message that says what changed and why.
-Do not push. Report linesChanged (insertions + deletions from git diff --shortstat origin/main...HEAD)
-and protectedPaths (files in git diff --name-only origin/main...HEAD matching .github/CODEOWNERS).`,
+Do not push. Report linesChanged (insertions + deletions from git diff --shortstat origin/main...HEAD).`,
     { label: `implement-${attempt}`, phase: 'Implement', schema: IMPLEMENT, agentType: pre.devRole },
   )
   if (!impl) return await blocked(wt, 'Implement', 'implement agent died', pre)
-  raiseTier(`implement-${attempt}`, { lines: impl.linesChanged, files: codeFiles(impl.filesChanged).length, protectedPaths: impl.protectedPaths || [] })
+  raiseTier(`implement-${attempt}`, { lines: impl.linesChanged, files: codeFiles(impl.filesChanged).length })
   if (!impl.gatesPassed) {
     feedback = `Quality gates failed:\n${impl.gateOutput}`
     log(`Attempt ${attempt}: gates failed`)
@@ -823,22 +839,24 @@ ${AS_BOT}
 
 Open the PR for issue #${ISSUE}: "${pre.title}".
 
-1. Work out which changed files match .github/CODEOWNERS (git diff --name-only origin/main...HEAD),
-   and report linesChanged (insertions + deletions from git diff --shortstat origin/main...HEAD)
-   and filesChanged (the number of files in that diff, NOT counting files under docs/media/).
+1. Report linesChanged (insertions + deletions from git diff --shortstat origin/main...HEAD),
+   filesChanged (the number of files in git diff --name-only origin/main...HEAD, NOT counting files under docs/media/),
+   and ruleChangePaths (the files in that diff under .github/, .claude/
+   settings, hooks, agents or workflows, scripts/agent-gates/ or scripts/merge/; [] if none).
 2. Push the branch as the bot, then record headSha = \`git rev-parse HEAD\` (the exact commit
    the GitHub review will run on).
 3. Open a PR (NOT draft) as the bot against main, labelled "agent-loop". Title in the
    repo's conventional style. The body is the review surface — write it for someone who
    will not open the diff (CLAUDE.md, "The PR body is the review surface"):
-   - If any protected paths: a first line "> ⚠️ Touches protected paths: <list> — needs Ayush's approval."
-     Otherwise a first line: "> ${SHADOW ? 'Shadow mode: no protected paths — would auto-merge once checks pass. Ayush merges during the shadow period.' : 'No protected paths: eligible for auto-merge.'}"
+   - A first line. If ruleChangePaths is not empty: "> Changes CI, gates or agent config: <list>" (the
+     orchestrating session names such a PR in the sprint doc; this is visibility, not an approval step).
+     Otherwise: "> ${SHADOW ? 'Shadow mode: auto-merge is not requested; a human merges this PR.' : 'Eligible for auto-merge once the required checks are green and the review says looks mergeable.'}"
    - Summary in behavioural terms: ${impl.summary}
    - Verified: ${verify.evidence}
      Embed the screenshots (${verify.screenshots.concat(repro ? repro.beforeScreenshots : []).join(', ') || 'none'}), before/after side by side where both exist. Every image uses an absolute URL pinned to the pushed commit: https://github.com/ayushb3/BubblyChef/blob/<full sha>/docs/media/issue-<n>/<file>.png?raw=true. Never a relative docs/media path, which GitHub doesn't render in a PR body, and never a blob/<branch>/ URL, which breaks after merge.
-   ${repro ? `- Fail-to-pass: ${repro.testFiles.join(', ')} failed on the unfixed code:\n     ${repro.failureOutput.slice(0, 600)}` : ''}
-   - Decisions made during the run: ${settled.length ? settled.map(d => `${d.question} → ${d.decision} (${d.reasoning})`).join('; ') : 'none needed'}
-   - Loop tier: ${tier.tier} (${tier.why}).${tier.tier === 'small' && verdictGateOn ? ` If the final diff is still small, the loop does NOT wait for or answer the GitHub review on this PR (it passed the in-loop review). The required "${VERDICT_GATE}" check holds the merge until that review says "looks mergeable" for the final commit, or Ayush approves it.` : ''}
+   ${repro ? `- Reproduced before the fix: ${repro.testFiles.join(', ')} failed on the unfixed code:\n     ${repro.failureOutput.slice(0, 600)}` : ''}
+   - Decisions made during the run (each a reversible product call; list the alternative rejected): ${settled.length ? settled.map(d => `${d.question} → ${d.decision} (${d.reasoning}; rejected: ${d.rejectedAlternative || 'not recorded'})`).join('; ') : 'none needed'}
+   - Loop tier: ${tier.tier} (${tier.why}).${tier.tier === 'small' && verdictGateOn ? ` If the final diff is still small, the loop does NOT wait for or answer the GitHub review on this PR (it passed the in-loop review). The required "${VERDICT_GATE}" check holds the merge until that review says "looks mergeable" for the final commit.` : ''}
    - Review — report these three lists separately and truthfully; never call a disputed finding fixed:
        fixed: ${fixedFindings.length ? fixedFindings.join('; ') : 'none'}${!fixedFindings.length && !disputedFindings.length ? ' (passed the first review)' : ''}
        disputed and accepted by the re-review: ${disputedFindings.length ? disputedFindings.map(d => `${d.finding} (${d.reason})`).join('; ') : 'none'}
@@ -854,7 +872,7 @@ Open the PR for issue #${ISSUE}: "${pre.title}".
 )
 if (!ship) return await blocked(wt, 'Ship', 'ship agent died before the PR was confirmed', pre)
 // The final diff, after any review fixes, is what decides whether Respond may be skipped.
-raiseTier('ship', { lines: ship.linesChanged, files: ship.filesChanged, protectedPaths: ship.protectedPaths || [] })
+raiseTier('ship', { lines: ship.linesChanged, files: ship.filesChanged })
 
 // ── Respond ──────────────────────────────────────────────────────────────────
 // The GitHub reviewer (claude-review.yml) reviews the PR from a context that never saw
@@ -877,13 +895,14 @@ raiseTier('ship', { lines: ship.linesChanged, files: ship.filesChanged, protecte
 // Opus review already passed, and it runs before the PR opens, so the fixes it asks for
 // are re-verified before any evidence goes into the PR. The GitHub reviewer still runs;
 // the loop just doesn't wait on it. Its verdict still binds: that required check holds
-// the merge until it says "looks mergeable" for the exact head commit (or Ayush approves
-// that commit). So a small PR can auto-merge on both reviews without the loop waiting.
+// the merge until it says "looks mergeable" for the exact head commit (or for an earlier
+// one when everything since only merged main in). So a small PR can auto-merge on both
+// reviews without the loop waiting.
 // Without the check, nothing would hold the merge, so small then waits like standard.
 phase('Respond')
 const MAX_RESPOND_ROUNDS = 2
 let expectedSha = ship.headSha
-let protectedNow = [...ship.protectedPaths]
+let ruleChangesNow = [...ship.ruleChangePaths]
 let ghReview = null
 let respondOutcome = 'looks mergeable'
 const respondFixed = []
@@ -899,6 +918,7 @@ for (let round = 0; !skipRespond && round <= MAX_RESPOND_ROUNDS; round++) {
   ghReview = await agent(
     `Read the GitHub review of ${REPO} PR #${ship.prNumber} for ONE exact commit. Read-only: change nothing.
 Expected head commit: ${expectedSha}
+Run every command from "${wt.path}".
 1. Wait until GitHub shows that commit as the PR head: poll
      gh pr view ${ship.prNumber} --repo ${REPO} --json headRefOid --jq .headRefOid
    every 20s for up to 5 minutes until it equals the expected commit. If it never does,
@@ -916,10 +936,15 @@ Expected head commit: ${expectedSha}
    Inline comments are new for each run: gh api repos/${REPO}/pulls/${ship.prNumber}/comments
    Use only the summary UPDATED after the run started, and inline comments CREATED after it.
    If the summary wasn't updated by this run, reviewRan=false.
-5. reviewedSha: the headSha of the run you read. verdict: exactly the review's own verdict —
-   "looks mergeable", "needs changes" or "needs a human". findings: each concrete problem it
-   raised (file, problem, why, and severity as it states it; if it doesn't state one, use
-   "important", never guess "minor").`,
+5. reviewedSha: the headSha of the run you read.
+6. verdict: do NOT work it out yourself. Save that summary comment's body to a file and run
+     bash scripts/merge/parse-verdict.sh < <that file>
+   It is the same parser the required "${VERDICT_GATE}" check uses, so your answer is what
+   GitHub will enforce. It prints looks-mergeable, needs-changes, needs-human or unknown. Report
+   "looks mergeable", "needs changes", "needs a human" for the first three, and "none" for
+   unknown (a verdict it cannot read is never approval).
+   findings: each concrete problem the review raised (file, problem, why, and severity as it
+   states it; if it doesn't state one, use "important", never guess "minor").`,
     { agentType: RUNNER, label: `gh-review-${round + 1}`, phase: 'Respond', schema: GH_REVIEW, model: 'sonnet', effort: 'low' },
   )
   // Enforced here, not by the reader: a review of any other commit is not a review of this one.
@@ -928,10 +953,17 @@ Expected head commit: ${expectedSha}
     log(`No usable GitHub review for ${expectedSha.slice(0, 8)}: ${!ghReview ? 'agent died' : !ghReview.reviewRan ? ghReview.note : `it read ${String(ghReview.reviewedSha).slice(0, 8)} instead`}`)
     break
   }
+  if (ghReview.verdict === 'none') {
+    // The shared parser could not read the summary (no label, marker or heading verdict, or
+    // they disagree). Fail closed: an unreadable review is a missing one, never approval.
+    respondOutcome = 'no-review'
+    log(`GitHub review of ${expectedSha.slice(0, 8)} has no verdict the shared parser can read`)
+    break
+  }
   const serious = ghReview.findings.filter(f => f.severity !== 'minor')
   log(`GitHub review round ${round + 1}: ${ghReview.verdict}, ${serious.length} serious finding(s)`)
   if (ghReview.verdict === 'looks mergeable') { respondOutcome = 'looks mergeable'; break }
-  if (ghReview.verdict === 'needs a human') { respondOutcome = 'needs a human'; break }  // expected for protected paths
+  if (ghReview.verdict === 'needs a human') { respondOutcome = 'needs a human'; break }
   if (ghReview.verdict === 'needs changes' && !serious.length) {
     // The reviewer still said "needs changes"; only minor points remain. The PR stands,
     // but this is NOT the reviewer's approval, so it can never lead to auto-merge.
@@ -966,7 +998,7 @@ Then, as the bot:
   A dispute with no new commit cannot be re-reviewed, so the loop hands it to Ayush.
 - Post ONE comment on PR #${ship.prNumber} listing each finding with one line:
   "fixed: <what changed>" or "disputed: <why>". Never call a disputed finding fixed.
-- protectedPaths: files in \`git diff --name-only origin/main...HEAD\` matching .github/CODEOWNERS.`,
+- ruleChangePaths: files in \`git diff --name-only origin/main...HEAD\` under .github/, .claude/ settings, hooks, agents or workflows, scripts/agent-gates/ or scripts/merge/; [] if none.`,
     { label: `respond-fix-${round + 1}`, phase: 'Respond', schema: RESPOND_FIX, agentType: pre.devRole },
   )
   if (!fix || !fix.gatesPassed) {
@@ -976,7 +1008,7 @@ Then, as the bot:
   }
   respondFixed.push(...fix.fixed)
   respondDisputed.push(...fix.disputed)
-  protectedNow = [...new Set([...protectedNow, ...fix.protectedPaths])]
+  ruleChangesNow = [...new Set([...ruleChangesNow, ...fix.ruleChangePaths])]
   if (!fix.pushedSha || fix.pushedSha === expectedSha) {
     // Nothing new pushed means nothing new to review: re-reading would only return the
     // same review. "The same commit as before" counts as nothing pushed, since an agent
@@ -991,14 +1023,18 @@ Then, as the bot:
 
 // ── Finish ───────────────────────────────────────────────────────────────────
 // Always runs once a PR exists: labels an unresolved PR for Ayush, requests auto-merge
-// only when EVERY condition holds, and returns the caller's checkout. Auto-merge needs
-// the reviewer's own "looks mergeable" on the exact final commit: read by Respond, or,
-// for the small tier, enforced by GitHub through the required "Claude review verdict"
-// check. Protected paths are taken from the WHOLE diff after any Respond fixes, not just
-// what Ship saw.
-const mayAutoMerge = !SHADOW && protectedNow.length === 0 && (respondOutcome === 'looks mergeable' || skipRespond)
+// only when EVERY WORKFLOW.md section 6 condition holds, and returns the caller's checkout.
+//   1. Required checks green on a branch up to date with main: GitHub enforces both once
+//      auto-merge is requested; Finish only brings the branch up to date.
+//   2. The reviewer's own "looks mergeable" for the final commit: read by Respond (through
+//      the same parser as the verdict check), or, for the small tier, enforced by GitHub
+//      through the required "Claude review verdict" check.
+//   3. For anything a user could see or trigger, a verify run that passed (Verify, and the
+//      re-verification after any fix, never reach Ship otherwise; checked again here).
+const verifyOk = !plan.userVisible || verify.verified === true
+const mayAutoMerge = !SHADOW && verifyOk && (respondOutcome === 'looks mergeable' || skipRespond)
 const finishPrompt = `${WORKTREE_RULES(wt)}
-${AS_BOT}
+${AS_BOT_IDENTITY}
 
 Finish the agent loop run for PR #${ship.prNumber} (issue #${ISSUE}). Do exactly these steps.
 1. ${respondOutcome === 'unresolved'
@@ -1006,10 +1042,10 @@ Finish the agent loop run for PR #${ship.prNumber} (issue #${ISSUE}). Do exactly
     : respondOutcome === 'no-review'
       ? `The GitHub review did not run, or could not be read for the final commit. As the bot, comment on PR #${ship.prNumber} saying so, so a human knows it is unreviewed by the GitHub reviewer.`
       : respondOutcome === 'needs a human'
-        ? `The GitHub review needs a human (a protected path, or findings disputed without a new commit). As the bot, comment on PR #${ship.prNumber} saying what Ayush needs to decide.`
+        ? `The GitHub review needs a human (findings disputed without a new commit, or a call that is Ayush's: v1 scope or spend). As the bot, comment on PR #${ship.prNumber} saying what Ayush needs to decide.`
         : 'Nothing to label.'}
 2. ${mayAutoMerge
-    ? `Every condition holds (not shadow mode; no protected paths; ${skipRespond ? `a small change, whose GitHub review is enforced by the required "${VERDICT_GATE}" check` : 'the GitHub review of the final commit says "looks mergeable"'}): as the bot, enable auto-merge with gh pr merge ${ship.prNumber} --repo ${REPO} --auto --merge. GitHub still waits for every required check${skipRespond ? `, including "${VERDICT_GATE}"` : ''}.`
+    ? `Every condition holds (not shadow mode; ${plan.userVisible ? 'verify passed on the final commit; ' : ''}${skipRespond ? `a small change, whose GitHub review is enforced by the required "${VERDICT_GATE}" check` : 'the GitHub review of the final commit says "looks mergeable"'}): as the bot, first bring the branch up to date if main has moved (gh pr view ${ship.prNumber} --repo ${REPO} --json mergeStateStatus; when it says BEHIND, gh pr update-branch ${ship.prNumber} --repo ${REPO}, which only merges main in), then enable auto-merge with gh pr merge ${ship.prNumber} --repo ${REPO} --auto --merge (a real merge commit, never squash or rebase, never --admin). GitHub still waits for every required check${skipRespond ? `, including "${VERDICT_GATE}"` : ''}.`
     : 'Do NOT enable auto-merge and do not run any gh pr merge command.'}
 3. Stop any stack you started, then return the checkout to its original branch:
    git checkout "${wt.originalBranch}"  (keep the local issue branch; it is pushed).
@@ -1042,7 +1078,7 @@ return {
   status: respondOutcome === 'unresolved' ? 'agent-blocked' : 'pr-opened',
   issue: ISSUE,
   pr: ship.prUrl,
-  protectedPaths: protectedNow,
+  ruleChangePaths: ruleChangesNow,
   wouldAutoMerge: ship.wouldAutoMerge,
   autoMergeRequested: mayAutoMerge,
   mergeRuleBroken: !!(fin && fin.ranMergeCommand && !mayAutoMerge),

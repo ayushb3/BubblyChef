@@ -4,7 +4,7 @@ Feeds `bubbly_chef.workflows.receipt_ingest` (OCR text -> grocery items),
 `bubbly_chef.workflows.product_ingest` (barcode-lookup-miss fallback: product
 description -> structured item), and `bubbly_chef.services.receipt_parser`
 (the standalone receipt-parsing service used by the scan review flow). Edits
-here are CODEOWNERS-gated: prompt wording changes model behavior even though
+here are fresh-context reviewed and `verify`-checked: prompt wording changes model behavior even though
 the test suite can stay green.
 """
 
