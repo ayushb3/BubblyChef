@@ -448,6 +448,25 @@ describe('GuidedCookFlow — done-state deduction handoff (#263)', () => {
     expect(onFinish).not.toHaveBeenCalled()
   })
 
+  // Issue #812 — the done state wears the same keycap buttons as the meal cook's finish.
+  it('draws the done state as a pixel panel with keycap actions', () => {
+    renderWithFinish()
+    for (let i = 0; i <= RECIPE.instructions.length; i++) {
+      fireEvent.click(screen.getByTestId('guided-cook-next'))
+    }
+    expect(screen.getByTestId('guided-cook-done')).toHaveAttribute('data-pixel-panel')
+    expect(screen.getByTestId('guided-cook-deduct')).toHaveAttribute('data-keycap', 'primary')
+    expect(screen.getByTestId('guided-cook-exit')).toHaveAttribute('data-keycap', 'secondary')
+  })
+
+  it('makes Back to recipe the primary keycap when there is no deduction handoff', () => {
+    renderFlow()
+    for (let i = 0; i <= RECIPE.instructions.length; i++) {
+      fireEvent.click(screen.getByTestId('guided-cook-next'))
+    }
+    expect(screen.getByTestId('guided-cook-exit')).toHaveAttribute('data-keycap', 'primary')
+  })
+
   it('hides the deduct button when onFinish is not wired', () => {
     renderFlow() // no onFinish
     for (let i = 0; i <= RECIPE.instructions.length; i++) {
