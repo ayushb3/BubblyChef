@@ -24,7 +24,8 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import SpringButton from '@/components/ui/SpringButton'
 import { fetchMealToBuy } from '@/lib/api/grocery'
-import { addToGroceryList } from '@/lib/grocery-store'
+import { groceryFoodKey } from '@/lib/grocery'
+import { addToGroceryList, loadGroceryLines } from '@/lib/grocery-store'
 import { fetchUserId } from '@/hooks/useGroceryCount'
 import { springs, useMotionConfig } from '@/lib/motion'
 
@@ -97,7 +98,17 @@ export default function MealToBuyLine({ mealId, signature }: MealToBuyLineProps)
 
   function handleAdd() {
     if (!user.data) return
-    addToGroceryList(user.data, names)
+    // A re-add must be harmless: `addManualLines` un-checks a food that is
+    // already listed (right for "I just asked for it again" from a pantry
+    // item), but here a ticked line means it was bought at the shop, so it
+    // is left exactly as it is.
+    const checked = new Set(
+      loadGroceryLines(user.data)
+        .filter((l) => l.checked)
+        .map((l) => l.key),
+    )
+    const fresh = names.filter((n) => !checked.has(groceryFoodKey(n)))
+    if (fresh.length > 0) addToGroceryList(user.data, fresh)
     setAddedFor({ key, count: names.length })
   }
 

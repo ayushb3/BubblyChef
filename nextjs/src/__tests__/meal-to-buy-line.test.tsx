@@ -9,7 +9,8 @@ import React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import MealToBuyLine from '@/components/meal/MealToBuyLine'
-import { loadGroceryLines } from '@/lib/grocery-store'
+import { loadGroceryLines, saveGroceryLines } from '@/lib/grocery-store'
+import { setLineChecked } from '@/lib/grocery'
 
 const fetchMealToBuy = jest.fn()
 jest.mock('@/lib/api/grocery', () => ({
@@ -91,6 +92,26 @@ describe('MealToBuyLine', () => {
     fireEvent.click(await screen.findByRole('button', { name: /add to grocery list/i }))
     await screen.findByTestId('meal-to-buy-added')
     expect(loadGroceryLines('u1')).toHaveLength(2)
+  })
+
+  it('keeps an item already ticked off when the meal is added again', async () => {
+    fetchMealToBuy.mockResolvedValue(['parsley', '1 lemon'])
+    const first = renderLine()
+    fireEvent.click(await screen.findByRole('button', { name: /add to grocery list/i }))
+    await screen.findByTestId('meal-to-buy-added')
+    first.unmount()
+
+    // At the shop: parsley goes in the basket.
+    const parsley = loadGroceryLines('u1').find((l) => l.name === 'parsley')!
+    saveGroceryLines('u1', setLineChecked(loadGroceryLines('u1'), parsley.key, true))
+
+    renderLine()
+    fireEvent.click(await screen.findByRole('button', { name: /add to grocery list/i }))
+    await screen.findByTestId('meal-to-buy-added')
+    const lines = loadGroceryLines('u1')
+    expect(lines).toHaveLength(2)
+    expect(lines.find((l) => l.name === 'parsley')?.checked).toBe(true)
+    expect(lines.find((l) => l.name === '1 lemon')?.checked).toBe(false)
   })
 
   it('does not touch the list before the tap', async () => {
