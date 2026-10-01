@@ -141,6 +141,15 @@ _QUERY_STOPWORDS = frozenset(
 )
 
 
+# Words that name the *occasion* a saved meal was planned for rather than any
+# dish in it. "make that pasta dinner again" asks for a saved meal about pasta;
+# "dinner" says meal, it isn't a dish to find. Stripped from the query side of
+# `search_saved_meals` only -- a saved *recipe* really can be called "Dinner Rolls".
+_MEAL_OCCASION_WORDS = frozenset(
+    {"meal", "meals", "dinner", "dinners", "lunch", "lunches", "supper", "tonight"}
+)
+
+
 def _tokenize(text: str) -> list[str]:
     """Lowercase and split into alphanumeric tokens for overlap scoring."""
     return _TOKEN_RE.findall(text.lower())
@@ -1673,6 +1682,82 @@ class SupabaseRepository:
             for row in _as_rows(result.data or [])
             if row.get("servings") is not None and row.get("last_cooked_at") is not None
         ]
+
+    async def search_saved_meals(
+        self, user_id: str, query: str, limit: int = 3
+    ) -> list[dict[str, Any]]:
+        """Rank a user's *saved* meals against a free-text lookup (issue #760).
+
+        Mirrors `search_saved_recipes` for the `meals` table: scoped
+        `.eq("user_id", user_id)` and `.eq("is_draft", False)`, so another
+        user's meal, or a meal the user opened but never saved, can never
+        appear. Each result is the raw `meals` row plus a `dishes` list
+        (`{"role", "position", "recipe_id", "title"}`, main first), read in the
+        same query through the `meal_dishes -> recipes(title)` embed.
+
+        Matching is against the meal's title, description and dish titles
+        together. Meal-occasion words ("dinner", "meal") are dropped from the
+        query, since they say "a meal" rather than naming a dish; every
+        remaining query token must appear somewhere in the meal, so a
+        two-word ask is never padded with meals that share only one word. A
+        query that is *only* occasion words ("show me my saved meals") returns
+        the most recently cooked, then most recently created, meals instead.
+        Ranked by title hits, then dish-title hits, then recency.
+
+        Raises on a query error (unlike `get_recent_meal_servings`): the caller
+        must tell "no such meal" from "couldn't look".
+        """
+        tokens = _tokenize_query(query)
+        if not tokens:
+            return []
+        wanted = {t for t in tokens if t not in _MEAL_OCCASION_WORDS}
+
+        result = (
+            self.client.table("meals")
+            .select(
+                "id,title,description,servings,last_cooked_at,created_at,"
+                "meal_dishes(role,position,recipe_id,recipes(title))"
+            )
+            .eq("user_id", user_id)
+            .eq("is_draft", False)
+            .eq("meal_dishes.user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(200)
+            .execute()
+        )
+
+        scored: list[tuple[tuple[int, int, str, str], dict[str, Any]]] = []
+        for row in _as_rows(result.data or []):
+            raw_dishes = row.get("meal_dishes")
+            dishes: list[dict[str, Any]] = []
+            for raw in _as_rows(raw_dishes) if isinstance(raw_dishes, list) else []:
+                recipe = raw.get("recipes")
+                dishes.append(
+                    {
+                        "role": raw.get("role"),
+                        "position": raw.get("position"),
+                        "recipe_id": str(raw["recipe_id"]) if raw.get("recipe_id") else None,
+                        "title": recipe.get("title") if isinstance(recipe, dict) else None,
+                    }
+                )
+            dishes.sort(key=lambda d: d["position"] if isinstance(d["position"], int) else 99)
+
+            title_tokens = set(_tokenize(str(row.get("title") or "")))
+            dish_tokens = {t for d in dishes for t in _tokenize(str(d.get("title") or ""))}
+            desc_tokens = set(_tokenize(str(row.get("description") or "")))
+            if wanted and not wanted <= (title_tokens | dish_tokens | desc_tokens):
+                continue
+
+            meal = {k: v for k, v in row.items() if k != "meal_dishes"}
+            meal["dishes"] = dishes
+            recency = str(row.get("last_cooked_at") or "")
+            created = str(row.get("created_at") or "")
+            scored.append(
+                ((len(wanted & title_tokens), len(wanted & dish_tokens), recency, created), meal)
+            )
+
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        return [meal for _score, meal in scored[:limit]]
 
     async def get_meal_with_dishes(self, user_id: str, meal_id: str) -> dict[str, Any] | None:
         """Return `{"meal": <meals row>, "dishes": [...]}` for one meal, or

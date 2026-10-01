@@ -138,6 +138,8 @@ def _patch_repo(matches: list[dict[str, Any]], recent: list[dict[str, Any]] | No
     repo = MagicMock()
     repo.search_saved_recipes = AsyncMock(return_value=matches)
     repo.get_user_recipes = AsyncMock(return_value=recent or [])
+    # The lookup also asks for saved meals (#760); these recipe-only tests have none.
+    repo.search_saved_meals = AsyncMock(return_value=[])
     return patch(
         "bubbly_chef.workflows.chat.nodes.get_repository",
         new_callable=AsyncMock,
