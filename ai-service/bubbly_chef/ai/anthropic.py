@@ -15,7 +15,13 @@ from typing import Any, TypeVar
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from .provider import AIProvider, ProviderUnavailableError, StructuredOutputError, ToolCall, ToolCallResponse
+from .provider import (
+    AIProvider,
+    ProviderUnavailableError,
+    StructuredOutputError,
+    ToolCall,
+    ToolCallResponse,
+)
 
 logger = logging.getLogger(__name__)
 

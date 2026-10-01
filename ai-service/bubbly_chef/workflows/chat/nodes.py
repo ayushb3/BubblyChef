@@ -10,6 +10,8 @@ import logging
 from datetime import date
 from typing import Any
 
+from pydantic import ValidationError
+
 import bubbly_chef.tools.cooking  # noqa: F401 — registers check_pantry on import
 from bubbly_chef.ai.manager import AIManager, NoProviderAvailableError
 from bubbly_chef.ai.provider import user_message_for_failure
@@ -27,6 +29,7 @@ from bubbly_chef.prompts.chat import (
     _COOKING_SYSTEM_PROMPT,
     _FOLLOW_UP_PROMPT,
 )
+
 # Re-exported for callers that import these off this module (e.g.
 # workflows/router.py, workflows/chat/__init__.py) — `as`-aliasing makes the
 # re-export explicit so mypy --strict's --no-implicit-reexport doesn't flag it.
@@ -40,10 +43,9 @@ from bubbly_chef.services.food_exclusions import (
     dislikes_block,
     get_stored_food_exclusions,
 )
-from bubbly_chef.workflows.recipe.exclusions import asks_for
 from bubbly_chef.tools.registry import get_tool, get_tool_schemas
+from bubbly_chef.workflows.recipe.exclusions import asks_for
 from bubbly_chef.workflows.state import WorkflowState
-from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
 
