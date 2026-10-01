@@ -33,6 +33,8 @@ export interface GroceryLine {
 
 /** The subset of a pantry row generation reads. */
 export interface GroceryPantryRow {
+  /** The lot's id; part of a suggestion's fingerprint (see `dismissalsFor`). */
+  id?: string
   name: string
   category?: string | null
   quantity: number
@@ -106,8 +108,25 @@ function isFresh(row: GroceryPantryRow): boolean {
   return !rowExpired(row, days) && (days === null || days > EXPIRING_DAYS)
 }
 
-/** What the pantry says to buy: one line per food, `depleted` or `expiring`. */
-export function generateGroceryLines(rows: GroceryPantryRow[]): GroceryLine[] {
+/** A suggested line and the fingerprint of the pantry state that suggested it. */
+interface Suggestion {
+  line: GroceryLine
+  fingerprint: string
+}
+
+/** One lot, for a fingerprint: its id (the name for a row without one). */
+function lotId(row: GroceryPantryRow): string {
+  return row.id ?? row.name
+}
+
+/**
+ * What the pantry suggests buying: one per food, `depleted` or `expiring`, each
+ * with a fingerprint of why: the food, the reason, and the lots that triggered
+ * it (every lot for a ran-out food; each lot with stock, with its expiry, for an
+ * expiring one). It is what a dismissal is keyed on, so it lasts until the
+ * food is restocked and runs out again, or a different lot is expiring.
+ */
+function suggest(rows: GroceryPantryRow[]): Suggestion[] {
   const byFood = new Map<string, GroceryPantryRow[]>()
   for (const row of rows) {
     const name = row.name?.trim()
@@ -118,7 +137,7 @@ export function generateGroceryLines(rows: GroceryPantryRow[]): GroceryLine[] {
     else byFood.set(key, [row])
   }
 
-  const lines: GroceryLine[] = []
+  const out: Suggestion[] = []
   for (const [key, lots] of byFood) {
     if (lots.some(isFresh)) continue // a healthy lot means the food isn't needed
 
@@ -129,29 +148,68 @@ export function generateGroceryLines(rows: GroceryPantryRow[]): GroceryLine[] {
     if (inStock.length > 0) {
       // Only expired / about-to-expire stock: suggest replacing the biggest lot.
       const biggest = inStock.reduce((a, b) => (b.quantity > a.quantity ? b : a))
-      lines.push({
-        key,
-        name: first.name.trim(),
-        quantity: biggest.quantity,
-        unit: biggest.unit ?? null,
-        category,
-        source: 'expiring',
-        checked: false,
+      const lotTokens = inStock.map((l) => `${lotId(l)}:${l.expiry_date ?? ''}`).sort()
+      out.push({
+        line: {
+          key,
+          name: first.name.trim(),
+          quantity: biggest.quantity,
+          unit: biggest.unit ?? null,
+          category,
+          source: 'expiring',
+          checked: false,
+        },
+        fingerprint: `${key}|expiring|${lotTokens.join(',')}`,
       })
     } else {
       // Every lot is at zero: the last known amount is gone, only the unit survives.
-      lines.push({
-        key,
-        name: first.name.trim(),
-        quantity: null,
-        unit: first.unit ?? null,
-        category,
-        source: 'depleted',
-        checked: false,
+      out.push({
+        line: {
+          key,
+          name: first.name.trim(),
+          quantity: null,
+          unit: first.unit ?? null,
+          category,
+          source: 'depleted',
+          checked: false,
+        },
+        fingerprint: `${key}|depleted|${lots.map(lotId).sort().join(',')}`,
       })
     }
   }
-  return sortLines(lines)
+  return out
+}
+
+/** What the pantry says to buy: one line per food, `depleted` or `expiring`. */
+export function generateGroceryLines(rows: GroceryPantryRow[]): GroceryLine[] {
+  return sortLines(suggest(rows).map((s) => s.line))
+}
+
+/** food key -> the fingerprint of what the pantry suggests for it right now. */
+export function suggestionFingerprints(rows: GroceryPantryRow[]): Map<string, string> {
+  return new Map(suggest(rows).map((s) => [s.line.key, s.fingerprint]))
+}
+
+/**
+ * The fingerprints to record when the user removes (or clears) these foods: one
+ * for each the pantry suggests right now. A food it does not suggest (one the
+ * user typed in) has none: removing that is just removing it.
+ */
+export function dismissalsFor(keys: readonly string[], rows: GroceryPantryRow[]): string[] {
+  const prints = suggestionFingerprints(rows)
+  return keys.flatMap((k) => {
+    const p = prints.get(k)
+    return p ? [p] : []
+  })
+}
+
+/**
+ * Drop dismissals the pantry no longer suggests: the food is back in stock, so
+ * the next time it runs out it is a new suggestion, even if a lot kept its id.
+ */
+export function pruneDismissals(dismissed: readonly string[], rows: GroceryPantryRow[]): string[] {
+  const current = new Set(suggestionFingerprints(rows).values())
+  return dismissed.filter((d) => current.has(d))
 }
 
 /**
@@ -159,13 +217,21 @@ export function generateGroceryLines(rows: GroceryPantryRow[]): GroceryLine[] {
  * refresh the unchecked generated ones from the pantry. A refreshed line keeps
  * its name (only quantity, unit, category and reason update); a generated line
  * that is no longer needed is dropped; a newly needed food is added. A food
- * the user already holds (manual or checked) is never duplicated.
+ * the user already holds (manual or checked) is never duplicated. A suggestion
+ * the user dismissed (`dismissed`, fingerprints from `dismissalsFor`) is skipped
+ * until the pantry state behind it changes.
  */
 export function regenerateGroceryList(
   current: GroceryLine[],
-  rows: GroceryPantryRow[]
+  rows: GroceryPantryRow[],
+  dismissed: readonly string[] = []
 ): GroceryLine[] {
-  const fresh = new Map(generateGroceryLines(rows).map((l) => [l.key, l]))
+  const skip = new Set(dismissed)
+  const fresh = new Map(
+    suggest(rows)
+      .filter((s) => !skip.has(s.fingerprint))
+      .map((s) => [s.line.key, s.line])
+  )
   const kept: GroceryLine[] = []
   const held = new Set<string>()
 

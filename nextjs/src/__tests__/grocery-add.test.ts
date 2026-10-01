@@ -4,7 +4,7 @@
  * user already checked off at the shop.
  */
 
-import { addItemsToMyGroceryList } from '@/lib/grocery-add'
+import { addItemsToMyGroceryList, addPantryItemToMyGroceryList } from '@/lib/grocery-add'
 import { loadGroceryLines, saveGroceryLines } from '@/lib/grocery-store'
 import { setLineChecked } from '@/lib/grocery'
 
@@ -45,5 +45,37 @@ describe('addItemsToMyGroceryList', () => {
   it('rejects when nobody is signed in', async () => {
     getUser.mockResolvedValue({ data: { user: null } })
     await expect(addItemsToMyGroceryList(['parsley'])).rejects.toThrow(/sign in/i)
+  })
+})
+
+describe('addPantryItemToMyGroceryList (issue #497: "Add to list" on a pantry row)', () => {
+  it('adds the food with its unit and category, and no amount to guess at', async () => {
+    await addPantryItemToMyGroceryList({ name: 'milk', category: 'dairy', unit: 'L' })
+    expect(loadGroceryLines('u1')).toEqual([
+      expect.objectContaining({
+        key: 'milk',
+        name: 'milk',
+        category: 'dairy',
+        unit: 'L',
+        quantity: null,
+        source: 'manual',
+        checked: false,
+      }),
+    ])
+  })
+
+  it('puts a ticked food back to buy: the user just asked for it again', async () => {
+    await addPantryItemToMyGroceryList({ name: 'milk', category: 'dairy', unit: 'L' })
+    saveGroceryLines('u1', setLineChecked(loadGroceryLines('u1'), 'milk', true))
+    await addPantryItemToMyGroceryList({ name: 'milk', category: 'dairy', unit: 'L' })
+    expect(loadGroceryLines('u1')).toHaveLength(1)
+    expect(loadGroceryLines('u1')[0].checked).toBe(false)
+  })
+
+  it('rejects when nobody is signed in', async () => {
+    getUser.mockResolvedValue({ data: { user: null } })
+    await expect(
+      addPantryItemToMyGroceryList({ name: 'milk', category: 'dairy', unit: 'L' }),
+    ).rejects.toThrow(/sign in/i)
   })
 })
