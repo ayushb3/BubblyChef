@@ -14,6 +14,9 @@
  * `balance` is `null` while it is unknown (loading or failed): the counter is
  * hidden rather than flashing a `0`. Its slot is reserved, so the title does not
  * jump when the balance lands.
+ *
+ * The header is `relative z-10` so it paints over the wall below it: the counter's
+ * "+N" tag hangs under the counter, over the wall's top edge (issue #839).
  */
 import BubblesCounter from '@/components/ui/BubblesCounter'
 import NotificationBell from '@/components/layout/NotificationBell'
@@ -26,7 +29,7 @@ export interface KitchenHeaderProps {
 
 export default function KitchenHeader({ eyebrow, balance }: KitchenHeaderProps) {
   return (
-    <header className="flex min-h-[58px] flex-wrap items-center justify-between gap-x-2 gap-y-1 px-4 py-1.5 max-[359px]:px-3">
+    <header className="relative z-10 flex min-h-[58px] flex-wrap items-center justify-between gap-x-2 gap-y-1 px-4 py-1.5 max-[359px]:px-3">
       {/* The title never truncates: it steps down to 20px on narrow phones, and
           if the counter still does not fit beside it (a 4-digit balance on a
           320px screen) the controls wrap to a second row rather than eat it. */}
