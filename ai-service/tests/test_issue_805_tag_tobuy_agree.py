@@ -224,6 +224,10 @@ class TestTagAndToBuyAgree:
             "name": "fresh basil",
             "dish_positions": [0, 1],
             "dish_names": ["fresh basil", "basil"],
+            # Issue #850: both dishes want a bunch, so the meal lacks two.
+            "quantity": 2.0,
+            "unit": "bunch",
+            "category": None,
         }
         assert [_key(n) for n in body["to_buy"]].count("basil") == 1
         # And each dish's own row for it is tagged To buy, so each card has to list it.

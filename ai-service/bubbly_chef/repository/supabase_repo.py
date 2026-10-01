@@ -18,6 +18,7 @@ from supabase import Client, create_client
 from bubbly_chef.config import settings
 from bubbly_chef.domain.lots import fresh_first_key, lot_base, lot_food_key, soonest_first_key
 from bubbly_chef.domain.normalizer import (
+    effective_unit,
     normalize_food_name,
     normalize_to_base_unit,
     normalize_unit,
@@ -1392,7 +1393,10 @@ class SupabaseRepository:
                 # than the one it was computed from.
                 name=normalize_food_name(str(row.get("name") or "")).lower().strip(),
                 quantity=current_qty,
-                unit=str(row.get("unit") or ""),
+                # A size the name states ("tomatoes 28 oz" as "1 can") is part of
+                # the unit, exactly as lots.lot_base reads it, so the deduction is
+                # in the same base the matcher worked out.
+                unit=effective_unit(str(row.get("name") or ""), str(row.get("unit") or "")),
             )
             if derived_base is not None and derived_unit is not None:
                 # Persist the derived values alongside the deduction so the row
@@ -1457,7 +1461,17 @@ class SupabaseRepository:
         (written later by `set_turn_metadata`). Nothing else may rewrite a saved
         row's `metadata` -- pantry-proposal turns get no follow-up chips, so no
         later writer exists today. Keep it that way, or an outcome gets clobbered.
+
+        Issue #847: a user turn is saved BEFORE its reply streams, so a stream
+        that dies leaves it stored with no reply after it, and the client's
+        Retry resends the identical text. A user save whose text equals the
+        conversation's last stored message (itself a user turn, so no assistant
+        reply follows it) reuses that row instead of inserting a duplicate.
         """
+        if role == "user" and await self._is_unanswered_user_turn(
+            user_id, conversation_id, content
+        ):
+            return
         self.client.table("conversation_history").insert(
             {
                 "user_id": user_id,
@@ -1469,6 +1483,28 @@ class SupabaseRepository:
                 "metadata": metadata,
             }
         ).execute()
+
+    async def _is_unanswered_user_turn(
+        self, user_id: str, conversation_id: str, content: str
+    ) -> bool:
+        """True when the conversation's newest stored message is a user turn with
+        exactly `content` (#847). Best effort: a failed lookup answers False, so a
+        message is never dropped because the dedupe check itself broke."""
+        try:
+            result = (
+                self.client.table("conversation_history")
+                .select("role,content")
+                .eq("user_id", user_id)
+                .eq("conversation_id", conversation_id)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+        except Exception as lookup_err:
+            logger.warning(f"User-turn dedupe lookup failed, saving anyway: {lookup_err}")
+            return False
+        rows = _as_rows(result.data)
+        return bool(rows) and rows[0].get("role") == "user" and rows[0].get("content") == content
 
     async def get_history(
         self, user_id: str, conversation_id: str, limit: int = _HISTORY_DEFAULT_LIMIT

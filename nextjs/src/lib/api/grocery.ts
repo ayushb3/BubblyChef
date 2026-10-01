@@ -39,6 +39,16 @@ export interface MealToBuyItem {
   dishPositions: number[]
   /** That dish's own wording, parallel to `dishPositions`. */
   dishNames: string[]
+  /**
+   * How much the meal lacks (issue #850): nothing usable is on hand for a listed
+   * food, so the recipe amount, summed across dishes that count it the same way.
+   * `null` when the recipe gives none, or from an older service.
+   */
+  quantity?: number | null
+  /** The unit of `quantity`, as the recipe wrote it. */
+  unit?: string | null
+  /** The food's category when the service knows it. */
+  category?: string | null
 }
 
 export interface MealToBuyDetail {
@@ -64,7 +74,17 @@ function parseItems(raw: unknown): MealToBuyItem[] | null {
     ) {
       return null
     }
-    items.push({ name: e.name, dishPositions: positions as number[], dishNames: names as string[] })
+    // The amount fields are additive (issue #850): an older service omits them, which is
+    // "no amount", not a malformed item.
+    const quantity = typeof e.quantity === 'number' && Number.isFinite(e.quantity) ? e.quantity : null
+    items.push({
+      name: e.name,
+      dishPositions: positions as number[],
+      dishNames: names as string[],
+      quantity,
+      unit: quantity !== null && typeof e.unit === 'string' && e.unit.trim() ? e.unit.trim() : null,
+      category: typeof e.category === 'string' && e.category.trim() ? e.category.trim() : null,
+    })
   }
   return items
 }
