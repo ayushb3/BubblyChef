@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
@@ -22,6 +22,10 @@ import KitchenScene from '@/components/kitchen/KitchenScene'
 import PixelBubbles from '@/components/kitchen/PixelBubbles'
 import { sceneLabel } from '@/lib/kitchen/bubbles-spot'
 import { useBubblesSpot } from '@/hooks/useBubblesSpot'
+import PutAwaySheet from '@/components/kitchen/PutAwaySheet'
+import SpringButton from '@/components/ui/SpringButton'
+import { usePendingPutAway } from '@/hooks/usePendingPutAway'
+import { incomingByPlace, pendingItemCount } from '@/lib/kitchen/pending-putaway'
 import KitchenHeader from '@/components/kitchen/KitchenHeader'
 import UnlockOffer from '@/components/kitchen/UnlockOffer'
 import KitchenThemePicker from '@/components/kitchen/KitchenThemePicker'
@@ -111,70 +115,73 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     places: null,
   })
 
-  useEffect(() => {
-    const fetchAll = async () => {
-      try {
-        const [pantryRes, expiringRes, dashboardDaily] = await Promise.all([
-          fetch('/api/pantry'),
-          fetch('/api/pantry/expiring?days=3'),
-          // Failure here degrades to the static FALLBACK_TIPS list and no
-          // suggestion card — it must never take down the rest of the hero.
-          fetchDashboardDaily().catch(() => null),
-        ])
-        const [pantryData, expiringData] = await Promise.all([
-          pantryRes.ok ? pantryRes.json() : { items: [], total_count: 0 },
-          expiringRes.ok ? expiringRes.json() : { items: [], count: 0 },
-        ])
+  // Loads everything the home shows. Also run after a put-away (issue #753), so
+  // the place counts reflect what was just put in.
+  const loadHome = useCallback(async () => {
+    try {
+      const [pantryRes, expiringRes, dashboardDaily] = await Promise.all([
+        fetch('/api/pantry'),
+        fetch('/api/pantry/expiring?days=3'),
+        // Failure here degrades to the static FALLBACK_TIPS list and no
+        // suggestion card — it must never take down the rest of the hero.
+        fetchDashboardDaily().catch(() => null),
+      ])
+      const [pantryData, expiringData] = await Promise.all([
+        pantryRes.ok ? pantryRes.json() : { items: [], total_count: 0 },
+        expiringRes.ok ? expiringRes.json() : { items: [], count: 0 },
+      ])
 
-        const allItems: EnrichedPantryItem[] = pantryData.items ?? []
-        const expiringItems: EnrichedPantryItem[] = expiringData.items ?? []
+      const allItems: EnrichedPantryItem[] = pantryData.items ?? []
+      const expiringItems: EnrichedPantryItem[] = expiringData.items ?? []
 
-        // Both windows need a lower bound. days_until_expiry goes negative once an
-        // item is past its date, so an unbounded `<= n` also matches food that
-        // expired weeks ago — which made the hero announce a long-expired item as
-        // "expires tomorrow" and inflated the "expiring" count with dead stock.
-        // Expired items are deliberately excluded here rather than relabelled:
-        // they are still surfaced on /pantry with an "Expired" badge, and #146
-        // already established that they should not get a cook-this-now CTA.
-        const urgentItem =
-          expiringItems.find(
-            (item) =>
-              item.days_until_expiry !== null &&
-              item.days_until_expiry >= 0 &&
-              item.days_until_expiry <= 1
-          ) ?? null
-
-        const expiringCount = allItems.filter(
+      // Both windows need a lower bound. days_until_expiry goes negative once an
+      // item is past its date, so an unbounded `<= n` also matches food that
+      // expired weeks ago — which made the hero announce a long-expired item as
+      // "expires tomorrow" and inflated the "expiring" count with dead stock.
+      // Expired items are deliberately excluded here rather than relabelled:
+      // they are still surfaced on /pantry with an "Expired" badge, and #146
+      // already established that they should not get a cook-this-now CTA.
+      const urgentItem =
+        expiringItems.find(
           (item) =>
-            item.is_expiring_soon ||
-            (item.days_until_expiry !== null &&
-              item.days_until_expiry >= 0 &&
-              item.days_until_expiry <= 7)
-        ).length
+            item.days_until_expiry !== null &&
+            item.days_until_expiry >= 0 &&
+            item.days_until_expiry <= 1
+        ) ?? null
 
-        // #525 — Bubbles goes "worried" when there's expired food sitting
-        // unused (still has quantity) rather than already used up or cleared.
-        const hasUnusedExpired = allItems.some((item) => item.is_expired && item.quantity > 0)
+      const expiringCount = allItems.filter(
+        (item) =>
+          item.is_expiring_soon ||
+          (item.days_until_expiry !== null &&
+            item.days_until_expiry >= 0 &&
+            item.days_until_expiry <= 7)
+      ).length
 
-        setData({
-          totalCount: pantryData.total_count ?? allItems.length,
-          expiringCount,
-          urgentItem,
-          tip: dashboardDaily?.tip ?? null,
-          suggestion: dashboardDaily?.suggestion ?? null,
-          hasUnusedExpired,
-          // A failed pantry fetch is "unknown", not "empty": the wall then shows
-          // names only rather than claiming four empty places.
-          places: pantryRes.ok ? summarizePlaces(allItems) : null,
-        })
-      } catch {
-        // silent
-      } finally {
-        setLoading(false)
-      }
+      // #525 — Bubbles goes "worried" when there's expired food sitting
+      // unused (still has quantity) rather than already used up or cleared.
+      const hasUnusedExpired = allItems.some((item) => item.is_expired && item.quantity > 0)
+
+      setData({
+        totalCount: pantryData.total_count ?? allItems.length,
+        expiringCount,
+        urgentItem,
+        tip: dashboardDaily?.tip ?? null,
+        suggestion: dashboardDaily?.suggestion ?? null,
+        hasUnusedExpired,
+        // A failed pantry fetch is "unknown", not "empty": the wall then shows
+        // names only rather than claiming four empty places.
+        places: pantryRes.ok ? summarizePlaces(allItems) : null,
+      })
+    } catch {
+      // silent
+    } finally {
+      setLoading(false)
     }
-    fetchAll()
   }, [])
+
+  useEffect(() => {
+    void loadHome()
+  }, [loadHome])
 
   // The header's weekday / part-of-day eyebrow and the fallback tip are derived
   // from the *client's* clock, which can disagree with the server's. We follow
@@ -210,11 +217,28 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
   // Kitchen scene (#521): `decorations` rows use `name`/`decoration_type`;
   // KitchenScene expects `id`/`slot`. The balance is `null` until `/api/bubbles`
   // answers, so the header hides its counter rather than flashing a `0`.
-  // The pixel Bubbles (#752): the door while a scan or put-away is open (nothing
-  // on home opens one yet: the put-away sheet wires `scanOpen`), the stove while
-  // a cook is on record in storage, the fridge when food is going off, else the
-  // stove.
-  const { spot: bubblesSpot, cooking } = useBubblesSpot({ places })
+  // Put-away (#753): a parsed scan waits in local storage until it is put away
+  // or discarded. While one does, shopping is headed to the places (their +N
+  // badges) and Bubbles stands at the door. The sheet opens over the scene when
+  // home mounts with one pending (a hand-off from a scan, or a reload).
+  const pending = usePendingPutAway()
+  const incoming = pending ? incomingByPlace(pending) : null
+  const [putAwayOpen, setPutAwayOpen] = useState(false)
+  const putAwayOffered = useRef(false)
+  useEffect(() => {
+    if (pending && !putAwayOffered.current) {
+      putAwayOffered.current = true
+      setPutAwayOpen(true)
+    } else if (!pending) {
+      putAwayOffered.current = false
+      setPutAwayOpen(false)
+    }
+  }, [pending])
+
+  // The pixel Bubbles (#752): the door while a scan or put-away is open, the
+  // stove while a cook is on record in storage, the fridge when food is going
+  // off, else the stove.
+  const { spot: bubblesSpot, cooking } = useBubblesSpot({ places, scanOpen: pending !== null })
   const { data: decorationsData, isLoading: decorationsLoading } = useDecorations()
   const { data: bubblesData } = useBubbles()
   const balance = bubblesData?.balance ?? null
@@ -326,6 +350,33 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         planDinnerHref={planDinnerHref()}
         bubblesLayer={<PixelBubbles spot={bubblesSpot} cooking={cooking} />}
         sceneLabel={sceneLabel(bubblesSpot, cooking)}
+        incoming={incoming}
+      />
+
+      {/* A scan waiting to be put away, with its sheet closed: the way back in
+          until the Bubbles card (#755) offers it. */}
+      {pending && !putAwayOpen && (
+        <div
+          className="flex min-h-11 items-center justify-between gap-3 px-4 pt-3"
+          data-testid="put-away-waiting"
+        >
+          <p className="min-w-0 text-sm font-bold text-[color:var(--color-text)] tabular-nums">
+            Shopping is waiting at the door
+            <span className="block text-xs">
+              {pendingItemCount(pending)} {pendingItemCount(pending) === 1 ? 'item' : 'items'}
+            </span>
+          </p>
+          <SpringButton size="sm" onClick={() => setPutAwayOpen(true)}>
+            Put it away
+          </SpringButton>
+        </div>
+      )}
+
+      <PutAwaySheet
+        open={putAwayOpen}
+        record={pending}
+        onClose={() => setPutAwayOpen(false)}
+        onPutAway={loadHome}
       />
 
       {/* Under the wall: the pantry count on the left, the streak (#524) and the

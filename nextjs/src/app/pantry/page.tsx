@@ -28,6 +28,7 @@ import {
 import type { PantryFacetSelection } from '@/lib/pantry-helpers'
 import FacetDropdown from '@/components/ui/FacetDropdown'
 import { expiryBadge } from '@/lib/pantry-expiry-display'
+import { useScanHandOff } from '@/hooks/useScanHandOff'
 
 // Category card tints — dedicated --color-cat-* tokens (globals.css). These must
 // never reference expiry/status tokens (fresh/expiring/expired): status signals
@@ -112,6 +113,8 @@ function PantryPageInner() {
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   const router = useRouter()
+  // A scan parsed in the add sheet is put away on the kitchen home (#753).
+  const handOffScan = useScanHandOff()
   // A gesture whose only feedback is movement isn't usable without motion, so
   // reduced-motion users get the button affordance on every card (#140).
   const prefersReduced = useReducedMotion()
@@ -408,6 +411,7 @@ function PantryPageInner() {
         onClose={handleAddSheetClose}
         initialTab={addSheetTab}
         onItemsAdded={handleItemsAdded}
+        onScanParsed={handOffScan}
       />
 
       {/* Single Item Edit Modal — the only way to correct or plainly delete an

@@ -3,6 +3,10 @@
  * for backward compatibility with any existing import sites. This pins that
  * the alias still renders correctly rather than asserting on the full
  * behaviour (covered by scan-review.test.tsx against `ReviewSurface` itself).
+ *
+ * Reworked for issue #753: `ReviewSurface` is the put-away review now, so the
+ * alias renders "Going in" with the item as a chip rather than the old "Ready to
+ * Add" tier with an editable name field.
  */
 
 import React from 'react'
@@ -30,19 +34,9 @@ it('ScanResults is the same component as ReviewSurface', () => {
   expect(ScanResults).toBe(ReviewSurface)
 })
 
-it('ScanResults renders the tiered review UI via the ReviewSurface alias', () => {
-  render(
-    <ScanResults
-      readyToAdd={[ITEM]}
-      needsReview={[]}
-      skipped={[]}
-      onReadyChange={noop}
-      onReviewChange={noop}
-      onSkippedChange={noop}
-      onConfirm={noop}
-      isSubmitting={false}
-    />,
-  )
-  expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument()
-  expect(screen.getByDisplayValue('Whole Milk')).toBeInTheDocument()
+it('ScanResults renders the put-away review via the ReviewSurface alias', () => {
+  render(<ScanResults readyToAdd={[ITEM]} needsReview={[]} skipped={[]} onChange={noop} />)
+  expect(screen.getByRole('heading', { name: /Going in 1/ })).toBeInTheDocument()
+  expect(screen.getByRole('group', { name: /Fridge, 1 item/ })).toBeInTheDocument()
+  expect(screen.getByText('Whole Milk')).toBeInTheDocument()
 })

@@ -365,7 +365,20 @@ describe('the pending scan', () => {
     expect(readPendingPutAway()).not.toBeNull()
   })
 
-  it('has nothing to put away, and says so, when everything is left out', () => {
+  it('finishes with the scan when every line is left out, rather than keep an empty one', () => {
+    const onClose = jest.fn()
+    renderSheet(
+      { ...SCAN, ready_to_add: [it_('Milk', 'fridge')], needs_review: [], skipped: [] },
+      { onClose },
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Fridge items' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Leave out Milk' }))
+    expect(readPendingPutAway()).toBeNull()
+    expect(onClose).toHaveBeenCalled()
+    expect(mockBulkAdd).not.toHaveBeenCalled()
+  })
+
+  it('has nothing to put away, and says so, when only skipped lines are left', () => {
     renderSheet({ ...SCAN, ready_to_add: [it_('Milk', 'fridge')], needs_review: [] })
     fireEvent.click(screen.getByRole('button', { name: 'Edit Fridge items' }))
     fireEvent.click(screen.getByRole('button', { name: 'Leave out Milk' }))

@@ -1,12 +1,20 @@
 /**
- * Issue #259 — `/scan` route container behaviour.
+ * Issue #259 — `/scan` route container behaviour; reworked for issue #753.
  *
- * The route owns upload → processing → review → confirm → redirect. It
- * mounts `ReviewSurface` for the review step (covered separately in
- * scan-review.test.tsx) — these tests pin the container's own wiring: that
- * a successful upload reaches the review step, that confirm only fires the
- * write on explicit user action and then redirects to `/pantry`, and that a
- * failed write surfaces an error without redirecting.
+ * The route owns upload → processing → hand-off. Review and confirm are no
+ * longer on this page: a parsed scan is kept as the pending put-away and the
+ * user goes to the kitchen home, where the put-away sheet reviews it and its
+ * "Put away" tap is the only write. The hand-off itself (the pending record, the
+ * redirect home, no write, no on-page review) is pinned for both scan entry
+ * points in scan-handoff.test.tsx; the put-away review and write are pinned in
+ * kitchen-putaway-sheet.test.tsx.
+ *
+ * Three tests that lived here were retired by that move, and are named in the
+ * PR: "uploading a receipt moves from the upload state to the review state",
+ * "confirming the review writes via bulkAddPantryItems and redirects to /pantry"
+ * and "a failed confirm shows an error and stays on the review step". Their
+ * behaviour now lives in the two files above. What stays is the failed-upload
+ * path, which this page still owns.
  */
 
 import React from 'react'
@@ -14,8 +22,6 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ScanPage from '@/app/scan/page'
 import * as scanApi from '@/lib/api/scan'
-import * as pantryApi from '@/lib/api/pantry'
-import type { ScanResult } from '@/types/scan'
 
 const push = jest.fn()
 
@@ -24,31 +30,8 @@ jest.mock('next/navigation', () => ({
 }))
 
 jest.mock('@/lib/api/scan')
-jest.mock('@/lib/api/pantry')
 
 const mockUploadReceipt = scanApi.uploadReceipt as jest.MockedFunction<typeof scanApi.uploadReceipt>
-const mockBulkAdd = pantryApi.bulkAddPantryItems as jest.MockedFunction<typeof pantryApi.bulkAddPantryItems>
-
-const SCAN_RESULT: ScanResult = {
-  ocr_text: 'MILK 4.29',
-  ready_to_add: [
-    {
-      name: 'Whole Milk',
-      original_name: 'whole milk',
-      source_line: 'MILK 4.29',
-      price: 4.29,
-      quantity: 1,
-      unit: 'gallon',
-      category: 'dairy',
-      location: 'fridge',
-      confidence: 0.95,
-    },
-  ],
-  needs_review: [],
-  skipped: [],
-  total_items: 1,
-  warnings: [],
-}
 
 function renderPage() {
   const queryClient = new QueryClient({
@@ -75,64 +58,6 @@ beforeEach(() => {
   global.URL.revokeObjectURL = jest.fn()
 })
 
-it('uploading a receipt moves from the upload state to the review state', async () => {
-  mockUploadReceipt.mockResolvedValue(SCAN_RESULT)
-  renderPage()
-
-  expect(screen.getByText(/Drop your receipt here/)).toBeInTheDocument()
-  selectFile()
-
-  await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
-  expect(mockUploadReceipt).toHaveBeenCalledTimes(1)
-})
-
-it('confirming the review writes via bulkAddPantryItems and redirects to /pantry', async () => {
-  mockUploadReceipt.mockResolvedValue(SCAN_RESULT)
-  mockBulkAdd.mockResolvedValue({ count: 1, items: [] })
-  renderPage()
-
-  selectFile()
-  await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
-
-  // Nothing written yet — the write only happens on explicit confirm.
-  expect(mockBulkAdd).not.toHaveBeenCalled()
-
-  fireEvent.click(screen.getByRole('button', { name: /Add 1 Item to Pantry/i }))
-
-  await waitFor(() => expect(mockBulkAdd).toHaveBeenCalledTimes(1))
-  expect(mockBulkAdd.mock.calls[0][0]).toEqual([
-    {
-      name: 'Whole Milk',
-      quantity: 1,
-      unit: 'gallon',
-      category: 'dairy',
-      storage_location: 'fridge',
-      expiry_date: null,
-      source: 'scan',
-    },
-  ])
-  // The route shows a brief "celebrate" mascot state before redirecting
-  // (issue #525), so the push happens ~1.5s after confirm rather than
-  // immediately — give waitFor enough headroom for that timer.
-  await waitFor(() => expect(push).toHaveBeenCalledWith('/pantry'), { timeout: 3000 })
-})
-
-it('a failed confirm shows an error and stays on the review step (no redirect)', async () => {
-  mockUploadReceipt.mockResolvedValue(SCAN_RESULT)
-  mockBulkAdd.mockRejectedValue(new Error('Failed to add items'))
-  renderPage()
-
-  selectFile()
-  await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
-
-  fireEvent.click(screen.getByRole('button', { name: /Add 1 Item to Pantry/i }))
-
-  await waitFor(() => expect(screen.getByText('Failed to add items')).toBeInTheDocument())
-  expect(push).not.toHaveBeenCalled()
-  // Still on review — the tier is still visible.
-  expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument()
-})
-
 it('a failed upload shows an error and returns to the upload state', async () => {
   // #396: this used to assert the raw upstream message was rendered verbatim,
   // which is the leak that issue describes. The route now maps failures to
@@ -146,4 +71,5 @@ it('a failed upload shows an error and returns to the upload state', async () =>
   await waitFor(() => expect(screen.getByText(/add items manually/i)).toBeInTheDocument())
   expect(screen.queryByText('OCR service unavailable')).not.toBeInTheDocument()
   expect(screen.getByText(/Drop your receipt here/)).toBeInTheDocument()
+  expect(push).not.toHaveBeenCalled()
 })

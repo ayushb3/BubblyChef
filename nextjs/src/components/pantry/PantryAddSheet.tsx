@@ -7,13 +7,14 @@ import TypeTab from './TypeTab'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import { bulkAddPantryItems } from '@/lib/api/pantry'
 import PixelSheet from '@/components/ui/PixelSheet'
+import type { ScanResult } from '@/types/scan'
 
 export interface AddItem {
   name: string
   quantity: number
   unit: string
   category: string
-  /** Only the scan path sets this (backend-derived); manual adds omit it (#397). */
+  /** Manual adds omit it (#397); scanned items no longer pass through this sheet (#753). */
   storage_location?: string
   expiry_date: string | null
   source: 'scan' | 'manual'
@@ -26,6 +27,13 @@ interface PantryAddSheetProps {
   onClose: () => void
   initialTab?: PantryAddTab
   onItemsAdded: () => void
+  /**
+   * The scan tab parsed a receipt (issue #753). The host takes it from here: it
+   * keeps the scan as the pending put-away and goes to the kitchen, where the
+   * shopping is put away (`useScanHandOff`). This sheet never reviews or writes a
+   * scan; its own confirm key is for the Manual tab's rows.
+   */
+  onScanParsed?: (result: ScanResult) => void
 }
 
 export default function PantryAddSheet({
@@ -33,9 +41,9 @@ export default function PantryAddSheet({
   onClose,
   initialTab = 'scan',
   onItemsAdded,
+  onScanParsed,
 }: PantryAddSheetProps) {
   const [activeTab, setActiveTab] = useState<PantryAddTab>(initialTab)
-  const [scanItems, setScanItems] = useState<AddItem[]>([])
   const [typeItems, setTypeItems] = useState<AddItem[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -89,7 +97,6 @@ export default function PantryAddSheet({
   // Reset state when sheet closes
   useEffect(() => {
     if (!isOpen) {
-      setScanItems([])
       setTypeItems([])
       setError(null)
       setIsSubmitting(false)
@@ -101,7 +108,7 @@ export default function PantryAddSheet({
     }
   }, [isOpen])
 
-  const allItems = [...scanItems, ...typeItems]
+  const allItems = typeItems
   const itemCount = allItems.length
 
   /** Wraps `onClose` so an early close (backdrop, swipe, X) cancels the pending auto-close timer. */
@@ -268,7 +275,10 @@ export default function PantryAddSheet({
                 : 'absolute inset-0 opacity-0 -translate-x-3 pointer-events-none'
             }`}
           >
-            <ScanTab onItemsReady={setScanItems} onProcessingChange={setScanProcessing} />
+            <ScanTab
+              onParsed={(result) => onScanParsed?.(result)}
+              onProcessingChange={setScanProcessing}
+            />
           </div>
           <div
             aria-hidden={activeTab !== 'type'}

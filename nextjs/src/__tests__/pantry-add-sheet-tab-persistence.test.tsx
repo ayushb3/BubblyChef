@@ -93,21 +93,33 @@ it('typed input and the footer count both survive a switch away to Scan and back
   expect(screen.getByRole('button', { name: /Add 1 Item/i })).toBeInTheDocument()
 })
 
-it('a completed scan review survives switching to Type and back', async () => {
+// REWRITTEN for issue #753: this was "a completed scan review survives switching
+// to Type and back". The scan tab no longer holds a review (a parsed scan is
+// handed to the kitchen's put-away), so the same guarantee now reads: a parsed
+// scan is handed off once and a tab switch neither re-uploads it, hands it off
+// again nor resets the tab to the dropzone.
+it('a parsed scan is handed off once, and survives switching to Type and back', async () => {
   mockUploadReceipt.mockResolvedValue(SCAN_RESULT)
+  const onScanParsed = jest.fn()
 
-  renderSheet({ isOpen: true, onClose: jest.fn(), initialTab: "scan", onItemsAdded: jest.fn() })
+  renderSheet({
+    isOpen: true,
+    onClose: jest.fn(),
+    initialTab: 'scan',
+    onItemsAdded: jest.fn(),
+    onScanParsed,
+  })
 
   selectFile()
-  await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
+  await waitFor(() => expect(onScanParsed).toHaveBeenCalledWith(SCAN_RESULT))
 
   switchTab(/Manual/)
   switchTab(/Scan/)
 
-  // Still on the results screen, not reset to the upload dropzone.
-  expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument()
+  expect(await screen.findByText(/Taking your shopping to the kitchen/)).toBeInTheDocument()
   expect(screen.queryByText(/Drop your receipt here/)).not.toBeInTheDocument()
   expect(mockUploadReceipt).toHaveBeenCalledTimes(1)
+  expect(onScanParsed).toHaveBeenCalledTimes(1)
 })
 
 it('locks the Type tab while a scan is processing, then unlocks on success', async () => {
@@ -118,7 +130,14 @@ it('locks the Type tab while a scan is processing, then unlocks on success', asy
     }),
   )
 
-  renderSheet({ isOpen: true, onClose: jest.fn(), initialTab: "scan", onItemsAdded: jest.fn() })
+  const onScanParsed = jest.fn()
+  renderSheet({
+    isOpen: true,
+    onClose: jest.fn(),
+    initialTab: 'scan',
+    onItemsAdded: jest.fn(),
+    onScanParsed,
+  })
 
   selectFile()
   await waitFor(() => expect(screen.getByText(/Scanning receipt…/)).toBeInTheDocument())
@@ -131,7 +150,8 @@ it('locks the Type tab while a scan is processing, then unlocks on success', asy
   expect(screen.getByText(/Scanning receipt…/)).toBeInTheDocument()
 
   resolveUpload(SCAN_RESULT)
-  await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
+  // The parsed scan is handed to the host (#753), which releases the lock.
+  await waitFor(() => expect(onScanParsed).toHaveBeenCalledWith(SCAN_RESULT))
 
   expect(screen.getByRole('button', { name: /^Manual$/ })).toHaveAttribute(
     'aria-disabled',

@@ -1,27 +1,30 @@
 /**
- * Slice 3 — Review screen tests
+ * Slice 3 — Review screen tests; rewritten for issue #753.
  *
- * Tests cover: tier rendering, pre-checked state for ready_to_add, unchecked state
- * for needs_review/skipped, eye-toggle raw face, Add button count tracking,
- * warnings banner, and keyboard accessibility.
+ * `ReviewSurface` is still the one presentation-only receipt review, mounted by
+ * put-away. Its tiers are the same, regrouped by place and worded as putting the
+ * shopping away: needs review is "Did I read these right?", ready is "Going in"
+ * (by place), skipped is "Skipped N lines". The checkbox model is gone with the
+ * old look (an item is in unless it is left out), so the tests that pinned the
+ * pre-checked state, the "Add N Items to Pantry" count, `onCheckedItemsChange`
+ * and the eye toggle's raw face were retired; the PR names them. What each one
+ * protected is covered here or in kitchen-putaway-sheet.test.tsx:
  *
- * The ScanResult stub matches the pinned contract exactly from
+ *   tier headers and counts      -> "tier sections" below
+ *   needs-review asked, ready in -> "tier sections" below, and Yes/Fix there
+ *   count tracks what goes in    -> the sheet's key count (leave out, Yes, add back)
+ *   raw receipt line visible     -> "the card shows the receipt line" below
+ *   warnings banner              -> "warnings" below
+ *
+ * The ScanResult stubs match the pinned contract from
  * docs/plans/2026-08-19-receipt-scan-rework.md.
- *
- * Issue #259: the tiered review UI moved from `ScanResults` to the
- * presentation-only `ReviewSurface`. These tests target `ReviewSurface`
- * directly; `scan-results-reexport.test.tsx` covers the backward-compatible
- * `ScanResults` alias separately.
  */
 
 import React from 'react'
-import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
-import ReviewSurface from '@/components/scan/ReviewSurface'
+import { render, screen, within, fireEvent } from '@testing-library/react'
+import ReviewSurface, { type PutAwayTiers } from '@/components/scan/ReviewSurface'
 import ScannedItemCard from '@/components/scan/ScannedItemCard'
 import type { ScannedItemWithId } from '@/lib/scan-helpers'
-import type { ScanResult } from '@/types/scan'
-
-// ─── Test stub matching the pinned contract ───────────────────────────────────
 
 const READY_ITEM: ScannedItemWithId = {
   _id: 'ready-1',
@@ -62,461 +65,114 @@ const SKIPPED_ITEM: ScannedItemWithId = {
   confidence: 0.35,
 }
 
-const STUB_RESULT: ScanResult = {
-  ocr_text: 'TRADER JOES\nITALIAN BOMBA HOT PEPPER 3.99\nORG CANE SUGAR 2.49\nT PREMIUM FILLER ASST. 8.99',
-  ready_to_add: [READY_ITEM],
-  needs_review: [REVIEW_ITEM],
-  skipped: [SKIPPED_ITEM],
-  total_items: 3,
-  warnings: [],
-}
-
-// ─── Helper ───────────────────────────────────────────────────────────────────
-
 function noop() {}
 
-function renderResults(overrides: Partial<{
-  readyToAdd: ScannedItemWithId[]
-  needsReview: ScannedItemWithId[]
-  skipped: ScannedItemWithId[]
-  warnings: string[]
-  hideConfirmButton: boolean
-  isSubmitting: boolean
-  onConfirm: (items: ScannedItemWithId[]) => void
-  onCheckedItemsChange: (items: ScannedItemWithId[]) => void
-}> = {}) {
-  const props = {
-    readyToAdd: [READY_ITEM],
-    needsReview: [REVIEW_ITEM],
-    skipped: [SKIPPED_ITEM],
-    warnings: STUB_RESULT.warnings,
-    onReadyChange: noop,
-    onReviewChange: noop,
-    onSkippedChange: noop,
-    onConfirm: noop,
-    isSubmitting: false,
-    ...overrides,
-  }
-  return render(<ReviewSurface {...props} />)
-}
-
-// ─── 1. Tier sections render ──────────────────────────────────────────────────
-
-it('renders all three tier section headers', () => {
-  renderResults()
-  expect(screen.getByText(/Ready to Add/)).toBeInTheDocument()
-  expect(screen.getByText(/Needs Review/)).toBeInTheDocument()
-  expect(screen.getByText(/Skipped/)).toBeInTheDocument()
-})
-
-it('shows item counts in tier headers', () => {
-  renderResults()
-  expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument()
-  expect(screen.getByText(/Needs Review \(1\)/)).toBeInTheDocument()
-  expect(screen.getByText(/Skipped \(1\)/)).toBeInTheDocument()
-})
-
-// ─── 2. Pre-checked state ─────────────────────────────────────────────────────
-
-it('ready_to_add items start pre-checked', () => {
-  renderResults()
-  const checkbox = screen.getByRole('checkbox', {
-    name: new RegExp(`Include ${READY_ITEM.name}`, 'i'),
-  })
-  expect(checkbox).toBeChecked()
-})
-
-it('needs_review items start unchecked', () => {
-  renderResults()
-  const checkbox = screen.getByRole('checkbox', {
-    name: new RegExp(`Include ${REVIEW_ITEM.name}`, 'i'),
-  })
-  expect(checkbox).not.toBeChecked()
-})
-
-// ─── 3. Add button count tracks the checked set ───────────────────────────────
-
-it('Add button shows count of checked items (1 ready pre-checked, 0 review)', () => {
-  renderResults({ hideConfirmButton: false })
-  // Only the one ready item is pre-checked
-  expect(screen.getByRole('button', { name: /Add 1 Item to Pantry/i })).toBeInTheDocument()
-})
-
-it('Add button count increases when a review item is checked', () => {
-  renderResults({ hideConfirmButton: false })
-  const reviewCheckbox = screen.getByRole('checkbox', {
-    name: new RegExp(`Include ${REVIEW_ITEM.name}`, 'i'),
-  })
-  fireEvent.click(reviewCheckbox)
-  expect(screen.getByRole('button', { name: /Add 2 Items to Pantry/i })).toBeInTheDocument()
-})
-
-it('Add button count decreases when a ready item is unchecked', () => {
-  renderResults({ hideConfirmButton: false })
-  const readyCheckbox = screen.getByRole('checkbox', {
-    name: new RegExp(`Include ${READY_ITEM.name}`, 'i'),
-  })
-  fireEvent.click(readyCheckbox)
-  expect(screen.getByRole('button', { name: /No items selected/i })).toBeInTheDocument()
-})
-
-it('Add button is disabled when no items are checked', () => {
-  renderResults({ readyToAdd: [], needsReview: [], skipped: [], hideConfirmButton: false })
-  const btn = screen.getByRole('button', { name: /No items selected/i })
-  expect(btn).toBeDisabled()
-})
-
-it('onConfirm is called with only the checked items', () => {
-  const onConfirm = jest.fn()
-  renderResults({ hideConfirmButton: false, onConfirm })
-
-  // Only ready item is pre-checked; click confirm
-  fireEvent.click(screen.getByRole('button', { name: /Add 1 Item to Pantry/i }))
-  expect(onConfirm).toHaveBeenCalledTimes(1)
-  const called: ScannedItemWithId[] = onConfirm.mock.calls[0][0]
-  expect(called).toHaveLength(1)
-  expect(called[0].name).toBe(READY_ITEM.name)
-})
-
-// ─── 3b. onCheckedItemsChange (issue #406) ────────────────────────────────────
-// An embedding parent (PantryAddSheet's ScanTab) hides the built-in confirm
-// button and instead tracks the checked set via this callback. It must fire
-// with the reduced list when a checked item is unchecked, not the full found
-// set.
-
-it('onCheckedItemsChange fires with the initial checked set on mount', async () => {
-  const onCheckedItemsChange = jest.fn()
-  renderResults({ hideConfirmButton: true, onCheckedItemsChange })
-
-  await waitFor(() => {
-    expect(onCheckedItemsChange).toHaveBeenCalled()
-  })
-  const lastCall = onCheckedItemsChange.mock.calls[onCheckedItemsChange.mock.calls.length - 1][0]
-  expect(lastCall).toHaveLength(1)
-  expect(lastCall[0].name).toBe(READY_ITEM.name)
-})
-
-it('onCheckedItemsChange fires with the reduced list when a checked item is unchecked', async () => {
-  const onCheckedItemsChange = jest.fn()
-  renderResults({ hideConfirmButton: true, onCheckedItemsChange })
-
-  const readyCheckbox = screen.getByRole('checkbox', {
-    name: new RegExp(`Include ${READY_ITEM.name}`, 'i'),
-  })
-  fireEvent.click(readyCheckbox)
-
-  await waitFor(() => {
-    const lastCall = onCheckedItemsChange.mock.calls[onCheckedItemsChange.mock.calls.length - 1][0]
-    expect(lastCall).toHaveLength(0)
-  })
-})
-
-it('onCheckedItemsChange fires with the increased list when a review item is checked', async () => {
-  const onCheckedItemsChange = jest.fn()
-  renderResults({ hideConfirmButton: true, onCheckedItemsChange })
-
-  const reviewCheckbox = screen.getByRole('checkbox', {
-    name: new RegExp(`Include ${REVIEW_ITEM.name}`, 'i'),
-  })
-  fireEvent.click(reviewCheckbox)
-
-  await waitFor(() => {
-    const lastCall = onCheckedItemsChange.mock.calls[onCheckedItemsChange.mock.calls.length - 1][0]
-    expect(lastCall).toHaveLength(2)
-  })
-})
-
-// ─── 4. Eye toggle ────────────────────────────────────────────────────────────
-
-it('eye button has correct aria-label before toggle', () => {
-  render(
-    <ScannedItemCard
-      item={READY_ITEM}
-      index={0}
-      checked
-      onChange={noop}
-      onDismiss={noop}
-      onCheckedChange={noop}
-    />,
-  )
-  expect(screen.getByRole('button', { name: 'See raw frame data' })).toBeInTheDocument()
-})
-
-it('eye toggle reveals raw face with source_line and original_name', () => {
-  render(
-    <ScannedItemCard
-      item={READY_ITEM}
-      index={0}
-      checked
-      onChange={noop}
-      onDismiss={noop}
-      onCheckedChange={noop}
-    />,
-  )
-  const eyeBtn = screen.getByRole('button', { name: 'See raw frame data' })
-  fireEvent.click(eyeBtn)
-
-  expect(screen.getByText('ITALIAN BOMBA HOT PEPPER')).toBeInTheDocument()
-  expect(screen.getByText('italian bomba hot pepper')).toBeInTheDocument()
-  expect(screen.getByText('$3.99')).toBeInTheDocument()
-})
-
-it('eye button label changes to "Hide raw frame data" after toggle', () => {
-  render(
-    <ScannedItemCard
-      item={READY_ITEM}
-      index={0}
-      checked
-      onChange={noop}
-      onDismiss={noop}
-      onCheckedChange={noop}
-    />,
-  )
-  const eyeBtn = screen.getByRole('button', { name: 'See raw frame data' })
-  fireEvent.click(eyeBtn)
-  expect(screen.getByRole('button', { name: 'Hide raw frame data' })).toBeInTheDocument()
-})
-
-it('eye toggle closes the raw face on second click', async () => {
-  render(
-    <ScannedItemCard
-      item={READY_ITEM}
-      index={0}
-      checked
-      onChange={noop}
-      onDismiss={noop}
-      onCheckedChange={noop}
-    />,
-  )
-  const eyeBtn = screen.getByRole('button', { name: 'See raw frame data' })
-  fireEvent.click(eyeBtn)
-  fireEvent.click(screen.getByRole('button', { name: 'Hide raw frame data' }))
-  // AnimatePresence exit animation keeps element briefly; wait for removal
-  await waitFor(() =>
-    expect(screen.queryByText('ITALIAN BOMBA HOT PEPPER')).not.toBeInTheDocument(),
-  )
-})
-
-it('null price renders as dash in raw face', () => {
-  const noPrice = { ...READY_ITEM, price: null }
-  render(
-    <ScannedItemCard
-      item={noPrice}
-      index={0}
-      checked
-      onChange={noop}
-      onDismiss={noop}
-      onCheckedChange={noop}
-    />,
-  )
-  fireEvent.click(screen.getByRole('button', { name: 'See raw frame data' }))
-  // Should display '—' for missing price
-  const rawSection = screen.getByText('Raw frame data').closest('div')!
-  expect(within(rawSection).getAllByText('—').length).toBeGreaterThan(0)
-})
-
-// ─── 5. Warnings banner ───────────────────────────────────────────────────────
-
-it('renders warnings when present', () => {
-  renderResults({ warnings: ['No items found on receipt.', 'Image quality was low.'] })
-  expect(screen.getByText('No items found on receipt.')).toBeInTheDocument()
-  expect(screen.getByText('Image quality was low.')).toBeInTheDocument()
-})
-
-it('does not render warnings banner when warnings array is empty', () => {
-  const { container } = renderResults({ warnings: [] })
-  // The yellow warning box should not be present
-  expect(container.querySelector('.bg-yellow-50')).toBeNull()
-})
-
-// ─── 6. ScannedItem contract shape ────────────────────────────────────────────
-// Ensure the pinned fields are accepted without TypeScript errors (compile-time
-// mostly, but we double-check the shape at runtime here too).
-
-it('ScannedItem has all pinned contract fields', () => {
-  const item: ScannedItemWithId = READY_ITEM
-  expect(typeof item.name).toBe('string')
-  expect(typeof item.original_name).toBe('string')
-  expect(typeof item.source_line).toBe('string')
-  expect(typeof item.price === 'number' || item.price === null).toBe(true)
-  expect(typeof item.quantity).toBe('number')
-  expect(typeof item.unit).toBe('string')
-  expect(typeof item.category).toBe('string')
-  expect(typeof item.location).toBe('string')
-  expect(typeof item.confidence).toBe('number')
-})
-
-it('ScanResult has all pinned contract fields', () => {
-  const result: ScanResult = STUB_RESULT
-  expect(typeof result.ocr_text).toBe('string')
-  expect(Array.isArray(result.ready_to_add)).toBe(true)
-  expect(Array.isArray(result.needs_review)).toBe(true)
-  expect(Array.isArray(result.skipped)).toBe(true)
-  expect(typeof result.total_items).toBe('number')
-  expect(Array.isArray(result.warnings)).toBe(true)
-})
-
-// ─── 7. Category shown once (issue #400) ──────────────────────────────────────
-// The category used to appear twice: a read-only pill next to the confidence
-// badge, and again as the editable <select>. Two on-screen copies of the same
-// value can drift apart when one is edited without the other. The editable
-// select is now the single source of truth — no separate pill exists.
-
-it('renders the category value exactly once per card', () => {
-  render(
-    <ScannedItemCard
-      item={READY_ITEM}
-      index={0}
-      checked
-      onChange={noop}
-      onDismiss={noop}
-      onCheckedChange={noop}
-    />,
-  )
-  // The only place "condiments" can appear is as the selected <option> text
-  // inside the Category <select>.
-  const matches = screen.getAllByText(/condiments/i)
-  expect(matches).toHaveLength(1)
-  expect(screen.getByRole('combobox', { name: 'Category' })).toHaveValue(READY_ITEM.category)
-})
-
-it('editing the category select is the only way to change it — no separate pill to disagree with', () => {
-  const onChange = jest.fn()
-  render(
-    <ScannedItemCard
-      item={READY_ITEM}
-      index={0}
-      checked
-      onChange={onChange}
-      onDismiss={noop}
-      onCheckedChange={noop}
-    />,
-  )
-  const select = screen.getByRole('combobox', { name: 'Category' })
-  fireEvent.change(select, { target: { value: 'produce' } })
-  expect(onChange).toHaveBeenCalledWith({ ...READY_ITEM, category: 'produce' })
-})
-
-// ─── 9. Regression: dismissing an earlier item must not drop a later item's
-// checked state (issue #470) ───────────────────────────────────────────────
-// When an item has no `source_line` (falsy), ReviewSurface's itemKey falls
-// back to `${name}-${index}`. Dismissing an earlier item shifts every later
-// item's index, which changes its derived key — even though the item's
-// checked state should be unaffected. The stale key means checkedKeys no
-// longer contains the (now-renamed) key for the still-checked item, so it
-// silently drops out of both the visible checkbox state and the confirm
-// payload.
-
-const NO_LINE_READY_ITEM: ScannedItemWithId = {
-  _id: 'no-line-ready-1',
-  name: 'Canned Tomatoes',
-  original_name: 'canned tomatoes',
-  source_line: '',
-  price: 1.99,
-  quantity: 1,
-  unit: 'can',
-  category: 'canned_goods',
-  location: 'pantry',
-  confidence: 0.9,
-}
-
-const NO_LINE_REVIEW_ITEM: ScannedItemWithId = {
-  _id: 'no-line-review-1',
-  name: 'Basmati Rice',
-  original_name: 'basmati rice',
-  source_line: '',
-  price: 4.99,
-  quantity: 1,
-  unit: 'bag',
-  category: 'dry_goods',
-  location: 'pantry',
-  confidence: 0.65,
-}
-
-// A minimal stateful wrapper mirroring how the real callers (ScanTab,
-// app/scan/page.tsx) own the three arrays: on*Change actually updates state
-// and gets fed back into ReviewSurface, so a dismiss really does shift the
-// positions of the items after it — which is what triggers the bug.
-function StatefulReviewSurface({
-  initialReady,
-  initialReview,
-  onCheckedItemsChange,
-}: {
-  initialReady: ScannedItemWithId[]
-  initialReview: ScannedItemWithId[]
-  onCheckedItemsChange: (items: ScannedItemWithId[]) => void
-}) {
-  const [ready, setReady] = React.useState(initialReady)
-  const [review, setReview] = React.useState(initialReview)
-  return (
+function renderSurface(
+  overrides: Partial<{
+    readyToAdd: ScannedItemWithId[]
+    needsReview: ScannedItemWithId[]
+    skipped: ScannedItemWithId[]
+    warnings: string[]
+    disabled: boolean
+    onChange: (next: PutAwayTiers) => void
+  }> = {},
+) {
+  return render(
     <ReviewSurface
-      readyToAdd={ready}
-      needsReview={review}
-      skipped={[]}
-      onReadyChange={setReady}
-      onReviewChange={setReview}
-      onSkippedChange={noop}
-      onConfirm={noop}
-      isSubmitting={false}
-      hideConfirmButton={true}
-      onCheckedItemsChange={onCheckedItemsChange}
-    />
+      readyToAdd={[READY_ITEM]}
+      needsReview={[REVIEW_ITEM]}
+      skipped={[SKIPPED_ITEM]}
+      onChange={noop}
+      {...overrides}
+    />,
   )
 }
 
-it('keeps a later item checked after an earlier item is dismissed (issue #470)', async () => {
-  const onCheckedItemsChange = jest.fn()
-  render(
-    <StatefulReviewSurface
-      initialReady={[NO_LINE_READY_ITEM]}
-      initialReview={[NO_LINE_REVIEW_ITEM]}
-      onCheckedItemsChange={onCheckedItemsChange}
-    />,
-  )
-
-  // Check the needs_review item (it starts unchecked).
-  const reviewCheckbox = screen.getByRole('checkbox', {
-    name: new RegExp(`Include ${NO_LINE_REVIEW_ITEM.name}`, 'i'),
-  })
-  fireEvent.click(reviewCheckbox)
-  expect(reviewCheckbox).toBeChecked()
-
-  await waitFor(() => {
-    const lastCall = onCheckedItemsChange.mock.calls[onCheckedItemsChange.mock.calls.length - 1][0]
-    expect(lastCall).toHaveLength(2)
+describe('tier sections', () => {
+  it('names the three tiers and counts them', () => {
+    renderSurface()
+    expect(screen.getByRole('heading', { name: /Did I read these right\? 1/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Going in 1/ })).toBeInTheDocument()
+    expect(screen.getByText(/Skipped 1 line:/)).toBeInTheDocument()
   })
 
-  // Dismiss the ready item — this shifts the review item's index-derived key.
-  fireEvent.click(screen.getByRole('button', { name: `Dismiss ${NO_LINE_READY_ITEM.name}` }))
-
-  // The review item's checkbox should still be checked — its underlying
-  // identity didn't change, only its position did.
-  const reviewCheckboxAfter = screen.getByRole('checkbox', {
-    name: new RegExp(`Include ${NO_LINE_REVIEW_ITEM.name}`, 'i'),
+  it('shows only the tiers that have something in them', () => {
+    renderSurface({ needsReview: [], skipped: [] })
+    expect(screen.queryByRole('heading', { name: /Did I read these right/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Skipped/)).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Going in 1/ })).toBeInTheDocument()
   })
-  expect(reviewCheckboxAfter).toBeChecked()
 
-  await waitFor(() => {
-    const lastCall = onCheckedItemsChange.mock.calls[onCheckedItemsChange.mock.calls.length - 1][0]
-    expect(lastCall).toHaveLength(1)
-    expect(lastCall[0].name).toBe(NO_LINE_REVIEW_ITEM.name)
+  it('files Going in under the place each item is headed to', () => {
+    renderSurface({ needsReview: [], skipped: [] })
+    expect(screen.getByRole('group', { name: /Shelves, 1 item/ })).toBeInTheDocument()
   })
 })
 
-// ─── 8. Selection checkbox matches the app's custom-checkbox pattern ──────────
-// Same visual language as the ingredient checklist on the recipe detail page
-// (recipes/[id]/page.tsx): a visually-hidden native <input type="checkbox">
-// for state/keyboard handling, with a styled circular indicator driven by
-// `checked`, rather than a bare browser checkbox.
-
-it('selection checkbox is a real, labelled, keyboard-operable checkbox input', () => {
-  renderResults()
-  const checkbox = screen.getByRole('checkbox', {
-    name: new RegExp(`Include ${READY_ITEM.name}`, 'i'),
+describe('the card shows the receipt line', () => {
+  it('shows the raw line the item was read from, and where it is headed', () => {
+    renderSurface()
+    const card = screen.getByRole('listitem', { name: 'Organic Cane Sugar' })
+    expect(within(card).getByText('ORG CANE SUGAR')).toBeInTheDocument()
+    expect(within(card).getByText('→ Shelves')).toBeInTheDocument()
+    expect(within(card).getByText('Organic Cane Sugar · 1 bag')).toBeInTheDocument()
   })
-  expect(checkbox).toBeChecked()
-  // Visually hidden (custom indicator renders the visible state), not a bare
-  // native checkbox — matches the sr-only + styled-indicator pattern used
-  // elsewhere in the app.
-  expect(checkbox.className).toContain('sr-only')
+
+  it('has no receipt line row when the item has none', () => {
+    render(
+      <ul>
+        <ScannedItemCard
+          item={{ ...REVIEW_ITEM, source_line: '' }}
+          editing={false}
+          onFix={noop}
+          onYes={noop}
+          onChange={noop}
+          onLeaveOut={noop}
+        />
+      </ul>,
+    )
+    expect(screen.queryByText('ORG CANE SUGAR')).not.toBeInTheDocument()
+  })
+})
+
+describe('changes go out whole, through onChange', () => {
+  it('Yes moves the item from needs-review to ready, leaving skipped alone', () => {
+    const onChange = jest.fn()
+    renderSurface({ onChange })
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, Organic Cane Sugar is right' }))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next: PutAwayTiers = onChange.mock.calls[0][0]
+    expect(next.needsReview).toEqual([])
+    expect(next.readyToAdd.map((i) => i._id)).toEqual(['ready-1', 'review-1'])
+    expect(next.skipped.map((i) => i._id)).toEqual(['skipped-1'])
+  })
+
+  it('moving an item to another place changes only its location', () => {
+    const onChange = jest.fn()
+    renderSurface({ onChange })
+    fireEvent.click(screen.getByRole('button', { name: 'Fix Organic Cane Sugar' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Fridge' }))
+    const next: PutAwayTiers = onChange.mock.calls[0][0]
+    expect(next.needsReview[0]).toEqual({ ...REVIEW_ITEM, location: 'fridge' })
+  })
+
+  it('locks every control while a write is in flight', () => {
+    renderSurface({ disabled: true })
+    expect(screen.getByRole('button', { name: 'Fix Organic Cane Sugar' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Yes, Organic Cane Sugar is right' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Edit Shelves items' })).toBeDisabled()
+  })
+})
+
+describe('warnings', () => {
+  it('renders warnings when present', () => {
+    renderSurface({ warnings: ['No items found on receipt.', 'Image quality was low.'] })
+    expect(screen.getByText('No items found on receipt.')).toBeInTheDocument()
+    expect(screen.getByText('Image quality was low.')).toBeInTheDocument()
+  })
+
+  it('does not render a warnings banner when there are none', () => {
+    renderSurface({ warnings: [] })
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
 })

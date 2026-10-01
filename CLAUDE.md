@@ -126,16 +126,20 @@ BubblyChef/
 | `/chat` | Chat | AI assistant — general or recipe mode |
 | `/profile` | Profile | User settings, dietary preferences |
 | `/login` | Auth | Sign in / sign up (Supabase) |
-| `/scan` | Scan | Receipt OCR upload + review flow |
+| `/scan` | Scan | Receipt OCR upload, then hand-off to the kitchen put-away |
 
-Receipt scanning has two entry points that share the same review UI and the
-same confirm semantics (nothing is written without an explicit confirm):
-the full-page `/scan` route (`app/scan/page.tsx`) and the quick path inside
-the pantry add sheet (`components/pantry/PantryAddSheet.tsx`, tabs `scan` and
-`type`, reached as `/pantry?add=scan`). Both mount the presentation-only
-`components/scan/ReviewSurface.tsx` for the tiered review; `ScanTab.tsx` still
-owns the sheet's own upload/processing state machine, and `/scan` owns its own
-(issue #259).
+Receipt scanning has two entry points that share one hand-off: the full-page
+`/scan` route (`app/scan/page.tsx`) and the quick path inside the pantry add
+sheet (`components/pantry/PantryAddSheet.tsx`, tabs `scan` and `type`, reached
+as `/pantry?add=scan`, state machine in `ScanTab.tsx`). Neither reviews or
+writes: when the parse returns, `hooks/useScanHandOff.ts` saves it as the
+pending put-away (`lib/kitchen/pending-putaway.ts`, localStorage, survives a
+reload until it is put away or discarded) and goes to the kitchen home. There
+`components/kitchen/PutAwaySheet.tsx` opens over the scene, Bubbles stands at
+the door, each place shows +N, and the review (`components/scan/ReviewSurface.tsx`,
+presentation-only, items grouped by place) ends in the "Put away N items" key,
+which is the only write (`bulkAddPantryItems`, each item with its storage
+location). Nothing is written without that tap (issues #259, #753).
 
 ---
 
@@ -212,8 +216,8 @@ POST  /v1/workflows/apply
 Upload image → (optional) preprocess → Gemini Vision OCR
 → AI parses items with confidence scores
 → ≥0.8 ready_to_add | 0.5–0.8 needs_review | <0.5 skipped
-→ User reviews/edits → clicks "Add X Items"
-→ POST /scan/confirm writes to DB
+→ Kitchen put-away sheet: user reviews/edits → taps "Put away N items"
+→ POST /api/pantry/bulk writes to DB
 Nothing auto-adds without explicit user confirm.
 ```
 

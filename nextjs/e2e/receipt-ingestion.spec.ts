@@ -5,10 +5,9 @@
  *
  *  3b — Deterministic / always-on CI (no live services needed).
  *       Stubs POST /api/ai/scan and POST /api/pantry/bulk via page.route().
- *       Drives the real Pantry Add Sheet → Scan tab → confirm UI.
- *       Asserts: items appear in review, confirm call carries correct payload,
- *       response items land with non-null expiry_date (as returned by the
- *       /api/pantry/bulk endpoint post fix #158).
+ *       Drives the real Pantry Add Sheet -> Scan tab -> hand-off to the kitchen
+ *       home -> put-away sheet (issue #753). Asserts: nothing is written until
+ *       "Put away N items", and the bulk call carries the right payload.
  *
  *  3a — Full live (opt-in, env-gated: BUBBLY_E2E_LIVE_SCAN=1).
  *       Uploads grocery-mart.png to the running app → real Gemini OCR.
@@ -18,9 +17,8 @@
  * Traced files (verify before changing selectors):
  *   - nextjs/src/app/pantry/page.tsx          — ?add=scan opens sheet (line ~134)
  *   - nextjs/src/components/pantry/ScanTab.tsx — input[type=file], upload trigger
- *   - nextjs/src/components/scan/ScanResults.tsx — "Ready to Add" section header
- *   - nextjs/src/components/pantry/PantryAddSheet.tsx — "Add N Items 🛒" button,
- *                                                         POST /api/pantry/bulk call
+ *   - nextjs/src/components/kitchen/PutAwaySheet.tsx - "Put away N items" key,
+ *                                                      POST /api/pantry/bulk call
  *   - nextjs/src/types/scan.ts                — ScanResult, ScannedItem shapes
  *
  * Known tsc quirk: this file imports from '@playwright/test' the same way
@@ -118,198 +116,127 @@ function makeBulkResponse(now = new Date()) {
 // ---------------------------------------------------------------------------
 
 test.describe('3b — receipt ingestion (stubbed, CI-safe)', () => {
+  // Issue #753: a scan no longer reviews and confirms inside the add sheet. The
+  // parsed scan is handed to the kitchen home, whose put-away sheet is the
+  // review, and its "Put away N items" tap is the only write.
 
-  test('scan → review → confirm adds 8 items and each gets a non-null expiry_date', async ({ page }) => {
-    // ── 1. Intercept OCR/parse: return fixed ScanResult ──────────────────
-    await page.route('/api/ai/scan', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(GROCERY_MART_SCAN_RESULT),
-      });
-    });
-
-    // ── 2. Intercept confirm: capture payload, return stub with non-null expiry
-    let capturedBulkBody: { items: Array<Record<string, unknown>> } | null = null;
-
-    await page.route('/api/pantry/bulk', async (route) => {
-      const req = route.request();
-      capturedBulkBody = JSON.parse(req.postData() ?? '{}') as { items: Array<Record<string, unknown>> };
-
-      await route.fulfill({
-        status: 201,
-        contentType: 'application/json',
-        body: JSON.stringify(makeBulkResponse()),
-      });
-    });
-
-    // ── 3. Also stub GET /api/pantry (post-confirm invalidation re-fetch) ─
-    await page.route('/api/pantry', async (route) => {
+  async function stubPantryReads(page) {
+    await page.route('**/api/pantry', async (route) => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ items: makeBulkResponse().items, count: 8 }),
+          body: JSON.stringify({ items: [], count: 0 }),
         });
       } else {
         await route.continue();
       }
     });
+    await page.route('**/api/pantry/expiring*', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [], count: 0 }) }),
+    );
+  }
 
-    // ── 4. Navigate — ?add=scan opens the sheet in Scan tab ───────────────
-    // Source: nextjs/src/app/pantry/page.tsx ~L134:
-    //   const addParam = searchParams.get('add')
-    //   if (addParam === 'scan' || addParam === 'type') { setAddSheetTab(addParam); setAddSheetOpen(true) }
+  test('scan hands off to the kitchen; nothing is written until "Put away"', async ({ page }) => {
+    await page.route('**/api/ai/scan', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(GROCERY_MART_SCAN_RESULT) }),
+    );
+    await stubPantryReads(page);
+
+    let capturedBulkBody: { items: Array<Record<string, unknown>> } | null = null;
+    await page.route('**/api/pantry/bulk', async (route) => {
+      capturedBulkBody = JSON.parse(route.request().postData() ?? '{}');
+      await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(makeBulkResponse()) });
+    });
+
     await page.goto('/pantry?add=scan');
-
-    // ── 5. Verify the sheet opened on the Scan tab ────────────────────────
-    // Source: PantryAddSheet.tsx — h2 "Add to Pantry" + tab buttons
     await expect(page.getByRole('heading', { name: 'Add to Pantry' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Scan', exact: true })).toBeVisible();
+    await page.locator('input[type="file"][accept="image/*"]').setInputFiles(RECEIPT_STUB_PNG);
 
-    // ── 6. Trigger file upload via the hidden input ───────────────────────
-    // Source: ScanTab.tsx L114: input type="file" accept="image/*" className="hidden"
-    // page.setInputFiles works on hidden inputs without clicking them.
-    const fileInput = page.locator('input[type="file"][accept="image/*"]');
-    await fileInput.setInputFiles(RECEIPT_STUB_PNG);
+    // Handed to the kitchen home, where the put-away sheet opens.
+    await expect(page).toHaveURL(/\/$/, { timeout: 10_000 });
+    const sheet = page.getByTestId('put-away-sheet');
+    await expect(sheet).toBeVisible({ timeout: 10_000 });
+    await expect(sheet.getByText('Put the shopping away?')).toBeVisible();
+    await expect(sheet.getByRole('group', { name: /Fridge, 6 items/ })).toBeVisible();
+    await expect(sheet.getByText('Nothing goes in until you tap this.')).toBeVisible();
 
-    // ── 7. Wait for the results state — "Ready to Add" section should appear
-    // Source: ScanResults.tsx — TierSection with title="Ready to Add"
-    // The section header button contains "Ready to Add"
-    await expect(page.getByRole('button', { name: /Ready to Add/ })).toBeVisible({ timeout: 10_000 });
+    // Nothing has been written yet.
+    expect(capturedBulkBody).toBeNull();
 
-    // ── 8. All 8 items should be listed. The section header's accessible name
-    // comes from aria-label (`${label} section, ${count} items` in
-    // ScanResults.tsx TierSection), which overrides the visible chip text — so
-    // the count reads "8 items", not "(8)".
-    await expect(page.getByRole('button', { name: /Ready to Add section, 8 items/ })).toBeVisible();
+    await sheet.getByRole('button', { name: 'Put away 8 items' }).click();
+    await expect(sheet).not.toBeVisible({ timeout: 8_000 });
 
-    // ── 9. Spot-check a few item names are visible in the card list ───────
-    // Source: ScannedItemCard renders item.name — we check a cross-section
-    await expect(page.getByText('Eggs')).toBeVisible();
-    await expect(page.getByText('Chicken Breasts')).toBeVisible();
-    await expect(page.getByText('Spaghetti')).toBeVisible();
-
-    // ── 10. Click the confirm button ──────────────────────────────────────
-    // Source: PantryAddSheet.tsx — button text: "Add {N} Item{s} 🛒"
-    await page.getByRole('button', { name: /Add 8 Items/ }).click();
-
-    // ── 11. Wait for the sheet to close (success path) ───────────────────
-    await expect(page.getByRole('heading', { name: 'Add to Pantry' })).not.toBeVisible({ timeout: 8_000 });
-
-    // ── 12. Assert bulk request payload ───────────────────────────────────
-    // The request is sent by PantryAddSheet.handleConfirm() which maps
-    // scanItems through ({ source: _source, ...item }) — stripping 'source'.
-    // TODO(#158): expiry_date is currently null from scannedToAddItem().
-    // After fix #158 merges, this assertion should change to verify non-null.
     expect(capturedBulkBody).not.toBeNull();
     expect(capturedBulkBody!.items).toHaveLength(8);
-
-    // Each item in the payload must have a name and category
     for (const item of capturedBulkBody!.items) {
       expect(typeof item.name).toBe('string');
       expect((item.name as string).length).toBeGreaterThan(0);
       expect(typeof item.category).toBe('string');
     }
-
-    // ── 13. Assert non-null expiry via pantry list (stub response) ────────
-    // After confirm, PantryAddSheet calls onItemsAdded() → queryClient.invalidateQueries
-    // → GET /api/pantry re-fires. Our GET stub returns items with non-null expiry_date.
-    // We wait for the pantry grid to render with an item that has an expiry badge.
-    // Source: pantry/page.tsx ~L282: expiryBadge() renders a span with "{N}d left".
-    // Chicken Breasts has expiry_date = 2 days out → badge "2d left"
-    await expect(page.getByText(/2d left/)).toBeVisible({ timeout: 8_000 });
   });
 
-  test('scan → review → confirms correct item names and quantities in bulk payload', async ({ page }) => {
-    // Narrowly focused: verify the exact fields forwarded to bulk route
+  test('the put-away carries each item name, quantity and place to the bulk route', async ({ page }) => {
     const captured: Array<Record<string, unknown>> = [];
 
-    await page.route('/api/ai/scan', (route) =>
+    await page.route('**/api/ai/scan', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
           ...GROCERY_MART_SCAN_RESULT,
-          // Limit to 2 items for a fast, focused assertion
           ready_to_add: GROCERY_MART_SCAN_RESULT.ready_to_add.slice(0, 2),
           total_items: 2,
         }),
       }),
     );
-
-    await page.route('/api/pantry/bulk', async (route) => {
-      const body = JSON.parse(route.request().postData() ?? '{}') as { items: Array<Record<string, unknown>> };
+    await stubPantryReads(page);
+    await page.route('**/api/pantry/bulk', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}');
       captured.push(...body.items);
       await route.fulfill({
         status: 201,
         contentType: 'application/json',
-        body: JSON.stringify({
-          count: 2,
-          items: [
-            { id: 'x1', name: 'Eggs', category: 'dairy', location: 'fridge', quantity: 12, unit: 'item', expiry_date: '2026-08-19' },
-            { id: 'x2', name: 'Whole Milk', category: 'dairy', location: 'fridge', quantity: 1, unit: 'gallon', expiry_date: '2026-08-08' },
-          ],
-        }),
+        body: JSON.stringify({ count: 2, items: makeBulkResponse().items.slice(0, 2) }),
       });
     });
 
-    await page.route('/api/pantry', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ items: [], count: 0 }),
-      }),
-    );
-
     await page.goto('/pantry?add=scan');
-    await expect(page.getByRole('heading', { name: 'Add to Pantry' })).toBeVisible();
+    await page.locator('input[type="file"][accept="image/*"]').setInputFiles(RECEIPT_STUB_PNG);
 
-    const fileInput = page.locator('input[type="file"][accept="image/*"]');
-    await fileInput.setInputFiles(RECEIPT_STUB_PNG);
+    const sheet = page.getByTestId('put-away-sheet');
+    await expect(sheet).toBeVisible({ timeout: 10_000 });
+    await sheet.getByRole('button', { name: 'Put away 2 items' }).click();
+    await expect(sheet).not.toBeVisible({ timeout: 8_000 });
 
-    await expect(page.getByRole('button', { name: /Ready to Add/ })).toBeVisible({ timeout: 10_000 });
-    await page.getByRole('button', { name: /Add 2 Items/ }).click();
-    await expect(page.getByRole('heading', { name: 'Add to Pantry' })).not.toBeVisible({ timeout: 8_000 });
-
-    // Validate payload shape
     expect(captured).toHaveLength(2);
     expect(captured[0].name).toBe('Eggs');
     expect(captured[0].quantity).toBe(12);
     expect(captured[0].unit).toBe('item');
     expect(captured[0].category).toBe('dairy');
     expect(captured[0].storage_location).toBe('fridge');
-    // 'source' field must NOT be forwarded (stripped in PantryAddSheet.handleConfirm)
     expect(captured[0].source).toBeUndefined();
-
     expect(captured[1].name).toBe('Whole Milk');
     expect(captured[1].quantity).toBe(1);
   });
 
   test('error from /api/ai/scan shows an error message and stays on upload state', async ({ page }) => {
-    await page.route('/api/ai/scan', (route) =>
+    await page.route('**/api/ai/scan', (route) =>
       route.fulfill({
         status: 500,
         contentType: 'application/json',
         body: JSON.stringify({ error: 'OCR service unavailable' }),
       }),
     );
-
-    await page.route('/api/pantry', (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [], count: 0 }) }),
-    );
+    await stubPantryReads(page);
 
     await page.goto('/pantry?add=scan');
     await expect(page.getByRole('heading', { name: 'Add to Pantry' })).toBeVisible();
-
-    const fileInput = page.locator('input[type="file"][accept="image/*"]');
-    await fileInput.setInputFiles(RECEIPT_STUB_PNG);
+    await page.locator('input[type="file"][accept="image/*"]').setInputFiles(RECEIPT_STUB_PNG);
 
     // A failed scan shows friendly copy, not the raw backend error string.
     await expect(page.getByText(/Couldn't read that receipt/)).toBeVisible({ timeout: 8_000 });
     await expect(page.getByText(/OCR service unavailable/)).toHaveCount(0);
-
-    // Upload affordance must be re-shown (state back to 'upload')
     await expect(page.getByText(/Drop your receipt here/)).toBeVisible();
   });
 });
@@ -361,15 +288,13 @@ test.describe('3a — receipt ingestion (live, opt-in)', () => {
     await fileInput.setInputFiles(RECEIPT_LIVE_PNG);
 
     // OCR + parse can take up to 30s on Gemini Vision
-    await expect(page.getByRole('button', { name: /Ready to Add|Needs Review/ })).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByTestId('put-away-sheet')).toBeVisible({ timeout: 45_000 });
 
     // Loose count check: grocery-mart has 8 items; tolerate partial parse (≥6)
     // Sections show "(N)" — grab the combined count from the found-items line.
     // Source: ScanTab.tsx ~L170: "Found {total} items"
-    const foundText = page.getByText(/Found \d+ items/);
-    await expect(foundText).toBeVisible();
-    const foundMatch = (await foundText.textContent())?.match(/Found (\d+) items/);
-    const found = parseInt(foundMatch?.[1] ?? '0', 10);
+    const countText = await page.getByText(/Put away \d+ items?/).first().textContent();
+    const found = parseInt(countText?.match(/(\d+)/)?.[1] ?? '0', 10);
     expect(found).toBeGreaterThanOrEqual(6);
 
     // Item-set assertions: at least 3 of these known grocery-mart items must appear
@@ -383,7 +308,7 @@ test.describe('3a — receipt ingestion (live, opt-in)', () => {
     expect(hitCount).toBeGreaterThanOrEqual(3);
 
     // Click confirm
-    const confirmBtn = page.getByRole('button', { name: /Add \d+ Items/ });
+    const confirmBtn = page.getByRole('button', { name: /Put away \d+ items?/ });
     await expect(confirmBtn).toBeVisible();
     await confirmBtn.click();
 
@@ -407,12 +332,10 @@ test.describe('3a — receipt ingestion (live, opt-in)', () => {
     await fileInput.setInputFiles(CITY_HARVEST_PNG);
 
     // city-harvest has 7 items (bread, yogurt, spinach, tomatoes, ground beef, cereal, coffee)
-    await expect(page.getByRole('button', { name: /Ready to Add|Needs Review/ })).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByTestId('put-away-sheet')).toBeVisible({ timeout: 45_000 });
 
-    const foundText = page.getByText(/Found \d+ items/);
-    await expect(foundText).toBeVisible();
-    const foundMatch = (await foundText.textContent())?.match(/Found (\d+) items/);
-    const foundCount = parseInt(foundMatch?.[1] ?? '0', 10);
+    const countText = await page.getByText(/Put away \d+ items?/).first().textContent();
+    const foundCount = parseInt(countText?.match(/(\d+)/)?.[1] ?? '0', 10);
     expect(foundCount).toBeGreaterThanOrEqual(5);
 
     // Item-set: at least 3 of the known city-harvest items
@@ -425,7 +348,7 @@ test.describe('3a — receipt ingestion (live, opt-in)', () => {
     expect(hitCount).toBeGreaterThanOrEqual(3);
 
     // Confirm
-    const confirmBtn = page.getByRole('button', { name: /Add \d+ Items/ });
+    const confirmBtn = page.getByRole('button', { name: /Put away \d+ items?/ });
     await confirmBtn.click();
     await expect(page.getByRole('heading', { name: 'Add to Pantry' })).not.toBeVisible({ timeout: 15_000 });
 

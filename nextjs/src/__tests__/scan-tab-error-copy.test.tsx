@@ -36,7 +36,7 @@ it('a client-side scan timeout shows friendly copy and returns the tab to a usab
   mockUploadReceipt.mockRejectedValue(
     new scanApi.ScanError('Scan timed out', scanApi.SCAN_CLIENT_TIMEOUT_CODE),
   )
-  render(<ScanTab onItemsReady={jest.fn()} />)
+  render(<ScanTab onParsed={jest.fn()} />)
 
   selectFile()
 
@@ -57,7 +57,7 @@ it('a client-side scan timeout shows friendly copy and returns the tab to a usab
 it('never renders a raw provider/server error string, even for an unrecognized code', async () => {
   const rawProviderString = 'GeminiProvider(model=gemini-3.1-flash-lite): 502 upstream connect error'
   mockUploadReceipt.mockRejectedValue(new scanApi.ScanError(rawProviderString, 'some_future_code'))
-  render(<ScanTab onItemsReady={jest.fn()} />)
+  render(<ScanTab onParsed={jest.fn()} />)
 
   selectFile()
 
@@ -68,7 +68,7 @@ it('never renders a raw provider/server error string, even for an unrecognized c
 
 it('a plain (non-ScanError) failure also falls back to generic friendly copy', async () => {
   mockUploadReceipt.mockRejectedValue(new Error('ECONNRESET at gemini-vision-proxy:443'))
-  render(<ScanTab onItemsReady={jest.fn()} />)
+  render(<ScanTab onParsed={jest.fn()} />)
 
   selectFile()
 
@@ -80,7 +80,7 @@ it('a recognized server code (unreadable image) shows its specific copy', async 
   mockUploadReceipt.mockRejectedValue(
     new scanApi.ScanError('We could not read that image.', 'unreadable_image'),
   )
-  render(<ScanTab onItemsReady={jest.fn()} />)
+  render(<ScanTab onParsed={jest.fn()} />)
 
   selectFile()
 
@@ -114,11 +114,14 @@ it('a successful scan after a prior timeout still reaches the results step', asy
     )
     .mockResolvedValueOnce(SCAN_RESULT)
 
-  render(<ScanTab onItemsReady={jest.fn()} />)
+  const onParsed = jest.fn()
+  render(<ScanTab onParsed={onParsed} />)
 
   selectFile()
   await waitFor(() => expect(screen.getByText(/Drop your receipt here/)).toBeInTheDocument())
+  expect(onParsed).not.toHaveBeenCalled()
 
+  // The retry works without a reload and hands the scan to the host (#753).
   selectFile()
-  await waitFor(() => expect(screen.getByText(/Ready to Add \(1\)/)).toBeInTheDocument())
+  await waitFor(() => expect(onParsed).toHaveBeenCalledWith(SCAN_RESULT))
 })

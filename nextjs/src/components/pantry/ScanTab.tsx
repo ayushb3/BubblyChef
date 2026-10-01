@@ -3,46 +3,49 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
-import ReviewSurface from '@/components/scan/ReviewSurface'
 import { useFileDropzone } from '@/hooks/useFileDropzone'
 import { uploadReceipt, ScanError } from '@/lib/api/scan'
-import {
-  scannedToBulkAddItem,
-  assignScanIds,
-  isEmptyScan,
-  type ScannedItemWithId,
-} from '@/lib/scan-helpers'
+import { isEmptyScan } from '@/lib/scan-helpers'
 import { scanErrorCopy, SCAN_NO_ITEMS_CODE } from '@/lib/scan-error-copy'
 import type { ScanResult } from '@/types/scan'
-import type { AddItem } from './PantryAddSheet'
 
-type ScanTabState = 'upload' | 'processing' | 'results'
+/**
+ * The add sheet's scan tab: upload a receipt, wait for it to parse, then hand
+ * the parsed scan to the host (issue #753).
+ *
+ * It no longer reviews the scan itself. A parsed scan is put away on the kitchen
+ * home, in the put-away sheet (`PutAwaySheet`), the same place the `/scan` page
+ * ends up: `onParsed` is the hand-off, and the host keeps the result and takes
+ * the user home (`useScanHandOff`). Nothing is written here; the only pantry write
+ * is put-away's "Put away" tap.
+ *
+ * It still owns the upload -> processing state machine and everything around it
+ * (cancel, timeouts, friendly errors, the double-submit and stale-scan guards).
+ */
+
+type ScanTabState = 'upload' | 'processing' | 'handoff'
 
 interface ScanTabProps {
-  onItemsReady: (items: AddItem[]) => void
+  /**
+   * A scan parsed with at least one item. The host takes it from here (keeps it
+   * as the pending put-away and goes to the kitchen). Not called for an empty
+   * scan, which is the friendly "nothing found" state here.
+   */
+  onParsed: (result: ScanResult) => void
   /**
    * Reports whether a scan is currently in flight so the parent sheet can
    * lock the Type tab for the duration (issue #402). Must fire `true` right
-   * before the upload starts and `false` on every path out of `processing`
-   * — success and failure/timeout alike — or the lock never releases.
+   * before the upload starts and `false` on every path out of `processing` —
+   * success and failure/timeout alike — or the lock never releases.
    */
   onProcessingChange?: (processing: boolean) => void
 }
 
-function scannedToAddItem(item: ScannedItemWithId): AddItem {
-  return { ...scannedToBulkAddItem(item), source: 'scan' }
-}
-
-export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabProps) {
+export default function ScanTab({ onParsed, onProcessingChange }: ScanTabProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [state, setState] = useState<ScanTabState>('upload')
   const [preview, setPreview] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-
-  const [readyToAdd, setReadyToAdd] = useState<ScannedItemWithId[]>([])
-  const [needsReview, setNeedsReview] = useState<ScannedItemWithId[]>([])
-  const [skipped, setSkipped] = useState<ScannedItemWithId[]>([])
-  const [warnings, setWarnings] = useState<string[]>([])
 
   const { isDragActive, dropzoneHandlers } = useFileDropzone({ onFile: handleFileSelect })
 
@@ -91,20 +94,22 @@ export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabPro
     try {
       const result: ScanResult = await uploadReceipt(file, { signal: controller.signal })
       if (isStale()) return
-      const withIds = assignScanIds(result)
-      if (isEmptyScan(withIds)) {
-        // The scan worked but found nothing: say so, rather than showing
-        // "Found 0 items" over an empty review list (#642).
+      if (
+        isEmptyScan({
+          ready_to_add: result.ready_to_add,
+          needs_review: result.needs_review,
+          skipped: result.skipped,
+        })
+      ) {
+        // The scan worked but found nothing: say so, rather than handing an
+        // empty scan to put-away (#642).
         setError(scanErrorCopy(SCAN_NO_ITEMS_CODE))
         setState('upload')
         if (inputRef.current) inputRef.current.value = ''
         return
       }
-      setReadyToAdd(withIds.ready_to_add)
-      setNeedsReview(withIds.needs_review)
-      setSkipped(withIds.skipped)
-      setWarnings(result.warnings ?? [])
-      setState('results')
+      setState('handoff')
+      onParsed(result)
     } catch (err) {
       if (isStale()) return
       // Never render a raw server/provider string — always route through the
@@ -124,7 +129,7 @@ export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabPro
       // settling late must not free a newer scan's slot.
       if (scanTokenRef.current === token) inFlightRef.current = false
       setTimeout(() => URL.revokeObjectURL(objectUrl), 500)
-      // Every path out of `processing` — results or upload/error — must
+      // Every path out of `processing` — handed off or upload/error — must
       // release the Type-tab lock (issue #402), but only for the scan that
       // is still current; an abandoned/superseded scan must not touch it
       // (issue #439).
@@ -143,26 +148,6 @@ export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabPro
     setError(null)
     onProcessingChange?.(false)
     if (inputRef.current) inputRef.current.value = ''
-  }
-
-  function handleReset() {
-    setState('upload')
-    setPreview(null)
-    setError(null)
-    setReadyToAdd([])
-    setNeedsReview([])
-    setSkipped([])
-    setWarnings([])
-    onItemsReady([])
-    if (inputRef.current) inputRef.current.value = ''
-  }
-
-  const handleReadyChange = (items: ScannedItemWithId[]) => {
-    setReadyToAdd(items)
-  }
-
-  const handleReviewChange = (items: ScannedItemWithId[]) => {
-    setNeedsReview(items)
   }
 
   return (
@@ -253,45 +238,19 @@ export default function ScanTab({ onItemsReady, onProcessingChange }: ScanTabPro
           </motion.div>
         )}
 
-        {state === 'results' && (
+        {state === 'handoff' && (
           <motion.div
-            key="results"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
+            key="handoff"
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.25 }}
+            className="text-center"
+            role="status"
           >
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm text-[var(--color-muted)]">
-                Found{' '}
-                <span className="font-semibold text-[var(--color-text)]">
-                  {readyToAdd.length + needsReview.length + skipped.length}
-                </span>{' '}
-                items
-              </p>
-              <button
-                type="button"
-                onClick={handleReset}
-                className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] underline transition-colors"
-              >
-                Scan again
-              </button>
+            <div className="flex justify-center mb-3">
+              <BubblesMascot state="happy" size={64} />
             </div>
-
-            {/* Render results without their built-in confirm button — PantryAddSheet owns confirm */}
-            <ReviewSurface
-              readyToAdd={readyToAdd}
-              needsReview={needsReview}
-              skipped={skipped}
-              warnings={warnings}
-              onReadyChange={handleReadyChange}
-              onReviewChange={handleReviewChange}
-              onSkippedChange={setSkipped}
-              onConfirm={() => {/* confirm handled by PantryAddSheet */}}
-              isSubmitting={false}
-              hideConfirmButton
-              onCheckedItemsChange={(checked) => onItemsReady(checked.map(scannedToAddItem))}
-            />
+            <p className="font-semibold text-[var(--color-text)]">Taking your shopping to the kitchen…</p>
           </motion.div>
         )}
       </AnimatePresence>

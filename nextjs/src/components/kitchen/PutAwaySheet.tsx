@@ -79,9 +79,9 @@ export default function PutAwaySheet({ open, onClose, record, onPutAway }: PutAw
 
   // The record clears the moment the write lands; the sheet is still animating
   // out then, so it draws the last record it had rather than going blank.
-  const lastRecord = useRef<PendingPutAway | null>(null)
-  if (record) lastRecord.current = record
-  const shown = record ?? lastRecord.current
+  const [lastRecord, setLastRecord] = useState<PendingPutAway | null>(record)
+  if (record && record !== lastRecord) setLastRecord(record)
+  const shown = record ?? lastRecord
 
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
@@ -90,12 +90,16 @@ export default function PutAwaySheet({ open, onClose, record, onPutAway }: PutAw
   const [confirmingDiscard, setConfirmingDiscard] = useState(false)
   const [maxHeight, setMaxHeight] = useState<string | undefined>(undefined)
 
-  // Start from a clean sheet each time it opens.
-  useEffect(() => {
-    if (!open) return
-    setError(null)
-    setConfirmingDiscard(false)
-  }, [open])
+  // Start from a clean sheet each time it opens (adjusted during render, not in
+  // an effect, so a reopened sheet never flashes the last attempt's error).
+  const [wasOpen, setWasOpen] = useState(open)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open) {
+      setError(null)
+      setConfirmingDiscard(false)
+    }
+  }
 
   // Leave the scene visible above the sheet: back to the top of home, and cap
   // the sheet so it starts below the lowest place tag. Measured off the wall (the

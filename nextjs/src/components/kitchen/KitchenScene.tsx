@@ -59,6 +59,8 @@ export interface KitchenSceneProps {
   bubblesLayer?: ReactNode
   /** The scene's accessible label; describes where Bubbles is. See `KitchenWall`. */
   sceneLabel?: string
+  /** Shopping waiting to be put away, per place: the tags read +N (issue #753). See `KitchenWall`. */
+  incoming?: Record<PlaceKey, number> | null
 }
 
 const CATALOG_BY_ID = new Map(CATALOG.map((d) => [d.id, d]))
@@ -80,6 +82,7 @@ export default function KitchenScene({
   spritesLayer,
   bubblesLayer,
   sceneLabel,
+  incoming = null,
 }: KitchenSceneProps) {
   // Build slot -> decoration lookup from the rows that actually resolve. A row
   // whose id isn't in the catalog, or whose slot isn't one of SLOTS', is
@@ -110,6 +113,7 @@ export default function KitchenScene({
         spritesLayer={spritesLayer}
         bubblesLayer={bubblesLayer}
         sceneLabel={sceneLabel}
+        incoming={incoming}
       >
         {SLOTS.map((slot) => {
           const decoration = decorationBySlot.get(slot.key)
