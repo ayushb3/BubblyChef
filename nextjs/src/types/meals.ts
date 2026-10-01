@@ -205,6 +205,8 @@ export interface MealCookSource {
   ingredient_unit: string | null
   required_base_qty: number | null
   status: IngredientMatchStatus
+  /** This dish's own required_base_qty is an estimate (see IngredientMatch.approximate). */
+  approximate?: boolean
   match_type: IngredientMatchType
   substitution_note: string | null
 }

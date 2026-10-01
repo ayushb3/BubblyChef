@@ -476,6 +476,20 @@ export function canStartEarly(card: NowCard): card is Extract<NowCard, { kind: '
   return card.kind === 'upcoming' && !card.waiting_on
 }
 
+/**
+ * Issue #849 — the step Ask Bubbles is asked about: the one the cook is
+ * actually on. An `active` card is its own step. An `upcoming` card that is
+ * waiting on a running step (the simmer ticking while the card reads "Next at
+ * ...") is about to be the next thing, not the current one, so the question is
+ * pinned to the running step; with nothing running it is the card's own step.
+ * `waiting` / `finished` have no single step.
+ */
+export function askBubblesStep(card: NowCard): StreamStep | null {
+  if (card.kind === 'active') return card.step
+  if (card.kind === 'upcoming') return card.waiting_on ?? card.step
+  return null
+}
+
 // ---------------------------------------------------------------------------
 // deriveStream
 // ---------------------------------------------------------------------------
