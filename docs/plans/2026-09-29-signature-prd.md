@@ -74,14 +74,35 @@ Home isn't a dashboard with a kitchen widget: it *is* the kitchen.
 - Implementation direction: layered sprites with Framer Motion, not a game engine, unless
   free movement turns out to be needed.
 
-**To flesh out (grilling session)**
-- Art direction: pixel scale, perspective (front-on or 3/4) and reference games. Does the
-  Bubbles art from PR #592 get a pixel redraw? Who makes the pixel art, and with which tool?
-- How roughly 80 pantry items map onto the scene without clutter (grouping, overflow).
-- How Bubbles moves: idle wandering, or scripted moves between points of interest.
-- Whether a plain list view of the pantry stays, for bulk edits and accessibility.
-- What happens to the M1 kitchen work already shipped (slots, themes, the bubbles ledger,
-  reactions): reuse it or rebuild it.
+**Settled in the design session (2026-10-01)**
+- **Layout: direction A, the "dollhouse wall".** The kitchen is a front-on wall across the
+  top of home, with cards, the Bubbles prompt and the bottom nav below it. Direction B
+  (porthole) was rejected because it hides the kitchen. Direction C (full scene plus a HUD)
+  was rejected because, on a phone, its HUD fights the scene for space.
+- **The Pantry tab goes, and the list stays.** The pantry is reached through the scene. Each
+  storage sheet has a Scene | List toggle, and one search covers every storage place. The
+  list serves bulk edits and screen readers.
+- **Art:** Claude builds the pixel art as SVG in code, front-on on a 16 px grid. Individual
+  sprites can later be swapped for hand-drawn or bought art (that choice is Ayush's, since it
+  costs money) without changing the layout.
+- **Bubbles:** the scene gets a pixel Bubbles drawn to the proportions of Ayush's turnaround
+  guide (`bubbles-turnaround-guide.png`). The illustrated Bubbles from PR #592 stays for chat
+  avatars and the big moments: empty states and celebrations.
+- **Storage places:**
+  - the fridge on the left, with the freezer as its bottom drawer;
+  - pantry items on open shelves above the counter;
+  - counter items in a produce basket on the worktop.
+  Tapping a place opens its sheet.
+- **About 80 items without clutter:** each place shows a few representative category sprites
+  (about 20 in total, such as a jar, a carton and a leafy bunch, not one per food), plus a
+  count badge. The 3 soonest-expiring items are drawn individually and visibly wilting.
+- **Bubbles moves by script between fixed spots:** the fridge when something is expiring,
+  the door during a scan, and the stove while cooking. Between moves, Bubbles idles in place.
+  There is no free wandering, so layered sprites with Framer Motion are enough.
+- **The M1 kitchen work is reused and redrawn.** The bubbles ledger, the decoration catalog and
+  its 12 slots, theme unlocks and reaction triggers all carry over unchanged. Only the drawing
+  is replaced, and the slots are repositioned on the new wall. Nobody loses earned bubbles or
+  decorations.
 
 ## Goal 3 — It looks like nothing else (component language)
 
@@ -96,11 +117,33 @@ flow, not a restyle of everything.
 - Built work is checked against the designs: `verify` screenshots are compared with the
   hero screens.
 
-**To flesh out (grilling session)**
-- An audit of which components read as generic today.
-- The signature set: likely the recipe card, the meal timeline table, panels and sheets,
-  buttons and chat bubbles.
-- Motion and feedback language: micro-reactions, and whether to use sound.
+**Settled in the design session (2026-10-01)**
+- **The signature set (7):**
+  1. pixel-framed panel and sheet;
+  2. keycap button;
+  3. recipe card;
+  4. meal timeline;
+  5. chat bubble (Bubbles' and the user's);
+  6. food tag / chip, with an expiring state;
+  7. bubbles counter.
+  Everything else (inputs, toggles, lists) takes on the tokens only.
+- **Type:** pixel lettering appears only inside the world (scene labels, the chalkboard, the
+  counter). Nunito is used everywhere else.
+- **Motion:** the world animates frame by frame, stepped (Bubbles' walk, steam, wilting).
+  The UI moves on soft springs (sheets, cards). With reduced motion, the world's loops become
+  still poses and UI motion becomes fades.
+- **Reactions:**
+  - a pop and count-up when bubbles are earned;
+  - a droop and fade on expiring food;
+  - a landing bounce when items unpack;
+  - a wiggle on an error.
+- **No sound in v1.** If it comes later, it is opt-in.
+- **The meal canvas calls are accepted as drawn:**
+  - one pastel per dish, carried through its card and its timeline column;
+  - active timeline steps solid, waiting steps hatched;
+  - a Serve-at toggle that schedules backwards from a serving time;
+  - the "N to buy" line linked to the grocery list.
+- **Generic-component audit:** the results are recorded in the Goal 3 spec.
 
 ## Sequencing
 
