@@ -17,14 +17,27 @@ milk-allergic user who typed "cheese"). The cost of a false positive is one
 regeneration; the cost of a false negative is an allergen on a card.
 """
 
+import re
 from collections.abc import Iterable
 
 from bubbly_chef.domain.diet_terms import DAIRY, NUTS, SEAFOOD, mentions, norm_label
 
 _SHELLFISH = frozenset(
     {
-        "shellfish", "shrimp", "prawn", "crab", "crawfish", "crayfish", "lobster", "clam",
-        "mussel", "oyster", "scallop", "squid", "calamari", "octopus",
+        "shellfish",
+        "shrimp",
+        "prawn",
+        "crab",
+        "crawfish",
+        "crayfish",
+        "lobster",
+        "clam",
+        "mussel",
+        "oyster",
+        "scallop",
+        "squid",
+        "calamari",
+        "octopus",
     }
 )
 
@@ -47,15 +60,27 @@ ALLERGEN_GROUPS: dict[str, frozenset[str]] = {
     "wheat": frozenset({"wheat", "flour", "bread", "breadcrumb", "pasta", "couscous", "semolina"}),
     "gluten": frozenset(
         {
-            "wheat", "gluten", "barley", "rye", "semolina", "couscous", "seitan", "bread",
-            "breadcrumb", "pasta", "spaghetti", "noodle", "tortilla",
+            "wheat",
+            "gluten",
+            "barley",
+            "rye",
+            "semolina",
+            "couscous",
+            "seitan",
+            "bread",
+            "breadcrumb",
+            "pasta",
+            "spaghetti",
+            "noodle",
+            "tortilla",
+            "flour",
         }
     ),
 }
 
 
 def _singular(label: str) -> str:
-    """"peanuts" -> "peanut" ("glass" and "hummus" keep their s)."""
+    """ "peanuts" -> "peanut" ("glass" and "hummus" keep their s)."""
     if len(label) > 3 and label.endswith("s") and not label.endswith(("ss", "us")):
         return label[:-1]
     return label
@@ -76,11 +101,93 @@ def allergen_terms(entry: str) -> frozenset[str]:
     return frozenset(terms)
 
 
+# ---------------------------------------------------------------------------
+# "X-free" qualifiers on an expanded term
+# ---------------------------------------------------------------------------
+#
+# `mentions` already rejects `peanut-free` for the literal term "peanut", but a broad
+# allergy also matches the foods it expands to, and `gluten-free pasta` names "pasta"
+# with nothing after it. A model told `NEVER include (allergy): gluten` writes exactly
+# that, so without this the correct card is flagged, regenerated, flagged again and
+# refused. The qualifier has to cover the *same ingredient phrase* it sits in front of
+# (or in brackets after): "gluten-free bread and regular pasta" and "pasta (not
+# gluten-free)" still name the pasta. This is a safety check, so every doubt flags.
+
+# Labels whose "-free" says nothing about the allergen: lactose-free milk is still milk.
+_NEVER_CLEARS = frozenset({"lactose"})
+
+# Plain non-wheat flours: "almond flour" is not the wheat the group expansion means.
+_NON_WHEAT_FLOUR = (
+    "almond|coconut|rice|corn|maize|chickpea|gram|tapioca|potato|cassava|buckwheat|sorghum|"
+    "millet|teff|quinoa|arrowroot|lentil|banana|hazelnut|cashew|pea|soy|soya|tigernut"
+)
+
+# The qualified phrase ends at a delimiter, a coordinator or a new clause, so a second
+# food in the same line is never covered by the first one's qualifier.
+_PHRASE_END = r"(?=\s+(?:and|or|with|plus|but|then|without|&)\s|[,;()/]|$)"
+_NEGATED = r"(?<!\bnot\s)(?<!\bnon[\s-])"
+
+
+def _qualifier_labels(allergy: str) -> frozenset[str]:
+    """The labels whose `<label>-free` clears a match of `allergy`'s terms."""
+    cleaned = " ".join(allergy.strip().lower().split())
+    own = {cleaned, _singular(cleaned)}
+    own_key = norm_label(_singular(cleaned))
+    mine = allergen_terms(allergy)
+    labels = set(own)
+    for key, group in ALLERGEN_GROUPS.items():
+        if key in _NEVER_CLEARS:
+            continue
+        if mine <= group | {key}:
+            labels.add(key.replace("-", " "))
+    if own_key == "wheat":
+        labels.add("gluten")  # gluten-free is labelled wheat-free
+    return frozenset(label for label in labels if label)
+
+
+def _label_re(labels: Iterable[str]) -> str:
+    return "|".join(
+        re.escape(label).replace(r"\ ", r"[\s-]") for label in sorted(labels, key=len, reverse=True)
+    )
+
+
+def _scrub_qualified(allergy: str, field: str) -> str:
+    """`field` with the phrases an `<allergen>-free` qualifier clears taken out.
+
+    Covers a leading qualifier ("gluten-free pasta", "free of gluten pasta", "no-gluten
+    pasta") and a bracketed or comma one right after the phrase ("pasta (gluten-free)").
+    """
+    text = field.lower().replace("\u2019", "'")
+    labels = _qualifier_labels(allergy)
+    if not labels:
+        return text
+    lab = _label_re(labels)
+    leading = (
+        rf"{_NEGATED}(?<![\w-])(?:certified\s+)?"
+        rf"(?:(?:{lab})[\s-]free|free\s+of\s+(?:{lab})|(?:no|without)[\s-](?:{lab}))"
+        rf"\s+[^,;()/]+?{_PHRASE_END}"
+    )
+    trailing = (
+        rf"[^,;()/]+?\s*(?:\(\s*|,\s*)(?:certified\s+)?"
+        rf"(?:(?:{lab})[\s-]free|free\s+of\s+(?:{lab}))\s*\)?"
+    )
+    text = re.sub(leading, " ", text)
+    text = re.sub(trailing, " ", text)
+    # The broad expansion of wheat/gluten reaches "flour"; a plain non-wheat flour isn't it.
+    if "flour" in allergen_terms(allergy) and norm_label(_singular(allergy.strip().lower())) != (
+        "flour"
+    ):
+        text = re.sub(rf"\b(?:{_NON_WHEAT_FLOUR})\s+flours?\b", " ", text)
+    return text
+
+
 def allergens_named(allergies: Iterable[str], *fields: str) -> list[str]:
     """The allergies (as the user spelled them) that any of `fields` names.
 
     Each field is checked on its own, so an ingredient line can never be read
-    together with the next one. Order follows `allergies`; no duplicates.
+    together with the next one. Order follows `allergies`; no duplicates. A phrase
+    carrying an `<allergen>-free` qualifier for the allergy being checked
+    ("gluten-free pasta") doesn't name it; see `_scrub_qualified`.
     """
     named: list[str] = []
     seen: set[str] = set()
@@ -89,7 +196,8 @@ def allergens_named(allergies: Iterable[str], *fields: str) -> list[str]:
         if not key or key in seen:
             continue
         terms = allergen_terms(allergy)
-        if any(mentions(term, field, plant_markers=False) for term in terms for field in fields):
+        scrubbed = [_scrub_qualified(allergy, field) for field in fields]
+        if any(mentions(term, field, plant_markers=False) for term in terms for field in scrubbed):
             named.append(allergy)
             seen.add(key)
     return named

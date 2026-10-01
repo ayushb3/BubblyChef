@@ -747,7 +747,7 @@ def option_allergens(option: Any, allergies: list[str], *, skip_main: bool = Fal
     `skip_main` leaves the main dish out: a fixed main (#651 PR B) is the user's own
     recipe, kept exactly as it is, so its ingredients are not the model's to answer for.
     """
-    fields = [option.title]
+    title_hits = allergens_named(allergies, option.title)
     if skip_main:
         # The title often echoes the user's own main ("Peanut Noodles Night"): an
         # allergen the fixed main carries is theirs, not the model's, so the title
@@ -756,12 +756,14 @@ def option_allergens(option: Any, allergies: list[str], *, skip_main: bool = Fal
             f for d in option.dishes if d.role == "main" for f in (d.name, *d.key_ingredients)
         ]
         own = set(allergens_named(allergies, *main_fields))
-        fields = [option.title] if not set(allergens_named(allergies, option.title)) <= own else []
+        title_hits = [a for a in title_hits if a not in own]
+    fields: list[str] = []
     for dish in option.dishes:
         if skip_main and dish.role == "main":
             continue
         fields.extend([dish.name, *dish.key_ingredients])
-    return allergens_named(allergies, *fields)
+    dish_hits = allergens_named(allergies, *fields)
+    return [a for a in allergies if a in title_hits or a in dish_hits]
 
 
 def _unknown_option_state(state: WorkflowState, option_id: Any) -> WorkflowState:
