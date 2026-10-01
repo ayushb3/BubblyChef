@@ -2,7 +2,7 @@
 
 Feeds `bubbly_chef.workflows.router.classify_intent`, which routes every
 incoming chat message to a sub-workflow (pantry update, recipe generation,
-cooking help, general chat, etc). Edits here are CODEOWNERS-gated: prompt
+cooking help, general chat, etc). Edits here are fresh-context reviewed and `verify`-checked: prompt
 wording changes model behavior even though the test suite can stay green.
 """
 

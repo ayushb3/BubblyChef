@@ -2,7 +2,7 @@
 
 Feeds `bubbly_chef.workflows.pantry.nodes`: `parse_pantry_items` (free-text
 grocery extraction) and `suggest_specifics` (turning a vague term like
-"veggies" into concrete tappable suggestions). Edits here are CODEOWNERS-gated:
+"veggies" into concrete tappable suggestions). Edits here are fresh-context reviewed and `verify`-checked:
 prompt wording changes model behavior even though the test suite can stay
 green.
 """

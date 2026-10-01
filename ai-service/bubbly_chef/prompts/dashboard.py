@@ -3,7 +3,7 @@
 Feeds `bubbly_chef.services.dashboard_service._generate_ai_copy` — the daily
 cooking tip and "why this recipe" line shown on the dashboard, grounded in
 the user's pantry and (if any) their top-ranked suggested recipe. Edits here
-are CODEOWNERS-gated: prompt wording changes model behavior even though the
+are fresh-context reviewed and `verify`-checked: prompt wording changes model behavior even though the
 test suite can stay green.
 """
 
