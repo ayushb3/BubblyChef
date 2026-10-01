@@ -40,9 +40,11 @@ export const CATALOG: Decoration[] = [
   { id: 'fridge_magnets', name: 'Fridge magnets', slot: 'fridge_door', emoji: '🧲' },
   { id: 'fridge_drawing', name: "Kid's drawing", slot: 'fridge_door', emoji: '🖍️' },
 
-  // rug
-  { id: 'rug_pastel', name: 'Pastel rug', slot: 'rug', emoji: '🟪' },
-  { id: 'rug_stripes', name: 'Striped rug', slot: 'rug', emoji: '🟦' },
+  // rug. There is no rug emoji. These were coloured-square emoji (🟪 🟦), which
+  // drew as a bare block on the wall and read as broken art (#748). Yarn and a
+  // striped scarf are recognisable stand-ins until the pixel art (#751).
+  { id: 'rug_pastel', name: 'Pastel rug', slot: 'rug', emoji: '🧶' },
+  { id: 'rug_stripes', name: 'Striped rug', slot: 'rug', emoji: '🧣' },
 
   // wall_art
   { id: 'art_painting', name: 'Framed painting', slot: 'wall_art', emoji: '🖼️' },

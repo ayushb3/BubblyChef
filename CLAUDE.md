@@ -486,10 +486,12 @@ the same credential differently.
 - `mutating` state in RecipeBook — buttons not yet `disabled={mutating}`
 - iOS Safari bottom nav bug — issue #4
 - Recipe generation ignores constraint modifications from chat follow-up — BubblyChef-747
-- The home kitchen (`components/kitchen/KitchenScene.tsx`, M1) is still the flat
-  12-slot decoration scene with themes and unlocks. The pixel "kitchen is the app"
-  redraw (Goal 2 of `docs/plans/2026-09-29-signature-prd.md`, settled 2026-10-01)
-  keeps its data and logic and replaces only the drawing
+- The home kitchen is the pixel dollhouse wall (`components/kitchen/KitchenWall.tsx`,
+  issue #748, Goal 2 of `docs/plans/2026-09-29-signature-prd.md`): inline SVG, four
+  storage places (`lib/kitchen/places.ts`) and the M1 decoration slots, themes and
+  unlocks carried over. Still to come in Goal 2: the storage sheet, category
+  sprites and wilting, pixel Bubbles, the put-away flow and the Bubbles card
+  (issues #749, #751, #752, #753, #755); decorations are still emoji until #751
 - Chat can't be told to ignore the pantry, and the instruction is lost on the
   next turn — issue #287
 - Expiring items are forced into every suggestion regardless of whether they
