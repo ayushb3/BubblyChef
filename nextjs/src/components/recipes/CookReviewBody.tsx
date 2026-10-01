@@ -12,6 +12,7 @@
  */
 
 import React from 'react'
+import { storageSheetHref } from '@/lib/kitchen/places'
 import type {
   CookProposal,
   CompoundSuggestion,
@@ -109,10 +110,9 @@ export function ExpiredIngredientsBanner({
   return (
     <div
       role="alert"
-      className="flex flex-col gap-1.5 rounded-xl px-3 py-2.5 border border-[var(--color-expired)]"
+      className="font-sans flex flex-col gap-1.5 rounded-xl px-3 py-2.5 border border-[var(--color-expired)]"
       style={{
         background: 'color-mix(in srgb, var(--color-expired) 12%, var(--color-surface))',
-        fontFamily: 'Nunito, sans-serif',
       }}
     >
       <div className="flex items-start justify-between gap-2">
@@ -139,12 +139,12 @@ export function ExpiredIngredientsBanner({
         ))}
       </ul>
       <a
-        href="/pantry"
+        href={storageSheetHref({ expiry: ['expired'] })}
         className="text-[11px] font-bold underline"
         style={{ color: 'var(--color-primary-dark)' }}
-        aria-label="Go to pantry to clear expired items"
+        aria-label="Go to your kitchen to clear expired items"
       >
-        Go to Pantry to clear them →
+        Clear them in your kitchen →
       </a>
     </div>
   )
@@ -248,7 +248,7 @@ export function MissingItemsList({
         return (
           <div key={name} className="flex flex-col gap-0.5">
             {note || source ? (
-              <div style={{ fontFamily: 'Nunito, sans-serif' }}>
+              <div className="font-sans">
                 <span className="font-semibold text-xs text-[var(--color-text)]">⚠️ {name}</span>
                 {note && (
                   <span
@@ -269,16 +269,14 @@ export function MissingItemsList({
               </div>
             ) : (
               <span
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border border-[var(--color-border)] text-[var(--color-muted)] self-start"
-                style={{ fontFamily: 'Nunito, sans-serif' }}
+                className="font-sans inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border border-[var(--color-border)] text-[var(--color-muted)] self-start"
               >
                 ⚠️ {name}
               </span>
             )}
             {suggestion && (
               <div
-                className="ml-2 text-[10px] leading-snug text-[var(--color-muted)]"
-                style={{ fontFamily: 'Nunito, sans-serif' }}
+                className="font-sans ml-2 text-[10px] leading-snug text-[var(--color-muted)]"
                 aria-label={`Compound substitution suggestion for ${name}`}
               >
                 <span className="font-semibold">Try combining: </span>
@@ -541,7 +539,7 @@ export function CookReviewBody({
 
       {/* Ingredient table — assumed staples and to-taste seasonings are collapsed into summary lines below */}
       {proposal.matches.filter((m: IngredientMatch) => !isQuietLine(m)).length > 0 && (
-        <table className="w-full text-xs" style={{ fontFamily: 'Nunito, sans-serif' }}>
+        <table className="font-sans w-full text-xs">
           <thead>
             <tr className="text-[var(--color-muted)] text-left">
               <th className="pb-1 font-semibold">Ingredient</th>
@@ -600,7 +598,7 @@ export function CookReviewBody({
                         className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold"
                         style={{
                           background: statusColor(m.status),
-                          color: '#4a4a4a',
+                          color: 'var(--color-charcoal)',
                         }}
                       >
                         {statusLabel(m.status)}
@@ -621,8 +619,7 @@ export function CookReviewBody({
         if (assumedNames.length === 0) return null
         return (
           <p
-            className="text-[10px] text-[var(--color-muted)] italic"
-            style={{ fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-[10px] text-[var(--color-muted)] italic"
             aria-label="Assumed culinary staples"
           >
             Basics assumed: {assumedNames.join(', ')}
@@ -638,8 +635,7 @@ export function CookReviewBody({
         if (toTasteNames.length === 0) return null
         return (
           <p
-            className="text-[10px] text-[var(--color-muted)] italic"
-            style={{ fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-[10px] text-[var(--color-muted)] italic"
             aria-label="Seasonings to taste"
           >
             Not deducted: to taste ({toTasteNames.join(', ')})
@@ -651,8 +647,7 @@ export function CookReviewBody({
       {proposal.missing.length > 0 && (
         <div>
           <p
-            className="text-xs font-bold text-[var(--color-muted)] mb-1"
-            style={{ fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-xs font-bold text-[var(--color-muted)] mb-1"
           >
             Not in pantry
           </p>
@@ -692,7 +687,7 @@ export function CookDeductionSummary({ summary, mode }: CookDeductionSummaryProp
   if (summary.matchedCount === 0 && summary.compoundDeductions.length === 0) return null
 
   return (
-    <div className="text-xs leading-snug" style={{ fontFamily: 'Nunito, sans-serif' }}>
+    <div className="font-sans text-xs leading-snug">
       {summary.matchedCount > 0 && (
         <p
           className={

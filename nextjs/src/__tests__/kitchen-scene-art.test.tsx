@@ -14,10 +14,12 @@ import KitchenScene from '@/components/kitchen/KitchenScene'
 
 jest.mock('@/lib/kitchen/catalog', () => {
   const actual = jest.requireActual('@/lib/kitchen/catalog')
-  const [first, ...rest] = actual.CATALOG
+  const [first, second, ...rest] = actual.CATALOG
   return {
     ...actual,
-    CATALOG: [{ ...first, art: '/kitchen/shelf_mugs.png' }, ...rest],
+    // Every real entry has pixel art since #751, so the entry that exercises the
+    // emoji fallback has its art taken away here.
+    CATALOG: [{ ...first, art: '/kitchen/shelf_mugs.png' }, { ...second, art: undefined }, ...rest],
   }
 })
 
@@ -25,7 +27,12 @@ describe('KitchenScene — art field (#521)', () => {
   it("renders an <img> at the catalog entry's art path instead of the emoji", async () => {
     const { CATALOG } = await import('@/lib/kitchen/catalog')
     const decorated = CATALOG[0]
-    render(<KitchenScene unlocked={[{ id: decorated.id, slot: decorated.slot }]} balance={0} />)
+    render(
+      <KitchenScene
+        unlocked={[{ id: decorated.id, slot: decorated.slot }]}
+        onOpenPlace={jest.fn()}
+      />,
+    )
 
     const slotEl = screen.getByTestId(`kitchen-slot-${decorated.slot}`)
     const img = slotEl.querySelector('img')
@@ -37,7 +44,12 @@ describe('KitchenScene — art field (#521)', () => {
   it('falls back to the emoji when a catalog entry has no art', async () => {
     const { CATALOG } = await import('@/lib/kitchen/catalog')
     const undecorated = CATALOG[1]
-    render(<KitchenScene unlocked={[{ id: undecorated.id, slot: undecorated.slot }]} balance={0} />)
+    render(
+      <KitchenScene
+        unlocked={[{ id: undecorated.id, slot: undecorated.slot }]}
+        onOpenPlace={jest.fn()}
+      />,
+    )
 
     const slotEl = screen.getByTestId(`kitchen-slot-${undecorated.slot}`)
     expect(slotEl.querySelector('img')).toBeNull()

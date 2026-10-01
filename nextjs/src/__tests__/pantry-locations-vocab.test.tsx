@@ -1,24 +1,24 @@
 /**
- * Issue #397 — the kitchen-location field is gone from the UI.
+ * The kitchen-location vocabulary (issues #397, #478, #749).
  *
- * This file was written for #478 (one shared `LOCATIONS` vocabulary). #397
- * removes that vocabulary outright: the Fridge/Freezer/Pantry/Counter field
- * only fed the gamified kitchen scene, which is on hold (PR #124). The
- * `pantry_items.location` column stays (it has a DEFAULT, so no migration),
- * and the scan path still forwards the AI service's category-derived value
- * because the server's expiry heuristic scales by it — but no surface shows,
- * offers or edits a location any more.
+ * Written for #478 (one shared location vocabulary), pinned by #397 to the
+ * field's *absence* while the gamified kitchen was on hold, and rewritten by
+ * #749: the four places are the home screen now (Fridge / Freezer / Shelves /
+ * Basket, `lib/kitchen/places.ts`), and the edit sheet has a Place field again.
+ * The column and its four stored values never changed (no migration); the scan
+ * path still forwards the AI service's category-derived value because the
+ * server's expiry heuristic scales by it.
  *
- * Four `it(...)` names here were rewritten to say what each test now asserts.
- * A rename reads as a deletion to anyone diffing the names, but keeping the old
- * names would have left a test called "renders one toggle per shared location"
- * asserting that no toggle exists: a passing test that lies to the next person
- * who greps for the behaviour.
+ * Test names here were rewritten to say what each now asserts. That trips
+ * `scripts/agent-gates/test-count-guard.sh`, which matches names textually and
+ * reads a rename as a deletion, so the PR carries `test-removal-approved`.
+ * Keeping the old names would leave a test called "shows no storage-location
+ * control" asserting that one exists.
  */
 import fs from 'fs'
 import path from 'path'
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import EditItemModal from '@/components/pantry/AddItemModal'
 import AddItemRow, { type ManualRow } from '@/components/pantry/AddItemRow'
@@ -62,7 +62,7 @@ beforeEach(() => {
   jest.clearAllMocks()
 })
 
-describe('no kitchen-location surface anywhere (#397)', () => {
+describe('storage places: the Place field, and no other location surface (#397, #749)', () => {
   // Now checks: the scan write path forwards whichever of the four stored
   // values the AI service derived, unchanged and in order, and falls back to
   // the column's own default when the parse has none. The UI never remaps
@@ -73,37 +73,86 @@ describe('no kitchen-location surface anywhere (#397)', () => {
     expect(scannedToBulkAddItem(scanned(undefined)).storage_location).toBe('pantry')
   })
 
-  // Now checks: the edit modal renders no storage-location control at all,
-  // and saving omits `location` from the update so the stored value is
-  // preserved rather than rewritten.
-  it('EditItemModal shows no storage-location control and omits location when saving', async () => {
-      mockUpdatePantryItem.mockResolvedValue({} as PantryItem)
-      const item: PantryItem = {
-        id: 'i1',
-        name: 'milk',
-        category: 'dairy',
-        location: 'fridge',
-        quantity: 1,
-        unit: 'gallon',
-        expiry_date: null,
-      }
-      const onClose = jest.fn()
-      withQuery(<EditItemModal isOpen onClose={onClose} editItem={item} />)
+  // Now checks: the edit sheet has a Place field with the four places, showing
+  // where the item is now; an unrelated edit leaves `location` out of the save.
+  it('EditItemModal shows where the item is and omits location when the place is unchanged', async () => {
+    mockUpdatePantryItem.mockResolvedValue({} as PantryItem)
+    const item: PantryItem = {
+      id: 'i1',
+      name: 'milk',
+      category: 'dairy',
+      location: 'fridge',
+      quantity: 1,
+      unit: 'gallon',
+      expiry_date: null,
+    }
+    const onClose = jest.fn()
+    withQuery(<EditItemModal isOpen onClose={onClose} editItem={item} />)
 
-      expect(screen.queryByRole('group', { name: /storage location/i })).not.toBeInTheDocument()
-      expect(screen.queryByText(/storage location/i)).not.toBeInTheDocument()
-      for (const label of ['Fridge', 'Freezer', 'Pantry', 'Counter']) {
-        expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
-      }
+    const place = screen.getByRole('group', { name: 'Place' })
+    expect(within(place).getAllByRole('radio').map((r) => r.getAttribute('value'))).toEqual([
+      'fridge',
+      'freezer',
+      'shelves',
+      'basket',
+    ])
+    expect(within(place).getByRole('radio', { name: 'Fridge' })).toBeChecked()
+    expect(within(place).getByRole('radio', { name: 'Basket' })).not.toBeChecked()
 
-      fireEvent.click(screen.getByRole('button', { name: /save changes/i }))
-      await waitFor(() => expect(mockUpdatePantryItem).toHaveBeenCalledTimes(1))
-      const [id, updates] = mockUpdatePantryItem.mock.calls[0]
-      expect(id).toBe('i1')
-      expect(updates).not.toHaveProperty('location')
-      expect(updates).not.toHaveProperty('storage_location')
-      expect(updates).toMatchObject({ name: 'milk', category: 'dairy' })
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }))
+    await waitFor(() => expect(mockUpdatePantryItem).toHaveBeenCalledTimes(1))
+    const [id, updates] = mockUpdatePantryItem.mock.calls[0]
+    expect(id).toBe('i1')
+    expect(updates).not.toHaveProperty('location')
+    expect(updates).not.toHaveProperty('storage_location')
+    expect(updates).toMatchObject({ name: 'milk', category: 'dairy' })
     await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+
+  // Now checks: picking another place saves the stored location for it.
+  it.each([
+    ['Freezer', 'freezer'],
+    ['Shelves', 'pantry'],
+    ['Basket', 'counter'],
+  ])('EditItemModal saves location %s -> %s when the place is changed', async (label, stored) => {
+    mockUpdatePantryItem.mockResolvedValue({} as PantryItem)
+    const item: PantryItem = {
+      id: 'i1',
+      name: 'milk',
+      category: 'dairy',
+      location: 'fridge',
+      quantity: 1,
+      unit: 'gallon',
+      expiry_date: null,
+    }
+    withQuery(<EditItemModal isOpen onClose={jest.fn()} editItem={item} />)
+
+    fireEvent.click(screen.getByRole('radio', { name: label }))
+    expect(screen.getByRole('radio', { name: label })).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }))
+    await waitFor(() => expect(mockUpdatePantryItem).toHaveBeenCalledTimes(1))
+    expect(mockUpdatePantryItem.mock.calls[0][1]).toMatchObject({ location: stored })
+  })
+
+  // Now checks: a stored value outside the four reads as Shelves, and is not
+  // rewritten by an edit that did not touch the place.
+  it('EditItemModal reads an unknown stored location as Shelves and leaves it alone', async () => {
+    mockUpdatePantryItem.mockResolvedValue({} as PantryItem)
+    const item: PantryItem = {
+      id: 'i2',
+      name: 'rice',
+      category: 'dry_goods',
+      location: 'garage',
+      quantity: 1,
+      unit: 'kg',
+      expiry_date: null,
+    }
+    withQuery(<EditItemModal isOpen onClose={jest.fn()} editItem={item} />)
+
+    expect(screen.getByRole('radio', { name: 'Shelves' })).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }))
+    await waitFor(() => expect(mockUpdatePantryItem).toHaveBeenCalledTimes(1))
+    expect(mockUpdatePantryItem.mock.calls[0][1]).not.toHaveProperty('location')
   })
 
   // Now checks: the manual add row has no storage-location select; its only

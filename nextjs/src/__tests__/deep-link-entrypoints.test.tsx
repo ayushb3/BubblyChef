@@ -1,7 +1,8 @@
 /**
  * The two surfaces that hand off into the seeded chat:
  *  - the dashboard hero CTA and tip card (#138 scope 1, #143)
- *  - expiring pantry item cards (#138 scope 2)
+ *  - expiring pantry item rows in the storage sheet's List (#138 scope 2; the
+ *    cards moved there from the Pantry page in #750)
  *
  * These assert on the *href*, because the href is the whole contract: the chat
  * page's own behaviour is covered in `chat-deep-links.test.tsx`.
@@ -9,9 +10,9 @@
 import React from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ThemeProvider } from '@/components/ThemeProvider'
 import HeroHome from '@/components/dashboard/HeroHome'
-import PantryPage from '@/app/pantry/page'
+import StorageSheet from '@/components/kitchen/StorageSheet'
+import { getDefaultKitchenTheme } from '@/lib/kitchen/themes'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ replace: jest.fn(), push: jest.fn(), refresh: jest.fn() }),
@@ -120,22 +121,23 @@ describe('dashboard hero ignores already-expired items', () => {
   })
 })
 
-describe('dashboard Plan dinner card (issue #651)', () => {
+// The Plan dinner card of the old quick-action row (issue #651) became the
+// chalkboard on the kitchen wall's door (#748); the other three cards went.
+describe('kitchen wall Plan dinner chalkboard (issue #651, #748)', () => {
   beforeEach(() => {
     global.fetch = jest.fn(async () =>
       jsonResponse({ items: [], total_count: 0, count: 0 }),
     ) as unknown as typeof fetch
   })
 
-  it('links to the plan-dinner seed, aria-labelled, alongside the other three cards', async () => {
+  it('links to the plan-dinner seed, aria-labelled, and the quick-action row is gone', async () => {
     renderHero()
 
     const planLink = await screen.findByRole('link', { name: 'Plan dinner' })
     expect(planLink.getAttribute('href')).toBe('/chat?plan=dinner')
 
-    expect(screen.getByRole('link', { name: /use soon/i })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /scan/i })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /ask/i })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /use soon/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /^scan$/i })).not.toBeInTheDocument()
   })
 })
 
@@ -181,7 +183,7 @@ describe('dashboard tip card (#143)', () => {
   })
 })
 
-describe('expiring pantry cards (#138)', () => {
+describe('expiring pantry rows in the storage sheet List (#138)', () => {
   const items = [
     { id: 'a', name: 'spinach', category: 'produce', location: 'fridge', quantity: 1, unit: 'bag', expiry_date: dateIn(1) },
     { id: 'b', name: 'yoghurt', category: 'dairy', location: 'fridge', quantity: 2, unit: 'cup', expiry_date: dateIn(-2) },
@@ -189,30 +191,35 @@ describe('expiring pantry cards (#138)', () => {
   ]
 
   function dateIn(days: number): string {
-    return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const d = new Date()
+    d.setDate(d.getDate() + days)
+    return d.toLocaleDateString('en-CA')
   }
 
   function renderPantry() {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     return render(
-      <ThemeProvider>
-        <QueryClientProvider client={client}>
-          <PantryPage />
-        </QueryClientProvider>
-      </ThemeProvider>,
+      <StorageSheet
+        open
+        place="fridge"
+        view="list"
+        items={items}
+        status="ready"
+        palette={getDefaultKitchenTheme().wall}
+        onPlaceChange={jest.fn()}
+        onViewChange={jest.fn()}
+        onClose={jest.fn()}
+        onEdit={jest.fn()}
+        onAdd={jest.fn()}
+        onMove={jest.fn()}
+        onResolve={jest.fn()}
+        onRetry={jest.fn()}
+      />,
     )
   }
 
-  beforeEach(() => {
-    global.fetch = jest.fn(async () => jsonResponse({ items })) as unknown as typeof fetch
-  })
-
-  it('offers "Cook this" on expiring items only — not expired, not far-future', async () => {
+  it('offers "Cook this" on expiring items only — not expired, not far-future', () => {
     renderPantry()
 
-    // Displayed title-cased (#132), but the `use` param below must stay the raw
-    // stored name — extraction matches on it.
-    await screen.findByText('Spinach')
     const cookLinks = screen.getAllByRole('link', { name: /^Cook this/i })
     const names = cookLinks.map((l) => hrefParams(l).get('use'))
 
@@ -224,45 +231,44 @@ describe('expiring pantry cards (#138)', () => {
     expect(names).not.toContain('rice')
   })
 
-  it('scopes the link to that item, expiry included', async () => {
+  it('scopes the link to that item, expiry included', () => {
     renderPantry()
 
-    const link = await screen.findByRole('link', { name: /Cook this spinach/i })
+    const link = screen.getByRole('link', { name: /Cook this spinach/i })
     const params = hrefParams(link)
     expect(link.getAttribute('href')).toMatch(/^\/chat\?/)
     expect(params.get('use')).toBe('spinach')
     expect(params.get('expires')).toBe(dateIn(1))
   })
 
-  it('keeps the card itself an edit target — the link is an extra affordance', async () => {
+  it('keeps the row itself an edit target — the link is an extra affordance', () => {
     renderPantry()
 
-    // The item name still sits inside its own button (opens the edit modal).
-    const nameEl = await screen.findByText('Spinach')
-    expect(nameEl.closest('button')).not.toBeNull()
+    // The item still sits inside its own button (opens the edit sheet).
+    const row = screen.getByRole('button', { name: /^Spinach/ })
+    expect(row).toHaveTextContent('Spinach')
     // ...and that button does not nest the link (invalid HTML, dead tap target).
-    expect(nameEl.closest('button')?.querySelector('a')).toBeNull()
+    expect(row.querySelector('a')).toBeNull()
   })
 
   // jsdom has no layout engine and no Tailwind at runtime, so these assert on
   // the utility classes that produce the behaviour rather than measured pixels.
-  it('gives "Cook this" a 44px tap target (WCAG 2.5.5)', async () => {
+  it('gives "Cook this" a 44px tap target (WCAG 2.5.5)', () => {
     renderPantry()
 
-    const link = await screen.findByRole('link', { name: /Cook this spinach/i })
+    const link = screen.getByRole('link', { name: /Cook this spinach/i })
     expect(link.className).toContain('min-h-[44px]')
   })
 
-  it('gives both card controls a visible focus ring', async () => {
+  it('gives both row controls a visible focus ring', () => {
     renderPantry()
 
-    const nameEl = await screen.findByText('Spinach')
-    const editButton = nameEl.closest('button')
+    const editButton = screen.getByRole('button', { name: /^Spinach/ })
     const link = screen.getByRole('link', { name: /Cook this spinach/i })
 
     for (const el of [editButton, link]) {
       expect(el?.className).toMatch(/focus-visible:outline-2/)
-      // Inset offset — the card wrapper is overflow-hidden, so an outward ring
+      // Inset offset — the swipe wrapper is overflow-hidden, so an outward ring
       // would be clipped.
       expect(el?.className).toContain('focus-visible:outline-offset-[-2px]')
     }

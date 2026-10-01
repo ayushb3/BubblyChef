@@ -218,7 +218,10 @@ test.describe('3b — receipt ingestion (stubbed, CI-safe)', () => {
     // We wait for the pantry grid to render with an item that has an expiry badge.
     // Source: pantry/page.tsx ~L282: expiryBadge() renders a span with "{N}d left".
     // Chicken Breasts has expiry_date = 2 days out → badge "2d left"
-    await expect(page.getByText(/2d left/)).toBeVisible({ timeout: 8_000 });
+    // (#750: the pantry grid is the storage sheet's List now, and the badge is the food tag.)
+    await page.getByRole('button', { name: /^Fridge/ }).click();
+    await page.getByRole('button', { name: 'List' }).click();
+    await expect(page.getByRole('button', { name: /Chicken Breasts.*expires in 2 days/ })).toBeVisible({ timeout: 8_000 });
   });
 
   test('scan → review → confirms correct item names and quantities in bulk payload', async ({ page }) => {
@@ -394,7 +397,10 @@ test.describe('3a — receipt ingestion (live, opt-in)', () => {
     // If the bulk route estimated expiries (fix #158), items like Chicken Breasts
     // or Milk will show "Xd left" badges immediately.
     // Source: pantry/page.tsx ~L86: expiryBadge renders "{N}d left"
-    await expect(page.locator('text=/\\d+d left/').first()).toBeVisible({ timeout: 10_000 });
+    // (#750: the pantry grid is the storage sheet's List now; the badge is the food tag.)
+    await page.getByRole('button', { name: /^Fridge/ }).click();
+    await page.getByRole('button', { name: 'List' }).click();
+    await expect(page.getByTestId('storage-expiry-pill').first()).toBeVisible({ timeout: 10_000 });
   });
 
   test('city-harvest.png → OCR → confirm → ≥5 items with non-null expiry', async ({ page }) => {
@@ -430,6 +436,9 @@ test.describe('3a — receipt ingestion (live, opt-in)', () => {
     await expect(page.getByRole('heading', { name: 'Add to Pantry' })).not.toBeVisible({ timeout: 15_000 });
 
     // At least one expiry badge should appear after the pantry refetches
-    await expect(page.locator('text=/\\d+d left/').first()).toBeVisible({ timeout: 10_000 });
+    // (#750: the pantry grid is the storage sheet's List now; the badge is the food tag.)
+    await page.getByRole('button', { name: /^Fridge/ }).click();
+    await page.getByRole('button', { name: 'List' }).click();
+    await expect(page.getByTestId('storage-expiry-pill').first()).toBeVisible({ timeout: 10_000 });
   });
 });

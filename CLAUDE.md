@@ -81,7 +81,7 @@ BubblyChef/
 │       │   ├── page.tsx             # Dashboard
 │       │   ├── login/page.tsx       # Auth (sign in / sign up)
 │       │   ├── recipes/page.tsx     # Recipe library
-│       │   ├── pantry/page.tsx
+│       │   ├── pantry/page.tsx      # redirect only: the Pantry tab is gone (#750)
 │       │   ├── chat/page.tsx
 │       │   └── api/                 # CRUD route handlers
 │       │       ├── pantry/          # GET/POST, expiring/, [id]/, [id]/slot/
@@ -120,8 +120,8 @@ BubblyChef/
 
 | Path | Page | Notes |
 |---|---|---|
-| `/` | Dashboard | Expiring items widget, quick actions |
-| `/pantry` | Pantry | Browse/manage all items |
+| `/` | Kitchen home | The pixel kitchen wall, expiring items, quick actions. Tapping a storage place opens its storage sheet (Scene \| List). The List is the whole pantry: filters, swipe-to-resolve, Used up / Tossed, edit, and select mode for bulk Move to / Used up / Tossed (issue #750). Deep links: `/?place=fridge&view=scene\|list` (issue #749), `&expiry=expiring,expired` starts the List with the expiry filter on, `/?add=scan\|type` opens the add sheet on that tab |
+| `/pantry` | (redirect) | There is no Pantry tab (issue #750). `/pantry` redirects to `/?place=fridge&view=list`, `/pantry?add=scan` to `/?add=scan`, `/pantry/use-soon` to the List with the expiry filter on |
 | `/recipes` | Recipe library | Search, save, edit, favourite |
 | `/chat` | Chat | AI assistant — general or recipe mode |
 | `/profile` | Profile | User settings, dietary preferences |
@@ -132,7 +132,7 @@ Receipt scanning has two entry points that share the same review UI and the
 same confirm semantics (nothing is written without an explicit confirm):
 the full-page `/scan` route (`app/scan/page.tsx`) and the quick path inside
 the pantry add sheet (`components/pantry/PantryAddSheet.tsx`, tabs `scan` and
-`type`, reached as `/pantry?add=scan`). Both mount the presentation-only
+`type`, reached as `/?add=scan`; the old `/pantry?add=scan` redirects there). Both mount the presentation-only
 `components/scan/ReviewSurface.tsx` for the tiered review; `ScanTab.tsx` still
 owns the sheet's own upload/processing state machine, and `/scan` owns its own
 (issue #259).
@@ -486,10 +486,12 @@ the same credential differently.
 - `mutating` state in RecipeBook — buttons not yet `disabled={mutating}`
 - iOS Safari bottom nav bug — issue #4
 - Recipe generation ignores constraint modifications from chat follow-up — BubblyChef-747
-- The home kitchen (`components/kitchen/KitchenScene.tsx`, M1) is still the flat
-  12-slot decoration scene with themes and unlocks. The pixel "kitchen is the app"
-  redraw (Goal 2 of `docs/plans/2026-09-29-signature-prd.md`, settled 2026-10-01)
-  keeps its data and logic and replaces only the drawing
+- The home kitchen is the pixel dollhouse wall (`components/kitchen/KitchenWall.tsx`,
+  issue #748, Goal 2 of `docs/plans/2026-09-29-signature-prd.md`): inline SVG, four
+  storage places (`lib/kitchen/places.ts`) and the M1 decoration slots, themes and
+  unlocks carried over. Still to come in Goal 2: the storage sheet, category
+  sprites and wilting, pixel Bubbles, the put-away flow and the Bubbles card
+  (issues #749, #751, #752, #753, #755); decorations are still emoji until #751
 - Chat can't be told to ignore the pantry, and the instruction is lost on the
   next turn — issue #287
 - Expiring items are forced into every suggestion regardless of whether they

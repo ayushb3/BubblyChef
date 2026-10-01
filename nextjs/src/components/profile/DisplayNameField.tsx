@@ -94,7 +94,7 @@ export default function DisplayNameField({ initialName, hasRealName }: DisplayNa
           </button>
         </div>
         {error && (
-          <p className="mt-2 text-xs text-[#ff9aa2]">{error}</p>
+          <p className="mt-2 text-xs text-[var(--color-coral)]">{error}</p>
         )}
       </div>
     )

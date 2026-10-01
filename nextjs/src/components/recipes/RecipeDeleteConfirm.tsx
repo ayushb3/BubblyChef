@@ -48,11 +48,10 @@ export default function RecipeDeleteConfirm({
       aria-modal="true"
       aria-labelledby="recipe-delete-confirm-title"
       tabIndex={-1}
-      className="flex flex-col gap-1.5 mt-2 px-3 py-2.5 rounded-xl outline-none"
+      className="font-sans flex flex-col gap-1.5 mt-2 px-3 py-2.5 rounded-xl outline-none"
       style={{
         background: 'var(--color-bg)',
         border: '1.5px solid var(--color-border)',
-        fontFamily: 'Nunito, sans-serif',
       }}
     >
       <div className="flex items-center gap-3">
@@ -66,12 +65,11 @@ export default function RecipeDeleteConfirm({
         <button
           onClick={onConfirm}
           disabled={deleting}
-          className="px-3 py-1 rounded-full text-xs font-bold disabled:opacity-50 active:scale-95 transition-transform"
+          className="font-sans px-3 py-1 rounded-full text-xs font-bold disabled:opacity-50 active:scale-95 transition-transform"
           style={{
-            color: 'var(--color-coral, #ff9aa2)',
-            border: '1.5px solid var(--color-coral, #ff9aa2)',
+            color: 'var(--color-coral)',
+            border: '1.5px solid var(--color-coral)',
             background: 'transparent',
-            fontFamily: 'Nunito, sans-serif',
           }}
         >
           {deleting ? 'Deleting...' : 'Delete'}
@@ -79,12 +77,11 @@ export default function RecipeDeleteConfirm({
         <button
           onClick={onCancel}
           disabled={deleting}
-          className="px-3 py-1 rounded-full text-xs font-bold disabled:opacity-50 active:scale-95 transition-transform"
+          className="font-sans px-3 py-1 rounded-full text-xs font-bold disabled:opacity-50 active:scale-95 transition-transform"
           style={{
             color: 'var(--color-muted)',
             border: '1.5px solid var(--color-border)',
             background: 'transparent',
-            fontFamily: 'Nunito, sans-serif',
           }}
         >
           Cancel

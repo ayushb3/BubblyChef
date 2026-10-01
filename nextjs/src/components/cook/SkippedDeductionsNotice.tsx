@@ -39,12 +39,11 @@ export default function SkippedDeductionsNotice({ names, unnamed, total: totalPr
     <div
       role="status"
       data-testid="skipped-deductions-notice"
-      className="w-full rounded-2xl px-4 py-3 text-left text-xs font-semibold leading-relaxed break-words"
+      className="font-sans w-full rounded-2xl px-4 py-3 text-left text-xs font-semibold leading-relaxed break-words"
       style={{
         background: 'color-mix(in srgb, var(--color-coral) 12%, var(--color-surface))',
         border: '1.5px solid color-mix(in srgb, var(--color-coral) 45%, var(--color-border))',
         color: 'var(--color-text)',
-        fontFamily: 'Nunito, sans-serif',
       }}
     >
       <span aria-hidden="true">⚠️ </span>

@@ -35,13 +35,13 @@ export default function SignOutButton() {
     <div className="w-full">
       <SpringButton
         onClick={handleSignOut}
-        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] text-sm font-semibold hover:border-[#ff9aa2] hover:text-[#ff9aa2] transition-colors"
+        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] text-sm font-semibold hover:border-[var(--color-coral)] hover:text-[var(--color-coral)] transition-colors"
       >
         <SignOut size={18} weight="fill" />
         Sign out
       </SpringButton>
       {error && (
-        <p className="mt-2 text-xs text-[#ff9aa2] text-center">{error}</p>
+        <p className="mt-2 text-xs text-[var(--color-coral)] text-center">{error}</p>
       )}
     </div>
   )

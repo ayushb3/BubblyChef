@@ -13,7 +13,8 @@ export interface TourStep {
   placement: 'above' | 'below'
 }
 
-// Bottom-nav steps follow the nav's left-to-right order (Pantry, Chat, Recipes).
+// The fridge step points at the kitchen scene (the Pantry tab went, #750). The
+// bottom-nav steps follow the nav's left-to-right order (Chat, Recipes).
 export const TOUR_STEPS: TourStep[] = [
   {
     id: 'hero',
@@ -22,16 +23,10 @@ export const TOUR_STEPS: TourStep[] = [
     placement: 'below',
   },
   {
-    id: 'quick-actions',
-    selector: '[data-tour="quick-actions"]',
-    copy: 'Quick actions: plan dinner, see what to use soon, scan a receipt, or ask me anything.',
+    id: 'fridge',
+    selector: '[data-tour="fridge"]',
+    copy: 'Your food lives in the kitchen — tap the fridge to see what’s inside.',
     placement: 'below',
-  },
-  {
-    id: 'nav-pantry',
-    selector: '[data-tour="nav-pantry"]',
-    copy: 'Your pantry lives here — tap + Add Item inside it to scan a receipt.',
-    placement: 'above',
   },
   {
     id: 'nav-chat',

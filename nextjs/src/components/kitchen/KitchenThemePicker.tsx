@@ -38,7 +38,16 @@ export interface KitchenThemePickerProps {
    * announcing itself (`role="alert"`) every time the sheet is reopened.
    */
   clearError?: () => void
+  /**
+   * Where the trigger sits. Defaults to the corner badge it has always been (an
+   * absolutely positioned circle in the top-left of a `relative` ancestor). The
+   * pixel kitchen home (#748) puts it in a toolbar row under the wall instead,
+   * so it passes its own layout classes.
+   */
+  triggerClassName?: string
 }
+
+const DEFAULT_TRIGGER_CLASS = 'absolute -top-2 -left-2 z-20 w-9 h-9'
 
 export default function KitchenThemePicker({
   isOpen,
@@ -51,6 +60,7 @@ export default function KitchenThemePicker({
   saving = false,
   error = null,
   clearError,
+  triggerClassName = DEFAULT_TRIGGER_CLASS,
 }: KitchenThemePickerProps) {
   // Scope the error banner to this open — a failed save from a previous
   // visit must not still be sitting there, `role="alert"`, the next time
@@ -69,7 +79,7 @@ export default function KitchenThemePicker({
         aria-haspopup="true"
         aria-expanded={isOpen}
         data-testid="kitchen-theme-trigger"
-        className="absolute -top-2 -left-2 z-20 w-9 h-9 rounded-full flex items-center justify-center shadow-sm border border-[var(--color-border)] active:scale-95 transition-transform"
+        className={`${triggerClassName} rounded-full flex items-center justify-center shadow-sm border border-[var(--color-border)] active:scale-95 transition-transform`}
         style={{ background: 'var(--color-surface)' }}
       >
         <span aria-hidden="true">🎨</span>
@@ -82,7 +92,7 @@ export default function KitchenThemePicker({
         titleId="kitchen-theme-picker-title"
         subheader={
           error ? (
-            <p className="text-xs text-center text-[#ff9aa2]" role="alert">
+            <p className="text-xs text-center text-[var(--color-coral)]" role="alert">
               {error}
             </p>
           ) : undefined

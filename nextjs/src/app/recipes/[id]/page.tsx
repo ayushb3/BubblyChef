@@ -8,6 +8,10 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 import FadeInView from '@/components/ui/FadeInView'
 import SpringButton from '@/components/ui/SpringButton'
 import RecipeRefinementModal from '@/components/recipes/RecipeRefinementModal'
+import RecipeSteps from '@/components/recipes/RecipeSteps'
+import Chip from '@/components/ui/Chip'
+import { tagForRow } from '@/components/recipes/ingredient-tags'
+import { useIngredientMatches } from '@/hooks/useIngredientMatches'
 import { ingredientParts } from '@/lib/recipe-helpers'
 import { makeMealHref } from '@/lib/chat-seed'
 import type { GeneratedRecipe } from '@/types/recipes'
@@ -17,12 +21,11 @@ import type { GeneratedRecipe } from '@/types/recipes'
 function MetaBadge({ icon, label }: { icon: string; label: string }) {
   return (
     <span
-      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border"
+      className="font-sans inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border"
       style={{
         background: 'var(--color-surface)',
         borderColor: 'var(--color-border)',
         color: 'var(--color-text)',
-        fontFamily: 'Nunito, sans-serif',
       }}
     >
       <span>{icon}</span>
@@ -36,11 +39,10 @@ function MetaBadge({ icon, label }: { icon: string; label: string }) {
 function DietaryPill({ tag }: { tag: string }) {
   return (
     <span
-      className="inline-block px-3 py-1 rounded-full text-xs font-bold"
+      className="font-sans inline-block px-3 py-1 rounded-full text-xs font-bold"
       style={{
         background: 'var(--color-accent)',
-        color: '#fff',
-        fontFamily: 'Nunito, sans-serif',
+        color: 'var(--color-on-primary)',
       }}
     >
       {tag}
@@ -62,6 +64,9 @@ export default function RecipeDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [showRefinementModal, setShowRefinementModal] = useState(false)
+
+  // Food tags on the ingredient rows (issue #784). Loading or a failed call is no tags.
+  const rowMatches = useIngredientMatches(recipe?.ingredients ?? [])
 
   const fetchRecipe = useCallback(async () => {
     if (!id) return
@@ -142,8 +147,8 @@ export default function RecipeDetailPage() {
       >
         <BubblesMascot state="thinking" size={80} />
         <p
-          className="text-sm font-semibold"
-          style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans text-sm font-semibold"
+          style={{ color: 'var(--color-muted)' }}
         >
           Loading recipe...
         </p>
@@ -160,14 +165,14 @@ export default function RecipeDetailPage() {
       >
         <BubblesMascot state="surprised" size={90} />
         <h1
-          className="text-xl font-extrabold text-center"
-          style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans text-xl font-extrabold text-center"
+          style={{ color: 'var(--color-text)' }}
         >
           {error === 'not_found' ? 'Recipe not found' : 'Could not load recipe'}
         </h1>
         <p
-          className="text-sm text-center"
-          style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans text-sm text-center"
+          style={{ color: 'var(--color-muted)' }}
         >
           {error === 'not_found'
             ? "This recipe doesn't exist or was deleted."
@@ -175,8 +180,8 @@ export default function RecipeDetailPage() {
         </p>
         <Link
           href="/recipes"
-          className="mt-2 px-6 py-2 rounded-full font-bold text-white text-sm"
-          style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans mt-2 px-6 py-2 rounded-full font-bold text-white text-sm"
+          style={{ background: 'var(--color-primary)' }}
         >
           Back to Recipes
         </Link>
@@ -188,8 +193,8 @@ export default function RecipeDetailPage() {
   return (
     <>
       <main
-        className="min-h-screen pb-24"
-        style={{ background: 'var(--color-bg)', fontFamily: 'Nunito, sans-serif' }}
+        className="font-sans min-h-screen pb-24"
+        style={{ background: 'var(--color-bg)' }}
       >
         <div className="max-w-2xl mx-auto px-4 pt-6">
           {/* Header row */}
@@ -283,11 +288,11 @@ export default function RecipeDetailPage() {
                 transition={{ duration: 0.18 }}
                 className="mb-5 p-4 rounded-2xl border flex flex-col gap-2"
                 style={{
-                  background: '#fff5f5',
-                  borderColor: '#f5c0c0',
+                  background: 'var(--color-error-bg)',
+                  borderColor: 'var(--color-error-border)',
                 }}
               >
-                <p className="text-sm font-bold" style={{ color: '#e05252' }}>
+                <p className="text-sm font-bold" style={{ color: 'var(--color-error-text)' }}>
                   Are you sure you want to delete this recipe?
                 </p>
                 <div className="flex gap-2">
@@ -335,6 +340,7 @@ export default function RecipeDetailPage() {
                   {recipe.ingredients.map((ing, i) => {
                     const checked = checkedIngredients.has(i)
                     const { label, preparation, optional } = ingredientParts(ing)
+                    const tag = tagForRow(rowMatches, i)
                     return (
                       <motion.label
                         key={i}
@@ -373,7 +379,7 @@ export default function RecipeDetailPage() {
                           </div>
                         </div>
                         <span
-                          className="text-sm leading-6 transition-colors"
+                          className="min-w-0 flex-1 text-sm leading-6 transition-colors"
                           style={{
                             color: checked ? 'var(--color-muted)' : 'var(--color-text)',
                             textDecoration: checked ? 'line-through' : 'none',
@@ -393,6 +399,13 @@ export default function RecipeDetailPage() {
                             </span>
                           )}
                         </span>
+                        {tag && (
+                          <span data-testid="ingredient-tag" className="flex-shrink-0">
+                            <Chip tone={tag.tone} size="sm">
+                              {tag.label}
+                            </Chip>
+                          </span>
+                        )}
                       </motion.label>
                     )
                   })}
@@ -411,30 +424,7 @@ export default function RecipeDetailPage() {
                 >
                   Steps
                 </h2>
-                <ol className="space-y-4">
-                  {recipe.instructions.map((step, i) => (
-                    <motion.li
-                      key={i}
-                      className="flex items-start gap-3"
-                      initial={{ opacity: 0, x: -6 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.04, duration: 0.25 }}
-                    >
-                      <span
-                        className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-extrabold"
-                        style={{ background: 'var(--color-accent)' }}
-                      >
-                        {i + 1}
-                      </span>
-                      <p
-                        className="text-sm leading-relaxed pt-1.5"
-                        style={{ color: 'var(--color-text)' }}
-                      >
-                        {step}
-                      </p>
-                    </motion.li>
-                  ))}
-                </ol>
+                <RecipeSteps instructions={recipe.instructions} steps={recipe.steps} />
               </section>
             </FadeInView>
           )}
@@ -446,18 +436,18 @@ export default function RecipeDetailPage() {
                 <div
                   className="rounded-3xl p-4"
                   style={{
-                    background: '#fffbea',
-                    border: '1.5px solid #ffe9a0',
+                    background: 'var(--color-tip-bg)',
+                    border: '1.5px solid var(--color-tip-border)',
                   }}
                 >
-                  <h2 className="text-base font-extrabold mb-2" style={{ color: '#b58a00' }}>
+                  <h2 className="text-base font-extrabold mb-2" style={{ color: 'var(--color-tip-title)' }}>
                     Tips
                   </h2>
                   <ul className="space-y-1">
                     {recipe.tips.map((tip, i) => (
                       <li key={i} className="text-sm flex items-start gap-2">
                         <span>💡</span>
-                        <span style={{ color: '#6b5600' }}>{tip}</span>
+                        <span style={{ color: 'var(--color-tip-text)' }}>{tip}</span>
                       </li>
                     ))}
                   </ul>

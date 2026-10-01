@@ -1,15 +1,29 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Camera, Fire, ForkKnife, Lightbulb, Sparkle } from '@phosphor-icons/react/dist/ssr'
-import type { ComponentType } from 'react'
+import { Lightbulb } from '@phosphor-icons/react/dist/ssr'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import FadeInView from '@/components/ui/FadeInView'
 import { titleCase } from '@/lib/format'
 import { useMotionConfig } from '@/lib/motion'
 import { cookThisHref, planDinnerHref, tipChatHref } from '@/lib/chat-seed'
+import { kitchenEyebrow } from '@/lib/kitchen/eyebrow'
+import {
+  PLACE_KEYS,
+  kitchenStock,
+  placeLocation,
+  storageSheetHref,
+  type ExpiryFacet,
+  summarizePlaces,
+  type KitchenStock,
+  type PlaceKey,
+  type PlaceSummaries,
+} from '@/lib/kitchen/places'
+import { movePantryItems, resolvePantryItems } from '@/lib/api/pantry'
 import { fetchDashboardDaily } from '@/lib/api/dashboard'
 import type { DashboardTip, DashboardSuggestion } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
@@ -17,6 +31,13 @@ import { estimatedExpirySuffix } from '@/lib/pantry-helpers'
 import { useDecorations } from '@/lib/api/kitchen'
 import { useBubbles } from '@/lib/api/bubbles'
 import KitchenScene from '@/components/kitchen/KitchenScene'
+import StorageSheet, { isStorageView, type StorageView } from '@/components/kitchen/StorageSheet'
+import EditItemModal from '@/components/pantry/AddItemModal'
+import PantryAddSheet, { type PantryAddTab } from '@/components/pantry/PantryAddSheet'
+import PixelBubbles from '@/components/kitchen/PixelBubbles'
+import { sceneLabel } from '@/lib/kitchen/bubbles-spot'
+import { useBubblesSpot } from '@/hooks/useBubblesSpot'
+import KitchenHeader from '@/components/kitchen/KitchenHeader'
 import UnlockOffer from '@/components/kitchen/UnlockOffer'
 import KitchenThemePicker from '@/components/kitchen/KitchenThemePicker'
 import KitchenThemeUnlockCard from '@/components/kitchen/KitchenThemeUnlockCard'
@@ -30,6 +51,12 @@ interface HomeData {
   suggestion: DashboardSuggestion | null
   /** True when the pantry has an expired item that hasn't been used up (issue #525). */
   hasUnusedExpired: boolean
+  /** Per-place counts for the wall; `null` until the pantry loads, and if it fails to. */
+  places: PlaceSummaries | null
+  /** What each place draws (category sprites and up to 3 wilting items); `null` like `places`. */
+  stock: KitchenStock | null
+  /** Every pantry row, for the storage sheet; `null` until the pantry loads, and if it fails to. */
+  items: EnrichedPantryItem[] | null
 }
 
 // Client-side fallback only — used when `GET /v1/dashboard/daily` (#225, #168)
@@ -57,37 +84,15 @@ function copyMentionsMinutes(copy: string, minutes: number): boolean {
   return new RegExp(`\\b${minutes}\\b\\s*min`, 'i').test(copy)
 }
 
-function getGreeting(): string {
-  const hour = new Date().getHours()
-  if (hour >= 5 && hour < 12) return 'Good morning'
-  if (hour >= 12 && hour < 18) return 'Good afternoon'
-  if (hour >= 18 && hour < 22) return 'Good evening'
-  return 'Late night snack'
-}
-
-function getGreetingEmoji(): string {
-  const hour = new Date().getHours()
-  if (hour >= 5 && hour < 12) return '☀️'
-  if (hour >= 12 && hour < 18) return '🌤️'
-  return '🌙'
-}
-
 interface HeroHomeProps {
-  displayName: string
+  /**
+   * No longer shown: the greeting went with the kitchen redesign (#748). Kept so
+   * the page and its callers keep their signature; the Bubbles card (#755) may
+   * address the user by name.
+   */
+  displayName?: string
   /** `user_metadata.kitchen_theme` as read server-side (#523), or `null` if never set. */
   initialKitchenTheme?: string | null
-}
-
-/**
- * Same shape `BottomNav` uses for its Phosphor tabs. The action cards share
- * the nav's icon set (Phosphor, `weight="fill"`) so the home screen reads as
- * one system instead of three platform-dependent emoji next to line icons
- * (#391).
- */
-interface IconProps {
-  size?: number
-  weight?: 'fill' | 'regular'
-  className?: string
 }
 
 /**
@@ -112,7 +117,8 @@ function Skeleton({
   )
 }
 
-export default function HeroHome({ displayName, initialKitchenTheme = null }: HeroHomeProps) {
+export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) {
+  const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<HomeData>({
     totalCount: 0,
@@ -121,7 +127,16 @@ export default function HeroHome({ displayName, initialKitchenTheme = null }: He
     tip: null,
     suggestion: null,
     hasUnusedExpired: false,
+    places: null,
+    stock: null,
+    items: null,
   })
+
+  // The pantry, dashboard and expiring reads. `reload` runs it again behind an
+  // open sheet (an edit or an add changed the rows): the skeletons are the first
+  // load's only, so the home does not flash while the counts catch up.
+  const [reloadTick, setReloadTick] = useState(0)
+  const reload = useCallback(() => setReloadTick((n) => n + 1), [])
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -175,6 +190,11 @@ export default function HeroHome({ displayName, initialKitchenTheme = null }: He
           tip: dashboardDaily?.tip ?? null,
           suggestion: dashboardDaily?.suggestion ?? null,
           hasUnusedExpired,
+          // A failed pantry fetch is "unknown", not "empty": the wall then shows
+          // names only rather than claiming four empty places.
+          places: pantryRes.ok ? summarizePlaces(allItems) : null,
+          stock: pantryRes.ok ? kitchenStock(allItems) : null,
+          items: pantryRes.ok ? allItems : null,
         })
       } catch {
         // silent
@@ -183,13 +203,12 @@ export default function HeroHome({ displayName, initialKitchenTheme = null }: He
       }
     }
     fetchAll()
-  }, [])
+  }, [reloadTick])
 
-  // The greeting/tip are derived from the *client's* clock, which can disagree with
-  // the server's. Now that this block renders on the first pass (rather than behind
-  // the old all-or-nothing `loading` gate), we follow the ThemeProvider convention:
-  // render a neutral value on both passes, then correct it in an effect after
-  // hydration. That keeps the greeting instant without a hydration mismatch.
+  // The header's weekday / part-of-day eyebrow and the fallback tip are derived
+  // from the *client's* clock, which can disagree with the server's. We follow
+  // the ThemeProvider convention: render a neutral value on both passes, then
+  // correct it in an effect after hydration, so there is no hydration mismatch.
   const [clockReady, setClockReady] = useState(false)
   useEffect(() => {
     setClockReady(true)
@@ -206,18 +225,32 @@ export default function HeroHome({ displayName, initialKitchenTheme = null }: He
   const [tipOverflows, setTipOverflows] = useState(false)
   const tipTextRef = useRef<HTMLParagraphElement>(null)
 
-  const greeting = clockReady ? getGreeting() : 'Hello'
-  const emoji = clockReady ? getGreetingEmoji() : '👋'
-  const { totalCount, expiringCount, urgentItem, tip: dashboardTip, suggestion, hasUnusedExpired } = data
+  const eyebrow = clockReady ? kitchenEyebrow(new Date()) : ''
+  const {
+    totalCount,
+    expiringCount,
+    urgentItem,
+    tip: dashboardTip,
+    suggestion,
+    hasUnusedExpired,
+    places,
+    stock,
+    items,
+  } = data
 
   // Kitchen scene (#521): `decorations` rows use `name`/`decoration_type`;
   // KitchenScene expects `id`/`slot`. The balance is `null` until `/api/bubbles`
-  // answers, so the scene hides its pill rather than flashing a `0`.
+  // answers, so the header hides its counter rather than flashing a `0`.
+  // The pixel Bubbles (#752): the door while a scan or put-away is open (nothing
+  // on home opens one yet: the put-away sheet wires `scanOpen`), the stove while
+  // a cook is on record in storage, the fridge when food is going off, else the
+  // stove.
+  const { spot: bubblesSpot, cooking } = useBubblesSpot({ places })
   const { data: decorationsData, isLoading: decorationsLoading } = useDecorations()
   const { data: bubblesData } = useBubbles()
   const balance = bubblesData?.balance ?? null
   // Rescue streak (#524): null until /api/bubbles answers, same convention
-  // as balance — KitchenScene hides the "🔥 N" indicator at null or 0.
+  // as balance — the toolbar hides the "🔥 N" indicator at null or 0.
   const streakWeeks = bubblesData?.streak_weeks ?? null
   const unlocked = (decorationsData?.decorations ?? []).map((row) => ({
     id: row.name,
@@ -272,19 +305,19 @@ export default function HeroHome({ displayName, initialKitchenTheme = null }: He
       : urgentItem
         ? `Your ${titleCase(urgentItem.name)} expires ${urgentItem.days_until_expiry === 0 ? 'today' : 'tomorrow'}${estimatedExpirySuffix(urgentItem.estimated_expiry)}! Let's cook it up.`
         : expiringCount > 0
-          ? "Check the 'Use Soon' tile — some items need your attention!"
+          ? 'Some items need using soon: tap the fridge or shelves to check.'
           : 'Your kitchen is looking great!'
 
   // The urgent-item CTA deep-links into a chat seeded with that ingredient
   // (#138), so one tap lands on a recipe that actually uses it.
   const heroAction = totalCount === 0
-    ? { label: 'Scan receipt', href: '/pantry?add=scan' }
+    ? { label: 'Scan receipt', href: '/scan' }
     : suggestion
       ? { label: 'Open recipe', href: `/recipes/${suggestion.recipe_id}` }
       : urgentItem
         ? { label: 'Find a recipe', href: cookThisHref(urgentItem.name, urgentItem.expiry_date) }
         : expiringCount > 0
-          ? { label: 'View pantry', href: '/pantry' }
+          ? { label: 'View pantry', href: storageSheetHref({ expiry: ['expiring', 'expired'] }) }
           : { label: 'Ask Bubbles', href: '/chat' }
 
   // Measure whether the clamped tip actually overflows. Runs once the tip has
@@ -301,199 +334,201 @@ export default function HeroHome({ displayName, initialKitchenTheme = null }: He
     return () => window.removeEventListener('resize', measure)
   }, [loading, tipExpanded, tip])
 
+  // Storage sheet (issue #749): tapping a place opens it on that place. The
+  // `?place=fridge&view=scene|list` deep link opens it directly, on load or when
+  // the URL changes under a mounted home. `&expiry=expiring,expired` starts the
+  // List with the expiry filter on (#750: where the old /pantry/use-soon lands).
+  // `?add=scan|type` opens the add sheet on that tab (#750: where the old
+  // /pantry?add= lands).
+  const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
+  const [sheet, setSheet] = useState<{
+    place: PlaceKey
+    view: StorageView
+    expiry?: ExpiryFacet[]
+  } | null>(null)
+  const [editItem, setEditItem] = useState<EnrichedPantryItem | null>(null)
+  const [addSheet, setAddSheet] = useState<{ tab: PantryAddTab; place?: PlaceKey } | null>(null)
+  const linkedPlace = searchParams.get('place')
+  const linkedView = searchParams.get('view')
+  const linkedExpiry = searchParams.get('expiry')
+  const linkedAdd = searchParams.get('add')
+  useEffect(() => {
+    if (!PLACE_KEYS.includes(linkedPlace as PlaceKey)) return
+    // The URL is an external system being synced into React, which is what an
+    // effect is for. It cannot be derived state: the user closes the sheet, and
+    // once opened its visibility belongs to the component, not the param.
+    setSheet({
+      place: linkedPlace as PlaceKey,
+      view: isStorageView(linkedView) ? linkedView : 'scene',
+      expiry: (linkedExpiry ?? '')
+        .split(',')
+        .filter((v): v is ExpiryFacet => v === 'expiring' || v === 'expired'),
+    })
+  }, [linkedPlace, linkedView, linkedExpiry])
+  useEffect(() => {
+    if (linkedAdd !== 'scan' && linkedAdd !== 'type') return
+    // Same: the address is the cause, and the sheet is closable afterwards.
+    setAddSheet({ tab: linkedAdd })
+  }, [linkedAdd])
+
+  const closeSheet = () => {
+    setSheet(null)
+    // A deep-linked visit must not reopen on refresh.
+    if (linkedPlace || linkedView || linkedExpiry) router.replace('/', { scroll: false })
+  }
+  const closeAddSheet = () => {
+    setAddSheet(null)
+    if (linkedAdd) router.replace('/', { scroll: false })
+  }
+
+  // The pantry changed behind the sheet: re-read the home's own copy, and mark
+  // the pantry page's cache and the Bubbles balance (an add earns) stale.
+  const pantryChanged = () => {
+    reload()
+    queryClient.invalidateQueries({ queryKey: ['pantry'] })
+    queryClient.invalidateQueries({ queryKey: ['bubbles'] })
+  }
+
+  // The List's bulk edits and per-row resolves: the existing per-item endpoints,
+  // one item at a time. The rows are re-read when anything went through.
+  const movePantry = async (ids: string[], place: PlaceKey) => {
+    const result = await movePantryItems(ids, placeLocation(place))
+    if (result.done.length > 0) pantryChanged()
+    return result
+  }
+  const resolvePantry = async (ids: string[], outcome: 'used' | 'tossed') => {
+    const result = await resolvePantryItems(ids, outcome)
+    if (result.done.length > 0) pantryChanged()
+    return result
+  }
+
+  const pantryStatus = loading ? 'loading' : items ? 'ready' : 'error'
+
+  const mascotState = hasUnusedExpired ? 'worried' : !suggestion && urgentItem ? 'surprised' : 'happy'
+
   return (
-    <div className="flex flex-col items-center">
-      {/* Kitchen scene — 12 fixed decoration slots + Bubbles balance (#521).
-          KitchenScene's root has only absolutely-positioned children, so it
-          contributes no intrinsic (max-content) width of its own — a `%`
-          width doesn't count towards that either. Every ancestor down to
-          here sits inside a `flex flex-col items-center` container, whose
-          `items-center` override makes flex items shrink-wrap to their
-          max-content width instead of stretching to the container's width.
-          With zero max-content contribution at the bottom of that chain, the
-          whole chain (including this `FadeInView`, itself a flex item)
-          collapsed to ~2px — text-bearing siblings below don't hit this
-          because their text gives them a non-zero max-content width. Passing
-          `className` all the way down to `FadeInView` (a plain prop it
-          forwards onto its own `motion.div`) breaks the shrink-wrap by
-          giving every link in the chain an explicit width instead of an
-          inferred one. `max-w-[480px]` (not `max-w-sm`'s 384px) matches
-          KitchenScene's own cap so the scene can actually reach the full
-          480px column issue #521 asks for. */}
-      <div className="relative w-full max-w-[480px] mb-4">
-        <FadeInView delay={0} className="w-full">
-          <KitchenScene
-            unlocked={unlocked}
-            balance={balance}
-            loading={decorationsLoading}
-            streakWeeks={streakWeeks}
-            theme={kitchenTheme}
-          />
-        </FadeInView>
+    <div className="mx-auto flex w-full max-w-[480px] flex-col">
+      {/* Header (#748): eyebrow, title, the pixel bubbles counter. */}
+      <KitchenHeader eyebrow={eyebrow} balance={balance} />
 
-        {/* Theme picker (#523) — the "🎨" trigger is positioned absolutely
-            against this wrapper, clear of the scene's own top-right balance
-            pill and top-left wall_shelf slot. */}
-        <KitchenThemePicker
-          isOpen={themePickerOpen}
-          onOpen={() => setThemePickerOpen(true)}
-          onClose={() => setThemePickerOpen(false)}
-          currentThemeKey={kitchenTheme.key}
-          unlockedKeys={unlockedThemeKeys}
-          balance={balance}
-          onSelect={selectTheme}
-          saving={themeSaving}
-          error={themeError}
-          clearError={clearThemeError}
-        />
-      </div>
-
-      {/* One-time "new theme unlocked" card (#523) — shown at most once per
-          theme per browser. "Try it" switches the scene to the new theme
-          (same `selectTheme` the picker sheet uses) and dismisses; the
-          plain ✕ just dismisses without switching. */}
-      <KitchenThemeUnlockCard
-        theme={newlyUnlocked}
-        onTryIt={() => {
-          if (newlyUnlocked) selectTheme(newlyUnlocked.key)
-          dismissUnlock()
-        }}
-        onDismiss={dismissUnlock}
+      {/* The kitchen: the pixel wall (#748) with the 12 decoration slots
+          (#521) and the four storage places. Full-bleed, at the board's 96:80
+          proportion from first paint, so nothing shifts once data lands. */}
+      <KitchenScene
+        unlocked={unlocked}
+        loading={decorationsLoading}
+        theme={kitchenTheme}
+        places={places}
+        stock={stock}
+        onOpenPlace={(place) => setSheet({ place, view: 'scene' })}
+        planDinnerHref={planDinnerHref()}
+        bubblesLayer={<PixelBubbles spot={bubblesSpot} cooking={cooking} />}
+        sceneLabel={sceneLabel(bubblesSpot, cooking)}
       />
 
-      {/* Milestone unlock offer (#522) — mounted directly under the kitchen
-          scene per the issue's placement instruction. Renders nothing when
-          there's no pending offer. */}
-      <UnlockOffer />
-
-      {/* Greeting */}
-      <FadeInView delay={0}>
-        <p className="text-sm text-[var(--color-muted)] font-medium mb-1">
-          {greeting}, <span style={{ color: 'var(--color-primary)' }}>{displayName}</span> {emoji}
-        </p>
-      </FadeInView>
-
-      {/* Hero Bubbles */}
-      <FadeInView delay={0.1}>
-        <div className="flex flex-col items-center mt-2 mb-4">
-          <BubblesMascot
-            state={
-              hasUnusedExpired ? 'worried' : !suggestion && urgentItem ? 'surprised' : 'happy'
-            }
-            size={120}
+      {/* Under the wall: the pantry count on the left, the streak (#524) and the
+          theme picker trigger (#523) on the right. */}
+      <div className="flex min-h-11 items-center justify-between gap-2 px-4 pt-2">
+        <div className="min-w-0">
+          {/* Data-dependent, so it skeletons until the fetches land. */}
+          {loading ? (
+            <Skeleton className="h-3 w-28" />
+          ) : (
+            totalCount > 0 && (
+              <p className="text-xs text-[var(--color-muted)]">
+                🧺 {totalCount} item{totalCount !== 1 ? 's' : ''} in pantry
+              </p>
+            )
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {/* The rescue streak (#524) sits beside the theme trigger — same surface
+              treatment as before, its own testid. Hidden at 0/null: nothing to
+              celebrate yet, and it must never claim a streak before one exists. */}
+          {streakWeeks !== null && streakWeeks > 0 && (
+            <div
+              className="rounded-full border border-[var(--color-border)] px-2.5 py-1 text-xs font-bold text-[var(--color-text)] shadow-sm"
+              style={{ background: 'var(--color-surface)' }}
+              data-testid="kitchen-streak"
+            >
+              🔥 {streakWeeks}
+            </div>
+          )}
+          {/* Theme picker (#523): the trigger is a 44px circle in this row; the
+              sheet it opens is unchanged. */}
+          <KitchenThemePicker
+            isOpen={themePickerOpen}
+            onOpen={() => setThemePickerOpen(true)}
+            onClose={() => setThemePickerOpen(false)}
+            currentThemeKey={kitchenTheme.key}
+            unlockedKeys={unlockedThemeKeys}
+            balance={balance}
+            onSelect={selectTheme}
+            saving={themeSaving}
+            error={themeError}
+            clearError={clearThemeError}
+            triggerClassName="relative h-11 w-11"
           />
         </div>
-      </FadeInView>
+      </div>
 
-      {/* Speech bubble */}
-      <FadeInView delay={0.25}>
-        <div className="relative max-w-sm w-full mx-auto mb-6" data-tour="hero">
-          {/* Triangle pointer */}
+      <div className="flex flex-col items-center px-4 pt-3">
+        {/* One-time "new theme unlocked" card (#523) — shown at most once per
+            theme per browser. "Try it" switches the wall to the new theme
+            (same `selectTheme` the picker sheet uses) and dismisses; the
+            plain ✕ just dismisses without switching. */}
+        <KitchenThemeUnlockCard
+          theme={newlyUnlocked}
+          onTryIt={() => {
+            if (newlyUnlocked) selectTheme(newlyUnlocked.key)
+            dismissUnlock()
+          }}
+          onDismiss={dismissUnlock}
+        />
+
+        {/* Milestone unlock offer (#522) — mounted directly under the kitchen
+            wall per the issue's placement instruction. Renders nothing when
+            there's no pending offer. */}
+        <UnlockOffer />
+
+        {/* The Bubbles speech bubble stays for now; the Bubbles card (issue
+            #755) replaces it. The illustrated Bubbles (#592) sits beside the
+            copy, as on the board's card; the 120px hero above it went with the
+            redesign. Its mood is still the #525 priority (worried, surprised,
+            happy). */}
+        <FadeInView delay={0.1} className="mb-6 w-full max-w-sm">
           <div
-            className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rotate-45 border-l border-t border-[var(--color-border)]"
-            style={{ background: 'var(--color-surface)' }}
-          />
-          <div
-            className="relative rounded-2xl p-4 text-center shadow-sm border border-[var(--color-border)]"
+            className="relative flex items-center gap-3 rounded-2xl border border-[var(--color-border)] p-4 shadow-sm"
             style={{ background: 'var(--color-surface)' }}
             aria-busy={loading}
+            data-tour="hero"
           >
-            {loading ? (
-              <div className="flex flex-col items-center gap-2">
-                <Skeleton className="w-11/12 h-3" />
-                <Skeleton className="w-2/3 h-3" />
-                <Skeleton className="w-28 h-7 rounded-full mt-2" />
-              </div>
-            ) : (
-              <>
-                <p className="text-[var(--color-text)] font-medium text-sm leading-relaxed">
-                  {heroMessage}
-                </p>
-                <Link
-                  href={heroAction.href}
-                  className="inline-block mt-3 text-xs font-semibold px-5 py-2 rounded-full text-white"
-                  style={{ background: 'var(--color-primary)' }}
-                >
-                  {heroAction.label}
-                </Link>
-              </>
-            )}
+            <BubblesMascot state={mascotState} size={56} />
+            <div className="min-w-0 flex-1">
+              {loading ? (
+                <div className="flex flex-col gap-2">
+                  <Skeleton className="h-3 w-11/12" />
+                  <Skeleton className="h-3 w-2/3" />
+                  <Skeleton className="mt-2 h-7 w-28 rounded-full" />
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm leading-relaxed font-medium text-[var(--color-text)]">
+                    {heroMessage}
+                  </p>
+                  <Link
+                    href={heroAction.href}
+                    className="mt-3 inline-block rounded-full px-5 py-2 text-xs font-semibold text-white"
+                    style={{ background: 'var(--color-primary)' }}
+                  >
+                    {heroAction.label}
+                  </Link>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      </FadeInView>
-
-      {/* 4 Action Cards, 2x2 (issue #651 adds Plan dinner, first in the list —
-          grid-cols-4 was rejected because labels wrap at 375px). */}
-      <div className="grid grid-cols-2 gap-3 w-full max-w-sm mb-6" data-tour="quick-actions">
-        {([
-          {
-            icon: ForkKnife,
-            label: 'Plan',
-            detail: 'Dinner',
-            pending: false,
-            href: planDinnerHref(),
-            ariaLabel: 'Plan dinner',
-            gradient: 'linear-gradient(135deg, var(--color-accent-dark) 0%, var(--color-primary) 100%)',
-          },
-          {
-            icon: Fire,
-            label: 'Use Soon',
-            detail: expiringCount > 0 ? `${expiringCount} item${expiringCount > 1 ? 's' : ''}` : 'All fresh!',
-            // Only this card's detail depends on fetched data.
-            pending: loading,
-            href: '/pantry',
-            gradient: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
-          },
-          {
-            icon: Camera,
-            label: 'Scan',
-            detail: 'Receipt',
-            pending: false,
-            href: '/pantry?add=scan',
-            gradient: 'linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-dark) 100%)',
-          },
-          {
-            icon: Sparkle,
-            label: 'Ask',
-            detail: 'Bubbles',
-            pending: false,
-            href: '/chat',
-            gradient: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-accent-dark) 100%)',
-          },
-        ] satisfies Array<{
-          icon: ComponentType<IconProps>
-          label: string
-          detail: string
-          pending: boolean
-          href: string
-          ariaLabel?: string
-          gradient: string
-        }>).map((card, i) => {
-          const Icon = card.icon
-          return (
-          <FadeInView key={card.href} delay={0.35 + i * 0.08}>
-            <Link href={card.href} aria-label={card.ariaLabel}>
-              <motion.div
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.97 }}
-                className="flex flex-col items-center rounded-2xl p-4 shadow-sm border border-white/30 text-white text-center"
-                style={{ background: card.gradient }}
-              >
-                {/* Decorative: the card's label is the accessible name
-                    (or `card.ariaLabel`, when set, on the Link itself). */}
-                <Icon size={28} weight="fill" className="mb-1" aria-hidden="true" />
-                <span className="text-sm font-bold">{card.label}</span>
-                {card.pending ? (
-                  <Skeleton onColor className="w-10 h-2 mt-1.5 mb-0.5" />
-                ) : (
-                  <span className="text-[10px] opacity-80 mt-0.5">{card.detail}</span>
-                )}
-              </motion.div>
-            </Link>
-          </FadeInView>
-          )
-        })}
-      </div>
+        </FadeInView>
 
       {/* Tip of the day — compact. Gated on `loading` like its three siblings
           above: without this, the fallback tip renders on first paint and gets
@@ -570,20 +605,43 @@ export default function HeroHome({ displayName, initialKitchenTheme = null }: He
         )}
       </FadeInView>
 
-      {/* Pantry status bar — data-dependent, so it skeletons until the fetches land */}
-      {(loading || totalCount > 0) && (
-        <FadeInView delay={0.7}>
-          <div className="mt-4 flex justify-center text-center">
-            {loading ? (
-              <Skeleton className="w-36 h-3" />
-            ) : (
-              <p className="text-xs text-[var(--color-muted)]">
-                🧺 {totalCount} item{totalCount !== 1 ? 's' : ''} in pantry
-              </p>
-            )}
-          </div>
-        </FadeInView>
-      )}
+      </div>
+
+      {/* The storage sheet (#749). It steps aside, keeping its search text, while
+          the edit or add sheet is on top: two sheets cannot both hold focus. */}
+      <StorageSheet
+        open={sheet !== null}
+        suspended={editItem !== null || addSheet !== null}
+        place={sheet?.place ?? 'fridge'}
+        view={sheet?.view ?? 'scene'}
+        initialExpiry={sheet?.expiry}
+        items={items}
+        status={pantryStatus}
+        palette={kitchenTheme.wall}
+        onPlaceChange={(place) => setSheet((s) => (s ? { ...s, place } : s))}
+        onViewChange={(view) => setSheet((s) => (s ? { ...s, view } : s))}
+        onClose={closeSheet}
+        onEdit={setEditItem}
+        onAdd={(place) => setAddSheet({ tab: 'type', place })}
+        onMove={movePantry}
+        onResolve={resolvePantry}
+        onRetry={reload}
+      />
+      <EditItemModal
+        isOpen={editItem !== null}
+        onClose={() => {
+          setEditItem(null)
+          pantryChanged()
+        }}
+        editItem={editItem}
+      />
+      <PantryAddSheet
+        isOpen={addSheet !== null}
+        onClose={closeAddSheet}
+        initialTab={addSheet?.tab ?? 'type'}
+        place={addSheet?.place}
+        onItemsAdded={pantryChanged}
+      />
     </div>
   )
 }

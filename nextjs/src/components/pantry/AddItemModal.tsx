@@ -6,10 +6,11 @@ import FoodAutocomplete from '@/components/pantry/FoodAutocomplete'
 import PixelSheet from '@/components/ui/PixelSheet'
 import { updatePantryItem, deletePantryItem } from '@/lib/api/pantry'
 import type { FoodCatalogEntry } from '@/lib/api/foods'
+import { PLACES, placeForLocation, placeLocation, type PlaceKey } from '@/lib/kitchen/places'
 import type { PantryItem } from '@/types/pantry'
 
 /**
- * EditItemModal — the single-item edit sheet on `/pantry`.
+ * EditItemModal — the single-item edit sheet, opened from the storage sheet on the kitchen home.
  *
  * Despite the filename (kept as `AddItemModal.tsx` so the focus-trap test and
  * the count guard that reads test names textually are undisturbed), this is
@@ -20,9 +21,13 @@ import type { PantryItem } from '@/types/pantry'
  * place in the app that updates or plainly deletes a single item, which is
  * why it survives at all.
  *
- * There is no kitchen-location control here (issue #397): the field only fed
- * the on-hold kitchen scene (PR #124). The item's stored location is left as
- * it is — the update omits the key rather than rewriting it.
+ * The Place field (issue #749) is back: Fridge / Freezer / Shelves / Basket, the
+ * four storage places of the kitchen wall. Issue #397 had removed the old
+ * location control while the gamified kitchen was on hold; now the places are
+ * the home screen, so moving an item between them is one tap here. It saves
+ * `location` only when the user changed the place: an item whose stored value
+ * is not one of the four (it reads as Shelves) is not rewritten by an
+ * unrelated edit.
  */
 
 interface EditItemModalProps {
@@ -55,6 +60,7 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
   const [unit, setUnit] = useState('item')
   const [category, setCategory] = useState('other')
   const [expiryDate, setExpiryDate] = useState('')
+  const [place, setPlace] = useState<PlaceKey>('shelves')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -67,6 +73,7 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
       setUnit(editItem.unit)
       setCategory(editItem.category || 'other')
       setExpiryDate(editItem.expiry_date ?? '')
+      setPlace(placeForLocation(editItem.location))
     }
     setConfirmDelete(false)
     setError(null)
@@ -86,7 +93,7 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
   // Quantity, unit and expiry are left alone: this is an existing item being
   // corrected, not a fresh one, so what the user already recorded is more
   // trustworthy than a catalog default. The catalog's `default_location` is
-  // ignored — there is no location field to fill (#397).
+  // ignored for the same reason: the place is wherever the item already lives.
   const handleCatalogSelect = (entry: FoodCatalogEntry) => {
     setName(entry.canonical)
     if (entry.category) setCategory(entry.category)
@@ -106,6 +113,10 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
         unit,
         category,
         expiry_date: expiryDate || null,
+        // Only a place the user changed is written (see the header note).
+        ...(place !== placeForLocation(editItem.location)
+          ? { location: placeLocation(place) }
+          : {}),
       })
       onClose()
     } catch (e) {
@@ -236,6 +247,31 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
           </datalist>
         </div>
       </div>
+
+      {/* Place (#749): native radios, so the arrow keys and the group's name
+          come for free; the labels are the 44px targets. */}
+      <fieldset className="mb-3 min-w-0">
+        <legend className="text-xs font-semibold text-[var(--color-muted)] mb-1 block">Place</legend>
+        <div className="grid grid-cols-4 gap-1.5">
+          {PLACES.map((p) => (
+            <label key={p.key} className="relative block">
+              <input
+                type="radio"
+                name="edit-item-place"
+                value={p.key}
+                checked={place === p.key}
+                onChange={() => setPlace(p.key)}
+                className="peer sr-only"
+              />
+              <span
+                className="flex min-h-[44px] items-center justify-center rounded-full border-2 border-[color:var(--color-text)] px-1 text-[13px] font-extrabold text-[color:var(--color-text)] peer-checked:bg-[var(--color-primary)] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[color:var(--color-text)]"
+              >
+                {p.label}
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       {/* Category */}
       <div className="mb-3">

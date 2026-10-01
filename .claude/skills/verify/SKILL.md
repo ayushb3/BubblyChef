@@ -102,6 +102,31 @@ A **Verified** section, written for someone who will not open the diff:
 - **What you could not verify, and why.** An unstated gap reads as a claim it was
   handled.
 
+## Comparing against main (before/after)
+
+To screenshot main next to your branch, build main from an export, not a checkout.
+On Windows/Git Bash the export's `node_modules` is a **junction** to a real
+`node_modules`, and anything recursive that touches the export reaches through it.
+
+```bash
+TMP=$(mktemp -d); M="$TMP/main-compare"; mkdir -p "$M" && git archive origin/main | tar -x -C "$M"
+cp nextjs/.env.local "$M/nextjs/"; cp ai-service/.env "$M/ai-service/"   # gitignored, so absent from the export; never print them
+cmd //c mklink /J "$(cygpath -w "$M/nextjs/node_modules")" "$(cygpath -w "$PWD/nextjs/node_modules")"
+# build main with NEXT_PUBLIC_AI_SERVICE_URL=http://127.0.0.1:<MAIN_AI_PORT>, then run main's `next start -p <port>`
+# and (if you need AI) its uvicorn on <MAIN_AI_PORT>, all different from this worktree's $PORT / $AI_PORT
+# stop main's `next start` and uvicorn first: a running server holding the junction is why rmdir fails
+cmd //c rmdir "$(cygpath -w "$M/nextjs/node_modules")"   && rm -rf "$TMP"   # unlink FIRST (non-recursive); rm only runs if the junction is gone
+```
+
+Main's build must bake in its own AI service (`NEXT_PUBLIC_AI_SERVICE_URL` is
+inlined at build time), never the branch's `$AI_PORT`, or "before" talks to the
+wrong backend. Link this worktree's `node_modules`, unless `package.json` differs
+from main's: then link the main checkout's. **Never run `rm -rf`, `npm ci` or
+`npm install` on a tree that holds a junctioned `node_modules`**: they follow the
+junction and empty the shared one every agent uses (2026-10-01: an `rm -rf` of such
+a temp dir did exactly that). `ln -s` can also create a junction, so treat it the
+same. If `rmdir` fails, stop and ask; do not retry with `rm`.
+
 ## Rules
 
 - **Never fake it.** No screenshots of a mocked page presented as the real flow,

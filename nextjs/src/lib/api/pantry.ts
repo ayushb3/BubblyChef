@@ -107,9 +107,9 @@ export async function resolvePantryItem(
 /**
  * Fields the edit modal can change on a single pantry item. Every field is
  * optional — `PUT /api/pantry/[id]` only touches the keys that are present.
- * Kitchen location is deliberately not among them (issue #397): the edit
- * modal no longer shows it, and omitting the key leaves the stored value
- * untouched.
+ * `location` (issue #749, the edit sheet's Place field) is one of the four
+ * stored values (`fridge` / `freezer` / `pantry` / `counter`); omitting it
+ * leaves the stored value untouched.
  */
 export interface UpdatePantryItemInput {
   name?: string
@@ -117,6 +117,7 @@ export interface UpdatePantryItemInput {
   unit?: string
   category?: string
   expiry_date?: string | null
+  location?: string
 }
 
 const NETWORK_ERROR_COPY = 'Network problem — check your connection and try again.'
@@ -159,6 +160,60 @@ export async function updatePantryItem(
   }
 
   return res.json()
+}
+
+/**
+ * What a bulk edit did: which items went through and which did not. A bulk edit
+ * never throws for one bad item, so the storage sheet can keep exactly the
+ * failed ones selected and say how many went through.
+ */
+export interface BulkEditResult {
+  done: string[]
+  failed: string[]
+}
+
+/**
+ * Run `op` on each id in turn. One at a time, not in parallel: a resolve can
+ * award bubbles server-side (the rescue streak, #524), and the bulk edit is a
+ * handful of items, so the speed-up isn't worth racing the ledger.
+ */
+async function eachItem(
+  ids: readonly string[],
+  op: (id: string) => Promise<unknown>,
+): Promise<BulkEditResult> {
+  const result: BulkEditResult = { done: [], failed: [] }
+  for (const id of ids) {
+    try {
+      await op(id)
+      result.done.push(id)
+    } catch {
+      result.failed.push(id)
+    }
+  }
+  return result
+}
+
+/**
+ * Move several items to one stored location (`fridge` / `freezer` / `pantry` /
+ * `counter`), through the existing per-item `PUT /api/pantry/[id]` (issue #750,
+ * the storage sheet's List: select, then "Move to").
+ */
+export function movePantryItems(
+  ids: readonly string[],
+  location: string,
+): Promise<BulkEditResult> {
+  return eachItem(ids, (id) => updatePantryItem(id, { location }))
+}
+
+/**
+ * Record the same outcome ("used up" or "tossed") on several items, through the
+ * existing per-item resolve endpoint (issue #750).
+ */
+export function resolvePantryItems(
+  ids: readonly string[],
+  outcome: Extract<ResolveOutcome, 'used' | 'tossed'>,
+): Promise<BulkEditResult> {
+  return eachItem(ids, (id) => resolvePantryItem(id, outcome))
 }
 
 /**

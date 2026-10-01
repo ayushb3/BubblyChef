@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { pwaColors } from "@/lib/design-tokens";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -7,8 +8,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Your kawaii pantry & recipe assistant",
     start_url: "/",
     display: "standalone",
-    background_color: "#fff9f5",
-    theme_color: "#ffb5c5",
+    background_color: pwaColors.backgroundColor,
+    theme_color: pwaColors.themeColor,
     icons: [
       {
         src: "/icons/icon-192.png",

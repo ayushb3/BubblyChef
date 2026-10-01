@@ -59,8 +59,8 @@ export default function MealTimelineDemoClient() {
 
   return (
     <div
-      className="min-h-screen p-6 max-w-xl mx-auto space-y-6"
-      style={{ background: 'var(--color-bg)', fontFamily: 'Nunito, sans-serif' }}
+      className="font-sans min-h-screen p-6 max-w-xl mx-auto space-y-6"
+      style={{ background: 'var(--color-bg)' }}
     >
       <div>
         <h1 className="text-2xl font-extrabold mb-1" style={{ color: 'var(--color-text)' }}>
@@ -84,7 +84,7 @@ export default function MealTimelineDemoClient() {
               className="rounded-full px-3 py-1.5 text-xs font-bold border"
               style={{
                 background: i === fixtureIndex ? 'var(--color-primary)' : 'var(--color-surface)',
-                color: i === fixtureIndex ? '#fff' : 'var(--color-text)',
+                color: i === fixtureIndex ? 'var(--color-on-primary)' : 'var(--color-text)',
                 borderColor: 'var(--color-border)',
               }}
               data-testid={`fixture-picker-${f.slug}`}

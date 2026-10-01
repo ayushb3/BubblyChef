@@ -239,6 +239,8 @@ export default function CookModal({
       const res = await confirmCook(recipeId, deductions)
       const skippedNow = skippedDeductionNames(proposal, res?.deductions_skipped ?? [])
       queryClient.invalidateQueries({ queryKey: ['bubbles'] })
+      // The deduction changed the pantry: refresh pantry-derived views (food tags, #784).
+      queryClient.invalidateQueries({ queryKey: ['pantry'] })
       // #440 — the deduction just landed, so this cook session is over
       // regardless of which page/flow confirmed it. Recorded outside React
       // state because the non-draft branch below navigates to a fresh mount
@@ -278,16 +280,15 @@ export default function CookModal({
               <button
                 onClick={onClose}
                 disabled={state === 'confirming'}
-                className="flex-1 py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform disabled:opacity-50"
-                style={{ fontFamily: 'Nunito, sans-serif' }}
+                className="font-sans flex-1 py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform disabled:opacity-50"
               >
                 {mode === 'preview' ? 'Back' : 'Cancel'}
               </button>
               {mode === 'preview' ? (
                 <button
                   onClick={onStartCooking}
-                  className="flex-1 py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
-                  style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
+                  className="font-sans flex-1 py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
+                  style={{ background: 'var(--color-primary-dark)' }}
                 >
                   Start cooking →
                 </button>
@@ -300,14 +301,13 @@ export default function CookModal({
                      like the obviously-correct action (#245). Still reachable —
                      some quantities genuinely cannot be measured. */
                   className={[
-                    'flex-1 py-2 rounded-full text-sm font-bold active:scale-95 transition-transform disabled:opacity-50',
+                    'font-sans flex-1 py-2 rounded-full text-sm font-bold active:scale-95 transition-transform disabled:opacity-50',
                     hasUnresolved
                       ? 'border-2 border-[var(--color-primary-dark)] text-[var(--color-primary-dark)]'
                       : 'text-white',
                   ].join(' ')}
                   style={{
                     background: hasUnresolved ? 'transparent' : 'var(--color-primary-dark)',
-                    fontFamily: 'Nunito, sans-serif',
                   }}
                 >
                   {state === 'confirming'
@@ -333,8 +333,7 @@ export default function CookModal({
               style={{ borderColor: 'var(--color-primary)', borderTopColor: 'transparent' }}
             />
             <p
-              className="text-sm font-semibold text-[var(--color-text)]"
-              style={{ fontFamily: 'Nunito, sans-serif' }}
+              className="font-sans text-sm font-semibold text-[var(--color-text)]"
             >
               {LOADING_STAGES[loadingStage].label}
             </p>
@@ -357,8 +356,7 @@ export default function CookModal({
           </div>
 
           <p
-            className="text-xs text-[var(--color-muted)]"
-            style={{ fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-xs text-[var(--color-muted)]"
           >
             {LOADING_STAGES[loadingStage].hint}
           </p>
@@ -367,7 +365,7 @@ export default function CookModal({
 
       {state === 'error' && (
         <div className="py-8 text-center">
-          <p className="text-sm font-semibold text-red-500" style={{ fontFamily: 'Nunito, sans-serif' }}>
+          <p className="font-sans text-sm font-semibold text-red-500">
             {errorMsg || 'Something went wrong. Please try again.'}
           </p>
         </div>
@@ -377,8 +375,7 @@ export default function CookModal({
         <div className="py-8 text-center flex flex-col items-center gap-3">
           <BubblesMascot state="celebrate" size={80} />
           <p
-            className="text-sm font-extrabold text-[var(--color-text)]"
-            style={{ fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-sm font-extrabold text-[var(--color-text)]"
           >
             Pantry updated!
           </p>
@@ -388,16 +385,14 @@ export default function CookModal({
           {isDraft ? (
             <>
               <p
-                className="text-sm text-[var(--color-muted)]"
-                style={{ fontFamily: 'Nunito, sans-serif' }}
+                className="font-sans text-sm text-[var(--color-muted)]"
               >
                 Add <span className="font-semibold">{recipeTitle}</span> to your library?
               </p>
               <div className="flex gap-2 w-full mt-1">
                 <button
                   onClick={() => { onCooked(); onClose() }}
-                  className="flex-1 py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform"
-                  style={{ fontFamily: 'Nunito, sans-serif' }}
+                  className="font-sans flex-1 py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform"
                 >
                   Not now
                 </button>
@@ -409,8 +404,8 @@ export default function CookModal({
                     onCooked(); onClose()
                   }}
                   disabled={addingToLibrary}
-                  className="flex-1 py-2 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
-                  style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
+                  className="font-sans flex-1 py-2 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
+                  style={{ background: 'var(--color-primary-dark)' }}
                 >
                   {addingToLibrary ? 'Saving...' : 'Add to library'}
                 </button>
@@ -421,16 +416,15 @@ export default function CookModal({
               type="button"
               ref={continueRef}
               onClick={continueToChat}
-              className="min-h-[44px] px-6 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
-              style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
+              className="font-sans min-h-[44px] px-6 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
+              style={{ background: 'var(--color-primary-dark)' }}
               data-testid="cook-modal-continue"
             >
               Continue
             </button>
           ) : (
             <p
-              className="text-xs text-[var(--color-muted)] mt-1"
-              style={{ fontFamily: 'Nunito, sans-serif' }}
+              className="font-sans text-xs text-[var(--color-muted)] mt-1"
             >
               Ingredients deducted — taking you to chat.
             </p>
@@ -441,8 +435,7 @@ export default function CookModal({
       {(state === 'review' || state === 'confirming') && proposal && amendedList && (
         <p
           data-testid="cook-modal-amended-note"
-          className="mb-3 rounded-xl bg-[var(--color-bg)] px-3 py-2 text-xs text-[var(--color-muted)]"
-          style={{ fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans mb-3 rounded-xl bg-[var(--color-bg)] px-3 py-2 text-xs text-[var(--color-muted)]"
         >
           Using your changes to this recipe. Your saved recipe stays as it was.
         </p>

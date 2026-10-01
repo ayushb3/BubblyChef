@@ -1,7 +1,6 @@
 /**
  * Regression tests for #391 (home screen visual polish):
- *  1. The three quick-action cards render Phosphor line icons (the same set
- *     `BottomNav` uses), not raw platform-dependent emoji.
+ *  1. (The quick-action cards' line icons: the cards went in #748.)
  *  2. The daily tip is no longer silently clamped: when the text overflows two
  *     lines a "Read more" toggle appears, and the seeded-chat deep link moved
  *     to its own "Ask Bubbles" pill so expanding and asking are two distinct
@@ -87,27 +86,18 @@ afterEach(() => {
   jest.restoreAllMocks()
 })
 
-describe('quick-action cards use line icons, not emoji (#391)', () => {
+// The three line-icon quick-action cards (#391) went with the old dashboard when
+// home became the kitchen wall (#748), so their two tests went with them. The
+// Plan dinner entry point lives on as the chalkboard (kitchen-wall.test.tsx).
+describe('quick-action row is gone from the kitchen home (#748)', () => {
   beforeEach(() => mockFetch('Taste as you cook.'))
 
-  it('renders an SVG icon in each of the three cards and no emoji literal', async () => {
+  it('renders no quick-action cards', async () => {
     renderHero()
     await screen.findByText(/^Tip:/)
 
-    for (const label of ['Use Soon', 'Scan', 'Ask']) {
-      const card = screen.getByText(label).closest('a')
-      expect(card).not.toBeNull()
-      expect(card!.querySelector('svg')).not.toBeNull()
-      expect(card!.textContent).not.toMatch(/[\u{1F525}\u{1F4F7}\u{2728}]/u)
-    }
-  })
-
-  it('marks the card icons decorative so the label is the accessible name', async () => {
-    renderHero()
-    await screen.findByText(/^Tip:/)
-
-    const useSoon = screen.getByRole('link', { name: /use soon/i })
-    expect(useSoon.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+    expect(screen.queryByRole('link', { name: /use soon/i })).toBeNull()
+    expect(document.querySelector('[data-tour="quick-actions"]')).toBeNull()
   })
 })
 

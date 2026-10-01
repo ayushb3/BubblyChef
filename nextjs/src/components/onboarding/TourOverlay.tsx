@@ -18,7 +18,7 @@ const TOOLTIP_EST_HEIGHT = 140
  * Steps whose target is position:fixed and always visible — skip scrollIntoView
  * for these so the rect read is not stale after a scroll attempt.
  */
-const FIXED_TARGET_IDS = new Set(['nav-pantry', 'nav-recipes', 'nav-chat', 'profile'])
+const FIXED_TARGET_IDS = new Set(['nav-recipes', 'nav-chat', 'profile'])
 
 interface SpotRect {
   x: number
@@ -87,7 +87,7 @@ export function TourOverlay() {
   const { isOpen: tourOpen, stepIndex, goNext, goBack, closeTour, totalSteps } = useTour()
   // Every step targets the home screen. "Take the tour" on /profile opens the
   // tour and then navigates to '/'; if the overlay ran while still on
-  // /profile, it would find no hero/quick-actions and auto-skip them, so the
+  // /profile, it would find no hero and auto-skip it, so the
   // replay started at step 3. It only shows (and measures, and skips) on '/'.
   const pathname = usePathname()
   const isOpen = tourOpen && pathname === '/'
@@ -202,7 +202,7 @@ export function TourOverlay() {
   // tooltip drops below the bottom nav, off-screen.
   //
   // The step's placement is a preference: if the card doesn't fit on that side
-  // (a 'below' step on a short phone, e.g. quick-actions at ~560px tall) and the
+  // (a 'below' step on a short phone, ~560px tall) and the
   // other side has more room, it flips. Either way it is clamped on-screen: the
   // card is fixed and the backdrop eats every tap, so a card below the fold
   // would leave a touch user with no way out but a reload.
