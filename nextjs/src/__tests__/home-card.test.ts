@@ -384,24 +384,41 @@ describe("tonight's planned meal", () => {
 
 describe('once a day, per fingerprint', () => {
   it('a nudge already shown today falls through to the next case', () => {
-    const first = pickHomeCard(snap({ now: at(18, 30), cook: COOK }))!
-    const later = pickHomeCard(snap({ now: at(18, 30), cook: COOK, seen: { [first.fingerprint]: TODAY } }))!
+    const first = pickHomeCard(snap({ now: at(18, 30), pending: SCAN }))!
+    const later = pickHomeCard(snap({ now: at(18, 30), pending: SCAN, seen: { [first.fingerprint]: TODAY } }))!
     expect(later.kind).toBe('mealtime')
   })
 
   it('a nudge shown on an earlier day is fresh again', () => {
-    const first = pickHomeCard(snap({ cook: COOK }))!
-    const card = pickHomeCard(snap({ cook: COOK, seen: { [first.fingerprint]: '2026-09-30' } }))!
-    expect(card.kind).toBe('cook')
+    const first = pickHomeCard(snap({ pending: SCAN }))!
+    const card = pickHomeCard(snap({ pending: SCAN, seen: { [first.fingerprint]: '2026-09-30' } }))!
+    expect(card.kind).toBe('scan')
   })
 
-  it('a changed fingerprint is a new nudge: a different cook step shows again', () => {
-    const first = pickHomeCard(snap({ cook: COOK }))!
+  it('a changed fingerprint is a new nudge: a different scan shows again', () => {
+    const first = pickHomeCard(snap({ pending: SCAN }))!
     const next = pickHomeCard(
-      snap({ cook: { ...COOK, step: 5 }, seen: { [first.fingerprint]: TODAY } }),
+      snap({
+        pending: { ...SCAN, savedAt: '2026-10-01T17:00:00.000Z' },
+        seen: { [first.fingerprint]: TODAY },
+      }),
     )!
-    expect(next.kind).toBe('cook')
+    expect(next.kind).toBe('scan')
     expect(next.fingerprint).not.toBe(first.fingerprint)
+  })
+
+  // Issue #848: a cook in progress is state, not a nudge. It is the way back to a
+  // cook, so it stays on every visit while the session is on record (a Not now or
+  // the cross still send it away, below).
+  it('a cook in progress is never capped: it shows on every visit', () => {
+    const first = pickHomeCard(snap({ now: at(18, 30), cook: COOK }))!
+    const later = pickHomeCard(snap({ now: at(18, 30), cook: COOK, seen: { [first.fingerprint]: TODAY } }))!
+    expect(later.kind).toBe('cook')
+    expect(later.fingerprint).toBe(first.fingerprint)
+  })
+
+  it('there is no cook card without a cook session', () => {
+    expect(pickHomeCard(snap({ now: at(18, 30), cook: null }))!.kind).not.toBe('cook')
   })
 
   it('fingerprints follow the thing: item, step, scan, meal', () => {
@@ -420,13 +437,13 @@ describe('once a day, per fingerprint', () => {
   })
 
   it('case 5 always fills when every other case has been used up', () => {
-    const cook = pickHomeCard(snap({ now: at(18, 30), cook: COOK }))!
+    const scan = pickHomeCard(snap({ now: at(18, 30), pending: SCAN }))!
     const meal = pickHomeCard(snap({ now: at(18, 30) }))!
     const card = pickHomeCard(
       snap({
         now: at(18, 30),
-        cook: COOK,
-        seen: { [cook.fingerprint]: TODAY, [meal.fingerprint]: TODAY },
+        pending: SCAN,
+        seen: { [scan.fingerprint]: TODAY, [meal.fingerprint]: TODAY },
       }),
     )!
     expect(card.kind).toBe('quiet')

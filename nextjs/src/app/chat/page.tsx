@@ -92,10 +92,11 @@ const COOKING_SUGGESTION_TONES: ChipTone[] = COOKING_CHIPS.map((c) => c.tone ?? 
  * scrolls and the message list is the only scroll container (issue #731).
  * The root layout's `<main>` reserves 5rem (`pb-20`) for the fixed BottomNav, so
  * subtracting it here makes header + banner + list + composer + nav add up to
- * `100dvh`. `dvh`, not `vh`: on iOS Safari `vh` is the toolbar-collapsed height
+ * `100dvh`. While the timer dock shows it takes its own height off too
+ * (`--timer-dock-h`, issue #848), so the composer stays fully visible above it. `dvh`, not `vh`: on iOS Safari `vh` is the toolbar-collapsed height
  * and would reintroduce a page scroll (issue #4).
  */
-const CHAT_VIEWPORT_CLASS = 'h-[calc(100dvh-5rem)]'
+const CHAT_VIEWPORT_CLASS = 'h-[calc(100dvh-5rem-var(--timer-dock-h,0px))]'
 
 /**
  * `useSearchParams` opts the tree into client-side rendering, so the page shell

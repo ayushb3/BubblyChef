@@ -45,6 +45,7 @@ import { saveCookProgress } from '@/lib/cook-session'
 import StepTimerChips, { StructuredStepTimerChip } from '@/components/timers/StepTimerChip'
 import { useRaiseTimerDock, useTimerDockRaised } from '@/components/timers/TimerDockLayer'
 import { useCookingTimers } from '@/lib/useCookingTimers'
+import { useWakeLock } from '@/hooks/useWakeLock'
 import AskBubblesOverlay from '@/components/cook/AskBubblesOverlay'
 import HandsChip from '@/components/meal/HandsChip'
 import { DISH_BG, SOLID_EDGE } from '@/components/meal/dish-style'
@@ -317,6 +318,8 @@ export default function GuidedCookFlow({
   useRaiseTimerDock(!chatOpen && !chatPresent)
   const dockRaised = useTimerDockRaised()
   const { timers, dismiss: dismissTimer } = useCookingTimers()
+  // Issue #848: the screen stays awake while the guided cook is open.
+  useWakeLock()
   // Issue #757 — which step started each dock timer (timer id -> step idx), so
   // a finished chip can clear when the cook moves past its step.
   const timerOwnerRef = useRef<Map<string, number>>(new Map())

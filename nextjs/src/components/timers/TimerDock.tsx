@@ -10,14 +10,36 @@
  * so it survives route changes (`/pantry`, `/chat`, ...) the same way the
  * timer store itself does.
  *
- * Completion feedback is visual-first (a badge turns urgent and pulses) plus
- * a screen-reader announcement. Vibration is a best-effort addition where the
- * browser supports it. There is deliberately no sound: the signature PRD says
- * "No sound in v1" (issue #783); if it returns it is opt-in.
+ * Completion feedback (issue #848): a badge turns urgent and pulses, a
+ * screen-reader announcement, a short WebAudio chime repeated up to 3 times
+ * until the timer is dismissed (`lib/timer-alerts.ts`), vibration where the
+ * browser supports it, and a system Notification where permission was already
+ * granted. Permission is asked once, the first time a timer starts, in a
+ * one-line strip in the dock, and never again.
+ *
+ * The dock reserves its own space (issue #848): it publishes its height as the
+ * `--timer-dock-h` CSS variable on the document root, which the root layout's
+ * `<main>` (and the chat surface) add to their bottom padding, so a timer never
+ * covers the chat input, a confirmation or Start cooking.
+ *
+ * A chip links back to the cook it belongs to (`lib/timer-cook-link.ts`).
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { AnimatePresence, motion } from 'framer-motion'
+import { getActiveCookSession, type ActiveCookSession } from '@/lib/cook-session'
+import { getActiveMealCookSession, type MealCookSession } from '@/lib/meal-cook-session'
+import { subscribeCookSessionChanges } from '@/lib/cook-session-signal'
+import { timerCookHref } from '@/lib/timer-cook-link'
+import {
+  markNotificationAsked,
+  notifyTimerDone,
+  requestNotificationPermission,
+  shouldAskForNotifications,
+  startChime,
+  unlockAudio,
+} from '@/lib/timer-alerts'
 import {
   useCookingTimers,
   TIMER_STARTED_EVENT,
@@ -49,11 +71,44 @@ const CONTROL_BASE =
 const KEY_FACE =
   'inline-flex min-h-[32px] min-w-[32px] items-center justify-center rounded-full border-2 border-[color:var(--color-text)] bg-[var(--color-surface)] px-2.5 shadow-[0_2px_0_var(--color-text)] transition-transform duration-[60ms] group-active:translate-y-[1px] group-active:shadow-[0_1px_0_var(--color-text)] motion-reduce:transition-none motion-reduce:group-active:translate-y-0 motion-reduce:group-active:brightness-90'
 
-function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolean }) {
+function TimerBadge({
+  timer,
+  expanded,
+  href,
+}: {
+  timer: CookingTimer
+  expanded: boolean
+  /** The cook this timer belongs to, or null when it has none. */
+  href: string | null
+}) {
   const { pause, resume, dismiss, extend } = useCookingTimers()
   const { reduced } = useMotionConfig()
   const isCompleted = timer.status === 'completed'
   const isPaused = timer.status === 'paused'
+
+  const badgeFace = (
+    <>
+      <span aria-hidden="true" className="flex-shrink-0 text-sm">
+        {isCompleted ? '⏰' : isPaused ? '⏸️' : '⏱️'}
+      </span>
+      {/* Issue #802 — a finished chip keeps its label ("Rice · done") in the
+          collapsed row too, so two finished timers can be told apart. A running
+          or paused chip shows the countdown instead and names itself only in
+          the expanded stack. */}
+      {(expanded || isCompleted) && (
+        <span
+          className={`min-w-0 truncate text-xs font-bold ${expanded ? 'flex-1' : 'max-w-[10rem]'}`}
+        >
+          {isCompleted ? `${timer.label} · done` : timer.label}
+        </span>
+      )}
+      {!isCompleted && (
+        <span className="flex-shrink-0 whitespace-nowrap text-xs font-extrabold tabular-nums">
+          {formatDuration(timer.remainingSeconds)}
+        </span>
+      )}
+    </>
+  )
 
   return (
     <motion.div
@@ -112,26 +167,22 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
       data-testid={`timer-badge-${timer.id}`}
       data-status={timer.status}
     >
-      <span aria-hidden="true" className="flex-shrink-0 text-sm">
-        {isCompleted ? '⏰' : isPaused ? '⏸️' : '⏱️'}
-      </span>
-      {/* Issue #802 — a finished chip keeps its label ("Rice · done") in the
-          collapsed row too, so two finished timers can be told apart. A running
-          or paused chip shows the countdown instead and names itself only in
-          the expanded stack. */}
-      {(expanded || isCompleted) && (
-        <span
-          className={`min-w-0 truncate text-xs font-bold ${expanded ? 'flex-1' : 'max-w-[10rem]'}`}
+      {/* Issue #848 — the chip's face (icon, label, countdown) leads back to the
+          cook it belongs to; the controls beside it keep their own taps. A
+          finished chip still clears itself when tapped (#757), and a link also
+          clears it on the way, so it does not sit there after you return. */}
+      {href ? (
+        <Link
+          href={href}
+          onClick={isCompleted ? () => dismiss(timer.id) : undefined}
+          aria-label={`${timer.label}: back to cooking`}
+          data-testid={`timer-link-${timer.id}`}
+          className="flex min-h-[32px] min-w-0 flex-shrink-0 items-center gap-2 rounded-full text-[color:var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
         >
-          {isCompleted ? `${timer.label} · done` : timer.label}
-        </span>
-      )}
-      {!isCompleted && (
-        <span
-          className="flex-shrink-0 whitespace-nowrap text-xs font-extrabold tabular-nums"
-        >
-          {formatDuration(timer.remainingSeconds)}
-        </span>
+          {badgeFace}
+        </Link>
+      ) : (
+        badgeFace
       )}
       {expanded && !isCompleted && (
         <button
@@ -189,6 +240,71 @@ export default function TimerDock() {
   // update — so a screen reader hears "X timer started" and "X timer
   // finished" and nothing in between.
   const [announcement, setAnnouncement] = useState('')
+  // Issue #848: the one-time "tell you when a timer finishes?" ask.
+  const [askNotify, setAskNotify] = useState(false)
+  // The cook sessions on record, for the chips' links back to a cook.
+  const [sessions, setSessions] = useState<{
+    meal: MealCookSession | null
+    recipe: ActiveCookSession | null
+  }>({ meal: null, recipe: null })
+  // The chime still repeating for each finished timer, to stop when it is dismissed.
+  const chimes = useRef(new Map<string, () => void>())
+  const dockRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const read = () => setSessions({ meal: getActiveMealCookSession(), recipe: getActiveCookSession() })
+    read()
+    return subscribeCookSessionChanges(read)
+  }, [])
+
+  // A chime runs until its timer is dismissed (or it has played 3 times).
+  useEffect(() => {
+    for (const [id, stop] of chimes.current) {
+      if (!timers.some((t) => t.id === id)) {
+        stop()
+        chimes.current.delete(id)
+      }
+    }
+  }, [timers])
+  useEffect(() => {
+    const active = chimes.current
+    return () => {
+      for (const stop of active.values()) stop()
+      active.clear()
+    }
+  }, [])
+
+  // The dock reserves its own space (issue #848): its height goes out as
+  // `--timer-dock-h` for the root layout and chat to pad their bottoms by. While
+  // the stack is expanded the last collapsed height stays (the stack floats over
+  // content for the moment you manage timers rather than shrinking the page).
+  // 12px = the 8px between the nav's top (80px) and the dock's bottom (88px),
+  // plus its 3px hard shadow and a pixel of air.
+  const hasTimers = timers.length > 0
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    const el = dockRef.current
+    if (!hasTimers || !el) {
+      root.style.setProperty('--timer-dock-h', '0px')
+      return
+    }
+    const publish = () => {
+      if (expanded) return
+      root.style.setProperty('--timer-dock-h', `${(el.offsetHeight || 64) + 12}px`)
+    }
+    publish()
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(publish) : null
+    observer?.observe(el)
+    return () => observer?.disconnect()
+  }, [hasTimers, expanded, askNotify])
+  useEffect(() => {
+    return () => document.documentElement.style.setProperty('--timer-dock-h', '0px')
+  }, [])
+
+  const allowNotifications = useCallback(async () => {
+    setAskNotify(false)
+    await requestNotificationPermission()
+  }, [])
 
   // Completion feedback (vibration, the live-region announcement) is
   // driven by the store's own `TIMER_COMPLETED_EVENT` rather than by
@@ -208,11 +324,21 @@ export default function TimerDock() {
     function handleStarted(event: Event) {
       const { label } = (event as CustomEvent<{ id: string; label: string }>).detail
       announce(`${label} timer started`)
+      // A timer start is a tap: the moment the browser lets audio be unlocked, and
+      // the moment to ask (once, ever) whether to notify when a timer finishes.
+      unlockAudio()
+      if (shouldAskForNotifications()) {
+        markNotificationAsked()
+        setAskNotify(true)
+      }
     }
     function handleCompleted(event: Event) {
-      const { label } = (event as CustomEvent<{ id: string; label: string }>).detail
+      const { id, label } = (event as CustomEvent<{ id: string; label: string }>).detail
       announce(`${label} timer finished`)
       vibrateOnComplete()
+      notifyTimerDone(label)
+      chimes.current.get(id)?.()
+      chimes.current.set(id, startChime())
     }
     window.addEventListener(TIMER_STARTED_EVENT, handleStarted)
     window.addEventListener(TIMER_COMPLETED_EVENT, handleCompleted)
@@ -237,7 +363,8 @@ export default function TimerDock() {
       </div>
       {timers.length > 0 && (
         <div
-          className={`fixed left-0 right-0 ${raised ? 'z-[9991]' : 'z-40'} flex justify-center px-3 pointer-events-none`}
+          ref={dockRef}
+          className={`fixed left-0 right-0 ${raised ? 'z-[9991]' : 'z-40'} flex flex-col items-center gap-2 px-3 pointer-events-none`}
           // Raised: clears guided cook's ~76px Back/Next footer (no bottom nav
           // there). z-[9991] sits above the guided root (9990) and below
           // BubblePop (9999). Otherwise it sits above the bottom nav: 88px =
@@ -250,6 +377,27 @@ export default function TimerDock() {
           data-testid="timer-dock"
           data-raised={raised ? 'true' : 'false'}
         >
+          {askNotify && (
+            <div
+              role="group"
+              aria-label="Timer notifications"
+              data-testid="timer-notify-ask"
+              className="pointer-events-auto flex max-w-full items-center gap-1 rounded-full py-1 pl-4 pr-1 text-xs font-bold text-[color:var(--color-text)]"
+              style={{
+                background: 'var(--color-bg)',
+                border: '2px solid var(--color-text)',
+                boxShadow: '3px 3px 0 var(--color-primary-dark)',
+              }}
+            >
+              <span className="min-w-0">Get a heads-up when a timer finishes?</span>
+              <button type="button" onClick={allowNotifications} className={CONTROL_BASE}>
+                <span className={KEY_FACE}>Allow</span>
+              </button>
+              <button type="button" onClick={() => setAskNotify(false)} className={CONTROL_BASE}>
+                <span className={KEY_FACE}>Not now</span>
+              </button>
+            </div>
+          )}
           <motion.div
             layout
             className={
@@ -278,7 +426,12 @@ export default function TimerDock() {
             </button>
             <AnimatePresence initial={false}>
               {timers.map((t) => (
-                <TimerBadge key={t.id} timer={t} expanded={expanded} />
+                <TimerBadge
+                  key={t.id}
+                  timer={t}
+                  expanded={expanded}
+                  href={timerCookHref(t.id, sessions.meal, sessions.recipe)}
+                />
               ))}
             </AnimatePresence>
           </motion.div>
