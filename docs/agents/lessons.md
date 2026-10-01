@@ -57,6 +57,11 @@ changes so it no longer applies.
   browser. `scripts/dev/stack.sh` passes the right origin; do the same by hand.
 - **Dev mode hides hydration bugs.** Specs that passed on `next dev` failed on a
   production build (issue #345). Verify against a production build.
+- **A hydration mismatch inside a page's Suspense boundary is silent on production**:
+  React client-renders that boundary and raises nothing, and only `next dev` reports
+  it. A shell-level mismatch (root layout: providers, bottom nav, timer dock) throws
+  `Minified React error #418` on production. So hunt page-level mismatches on a dev
+  build, and use `e2e/home-hydration.spec.ts` for the shell (issue #573).
 
 ## Tests and gates
 
