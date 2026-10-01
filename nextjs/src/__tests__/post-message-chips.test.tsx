@@ -1,6 +1,7 @@
 /**
  * Issue #651 — `PostMessageChips`'s two pill kinds (send vs action) and the
- * ✎ edit affordance on send-kind chips. The resolver's row-building rules
+ * tap-to-send behaviour of send-kind chips (issue #730 removed their ✎
+ * edit-before-send button). The resolver's row-building rules
  * (fixed sets, stamping, caps) live in `chat-chip-resolver.test.ts`
  * (`frontend`'s file) — this suite only covers what the component itself
  * does with a given `chips` array.
@@ -39,49 +40,11 @@ describe('PostMessageChips', () => {
     expect(onChipTap).toHaveBeenCalledWith(SEND_CHIP)
   })
 
-  it('renders no ✎ when onEditChip is absent', () => {
-    render(<PostMessageChips chips={[SEND_CHIP]} onChipTap={jest.fn()} />)
-    expect(screen.queryByLabelText(/Edit ".*" before sending/)).not.toBeInTheDocument()
-  })
-
-  it('the ✎ button stages the message and never taps the pill', () => {
-    const onChipTap = jest.fn()
-    const onEditChip = jest.fn()
-    render(
-      <PostMessageChips chips={[SEND_CHIP]} onChipTap={onChipTap} onEditChip={onEditChip} />,
-    )
-
-    const editButton = screen.getByRole('button', {
-      name: 'Edit "Something quicker" before sending',
-    })
-    fireEvent.click(editButton)
-
-    expect(onEditChip).toHaveBeenCalledTimes(1)
-    expect(onEditChip).toHaveBeenCalledWith(SEND_CHIP.message)
-    expect(onChipTap).not.toHaveBeenCalled()
-  })
-
-  it('the ✎ glyph is aria-hidden', () => {
-    render(
-      <PostMessageChips chips={[SEND_CHIP]} onChipTap={jest.fn()} onEditChip={jest.fn()} />,
-    )
-    const editButton = screen.getByRole('button', {
-      name: 'Edit "Something quicker" before sending',
-    })
-    const glyph = editButton.querySelector('[aria-hidden="true"]')
-    expect(glyph).not.toBeNull()
-    expect(glyph?.textContent).toBe('✎')
-  })
-
-  it('the ✎ button has at least a 32x32px hit area', () => {
-    render(
-      <PostMessageChips chips={[SEND_CHIP]} onChipTap={jest.fn()} onEditChip={jest.fn()} />,
-    )
-    const editButton = screen.getByRole('button', {
-      name: 'Edit "Something quicker" before sending',
-    })
-    expect(editButton.className).toMatch(/\bw-8\b/)
-    expect(editButton.className).toMatch(/\bh-8\b/)
+  it('renders each send pill as a single button, with no sibling edit control (issue #730)', () => {
+    render(<PostMessageChips chips={[SEND_CHIP, ACTION_CHIP]} onChipTap={jest.fn()} onChipAction={jest.fn()} />)
+    expect(screen.getAllByRole('button')).toHaveLength(2)
+    expect(screen.queryByLabelText(/before sending/)).not.toBeInTheDocument()
+    expect(screen.queryByText('✎')).not.toBeInTheDocument()
   })
 
   it('an action chip calls onChipAction and never onChipTap', () => {
@@ -99,18 +62,6 @@ describe('PostMessageChips', () => {
     expect(onChipAction).toHaveBeenCalledTimes(1)
     expect(onChipAction).toHaveBeenCalledWith('save_meal')
     expect(onChipTap).not.toHaveBeenCalled()
-  })
-
-  it('an action chip renders no ✎, even with onEditChip set', () => {
-    render(
-      <PostMessageChips
-        chips={[ACTION_CHIP]}
-        onChipTap={jest.fn()}
-        onChipAction={jest.fn()}
-        onEditChip={jest.fn()}
-      />,
-    )
-    expect(screen.queryByLabelText(/Edit ".*" before sending/)).not.toBeInTheDocument()
   })
 
   it('an action chip is not rendered at all when onChipAction is absent', () => {
@@ -142,9 +93,9 @@ describe('PostMessageChips', () => {
       tone: 'expiring',
     }
 
-    it('truncates a long label and keeps the ✎ present, outside the truncation', () => {
+    it('truncates a long label, with the full text in the tooltip', () => {
       render(
-        <PostMessageChips chips={[LONG_CHIP]} onChipTap={jest.fn()} onEditChip={jest.fn()} />,
+        <PostMessageChips chips={[LONG_CHIP]} onChipTap={jest.fn()} />,
       )
 
       const pill = screen.getByRole('button', { name: LONG_CHIP.label })
@@ -156,13 +107,6 @@ describe('PostMessageChips', () => {
       expect(labelSpan?.className).toMatch(/\btruncate\b/)
       // The full label survives as a tooltip for anyone who needs it.
       expect(pill).toHaveAttribute('title', LONG_CHIP.label)
-
-      // The ✎ is a sibling with a fixed size — never truncated, never hidden
-      // by the long label.
-      const editButton = screen.getByRole('button', {
-        name: `Edit "${LONG_CHIP.label}" before sending`,
-      })
-      expect(editButton.className).toMatch(/flex-shrink-0/)
     })
 
     it('bounds an action chip the same way, with no wrapper to fall back on', () => {

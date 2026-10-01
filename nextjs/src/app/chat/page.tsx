@@ -539,8 +539,7 @@ function ChatSurface() {
 
   // Forwards a stamped pill's request context (issue #651, §1c/§4) — set only
   // by the resolver (`{ meal_followup: true }`), never from model output. An
-  // unstamped chip (every non-meal pill, plus any pill edited via ✎) keeps
-  // the pre-#651 one-argument call.
+  // unstamped chip (every non-meal pill) keeps the pre-#651 one-argument call.
   const handleChipTap = (chip: ChipConfig) => {
     if (chip.context) {
       sendChipMessage(chip.message, chip.context)
@@ -975,7 +974,6 @@ function ChatSurface() {
                 chips={rankStarterPills(starter.data ?? null, mountedAt)}
                 align="center"
                 onChipTap={(chip) => handleSuggestionClick(chip.message)}
-                onEditChip={handleStageText}
                 onChipAction={(action) => {
                   // The starter row's only action pill is the scan pill.
                   if (action === 'open_scan') router.push('/pantry?add=scan')
@@ -1311,7 +1309,6 @@ function MessageRenderer({
             <PostMessageChips
               chips={resolveChips(intent, getFollowUpSuggestions(message.response))}
               onChipTap={onChipTap}
-              onEditChip={onStageText}
               onChipAction={onChipAction}
             />
           )}
@@ -1352,7 +1349,6 @@ function MessageRenderer({
                 fixedMain: Boolean(proposal.fixed_main),
               })}
               onChipTap={onChipTap}
-              onEditChip={onStageText}
               onChipAction={onChipAction}
             />
           )}
@@ -1385,7 +1381,6 @@ function MessageRenderer({
             <PostMessageChips
               chips={resolveChips(intent, getFollowUpSuggestions(message.response), 'meal', { mealSaved })}
               onChipTap={onChipTap}
-              onEditChip={onStageText}
               onChipAction={onChipAction}
             />
           )}
@@ -1527,7 +1522,6 @@ function MessageRenderer({
         <PostMessageChips
           chips={resolveChips(intent, getFollowUpSuggestions(message.response))}
           onChipTap={onChipTap}
-          onEditChip={onStageText}
           onChipAction={onChipAction}
         />
       )}
