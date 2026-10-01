@@ -4,7 +4,7 @@ Feeds `bubbly_chef.services.recipe_url_ingestor.ingest_recipe_from_url`'s
 Tier-3 fallback: extracting a structured RecipeCard from fetched HTML, or
 (when the page could not be fetched) from the model's own training knowledge
 of the URL. ``_AI_VIDEO_PROMPT`` is the YouTube path (issue #528): the model
-watches the video itself and signals "not a recipe" with an empty card. Edits here are CODEOWNERS-gated: prompt wording changes model
+watches the video itself and signals "not a recipe" with an empty card. Edits here are fresh-context reviewed and `verify`-checked: prompt wording changes model
 behavior even though the test suite can stay green.
 """
 

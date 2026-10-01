@@ -7,10 +7,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import FadeInView from '@/components/ui/FadeInView'
 import SpringButton from '@/components/ui/SpringButton'
-import MealDishCard from '@/components/meal/MealDishCard'
 import MealTimelineTable, { timelineNotes } from '@/components/meal/MealTimelineTable'
 import ServeAtControl, { type ServeAtMode } from '@/components/meal/ServeAtControl'
 import SideAlternativesRow from '@/components/meal/SideAlternativesRow'
+import RecipeCard from '@/components/recipes/RecipeCard'
 import RecipeDeleteConfirm from '@/components/recipes/RecipeDeleteConfirm'
 import {
   fetchMeal,
@@ -22,6 +22,9 @@ import {
   type SideAlternativeOutline,
 } from '@/lib/api/meals'
 import { ensureSteps } from '@/lib/api/recipes'
+import { fetchMealToBuy } from '@/lib/api/grocery'
+import { attributeToBuy } from '@/lib/meal-to-buy'
+import { ingredientParts } from '@/lib/recipe-helpers'
 import { scaledIngredients } from '@/lib/recipe-helpers'
 import { scheduleMeal } from '@/lib/meal-scheduler'
 import { resolveMealAnchor } from '@/lib/meal-anchor'
@@ -261,6 +264,31 @@ export default function MealDetailPage() {
   // stores and what `isStaleMealCookSession` compares against — position-
   // ordered recipe ids, the same shape the cook route restores dishes from.
   const dishIds = useMemo(() => dishesSorted.map((d) => d.recipe.id), [dishesSorted])
+
+  // Each dish card's "N to buy" line (issue #744). The AI service computes the
+  // meal's missing foods against the current pantry (deterministic, read-only);
+  // they are attributed to the dish that lists them. A failure just hides the
+  // lines: the cards never show a made-up "nothing to buy".
+  const { data: mealToBuy } = useQuery({
+    queryKey: ['meal-to-buy', id, dishIds.join(',')],
+    queryFn: () => fetchMealToBuy(id),
+    enabled: Boolean(id) && !deleted && dishIds.length > 0,
+    retry: false,
+    staleTime: 60_000,
+  })
+  const toBuyByPosition = useMemo(
+    () =>
+      mealToBuy
+        ? attributeToBuy(
+            mealToBuy,
+            dishesSorted.map((d) => ({
+              position: d.position,
+              names: d.recipe.ingredients.map((ing) => ingredientParts(ing).name),
+            })),
+          )
+        : null,
+    [mealToBuy, dishesSorted],
+  )
   // Issue #653 review round 1 (S4) — one signature per dish (step count +
   // labels), alongside `dishIds`: a resumed session where a dish's steps
   // changed shape under the same recipe id (an `ensureSteps` upgrade landing
@@ -807,6 +835,7 @@ export default function MealDetailPage() {
             <DishSection
               key={dish.recipe.id}
               dish={dish}
+              toBuy={toBuyByPosition?.get(dish.position)}
               mealServings={meal.servings}
               sideCount={sideCount}
               row={row}
@@ -904,8 +933,18 @@ export default function MealDetailPage() {
   )
 }
 
+/** A dish's minutes for its card band: the recipe's own total, else prep + cook, else the steps' sum. */
+function dishMinutes(recipe: MealDishFull['recipe']): number | null {
+  if (recipe.total_time_minutes) return recipe.total_time_minutes
+  const prepCook = (recipe.prep_time_minutes ?? 0) + (recipe.cook_time_minutes ?? 0)
+  if (prepCook > 0) return prepCook
+  const stepSum = (recipe.steps ?? []).reduce((sum, step) => sum + (step.duration_minutes ?? 0), 0)
+  return stepSum > 0 ? stepSum : null
+}
+
 function DishSection({
   dish,
+  toBuy,
   mealServings,
   sideCount,
   row,
@@ -922,6 +961,8 @@ function DishSection({
   onCancelRow,
 }: {
   dish: MealDishFull
+  /** This dish's missing foods; undefined while unknown. */
+  toBuy?: string[]
   mealServings: number
   sideCount: number
   row: RowUiState | null
@@ -948,36 +989,28 @@ function DishSection({
   return (
     <FadeInView>
       <div className="flex flex-col gap-2">
-        <MealDishCard
+        <RecipeCard
+          variant="dish"
           role={dish.role}
+          position={dish.position}
           title={dish.recipe.title}
+          minutes={dishMinutes(dish.recipe)}
           href={`/recipes/${dish.recipe.id}`}
           ingredients={scaledIngredients(dish.recipe.ingredients, scale)}
           instructions={dish.recipe.instructions}
           steps={dish.recipe.steps ?? fallbackSteps(dish.recipe.instructions)}
           stepsEstimated={stepsEstimated}
+          toBuy={toBuy}
           actions={
             isSide ? (
               <>
-                <button
-                  type="button"
-                  onClick={onSwap}
-                  disabled={controlsDisabled}
-                  className="min-h-[44px] px-3 rounded-full text-xs font-bold disabled:opacity-40"
-                  style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
-                >
+                <SpringButton variant="secondary" size="sm" onClick={onSwap} disabled={controlsDisabled}>
                   Swap
-                </button>
+                </SpringButton>
                 {sideCount === 2 && (
-                  <button
-                    type="button"
-                    onClick={onRequestRemove}
-                    disabled={controlsDisabled}
-                    className="min-h-[44px] px-3 rounded-full text-xs font-bold disabled:opacity-40"
-                    style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}
-                  >
+                  <SpringButton variant="secondary" size="sm" onClick={onRequestRemove} disabled={controlsDisabled}>
                     Remove
-                  </button>
+                  </SpringButton>
                 )}
               </>
             ) : undefined

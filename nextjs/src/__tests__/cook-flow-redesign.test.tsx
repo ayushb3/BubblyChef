@@ -48,7 +48,7 @@ jest.mock('framer-motion', () => {
 
 jest.mock('@/lib/format', () => ({ titleCase: (s: string) => s }))
 
-import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
+import RecipeCard from '@/components/recipes/RecipeCard'
 import type { ChatRecipeData } from '@/types/chat'
 
 const RECIPE: ChatRecipeData = {
@@ -63,7 +63,7 @@ const RECIPE: ChatRecipeData = {
 describe('ChatRecipeCard — cook-flow redesign', () => {
   it('"Cook with me" is present and not disabled when cookState is idle', () => {
     render(
-      <ChatRecipeCard
+      <RecipeCard variant="chat"
         recipe={RECIPE}
         onCookWithMe={jest.fn()}
         onAlreadyMade={jest.fn()}
@@ -76,7 +76,7 @@ describe('ChatRecipeCard — cook-flow redesign', () => {
 
   it('"Cook with me" and "I already made this" are disabled when cookState is pending', () => {
     render(
-      <ChatRecipeCard
+      <RecipeCard variant="chat"
         recipe={RECIPE}
         onCookWithMe={jest.fn()}
         onAlreadyMade={jest.fn()}
@@ -94,7 +94,7 @@ describe('ChatRecipeCard — cook-flow redesign', () => {
   it('"Cook with me" fires onCookWithMe without savedRecipeId', () => {
     const onCookWithMe = jest.fn()
     render(
-      <ChatRecipeCard recipe={RECIPE} onCookWithMe={onCookWithMe} onAlreadyMade={jest.fn()} />,
+      <RecipeCard variant="chat" recipe={RECIPE} onCookWithMe={onCookWithMe} onAlreadyMade={jest.fn()} />,
     )
     fireEvent.click(screen.getByRole('button', { name: /cook with me/i }))
     expect(onCookWithMe).toHaveBeenCalledTimes(1)
@@ -103,7 +103,7 @@ describe('ChatRecipeCard — cook-flow redesign', () => {
   it('"I already made this" fires onAlreadyMade', () => {
     const onAlreadyMade = jest.fn()
     render(
-      <ChatRecipeCard recipe={RECIPE} onCookWithMe={jest.fn()} onAlreadyMade={onAlreadyMade} />,
+      <RecipeCard variant="chat" recipe={RECIPE} onCookWithMe={jest.fn()} onAlreadyMade={onAlreadyMade} />,
     )
     fireEvent.click(screen.getByText(/i already made this/i))
     expect(onAlreadyMade).toHaveBeenCalledTimes(1)
@@ -111,7 +111,7 @@ describe('ChatRecipeCard — cook-flow redesign', () => {
 
   it('"Save to Library" is hidden when saveState is "saved"', () => {
     render(
-      <ChatRecipeCard
+      <RecipeCard variant="chat"
         recipe={RECIPE}
         saveState="saved"
         onSave={jest.fn()}
@@ -125,7 +125,7 @@ describe('ChatRecipeCard — cook-flow redesign', () => {
 
   it('"Save to Library" is hidden when savedRecipeId exists and is not a draft', () => {
     render(
-      <ChatRecipeCard
+      <RecipeCard variant="chat"
         recipe={RECIPE}
         saveState="idle"
         savedRecipeId="real-id-123"
@@ -140,7 +140,7 @@ describe('ChatRecipeCard — cook-flow redesign', () => {
 
   it('"Save to Library" is shown when savedRecipeId is a draft', () => {
     render(
-      <ChatRecipeCard
+      <RecipeCard variant="chat"
         recipe={RECIPE}
         saveState="idle"
         savedRecipeId="draft-id-99"
@@ -285,7 +285,7 @@ describe('GET /api/recipes — draft filter default', () => {
 describe('ChatRecipeCard — inert once cooking has started (#269)', () => {
   const renderStarted = () =>
     render(
-      <ChatRecipeCard
+      <RecipeCard variant="chat"
         recipe={RECIPE}
         onSave={jest.fn()}
         onTryAnother={jest.fn()}
@@ -308,7 +308,7 @@ describe('ChatRecipeCard — inert once cooking has started (#269)', () => {
   it('does not fire onAlreadyMade when the started card is clicked', () => {
     const onAlreadyMade = jest.fn()
     render(
-      <ChatRecipeCard
+      <RecipeCard variant="chat"
         recipe={RECIPE}
         onCookWithMe={jest.fn()}
         onAlreadyMade={onAlreadyMade}
@@ -322,7 +322,7 @@ describe('ChatRecipeCard — inert once cooking has started (#269)', () => {
   it('still fires onAlreadyMade while idle', () => {
     const onAlreadyMade = jest.fn()
     render(
-      <ChatRecipeCard
+      <RecipeCard variant="chat"
         recipe={RECIPE}
         onCookWithMe={jest.fn()}
         onAlreadyMade={onAlreadyMade}
