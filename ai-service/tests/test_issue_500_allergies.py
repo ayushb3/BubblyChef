@@ -951,7 +951,11 @@ class TestMealEngine:
     @pytest.mark.asyncio
     async def test_no_allergies_does_not_trigger_the_guard(self) -> None:
         dirty = MealOptionsLLMResult(
-            options=[_option(f"Satay {i}", "Chicken Satay", ["peanut sauce"]) for i in range(3)]
+            # three different proteins: three of one would trigger #877's replacement call
+            options=[
+                _option(f"Satay {i}", f"{protein} Satay", ["peanut sauce"])
+                for i, protein in enumerate(("Chicken", "Beef", "Tofu"))
+            ]
         )
         ai = MagicMock()
         ai.complete = AsyncMock(return_value=dirty)

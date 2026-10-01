@@ -67,6 +67,18 @@ PANTRIES: dict[str, dict[str, Any]] = {
     },
 }
 
+# Issue #877: a chicken-heavy pantry with no avoid list, so a lazy model's default is three
+# chicken mains. One stage run is one live call, or two when the replace-once step fires.
+PANTRIES["C"] = {
+    "label": "C: chicken-heavy (#877)",
+    "items": [
+        "chicken thighs", "chicken breast", "whole chicken", "chicken drumsticks", "potatoes",
+        "rice", "onion", "garlic", "carrots", "broccoli", "soy sauce", "olive oil", "salt",
+        "black pepper", "lemon", "smoked paprika", "cumin", "butter", "eggs",
+    ],
+    "avoid": [],
+}
+
 REQUEST = "Plan dinner for tonight"
 
 
@@ -131,15 +143,22 @@ async def run(args: argparse.Namespace) -> None:
     if args.dry:  # offline wiring check: a canned answer, no network, no budget spent
         from bubbly_chef.models.meal import MealDishOutlineLLM, MealOptionLLM
 
+        # Three chicken mains: the dry run also walks the #877 replace-once path (the canned
+        # replacement is the same three, so it is rejected as still duplicated).
         canned = MealOptionsLLMResult(
             options=[
                 MealOptionLLM(
-                    title="Dry Run",
+                    title=f"Dry Run {n}",
                     blurb="Crispy chicken with garlic.",
+                    cuisine="American",
                     dishes=[
-                        MealDishOutlineLLM(role="main", name="Chicken", key_ingredients=["chicken"])
+                        MealDishOutlineLLM(
+                            role="main", name=f"Chicken {n}", key_ingredients=["chicken"]
+                        ),
+                        MealDishOutlineLLM(role="side", name="Rice", key_ingredients=["rice"]),
                     ],
                 )
+                for n in (1, 2, 3)
             ]
         )
         real = MagicMock()
@@ -147,18 +166,33 @@ async def run(args: argparse.Namespace) -> None:
         real.close = AsyncMock()
     else:
         real = get_ai_manager()
-    captured: dict[str, Any] = {"prompt": None, "raw": None}
+    captured: dict[str, Any] = {"prompt": None, "raw": None, "replacement_raw": []}
+    replay_raw: dict[str, Any] | None = None
+    if args.replay_first:
+        replay_raw = json.loads(Path(args.replay_first).read_text(encoding="utf-8"))["raw"]
 
     class Proxy:
         async def complete(
             self, *, prompt: str, response_schema: type, temperature: float = 0.7
         ) -> Any:
             if response_schema is MealOptionsLLMResult:
-                captured["prompt"] = prompt
-                result = await real.complete(
-                    prompt=prompt, response_schema=response_schema, temperature=temperature
-                )
-                captured["raw"] = result.model_dump()
+                first = captured["raw"] is None
+                if first:
+                    captured["prompt"] = prompt
+                if first and replay_raw is not None:
+                    # #877: replay an earlier live answer as the options call so a budgeted
+                    # live call goes to the replacement step alone. Costs nothing.
+                    result = MealOptionsLLMResult.model_validate(replay_raw)
+                else:
+                    result = await real.complete(
+                        prompt=prompt, response_schema=response_schema, temperature=temperature
+                    )
+                if first:
+                    captured["raw"] = result.model_dump()
+                else:  # the #877 replace-once call: its prompt is the first one plus a block
+                    captured["replacement_raw"].append(
+                        {"prompt_tail": prompt[len(captured["prompt"]) :], **result.model_dump()}
+                    )
                 return result
             if response_schema is RecipeConstraints:
                 return RecipeConstraints()  # stubbed: keeps one stage run to one live call
@@ -210,6 +244,7 @@ async def run(args: argparse.Namespace) -> None:
                 "http_calls": http_calls,
                 "prompt": captured["prompt"],
                 "raw": captured["raw"],
+                "replacement_raw": captured["replacement_raw"],
                 "final": final,
                 "avoid": pantry_def["avoid"],
                 "pantry_items": pantry_def["items"],
@@ -241,6 +276,7 @@ def report(args: argparse.Namespace) -> None:
     from bubbly_chef.workflows.meal.variety import (
         _repeats,
         _title_words,
+        main_protein,
         unsupported_claims,
     )
 
@@ -288,6 +324,29 @@ def report(args: argparse.Namespace) -> None:
             main = next((d["name"] for d in o["dishes"] if d["role"] == "main"), "?")
             detail.append(f"- {o['title']} (main: {main}) -- {o.get('blurb')!r}")
     print("\n".join(detail))
+    print("\n#877 main protein / cuisine per option (model's first answer -> shipped):")
+    for r in rows:
+        if not r["final"]:
+            continue
+
+        def keys(options: list[dict[str, Any]]) -> list[str]:
+            out = []
+            for o in options:
+                main = next((d for d in o["dishes"] if d["role"] == "main"), None)
+                protein = (
+                    main_protein(main["name"], main.get("key_ingredients", [])) if main else "none"
+                )
+                # a shipped MealOption carries no cuisine, only the model's raw answer does
+                out.append(f"{protein}/{o['cuisine']}" if o.get("cuisine") else protein)
+            return out
+
+        first = list(r["raw"]["options"]) if r["raw"] else []
+        shipped = r["final"]
+        chicken = sum(k.split("/")[0] == "chicken" for k in keys(shipped))
+        print(
+            f"- {r['label']}/{r['pantry']}: {keys(first)} -> {keys(shipped)}; chicken mains "
+            f"shipped: {chicken}/{len(shipped)}; live calls: {r['http_calls']}"
+        )
 
 
 def main() -> None:
@@ -302,6 +361,11 @@ def main() -> None:
     p_run.add_argument("--budget", type=int, default=6)
     p_run.add_argument("--env-file", required=True)
     p_run.add_argument("--dry", action="store_true", help="canned model answer; no live call")
+    p_run.add_argument(
+        "--replay-first",
+        help="an earlier run's JSON: its raw options answer is replayed as the options call "
+        "(no live call), so only the #877 replacement call, if any, goes live",
+    )
     p_rep = sub.add_parser("report")
     p_rep.add_argument("--root", required=True)
     p_rep.add_argument("files", nargs="+")
