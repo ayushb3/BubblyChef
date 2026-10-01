@@ -8,18 +8,18 @@ import { useMotionConfig } from '@/lib/motion'
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
 
 // ─── Static palette data ──────────────────────────────────────────────────────
-// WHY static hex values instead of CSS variables: we need each swatch to always
-// display its own hue regardless of which theme is currently active on the page.
-// If we used var(--color-primary) the swatch would show the *active* theme's
-// primary colour for every entry, making all five look identical and defeating
-// the entire purpose of the picker.
+// Each swatch must always display its own theme's hue regardless of which theme
+// is active on the page, so a bare var(--color-primary) would paint all five the
+// same. Instead each swatch carries `data-theme={key}`: globals.css scopes the
+// palette variables to `[data-theme="..."]`, so on that element (and only that
+// element) --color-primary resolves to that theme's primary. No hex here.
 
-const PALETTES: Array<{ key: ThemeKey; hex: string; name: string; label: string }> = [
-  { key: 'sakura',   hex: '#FFB7C5', name: 'Sakura',   label: 'Switch to sakura theme' },
-  { key: 'mint',     hex: '#A8E6CF', name: 'Mint',     label: 'Switch to mint theme' },
-  { key: 'lavender', hex: '#C9B5E8', name: 'Lavender', label: 'Switch to lavender theme' },
-  { key: 'yuzu',     hex: '#FFD98C', name: 'Yuzu',     label: 'Switch to yuzu theme' },
-  { key: 'bluebell', hex: '#A3C4F5', name: 'Bluebell', label: 'Switch to bluebell theme' },
+const PALETTES: Array<{ key: ThemeKey; name: string; label: string }> = [
+  { key: 'sakura',   name: 'Sakura',   label: 'Switch to sakura theme' },
+  { key: 'mint',     name: 'Mint',     label: 'Switch to mint theme' },
+  { key: 'lavender', name: 'Lavender', label: 'Switch to lavender theme' },
+  { key: 'yuzu',     name: 'Yuzu',     label: 'Switch to yuzu theme' },
+  { key: 'bluebell', name: 'Bluebell', label: 'Switch to bluebell theme' },
 ]
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -82,11 +82,12 @@ export default function ThemePicker() {
         {/* The visible swatch stays 24px; the 44×44 button around it is the tap target. */}
         <span
           aria-hidden="true"
+          data-theme={active.key}
           style={{
             width: 24,
             height: 24,
             borderRadius: '50%',
-            backgroundColor: active.hex,
+            backgroundColor: 'var(--color-primary)',
             border: '1px solid rgba(0,0,0,0.08)',
           }}
         />
@@ -111,7 +112,7 @@ export default function ThemePicker() {
             aria-label="Theme picker"
             tabIndex={-1}
           >
-            {PALETTES.map(({ key, hex, name, label }) => {
+            {PALETTES.map(({ key, name, label }) => {
               const isActive = theme === key
               return (
                 <button
@@ -134,11 +135,12 @@ export default function ThemePicker() {
                 >
                   <span
                     aria-hidden="true"
+                    data-theme={key}
                     style={{
                       width: 20,
                       height: 20,
                       borderRadius: '50%',
-                      backgroundColor: hex,
+                      backgroundColor: 'var(--color-primary)',
                       border: '1px solid rgba(0,0,0,0.08)',
                       flexShrink: 0,
                     }}

@@ -209,7 +209,10 @@
 *:focus-visible {
   outline: 2px solid var(--color-text);
   outline-offset: 2px;
-  border-radius: inherit; /* follow the element's own corner radius */
+  /* No corner-radius declaration here (issue #747). `inherit` took the PARENT's
+     radius, and being unlayered it beat Tailwind's `rounded-*`, so a focused
+     pill or keycap lost its own corners. The outline follows the element's own
+     radius already. */
 }
 
 /*
@@ -227,7 +230,6 @@
 .focus-ring-inset:focus-visible {
   outline: 2px solid var(--color-text);
   outline-offset: -3px;
-  border-radius: inherit;
 }
 
 /* Chowder-style textile/fabric panel — subtle woven crosshatch texture.

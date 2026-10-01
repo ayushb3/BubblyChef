@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { Providers } from "@/components/Providers";
 import BottomNav from "@/components/layout/BottomNav";
 import PageTransition from "@/components/ui/PageTransition";
+import { pwaColors } from "@/lib/design-tokens";
 import "./globals.css";
 
 // Self-hosted (not next/font/google) so production builds never fetch from
@@ -60,7 +61,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#ffb5c5",
+  themeColor: pwaColors.themeColor,
 };
 
 export default function RootLayout({
