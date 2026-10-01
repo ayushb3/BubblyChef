@@ -3,7 +3,7 @@
 'use strict'
 const fs = require('fs')
 const path = require('path')
-const { decide, parseVerdict, prDiffUnchanged, owners, makeGit, REVIEW_JOB, REVIEW_STEP } = require('./review-verdict.cjs')
+const { decide, parseVerdict, looksLikeReviewSummary, prDiffUnchanged, owners, makeGit, REVIEW_JOB, REVIEW_STEP } = require('./review-verdict.cjs')
 
 let failures = 0
 function check(name, cond, detail) {
@@ -35,6 +35,50 @@ check('prose mentioning "verdict" without a colon label is unreadable',
   parseVerdict("Great work overall; my verdict is that this looks mergeable.") === '', '')
 check('the last of several "Verdict:" lines wins',
   parseVerdict('Verdict: needs changes\nsome discussion\nVerdict: looks mergeable') === 'looks mergeable', '')
+
+// issue #571: a re-review summary titled by a heading ("## Re-review (round 3) — `looks mergeable`",
+// PR #569) carries no "Verdict:" label, and was held as "no review summary comment found"
+const HEAD3 = '## Re-review (round 3) — `looks mergeable`\n\nBoth findings fixed.'
+check('heading verdict: backticked, after an em dash', parseVerdict(HEAD3) === 'looks mergeable', parseVerdict(HEAD3))
+check('heading verdict: plain, after a colon', parseVerdict('### Re-review: needs changes\nstuff') === 'needs changes', '')
+check('heading verdict: the whole heading is the verdict', parseVerdict('## Needs a human\nwhy') === 'needs a human', '')
+check('heading verdict: hyphen separator with spaces', parseVerdict('## Round 2 - looks mergeable') === 'looks mergeable', '')
+check('heading verdict: the last heading wins', parseVerdict('## Round 1 — needs changes\n\n## Round 2 — looks mergeable') === 'looks mergeable', '')
+check('heading verdict: a verdict mid-heading is not read', parseVerdict('## Why this is not looks mergeable yet') === '', '')
+check('heading verdict: glued to a word is not read', parseVerdict('## Re-review-needs changes') === '', '')
+check('heading verdict: a bold line (not a heading) is not read', parseVerdict('**Re-review — looks mergeable**') === '', '')
+check('heading verdict: inside a code fence is not read', parseVerdict('```\n## Round 2 — looks mergeable\n```') === '', '')
+check('heading verdict: an explicit label that disagrees fails closed',
+  parseVerdict('## Re-review — looks mergeable\n\n**Verdict: `needs changes`**') === '', '')
+check('heading verdict: an explicit label that agrees is fine',
+  parseVerdict('## Re-review — looks mergeable\n\n**Verdict: `looks mergeable`**') === 'looks mergeable', '')
+check('heading verdict: an unreadable label is not rescued by a heading',
+  parseVerdict('## Re-review — looks mergeable\n\n**Verdict:** needs a human to weigh in, otherwise looks mergeable') === '', '')
+
+// the machine-readable marker the reviewer prompt asks for, last line of the comment. It used to
+// be read as the LAST "Verdict:" label with value "looks-mergeable -->", making every review
+// that carried it unreadable
+const MARK = v => `<!-- verdict: ${v} -->`
+check('marker after the label does not clobber it', parseVerdict(`**Verdict: \`looks mergeable\`**\n\nbody\n\n${MARK('looks-mergeable')}`) === 'looks mergeable', '')
+check('marker alone is readable', parseVerdict(`body\n${MARK('needs-changes')}`) === 'needs changes', '')
+check('marker that disagrees with the label fails closed', parseVerdict(`**Verdict: \`needs changes\`**\n${MARK('looks-mergeable')}`) === '', '')
+check('marker that disagrees with a heading fails closed', parseVerdict(`## Re-review — needs a human\n${MARK('looks-mergeable')}`) === '', '')
+check('marker with an unknown value fails closed', parseVerdict(`**Verdict: \`looks mergeable\`**\n${MARK('fine')}`) === '', '')
+check('two disagreeing markers fail closed', parseVerdict(`${MARK('looks-mergeable')}\n${MARK('needs-human')}`) === '', '')
+check('marker quoted inline in prose is ignored', parseVerdict('Use `<!-- verdict: looks-mergeable -->` on its own line.\n**Verdict: needs changes**') === 'needs changes', '')
+check('marker inside a code fence is ignored', parseVerdict(`**Verdict: needs a human**\n\`\`\`\n${MARK('looks-mergeable')}\n\`\`\``) === 'needs a human', '')
+
+// which claude comments count as the review summary
+check('summary: has a Verdict label', looksLikeReviewSummary('**Verdict: `looks mergeable`**') === true, '')
+check('summary: heading verdict, no label', looksLikeReviewSummary(HEAD3) === true, '')
+check('summary: marker only', looksLikeReviewSummary(`hello\n${MARK('looks-mergeable')}`) === true, '')
+check('summary: an unrelated claude reply is not one', looksLikeReviewSummary('Sure, I changed the label.') === false, '')
+{
+  const r = run({ sticky: { ...OK.sticky, body: HEAD3 } })
+  check('passes: a re-review headed "— looks mergeable" with no Verdict label', r.pass === true, r.reason)
+  const h = run({ sticky: { ...OK.sticky, body: '## Re-review (round 3) — `needs changes`\n\nstill broken' } })
+  check('holds: a re-review headed "— needs changes"', h.pass === false && /needs changes/.test(h.reason), h.reason)
+}
 
 check('passes: fresh "looks mergeable" for this commit', run({}).pass === true, run({}).reason)
 check('passes: a PR without the agent-loop label is not gated', run({ labels: ['bug'], sticky: null, reviewJob: null }).pass === true, '')

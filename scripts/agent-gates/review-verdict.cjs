@@ -23,16 +23,83 @@ const REVIEW_STEP = 'Claude review'
 // The three verdicts the reviewer is instructed to write (see .github/workflows/claude-review.yml).
 const KNOWN_VERDICTS = ['looks mergeable', 'needs changes', 'needs a human']
 
-// The value after the LAST "Verdict:" label in the body, however the reviewer formatted
-// it: backticked or not, bold or not, any case, trailing punctuation, extra spaces —
-// `**Verdict: \`looks mergeable\`**`, `Verdict: looks mergeable.`, `VERDICT: NEEDS A
-// HUMAN` all parse the same way. Only the three known verdicts are ever accepted;
-// anything else — an unknown word, or no "Verdict:" label at all — is "unreadable" (fail
-// closed), returned as ''. Requires the literal label "Verdict" immediately followed by
-// a colon, so ordinary prose that merely mentions "verdict" never matches.
-function parseVerdict(body) {
-  const lines = String(body || '').split(/\r?\n/)
+// Lines of the body outside fenced code blocks (a fence line toggles; the fence lines
+// themselves are dropped). Used for the heading and marker rules, where a fenced example
+// of the format must never be read as this review's verdict.
+function unfencedLines(text) {
+  const out = []
+  let fenced = false
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s{0,3}(`{3,}|~{3,})/.test(line)) { fenced = !fenced; continue }
+    if (!fenced) out.push(line)
+  }
+  return out
+}
+
+// "needs changes" / "needs-changes" / "Needs A Human." -> the canonical spaced form, or ''.
+function canonical(value) {
+  const normalized = String(value)
+    .replace(/[`*_]/g, '')
+    .trim()
+    .replace(/[.,;:!?]+$/, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, ' ')
+  return KNOWN_VERDICTS.includes(normalized) ? normalized : ''
+}
+
+// The verdict a markdown HEADING carries, for re-review summaries titled
+// "## Re-review (round 3) — `looks mergeable`" that never say "Verdict:" (issue #571,
+// PR #569). The verdict must END the heading and be the whole heading or follow a
+// separator (an em/en dash or hyphen set off by spaces, or a colon), so "## Why this is
+// not looks mergeable yet" or "## Re-review-needs changes" read as nothing. The last such
+// heading outside a code fence wins, as with the label. '' when none.
+function headingVerdict(text) {
   let value = ''
+  for (const line of unfencedLines(text)) {
+    const h = /^\s{0,3}#{1,6}\s+(.*)$/.exec(line)
+    if (!h) continue
+    const title = h[1].replace(/[`*_]/g, '').trim().replace(/[.,;:!?]+$/, '').trim()
+    const m = /(?:^|\s[—–-]+\s|:\s*)(looks mergeable|needs changes|needs a human)$/i.exec(title)
+    if (m) value = m[1]
+  }
+  return canonical(value)
+}
+
+// The machine-readable marker the reviewer prompt asks for, on its own line outside any
+// code fence: `<!-- verdict: looks-mergeable -->`. `bad` is true when a marker is present
+// but unreadable, or two markers disagree (fail closed).
+function markerVerdict(text) {
+  const found = new Set()
+  let bad = false
+  for (const line of unfencedLines(text)) {
+    const m = /^\s*<!--\s*verdict\s*:\s*(.*?)\s*-->\s*$/i.exec(line)
+    if (!m) continue
+    const v = canonical(m[1])
+    if (v) found.add(v)
+    else bad = true
+  }
+  return { value: found.size === 1 ? [...found][0] : '', bad: bad || found.size > 1 }
+}
+
+// The verdict a review comment states, however the reviewer formatted it. Three places
+// can carry it, and every one that is present must agree (any conflict is unreadable):
+//   1. a "Verdict:" label: the value after the LAST one in the body, backticked or not,
+//      bold or not, any case, trailing punctuation, extra spaces:
+//      `**Verdict: `looks mergeable`**`, `Verdict: looks mergeable.`,
+//      `VERDICT: NEEDS A HUMAN` all parse the same way. Requires the literal label
+//      "Verdict" immediately followed by a colon, so prose that merely mentions
+//      "verdict" never matches. A label whose value is not one of the three known
+//      verdicts makes the whole comment unreadable.
+//   2. the `<!-- verdict: looks-mergeable -->` marker line (see markerVerdict).
+//   3. a heading that ends in the verdict (see headingVerdict).
+// Only the three known verdicts are ever accepted; anything else, or no verdict at all,
+// is "unreadable" (fail closed), returned as ''.
+function parseVerdict(body) {
+  const text = String(body || '')
+  // HTML comments (the marker, or an example of it) are never "Verdict:" labels.
+  const lines = text.replace(/<!--[\s\S]*?-->/g, '').split(/\r?\n/)
+  let label = null
   for (const line of lines) {
     const m = /\bVerdict\s*:\s*(.*)$/i.exec(line)
     if (!m) continue
@@ -40,16 +107,28 @@ function parseVerdict(body) {
     // closing backtick, e.g. a parenthetical aside, is never swept in). Without
     // backticks the rest of the line is the value.
     const backticked = /^\**\s*`([^`]+)`/.exec(m[1])
-    value = backticked ? backticked[1] : m[1]
+    label = backticked ? backticked[1] : m[1]
   }
-  const normalized = value
-    .replace(/[`*_]/g, '')
-    .trim()
-    .replace(/[.,;:!?]+$/, '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-  return KNOWN_VERDICTS.includes(normalized) ? normalized : ''
+  const marker = markerVerdict(text)
+  if (marker.bad) return ''
+  const sources = []
+  if (label !== null) {
+    const v = canonical(label)
+    if (!v) return ''
+    sources.push(v)
+  }
+  if (marker.value) sources.push(marker.value)
+  const heading = headingVerdict(text)
+  if (heading) sources.push(heading)
+  return sources.length > 0 && sources.every(v => v === sources[0]) ? sources[0] : ''
+}
+
+// Does this comment look like the reviewer's summary, so the gate reads it, and an
+// unreadable newest one holds rather than silently falling back to an older one? A
+// "Verdict" label, the marker, or a heading ending in a verdict.
+function looksLikeReviewSummary(body) {
+  const text = String(body || '')
+  return /Verdict/.test(text) || /<!--\s*verdict\s*:/i.test(text) || headingVerdict(text) !== ''
 }
 
 // Each code owner's standing approval: their latest APPROVED / CHANGES_REQUESTED /
@@ -219,7 +298,7 @@ function gather(repo, pr, headSha) {
     }
   }
   const sticky = api(`repos/${repo}/issues/${pr}/comments?per_page=100`)
-    .filter(c => c.user && (c.user.login === 'claude[bot]' || c.user.login === 'claude') && /Verdict/.test(c.body || ''))
+    .filter(c => c.user && (c.user.login === 'claude[bot]' || c.user.login === 'claude') && looksLikeReviewSummary(c.body))
     .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))[0]
   return {
     labels, approvals, headSha, reviewJob, prDiffUnchanged: prDiffUnchangedAt,
@@ -228,7 +307,7 @@ function gather(repo, pr, headSha) {
   }
 }
 
-module.exports = { decide, parseVerdict, prDiffUnchanged, owners, makeGit, fetchHistory, ensureCommits, LOOP_LABEL, REVIEW_JOB, REVIEW_STEP }
+module.exports = { decide, parseVerdict, looksLikeReviewSummary, prDiffUnchanged, owners, makeGit, fetchHistory, ensureCommits, LOOP_LABEL, REVIEW_JOB, REVIEW_STEP }
 
 if (require.main === module) {
   const [repo, pr, headSha] = process.argv.slice(2)

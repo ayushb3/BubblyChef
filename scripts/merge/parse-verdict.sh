@@ -24,6 +24,12 @@
 # answer, so this wrapper defers entirely to the protected parser instead
 # and the old shell-side rules are gone.)
 #
+# UPDATE (issue #571): parseVerdict() now ALSO reads a heading that ends in a
+# verdict ("## Re-review (round 3) -- `looks mergeable`") and the trailing
+# `<!-- verdict: looks-mergeable -->` marker, and requires every source
+# present to agree (any conflict is `unknown`). The paragraph below describes
+# the label rule only; review-verdict.cjs is the spec.
+#
 # review-verdict.cjs's parseVerdict(), briefly (see that file for the real
 # spec): it looks only for a literal "Verdict:" label -- any case, bold or
 # backticked or not -- and takes the value after the LAST such label found
