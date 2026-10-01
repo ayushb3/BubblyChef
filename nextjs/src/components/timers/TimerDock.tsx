@@ -10,10 +10,10 @@
  * so it survives route changes (`/pantry`, `/chat`, ...) the same way the
  * timer store itself does.
  *
- * Completion feedback is visual-first (a badge turns urgent and pulses) —
- * sound/vibration are best-effort additions, never the only signal, so a
- * muted phone or a browser that blocks audio autoplay still surfaces a
- * finished timer.
+ * Completion feedback is visual-first (a badge turns urgent and pulses) plus
+ * a screen-reader announcement. Vibration is a best-effort addition where the
+ * browser supports it. There is deliberately no sound: the signature PRD says
+ * "No sound in v1" (issue #783); if it returns it is opt-in.
  */
 
 import { useEffect, useState } from 'react'
@@ -28,36 +28,7 @@ import { formatDuration } from '@/lib/timers'
 import { useMotionConfig } from '@/lib/motion'
 import { useTimerDockRaised } from './TimerDockLayer'
 
-/** Best-effort completion beep — a short two-tone chime via WebAudio. Never
- * throws: browsers that block audio without a user gesture, or don't
- * support WebAudio at all, just get no sound (the dock badge still shows).
- */
-function playCompletionChime() {
-  try {
-    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (!Ctx) return
-    const ctx = new Ctx()
-    const now = ctx.currentTime
-    ;[880, 1320].forEach((freq, i) => {
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.type = 'sine'
-      osc.frequency.value = freq
-      const start = now + i * 0.16
-      gain.gain.setValueAtTime(0.0001, start)
-      gain.gain.exponentialRampToValueAtTime(0.2, start + 0.02)
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18)
-      osc.connect(gain)
-      gain.connect(ctx.destination)
-      osc.start(start)
-      osc.stop(start + 0.2)
-    })
-    setTimeout(() => void ctx.close(), 500)
-  } catch {
-    // Best effort only.
-  }
-}
-
+/** Best-effort haptic nudge; a no-op where `navigator.vibrate` is unsupported. */
 function vibrateOnComplete() {
   try {
     navigator.vibrate?.([120, 60, 120])
@@ -202,7 +173,7 @@ export default function TimerDock() {
   // finished" and nothing in between.
   const [announcement, setAnnouncement] = useState('')
 
-  // Completion feedback (chime, vibration, the live-region announcement) is
+  // Completion feedback (vibration, the live-region announcement) is
   // driven by the store's own `TIMER_COMPLETED_EVENT` rather than by
   // watching `timers` for a `status === 'completed'` transition. The event
   // is the store's single source of truth for "this timer just completed,
@@ -224,7 +195,6 @@ export default function TimerDock() {
     function handleCompleted(event: Event) {
       const { label } = (event as CustomEvent<{ id: string; label: string }>).detail
       announce(`${label} timer finished`)
-      playCompletionChime()
       vibrateOnComplete()
     }
     window.addEventListener(TIMER_STARTED_EVENT, handleStarted)
