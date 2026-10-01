@@ -28,8 +28,8 @@ export default function ChipDemo() {
   const [balance, setBalance] = useState(240)
 
   return (
-    <div className="min-h-screen p-8 max-w-xl mx-auto space-y-10"
-         style={{ background: 'var(--color-bg)', fontFamily: 'Nunito, sans-serif' }}>
+    <div className="font-sans min-h-screen p-8 max-w-xl mx-auto space-y-10"
+         style={{ background: 'var(--color-bg)' }}>
 
       <div>
         <h1 className="text-2xl font-extrabold mb-1" style={{ color: 'var(--color-text)' }}>

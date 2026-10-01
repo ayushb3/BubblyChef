@@ -8,7 +8,6 @@ import { useState } from 'react'
 import { MOCK_RECIPE, MOCK_DEDUCTIONS, STATUS_META } from './mock'
 import { TimerChip, DoneState } from './shared'
 
-const FONT = { fontFamily: 'Nunito, sans-serif' } as const
 
 export default function VariantC() {
   const steps = MOCK_RECIPE.steps
@@ -18,7 +17,7 @@ export default function VariantC() {
 
   if (exited)
     return (
-      <div className="min-h-screen flex items-center justify-center text-sm" style={{ background: 'var(--color-bg)', color: 'var(--color-muted)', ...FONT }}>
+      <div className="font-sans min-h-screen flex items-center justify-center text-sm" style={{ background: 'var(--color-bg)', color: 'var(--color-muted)' }}>
         ← back in chat, banner cleared. (switch variant below to reset)
       </div>
     )
@@ -28,7 +27,7 @@ export default function VariantC() {
   const stepDeductions = MOCK_DEDUCTIONS.filter((d) => step.uses?.includes(d.ingredient))
 
   return (
-    <div className="min-h-screen pb-28" style={{ background: 'var(--color-bg)', ...FONT }}>
+    <div className="font-sans min-h-screen pb-28" style={{ background: 'var(--color-bg)' }}>
       <div className="max-w-[480px] mx-auto">
         {/* pinned step strip */}
         <div className="sticky top-0 z-10 px-4 py-3 flex gap-2 overflow-x-auto" style={{ background: 'var(--color-bg)', borderBottom: '1px solid var(--color-border)' }}>

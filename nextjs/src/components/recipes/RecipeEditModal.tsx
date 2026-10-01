@@ -84,20 +84,19 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
           <button
             onClick={handleSave}
             disabled={saving || disabled || !title.trim()}
-            className="flex-1 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
-            style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans flex-1 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
+            style={{ background: 'var(--color-primary)' }}
           >
             {saving ? 'Saving...' : 'Save'}
           </button>
           <button
             onClick={handleClose}
             disabled={saving || disabled}
-            className="flex-1 py-2.5 rounded-full text-sm font-bold disabled:opacity-50 active:scale-95 transition-transform"
+            className="font-sans flex-1 py-2.5 rounded-full text-sm font-bold disabled:opacity-50 active:scale-95 transition-transform"
             style={{
               background: 'var(--color-bg)',
               border: '1.5px solid var(--color-border)',
               color: 'var(--color-muted)',
-              fontFamily: 'Nunito, sans-serif',
             }}
           >
             Cancel
@@ -110,8 +109,8 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
         {/* Title */}
         <div>
           <label
-            className="text-xs font-semibold block mb-1"
-            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-xs font-semibold block mb-1"
+            style={{ color: 'var(--color-muted)' }}
           >
             Title
           </label>
@@ -119,12 +118,11 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)]"
+            className="font-sans w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)]"
             style={{
               background: 'var(--color-bg)',
               border: '1.5px solid var(--color-border)',
               color: 'var(--color-text)',
-              fontFamily: 'Nunito, sans-serif',
             }}
           />
         </div>
@@ -132,8 +130,8 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
         {/* Description */}
         <div>
           <label
-            className="text-xs font-semibold block mb-1"
-            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-xs font-semibold block mb-1"
+            style={{ color: 'var(--color-muted)' }}
           >
             Description
           </label>
@@ -141,12 +139,11 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
-            className="w-full rounded-xl px-4 py-2.5 text-sm resize-none border focus:border-[var(--color-primary)]"
+            className="font-sans w-full rounded-xl px-4 py-2.5 text-sm resize-none border focus:border-[var(--color-primary)]"
             style={{
               background: 'var(--color-bg)',
               border: '1.5px solid var(--color-border)',
               color: 'var(--color-text)',
-              fontFamily: 'Nunito, sans-serif',
             }}
           />
         </div>
@@ -154,8 +151,8 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
         {/* Tags */}
         <div>
           <label
-            className="text-xs font-semibold block mb-1"
-            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-xs font-semibold block mb-1"
+            style={{ color: 'var(--color-muted)' }}
           >
             Tags
           </label>
@@ -164,12 +161,11 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
             value={tags}
             onChange={(e) => setTags(e.target.value)}
             placeholder="comma-separated"
-            className="w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)]"
+            className="font-sans w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)]"
             style={{
               background: 'var(--color-bg)',
               border: '1.5px solid var(--color-border)',
               color: 'var(--color-text)',
-              fontFamily: 'Nunito, sans-serif',
             }}
           />
         </div>
@@ -177,8 +173,8 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
         {/* Ingredients */}
         <div>
           <label
-            className="text-xs font-semibold block mb-1"
-            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-xs font-semibold block mb-1"
+            style={{ color: 'var(--color-muted)' }}
           >
             Ingredients
           </label>
@@ -189,12 +185,11 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
                   type="text"
                   value={row.text}
                   onChange={(e) => updateIngredient(i, e.target.value)}
-                  className="flex-1 rounded-xl px-3 py-2 text-sm border focus:border-[var(--color-primary)]"
+                  className="font-sans flex-1 rounded-xl px-3 py-2 text-sm border focus:border-[var(--color-primary)]"
                   style={{
                     background: 'var(--color-bg)',
                     border: '1.5px solid var(--color-border)',
                     color: 'var(--color-text)',
-                    fontFamily: 'Nunito, sans-serif',
                   }}
                 />
                 <button
@@ -209,8 +204,8 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
             ))}
             <button
               onClick={addIngredient}
-              className="text-xs font-bold px-3 py-1.5 rounded-full"
-              style={{ color: 'var(--color-primary)', background: 'var(--color-bg)', border: '1.5px solid var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+              className="font-sans text-xs font-bold px-3 py-1.5 rounded-full"
+              style={{ color: 'var(--color-primary)', background: 'var(--color-bg)', border: '1.5px solid var(--color-primary)' }}
             >
               + Add ingredient
             </button>
@@ -220,8 +215,8 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
         {/* Instructions */}
         <div>
           <label
-            className="text-xs font-semibold block mb-1"
-            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-xs font-semibold block mb-1"
+            style={{ color: 'var(--color-muted)' }}
           >
             Instructions
           </label>
@@ -229,8 +224,8 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
             {instructions.map((step, i) => (
               <div key={i} className="flex gap-2 items-start">
                 <span
-                  className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-2"
-                  style={{ background: 'var(--color-primary)', color: '#fff', fontFamily: 'Nunito, sans-serif' }}
+                  className="font-sans w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-2"
+                  style={{ background: 'var(--color-primary)', color: 'var(--color-on-primary)' }}
                 >
                   {i + 1}
                 </span>
@@ -238,12 +233,11 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
                   value={step}
                   onChange={(e) => updateItem(setInstructions, i, e.target.value)}
                   rows={2}
-                  className="flex-1 rounded-xl px-3 py-2 text-sm resize-none border focus:border-[var(--color-primary)]"
+                  className="font-sans flex-1 rounded-xl px-3 py-2 text-sm resize-none border focus:border-[var(--color-primary)]"
                   style={{
                     background: 'var(--color-bg)',
                     border: '1.5px solid var(--color-border)',
                     color: 'var(--color-text)',
-                    fontFamily: 'Nunito, sans-serif',
                   }}
                 />
                 <button
@@ -258,8 +252,8 @@ export default function RecipeEditModal({ recipe, onSave, onClose, disabled = fa
             ))}
             <button
               onClick={() => addItem(setInstructions)}
-              className="text-xs font-bold px-3 py-1.5 rounded-full"
-              style={{ color: 'var(--color-primary)', background: 'var(--color-bg)', border: '1.5px solid var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+              className="font-sans text-xs font-bold px-3 py-1.5 rounded-full"
+              style={{ color: 'var(--color-primary)', background: 'var(--color-bg)', border: '1.5px solid var(--color-primary)' }}
             >
               + Add step
             </button>

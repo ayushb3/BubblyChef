@@ -101,7 +101,7 @@ export default function ExpiryPriorityControl({
       <p className="mt-2 text-xs text-[var(--color-muted)]">{DESCRIPTIONS[value]}</p>
       <p className="mt-1 text-xs min-h-4" aria-live="polite">
         {status === 'saved' && <span className="text-[var(--color-primary)]">Saved!</span>}
-        {status === 'error' && <span className="text-[#ff9aa2]">{errorMessage}</span>}
+        {status === 'error' && <span className="text-[var(--color-coral)]">{errorMessage}</span>}
       </p>
     </div>
   )

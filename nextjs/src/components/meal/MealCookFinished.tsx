@@ -31,8 +31,8 @@ export default function MealCookFinished({
 }: MealCookFinishedProps) {
   return (
     <section
-      className="rounded-3xl text-center py-8 px-6"
-      style={{ background: 'var(--color-surface)', border: '1.5px solid var(--color-border)', fontFamily: 'Nunito, sans-serif' }}
+      className="font-sans rounded-3xl text-center py-8 px-6"
+      style={{ background: 'var(--color-surface)', border: '1.5px solid var(--color-border)' }}
       data-testid="meal-cook-finished"
     >
       <h2 className="text-xl font-extrabold mb-1" style={{ color: 'var(--color-text)' }}>

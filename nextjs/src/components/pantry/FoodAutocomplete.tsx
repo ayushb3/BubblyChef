@@ -191,7 +191,7 @@ export default function FoodAutocomplete({
           aria-label={`${ariaLabel} suggestions`}
           className="absolute left-0 right-0 top-full mt-1 z-20 rounded-xl overflow-hidden max-h-56 overflow-y-auto"
           style={{
-            background: 'var(--color-surface, #fff)',
+            background: 'var(--color-surface)',
             border: '1px solid var(--color-border)',
             boxShadow: 'var(--shadow-pop, 0 8px 24px rgba(0,0,0,0.12))',
           }}

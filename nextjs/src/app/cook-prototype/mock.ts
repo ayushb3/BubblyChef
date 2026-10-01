@@ -60,7 +60,7 @@ export const STATUS_META: Record<MatchStatus, { label: string; emoji: string; to
   substitute: { label: 'Substitute', emoji: '↺', tone: 'var(--color-primary-dark)' },
   imprecise: { label: 'Approx.', emoji: '≈', tone: 'var(--color-muted)' },
   assumed: { label: 'Assumed', emoji: '·', tone: 'var(--color-muted)' },
-  missing: { label: 'Missing', emoji: '✗', tone: '#D9534F' },
+  missing: { label: 'Missing', emoji: '✗', tone: 'var(--color-danger)' },
 }
 
 export const VARIANT_NAMES: Record<string, string> = {

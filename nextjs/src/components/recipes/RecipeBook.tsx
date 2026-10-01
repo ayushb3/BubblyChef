@@ -464,8 +464,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
           </span>
           <div className="flex-1 min-w-0">
             <p
-              className="text-sm font-semibold leading-snug"
-              style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+              className="font-sans text-sm font-semibold leading-snug"
+              style={{ color: 'var(--color-text)' }}
             >
               You were cooking <span className="font-extrabold">{resumeBanner.title}</span>
               {resumeBanner.totalSteps > 0 && (
@@ -480,20 +480,19 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
               <button
                 type="button"
                 onClick={handleResumeBanner}
-                className="rounded-full px-4 py-1.5 text-xs font-bold active:scale-95 transition-transform"
-                style={{ background: 'var(--color-primary)', color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+                className="font-sans rounded-full px-4 py-1.5 text-xs font-bold active:scale-95 transition-transform"
+                style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
               >
                 Resume
               </button>
               <button
                 type="button"
                 onClick={handleDismissResumeBanner}
-                className="rounded-full px-4 py-1.5 text-xs font-bold active:scale-95 transition-transform"
+                className="font-sans rounded-full px-4 py-1.5 text-xs font-bold active:scale-95 transition-transform"
                 style={{
                   background: 'var(--color-surface)',
                   border: '1px solid var(--color-border)',
                   color: 'var(--color-muted)',
-                  fontFamily: 'Nunito, sans-serif',
                 }}
               >
                 Dismiss
@@ -510,8 +509,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         </div>
         <button
           onClick={() => setImportOpen(true)}
-          className="flex-shrink-0 px-3 py-2 rounded-full text-sm font-bold text-[var(--color-text)] active:scale-95 transition-transform"
-          style={{ background: 'var(--color-accent)', fontFamily: 'Nunito, sans-serif' }}
+          className="font-sans flex-shrink-0 px-3 py-2 rounded-full text-sm font-bold text-[var(--color-text)] active:scale-95 transition-transform"
+          style={{ background: 'var(--color-accent)' }}
           title="Import recipe from URL"
           aria-label="Import recipe from URL"
         >
@@ -567,8 +566,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   style={{ background: 'var(--color-bg)' }}
                 >
                   <span
-                    className="font-extrabold text-sm text-[var(--color-text)]"
-                    style={{ fontFamily: 'Nunito, sans-serif' }}
+                    className="font-sans font-extrabold text-sm text-[var(--color-text)]"
                   >
                     Recipes 🍳
                   </span>
@@ -584,8 +582,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 {/* Recipe list */}
                 <ul className="flex-1 overflow-y-auto">
                   {filteredRecipes.length === 0 ? (
-                    <li className="px-4 py-6 text-center text-xs text-[var(--color-muted)]"
-                      style={{ fontFamily: 'Nunito, sans-serif' }}>
+                    <li className="font-sans px-4 py-6 text-center text-xs text-[var(--color-muted)]">
                       {search ? `No results for "${search}"` : 'No recipes yet'}
                     </li>
                   ) : (
@@ -595,11 +592,10 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                         <li key={r.id}>
                           <button
                             onClick={() => handleSelect(r.id)}
-                            className="w-full text-left px-4 py-3 text-sm transition-colors"
+                            className="font-sans w-full text-left px-4 py-3 text-sm transition-colors"
                             style={{
                               background: isActive ? 'var(--color-bg)' : 'transparent',
                               borderLeft: `3px solid ${isActive ? 'var(--color-primary)' : 'transparent'}`,
-                              fontFamily: 'Nunito, sans-serif',
                               fontWeight: isActive ? 700 : 400,
                               color: isActive ? 'var(--color-text)' : 'var(--color-muted)',
                             }}
@@ -614,8 +610,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
 
                 {/* Recipe count */}
                 <div
-                  className="px-4 py-2 text-xs text-[var(--color-muted)] border-t border-[var(--color-border)] flex-shrink-0"
-                  style={{ fontFamily: 'Nunito, sans-serif' }}
+                  className="font-sans px-4 py-2 text-xs text-[var(--color-muted)] border-t border-[var(--color-border)] flex-shrink-0"
                 >
                   {filteredRecipes.length} of {recipes.length} recipe{recipes.length !== 1 ? 's' : ''}
                 </div>
@@ -633,7 +628,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
               width: '28px',
               height: '40px',
               background: 'var(--color-primary)',
-              color: '#fff',
+              color: 'var(--color-on-primary)',
               fontSize: '14px',
             }}
             aria-label="Open recipe list"
@@ -663,8 +658,8 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                     }}
                   >
                     <h2
-                      className="text-lg font-extrabold text-white leading-tight line-clamp-2"
-                      style={{ fontFamily: 'Nunito, sans-serif', textShadow: '0 1px 4px rgba(0,0,0,0.4)' }}
+                      className="font-sans text-lg font-extrabold text-white leading-tight line-clamp-2"
+                      style={{ textShadow: '0 1px 4px rgba(0,0,0,0.4)' }}
                     >
                       {selectedRecipe.title}
                     </h2>
@@ -756,15 +751,15 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                             >
                               <button
                                 onClick={() => { setMenuOpen(false); setEditOpen(true) }}
-                                className="w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
-                                style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+                                className="font-sans w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
+                                style={{ color: 'var(--color-text)' }}
                               >
                                 ✏️ Edit
                               </button>
                               <button
                                 onClick={() => { setMenuOpen(false); setDeleteOpen(true) }}
-                                className="w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
-                                style={{ color: 'var(--color-coral)', fontFamily: 'Nunito, sans-serif' }}
+                                className="font-sans w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
+                                style={{ color: 'var(--color-coral)' }}
                               >
                                 🗑️ Delete
                               </button>
@@ -794,8 +789,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 className="pl-10 pr-4 pt-4 pb-3 flex-shrink-0"
               >
                 <h2
-                  className="text-xl font-extrabold text-[var(--color-text)] leading-tight"
-                  style={{ fontFamily: 'Nunito, sans-serif' }}
+                  className="font-sans text-xl font-extrabold text-[var(--color-text)] leading-tight"
                 >
                   {selectedRecipe.title}
                 </h2>
@@ -885,15 +879,15 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                             >
                               <button
                                 onClick={() => { setMenuOpen(false); setEditOpen(true) }}
-                                className="w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
-                                style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+                                className="font-sans w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
+                                style={{ color: 'var(--color-text)' }}
                               >
                                 ✏️ Edit
                               </button>
                               <button
                                 onClick={() => { setMenuOpen(false); setDeleteOpen(true) }}
-                                className="w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
-                                style={{ color: 'var(--color-coral)', fontFamily: 'Nunito, sans-serif' }}
+                                className="font-sans w-full px-4 py-3 text-left text-sm font-semibold flex items-center gap-2 hover:bg-[var(--color-bg)] transition-colors"
+                                style={{ color: 'var(--color-coral)' }}
                               >
                                 🗑️ Delete
                               </button>
@@ -919,12 +913,11 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
             {/* Error banner */}
             {errorMessage && (
               <div
-                className="mx-4 mt-2 px-3 py-2 rounded-xl text-sm flex items-center justify-between"
+                className="font-sans mx-4 mt-2 px-3 py-2 rounded-xl text-sm flex items-center justify-between"
                 style={{
                   background: 'var(--color-bg)',
                   border: '1px solid var(--color-border)',
                   color: 'var(--color-text)',
-                  fontFamily: 'Nunito, sans-serif',
                 }}
                 role="alert"
               >
@@ -954,7 +947,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                 >
                   ‹
                 </button>
-                <span className="text-xs text-[var(--color-muted)]" style={{ fontFamily: 'Nunito, sans-serif' }}>
+                <span className="font-sans text-xs text-[var(--color-muted)]">
                   {currentIndex + 1} / {filteredRecipes.length}
                 </span>
                 <button

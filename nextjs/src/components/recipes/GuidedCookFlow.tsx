@@ -137,7 +137,7 @@ function PrepIngredientList({ recipe }: { recipe: Recipe }) {
       {recipe.ingredients.map((ing, i) => {
         const label = ingredientLabel(ing)
         return (
-          <li key={i} className="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}>
+          <li key={i} className="font-sans flex items-center gap-2 text-sm" style={{ color: 'var(--color-text)' }}>
             <span
               className="flex-shrink-0 w-2 h-2 rounded-full"
               style={{ background: 'var(--color-primary)' }}
@@ -155,8 +155,8 @@ function YoullNeedBlock({ uses }: { uses: string[] }) {
   if (uses.length === 0) return null
   return (
     <div
-      className="rounded-2xl px-4 py-3 mt-4"
-      style={{ background: 'var(--color-bg)', fontFamily: 'Nunito, sans-serif' }}
+      className="font-sans rounded-2xl px-4 py-3 mt-4"
+      style={{ background: 'var(--color-bg)' }}
     >
       <p
         className="text-[11px] font-bold uppercase tracking-wide mb-2"
@@ -193,7 +193,7 @@ function ProgressDots({ steps, idx }: { steps: CookStep[]; idx: number }) {
               height: 16,
               fontSize: 10,
               fontWeight: 800,
-              color: '#fff',
+              color: 'var(--color-on-primary)',
               background: complete
                 ? 'var(--color-accent-dark)'
                 : current
@@ -216,12 +216,11 @@ function ProgressDots({ steps, idx }: { steps: CookStep[]; idx: number }) {
 function DoneState({ recipe, onExit, onFinish }: { recipe: Recipe; onExit: () => void; onFinish?: () => void }) {
   return (
     <div
-      className="rounded-3xl text-center py-8 px-6"
+      className="font-sans rounded-3xl text-center py-8 px-6"
       style={{
         background: 'var(--color-surface)',
         border: '1px solid var(--color-border)',
         boxShadow: 'var(--shadow-soft)',
-        fontFamily: 'Nunito, sans-serif',
       }}
       data-testid="guided-cook-done"
     >
@@ -410,8 +409,8 @@ export default function GuidedCookFlow({
 
   return (
     <div
-      className="fixed inset-0 z-[9990] flex flex-col"
-      style={{ background: 'var(--color-bg)', fontFamily: 'Nunito, sans-serif' }}
+      className="font-sans fixed inset-0 z-[9990] flex flex-col"
+      style={{ background: 'var(--color-bg)' }}
       data-testid="guided-cook-flow"
     >
       {/* ─── Header: recipe title + progress dots ─── */}
@@ -614,12 +613,11 @@ export default function GuidedCookFlow({
             <button
               onClick={goBack}
               disabled={isPrep}
-              className="flex-1 rounded-full py-3 font-bold text-sm disabled:opacity-30 active:scale-95 transition-transform"
+              className="font-sans flex-1 rounded-full py-3 font-bold text-sm disabled:opacity-30 active:scale-95 transition-transform"
               style={{
                 background: 'var(--color-surface)',
                 border: '1px solid var(--color-border)',
                 color: 'var(--color-text)',
-                fontFamily: 'Nunito, sans-serif',
               }}
               data-testid="guided-cook-back"
               aria-label="Previous step"
@@ -628,8 +626,8 @@ export default function GuidedCookFlow({
             </button>
             <button
               onClick={goNext}
-              className="flex-[2] rounded-full py-3 font-bold text-sm active:scale-95 transition-transform"
-              style={{ background: 'var(--color-primary)', color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
+              className="font-sans flex-[2] rounded-full py-3 font-bold text-sm active:scale-95 transition-transform"
+              style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
               data-testid="guided-cook-next"
               aria-label={isPrep ? 'Skip prep and start cooking' : idx === steps.length - 1 ? 'Finish cooking' : 'Next step'}
             >

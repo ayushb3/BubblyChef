@@ -98,7 +98,6 @@ function AmendmentCard({
   const cardStyle = {
     background: 'var(--color-bg)',
     border: '1px solid var(--color-border)',
-    fontFamily: 'Nunito, sans-serif',
   } as const
 
   const resolvedRef = useRef<HTMLDivElement>(null)
@@ -113,7 +112,7 @@ function AmendmentCard({
           ref={resolvedRef}
           tabIndex={-1}
           role="status"
-          className="rounded-2xl px-3.5 py-2.5 text-xs max-w-[80%] mt-1 outline-none"
+          className="font-sans rounded-2xl px-3.5 py-2.5 text-xs max-w-[80%] mt-1 outline-none"
           style={{ ...cardStyle, color: 'var(--color-text)' }}
           data-testid="ask-bubbles-amendment-resolved"
         >
@@ -130,7 +129,7 @@ function AmendmentCard({
           ref={resolvedRef}
           tabIndex={-1}
           role="status"
-          className="rounded-2xl px-3.5 py-2.5 text-xs max-w-[80%] mt-1 outline-none"
+          className="font-sans rounded-2xl px-3.5 py-2.5 text-xs max-w-[80%] mt-1 outline-none"
           style={{ ...cardStyle, color: 'var(--color-muted)' }}
           data-testid="ask-bubbles-amendment-resolved"
         >
@@ -143,7 +142,7 @@ function AmendmentCard({
   return (
     <div className="flex justify-start">
       <div
-        className="rounded-2xl px-3.5 py-3 text-sm max-w-[85%] mt-1"
+        className="font-sans rounded-2xl px-3.5 py-3 text-sm max-w-[85%] mt-1"
         style={cardStyle}
         role="status"
         data-testid="ask-bubbles-amendment-card"
@@ -371,23 +370,21 @@ export default function AskBubblesOverlay({
               onKeyDown={handleKeyDown}
               placeholder="Ask about this step…"
               disabled={streaming}
-              className="flex-1 rounded-full px-4 py-2.5 text-sm outline-none disabled:opacity-60"
+              className="font-sans flex-1 rounded-full px-4 py-2.5 text-sm outline-none disabled:opacity-60"
               style={{
                 background: 'var(--color-bg)',
                 border: '1px solid var(--color-border)',
                 color: 'var(--color-text)',
-                fontFamily: 'Nunito, sans-serif',
               }}
             />
             <button
               onClick={() => void handleSend()}
               disabled={!input.trim() || streaming}
               aria-label="Send question"
-              className="rounded-full px-4 font-bold text-sm disabled:opacity-50 active:scale-95 transition-transform"
+              className="font-sans rounded-full px-4 font-bold text-sm disabled:opacity-50 active:scale-95 transition-transform"
               style={{
                 background: 'var(--color-primary)',
                 color: 'var(--color-text)',
-                fontFamily: 'Nunito, sans-serif',
               }}
             >
               Send
@@ -396,8 +393,8 @@ export default function AskBubblesOverlay({
 
           <button
             onClick={onClose}
-            className="mt-3 w-full text-sm font-bold active:opacity-70 transition-opacity"
-            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans mt-3 w-full text-sm font-bold active:opacity-70 transition-opacity"
+            style={{ color: 'var(--color-muted)' }}
             aria-label={`Back to step ${stepN}`}
           >
             &darr; Back to step {stepN}
@@ -413,8 +410,8 @@ export default function AskBubblesOverlay({
       >
         {messages.length === 0 && !streaming && (
           <p
-            className="text-sm text-center py-4"
-            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-sm text-center py-4"
+            style={{ color: 'var(--color-muted)' }}
           >
             Ask Bubbles anything about this step!
           </p>
@@ -445,8 +442,8 @@ export default function AskBubblesOverlay({
         )}
         {error && (
           <p
-            className="text-xs text-center py-2"
-            style={{ color: '#D9534F', fontFamily: 'Nunito, sans-serif' }}
+            className="font-sans text-xs text-center py-2"
+            style={{ color: 'var(--color-danger)' }}
             role="alert"
           >
             {error}
@@ -462,12 +459,11 @@ function ChatBubble({ who, children }: { who: 'user' | 'assistant'; children: Re
   return (
     <div className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
       <div
-        className="rounded-2xl px-3.5 py-2 text-sm max-w-[80%]"
+        className="font-sans rounded-2xl px-3.5 py-2 text-sm max-w-[80%]"
         style={{
           background: isMe ? 'var(--color-primary)' : 'var(--color-bg)',
           border: isMe ? 'none' : '1px solid var(--color-border)',
           color: 'var(--color-text)',
-          fontFamily: 'Nunito, sans-serif',
         }}
       >
         {children}

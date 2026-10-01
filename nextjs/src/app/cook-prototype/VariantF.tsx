@@ -18,7 +18,6 @@ import { useState } from 'react'
 import { MOCK_MEAL, MEAL_TIMELINE } from './mock'
 import { TimerChip } from './shared'
 
-const FONT = { fontFamily: 'Nunito, sans-serif' } as const
 
 export default function VariantF() {
   const dishes = MOCK_MEAL.dishes
@@ -34,7 +33,7 @@ export default function VariantF() {
     setStepByDish((prev) => prev.map((v, i) => (i === di ? si : v)))
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: 'var(--color-bg)', ...FONT }}>
+    <div className="font-sans min-h-screen flex flex-col" style={{ background: 'var(--color-bg)' }}>
       <div className="max-w-[480px] w-full mx-auto px-5 pt-5 flex-1 flex flex-col">
         <p className="text-sm font-extrabold mb-3" style={{ color: 'var(--color-text)' }}>
           🍽️ {MOCK_MEAL.title}
