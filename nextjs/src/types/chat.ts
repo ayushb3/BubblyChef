@@ -182,7 +182,7 @@ export interface MealOption {
   option_id: string
   title: string
   blurb: string
-  /** Exactly one main first, then 1-2 sides. */
+  /** Exactly one main first, then 0-2 sides (none when the main is a whole plate, or a different-sides follow-up found no new side). */
   dishes: MealOptionDish[]
   /** null when no dish carried an estimate; the time chip is hidden then. */
   est_total_minutes: number | null
@@ -195,7 +195,7 @@ export interface MealOption {
 
 export interface MealOptionsProposal {
   proposal_type: 'meal_options'
-  /** Exactly 3, fewer only if generation fails for some. */
+  /** 3 by default; 2 when a thin pantry or tight constraints allow no more (or generation fails for some). */
   options: MealOption[]
   servings: number
   constraints: MealProposalConstraints

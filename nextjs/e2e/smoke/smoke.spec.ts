@@ -21,7 +21,7 @@ import { AI_UNAVAILABLE_COPY, assertChatReplyIsNotAiUnavailable } from '../suppo
 // ---------------------------------------------------------------------------
 
 test.describe('smoke — navigation', () => {
-  test('signed-in session lands on the dashboard, pantry loads, recipes loads', async ({ page }) => {
+  test('signed-in session lands on the kitchen, pantry loads, recipes loads', async ({ page }) => {
     // (a) Sign-in: fixtures/auth's storageState (from global-setup) already
     // authenticated us. Landing on '/' without a login redirect is the proof.
     await page.goto('/');
@@ -31,12 +31,14 @@ test.describe('smoke — navigation', () => {
     // "there is exactly one mascot".
     await expect(page.getByAltText(/Bubbles/).first()).toBeVisible();
 
-    // (b) Pantry page loads with its main UI. The "+ Add Item" FAB is present
+    // (b) The pantry loads through the kitchen (the Pantry tab went, #750): tap
+    // the fridge, flip to List. The "Add to the fridge" key is present
     // regardless of how many items the shared test account currently holds,
     // unlike any item-count-dependent text.
-    await page.getByRole('link', { name: 'Pantry' }).click();
-    await expect(page).toHaveURL(/\/pantry/);
-    await expect(page.getByRole('button', { name: '+ Add Item' })).toBeVisible({ timeout: 10_000 });
+    await page.getByRole('button', { name: /^Fridge/ }).click();
+    await page.getByRole('button', { name: 'List' }).click();
+    await expect(page.getByRole('button', { name: 'Add to the fridge' })).toBeVisible({ timeout: 10_000 });
+    await page.getByRole('button', { name: 'Close' }).click();
 
     // (d) Recipes page loads. "Import recipe from URL" is present whether the
     // library is empty or full — unlike anything keyed to a specific recipe.
@@ -58,8 +60,8 @@ test.describe('smoke — pantry add/delete', () => {
     const itemName = `smoke-${Date.now()}`;
 
     // ?add=type opens the Add sheet straight to the manual-entry tab (mirrors
-    // ?add=scan in receipt-ingestion.spec.ts — see pantry/page.tsx's addParam
-    // handling).
+    // ?add=scan in receipt-ingestion.spec.ts — see HeroHome's `add`
+    // param handling; /pantry?add=type redirects to /?add=type).
     await page.goto('/pantry?add=type');
     await expect(page.getByRole('heading', { name: 'Add to Pantry' })).toBeVisible();
 

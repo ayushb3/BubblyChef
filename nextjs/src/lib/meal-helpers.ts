@@ -36,8 +36,9 @@ export function normalizeConstraints(raw: unknown): MealConstraints {
 }
 
 /**
- * A meal needs exactly one main (at position 0) and one or two sides (at
- * positions 1-2), matching the DB's own CHECK/unique constraints
+ * A meal needs exactly one main (at position 0) and up to two sides (at
+ * positions 1-2; none is valid, issue #758: the planner may offer a main that is
+ * already a whole plate), matching the DB's own CHECK/unique constraints
  * (`supabase/migrations/00013_meals.sql`). Returns an error message, or
  * `null` when the set is valid.
  */
@@ -50,7 +51,7 @@ export function validateMealDishRoles(
   const mains = dishes.filter((d) => d.role === 'main')
   const sides = dishes.filter((d) => d.role === 'side')
   if (mains.length !== 1) return 'A meal needs exactly one main.'
-  if (sides.length < 1 || sides.length > 2) return 'A meal needs one or two sides.'
+  if (sides.length > 2) return 'A meal can have at most two sides.'
   const positions = dishes.map((d) => d.position)
   if (new Set(positions).size !== positions.length) return 'Dish positions must be unique.'
   if (mains[0].position !== 0) return 'The main must be at position 0.'

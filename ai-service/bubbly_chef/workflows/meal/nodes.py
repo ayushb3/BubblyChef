@@ -6,8 +6,10 @@ keeps, resolved and validated in `workflows/meal/fixed_main.py`.
 Two LangGraph nodes, wired in `workflows/router.py`:
 
 - `meal_options_stage` — one structured `AIManager` call returns three meal
-  outlines (a main + 1-2 sides each). Coverage, to-buy, and the rescue flag
-  are computed deterministically in code (the cook matcher's synonym-table
+  outlines (a main + 0-2 sides each; fewer outlines when a thin pantry or tight
+  constraints allow no more, issue #758; a fixed main keeps 1-2 sides unless
+  the different-sides check, issue #762, removed every repeat). Coverage,
+  to-buy, and the rescue flag are computed deterministically in code (the cook matcher's synonym-table
   path, never the LLM-substitution tier), the to-buy cap is applied, and the
   options are retained in the session next to `brainstorm_ideas` for the
   pick turn. The same call also returns 2-4 `follow_ups` pills (#651),
@@ -69,6 +71,7 @@ from bubbly_chef.prompts.meal import (
     MEAL_DISH_PANTRY_BLOCK_NO_PANTRY,
     MEAL_FOLLOW_UPS_NO_PANTRY_RULE,
     MEAL_OPTIONS_FIXED_MAIN_BLOCK,
+    MEAL_OPTIONS_FIXED_MAIN_NO_REPEAT_RULE,
     MEAL_OPTIONS_FIXED_MAIN_FOLLOW_UPS_RULE,
     MEAL_OPTIONS_FOLLOW_UPS_RULES,
     MEAL_OPTIONS_PREVIOUS_BLOCK,
@@ -490,13 +493,12 @@ def _meal_pantry_context(scored_items: list[dict[str, Any]]) -> str:
 def _normalize_option_dishes(
     raw_dishes: list[MealDishOutlineLLM],
 ) -> list[MealDishOutline] | None:
-    """Coerce a model-proposed dish list into exactly one main + 1-2 sides.
+    """Coerce a model-proposed dish list into exactly one main + 0-2 sides.
 
-    Returns `None` when the option can't be salvaged into a valid meal (no
-    dishes at all, or nothing left to serve as a side after normalization)
-    -- the caller drops that option rather than fabricate a side out of
-    nothing. Deterministic, matching issue #650's "1 main and 1-2 sides"
-    validation requirement without relying on the model to get roles right.
+    Returns `None` only when there are no dishes at all -- the caller drops
+    that option. A main with no side is a valid meal (issue #758: the number
+    of sides is fitted to the main), so it is never padded or dropped.
+    Deterministic, so the roles are right without relying on the model.
     """
     if not raw_dishes:
         return None
@@ -512,8 +514,6 @@ def _normalize_option_dishes(
         sides = list(raw_dishes[1:])
 
     sides = sides[:2]
-    if not sides:
-        return None
 
     def _to_outline(d: MealDishOutlineLLM, role: Literal["main", "side"]) -> MealDishOutline:
         return MealDishOutline(
@@ -832,19 +832,43 @@ def _same_dish_name(a: str, b: str) -> bool:
     return _dish_name_key(a) == _dish_name_key(b)
 
 
+def _descriptor_dish_names(descriptor: str) -> list[str]:
+    """The dish names inside a `Title (Dish, Dish)` descriptor."""
+    _, _, tail = descriptor.rpartition(" (")
+    return [name.strip() for name in tail.removesuffix(")").split(", ") if name.strip()]
+
+
+def _shown_dish_keys(shown: list[str], retained_options: list[MealOption]) -> frozenset[str]:
+    """Normalised names of every dish already offered in this conversation's meal
+    flow: the exact dishes of the latest set plus those named in the rolling
+    `shown_options` descriptors (issue #762). Includes the main, which is
+    harmless: a side is never allowed to repeat it anyway."""
+    keys = {_dish_name_key(d.name) for o in retained_options for d in o.dishes}
+    for descriptor in shown:
+        keys.update(_dish_name_key(n) for n in _descriptor_dish_names(descriptor))
+    keys.discard("")
+    return frozenset(keys)
+
+
 def _fixed_main_option_dishes(
-    raw_dishes: list[MealDishOutlineLLM], outline: MealDishOutline
+    raw_dishes: list[MealDishOutlineLLM],
+    outline: MealDishOutline,
+    shown_dish_keys: frozenset[str] = frozenset(),
 ) -> tuple[list[MealDishOutline], bool] | None:
     """Every option keeps the given main: `[outline, *sides]`.
 
     The model's own `main` is ALWAYS discarded, whatever it's called, and so is a
     side that repeats the main's name; only `side`-role dishes are kept, up to 2.
-    Returns `None` (the caller drops the option) when no side is left. The bool
-    is True when the option was built around a *different* main the model named
-    -- the caller retitles it, since its title and blurb describe a dish that is
-    no longer there.
+    A side whose normalised name is in `shown_dish_keys` (a different-sides
+    follow-up, issue #762) is dropped too. Returns `None` (the caller drops the
+    option) when the model gave no side at all; when every side it gave was a
+    repeat, the option keeps just its main (an empty sides list) rather than
+    repeating a side. The bool is True when the option was changed from what the
+    model wrote -- built around a *different* main, or with a repeated side
+    dropped -- so the caller retitles it, since its title and blurb describe
+    dishes that are no longer there.
     """
-    sides = [
+    given_sides = [
         MealDishOutline(
             role="side",
             name=d.name,
@@ -854,13 +878,18 @@ def _fixed_main_option_dishes(
         )
         for d in raw_dishes
         if d.role == "side" and not _same_dish_name(d.name, outline.name)
-    ][:2]
-    if not sides:
+    ]
+    if not given_sides:
         return None
+    sides = [s for s in given_sides if _dish_name_key(s.name) not in shown_dish_keys][:2]
+    # Only a repeat among the sides the option was built around (the first two, as
+    # the cap keeps at most two) changes what the title and blurb describe; a
+    # repeat past the cap was never going to be shown.
+    dropped_repeat = any(_dish_name_key(s.name) in shown_dish_keys for s in given_sides[:2])
     discarded_other_main = any(
         d.role == "main" and not _same_dish_name(d.name, outline.name) for d in raw_dishes
     )
-    return [outline, *sides], discarded_other_main
+    return [outline, *sides], discarded_other_main or dropped_repeat
 
 
 # ---------------------------------------------------------------------------
@@ -1014,6 +1043,7 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
 
     outline: MealDishOutline | None = None
     fixed_block = ""
+    shown_dish_keys: frozenset[str] = frozenset()
     user_line = input_text
     if fixed_resolved is not None:
         outline = fixed_main_outline(fixed_resolved.card)
@@ -1025,6 +1055,11 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
             cuisine_part=f" ({cuisine})" if cuisine else "",
             ingredients=", ".join(outline.key_ingredients[:20]) or "not listed",
         )
+        if retained_state is not None and previous_block:
+            # A different-sides follow-up (#762): the prompt forbids repeats,
+            # and the loop below drops any that slip through.
+            fixed_block += MEAL_OPTIONS_FIXED_MAIN_NO_REPEAT_RULE
+            shown_dish_keys = _shown_dish_keys(shown, retained_state.options)
         if fresh_fixed:
             # Built from the card, never from input_text: a deep link's
             # ?title= controls that text.
@@ -1092,24 +1127,33 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     pantry_items = await _pantry_items_for_matching(user_id) if pantry_grounded else []
 
     options: list[MealOption] = []
+    seen_fixed_dishes: set[tuple[str, ...]] = set()
     for idx, raw_option in enumerate(result.options[:3], start=1):
         option_title: str = raw_option.title
         option_blurb: str | None = raw_option.blurb
         dishes: list[MealDishOutline] | None
         if outline is not None:
-            fixed_dishes = _fixed_main_option_dishes(raw_option.dishes, outline)
+            fixed_dishes = _fixed_main_option_dishes(raw_option.dishes, outline, shown_dish_keys)
             dishes = fixed_dishes[0] if fixed_dishes is not None else None
             if fixed_dishes is not None and fixed_dishes[1]:
-                # Built around a main the card no longer has: its title and
-                # blurb would describe a dish that isn't there.
+                # Built around a main the card no longer has, or with a repeated
+                # side dropped: its title and blurb would describe dishes that
+                # aren't there.
                 side_names = " & ".join(d.name for d in fixed_dishes[0][1:])
-                option_title = f"{outline.name} with {side_names}"
+                option_title = f"{outline.name} with {side_names}" if side_names else outline.name
                 option_blurb = None
         else:
             dishes = _normalize_option_dishes(raw_option.dishes)
         if dishes is None:
             logger.info("meal_options_stage: dropping option %r -- no valid side", raw_option.title)
             continue
+        if outline is not None:
+            # Repeat-stripping can leave two options identical; show one.
+            dish_key = tuple(_dish_name_key(d.name) for d in dishes)
+            if dish_key in seen_fixed_dishes:
+                logger.info("meal_options_stage: dropping option %r -- duplicate", raw_option.title)
+                continue
+            seen_fixed_dishes.add(dish_key)
         coverage: MealCoverage | None = None
         rescues: list[str] = []
         if pantry_grounded:
@@ -1140,7 +1184,11 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         recipe_constraints=constraints,
     )
     fixed_echo: MealFixedMainEcho | None = None
-    assistant_message = "Here are three meal ideas!"
+    assistant_message = {
+        1: "Here's a meal idea!",
+        2: "Here are two meal ideas!",
+        3: "Here are three meal ideas!",
+    }.get(len(options), "Here are some meal ideas!")
     if fixed_resolved is not None and outline is not None:
         fixed_echo = MealFixedMainEcho(
             recipe_id=fixed_resolved.linked_recipe_id, title=outline.name

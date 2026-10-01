@@ -81,7 +81,7 @@ BubblyChef/
 │       │   ├── page.tsx             # Dashboard
 │       │   ├── login/page.tsx       # Auth (sign in / sign up)
 │       │   ├── recipes/page.tsx     # Recipe library
-│       │   ├── pantry/page.tsx
+│       │   ├── pantry/page.tsx      # redirect only: the Pantry tab is gone (#750)
 │       │   ├── chat/page.tsx
 │       │   └── api/                 # CRUD route handlers
 │       │       ├── pantry/          # GET/POST, expiring/, [id]/, [id]/slot/
@@ -120,8 +120,8 @@ BubblyChef/
 
 | Path | Page | Notes |
 |---|---|---|
-| `/` | Dashboard | Expiring items widget, quick actions. Tapping a storage place on the kitchen wall opens its storage sheet; `/?place=fridge&view=scene\|list` opens one directly (issue #749) |
-| `/pantry` | Pantry | Browse/manage all items |
+| `/` | Kitchen home | The pixel kitchen wall, expiring items, quick actions. Tapping a storage place opens its storage sheet (Scene \| List). The List is the whole pantry: filters, swipe-to-resolve, Used up / Tossed, edit, and select mode for bulk Move to / Used up / Tossed (issue #750). Deep links: `/?place=fridge&view=scene\|list` (issue #749), `&expiry=expiring,expired` starts the List with the expiry filter on, `/?add=scan\|type` opens the add sheet on that tab |
+| `/pantry` | (redirect) | There is no Pantry tab (issue #750). `/pantry` redirects to `/?place=fridge&view=list`, `/pantry?add=scan` to `/?add=scan`, `/pantry/use-soon` to the List with the expiry filter on |
 | `/recipes` | Recipe library | Search, save, edit, favourite |
 | `/chat` | Chat | AI assistant — general or recipe mode |
 | `/profile` | Profile | User settings, dietary preferences |
@@ -131,7 +131,7 @@ BubblyChef/
 Receipt scanning has two entry points that share one hand-off: the full-page
 `/scan` route (`app/scan/page.tsx`) and the quick path inside the pantry add
 sheet (`components/pantry/PantryAddSheet.tsx`, tabs `scan` and `type`, reached
-as `/pantry?add=scan`, state machine in `ScanTab.tsx`). Neither reviews or
+as `/?add=scan`, state machine in `ScanTab.tsx`; the old `/pantry?add=scan` redirects there). Neither reviews or
 writes: when the parse returns, `hooks/useScanHandOff.ts` saves it as the
 pending put-away (`lib/kitchen/pending-putaway.ts`, localStorage, survives a
 reload until it is put away or discarded) and goes to the kitchen home. There

@@ -136,10 +136,10 @@ export default function PutAwaySheet({ open, onClose, record, onPutAway }: PutAw
 
   function edit(next: PutAwayTiers) {
     if (!shown) return
-    const everythingGone =
-      next.readyToAdd.length + next.needsReview.length + next.skipped.length === 0
+    const everythingGone = next.readyToAdd.length + next.needsReview.length === 0
     if (everythingGone) {
-      // Every line left out: there is no scan left to put away.
+      // Every item left out (only skipped lines, if any, remain): there is no scan
+      // left to put away, and the home row must not say "0 items".
       clearPendingPutAway()
       onClose()
       return

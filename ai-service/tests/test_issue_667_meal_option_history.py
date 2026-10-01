@@ -251,7 +251,11 @@ class TestOptionHistoryAcrossTurns:
             MealOptionLLM(
                 title="Lemon Butter Pasta with Peas",
                 dishes=[_dish_llm("main", main), _dish_llm("side", "Buttered Peas")],
-            )
+            ),
+            MealOptionLLM(
+                title="Lemon Butter Pasta with Carrots",
+                dishes=[_dish_llm("main", main), _dish_llm("side", "Glazed Carrots")],
+            ),
         ]
         ai = _sequenced_ai([new_options])
         repo = _repo({(_USER_A, _RID): _row()}, meal_plan_state=retained)
@@ -272,5 +276,6 @@ class TestOptionHistoryAcrossTurns:
 
         state = out["meal_plan_session_state"]
         assert isinstance(state.fixed_main, MealFixedMain)
-        assert len(state.shown_options) == 4
-        assert state.shown_options[-1].endswith(f"({main}, Buttered Peas)")
+        assert len(state.shown_options) == 5
+        assert state.shown_options[-2].endswith(f"({main}, Buttered Peas)")
+        assert state.shown_options[-1].endswith(f"({main}, Glazed Carrots)")
