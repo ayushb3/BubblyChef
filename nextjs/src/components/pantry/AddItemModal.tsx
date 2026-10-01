@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import { addPantryItemToMyGroceryList } from '@/lib/grocery-add'
 import SpringButton from '@/components/ui/SpringButton'
 import FoodAutocomplete from '@/components/pantry/FoodAutocomplete'
 import PixelSheet from '@/components/ui/PixelSheet'
@@ -64,6 +66,11 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // "Add to grocery list" (#497): where that button is. `message` is the failure's words.
+  const [listState, setListState] = useState<{
+    kind: 'idle' | 'adding' | 'added' | 'error'
+    message?: string
+  }>({ kind: 'idle' })
 
   // Populate the form from the item every time the sheet opens.
   useEffect(() => {
@@ -77,7 +84,24 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
     }
     setConfirmDelete(false)
     setError(null)
+    setListState({ kind: 'idle' })
   }, [editItem, isOpen])
+
+  // Puts the saved food on this browser's grocery list (#497). It reads the
+  // pantry row, not the form: unsaved edits are not what the user is shopping for.
+  const handleAddToList = async () => {
+    if (!editItem) return
+    setListState({ kind: 'adding' })
+    try {
+      await addPantryItemToMyGroceryList(editItem)
+      setListState({ kind: 'added' })
+    } catch (err) {
+      setListState({
+        kind: 'error',
+        message: err instanceof Error ? err.message : 'Couldn’t add it to your grocery list.',
+      })
+    }
+  }
 
   // A stored category the catalog uses but this fixed list predates (e.g.
   // "seafood", "canned", "bakery") still needs a matching <option>, or the
@@ -288,7 +312,7 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
       </div>
 
       {/* Expiry Date */}
-      <div className="mb-5">
+      <div className="mb-4">
         <label className="text-xs font-semibold text-[var(--color-muted)] mb-1 block">Expiry Date</label>
         <input
           type="date"
@@ -296,6 +320,34 @@ export default function EditItemModal({ isOpen, onClose, editItem }: EditItemMod
           onChange={(e) => setExpiryDate(e.target.value)}
           className={fieldClass}
         />
+      </div>
+
+      {/* Add to the grocery list (#497): every pantry row can go on it from here. */}
+      <div className="mb-2 flex flex-col items-start gap-2">
+        <SpringButton
+          variant="secondary"
+          size="sm"
+          onClick={handleAddToList}
+          loading={listState.kind === 'adding'}
+          disabled={listState.kind === 'adding'}
+          className="px-4"
+        >
+          <span aria-hidden="true">🛒 </span>
+          Add to grocery list
+        </SpringButton>
+        {listState.kind === 'added' && (
+          <p role="status" className="text-[13px] font-bold text-[color:var(--color-text)]">
+            Added to your grocery list.{' '}
+            <Link href="/grocery" className="font-extrabold underline underline-offset-[3px]">
+              View list
+            </Link>
+          </p>
+        )}
+        {listState.kind === 'error' && (
+          <p role="alert" className="text-[13px] font-bold text-[var(--color-expired-text)]">
+            {listState.message}
+          </p>
+        )}
       </div>
     </PixelSheet>
   )

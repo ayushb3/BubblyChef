@@ -1,6 +1,7 @@
 import type { MealCookIngredient } from '@/types/meals'
 import { isMealCookIngredient } from '@/lib/meal-cook-session'
 import { sanitizeMealCookIngredients } from '@/lib/meal-cook-deduction'
+import { notifyCookSessionChanged } from '@/lib/cook-session-signal'
 
 /**
  * Issue #440 — cook-session lifecycle, tracked independently of any single
@@ -192,6 +193,7 @@ function writeActiveSession(session: ActiveCookSession | null): void {
     } else {
       window.localStorage.setItem(SESSION_KEY, JSON.stringify(session))
     }
+    notifyCookSessionChanged()
   } catch {
     // Best effort — worst case a reload loses the step position, which is
     // the pre-#441 behaviour, not a new failure mode.
@@ -240,6 +242,7 @@ function writeEndedRecipeIds(ids: string[]): void {
   if (typeof window === 'undefined') return
   try {
     window.localStorage.setItem(ENDED_KEY, JSON.stringify(ids))
+    notifyCookSessionChanged()
   } catch {
     // Best effort — worst case the banner reappears, which is the pre-fix
     // behaviour, not a new failure mode.
