@@ -135,6 +135,11 @@ function ChatSurface() {
     [cookingRecipeId, searchParams],
   )
 
+  // `/chat?new=1` (#854): Home's "What's for dinner?" submitted empty. No seed
+  // and nothing to send, but the visit is for planning, so it opens a fresh
+  // conversation with the starter chips instead of resuming the last thread.
+  const freshChat = searchParams.get('new') === '1'
+
   // #265 — a deep link that seeds a purpose-built first message (or the cook
   // handoff) should start a fresh conversation rather than silently resuming
   // whatever was last open; the seed/handoff *is* the intent for this visit.
@@ -159,7 +164,7 @@ function ChatSurface() {
     updateProposalActions,
     applyAmendment,
     dismissAmendment,
-  } = useChat({ skipResume: Boolean(seed) || Boolean(cookingRecipeId) })
+  } = useChat({ skipResume: Boolean(seed) || Boolean(cookingRecipeId) || freshChat })
 
   const [input, setInput] = useState('')
   const [aiAvailable, setAiAvailable] = useState(true)

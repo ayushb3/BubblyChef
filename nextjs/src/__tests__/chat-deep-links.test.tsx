@@ -35,17 +35,22 @@ jest.mock('next/navigation', () => ({
 const sendMessage = jest.fn()
 const startNewChat = jest.fn()
 
+const useChatOptions = jest.fn()
+
 jest.mock('@/hooks/useChat', () => ({
-  useChat: () => ({
-    messages: [],
-    isStreaming: false,
-    proposalStates: {},
-    sendMessage,
-    cancelStream: jest.fn(),
-    startNewChat,
-    approveProposal: jest.fn(),
-    rejectProposal: jest.fn(),
-  }),
+  useChat: (options?: unknown) => {
+    useChatOptions(options)
+    return {
+      messages: [],
+      isStreaming: false,
+      proposalStates: {},
+      sendMessage,
+      cancelStream: jest.fn(),
+      startNewChat,
+      approveProposal: jest.fn(),
+      rejectProposal: jest.fn(),
+    }
+  },
 }))
 
 jest.mock('@/lib/api/chat', () => ({
@@ -223,6 +228,47 @@ describe('/chat?plan=dinner — home screen handoff (#651)', () => {
 
     await waitFor(() => expect(screen.queryByText('Planning dinner')).toBeNull())
     expect(replace).toHaveBeenCalledWith('/chat', { scroll: false })
+  })
+})
+
+describe('/chat?ask= — Home "What\'s for dinner?" input (#854)', () => {
+  it('sends the typed text as the first message exactly once under a StrictMode double mount', async () => {
+    withParams(new URLSearchParams({ ask: 'something with eggs & rice' }).toString())
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <StrictMode>
+        <QueryClientProvider client={client}>
+          <ThemeProvider>
+            <ChatPage />
+          </ThemeProvider>
+        </QueryClientProvider>
+      </StrictMode>,
+    )
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1))
+    expect(sendMessage).toHaveBeenCalledWith('something with eggs & rice')
+    // Settle: a late second effect pass must not add a second send.
+    await new Promise((r) => setTimeout(r, 50))
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('/chat?new=1 — Home input, submitted empty (#854)', () => {
+  it('starts a fresh conversation (no resume) and sends nothing', async () => {
+    withParams('new=1')
+    renderChat()
+
+    await waitFor(() => expect(screen.getByText('Chat with Bubbles')).toBeInTheDocument())
+    expect(sendMessage).not.toHaveBeenCalled()
+    expect(useChatOptions).toHaveBeenCalledWith(expect.objectContaining({ skipResume: true }))
+    // The starter chips are the empty state's affordance.
+    expect(screen.queryByText(/Using your|Planning dinner/)).toBeNull()
+  })
+
+  it('a bare /chat still resumes', async () => {
+    renderChat()
+    await waitFor(() => expect(screen.getByText('Chat with Bubbles')).toBeInTheDocument())
+    expect(useChatOptions).toHaveBeenCalledWith(expect.objectContaining({ skipResume: false }))
   })
 })
 

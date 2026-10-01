@@ -35,6 +35,7 @@ import { incomingByPlace } from '@/lib/kitchen/pending-putaway'
 import HomeCardSlot from '@/components/kitchen/HomeCardSlot'
 import type { ExpiringItem } from '@/lib/kitchen/home-card'
 import { DEFAULT_EXPIRY_PRIORITY, type ExpiryPriority } from '@/lib/expiry-priority'
+import DinnerInput from '@/components/kitchen/DinnerInput'
 import KitchenHeader from '@/components/kitchen/KitchenHeader'
 import KitchenThemePicker from '@/components/kitchen/KitchenThemePicker'
 import KitchenThemeUnlockCard from '@/components/kitchen/KitchenThemeUnlockCard'
@@ -385,6 +386,9 @@ export default function HeroHome({
           }}
         />
       )}
+
+      {/* A place to type straight away (#854); the door on the wall still works. */}
+      <DinnerInput />
 
       {/* Under the wall: the pantry count on the left, the streak (#524) and the
           theme picker trigger (#523) on the right. */}
