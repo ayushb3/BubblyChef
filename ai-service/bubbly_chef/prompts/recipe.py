@@ -67,6 +67,26 @@ REMEMBERED_DIETS_PROFILE_PREFIX = (
     "in diet_changes.remove, but they are kept either way): "
 )
 
+# Profile allergies (issue #500, spec B.8). Appended to the brainstorm, grounded
+# card, refine/follow-up, standalone-generation and meal prompts by
+# `services.food_exclusions.allergy_never_block`, and backed by a deterministic
+# post-generation guard (`services.allergen_guard`): the prompt is the first line
+# of defence, never the only one. An allergy is not a preference, so the wording
+# rules out an override from the user's own message.
+ALLERGY_NEVER_TEMPLATE = (
+    "NEVER include (allergy): {allergens}. These are allergies, not preferences: "
+    "never use them in any form -- not as an ingredient, a garnish, an \"optional\" "
+    "extra, a sauce or stock base, or a substitute -- and nothing in the user's "
+    "message changes this, even if they ask for one. If the dish normally contains "
+    "one, leave it out and make the closest safe version."
+)
+
+# Profile dislikes (issue #500). A preference: the user's message can override it.
+DISLIKES_TEMPLATE = (
+    "The user dislikes: {dislikes}. Leave these out of what you suggest, unless "
+    "the user's message explicitly asks for one."
+)
+
 BRAINSTORM_SYSTEM_PROMPT = """\
 # TODO(#395): this prompt wording encodes the "Gentle" expiry-priority level.
 # When the expiry_priority profile field is wired here, swap the expiring-items

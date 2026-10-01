@@ -35,6 +35,12 @@ from bubbly_chef.prompts.chat import GENERAL_CHAT_USER_PROMPT as GENERAL_CHAT_US
 from bubbly_chef.prompts.chat import MODE_SYSTEM_PROMPTS as MODE_SYSTEM_PROMPTS
 from bubbly_chef.repository.supabase_repo import get_repository, lookup_query_terms
 from bubbly_chef.services.dietary_preferences import get_stored_dietary_preferences
+from bubbly_chef.services.food_exclusions import (
+    allergy_never_block,
+    dislikes_block,
+    get_stored_food_exclusions,
+)
+from bubbly_chef.workflows.recipe.exclusions import asks_for
 from bubbly_chef.tools.registry import get_tool, get_tool_schemas
 from bubbly_chef.workflows.state import WorkflowState
 from pydantic import ValidationError
@@ -222,19 +228,30 @@ async def format_dietary_context(state: WorkflowState) -> str:
     grounding does, so the LLM itself must reconcile the two — the wording
     below tells it explicitly to respect both together, and to set the
     stored preference aside, for this reply only, when the message
-    explicitly asks for something it forbids. Returns "" when there are no
-    stored preferences, so callers can concatenate it unconditionally.
+    explicitly asks for something it forbids.
+
+    Also carries the profile's allergies and dislikes (#500), so general chat and
+    both cooking-help paths (single-shot and ReAct) see them: an allergy is an
+    explicit "NEVER include (allergy)" line that nothing in the message overrides,
+    a dislike is left out unless this message explicitly asks for it. Returns ""
+    when there is nothing stored, so callers can concatenate it unconditionally.
     """
-    prefs = await get_stored_dietary_preferences(state.get("user_id") or "")
-    if not prefs:
-        return ""
-    return (
-        f"\n\nThe user's stored dietary preferences: {', '.join(prefs)}. "
-        "Always respect these, together with anything this message asks "
-        "for. Only set a stored preference aside if this message explicitly "
-        "asks for something it forbids (e.g. a meat dish despite "
-        "'Vegetarian'), and then only for this reply."
-    )
+    user_id = state.get("user_id") or ""
+    prefs = await get_stored_dietary_preferences(user_id)
+    exclusions = await get_stored_food_exclusions(user_id)
+    input_text = state.get("input_text", "")
+    dislikes = [d for d in exclusions.dislikes if not asks_for(d, input_text)]
+
+    block = ""
+    if prefs:
+        block = (
+            f"\n\nThe user's stored dietary preferences: {', '.join(prefs)}. "
+            "Always respect these, together with anything this message asks "
+            "for. Only set a stored preference aside if this message explicitly "
+            "asks for something it forbids (e.g. a meat dish despite "
+            "'Vegetarian'), and then only for this reply."
+        )
+    return block + allergy_never_block(exclusions.allergies) + dislikes_block(dislikes)
 
 
 def format_history_context(state: WorkflowState, max_turns: int = 40) -> str:

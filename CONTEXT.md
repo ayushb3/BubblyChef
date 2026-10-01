@@ -96,6 +96,15 @@ Extracted user preferences that shape recipe generation. Populated from chat int
 - **Source**: LLM extracts from user query in chat workflows
 - **Usage**: Passed to score_and_rank() during recipe generation
 
+### Allergy and Dislike
+Two profile lists (`user_profiles.allergies`, `user_profiles.disliked_ingredients`, migration `00018`; issue #500) that feed `RecipeConstraints.excluded_ingredients` on every generation and chat turn. They differ in strength, and the difference is the point:
+
+- **Allergy** -- a hard "never suggest" (safety, not preference). Nothing in a message overrides it ("I know I'm allergic, do it anyway" changes nothing). Enforced twice: the prompts carry an explicit `NEVER include (allergy)` line, and a deterministic **allergen guard** (`services/allergen_guard.py`, matcher in `domain/allergens.py`) checks every card, meal outline, dish and brainstorm idea the model returns -- regenerate once naming the offence, then refuse honestly rather than return it. The model is never the only line of defence. Broad labels expand ("nuts" covers almond, cashew...; "dairy" covers cheese...). Free-text chat replies are prompt-only (no structured output to check).
+- **Dislike** -- a soft "leave out of suggestions". A message that explicitly asks for the ingredient ("add cilantro on top") wins for that reply only; "without cilantro" does not count as an ask. Rides the same set-aside rules as an exclusion the user typed (`RecipeCard.exclusions_set_aside`).
+- **Not persisted into the session**: profile-origin exclusions are re-read from the profile each turn (`constraints_to_persist` leaves them out), so dropping one from the profile takes effect immediately.
+- **Degrades**: a profile row without the columns (migration not yet applied), a missing row or an unreachable DB reads as "nothing stored" -- never an error.
+- **Related**: RecipeConstraints, Recipe (the card the guard checks), Meal option / Dish (the meal engine runs the same guard)
+
 ### ProposalEnvelope
 AI-generated structured output wrapped with confidence scores. Prevents data corruption from low-confidence AI hallucinations.
 

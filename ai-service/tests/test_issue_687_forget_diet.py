@@ -187,7 +187,8 @@ def test_diet_changes_is_optional_on_the_constraints_schema() -> None:
 def test_resolver_takes_no_message_text() -> None:
     """No code path can clear a diet on text alone: the resolver has no text to read."""
     params = inspect.signature(resolve_diet_change).parameters
-    assert set(params) == {"changes", "session", "stored", "fresh"}
+    # `allergies` (#500) is the profile's list, not text: still nothing to read a message from.
+    assert set(params) == {"changes", "session", "stored", "fresh", "allergies"}
 
 
 def test_resolver_clears_nothing_without_a_structured_removal() -> None:

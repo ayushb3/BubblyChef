@@ -59,6 +59,31 @@ class Settings(BaseSettings):
     # A fast OCR leaves the parse most of the 40s; only a slow OCR squeezes it.
     scan_request_budget_seconds: float = 40.0
 
+    # /health/ai generation probe — issue #576. Gemini's is_available() is a
+    # model-metadata GET: it still answers 200 when the key is spend-capped, so
+    # /health/ai read green through an outage where every generation 429'd. The
+    # probe runs one tiny real generation through AIManager and caches the
+    # result for this many seconds so health checks do not burn quota (each
+    # probe that isn't served from the cache is a real provider call; 3600s is
+    # at most 24 successful probes a day). 0 disables the probe and keeps the
+    # old reachability-only behaviour. The token cap keeps each probe nearly
+    # free. Tradeoff (approved by Ayush 2026-10-01): an outage that starts
+    # after a successful probe can read healthy for up to an hour. A FAILED probe is cached for the shorter failure TTL so /health/ai
+    # recovers soon after an outage ends (a 429/error isn't billed, so probing
+    # a down provider more often costs nothing); 0 re-probes on every call.
+    health_generation_probe_ttl_seconds: int = Field(default=3600, ge=0)
+    health_generation_probe_failure_ttl_seconds: int = Field(default=60, ge=0)
+    # 16, not 1-5: on a thinking model (gemini-3.1-flash-lite) thinking tokens
+    # count against maxOutputTokens, so a 4-token cap can be spent before any
+    # text is emitted. We do not send a thinkingConfig to avoid that: the knob
+    # is model-specific (thinkingBudget on 2.5, thinkingLevel on 3.x, and
+    # thinkingBudget=0 is rejected by models that can't disable thinking), and
+    # an unsupported field would 400 and read as a false outage. 16 leaves room
+    # for a little thinking plus the one-word reply at a cost that is still
+    # negligible, and a MAX_TOKENS reply with no text is treated as healthy
+    # anyway (see AIManager._run_generation_probe).
+    health_generation_probe_max_output_tokens: int = Field(default=16, ge=1)
+
     # Anthropic / SAP proxy (dev only — leave use_anthropic_proxy=false in prod/CI)
     anthropic_base_url: str = "http://localhost:6655/anthropic"
     anthropic_api_key: str = ""

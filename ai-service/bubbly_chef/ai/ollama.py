@@ -6,7 +6,7 @@ Ollama provider for self-hosted local LLM inference.
 import json
 import logging
 from collections.abc import AsyncIterator
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -49,6 +49,7 @@ class OllamaProvider(AIProvider):
         prompt: str,
         response_schema: type[T] | None = None,
         temperature: float = 0.7,
+        max_output_tokens: int | None = None,
     ) -> T | str:
         """Generate completion using Ollama API."""
 
@@ -68,7 +69,7 @@ Respond with valid JSON matching this schema:
 
 Return ONLY the JSON, no markdown formatting or extra text."""
 
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model,
             "prompt": full_prompt,
             "stream": False,
@@ -76,6 +77,9 @@ Return ONLY the JSON, no markdown formatting or extra text."""
                 "temperature": temperature,
             },
         }
+
+        if max_output_tokens is not None:
+            payload["options"]["num_predict"] = max_output_tokens
 
         # Ollama supports structured output via format=<json-schema> (Ollama ≥0.3)
         # Passing the full schema forces the model to emit conforming JSON rather than

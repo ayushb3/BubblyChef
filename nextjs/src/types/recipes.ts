@@ -97,6 +97,11 @@ export interface GenerateRecipeResponse {
   have_count: number
   partial_count: number
   pantry_match_score: number
+  /**
+   * Set by a refine (issue #500) when the user's own saved recipe still carries an
+   * ingredient on their allergy list. The recipe is kept as they made it; this says so.
+   */
+  allergy_warning?: string | null
 }
 
 export interface RefineRecipeRequest {

@@ -24,3 +24,26 @@ export async function updateDietaryPreferences(
     throw new Error(err.error ?? `Failed to save dietary preferences: ${res.status}`)
   }
 }
+
+/**
+ * Persist the caller's allergies and/or disliked ingredients (issue #500).
+ *
+ * Only the fields present in `fields` are sent, so saving one row never
+ * overwrites the other. Allergies are a hard "never suggest" for the AI
+ * service; dislikes are left out of suggestions unless a message asks for one.
+ */
+export async function updateFoodExclusions(
+  profileId: string,
+  fields: { allergies?: string[]; disliked_ingredients?: string[] },
+): Promise<void> {
+  const res = await fetch(`/api/profile/${profileId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Failed to save' }))
+    throw new Error(err.error ?? `Failed to save: ${res.status}`)
+  }
+}

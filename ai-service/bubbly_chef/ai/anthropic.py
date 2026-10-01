@@ -128,6 +128,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
         prompt: str,
         response_schema: type[T] | None = None,
         temperature: float = 0.7,
+        max_output_tokens: int | None = None,
     ) -> T | str:
         """Generate a completion using the Anthropic Messages API."""
         url = f"{self.base_url}/v1/messages"
@@ -135,7 +136,7 @@ Return ONLY the JSON, no markdown formatting or extra text."""
 
         payload: dict[str, Any] = {
             "model": self.model,
-            "max_tokens": self.max_tokens,
+            "max_tokens": max_output_tokens or self.max_tokens,
             "temperature": temperature,
             "messages": [
                 {
