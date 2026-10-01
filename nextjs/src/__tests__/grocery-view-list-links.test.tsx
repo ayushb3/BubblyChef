@@ -10,7 +10,8 @@ import { ToBuyLine } from '@/components/recipes/recipe-card/parts'
 
 const fetchMealToBuy = jest.fn()
 jest.mock('@/lib/api/grocery', () => ({
-  fetchMealToBuy: (...args: unknown[]) => fetchMealToBuy(...args),
+  // The line reads the detail (issue #850); this test feeds it bare names.
+  fetchMealToBuyDetail: async (...args: unknown[]) => ({ names: await fetchMealToBuy(...args), items: null }),
 }))
 
 const getUser = jest.fn()

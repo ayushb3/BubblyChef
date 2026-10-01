@@ -148,14 +148,25 @@ export function addToGroceryList(
  * line from a recipe's missing items means it was bought at the shop, so it is
  * left ticked; unticked and new names are added (or adopted) as usual. Writes
  * nothing when every name is already ticked.
+ *
+ * An item may carry its amount, unit and category (issue #850). On a food that
+ * is already on the list the meal's amount only fills a line that has none: a
+ * quantity the user typed (or an earlier add set) is never overwritten, and its
+ * unit stays with it ("milk 2 L" stays "milk 2 L" after a meal needing 100 ml).
  */
-export function addMissingToGroceryList(userId: string, names: string[]): void {
-  const ticked = new Set(
-    loadGroceryLines(userId)
-      .filter((l) => l.checked)
-      .map((l) => l.key)
-  )
-  const fresh = names.filter((n) => !ticked.has(groceryFoodKey(n)))
+export function addMissingToGroceryList(
+  userId: string,
+  items: Array<string | ManualLineInput>
+): void {
+  const existing = new Map(loadGroceryLines(userId).map((l) => [l.key, l]))
+  const fresh: Array<string | ManualLineInput> = []
+  for (const item of items) {
+    const input: ManualLineInput = typeof item === 'string' ? { name: item } : item
+    const line = existing.get(groceryFoodKey(input.name))
+    if (line?.checked) continue
+    // Adopt a line that already has an amount as it is: the amount on the list wins.
+    fresh.push(line && line.quantity !== null ? { name: input.name } : item)
+  }
   if (fresh.length > 0) addToGroceryList(userId, fresh)
 }
 
