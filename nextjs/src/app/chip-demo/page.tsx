@@ -191,6 +191,8 @@ export default function ChipDemo() {
           <SpringButton variant="secondary" disabled>Not now</SpringButton>
           <SpringButton loading>Planning…</SpringButton>
           <SpringButton variant="secondary" loading>Saving…</SpringButton>
+          <SpringButton variant="danger">Delete</SpringButton>
+          <SpringButton variant="danger" disabled>Delete</SpringButton>
         </div>
         <div className="flex gap-3 items-center">
           <SpringButton size="sm" variant="secondary">Fix</SpringButton>

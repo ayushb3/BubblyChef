@@ -35,14 +35,25 @@ interface SpringButtonProps {
   /** Accessible name override, e.g. to name the dish a generic label acts on. */
   'aria-label'?: string
   /**
-   * `primary` (theme primary fill) or `secondary` (surface fill). `plain` is
-   * not a key: no border, shadow or press, for text-link buttons and tiles.
-   * Only fills the button when no `className` is passed.
+   * `primary` (theme primary fill), `secondary` (surface fill) or `danger`
+   * (the theme-invariant expired rose with its dark-red text, 7:1; for
+   * destructive actions). `plain` is not a key: no border, shadow or press, for
+   * text-link buttons and tiles. The fill applies when no `className` is passed
+   * or when `variant` is passed explicitly (then `className` is layout only and
+   * must not set a background).
    */
-  variant?: 'primary' | 'secondary' | 'plain'
+  variant?: 'primary' | 'secondary' | 'danger' | 'plain'
   /** `sm` is 36px tall with a 2px shadow, inside a 44px hit area. */
   size?: 'md' | 'sm'
   fullWidth?: boolean
+  /**
+   * Ink text (the default): the keycap forces `--color-text` on every fill, with
+   * `!important`, so a legacy `text-white` can't make pink unreadable. Pass
+   * `ink={false}` to keep the caller's own text colour while keeping the whole
+   * keycap look (border, shadow, press). Only do that on a fill you've checked
+   * against the text at 4.5:1; there is no automatic fallback.
+   */
+  ink?: boolean
   /**
    * Shows the three stepped pixel dots before the label, sets `aria-busy` and
    * ignores clicks. The caller supplies the in-flight label ("Planning…").
@@ -59,7 +70,7 @@ interface SpringButtonProps {
 // Keycap chrome. `!` (Tailwind v4 suffix form) makes these win over the
 // legacy callers' own border / shadow / text / radius classes.
 const CHROME = [
-  'min-h-[44px] rounded-full! border-2! border-[color:var(--color-text)]! text-[color:var(--color-text)]! font-extrabold!',
+  'min-h-[44px] rounded-full! border-2! border-[color:var(--color-text)]! font-extrabold!',
   'shadow-[0_3px_0_var(--color-text)]! cursor-pointer',
   // press: sink 2px + shadow to 1px in 60 ms; release springs back in 180 ms.
   'transition-[translate,box-shadow,filter]! duration-[180ms]! ease-[cubic-bezier(0.34,1.56,0.64,1)]!',
@@ -71,6 +82,9 @@ const CHROME = [
   'disabled:shadow-none! disabled:border-[color:var(--color-muted)]! disabled:text-[color:var(--color-muted)]! disabled:cursor-not-allowed',
 ].join(' ')
 
+// Ink text on every fill, unless `ink={false}` or the variant brings its own.
+const INK = 'text-[color:var(--color-text)]!'
+
 const SMALL_CHROME = [
   'min-h-[36px]! shadow-[0_2px_0_var(--color-text)]!',
   'motion-safe:active:enabled:translate-y-[1px] motion-safe:active:enabled:shadow-[0_1px_0_var(--color-text)]!',
@@ -78,10 +92,13 @@ const SMALL_CHROME = [
   "relative before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']",
 ].join(' ')
 
-const VARIANT_FILL: Record<'primary' | 'secondary', string> = {
+const VARIANT_FILL: Record<'primary' | 'secondary' | 'danger', string> = {
   primary:
     'bg-[var(--color-primary)] disabled:bg-[color-mix(in_srgb,var(--color-primary)_40%,var(--color-surface))]',
   secondary: 'bg-[var(--color-surface)] disabled:bg-[var(--color-bg)]',
+  // Rose fill + dark-red text: 7.3:1, no white-on-red, and still reads as "careful".
+  danger:
+    'bg-[var(--color-expired)] text-[color:var(--color-expired-text)]! disabled:bg-[color-mix(in_srgb,var(--color-expired)_40%,var(--color-surface))]',
 }
 
 const OWN_LAYOUT = {
@@ -119,13 +136,17 @@ export default function SpringButton({
   disabled,
   title,
   'aria-label': ariaLabel,
-  variant = 'primary',
+  variant: variantProp,
   size = 'md',
   fullWidth = false,
+  ink = true,
   loading = false,
   ref,
 }: SpringButtonProps) {
+  const variant = variantProp ?? 'primary'
   const own = className === undefined
+  // The variant's fill applies to a bare button, or when a caller asks for one.
+  const fills = own || variantProp !== undefined
   const classes =
     variant === 'plain'
       ? [className ?? '', 'active:opacity-70 disabled:cursor-not-allowed']
@@ -133,7 +154,8 @@ export default function SpringButton({
           CHROME,
           size === 'sm' ? SMALL_CHROME : '',
           own ? OWN_LAYOUT[size] : '',
-          own ? VARIANT_FILL[variant] : '',
+          ink && variant !== 'danger' ? INK : '',
+          fills ? VARIANT_FILL[variant] : '',
           fullWidth ? 'w-full' : '',
           className ?? '',
         ]

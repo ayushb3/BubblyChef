@@ -67,6 +67,41 @@ describe('SpringButton keycap (#741)', () => {
     expect(screen.getByRole('button')).toHaveAttribute('data-keycap', 'secondary')
   })
 
+  it('danger is the rose fill with its dark-red text, not ink and not white', () => {
+    render(<SpringButton variant="danger">Delete</SpringButton>)
+    const btn = screen.getByRole('button', { name: 'Delete' })
+    expect(btn.className).toContain('bg-[var(--color-expired)]')
+    expect(btn.className).toContain('text-[color:var(--color-expired-text)]!')
+    expect(btn.className).not.toContain('text-[color:var(--color-text)]!')
+    expect(btn).toHaveAttribute('data-keycap', 'danger')
+  })
+
+  it('an explicit variant fills even when a className is passed (layout only)', () => {
+    render(
+      <SpringButton variant="danger" className="px-4 py-2 text-sm">
+        Delete
+      </SpringButton>,
+    )
+    const btn = screen.getByRole('button', { name: 'Delete' })
+    expect(btn.className).toContain('bg-[var(--color-expired)]')
+    expect(btn.className).toContain('px-4')
+  })
+
+  it("ink={false} keeps the caller's text colour but keeps the keycap look", () => {
+    const { rerender } = render(<SpringButton className="text-white">Go</SpringButton>)
+    expect(screen.getByRole('button').className).toContain('text-[color:var(--color-text)]!')
+    rerender(
+      <SpringButton ink={false} className="text-white">
+        Go
+      </SpringButton>,
+    )
+    const cls = screen.getByRole('button').className
+    expect(cls).not.toContain('text-[color:var(--color-text)]!')
+    expect(cls).toContain('text-white')
+    expect(cls).toContain('border-[color:var(--color-text)]!')
+    expect(cls).toContain('shadow-[0_3px_0_var(--color-text)]!')
+  })
+
   it('full width stretches the key', () => {
     render(<SpringButton fullWidth>Put away 11 items</SpringButton>)
     expect(screen.getByRole('button').className).toContain('w-full')
