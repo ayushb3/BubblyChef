@@ -12,7 +12,15 @@
 
 import React from 'react'
 import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import RecipeDetailPage from '@/app/recipes/[id]/page'
+
+// The page's ingredient food tags use React Query (issue #784).
+const withClient = (ui: React.ReactElement) => (
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    {ui}
+  </QueryClientProvider>
+)
 
 const pushMock = jest.fn()
 
@@ -43,7 +51,7 @@ describe('RecipeDetailPage ingredient rendering (#315)', () => {
       instructions: ['Whisk eggs', 'Cook in butter'],
     })
 
-    render(<RecipeDetailPage />)
+    render(withClient(<RecipeDetailPage />))
 
     expect(await screen.findByText('2 large eggs')).toBeInTheDocument()
     expect(screen.getByText('a pinch of salt')).toBeInTheDocument()
@@ -62,7 +70,7 @@ describe('RecipeDetailPage ingredient rendering (#315)', () => {
       instructions: ['Mix', 'Cook'],
     })
 
-    render(<RecipeDetailPage />)
+    render(withClient(<RecipeDetailPage />))
 
     expect(await screen.findByText('2 cups flour')).toBeInTheDocument()
     expect(screen.getByText('1 egg')).toBeInTheDocument()
@@ -79,7 +87,7 @@ describe('RecipeDetailPage ingredient rendering (#315)', () => {
       instructions: ['Saute'],
     })
 
-    render(<RecipeDetailPage />)
+    render(withClient(<RecipeDetailPage />))
 
     expect(await screen.findByText('1 onion, diced')).toBeInTheDocument()
     expect(screen.getByText('2 tbsp olive oil')).toBeInTheDocument()
