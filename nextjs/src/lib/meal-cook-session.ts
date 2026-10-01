@@ -38,6 +38,7 @@
  */
 
 import type { MealCookIngredient } from '@/types/meals'
+import { clearPlannedTonight } from '@/lib/kitchen/planned-tonight'
 
 export interface MealCookStepRecord {
   status: 'done' | 'skipped' | 'running'
@@ -373,6 +374,10 @@ export function endMealCookSession(mealId: string): void {
   if (active && active.meal_id === mealId) {
     writeActiveSession(null)
   }
+
+  // Issue #755 — a cooked dinner is no longer "planned for tonight": the Bubbles
+  // card must not still say "Start the rice at 6:15" after the meal is done.
+  clearPlannedTonight(mealId)
 }
 
 /**
