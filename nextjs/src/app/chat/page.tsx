@@ -88,18 +88,38 @@ const COOKING_SUGGESTIONS = COOKING_CHIPS.map((c) => c.suggestion ?? c.message)
 const COOKING_SUGGESTION_TONES: ChipTone[] = COOKING_CHIPS.map((c) => c.tone ?? 'primary')
 
 /**
+ * The chat surface is exactly one dynamic viewport tall, so the page never
+ * scrolls and the message list is the only scroll container (issue #731).
+ * The root layout's `<main>` reserves 5rem (`pb-20`) for the fixed BottomNav, so
+ * subtracting it here makes header + banner + list + composer + nav add up to
+ * `100dvh`. `dvh`, not `vh`: on iOS Safari `vh` is the toolbar-collapsed height
+ * and would reintroduce a page scroll (issue #4).
+ */
+const CHAT_VIEWPORT_CLASS = 'h-[calc(100dvh-5rem)]'
+
+/**
  * `useSearchParams` opts the tree into client-side rendering, so the page shell
  * is a Suspense boundary around the real chat surface (Next.js 16 requirement).
  */
 export default function ChatPage() {
   return (
-    <Suspense fallback={<div className="h-screen" />}>
+    <Suspense fallback={<div className={CHAT_VIEWPORT_CLASS} />}>
       <ChatSurface />
     </Suspense>
   )
 }
 
 function ChatSurface() {
+  // Root layout's <body> is `min-h-screen` (100vh), which on iOS Safari is taller
+  // than 100dvh while the toolbar is showing — enough to give the document a few
+  // pixels of scroll under the chat. Lock document scroll while /chat is mounted;
+  // the message list below is the only thing meant to scroll (issue #731).
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.add('overflow-hidden')
+    return () => root.classList.remove('overflow-hidden')
+  }, [])
+
   const router = useRouter()
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
@@ -546,8 +566,7 @@ function ChatSurface() {
 
   // Forwards a stamped pill's request context (issue #651, §1c/§4) — set only
   // by the resolver (`{ meal_followup: true }`), never from model output. An
-  // unstamped chip (every non-meal pill, plus any pill edited via ✎) keeps
-  // the pre-#651 one-argument call.
+  // unstamped chip (every non-meal pill) keeps the pre-#651 one-argument call.
   const handleChipTap = (chip: ChipConfig) => {
     if (chip.context) {
       sendChipMessage(chip.message, chip.context)
@@ -758,7 +777,7 @@ function ChatSurface() {
   const starter = useStarterContext(!hasMessages && !isResuming && !cookingRecipeId && !seed)
 
   return (
-    <div className="flex flex-col h-screen pb-20">
+    <div className={`flex flex-col ${CHAT_VIEWPORT_CLASS}`}>
       {/* Header */}
       <BubblesHeader
         mascotState={mascotState}
@@ -983,7 +1002,6 @@ function ChatSurface() {
                 chips={rankStarterPills(starter.data ?? null, mountedAt)}
                 align="center"
                 onChipTap={(chip) => handleSuggestionClick(chip.message)}
-                onEditChip={handleStageText}
                 onChipAction={(action) => {
                   // The starter row's only action pill is the scan pill.
                   if (action === 'open_scan') router.push('/pantry?add=scan')
@@ -994,8 +1012,8 @@ function ChatSurface() {
         )}
       </div>
 
-      {/* Input bar — fixed above BottomNav */}
-      <div className="fixed bottom-20 left-0 right-0 bg-[var(--color-surface)] border-t border-[var(--color-border)] p-3 flex gap-2">
+      {/* Input bar — pinned under the list (a flex row, not a fixed overlay) */}
+      <div className="flex-shrink-0 bg-[var(--color-surface)] border-t border-[var(--color-border)] p-3 flex gap-2">
         <div className="flex-1 relative">
           <input
             ref={inputRef}
@@ -1347,7 +1365,6 @@ function MessageRenderer({
             <PostMessageChips
               chips={resolveChips(intent, getFollowUpSuggestions(message.response))}
               onChipTap={onChipTap}
-              onEditChip={onStageText}
               onChipAction={onChipAction}
             />
           )}
@@ -1388,7 +1405,6 @@ function MessageRenderer({
                 fixedMain: Boolean(proposal.fixed_main),
               })}
               onChipTap={onChipTap}
-              onEditChip={onStageText}
               onChipAction={onChipAction}
             />
           )}
@@ -1421,7 +1437,6 @@ function MessageRenderer({
             <PostMessageChips
               chips={resolveChips(intent, getFollowUpSuggestions(message.response), 'meal', { mealSaved })}
               onChipTap={onChipTap}
-              onEditChip={onStageText}
               onChipAction={onChipAction}
             />
           )}
@@ -1563,7 +1578,6 @@ function MessageRenderer({
         <PostMessageChips
           chips={resolveChips(intent, getFollowUpSuggestions(message.response))}
           onChipTap={onChipTap}
-          onEditChip={onStageText}
           onChipAction={onChipAction}
         />
       )}
