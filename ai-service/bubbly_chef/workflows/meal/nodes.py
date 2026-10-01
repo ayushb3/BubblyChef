@@ -6,9 +6,10 @@ keeps, resolved and validated in `workflows/meal/fixed_main.py`.
 Two LangGraph nodes, wired in `workflows/router.py`:
 
 - `meal_options_stage` — one structured `AIManager` call returns three meal
-  outlines (a main + 0-2 sides each; 2 outlines when a thin pantry or tight
-  constraints allow no more, issue #758; a fixed main always keeps 1-2 sides). Coverage, to-buy, and the rescue flag
-  are computed deterministically in code (the cook matcher's synonym-table
+  outlines (a main + 0-2 sides each; fewer outlines when a thin pantry or tight
+  constraints allow no more, issue #758; a fixed main keeps 1-2 sides unless
+  the different-sides check, issue #762, removed every repeat). Coverage,
+  to-buy, and the rescue flag are computed deterministically in code (the cook matcher's synonym-table
   path, never the LLM-substitution tier), the to-buy cap is applied, and the
   options are retained in the session next to `brainstorm_ideas` for the
   pick turn. The same call also returns 2-4 `follow_ups` pills (#651),
@@ -881,7 +882,10 @@ def _fixed_main_option_dishes(
     if not given_sides:
         return None
     sides = [s for s in given_sides if _dish_name_key(s.name) not in shown_dish_keys][:2]
-    dropped_repeat = any(_dish_name_key(s.name) in shown_dish_keys for s in given_sides)
+    # Only a repeat among the sides the option was built around (the first two, as
+    # the cap keeps at most two) changes what the title and blurb describe; a
+    # repeat past the cap was never going to be shown.
+    dropped_repeat = any(_dish_name_key(s.name) in shown_dish_keys for s in given_sides[:2])
     discarded_other_main = any(
         d.role == "main" and not _same_dish_name(d.name, outline.name) for d in raw_dishes
     )
@@ -1180,9 +1184,11 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         recipe_constraints=constraints,
     )
     fixed_echo: MealFixedMainEcho | None = None
-    assistant_message = {2: "Here are two meal ideas!", 3: "Here are three meal ideas!"}.get(
-        len(options), "Here are some meal ideas!"
-    )
+    assistant_message = {
+        1: "Here's a meal idea!",
+        2: "Here are two meal ideas!",
+        3: "Here are three meal ideas!",
+    }.get(len(options), "Here are some meal ideas!")
     if fixed_resolved is not None and outline is not None:
         fixed_echo = MealFixedMainEcho(
             recipe_id=fixed_resolved.linked_recipe_id, title=outline.name

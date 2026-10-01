@@ -159,6 +159,40 @@ class TestPostCheck:
         assert not names & {"Roasted Broccoli", "roasted BROCCOLI", "Garlic Bread", "Rice!"}
 
     @pytest.mark.asyncio
+    async def test_a_repeat_past_the_two_side_cap_keeps_the_models_title_and_blurb(self) -> None:
+        # [New1, New2, Repeat]: the cap already discards the repeat, so the option is
+        # what the model wrote and its title and blurb still describe it.
+        out, _ = await _followup(
+            [
+                _fixed_option("Pasta with Peas and Slaw", "Buttered Peas", "Crunchy Slaw", "Rice"),
+                _fixed_option("Pasta with Carrots", "Glazed Carrots"),
+            ]
+        )
+        first = out["proposal"].options[0]
+        assert [d.name for d in first.dishes] == [_MAIN, "Buttered Peas", "Crunchy Slaw"]
+        assert first.title == "Pasta with Peas and Slaw"
+        assert first.blurb == "Model blurb that names the old sides."
+
+    @pytest.mark.asyncio
+    async def test_a_repeat_inside_the_cap_retitles_and_keeps_the_new_sides(self) -> None:
+        out, _ = await _followup(
+            [
+                _fixed_option("Pasta with Rice and Peas", "Rice", "Buttered Peas", "Crunchy Slaw"),
+                _fixed_option("Pasta with Carrots", "Glazed Carrots"),
+            ]
+        )
+        first = out["proposal"].options[0]
+        assert [d.name for d in first.dishes] == [_MAIN, "Buttered Peas", "Crunchy Slaw"]
+        assert first.title == f"{_MAIN} with Buttered Peas & Crunchy Slaw"
+        assert first.blurb is None
+
+    @pytest.mark.asyncio
+    async def test_options_collapsing_to_one_still_render_one_card(self) -> None:
+        out, _ = await _followup([_fixed_option("A", "Garlic Bread"), _fixed_option("B", "Rice")])
+        assert [[d.name for d in o.dishes] for o in out["proposal"].options] == [[_MAIN]]
+        assert out["next_action"] == "pick_meal"
+
+    @pytest.mark.asyncio
     async def test_no_regenerate_loop(self) -> None:
         _, ai = await _followup([_fixed_option("A", "Garlic Bread"), _fixed_option("B", "Rice")])
         option_calls = [

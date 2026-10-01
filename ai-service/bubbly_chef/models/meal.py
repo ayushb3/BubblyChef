@@ -346,16 +346,18 @@ class MealOptionLLM(BaseModel):
 class MealOptionsLLMResult(BaseModel):
     """Envelope for the option-stage structured call -- 3 options requested.
 
-    The schema accepts 2-3 (issue #758): 3 is the target, 2 is allowed when the
-    pantry or constraints leave room for no more. It does not force exactly 3,
-    which would turn a thin-pantry answer into a validation-retry loop.
+    The schema accepts 1-3 (issue #758): 3 is the target, fewer is allowed when
+    the pantry or constraints leave room for no more. It does not force exactly
+    3, or even 2: a floor turned a thin-pantry answer of one option into a
+    validation-retry loop and then a generation error, where showing that one
+    option is the better outcome. The prompt, not the schema, carries the 3.
     """
 
     options: list[MealOptionLLM] = Field(
         default_factory=list,
-        min_length=2,
+        min_length=1,
         max_length=3,
-        description="3 meal options; 2 only when a thin pantry or tight constraints allow no more",
+        description="3 meal options; fewer only when a thin pantry or tight constraints allow",
     )
     follow_ups: list[str] = Field(
         default_factory=list,

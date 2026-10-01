@@ -57,14 +57,16 @@ def _ai(options: list[MealOptionLLM]) -> MagicMock:
 
 
 class TestSchemaBounds:
-    def test_accepts_two_or_three_options(self) -> None:
+    def test_accepts_one_to_three_options(self) -> None:
+        # A thin pantry may honestly yield one meal; a floor of 2 turned that into an error.
+        assert len(MealOptionsLLMResult(options=[_option("A", 1)]).options) == 1
         assert len(MealOptionsLLMResult(options=[_option("A", 1), _option("B", 1)]).options) == 2
         three = [_option("A", 1), _option("B", 1), _option("C", 1)]
         assert len(MealOptionsLLMResult(options=three).options) == 3
 
-    def test_rejects_a_single_option(self) -> None:
+    def test_rejects_no_options(self) -> None:
         with pytest.raises(ValidationError):
-            MealOptionsLLMResult(options=[_option("A", 1)])
+            MealOptionsLLMResult(options=[])
 
     def test_rejects_more_than_three_options(self) -> None:
         with pytest.raises(ValidationError):
@@ -73,7 +75,7 @@ class TestSchemaBounds:
     def test_json_schema_tells_the_model_the_bounds(self) -> None:
         # The Gemini path embeds `model_json_schema()` in the prompt.
         options = MealOptionsLLMResult.model_json_schema()["properties"]["options"]
-        assert (options["minItems"], options["maxItems"]) == (2, 3)
+        assert (options["minItems"], options["maxItems"]) == (1, 3)
 
     def test_dish_description_allows_no_sides(self) -> None:
         field = MealOptionLLM.model_fields["dishes"]
@@ -164,4 +166,15 @@ class TestOptionStageEndToEnd:
         with _env(_repo(), ai):
             out = await meal_options_stage(_state(None, input_text="Plan dinner"))
         assert len(out["meal_plan_session_state"].options) == 2
-        assert "three" not in out["assistant_message"]
+        assert out["assistant_message"] == "Here are two meal ideas!"
+
+    @pytest.mark.asyncio
+    async def test_a_one_option_reply_renders_as_one_card_not_an_error(self) -> None:
+        ai = _ai([_option("Only Soup", 0)])
+        with _env(_repo(), ai):
+            out = await meal_options_stage(_state(None, input_text="Plan dinner"))
+        proposal = out["proposal"]
+        assert [o.title for o in proposal.options] == ["Only Soup"]
+        assert out["next_action"] == "pick_meal"
+        # Singular copy over a single card, not "three" or "some".
+        assert out["assistant_message"] == "Here's a meal idea!"

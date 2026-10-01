@@ -26,8 +26,8 @@ byte-identical to before.
 # acceptable, and an example of each side count so 0, 1 and 2 are all live shapes.
 _MEAL_OPTION_SHAPE_RULES = """\
 Propose 3 meal options. Return only 2 when the request or the ingredients \
-genuinely leave room for no more (a thin pantry or tight constraints); never \
-return fewer than 2 and never more than 3.
+genuinely leave room for no more (a thin pantry or tight constraints), and \
+only 1 if there is truly a single sensible meal; never return more than 3.
 
 Each meal option is exactly one MAIN dish plus 0, 1 or 2 SIDE dishes, fitted \
 to the main. Never default to exactly one side: the number of sides is a \
@@ -266,7 +266,8 @@ MEAL_OPTIONS_FIXED_MAIN_BLOCK = (
     "give each option 1-2 sides that complement this main (don't repeat its main "
     "ingredient or its starch), and make each option's sides genuinely different "
     "from the other options' sides. This overrides the rule about different "
-    "mains and the no-side shape: here every option has sides, never none. The constraints above apply to the sides; never change the main."
+    "mains and the no-side shape: here every option has sides, never none. The "
+    "constraints above apply to the sides; never change the main."
 )
 
 # Appended to the fixed-main block on a follow-up turn, when "Already suggested"
