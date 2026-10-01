@@ -82,7 +82,7 @@ from bubbly_chef.workflows.meal.nodes import (
     meal_options_stage,
     meal_pick_stage,
 )
-from bubbly_chef.workflows.meal.refine import is_meal_refinement_phrase
+from bubbly_chef.workflows.meal.refine import is_about_the_meal, is_meal_refinement_phrase
 from bubbly_chef.workflows.pantry.nodes import (
     apply_expiry_heuristics,
     check_for_duplicates,
@@ -777,9 +777,17 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
         )
         logger.debug(f"LLM reasoning: {result.reasoning}, entities: {result.entities}")
 
-        # A recipe edit read with a meal on screen (#846): the meal has no pinned recipe
-        # for an edit to land on, so it is a change to the meal, not a recipe_card turn.
-        if intent == Intent.RECIPE_CARD.value and _meal_on_screen(state):
+        # A recipe edit read with a meal on screen (#846): with no pinned recipe for an
+        # edit to land on, it is a change to the meal, not a recipe_card turn. Narrow on
+        # purpose: a pinned recipe keeps its edit, and a question, a substitution question
+        # or a request for another dish or recipe ("a recipe for banana pancakes") keeps
+        # the classifier's routing.
+        if (
+            intent == Intent.RECIPE_CARD.value
+            and _meal_on_screen(state)
+            and not _session_has_picked_recipe(state)
+            and is_about_the_meal(input_text)
+        ):
             logger.info("classify_intent: recipe edit with a meal on screen → meal refinement")
             return _meal_refinement_state(
                 state, confidence, f"Meal on screen, read as a recipe edit: {result.reasoning}"

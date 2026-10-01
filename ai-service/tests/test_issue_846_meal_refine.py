@@ -216,6 +216,93 @@ async def test_without_a_meal_on_screen_a_refinement_phrase_is_left_alone(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
+        "give me a recipe for banana pancakes",
+        "show me the full recipe for the chickpea stew",
+        "what can I use instead of butter?",
+        "can I replace the butter with oil",
+        "show me a vegetarian recipe for dinner",
+        "make me a banana pancake batch",
+    ],
+)
+async def test_a_recipe_card_reading_that_is_not_an_edit_of_the_meal_keeps_its_routing(
+    text: str,
+) -> None:
+    # The classifier is stubbed to recipe_card (what it may well say for these), not to
+    # cooking_help: the override must not turn them into a new options card.
+    patcher, ai = _llm_says("recipe_card")
+    with patcher:
+        result = await classify_intent(_state(text))
+
+    ai.complete.assert_called_once()
+    assert result["intent"] == Intent.RECIPE_CARD.value
+    assert not result.get("meal_refinement")
+
+
+@pytest.mark.asyncio
+async def test_a_pinned_recipe_keeps_its_edit_even_with_a_meal_as_the_last_turn() -> None:
+    patcher, ai = _llm_says("recipe_card")
+    pinned = {"title": "Old Pancakes", "ingredients": [], "instructions": []}
+    with patcher:
+        result = await classify_intent(
+            _state(
+                "could we go a bit more Italian with it",
+                session=_session(_retained(), picked_recipe=pinned),
+            )
+        )
+
+    assert result["intent"] == Intent.RECIPE_CARD.value
+    assert not result.get("meal_refinement")
+
+
+@pytest.mark.asyncio
+async def test_a_request_for_another_recipe_is_not_taken_by_the_phrase_list_either() -> None:
+    patcher, ai = _llm_says("recipe_generation")
+    with patcher:
+        result = await classify_intent(_state("show me a vegetarian recipe for dinner"))
+
+    ai.complete.assert_called_once()
+    assert not result.get("meal_refinement")
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("I don't have much time", []),
+        ("something quicker, I don't have much time", []),
+        ("I don't have a lot of time", []),
+        ("I don't have enough time", []),
+        ("I don't have long", []),
+        ("no butter and no cream", ["butter", "cream"]),
+        ("no butter, no cream", ["butter", "cream"]),
+        ("I don't have any butter or no cream", ["butter", "cream"]),
+        ("no butter or cream", ["butter", "cream"]),
+        ("without the cream", ["cream"]),
+    ],
+)
+def test_absent_ingredients_keeps_only_ingredients(text: str, expected: list[str]) -> None:
+    from bubbly_chef.workflows.meal.refine import absent_ingredients
+
+    assert absent_ingredients(text) == expected
+
+
+@pytest.mark.asyncio
+async def test_i_dont_have_much_time_stores_no_exclusion() -> None:
+    envelope, ai, _ = await _refine(
+        "something quicker, I don't have much time",
+        retained=_retained(cuisine="Italian"),
+        extracted=RecipeConstraints(),
+    )
+
+    assert isinstance(envelope.proposal, MealOptionsProposal)
+    echoed = envelope.proposal.constraints.recipe_constraints
+    assert not echoed.get("excluded_ingredients")
+    assert "Exclude:" not in _option_prompt(ai)
+
+
+@pytest.mark.asyncio
 async def test_a_malformed_retained_meal_is_not_a_meal_on_screen() -> None:
     patcher, ai = _llm_says("recipe_card")
     with patcher:

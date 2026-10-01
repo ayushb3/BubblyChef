@@ -61,13 +61,36 @@ _REFINE_RE = re.compile(
 )
 
 
+# A request for some other dish or its recipe, not a change to the meal on screen:
+# "a recipe for banana pancakes", "show me the full recipe for the stew", "give me a
+# vegetarian recipe", "make me a pancake batch".
+_NEW_DISH_RE = re.compile(
+    r"\brecipes?\s+(?:for|of|to)\b"
+    r"|\b(?:full|whole|complete|entire)\s+recipe\b"
+    r"|\b(?:give|show|get|find|send|tell)\s+me\s+(?:\w+\s+){0,4}?recipes?\b"
+    r"|\b(?:make|cook|bake|prepare|fix)\s+(?:me\s+|us\s+)?(?:a|an|some)\s+"
+    r"(?!(?:bit|little|lot|different|quicker|faster|simpler|easier|lighter|healthier|spicier"
+    r"|milder|cheaper)\b)",
+    re.IGNORECASE,
+)
+
+
+def is_about_the_meal(text: str) -> bool:
+    """False for a question, a substitution question, or a request for another dish or
+    recipe: whatever else it says, it is not a change to the meal on screen. The guards
+    both entry points (the phrase list and the recipe-edit safety net) share."""
+    return not (
+        _QUESTION_LEAD_RE.search(text)
+        or _SUBSTITUTION_RE.search(text)
+        or _NEW_DISH_RE.search(text)
+    )
+
+
 def is_meal_refinement_phrase(text: str) -> bool:
     """True when `text` reads as a change to the meal on screen ("something quicker",
     "no butter", "make it vegetarian", "fewer dishes"). Only meaningful with a meal on
     screen; the router checks that."""
-    if _QUESTION_LEAD_RE.search(text) or _SUBSTITUTION_RE.search(text):
-        return False
-    return _REFINE_RE.search(text) is not None
+    return is_about_the_meal(text) and _REFINE_RE.search(text) is not None
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +104,19 @@ _ABSENT_RE = re.compile(
     r"(?=\s*(?:[,.;:!?]|\b(?:but|so|please|though|since|because|then|for|tonight|today)\b|$))",
     re.IGNORECASE,
 )
-_NAME_LEAD_RE = re.compile(r"^(?:any|the|a|an|some|my|more|of|enough|any\s+more)\s+", re.IGNORECASE)
+_NAME_LEAD_RE = re.compile(
+    r"^(?:no|without|any|the|a|an|some|my|more|of|enough|any\s+more)\s+", re.IGNORECASE
+)
+# Time, quantity and filler words: a part holding one of these ("much time", "a lot of
+# time", "enough") is not an ingredient.
+_NOT_FOOD_WORDS = frozenset(
+    {
+        "much", "many", "time", "long", "lot", "lots", "enough", "anything", "everything",
+        "nothing", "spare", "extra", "space", "room", "patience", "energy", "hurry", "minute",
+        "minutes", "hour", "hours", "money", "budget", "clue", "idea",
+    }
+)
+_MAX_NAME_WORDS = 3
 _NAME_SPLIT_RE = re.compile(r"\s*(?:,|\band\b|\bor\b|&|/)\s*", re.IGNORECASE)
 _NOT_AN_INGREDIENT = frozenset(
     {
@@ -103,9 +138,18 @@ def absent_ingredients(text: str) -> list[str]:
         raw = match.group("names").strip().lower()
         raw = _NAME_LEAD_RE.sub("", raw)
         for part in _NAME_SPLIT_RE.split(raw):
-            name = _NAME_LEAD_RE.sub("", part.strip())
+            name = part.strip()
+            while (stripped := _NAME_LEAD_RE.sub("", name)) != name:
+                name = stripped
             name = re.sub(r"\s+(?:please|thanks|anymore|left|now)$", "", name).strip(" -'")
-            if name and name not in _NOT_AN_INGREDIENT and name not in found:
+            words = name.split()
+            if (
+                name
+                and name not in _NOT_AN_INGREDIENT
+                and len(words) <= _MAX_NAME_WORDS
+                and not _NOT_FOOD_WORDS.intersection(words)
+                and name not in found
+            ):
                 found.append(name)
     return found
 
