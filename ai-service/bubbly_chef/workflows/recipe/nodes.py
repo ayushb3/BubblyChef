@@ -2223,6 +2223,15 @@ async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
         available_ingredients=available,
     )
 
+    # "I kept out X" only for allergens that really are out of the card: one the user's own
+    # recipe still carries is named by the warning instead, never both (#500).
+    carried = card_allergens(
+        list(decision.allergies),
+        refined_recipe.title,
+        [i.name for i in refined_recipe.ingredients],
+    )
+    kept_out = [a for a in decision.allergies if a not in carried]
+
     envelope = create_recipe_envelope(
         proposal=proposal,
         confidence=0.9,
@@ -2230,7 +2239,7 @@ async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
         warnings=state.get("warnings", []),
         errors=state.get("errors", []),
         assistant_message=(
-            f"Updated {refined_recipe.title}!{allergen_safe_note(list(decision.allergies))}"
+            f"Updated {refined_recipe.title}!{allergen_safe_note(kept_out)}"
             + (f" {result.allergy_warning}" if result.allergy_warning else "")
         ),
         request_id=state.get("request_id"),

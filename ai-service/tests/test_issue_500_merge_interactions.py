@@ -202,9 +202,105 @@ class TestRefineEditListIsGuarded:
         ):
             out = await refine_recipe_node(state)
         assert out.get("proposal") is not None, out.get("assistant_message")
-        assert "This recipe contains peanut, which is on your allergy list." in (
-            out["assistant_message"]
+        message = out["assistant_message"]
+        assert "This recipe contains peanut, which is on your allergy list." in message
+        # the note that says the allergen was kept OUT must not contradict the warning
+        assert "kept out" not in message
+
+    @pytest.mark.asyncio
+    async def test_the_kept_out_note_names_only_the_allergens_really_out_of_the_card(
+        self,
+    ) -> None:
+        from bubbly_chef.workflows.recipe.nodes import refine_recipe_node
+
+        ai = _scripted(_refine_output(added=["Chilli flakes"], title="Spicy Chicken Satay"))
+        card = self._satay_card()
+        state: Any = {
+            "input_text": "make it spicier",
+            "user_id": USER,
+            "errors": [],
+            "warnings": [],
+            "session": {"metadata": {"picked_recipe": card.model_dump(mode="json")}},
+        }
+        repo = MagicMock()
+        repo.get_all_pantry_items = AsyncMock(return_value=[])
+        with (
+            patch(f"{_NODES}.get_ai_manager", MagicMock(return_value=ai)),
+            patch(f"{_NODES}.get_repository", AsyncMock(return_value=repo)),
+            patch(f"{_NODES}.get_stored_dietary_preferences", AsyncMock(return_value=[])),
+            _profile("peanut", "shellfish"),
+        ):
+            out = await refine_recipe_node(state)
+        message = out["assistant_message"]
+        assert "kept out shellfish because" in message
+        assert "kept out peanut" not in message and "kept out peanut, shellfish" not in message
+        assert "This recipe contains peanut, which is on your allergy list." in message
+
+    @pytest.mark.asyncio
+    async def test_a_card_without_the_allergen_still_says_it_was_kept_out(self) -> None:
+        from bubbly_chef.workflows.recipe.nodes import refine_recipe_node
+
+        ai = _scripted(_refine_output(added=["Sesame seeds"]))
+        state: Any = {
+            "input_text": "add crunch",
+            "user_id": USER,
+            "errors": [],
+            "warnings": [],
+            "session": {"metadata": {"picked_recipe": _noodle_card().model_dump(mode="json")}},
+        }
+        repo = MagicMock()
+        repo.get_all_pantry_items = AsyncMock(return_value=[])
+        with (
+            patch(f"{_NODES}.get_ai_manager", MagicMock(return_value=ai)),
+            patch(f"{_NODES}.get_repository", AsyncMock(return_value=repo)),
+            patch(f"{_NODES}.get_stored_dietary_preferences", AsyncMock(return_value=[])),
+            _profile("peanut"),
+        ):
+            out = await refine_recipe_node(state)
+        assert "I kept out peanut because of your allergies." in out["assistant_message"]
+        assert "allergy list" not in out["assistant_message"]
+
+    @pytest.mark.asyncio
+    async def test_the_library_refine_route_returns_the_warning(self) -> None:
+        from bubbly_chef.api.routes.recipes_ai import RefineRequest, refine_recipe
+
+        card = self._satay_card()
+        ai = _scripted(_refine_output(added=["Chilli flakes"], title="Spicy Chicken Satay"))
+        repo = MagicMock()
+        repo.get_all_pantry_items = AsyncMock(return_value=[])
+        with (
+            patch("bubbly_chef.api.deps.get_ai_manager", MagicMock(return_value=ai)),
+            patch("bubbly_chef.api.routes.recipes_ai.get_repository", AsyncMock(return_value=repo)),
+            patch(f"{_NODES}.get_stored_dietary_preferences", AsyncMock(return_value=[])),
+            _profile("peanut"),
+        ):
+            body = await refine_recipe(
+                RefineRequest(recipe=card.model_dump(mode="json"), prompt="make it spicier"),
+                user_id=USER,
+            )
+        assert body["allergy_warning"] == (
+            "This recipe contains peanut, which is on your allergy list."
         )
+        assert "Peanut sauce" in [i["name"] for i in body["recipe"]["ingredients"]]
+
+    @pytest.mark.asyncio
+    async def test_the_library_refine_route_returns_null_when_nothing_is_carried(self) -> None:
+        from bubbly_chef.api.routes.recipes_ai import RefineRequest, refine_recipe
+
+        ai = _scripted(_refine_output(added=["Sesame seeds"]))
+        repo = MagicMock()
+        repo.get_all_pantry_items = AsyncMock(return_value=[])
+        with (
+            patch("bubbly_chef.api.deps.get_ai_manager", MagicMock(return_value=ai)),
+            patch("bubbly_chef.api.routes.recipes_ai.get_repository", AsyncMock(return_value=repo)),
+            patch(f"{_NODES}.get_stored_dietary_preferences", AsyncMock(return_value=[])),
+            _profile("peanut"),
+        ):
+            body = await refine_recipe(
+                RefineRequest(recipe=_noodle_card().model_dump(mode="json"), prompt="add crunch"),
+                user_id=USER,
+            )
+        assert body["allergy_warning"] is None
 
     @pytest.mark.asyncio
     async def test_a_refine_that_adds_a_new_allergen_to_such_a_recipe_is_still_rejected(

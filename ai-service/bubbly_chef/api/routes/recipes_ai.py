@@ -114,7 +114,9 @@ async def generate_recipe(
         )
 
         return {
-            "recipe": result.recipe.model_dump(mode="json") if hasattr(result.recipe, "model_dump") else result.recipe,
+            "recipe": result.recipe.model_dump(mode="json")
+            if hasattr(result.recipe, "model_dump")
+            else result.recipe,
             "ingredients_status": [
                 s.model_dump(mode="json") if hasattr(s, "model_dump") else s
                 for s in (result.ingredients_status or [])
@@ -218,6 +220,9 @@ async def refine_recipe(
             "missing_count": result.missing_count,
             "have_count": result.have_count,
             "pantry_match_score": result.pantry_match_score,
+            # Set when the user's own saved recipe still carries a profile allergen
+            # (#500): the card is kept as they made it and the library says so.
+            "allergy_warning": result.allergy_warning,
         }
 
     except AllergenViolation as e:
