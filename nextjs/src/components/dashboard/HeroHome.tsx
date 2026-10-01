@@ -19,6 +19,9 @@ import { estimatedExpirySuffix } from '@/lib/pantry-helpers'
 import { useDecorations } from '@/lib/api/kitchen'
 import { useBubbles } from '@/lib/api/bubbles'
 import KitchenScene from '@/components/kitchen/KitchenScene'
+import PixelBubbles from '@/components/kitchen/PixelBubbles'
+import { sceneLabel } from '@/lib/kitchen/bubbles-spot'
+import { useBubblesSpot } from '@/hooks/useBubblesSpot'
 import KitchenHeader from '@/components/kitchen/KitchenHeader'
 import UnlockOffer from '@/components/kitchen/UnlockOffer'
 import KitchenThemePicker from '@/components/kitchen/KitchenThemePicker'
@@ -207,6 +210,11 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
   // Kitchen scene (#521): `decorations` rows use `name`/`decoration_type`;
   // KitchenScene expects `id`/`slot`. The balance is `null` until `/api/bubbles`
   // answers, so the header hides its counter rather than flashing a `0`.
+  // The pixel Bubbles (#752): the door while a scan or put-away is open (nothing
+  // on home opens one yet: the put-away sheet wires `scanOpen`), the stove while
+  // a cook is on record in storage, the fridge when food is going off, else the
+  // stove.
+  const { spot: bubblesSpot, cooking } = useBubblesSpot({ places })
   const { data: decorationsData, isLoading: decorationsLoading } = useDecorations()
   const { data: bubblesData } = useBubbles()
   const balance = bubblesData?.balance ?? null
@@ -316,6 +324,8 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         places={places}
         onOpenPlace={openPlace}
         planDinnerHref={planDinnerHref()}
+        bubblesLayer={<PixelBubbles spot={bubblesSpot} cooking={cooking} />}
+        sceneLabel={sceneLabel(bubblesSpot, cooking)}
       />
 
       {/* Under the wall: the pantry count on the left, the streak (#524) and the
