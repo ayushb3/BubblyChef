@@ -153,6 +153,7 @@ class AIProvider(ABC):
         prompt: str,
         response_schema: type[T] | None = None,
         temperature: float = 0.7,
+        max_output_tokens: int | None = None,
     ) -> T | str:
         """
         Generate a completion.
@@ -161,6 +162,9 @@ class AIProvider(ABC):
             prompt: The input prompt
             response_schema: Optional Pydantic model for structured output
             temperature: Sampling temperature (0.0 - 1.0)
+            max_output_tokens: Optional hard cap on generated tokens. ``None``
+                keeps the provider's own default. Used by the /health/ai
+                generation probe (#576) to keep each probe nearly free.
 
         Returns:
             Parsed Pydantic model if schema provided, otherwise raw string
