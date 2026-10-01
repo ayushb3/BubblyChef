@@ -387,6 +387,73 @@ describe('AskBubblesOverlay — scrolls a new turn into view', () => {
   })
 })
 
+describe('AskBubblesOverlay — single-recipe cook context (#814)', () => {
+  it('cookContext + conversationId send the dish and the given id, with no amendment card', () => {
+    queueResponse(baseResponse({ proposal: AMENDMENT_PROPOSAL, requires_review: true, next_action: 'review_proposal' }))
+    render(
+      <AskBubblesOverlay
+        stepN={1}
+        stepText="Boil the pasta"
+        recipeTitle="Creamy pasta"
+        onClose={jest.fn()}
+        cookContext={PIN}
+        conversationId="cook-session-1"
+      />,
+    )
+    sendMessage('why al dente?')
+
+    const request = streamChatMessageMock.mock.calls[0][0]
+    expect(request.conversation_id).toBe('cook-session-1')
+    expect(request.context).toEqual({
+      cooking_recipe: { id: 'dish-1', title: 'Creamy pasta', ingredients: PIN.ingredients },
+    })
+    expect(request.follow_up_chips).toBe(false)
+    expect(screen.getByText('Asking about step 1')).toBeInTheDocument()
+    expect(screen.queryByTestId('ask-bubbles-amendment-card')).not.toBeInTheDocument()
+  })
+})
+
+describe('AskBubblesOverlay — meal constraints (#814)', () => {
+  const CONSTRAINTS = {
+    kitchen_limits: ['one pan'],
+    exclusive_tags: ['pan'],
+    recipe_constraints: { dietary: ['dairy-free'], excluded_ingredients: ['peanuts'] },
+  }
+
+  it('sends the meal constraints as context.meal_constraints on every turn, next to the pin', () => {
+    queueResponse(baseResponse())
+    render(
+      <AskBubblesOverlay
+        stepN={1}
+        stepText="text"
+        recipeTitle="Creamy pasta"
+        onClose={jest.fn()}
+        pinned={PIN}
+        mealConstraints={CONSTRAINTS}
+      />,
+    )
+    sendMessage('can I use butter?')
+    queueResponse(baseResponse())
+    sendMessage('and cheese?')
+
+    for (const [request] of streamChatMessageMock.mock.calls) {
+      expect(request.context).toEqual({
+        cooking_recipe: { id: 'dish-1', title: 'Creamy pasta', ingredients: PIN.ingredients },
+        meal_constraints: CONSTRAINTS,
+      })
+    }
+  })
+
+  it('omits meal_constraints when none are given (a saved-recipe cook, or a meal planned without chat)', () => {
+    queueResponse(baseResponse())
+    render(
+      <AskBubblesOverlay stepN={1} stepText="text" recipeTitle="Creamy pasta" onClose={jest.fn()} pinned={PIN} />,
+    )
+    sendMessage('can I use butter?')
+    expect('meal_constraints' in streamChatMessageMock.mock.calls[0][0].context).toBe(false)
+  })
+})
+
 describe('AskBubblesOverlay — unpinned mode (unchanged)', () => {
   it('never mints a conversation id when unpinned', () => {
     const spy = jest.spyOn(crypto, 'randomUUID')

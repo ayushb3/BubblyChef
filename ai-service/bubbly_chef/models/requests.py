@@ -154,6 +154,11 @@ class ChatRequest(BaseModel):
             "cooking; the recipe is resolved server-side from this id and the "
             "conversation is pinned to it. Legacy: \"cooking_recipe\" "
             "({id, title, ingredients}) — still accepted, same effect. "
+            '"meal_constraints" (<object>) — a meal cook\'s stored planning '
+            "constraints ({kitchen_limits, recipe_constraints}, issue #814), "
+            "rendered as read-only background in the cooking prompt while a dish "
+            "is pinned; only diet, excluded ingredients, skill, time and kitchen "
+            "limits are read, capped, and nothing is written back. "
             '"meal_option_id" (<str>) — a tap on one of the meal_plan option '
             "cards; resolves against the retained option set and routes to "
             "the pick stage, never fuzzy-matched. "

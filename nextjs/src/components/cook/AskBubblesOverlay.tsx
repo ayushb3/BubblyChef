@@ -6,10 +6,13 @@
  * `docs/plans/2026-09-29-issue-654-b-meal-amendments-contract.md`).
  *
  * Two modes:
- *  - **Unpinned** (no `pinned` prop, GuidedCookFlow's single-recipe cook):
- *    behaves exactly as before this extraction. The request is
- *    `{ message, conversation_id: null, follow_up_chips: false }` — no
- *    `context` key — and no amendment card is ever rendered.
+ *  - **Unpinned** (no `pinned` prop, GuidedCookFlow's single-recipe cook): no
+ *    amendment card is ever rendered. Given `cookContext` (the dish) and a
+ *    per-cook-session `conversationId`, each turn carries them as
+ *    `context.cooking_recipe` + `conversation_id`, so the model sees the
+ *    dish's ingredients and remembers the earlier questions (issue #814).
+ *    Without them the request is `{ message, conversation_id: null,
+ *    follow_up_chips: false }`, as before this extraction.
  *  - **Pinned** (the meal cook page's per-dish Ask Bubbles): every turn
  *    carries a stable `conversation_id` (minted once per mount) and
  *    `context.cooking_recipe`, read from the *current* `pinned` prop at send
@@ -18,10 +21,12 @@
  *    `RecipeAmendmentProposal` renders an actionable card under the assistant
  *    bubble; only the latest such card stays actionable.
  *
- * The backend DOES read `ChatRequest.context` (`models/requests.py`) and the
- * streaming route (`workflows/router.py`) passes it through — the unpinned
- * mode simply chooses to send none, so a single-recipe cook's questions never
- * pin a conversation or pay for amendment detection.
+ * The backend reads `ChatRequest.context` (`models/requests.py`) and the
+ * streaming route (`workflows/router.py`) passes it through. A meal cook also
+ * passes `mealConstraints` (the meal's stored planning constraints), sent as
+ * `context.meal_constraints`: read-only background for the cooking prompt, so
+ * what the user said while planning (an allergy, "one pan") still applies. The
+ * cook Q&A never joins the planning conversation (issue #814).
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react'
@@ -29,7 +34,7 @@ import { useReducedMotion } from 'framer-motion'
 import PixelSheet from '@/components/ui/PixelSheet'
 import { streamChatMessage } from '@/lib/api/chat'
 import { isRecipeAmendmentProposal, type ChatRequest } from '@/types/chat'
-import type { MealCookIngredient } from '@/types/meals'
+import type { MealConstraints, MealCookIngredient } from '@/types/meals'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -57,6 +62,20 @@ export interface AskBubblesOverlayProps {
   onClose: () => void
   pinned?: AskBubblesPin
   onApplyAmendment?: (a: AskBubblesAmendment) => void
+  /**
+   * Single-recipe cook (unpinned): the dish being cooked. Sent as
+   * `context.cooking_recipe` so the model sees its ingredients. Never renders
+   * an amendment card (there is nothing to apply it to). Read at send time.
+   */
+  cookContext?: AskBubblesPin
+  /**
+   * One conversation id for the whole cook session, so the overlay keeps its
+   * memory when it is closed and reopened. When absent, the overlay mints one
+   * per mount (the meal cook's behaviour).
+   */
+  conversationId?: string
+  /** Meal cook: the meal's stored planning constraints, sent as `context.meal_constraints`. */
+  mealConstraints?: MealConstraints
 }
 
 interface AmendmentState {
@@ -190,6 +209,9 @@ export default function AskBubblesOverlay({
   onClose,
   pinned,
   onApplyAmendment,
+  cookContext,
+  conversationId: sessionConversationId,
+  mealConstraints,
 }: AskBubblesOverlayProps) {
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<OverlayMessage[]>([])
@@ -202,10 +224,16 @@ export default function AskBubblesOverlay({
   // card can claim focus once — never left to drop back to `body` (N4).
   const [justResolvedIndex, setJustResolvedIndex] = useState<number | null>(null)
 
-  // Minted once per mount, only when pinned (only the pinned mode ever sends
-  // it) — a lazy `useState` initializer, not a ref read during render (which
-  // `react-hooks/refs` disallows even for a guarded once-only assignment).
-  const [conversationId] = useState<string | null>(() => (pinned ? crypto.randomUUID() : null))
+  // The dish whose ingredients ride along: the meal cook's pin, or a single
+  // recipe cook's `cookContext`. Neither → the request stays context-free.
+  const dish = pinned ?? cookContext
+
+  // Minted once per mount, only when a dish is in play (otherwise nothing ever
+  // sends it) — a lazy `useState` initializer, not a ref read during render
+  // (which `react-hooks/refs` disallows even for a guarded once-only
+  // assignment). A caller-owned per-cook-session id wins over the minted one.
+  const [mintedConversationId] = useState<string | null>(() => (dish ? crypto.randomUUID() : null))
+  const conversationId = dish ? (sessionConversationId ?? mintedConversationId) : null
 
   // Focus input on mount
   useEffect(() => {
@@ -255,17 +283,18 @@ export default function AskBubblesOverlay({
 
     const request: ChatRequest = {
       message: framedMessage,
-      conversation_id: pinned ? conversationId : null,
+      conversation_id: conversationId,
       // The cook overlay shows no follow-up chips, so don't pay for them (#498).
       follow_up_chips: false,
     }
-    if (pinned) {
+    if (dish) {
       request.context = {
         cooking_recipe: {
-          id: pinned.recipe_id,
-          title: pinned.title,
-          ingredients: pinned.ingredients,
+          id: dish.recipe_id,
+          title: dish.title,
+          ingredients: dish.ingredients,
         },
+        ...(mealConstraints ? { meal_constraints: mealConstraints } : {}),
       }
     }
 
@@ -313,7 +342,7 @@ export default function AskBubblesOverlay({
       },
       abortRef.current.signal,
     )
-  }, [input, streaming, stepN, stepBodyText, recipeTitle, pinned, conversationId])
+  }, [input, streaming, stepN, stepBodyText, recipeTitle, pinned, dish, conversationId, mealConstraints])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
