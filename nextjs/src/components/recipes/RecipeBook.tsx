@@ -5,7 +5,8 @@ import { motion, AnimatePresence, useAnimation, type PanInfo } from 'framer-moti
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import { Heart, DotsThree } from '@phosphor-icons/react'
-import RecipeDetail, { type Recipe } from './RecipePage'
+import type { Recipe } from './RecipePage'
+import PantryRecipeDetail from './PantryRecipeDetail'
 import RecipeSearchBar from './RecipeSearchBar'
 import EmptyState from '@/components/ui/EmptyState'
 import RecipeEditModal from './RecipeEditModal'
@@ -984,7 +985,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
                   }}
                   whileDrag={{ cursor: 'grabbing' }}
                 >
-                  <RecipeDetail recipe={selectedRecipe} />
+                  <PantryRecipeDetail recipe={selectedRecipe} />
                 </motion.div>
               </AnimatePresence>
             </div>

@@ -5,7 +5,15 @@
  */
 import React from 'react'
 import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import RecipeDetailPage from '@/app/recipes/[id]/page'
+
+// The page's ingredient food tags use React Query (issue #784).
+const withClient = (ui: React.ReactElement) => (
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    {ui}
+  </QueryClientProvider>
+)
 
 jest.mock('next/navigation', () => ({
   useParams: () => ({ id: 'recipe-1' }),
@@ -33,7 +41,7 @@ describe('RecipeDetailPage — Make it a meal (#651 PR B)', () => {
       instructions: ['Boil'],
     })
 
-    render(<RecipeDetailPage />)
+    render(withClient(<RecipeDetailPage />))
 
     const link = await screen.findByRole('link', { name: /make it a meal/i })
     const href = link.getAttribute('href') ?? ''
@@ -46,7 +54,7 @@ describe('RecipeDetailPage — Make it a meal (#651 PR B)', () => {
   it('is absent on the 404 screen', async () => {
     mockFetchOnce({}, 404)
 
-    render(<RecipeDetailPage />)
+    render(withClient(<RecipeDetailPage />))
 
     expect(await screen.findByText('Recipe not found')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /make it a meal/i })).toBeNull()
@@ -55,7 +63,7 @@ describe('RecipeDetailPage — Make it a meal (#651 PR B)', () => {
   it('is absent on the load-error screen', async () => {
     mockFetchOnce({}, 500)
 
-    render(<RecipeDetailPage />)
+    render(withClient(<RecipeDetailPage />))
 
     expect(await screen.findByText('Could not load recipe')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /make it a meal/i })).toBeNull()

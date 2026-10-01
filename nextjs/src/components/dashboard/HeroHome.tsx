@@ -12,7 +12,14 @@ import { titleCase } from '@/lib/format'
 import { useMotionConfig } from '@/lib/motion'
 import { cookThisHref, planDinnerHref, tipChatHref } from '@/lib/chat-seed'
 import { kitchenEyebrow } from '@/lib/kitchen/eyebrow'
-import { PLACE_KEYS, summarizePlaces, type PlaceKey, type PlaceSummaries } from '@/lib/kitchen/places'
+import {
+  PLACE_KEYS,
+  kitchenStock,
+  summarizePlaces,
+  type KitchenStock,
+  type PlaceKey,
+  type PlaceSummaries,
+} from '@/lib/kitchen/places'
 import { fetchDashboardDaily } from '@/lib/api/dashboard'
 import type { DashboardTip, DashboardSuggestion } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
@@ -42,6 +49,8 @@ interface HomeData {
   hasUnusedExpired: boolean
   /** Per-place counts for the wall; `null` until the pantry loads, and if it fails to. */
   places: PlaceSummaries | null
+  /** What each place draws (category sprites and up to 3 wilting items); `null` like `places`. */
+  stock: KitchenStock | null
   /** Every pantry row, for the storage sheet; `null` until the pantry loads, and if it fails to. */
   items: EnrichedPantryItem[] | null
 }
@@ -115,6 +124,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     suggestion: null,
     hasUnusedExpired: false,
     places: null,
+    stock: null,
     items: null,
   })
 
@@ -179,6 +189,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
           // A failed pantry fetch is "unknown", not "empty": the wall then shows
           // names only rather than claiming four empty places.
           places: pantryRes.ok ? summarizePlaces(allItems) : null,
+          stock: pantryRes.ok ? kitchenStock(allItems) : null,
           items: pantryRes.ok ? allItems : null,
         })
       } catch {
@@ -219,6 +230,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     suggestion,
     hasUnusedExpired,
     places,
+    stock,
     items,
   } = data
 
@@ -370,6 +382,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         loading={decorationsLoading}
         theme={kitchenTheme}
         places={places}
+        stock={stock}
         onOpenPlace={(place) => setSheet({ place, view: 'scene' })}
         planDinnerHref={planDinnerHref()}
         bubblesLayer={<PixelBubbles spot={bubblesSpot} cooking={cooking} />}
