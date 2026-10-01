@@ -5,7 +5,7 @@
  *
  * "2 to buy: parsley, 1 lemon" with an "Add to grocery list" key. The missing
  * items come from the existing read-only meal-to-buy endpoint
- * (`fetchMealToBuy`, deterministic, no writes). The key puts exactly those
+ * (`fetchMealToBuyDetail`, deterministic, no writes). The key puts exactly those
  * items on the client-side grocery list (`addMissingToGroceryList`, which adopts a
  * food already on the list instead of duplicating it and leaves a ticked one
  * ticked) and the line crossfades
@@ -25,7 +25,8 @@ import Link from 'next/link'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import SpringButton from '@/components/ui/SpringButton'
-import { fetchMealToBuy } from '@/lib/api/grocery'
+import { fetchMealToBuyDetail } from '@/lib/api/grocery'
+import { groceryEntriesFromDetail } from '@/lib/meal-to-buy'
 import { addMissingToGroceryList } from '@/lib/grocery-store'
 import { fetchUserId } from '@/hooks/useGroceryCount'
 import { springs, useMotionConfig } from '@/lib/motion'
@@ -42,7 +43,7 @@ export default function MealToBuyLine({ mealId, signature }: MealToBuyLineProps)
   const { reduced } = useMotionConfig()
   const toBuy = useQuery({
     queryKey: ['meal-to-buy', mealId, signature],
-    queryFn: () => fetchMealToBuy(mealId),
+    queryFn: () => fetchMealToBuyDetail(mealId),
   })
   const user = useQuery({ queryKey: ['grocery-user-id'], queryFn: fetchUserId })
   // The count of the last add, per meal contents: a swap makes the line fresh again.
@@ -78,7 +79,7 @@ export default function MealToBuyLine({ mealId, signature }: MealToBuyLineProps)
     )
   }
 
-  const names = toBuy.data ?? []
+  const names = toBuy.data?.names ?? []
 
   if (names.length === 0) {
     return (
@@ -102,7 +103,9 @@ export default function MealToBuyLine({ mealId, signature }: MealToBuyLineProps)
     // A re-add must be harmless: a ticked line was bought at the shop, so
     // `addMissingToGroceryList` leaves it as it is (issue #787 shares this
     // with the recipe card's add).
-    addMissingToGroceryList(user.data, names)
+    // Each line keeps the amount the meal lacks, its unit and its category (issue #850).
+    if (!toBuy.data) return
+    addMissingToGroceryList(user.data, groceryEntriesFromDetail(toBuy.data))
     setAddedFor({ key, count: names.length })
   }
 
