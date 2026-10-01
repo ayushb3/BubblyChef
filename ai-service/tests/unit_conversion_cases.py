@@ -77,6 +77,9 @@ CASES: tuple[Case, ...] = (
     Case("garlic-range-1-2-cloves", (("garlic", 1, "head"),), "1-2 cloves garlic",
          "ready", 1.5 * 5, "g", True, left(1, 50, 7.5),
          note="midpoint is deducted"),
+    Case("cloves-off-two-bulbs", (("garlic", 2, "bulb"),), "2 cloves garlic",
+         "ready", 2 * 5, "g", True, left(2, 100, 10),
+         note="a bulb of garlic is a head (#866)"),
     Case("twelve-cloves-from-one-head", (("garlic", 1, "head"),), "12 cloves garlic",
          "shortfall", 50, "g", True, 0.0, shortfall=10),
     # --- onions: count vs weight -----------------------------------------------

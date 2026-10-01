@@ -54,6 +54,8 @@ from tests.test_issue_356_pantry_lots import _repo, _row
         ("lbs", "lb"),
         ("packs", "package"),
         ("packet", "package"),
+        ("bulb", "head"),
+        ("bulbs", "head"),
     ],
 )
 def test_unit_spellings_resolve(raw: str, canonical: str) -> None:

@@ -434,6 +434,8 @@ _UNIT_ALIASES: dict[str, str] = {
     "clove": "clove", "cloves": "clove",
     "sprig": "sprig", "sprigs": "sprig",
     "head": "head", "heads": "head",
+    # A bulb of garlic or shallots is a head of it (#866); same typical weight.
+    "bulb": "head", "bulbs": "head",
     "bunch": "bunch", "bunches": "bunch",
     "handful": "handful", "handfuls": "handful",
     # Small culinary volumes
