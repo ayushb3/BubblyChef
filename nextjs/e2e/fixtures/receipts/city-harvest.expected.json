@@ -1,0 +1,13 @@
+{
+  "store": "City Harvest Grocers",
+  "notes": "Same wooden-table photo style as grocery-mart. 7 food lines, each with a leading '- ' before the price. '80/20' in the beef line is the fat ratio, not a quantity. Subtotal, Tax, TOTAL and CASH are not items; 'CUSTOMER COPY' is a footer.",
+  "items": [
+    {"name": "whole wheat bread", "quantity": 1},
+    {"name": "greek yogurt", "quantity": [1, 32]},
+    {"name": "spinach", "quantity": 1},
+    {"name": "roma tomatoes", "quantity": 1},
+    {"name": "ground beef", "quantity": 1},
+    {"name": "breakfast cereal", "quantity": 1},
+    {"name": "coffee beans", "quantity": 1}
+  ]
+}
