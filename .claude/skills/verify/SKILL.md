@@ -102,6 +102,26 @@ A **Verified** section, written for someone who will not open the diff:
 - **What you could not verify, and why.** An unstated gap reads as a claim it was
   handled.
 
+## Comparing against main (before/after)
+
+To screenshot main next to your branch, build main from an export, not a checkout.
+On Windows/Git Bash the export's `node_modules` is a **junction** to a real
+`node_modules`, and anything recursive that touches the export reaches through it.
+
+```bash
+TMP=$(mktemp -d); mkdir -p "$TMP/main-compare" && git archive origin/main | tar -x -C "$TMP/main-compare"
+cmd //c mklink /J "$(cygpath -w "$TMP/main-compare/nextjs/node_modules")" "$(cygpath -w "$PWD/nextjs/node_modules")"
+# build and `next start -p <port>` main on a port different from this worktree's $PORT
+cmd //c rmdir "$(cygpath -w "$TMP/main-compare/nextjs/node_modules")"   # unlink FIRST, non-recursive
+rm -rf "$TMP"                                                            # only now
+```
+
+Link to this worktree's own `node_modules` (or the main checkout's). **Never run
+`rm -rf`, `npm ci` or `npm install` on a tree that holds a junctioned
+`node_modules`**: they follow the junction and empty the shared one every agent
+uses (2026-10-01: an `rm -rf` of such a temp dir did exactly that). `ln -s` can
+also create a junction, so treat it the same. If `rmdir` fails, stop and ask.
+
 ## Rules
 
 - **Never fake it.** No screenshots of a mocked page presented as the real flow,
