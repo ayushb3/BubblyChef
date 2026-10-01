@@ -13,6 +13,8 @@ import MealCookFinished from '@/components/meal/MealCookFinished'
 import MealCookSheet, { type MealCookSheetState } from '@/components/meal/MealCookSheet'
 import MealTimelineSheet from '@/components/meal/MealTimelineSheet'
 import MealTimelineTable from '@/components/meal/MealTimelineTable'
+import MealIngredientsSheet from '@/components/meal/MealIngredientsSheet'
+import SpringButton from '@/components/ui/SpringButton'
 import AskBubblesOverlay, { type AskBubblesAmendment } from '@/components/cook/AskBubblesOverlay'
 import { fetchMeal, requestMealCookProposal, confirmMealCook, MealCookError } from '@/lib/api/meals'
 import { dishStepSignaturesForMeal, schedulerDishesForMeal } from '@/lib/meal-dishes'
@@ -22,7 +24,9 @@ import {
   buildMealCookRequest,
   recipeServingsFor,
   pinnedIngredientsForDish,
+  cookedIngredientsForDish,
 } from '@/lib/meal-cook-deduction'
+import { cookIngredientsFor, ingredientsForStep, type CookIngredient } from '@/lib/cook-step-ingredients'
 import type { Column } from '@/lib/meal-scheduler'
 import {
   deriveStream,
@@ -40,6 +44,7 @@ import {
   finishedTimerIdsToClear,
   isMealCookFinished,
   canStartEarly,
+  askBubblesStep,
 } from '@/lib/meal-cook-stream'
 import {
   getActiveMealCookSession,
@@ -114,6 +119,10 @@ export default function MealCookPage() {
   const [redirecting, setRedirecting] = useState(false)
   const [nowMinutes, setNowMinutes] = useState(0)
   const [timelineOpen, setTimelineOpen] = useState(false)
+  // Issue #849 — the Ingredients sheet, and which rows the cook has ticked off.
+  // Held here (not in the sheet) so the ticks survive closing and reopening it.
+  const [ingredientsOpen, setIngredientsOpen] = useState(false)
+  const [checkedIngredients, setCheckedIngredients] = useState<ReadonlySet<string>>(() => new Set())
   // Issue #654 PR B (§3) — the dish (and step) the Ask Bubbles overlay is
   // pinned to. Captured once, at the tap that opens it, from the Now card's
   // step at that instant: the Now card advancing while the overlay is open
@@ -298,6 +307,43 @@ export default function MealCookPage() {
   )
   const stepByKey = useMemo(() => new Map(allStreamSteps.map((s) => [s.key, s])), [allStreamSteps])
 
+  // Issue #849 — each dish's scaled ingredient list (the amended one once Ask
+  // Bubbles has applied a change), for the step chips and the Ingredients sheet.
+  const dishIngredients = useMemo(() => {
+    const map = new Map<string, CookIngredient[]>()
+    if (!meal || !session) return map
+    for (const d of schedulerDishes) {
+      const full = dishByRecipeId.get(d.dish_id)
+      if (!full) continue
+      const { ingredients, string_scale } = cookedIngredientsForDish(full, meal.servings, session)
+      map.set(d.dish_id, cookIngredientsFor(ingredients, string_scale))
+    }
+    return map
+  }, [meal, session, schedulerDishes, dishByRecipeId])
+  const nowCardIngredients = useMemo(() => {
+    if (!stream || (stream.now.kind !== 'active' && stream.now.kind !== 'upcoming')) return []
+    const step = stream.now.step
+    return ingredientsForStep(step.label, step.text, dishIngredients.get(step.dish_id) ?? []).map((i) => i.label)
+  }, [stream, dishIngredients])
+  const ingredientSheetDishes = useMemo(
+    () =>
+      schedulerDishes.map((d) => ({
+        dish_id: d.dish_id,
+        column: d.column,
+        title: d.title,
+        items: dishIngredients.get(d.dish_id) ?? [],
+      })),
+    [schedulerDishes, dishIngredients],
+  )
+  const toggleIngredient = useCallback((rowKey: string) => {
+    setCheckedIngredients((prev) => {
+      const next = new Set(prev)
+      if (next.has(rowKey)) next.delete(rowKey)
+      else next.add(rowKey)
+      return next
+    })
+  }, [])
+
   // Issue #654 §3 (S9) — the finish flow's own view of the same session:
   // which dishes actually count as cooked, and (the complement) which
   // dish titles the finished screen names as skipped.
@@ -461,8 +507,10 @@ export default function MealCookPage() {
   // advances.
   function handleAskBubbles() {
     if (!stream) return
-    if (stream.now.kind !== 'active' && stream.now.kind !== 'upcoming') return
-    const step = stream.now.step
+    // Issue #849 — the step the cook is on, which is not always the card's own
+    // (see `askBubblesStep`).
+    const step = askBubblesStep(stream.now)
+    if (!step) return
     setAskPin({
       dishId: step.dish_id,
       dishTitle: step.dish_title,
@@ -795,6 +843,20 @@ export default function MealCookPage() {
           </button>
         </div>
 
+        {stream.now.kind !== 'finished' && (
+          <div className="flex">
+            <SpringButton
+              variant="secondary"
+              size="sm"
+              onClick={() => setIngredientsOpen(true)}
+              aria-label="Open ingredients"
+              data-testid="meal-cook-ingredients-button"
+            >
+              Ingredients
+            </SpringButton>
+          </div>
+        )}
+
         {stream.now.kind === 'finished' ? (
           <MealCookFinished
             mealTitle={meal.title}
@@ -814,6 +876,7 @@ export default function MealCookPage() {
               onStartEarly={handleStartEarly}
               onAskBubbles={handleAskBubbles}
               progress={dishProgress(allStreamSteps, session.steps)}
+              stepIngredients={nowCardIngredients}
             />
             {/* A waiting card already lists what's running, and has nothing
                 next to preview: rendering either here would repeat it (PR #661 review). */}
@@ -835,6 +898,14 @@ export default function MealCookPage() {
           progress={timelineProgress}
         />
       </MealTimelineSheet>
+
+      <MealIngredientsSheet
+        open={ingredientsOpen}
+        onClose={() => setIngredientsOpen(false)}
+        dishes={ingredientSheetDishes}
+        checked={checkedIngredients}
+        onToggle={toggleIngredient}
+      />
 
       <MealCookSheet
         open={sheetOpen}
