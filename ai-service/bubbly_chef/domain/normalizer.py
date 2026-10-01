@@ -434,6 +434,8 @@ _UNIT_ALIASES: dict[str, str] = {
     "clove": "clove", "cloves": "clove",
     "sprig": "sprig", "sprigs": "sprig",
     "head": "head", "heads": "head",
+    # A bulb of garlic or shallots is a head of it (#866); same typical weight.
+    "bulb": "head", "bulbs": "head",
     "bunch": "bunch", "bunches": "bunch",
     "handful": "handful", "handfuls": "handful",
     # Small culinary volumes
@@ -556,6 +558,17 @@ _RAW_UNIT_SINGULARS: dict[str, str] = {
     "pkg": "package",
     "pkgs": "package",
 }
+# Every spelling that normalize_unit() resolves to a piece or package unit is
+# the same unit to the guard ("bulb" is a head, "tin" is a can, "carton" is a
+# container). Derived from _UNIT_ALIASES so a new alias can't skip the ADR 0003
+# guard (#866): "2 cloves shallots" against "3 bulb" is not 2 bulbs.
+_RAW_UNIT_SINGULARS.update(
+    {
+        raw: canonical
+        for raw, canonical in _UNIT_ALIASES.items()
+        if canonical in PIECE_UNITS or canonical in PACKAGE_UNITS
+    }
+)
 
 
 def _canonical_raw_unit(unit: str | None) -> str:

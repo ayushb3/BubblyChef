@@ -405,7 +405,7 @@ _LEADING_QTY_RE = re.compile(
     r"|pint|pints|quart|quarts|gallon|gallons|fl\s+oz|fluid\s+ounce|fluid\s+ounces"
     r"|stick|sticks|clove|cloves"
     r"|bunch|bunches|slice|slices|piece|pieces|can|cans|tin|tins|package|packages"
-    r"|head|heads|sprig|sprigs|leaf|leaves|pinch|pinches|dash|dashes"
+    r"|head|heads|bulb|bulbs|sprig|sprigs|leaf|leaves|pinch|pinches|dash|dashes"
     r"|handful|handfuls|item|count|dozen|jar|jars|bottle|bottles|bag|bags|box|boxes"
     r"|container|containers|carton|cartons))?"
     r"\s+",
@@ -569,7 +569,7 @@ def _parse_ingredient_string(raw: str) -> dict[str, Any]:
                    "teaspoon", "teaspoons", "oz", "lb", "lbs", "g", "kg", "ml",
                    "l", "item", "count", "piece", "pieces", "slice", "slices",
                    "bunch", "can", "cans", "package", "packages", "clove", "cloves",
-                   "sprig", "sprigs", "head", "heads", "stick", "sticks"}
+                   "sprig", "sprigs", "head", "heads", "bulb", "bulbs", "stick", "sticks"}
     if not name or name in _UNIT_WORDS:
         last = last_segment
         # Strip leading adjectives/conjunction words before the qty match

@@ -122,6 +122,29 @@ describe('to-taste seasoning line (#756)', () => {
     expect(screen.queryByText(/ingredient/i)).not.toBeInTheDocument()
   })
 
+  it('names a food once when two to-taste lines repeat it, ignoring case (#867)', () => {
+    render(
+      <CookReviewBody
+        proposal={proposalOf([
+          toTaste('salt'),
+          toTaste('Pepper'),
+          toTaste('Salt'),
+          toTaste('salt'),
+          toTaste('pepper'),
+        ])}
+        overrides={{}}
+        onOverrideChange={jest.fn()}
+        expiredDismissed
+        onDismissExpired={jest.fn()}
+      />,
+    )
+
+    // First appearance wins, in order, with its own casing.
+    expect(screen.getByLabelText(/seasonings to taste/i).textContent).toBe(
+      'Not deducted: to taste (salt, Pepper)',
+    )
+  })
+
   it('renders no line when nothing is to taste', () => {
     render(
       <CookReviewBody
