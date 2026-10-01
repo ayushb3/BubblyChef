@@ -73,6 +73,19 @@ def user_message_for_failure(kind: str | None, configured: bool) -> str:
     return FAILURE_MESSAGES.get(kind or "unknown", FAILURE_MESSAGES["unknown"])
 
 
+def ai_error_kind_for_failure(kind: str | None, configured: bool) -> str:
+    """The machine-readable tag a chat envelope carries for an AI-error reply.
+
+    Sent as ``metadata.ai_error_kind`` (#732) so the client can tell a canned
+    failure reply from an answer, and decide whether "try again" can help.
+    ``not_configured`` stands in for the empty-provider-list case; otherwise a
+    missing kind reads as ``unknown``.
+    """
+    if not configured:
+        return "not_configured"
+    return kind or "unknown"
+
+
 def infer_kind_from_message(message: str) -> ProviderFailureKind:
     """Best-effort fallback classification from raw error text.
 

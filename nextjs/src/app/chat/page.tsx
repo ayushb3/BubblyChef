@@ -58,6 +58,7 @@ import {
   getSavedRecipeMatches,
   getClarificationSuggestions,
   getFollowUpSuggestions,
+  getAiErrorKind,
   isFollowUpsPending,
   buildClarificationText,
   getConfirmOptions,
@@ -66,7 +67,13 @@ import {
   isRecipeAmendmentProposal,
 } from '@/types/chat'
 import type { SavedRecipeMatch } from '@/types/chat'
-import { resolveChips, COOKING_CHIPS, type ChipConfig, type ChipAction } from '@/lib/chat-chips'
+import {
+  resolveChips,
+  resolveAiErrorChips,
+  COOKING_CHIPS,
+  type ChipConfig,
+  type ChipAction,
+} from '@/lib/chat-chips'
 
 // ---------------------------------------------------------------------------
 // Intent-aware chip resolver — logic lives in lib/chat-chips.ts (testable
@@ -794,9 +801,9 @@ function ChatSurface() {
       {/* AI unavailable warning */}
       {!aiAvailable && (
         <div className="mx-4 mt-3 px-4 py-2.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl flex items-center gap-2 text-sm">
-          <span>⚠️</span>
+          <span>💤</span>
           <span className="text-[var(--color-text)]">
-            AI is unavailable. Check your Gemini API key or start Ollama.
+            Bubbles is taking a break — chat will be back soon. Your pantry and recipes still work.
           </span>
         </div>
       )}
@@ -871,6 +878,7 @@ function ChatSurface() {
                   msg.role === 'assistant' &&
                   index === messages.length - 1
                 }
+                retryText={messages[index - 1]?.role === 'user' ? messages[index - 1].content : undefined}
                 proposalState={proposalStates[msg.id]}
                 proposalError={proposalErrors[msg.id]}
                 failedNames={proposalFailedNames?.[msg.id]}
@@ -1098,6 +1106,8 @@ interface MessageRendererProps {
   isLastAssistant: boolean
   isStreaming: boolean
   isLastSettledAssistant: boolean
+  /** The user message this reply answers — what "Try again" resends on an AI-error reply (#732). */
+  retryText?: string
   proposalState?: 'pending' | 'approving' | 'approved' | 'rejected' | 'failed'
   proposalError?: string
   failedNames?: string[]
@@ -1156,6 +1166,7 @@ function MessageRenderer({
   isLastAssistant,
   isStreaming,
   isLastSettledAssistant,
+  retryText,
   proposalState,
   proposalError,
   failedNames,
@@ -1206,6 +1217,31 @@ function MessageRenderer({
 
   const mascotState = isLastAssistant && isStreaming ? 'thinking' : 'happy'
   const intent = message.intent ?? message.response?.intent
+
+  // A canned AI-failure reply (#732): no normal follow-ups, which would only
+  // fail the same way, and at most one "Try again" that resends the last message.
+  const aiErrorKind = getAiErrorKind(message.response)
+  if (aiErrorKind) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      >
+        <div className="flex items-end gap-2">
+          <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
+          <MessageBubble message={message} />
+        </div>
+        {isLastSettledAssistant && (
+          <PostMessageChips
+            chips={resolveAiErrorChips(aiErrorKind, retryText)}
+            onChipTap={onChipTap}
+            onChipAction={onChipAction}
+          />
+        )}
+      </motion.div>
+    )
+  }
 
   // Mid-cook amendment (#489): the reply text plus the "Update what I'm cooking"
   // card. Checked first: an amendment turn carries no pantry or recipe payload.

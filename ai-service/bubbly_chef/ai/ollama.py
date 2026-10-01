@@ -93,7 +93,13 @@ Return ONLY the JSON, no markdown formatting or extra text."""
         except httpx.HTTPStatusError as e:
             raise ProviderUnavailableError(f"Ollama API error: {e}") from e
         except httpx.RequestError as e:
-            raise ProviderUnavailableError(f"Ollama connection error: {type(e).__name__}: {e}") from e
+            # Failing to even connect (refused, connect timeout) means the
+            # server isn't there: "network". Left to message inference,
+            # "ConnectTimeout" read as a "timeout" (#732).
+            raise ProviderUnavailableError(
+                f"Ollama connection error: {type(e).__name__}: {e}",
+                kind="network" if isinstance(e, httpx.ConnectError | httpx.ConnectTimeout) else None,
+            ) from e
 
         # Parse response
         data = response.json()

@@ -232,6 +232,28 @@ export function resolveStaticChips(
   }
 }
 
+/** AI failures that retrying cannot fix: a spend cap, a bad key, a missing model, no provider. */
+const NO_RETRY_AI_ERROR_KINDS = new Set([
+  'quota_exhausted',
+  'auth',
+  'model_not_found',
+  'not_configured',
+])
+
+/**
+ * The pills under an AI-error reply (issue #732). The normal follow-ups
+ * ("Try another", "Tell me more") would just fail the same way, so an error
+ * reply gets at most one "Try again" that resends the last message — and none
+ * when the failure is a configuration problem a retry can't help, or when
+ * there is no message to resend.
+ */
+export function resolveAiErrorChips(kind: string, retryText: string | undefined): ChipConfig[] {
+  if (NO_RETRY_AI_ERROR_KINDS.has(kind)) return []
+  const message = retryText?.trim()
+  if (!message) return []
+  return [{ label: 'Try again', message, tone: 'accent', emoji: '🔄' }]
+}
+
 /**
  * Resolve the follow-up chips for an assistant message.
  *

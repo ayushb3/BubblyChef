@@ -594,6 +594,13 @@ Return ONLY the JSON, no markdown formatting or extra text."""
                 params={"alt": "sse"},
                 headers=self._auth_headers,
             ) as response:
+                if response.is_error:
+                    # A streamed error body is unread, and once this context
+                    # exits it can never be read: `.text` in the handler below
+                    # raised ResponseNotRead/StreamClosed, which escaped as an
+                    # unclassified error and cost a spend-capped Gemini its
+                    # quota_exhausted kind (#732).
+                    await response.aread()
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if not line.startswith("data: "):
@@ -609,7 +616,8 @@ Return ONLY the JSON, no markdown formatting or extra text."""
                         continue
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
-                full_body = e.response.text if hasattr(e.response, "text") else str(e)
+                # The body was read inside the stream context above (#732).
+                full_body = e.response.text
                 error_body = full_body[:500]
                 logger.warning(
                     f"Gemini [{self.model}] stream hit 429 rate limit, cascading: "

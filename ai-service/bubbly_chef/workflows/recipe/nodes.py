@@ -1763,6 +1763,8 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         result = await ai_manager.complete(prompt=prompt + extra, temperature=0.7)
         return result if isinstance(result, str) else getattr(result, "response", str(result))
 
+    # Set when the reply is a canned AI-failure message, so the envelope can say so (#732).
+    ai_failure: NoProviderAvailableError | None = None
     try:
         # The guard reads the idea names (the bold titles), the concrete thing offered:
         # a closing note like "I left out the peanuts" isn't an idea (#500).
@@ -1775,6 +1777,7 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         return {**_allergen_refusal_state(state, e, "recipe ideas for that"), "brainstorm_ideas": []}
     except NoProviderAvailableError as e:
         response_text = user_message_for_failure(e.kind, e.configured)
+        ai_failure = e
     except Exception as e:
         logger.error("Brainstorm error: %s", e)
         response_text = "Sorry, I ran into an error generating recipe ideas. Please try again."
@@ -1782,7 +1785,7 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
     # Extract recipe names from bold text for state
     ideas = re.findall(r"\*\*(.+?)\*\*", response_text)
 
-    return {
+    result: WorkflowState = {
         **state,
         "intent": Intent.RECIPE_BRAINSTORM.value,
         "assistant_message": response_text,
@@ -1794,6 +1797,10 @@ async def brainstorm_recipe_ideas(state: WorkflowState) -> WorkflowState:
         "workflow_status": WorkflowStatus.COMPLETED.value,
         "suggested_action": NextAction.PICK_RECIPE.value,
     }
+    if ai_failure is not None:
+        result["ai_failure_kind"] = ai_failure.kind
+        result["ai_failure_configured"] = ai_failure.configured
+    return result
 
 
 async def research_recipe(state: WorkflowState) -> WorkflowState:
@@ -2046,6 +2053,8 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
             **state,
             "intent": Intent.GENERAL_CHAT.value,
             "assistant_message": user_message_for_failure(e.kind, e.configured),
+            "ai_failure_kind": e.kind,
+            "ai_failure_configured": e.configured,
             "next_action": NextAction.NONE.value,
             "proposal": None,
             "requires_review": False,
@@ -2300,6 +2309,8 @@ async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
             **state,
             "intent": Intent.GENERAL_CHAT.value,
             "assistant_message": user_message_for_failure(e.kind, e.configured),
+            "ai_failure_kind": e.kind,
+            "ai_failure_configured": e.configured,
             "next_action": NextAction.NONE.value,
             "proposal": None,
             "requires_review": False,

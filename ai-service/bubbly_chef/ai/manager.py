@@ -34,28 +34,50 @@ _PROBE_PROMPT = "Reply with the single word: ok"
 _PROBE_TIMEOUT_SECONDS = 20.0
 
 
-# Kinds that say nothing about *why* a call failed (#514).
-_GENERIC_KINDS = frozenset({"network", "unknown"})
+# How much a failure kind tells the user (issue #732, building on #514). Lower
+# ranks win when every provider in the cascade failed:
+#
+#   0  configuration problems that won't fix themselves (quota, key, model)
+#   1  busy / rate-limited / bad request: the provider answered, with a reason
+#   2  timeout: a request went out and nothing came back in time
+#   3  network / unknown: says nothing about *why*; e.g. an Ollama fallback
+#      that was never really configured refusing the connection
+#
+# Ties keep the first kind seen, i.e. the primary provider's.
+_KIND_RANK: dict[str, int] = {
+    "quota_exhausted": 0,
+    "auth": 0,
+    "model_not_found": 0,
+    "rate_limited": 1,
+    "overloaded": 1,
+    "bad_request": 1,
+    "timeout": 2,
+    "network": 3,
+    "unknown": 3,
+}
+_LEAST_INFORMATIVE_RANK = 3
 
 
 def _aggregate_kind(kinds: list[str]) -> str | None:
-    """Pick the most informative failure kind out of everything tried.
+    """Pick the most meaningful failure kind out of everything tried.
 
-    Providers are tried in registration order — Gemini first, then Ollama
-    as the local fallback (#514). A generic "network" kind (e.g. Ollama
-    unreachable at localhost) is the least informative failure there is: it
-    says nothing about *why* the request actually failed. A specific kind
-    from an earlier provider — quota_exhausted, auth, bad_request — is what
-    the user needs to hear, so it must win even if a later provider's
-    failure is recorded last. "unknown" is just as uninformative: it must
-    not outrank a specific kind from a later provider either. Falls back to
-    the first kind seen (network or unknown) only when nothing more specific
-    occurred, and to ``None`` when nothing failed at all.
+    Providers are tried in registration order (Gemini, then the local Ollama
+    fallback), but the *last* failure is rarely the one the user needs to
+    hear about: an unreachable fallback says "network" while the primary's
+    real reason is "quota_exhausted". Kinds are ranked by ``_KIND_RANK``
+    (configuration problems that won't fix themselves above transient ones)
+    and the best rank wins regardless of order. Among equal ranks the first
+    kind seen wins. Unrecognised kinds rank as least informative. Returns
+    ``None`` when nothing failed at all. ``/health/ai``'s
+    ``last_failure_kind`` uses the same function, so chat and health agree.
     """
+    best: str | None = None
+    best_rank = _LEAST_INFORMATIVE_RANK + 1
     for kind in kinds:
-        if kind not in _GENERIC_KINDS:
-            return kind
-    return kinds[0] if kinds else None
+        rank = _KIND_RANK.get(kind, _LEAST_INFORMATIVE_RANK)
+        if rank < best_rank:
+            best, best_rank = kind, rank
+    return best
 
 
 class NoProviderAvailableError(Exception):
@@ -63,9 +85,9 @@ class NoProviderAvailableError(Exception):
 
     Carries the most *informative* failure-kind classification out of every
     ``ProviderUnavailableError`` that led here (``kind``, via
-    ``_aggregate_kind`` — a specific kind like ``quota_exhausted`` or
-    ``auth`` from an earlier provider wins over a generic ``network`` kind
-    from a later one, e.g. an unreachable local Ollama fallback), and
+    ``_aggregate_kind`` — a configuration kind like ``quota_exhausted`` or
+    ``auth`` wins over a transient ``timeout`` / ``network`` one whichever
+    provider it came from, e.g. an unreachable local Ollama fallback), and
     whether any provider was registered at all (``configured``) — #514.
     ``configured`` is only ``False`` when the manager's provider list is
     empty; a registered-but-failing provider is still "configured".

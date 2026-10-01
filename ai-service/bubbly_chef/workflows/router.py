@@ -25,7 +25,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from bubbly_chef.ai.manager import NoProviderAvailableError
-from bubbly_chef.ai.provider import user_message_for_failure
+from bubbly_chef.ai.provider import ai_error_kind_for_failure, user_message_for_failure
 from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.config import settings
 from bubbly_chef.domain.stock import filter_usable_pantry_items
@@ -2208,6 +2208,12 @@ def _build_envelope_from_state(
         envelope.next_action = NextAction.CONFIRM_CHOICE
         envelope.requires_review = True
         envelope.metadata["confirm_options"] = final_state.get("confirm_options", [])
+    # An AI-failure reply is canned text, not an answer: tag it so the client
+    # doesn't offer follow-ups that would only fail the same way (#732).
+    if "ai_failure_configured" in final_state:
+        envelope.metadata["ai_error_kind"] = ai_error_kind_for_failure(
+            final_state.get("ai_failure_kind"), final_state["ai_failure_configured"]
+        )
     return envelope
 
 
@@ -2446,6 +2452,8 @@ async def run_chat_workflow_streaming(
     # Set when the reply below is a canned failure message rather than an
     # answer: there's nothing to suggest follow-ups for (issue #498).
     stream_failed = False
+    # What kind of AI failure the canned reply stands for (#732); None = a real answer.
+    ai_error_kind: str | None = None
 
     try:
         async for token in ai_manager.stream_complete(prompt=prompt, temperature=0.7):
@@ -2453,11 +2461,13 @@ async def run_chat_workflow_streaming(
             yield _json.dumps({"type": "token", "content": token})
     except NoProviderAvailableError as e:
         stream_failed = True
+        ai_error_kind = ai_error_kind_for_failure(e.kind, e.configured)
         collected_text = user_message_for_failure(e.kind, e.configured)
         yield _json.dumps({"type": "token", "content": collected_text})
     except Exception as e:
         logger.error(f"Streaming error: {e}")
         stream_failed = True
+        ai_error_kind = "unknown"
         collected_text = "Sorry, I ran into an error. Please try again."
         yield _json.dumps({"type": "token", "content": collected_text})
 
@@ -2527,6 +2537,8 @@ async def run_chat_workflow_streaming(
             conversation_id=conversation_id,
         )
     envelope.suggested_mode = suggested_mode
+    if ai_error_kind is not None:
+        envelope.metadata["ai_error_kind"] = ai_error_kind
 
     yield _json.dumps({"type": "done"})
 
