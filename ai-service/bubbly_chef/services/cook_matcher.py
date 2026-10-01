@@ -17,15 +17,15 @@ from typing import Any, Callable, Literal, TypeVar
 
 from pydantic import BaseModel, Field
 
+from bubbly_chef.domain.lots import fresh_first_key, lot_base
 from bubbly_chef.domain.normalizer import (
+    SIZE_ADJECTIVE_UNITS,  # noqa: F401  re-export: single source of truth
     get_unit_dimension,
     is_package_unit,
     is_piece_unit,
     normalize_food_name,
     normalize_to_base_unit,
 )
-from bubbly_chef.domain.normalizer import SIZE_ADJECTIVE_UNITS  # noqa: F401  re-export: single source of truth
-from bubbly_chef.domain.lots import fresh_first_key, lot_base
 from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.models.cook import (
     CompoundComponent,

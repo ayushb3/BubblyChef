@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import UUID
 
+from bubbly_chef.domain.lots import plan_lot_deduction
 from bubbly_chef.models.cook import (
     CompoundSuggestion,
     CookProposal,
@@ -616,25 +617,55 @@ def correlate_expired(
     }
     expired_items: list[ExpiredMatchedItem] = []
     seen_ids: set[str] = set()
+    # Base amount already planned against each named lot by earlier lines, so a
+    # second line for the same food is judged on the running total the confirm
+    # step will actually deduct (it collapses deductions per pantry item).
+    claimed: dict[str, float] = {}
     for match in matches:
         if match.pantry_item_id is None:
             continue
-        item_id = str(match.pantry_item_id)
-        if dedupe and item_id in seen_ids:
-            continue
-        expired_row = expired_by_id.get(item_id)
-        if expired_row is None:
-            continue
-        seen_ids.add(item_id)
-        days_expired = abs(expired_row.days_until_expiry or 0)
-        expired_items.append(
-            ExpiredMatchedItem(
-                ingredient_name=match.ingredient_name,
-                pantry_item_name=expired_row.name,
-                days_expired=max(1, days_expired),
+        named_id = str(match.pantry_item_id)
+        touched = _lots_reached(match, named_id, pantry_items, claimed)
+        for item_id in touched:
+            if dedupe and item_id in seen_ids:
+                continue
+            expired_row = expired_by_id.get(item_id)
+            if expired_row is None:
+                continue
+            seen_ids.add(item_id)
+            days_expired = abs(expired_row.days_until_expiry or 0)
+            expired_items.append(
+                ExpiredMatchedItem(
+                    ingredient_name=match.ingredient_name,
+                    pantry_item_name=expired_row.name,
+                    days_expired=max(1, days_expired),
+                )
             )
-        )
     return expired_items
+
+
+def _lots_reached(
+    match: IngredientMatch,
+    named_id: str,
+    pantry_items: list[PantryItem],
+    claimed: dict[str, float],
+) -> list[str]:
+    """Ids of the lots this match's confirmed deduction will take stock from (#756).
+
+    The match names one lot, but a deduction larger than that lot carries over
+    into the food's other lots (fresh first, expired last), so "which lot is
+    expired" has to be asked of the planned split, not the named lot. A line
+    that deducts nothing (imprecise, unit conflict, no quantity) reaches only
+    the lot it names, as before.
+    """
+    qty = match.deduct_qty
+    if qty is None or qty <= 0:
+        return [named_id]
+    before = plan_lot_deduction(pantry_items, named_id, claimed.get(named_id, 0.0))
+    after = plan_lot_deduction(pantry_items, named_id, claimed.get(named_id, 0.0) + qty)
+    claimed[named_id] = claimed.get(named_id, 0.0) + qty
+    reached = [lot for lot, amount in after.items() if amount - before.get(lot, 0.0) > 1e-6]
+    return reached or [named_id]
 
 
 # ---------------------------------------------------------------------------

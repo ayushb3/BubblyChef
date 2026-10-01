@@ -50,10 +50,10 @@ from bubbly_chef.prompts.router import (
     DIET_CHANGE_FLAG_PROMPT,
     INTENT_CLASSIFICATION_SYSTEM_PROMPT,
     INTENT_CLASSIFICATION_USER_PROMPT,
-    MODE_BIAS_RECIPE_PICKED_PROMPT,
-    MODE_BIAS_RECIPE_BROWSING_PROMPT,
     MODE_BIAS_COOKING_PROMPT,
     MODE_BIAS_PANTRY_PROMPT,
+    MODE_BIAS_RECIPE_BROWSING_PROMPT,
+    MODE_BIAS_RECIPE_PICKED_PROMPT,
 )
 from bubbly_chef.repository.supabase_repo import SupabaseRepository, get_repository
 from bubbly_chef.services.recipe_url_ingestor import ingest_recipe_from_url

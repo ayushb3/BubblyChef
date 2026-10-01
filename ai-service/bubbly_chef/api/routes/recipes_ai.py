@@ -156,8 +156,8 @@ async def refine_recipe(
 
     try:
         from bubbly_chef.api.deps import get_ai_manager
-        from bubbly_chef.services.recipe_generator import generate_recipe as gen_recipe
         from bubbly_chef.models.recipe import RecipeCard
+        from bubbly_chef.services.recipe_generator import generate_recipe as gen_recipe
         from bubbly_chef.workflows.recipe.nodes import (
             carry_dietary_tags,
             refine_dietary_constraints,

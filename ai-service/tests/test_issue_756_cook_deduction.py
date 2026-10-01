@@ -37,9 +37,11 @@ from bubbly_chef.services.cook_matcher import (
     _unmatched_ingredient_names,
     match_ingredients,
 )
+from bubbly_chef.domain.lots import plan_lot_deduction
 from bubbly_chef.services.meal_cook import (
     MealCookDishMeta,
     apply_collapsed_deductions,
+    correlate_expired,
     merge_meal_matches,
 )
 from tests.test_issue_356_pantry_lots import _day, _repo, _row
@@ -439,6 +441,105 @@ class TestFreshLotsFirst:
 
         assert client.rows[0]["quantity"] == pytest.approx(4.0)
 
+
+
+def _lot(qty: float, expiry: date) -> PantryItem:
+    return _item("eggs", qty, "item", base=qty, base_unit="count", expiry=expiry)
+
+
+def _banner(pantry: list[PantryItem], ingredients: list[dict[str, Any]], **kw: Any) -> list[Any]:
+    proposal = _match(pantry, ingredients)
+    return correlate_expired(proposal.matches, pantry, **kw)
+
+
+class TestExpiredBannerFollowsTheSpend:
+    """The warning is about what the deduction will reach, not the lot a match names."""
+
+    def test_an_overflow_into_the_expired_lot_still_warns(self) -> None:
+        # Fresh 1 + expired 6, recipe needs 4: the named lot is the fresh one, but
+        # confirm takes 3 off the expired lot (main warned here).
+        pantry = [_lot(1.0, _day(5)), _lot(6.0, _day(-3))]
+
+        items = _banner(pantry, [{"name": "eggs", "quantity": 4.0, "unit": "item"}])
+
+        assert [(i.ingredient_name, i.pantry_item_name, i.days_expired) for i in items] == [
+            ("eggs", "eggs", 3)
+        ]
+
+    def test_fresh_stock_alone_covering_the_recipe_has_no_banner(self) -> None:
+        pantry = [_lot(6.0, _day(5)), _lot(6.0, _day(-3))]
+
+        assert _banner(pantry, [{"name": "eggs", "quantity": 2.0, "unit": "item"}]) == []
+
+    def test_a_recipe_using_exactly_the_fresh_stock_has_no_banner(self) -> None:
+        pantry = [_lot(4.0, _day(5)), _lot(6.0, _day(-3))]
+
+        assert _banner(pantry, [{"name": "eggs", "quantity": 4.0, "unit": "item"}]) == []
+
+    def test_all_lots_expired_warns(self) -> None:
+        pantry = [_lot(6.0, _day(-3)), _lot(6.0, _day(-9))]
+
+        items = _banner(pantry, [{"name": "eggs", "quantity": 2.0, "unit": "item"}])
+
+        assert len(items) == 1
+        assert items[0].days_expired == 9  # the lot that will be spent first
+
+    def test_a_second_line_for_the_same_food_is_judged_on_the_running_total(self) -> None:
+        # Two lines of 4 against fresh 6 + expired 6: the first stays on fresh stock,
+        # the second tips into the expired lot once confirm collapses them.
+        pantry = [_lot(6.0, _day(5)), _lot(6.0, _day(-3))]
+
+        proposal = _match(
+            pantry,
+            [
+                {"name": "eggs", "quantity": 4.0, "unit": "item", "_": "a"},
+                {"name": "eggs", "quantity": 4.0, "unit": "item", "_": "b"},
+            ],
+        )
+        items = correlate_expired(proposal.matches, pantry)
+
+        assert len(items) == 1
+
+    def test_a_meal_reports_the_expired_lot_once(self) -> None:
+        pantry = [_lot(1.0, _day(5)), _lot(6.0, _day(-3))]
+        proposal = _match(pantry, [{"name": "eggs", "quantity": 4.0, "unit": "item"}])
+
+        items = correlate_expired(proposal.matches * 2, pantry, dedupe=True)
+
+        assert len(items) == 1
+
+    def test_a_line_that_deducts_nothing_is_judged_on_its_named_lot_as_before(self) -> None:
+        pantry = [_item("sourdough", 1.0, "loaf", expiry=_day(-2))]
+
+        items = _banner(pantry, [{"name": "sourdough", "quantity": None, "unit": None}])
+
+        assert [i.days_expired for i in items] == [2]
+
+    @pytest.mark.asyncio
+    async def test_the_planned_split_is_what_confirm_actually_does(self) -> None:
+        expired = _eggs(6.0, _day(-3), age=10)
+        fresh = _eggs(1.0, _day(5), age=1)
+        repo, client = _repo([expired, fresh])
+        pantry = [
+            _item("eggs", 6.0, "item", base=6.0, base_unit="count", expiry=_day(-3)).model_copy(
+                update={"id": uuid.UUID(expired["id"])}
+            ),
+            _item("eggs", 1.0, "item", base=1.0, base_unit="count", expiry=_day(5)).model_copy(
+                update={"id": uuid.UUID(fresh["id"])}
+            ),
+        ]
+
+        planned = plan_lot_deduction(pantry, fresh["id"], 4.0)
+        await apply_collapsed_deductions(
+            repo,
+            "u1",
+            [DeductionItem(pantry_item_id=uuid.UUID(fresh["id"]), deduct_qty=4.0, base_unit="count")],
+        )
+
+        by_id = {r["id"]: r for r in client.rows}
+        assert planned == {fresh["id"]: pytest.approx(1.0), expired["id"]: pytest.approx(3.0)}
+        assert by_id[fresh["id"]]["quantity"] == pytest.approx(0.0)
+        assert by_id[expired["id"]]["quantity"] == pytest.approx(3.0)
 
 
 # ---------------------------------------------------------------------------

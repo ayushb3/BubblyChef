@@ -82,3 +82,52 @@ def lot_base(item: PantryItem) -> tuple[float | None, str | None]:
         name=lot_food_key(item.name), quantity=item.quantity, unit=item.unit
     )
 
+
+_PLAN_EPSILON = 1e-6
+
+
+def plan_lot_deduction(
+    pantry_items: list[PantryItem], named_id: object, qty: float
+) -> dict[str, float]:
+    """The per-lot split a deduction of `qty` (base unit) from `named_id` will make (#756).
+
+    Mirrors `SupabaseRepository.deduct_pantry_item`: the named lot first, up to what
+    it holds, then the food's other stocked lots of the same base unit in
+    `fresh_first_key` order. Returns `{lot id: base amount}` for the lots that would
+    actually be touched; `{}` when the named lot has no base unit to deduct in (the
+    repository refuses that deduction too). Pure, so a review can ask "will this
+    reach an expired lot" without writing anything.
+    """
+    named = next((i for i in pantry_items if str(i.id) == str(named_id)), None)
+    if named is None or qty <= _PLAN_EPSILON:
+        return {}
+    named_qty, base_unit = lot_base(named)
+    if named_qty is None or base_unit is None:
+        return {}
+
+    split: dict[str, float] = {}
+    take = min(qty, named_qty)
+    if take > 0:
+        split[str(named.id)] = take
+    remainder = qty - named_qty
+
+    food = lot_food_key(named.name)
+    others = sorted(
+        (
+            i
+            for i in pantry_items
+            if i.id != named.id and i.quantity > 0 and lot_food_key(i.name) == food
+        ),
+        key=fresh_first_key,
+    )
+    for lot in others:
+        if remainder <= _PLAN_EPSILON:
+            break
+        lot_qty, lot_unit = lot_base(lot)
+        if lot_qty is None or lot_qty <= 0 or lot_unit != base_unit:
+            continue
+        take = min(remainder, lot_qty)
+        split[str(lot.id)] = take
+        remainder -= take
+    return split
+
