@@ -1,0 +1,35 @@
+{
+  "chat": {
+    "dockTop": 692,
+    "dockBottom": 756,
+    "inputBottom": 746,
+    "inputTop": 704,
+    "navTop": 765,
+    "h": ""
+  },
+  "chatInputClear": false,
+  "meal": {
+    "dockTop": 692,
+    "btnBottom": 234.5,
+    "btnTop": 186.5
+  },
+  "mealStartClear": true,
+  "wake1": 0,
+  "wake2": 0,
+  "askShown": false,
+  "wakeReleasedOnLeave": 0,
+  "chipLinkCount": 0,
+  "home1": "Back to the Weeknight dinner? You were on step 2 of 3.I finished itPick up at step 2",
+  "home2": "Your large free-range eggs need using today. Want me to plan dinner around it?Dinner with the large free-range eggsSomething in 20 minutesMake the Hearty Tomato Garlic Noodles againPlan a whole dinner",
+  "finished": {
+    "oscStarts": 0,
+    "notifications": []
+  },
+  "wakeLeave": {
+    "urlAfter": "http://127.0.0.1:3411/meals/meal-848",
+    "requests": 0,
+    "releasesBefore": 0,
+    "releasesAfter": 0
+  },
+  "aiHitsBlocked": 12
+}
