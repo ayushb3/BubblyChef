@@ -211,3 +211,14 @@ describe('KitchenWall scene (#748)', () => {
     expect(deco).toBeLessThan(fridge)
   })
 })
+
+describe('KitchenWall tour target (#750)', () => {
+  // The onboarding tour's pantry step points at the fridge now that the Pantry
+  // tab is gone; a missing target would make the tour skip the step.
+  it('marks the fridge, and only the fridge, as the tour target', () => {
+    renderWall()
+    const targets = document.querySelectorAll('[data-tour="fridge"]')
+    expect(targets).toHaveLength(1)
+    expect(targets[0]).toBe(screen.getByRole('button', { name: /^Fridge/ }))
+  })
+})

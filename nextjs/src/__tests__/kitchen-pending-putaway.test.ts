@@ -98,6 +98,23 @@ describe('counts', () => {
   })
 })
 
+describe('a scan with only skipped lines', () => {
+  const ONLY_SKIPPED = { ...SCAN, ready_to_add: [], needs_review: [] }
+
+  it('is not kept: saving it clears whatever was pending', () => {
+    const storage = memoryStorage()
+    savePendingPutAway(pendingFromScan(SCAN, NOW), storage)
+    savePendingPutAway(pendingFromScan(ONLY_SKIPPED, NOW), storage)
+    expect(readPendingPutAway(storage)).toBeNull()
+  })
+
+  it('reads as no pending scan, even if one is already in storage', () => {
+    const storage = memoryStorage()
+    storage.setItem(PENDING_PUTAWAY_KEY, JSON.stringify(pendingFromScan(ONLY_SKIPPED, NOW)))
+    expect(readPendingPutAway(storage)).toBeNull()
+  })
+})
+
 describe('save / read / clear', () => {
   it('round-trips a record through storage', () => {
     const storage = memoryStorage()

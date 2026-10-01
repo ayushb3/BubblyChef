@@ -18,7 +18,7 @@ const TOOLTIP_EST_HEIGHT = 140
  * Steps whose target is position:fixed and always visible — skip scrollIntoView
  * for these so the rect read is not stale after a scroll attempt.
  */
-const FIXED_TARGET_IDS = new Set(['nav-pantry', 'nav-recipes', 'nav-chat', 'profile'])
+const FIXED_TARGET_IDS = new Set(['nav-recipes', 'nav-chat', 'profile'])
 
 interface SpotRect {
   x: number

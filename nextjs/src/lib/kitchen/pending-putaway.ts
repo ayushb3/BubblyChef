@@ -145,7 +145,8 @@ export function parsePendingPutAway(raw: string | null): PendingPutAway | null {
   const ready = readTier(parsed.ready)
   const review = readTier(parsed.review)
   const skipped = readTier(parsed.skipped)
-  if (ready.length + review.length + skipped.length === 0) return null
+  // Skipped lines alone are nothing to put away or ask about.
+  if (ready.length + review.length === 0) return null
   return {
     v: VERSION,
     savedAt: str(parsed.savedAt, new Date(0).toISOString()),
@@ -184,6 +185,12 @@ export function savePendingPutAway(
   record: PendingPutAway,
   storage: Storage | null = defaultStorage(),
 ): void {
+  // A scan with no item to put away or ask about (only skipped lines left) is not
+  // kept: the home row would say "0 items".
+  if (pendingLineCount(record) === 0) {
+    clearPendingPutAway(storage)
+    return
+  }
   try {
     storage?.setItem(PENDING_PUTAWAY_KEY, JSON.stringify(record))
   } catch {

@@ -9,6 +9,7 @@ import { bulkAddPantryItems } from '@/lib/api/pantry'
 import PixelSheet from '@/components/ui/PixelSheet'
 import type { ScanResult } from '@/types/scan'
 import { placeDef, placeLocation, type PlaceKey } from '@/lib/kitchen/places'
+import { pendingFromScan, savePendingPutAway } from '@/lib/kitchen/pending-putaway'
 
 export interface AddItem {
   name: string
@@ -29,10 +30,12 @@ interface PantryAddSheetProps {
   initialTab?: PantryAddTab
   onItemsAdded: () => void
   /**
-   * The scan tab parsed a receipt (issue #753). The host takes it from here: it
-   * keeps the scan as the pending put-away and goes to the kitchen, where the
-   * shopping is put away (`useScanHandOff`). This sheet never reviews or writes a
-   * scan; its own confirm key is for the Manual tab's rows.
+   * The scan tab parsed a receipt (issue #753). By default this sheet hands it
+   * off itself, so no host can forget to: the scan is kept as the pending
+   * put-away (`lib/kitchen/pending-putaway`) and the sheet closes; the kitchen
+   * home opens put-away over the scene when a new pending scan appears. A host
+   * can take over instead by passing this. Either way the sheet never reviews or
+   * writes a scan; its own confirm key is for the Manual tab's rows.
    */
   onScanParsed?: (result: ScanResult) => void
   /**
@@ -296,7 +299,14 @@ export default function PantryAddSheet({
             }`}
           >
             <ScanTab
-              onParsed={(result) => onScanParsed?.(result)}
+              onParsed={(result) => {
+                if (onScanParsed) {
+                  onScanParsed(result)
+                  return
+                }
+                savePendingPutAway(pendingFromScan(result))
+                handleClose()
+              }}
               onProcessingChange={setScanProcessing}
             />
           </div>

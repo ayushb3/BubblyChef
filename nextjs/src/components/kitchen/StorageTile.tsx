@@ -15,10 +15,16 @@
  *  - `StorageTile`: `urgent` draws the "Use first" tile (ink edge and a 3 px
  *    hard shadow); the plain tile has a hairline edge.
  *  - `StorageRow`: `highlight` marks the typed text in the name, and `where`
- *    adds the "Fridge · Meat and fish" line a search result carries.
+ *    adds the "Fridge · Meat and fish" line a search result carries. `select`
+ *    makes it a checkbox row (select mode, issue #750); `resolve` adds the old
+ *    Pantry page's actions (Used up / Tossed buttons, "Cook this", or the swipe).
  *  - `ExpiryPill` renders nothing for food that is not expiring or expired.
  */
 import type { CSSProperties } from 'react'
+import Link from 'next/link'
+import ResolveActions from '@/components/pantry/ResolveActions'
+import SwipeToResolve from '@/components/pantry/SwipeToResolve'
+import type { ResolveOutcome } from '@/lib/api/pantry'
 import { getFoodEmoji } from '@/lib/food-emoji'
 import { expiryTag, type ExpiryTag } from '@/lib/food-tag'
 import { formatAmount, titleCase } from '@/lib/format'
@@ -126,48 +132,193 @@ function HighlightedName({ name, query }: { name: string; query: string }) {
   )
 }
 
+/** What a row needs to be ticked in select mode. */
+export interface RowSelect {
+  selected: boolean
+  onToggle: () => void
+}
+
+/** What a row needs to be resolved in place (the old Pantry page's actions). */
+export interface RowResolve {
+  /** A resolve of this item is in flight: its buttons are off. */
+  pending: boolean
+  /** The visible Used up / Tossed buttons, not the swipe (urgency, or reduced motion). */
+  showButtons: boolean
+  /** "Cook this": a chat seeded with this item, for food that is expiring soon. */
+  cookHref?: string
+  onResolve: (outcome: ResolveOutcome) => void
+}
+
+/** A row's content: emoji, name (and where it is, for a search hit), tag, amount. */
+function RowFace({
+  item,
+  days,
+  highlight,
+  where,
+}: {
+  item: StoredItem
+  days: number | null
+  highlight?: string
+  where?: string
+}) {
+  const name = titleCase(item.name)
+  return (
+    <>
+      <span aria-hidden="true" className="w-[26px] shrink-0 text-center text-[20px] leading-6">
+        {getFoodEmoji(item.name, item.category ?? undefined)}
+      </span>
+      <span aria-hidden="true" className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-[14px] leading-[19px] font-extrabold">
+          {highlight ? <HighlightedName name={name} query={highlight} /> : name}
+        </span>
+        {where && (
+          <span className="truncate text-xs leading-4 font-semibold opacity-80">{where}</span>
+        )}
+      </span>
+      <ExpiryPill days={days} />
+      <span
+        aria-hidden="true"
+        className="max-w-[28%] min-w-[58px] shrink-0 truncate text-right text-[13px] leading-[18px] font-bold tabular-nums"
+      >
+        {formatAmount(item.quantity, item.unit)}
+      </span>
+    </>
+  )
+}
+
+const ROW_FOCUS =
+  'focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--color-text)]'
+
+const ROW_BORDER = 'border-b border-[color:var(--color-border)]'
+
+/**
+ * A list row. Three ways to be one:
+ *  - plain: one button, tap to edit;
+ *  - `select`: a checkbox row (select mode), tap to tick. The real checkbox is
+ *    visually hidden so a screen reader and the keyboard get a native control;
+ *  - `resolve`: the pantry page's resolve actions, in place. Food that needs
+ *    using shows Used up / Tossed (and Cook this); everything else resolves by
+ *    the graduated swipe, which keeps ordinary rows clean (#140).
+ */
 export function StorageRow({
   item,
   days,
   onOpen,
   highlight,
   where,
+  select,
+  resolve,
 }: ItemProps & {
   highlight?: string
   /** "Fridge · Meat and fish": which place (and food group) a search result is in. */
   where?: string
+  select?: RowSelect
+  resolve?: RowResolve
 }) {
-  const name = titleCase(item.name)
-  return (
-    <li className="border-b border-[color:var(--color-border)] last:border-b-0">
-      <button
-        type="button"
-        onClick={() => onOpen(item)}
-        aria-label={where ? `${itemLabel(item, days)}, in the ${where.split(' · ')[0]}` : itemLabel(item, days)}
-        data-testid="storage-row"
-        className="flex min-h-[44px] w-full min-w-0 items-center gap-3 py-2 text-left text-[color:var(--color-text)]"
-      >
-        <span aria-hidden="true" className="shrink-0 text-[22px] leading-[26px]">
-          {getFoodEmoji(item.name, item.category ?? undefined)}
-        </span>
-        <span aria-hidden="true" className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[15px] leading-5 font-extrabold">
-            {highlight ? <HighlightedName name={name} query={highlight} /> : name}
-          </span>
-          {where && (
-            <span className="truncate text-xs leading-4 font-semibold opacity-80">
-              {where}
-            </span>
-          )}
-        </span>
-        <ExpiryPill days={days} />
-        <span
-          aria-hidden="true"
-          className="max-w-[28%] shrink-0 truncate text-right text-[13px] font-bold tabular-nums"
+  const label = where
+    ? `${itemLabel(item, days)}, in the ${where.split(' · ')[0]}`
+    : itemLabel(item, days)
+
+  if (select) {
+    return (
+      <li className={ROW_BORDER}>
+        <label
+          data-testid="storage-row"
+          className="relative flex min-h-[44px] w-full min-w-0 cursor-pointer items-center gap-2.5 px-2 py-1 text-[color:var(--color-text)] has-[input:focus-visible]:outline-2 has-[input:focus-visible]:-outline-offset-2 has-[input:focus-visible]:outline-[color:var(--color-text)]"
+          style={{
+            background: select.selected
+              ? 'color-mix(in srgb, var(--color-primary) 40%, transparent)'
+              : undefined,
+          }}
         >
-          {formatAmount(item.quantity, item.unit)}
-        </span>
-      </button>
+          <input
+            type="checkbox"
+            checked={select.selected}
+            onChange={select.onToggle}
+            aria-label={label}
+            className="sr-only"
+          />
+          <span
+            aria-hidden="true"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2"
+            style={{
+              borderColor: INK,
+              background: select.selected ? 'var(--color-primary)' : 'var(--color-surface)',
+            }}
+          >
+            {select.selected && (
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="3.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M5 12.5l4.5 4.5L19 7.5" />
+              </svg>
+            )}
+          </span>
+          <RowFace item={item} days={days} highlight={highlight} where={where} />
+        </label>
+      </li>
+    )
+  }
+
+  const button = (
+    <button
+      type="button"
+      onClick={() => onOpen(item)}
+      aria-label={label}
+      data-testid="storage-row"
+      className={`flex min-h-[44px] w-full min-w-0 items-center gap-2.5 px-2 py-1 text-left text-[color:var(--color-text)] ${ROW_FOCUS}`}
+    >
+      <RowFace item={item} days={days} highlight={highlight} where={where} />
+    </button>
+  )
+
+  if (!resolve) return <li className={ROW_BORDER}>{button}</li>
+
+  if (resolve.showButtons) {
+    return (
+      <li className={ROW_BORDER}>
+        {button}
+        {/* One strip under the row: Cook this, Used it, Tossed. */}
+        <ResolveActions
+          variant="pills"
+          itemName={item.name}
+          pending={resolve.pending}
+          onResolve={resolve.onResolve}
+          leading={
+            resolve.cookHref && (
+              <Link
+                href={resolve.cookHref}
+                aria-label={`Cook this ${item.name}`}
+                // A full 44px tap target around the small label (WCAG 2.5.5).
+                className={`flex min-h-[44px] flex-1 items-center justify-center rounded-full border-2 border-[color:var(--color-text)] bg-[color:var(--color-primary)] px-2 text-center text-xs font-extrabold whitespace-nowrap text-[color:var(--color-text)] shadow-[0_2px_0_var(--color-text)] active:translate-y-px ${ROW_FOCUS}`}
+              >
+                🍳 Cook this
+              </Link>
+            )
+          }
+        />
+      </li>
+    )
+  }
+
+  return (
+    <li className={ROW_BORDER}>
+      <SwipeToResolve
+        itemName={item.name}
+        pending={resolve.pending}
+        onResolve={resolve.onResolve}
+        className="rounded-none"
+        contentClassName="bg-[var(--color-bg)]"
+      >
+        {button}
+      </SwipeToResolve>
     </li>
   )
 }

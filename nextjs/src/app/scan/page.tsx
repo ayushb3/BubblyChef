@@ -74,7 +74,8 @@ export default function ScanPage() {
         isEmptyScan({
           ready_to_add: result.ready_to_add,
           needs_review: result.needs_review,
-          skipped: result.skipped,
+          // Skipped lines alone leave nothing to put away (#753).
+          skipped: [],
         })
       ) {
         // The scan worked but found nothing: say so, rather than putting an

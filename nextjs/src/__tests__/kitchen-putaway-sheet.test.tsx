@@ -468,13 +468,15 @@ describe('the pending scan', () => {
     expect(mockBulkAdd).not.toHaveBeenCalled()
   })
 
-  it('has nothing to put away, and says so, when only skipped lines are left', () => {
-    renderSheet({ ...SCAN, ready_to_add: [it_('Milk', 'fridge')], needs_review: [] })
+  it('clears the pending scan when every item is left out and only skipped lines remain', () => {
+    // So the home row can never say "0 items".
+    const onClose = jest.fn()
+    renderSheet({ ...SCAN, ready_to_add: [it_('Milk', 'fridge')], needs_review: [] }, { onClose })
     fireEvent.click(screen.getByRole('button', { name: 'Edit Fridge items' }))
     fireEvent.click(screen.getByRole('button', { name: 'Leave out Milk' }))
-    expect(screen.getByRole('button', { name: 'Nothing to put away' })).toBeDisabled()
-    // Discard is still there to finish with the scan.
-    expect(screen.getByRole('button', { name: 'Discard this scan' })).toBeInTheDocument()
+    expect(readPendingPutAway()).toBeNull()
+    expect(onClose).toHaveBeenCalled()
+    expect(mockBulkAdd).not.toHaveBeenCalled()
   })
 })
 
