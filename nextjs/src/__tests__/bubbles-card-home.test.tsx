@@ -584,6 +584,33 @@ describe('one card, always', () => {
     expect(container.querySelectorAll('[data-testid="bubbles-card"], [data-testid="unlock-offer"]')).toHaveLength(1)
   })
 
+  it('an offer in the cards place does not use up the days nudge: it is not recorded as seen', async () => {
+    const picks = CATALOG.slice(0, 3)
+    const romaine = {
+      id: 'i-1', name: 'romaine', days_until_expiry: 0, is_expiring_soon: true, expiry_date: '2026-10-01',
+    }
+    const offer = {
+      milestone_key: 'm25', threshold: 25,
+      options: picks.map(({ id, name, slot, emoji }) => ({ id, name, slot, emoji })),
+    }
+    mockWorld({ expiring: [romaine], offer })
+    renderHome()
+
+    await screen.findByTestId('unlock-offer')
+    // Give the card every chance to be (wrongly) recorded.
+    await new Promise((r) => setTimeout(r, 50))
+    expect(readHomeCardRecords().seen).toEqual({})
+    expect(window.localStorage.getItem(HOME_CARD_KEY)).toBeNull()
+
+    // The offer is claimed and resolves: now the expiring card shows, and only now is it seen.
+    mockWorld({ expiring: [romaine], offer: null })
+    fireEvent.click(within(screen.getByTestId('unlock-offer')).getByRole('button', { name: new RegExp(picks[0].name) }))
+    expect(await screen.findByText(/Your romaine needs using today/)).toBeInTheDocument()
+    await waitFor(() =>
+      expect(readHomeCardRecords().seen).toEqual({ 'expiring:romaine:2026-10-01': '2026-10-01' }),
+    )
+  })
+
   it('never more than one card across every situation at once', async () => {
     startGuidedCookSession('r-lemon')
     saveCookProgress('r-lemon', 3)

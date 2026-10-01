@@ -134,10 +134,15 @@ export default function HomeCardSlot({
     (card?.kind === 'mealtime' || card?.kind === 'expiring') && starter.isLoading
   const settled = ready && !waitingOnStarter
 
+  // The card is only *on screen* when nothing else holds its place: a pending unlock
+  // offer renders instead of it. Latching and the seen record follow what is on
+  // screen, not what was picked, so an offer does not use up the day's nudge.
+  const cardOnScreen = settled && !offerPending
+
   // Latch the first card shown (adjusting state while rendering, React's pattern for
   // state derived from other state).
-  if (settled && card && latched === null) setLatched(card.fingerprint)
-  const visible = settled && card !== null && card.fingerprint === latched && !closed
+  if (cardOnScreen && card && latched === null) setLatched(card.fingerprint)
+  const visible = cardOnScreen && card !== null && card.fingerprint === latched && !closed
   const shown = visible ? card : null
 
   const shownFingerprint = shown?.fingerprint ?? null
