@@ -23,6 +23,11 @@ const REVIEW_STEP = 'Claude review'
 // The three verdicts the reviewer is instructed to write (see .github/workflows/claude-review.yml).
 const KNOWN_VERDICTS = ['looks mergeable', 'needs changes', 'needs a human']
 
+// The hyphenated tokens the reviewer prompt mandates inside the marker comment, derived
+// from KNOWN_VERDICTS so they cannot drift: 'looks-mergeable', 'needs-changes',
+// 'needs-human' (the filler word "a" is dropped from "needs a human").
+const MARKER_TOKENS = Object.fromEntries(KNOWN_VERDICTS.map(v => [v.replace(/ a /, ' ').replace(/ /g, '-'), v]))
+
 // Lines of the body outside fenced code blocks (a fence line toggles; the fence lines
 // themselves are dropped). Used for the heading and marker rules, where a fenced example
 // of the format must never be read as this review's verdict.
@@ -75,7 +80,7 @@ function markerVerdict(text) {
   for (const line of unfencedLines(text)) {
     const m = /^\s*<!--\s*verdict\s*:\s*(.*?)\s*-->\s*$/i.exec(line)
     if (!m) continue
-    const v = canonical(m[1])
+    const v = canonical(m[1]) || MARKER_TOKENS[m[1].trim().toLowerCase()] || ''
     if (v) found.add(v)
     else bad = true
   }
@@ -307,7 +312,7 @@ function gather(repo, pr, headSha) {
   }
 }
 
-module.exports = { decide, parseVerdict, looksLikeReviewSummary, prDiffUnchanged, owners, makeGit, fetchHistory, ensureCommits, LOOP_LABEL, REVIEW_JOB, REVIEW_STEP }
+module.exports = { decide, parseVerdict, looksLikeReviewSummary, KNOWN_VERDICTS, prDiffUnchanged, owners, makeGit, fetchHistory, ensureCommits, LOOP_LABEL, REVIEW_JOB, REVIEW_STEP }
 
 if (require.main === module) {
   const [repo, pr, headSha] = process.argv.slice(2)

@@ -3,7 +3,7 @@
 'use strict'
 const fs = require('fs')
 const path = require('path')
-const { decide, parseVerdict, looksLikeReviewSummary, prDiffUnchanged, owners, makeGit, REVIEW_JOB, REVIEW_STEP } = require('./review-verdict.cjs')
+const { decide, parseVerdict, looksLikeReviewSummary, prDiffUnchanged, owners, makeGit, KNOWN_VERDICTS, REVIEW_JOB, REVIEW_STEP } = require('./review-verdict.cjs')
 
 let failures = 0
 function check(name, cond, detail) {
@@ -64,7 +64,33 @@ check('marker alone is readable', parseVerdict(`body\n${MARK('needs-changes')}`)
 check('marker that disagrees with the label fails closed', parseVerdict(`**Verdict: \`needs changes\`**\n${MARK('looks-mergeable')}`) === '', '')
 check('marker that disagrees with a heading fails closed', parseVerdict(`## Re-review — needs a human\n${MARK('looks-mergeable')}`) === '', '')
 check('marker with an unknown value fails closed', parseVerdict(`**Verdict: \`looks mergeable\`**\n${MARK('fine')}`) === '', '')
-check('two disagreeing markers fail closed', parseVerdict(`${MARK('looks-mergeable')}\n${MARK('needs-human')}`) === '', '')
+// both tokens are valid and different, so this exercises the conflict path, not "unparseable token"
+check('two disagreeing markers fail closed', parseVerdict(`${MARK('looks-mergeable')}\n${MARK('needs-changes')}`) === '', '')
+check('two identical markers are fine', parseVerdict(`${MARK('needs-human')}\n${MARK('needs-human')}`) === 'needs a human', '')
+
+// every known verdict must round-trip through every form the reviewer is told to use (the
+// marker token for "needs a human" is the hyphenated "needs-human", which once parsed as unreadable)
+for (const v of KNOWN_VERDICTS) {
+  const token = v.replace(/ a /, ' ').replace(/ /g, '-')
+  const forms = {
+    'label, backticked': `**Verdict: \`${v}\`**`,
+    'label, plain': `Verdict: ${v}.`,
+    'heading after a dash': `## Re-review (round 2) — \`${v}\``,
+    'heading after a colon': `### Re-review: ${v}`,
+    'marker alone': MARK(token),
+    'label + marker': `**Verdict: \`${v}\`**\n\n${MARK(token)}`,
+    'heading + marker': `## Re-review — ${v}\n\n${MARK(token)}`,
+    'label + heading + marker': `## Re-review — ${v}\n\n**Verdict: \`${v}\`**\n\n${MARK(token)}`,
+  }
+  for (const [name, body] of Object.entries(forms)) {
+    check(`round-trip "${v}": ${name}`, parseVerdict(body) === v, `got "${parseVerdict(body)}"`)
+  }
+  const others = KNOWN_VERDICTS.filter(o => o !== v)
+  for (const o of others) {
+    const otherToken = o.replace(/ a /, ' ').replace(/ /g, '-')
+    check(`conflict "${v}" label vs "${o}" marker fails closed`, parseVerdict(`**Verdict: \`${v}\`**\n${MARK(otherToken)}`) === '', '')
+  }
+}
 check('marker quoted inline in prose is ignored', parseVerdict('Use `<!-- verdict: looks-mergeable -->` on its own line.\n**Verdict: needs changes**') === 'needs changes', '')
 check('marker inside a code fence is ignored', parseVerdict(`**Verdict: needs a human**\n\`\`\`\n${MARK('looks-mergeable')}\n\`\`\``) === 'needs a human', '')
 

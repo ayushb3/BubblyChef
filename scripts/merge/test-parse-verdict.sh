@@ -150,6 +150,11 @@ check "heading + marker that agree, no label" \
 check "heading and label disagree: unreadable" \
   "heading-disagrees-with-label.txt" "unknown"
 
+# (16) The marker token for "needs a human" is `needs-human` (no "a"). It once
+#      parsed as unreadable, so a fully compliant escalation read as `unknown`.
+check "needs-a-human label + unfenced needs-human marker" \
+  "needs-human-marker.txt" "needs-human"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
