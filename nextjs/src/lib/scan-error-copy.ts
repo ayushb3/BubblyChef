@@ -31,6 +31,13 @@ const GENERIC_COPY = "Couldn't read that receipt — try again, or add items man
 export const SCAN_NO_ITEMS_CODE = 'no_items_found'
 
 /**
+ * The parse judged the image is not a receipt and found nothing in it (issue
+ * #856). Raised by the UI like `SCAN_NO_ITEMS_CODE`, and shown instead of it. When
+ * there *are* items the put-away sheet asks instead ("Use it anyway").
+ */
+export const SCAN_NOT_A_RECEIPT_CODE = 'not_a_receipt'
+
+/**
  * What a host passes for a failure that carried no code (a bare network
  * `TypeError`, a proxy 502): it maps to the generic copy.
  */
@@ -53,6 +60,8 @@ const COPY_BY_CODE: Record<string, string> = {
   [SCAN_NETWORK_ERROR_CODE]:
     "Couldn't reach the scanner. Check your connection and try again, or add items manually.",
   [SCAN_NOT_AN_IMAGE_CODE]: 'That file is not a photo. Pick a picture of your receipt instead.',
+  [SCAN_NOT_A_RECEIPT_CODE]:
+    "This doesn't look like a receipt. Try a photo of the receipt, or add items manually.",
   [SCAN_NO_ITEMS_CODE]:
     "We couldn't find any items on that receipt. Try a clearer, well-lit photo, or add items manually.",
 }

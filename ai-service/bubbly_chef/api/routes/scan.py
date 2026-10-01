@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from bubbly_chef.api.auth import get_current_user_id
 from bubbly_chef.config import settings
+from bubbly_chef.models.pantry import PantryProposal
 from bubbly_chef.services.scan_budget import RequestBudget
 from bubbly_chef.services.scan_errors import classify_scan_error
 
@@ -82,6 +83,7 @@ async def scan_receipt(
                 "skipped": [],
                 "total_items": 0,
                 "warnings": ["No text detected in image. Try a clearer photo."],
+                "is_receipt": True,  # no text is no verdict on the document (#856)
             }
 
         # AI parse via the unified ingest dispatcher (single ingest seam — #204).
@@ -144,6 +146,9 @@ async def scan_receipt(
             "skipped": skipped,
             "total_items": len(actions),
             "warnings": warnings,
+            # The parse's document-kind verdict (#856): False -> the UI asks
+            # before putting anything away. Items are still returned.
+            "is_receipt": proposal.is_receipt if isinstance(proposal, PantryProposal) else True,
         }
 
     except Exception as e:

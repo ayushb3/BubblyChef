@@ -83,6 +83,8 @@ function toScanResult(body: unknown): ScanResult {
     skipped: list(b.skipped),
     total_items: typeof b.total_items === 'number' ? b.total_items : 0,
     warnings: list(b.warnings),
+    // Only an explicit false is a verdict; an older service omits it (#856).
+    is_receipt: b.is_receipt !== false,
   }
 }
 

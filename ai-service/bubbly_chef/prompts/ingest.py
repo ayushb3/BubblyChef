@@ -31,7 +31,13 @@ Rules:
 8. Return a SEPARATE confidence score for each individual item (0.0–1.0), based on how
    clearly that specific line could be read and interpreted — not a single score for all.
 9. Set source_line to the raw receipt line this item was extracted from.
-10. Set price to the item's price if visible, otherwise null."""
+10. Set price to the item's price if visible, otherwise null.
+11. Set is_receipt to false ONLY when the text clearly did not come from a store receipt or
+    purchase list: an app or website screenshot, a menu, a recipe, a label, a letter. App
+    interface text (buttons, tabs, menus, headings such as "Fix", "Yes", "Add", "Put away")
+    means a screenshot, even when the screen shows receipt-like lines or prices. A
+    receipt that is faded, partial, handwritten, in another language or has few lines is
+    still a receipt (true). When unsure, true. Still list any food items you can see."""
 
 
 RECEIPT_PARSE_USER_PROMPT_TEMPLATE = """Parse the following receipt text into grocery items:
