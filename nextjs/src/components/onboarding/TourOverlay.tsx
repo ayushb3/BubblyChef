@@ -347,13 +347,14 @@ export function TourOverlay() {
                 {stepIndex > 0 && (
                   <SpringButton
                     onClick={goBack}
-                    className="text-xs font-semibold px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[var(--color-muted)] bg-transparent"
+                    className="text-xs font-semibold px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[var(--color-muted)] bg-[var(--color-surface)]"
                   >
                     Back
                   </SpringButton>
                 )}
                 <div className="flex-1" />
                 <SpringButton
+                  variant="plain"
                   onClick={() => void closeTour()}
                   className="text-xs font-medium text-[var(--color-muted)] bg-transparent px-2 py-1.5"
                 >

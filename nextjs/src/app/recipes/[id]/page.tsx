@@ -208,21 +208,15 @@ export default function RecipeDetailPage() {
               {/* Action buttons */}
               <div className="flex gap-2 flex-shrink-0">
                 <SpringButton
-                  className="px-4 py-2 rounded-full text-sm font-bold text-white active:scale-95"
-                  style={{ background: 'var(--color-accent)' } as React.CSSProperties}
+                  variant="primary"
+                  className="px-4 py-2 text-sm active:scale-95"
                   onClick={() => setShowRefinementModal(true)}
                 >
                   Edit with AI
                 </SpringButton>
                 <SpringButton
-                  className="px-4 py-2 rounded-full text-sm font-bold active:scale-95"
-                  style={
-                    {
-                      background: 'var(--color-surface)',
-                      color: '#e05252',
-                      border: '1.5px solid #f5c0c0',
-                    } as React.CSSProperties
-                  }
+                  variant="danger"
+                  className="px-4 py-2 text-sm active:scale-95"
                   onClick={() => setShowDeleteConfirm(true)}
                 >
                   Delete
@@ -298,8 +292,8 @@ export default function RecipeDetailPage() {
                 </p>
                 <div className="flex gap-2">
                   <SpringButton
-                    className="px-4 py-2 rounded-full text-sm font-bold text-white active:scale-95"
-                    style={{ background: '#e05252' } as React.CSSProperties}
+                    variant="danger"
+                    className="px-4 py-2 text-sm active:scale-95"
                     onClick={handleDelete}
                     disabled={deleting}
                   >

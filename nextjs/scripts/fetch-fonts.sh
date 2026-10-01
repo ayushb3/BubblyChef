@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Re-download the self-hosted Nunito and Quicksand woff2 files (issue #633,
-# PR #634) and verify each against its known-good sha256, so the committed
+# Re-download the self-hosted Nunito, Quicksand and Pixelify Sans woff2 files
+# (issue #633, PR #634; Pixelify Sans added by issue #741) and verify each against its known-good sha256, so the committed
 # files under src/app/fonts/ are reproducible instead of resting on prose.
 #
-# The two woff2 files come from the "latin" @font-face block that
+# The woff2 files come from the "latin" @font-face block that
 # fonts.googleapis.com/css2 serves for a Chrome-class User-Agent (a plainer
 # UA, or omitting the weight-range syntax, gets served static TTFs instead
 # of the variable woff2 — that's why the UA below is pinned, not decorative).
@@ -23,6 +23,7 @@ WRITE=0
 FONTS=(
   "Nunito|https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,200..1000;1,200..1000&display=swap|https://fonts.gstatic.com/s/nunito/v32/XRXV3I6Li01BKofINeaB.woff2|$FONTS_DIR/nunito/Nunito-Variable.woff2|ba344451eab25b217a165363b1982048a5e5830a0daf36577973955a04cac793"
   "Quicksand|https://fonts.googleapis.com/css2?family=Quicksand:wght@300..700&display=swap|https://fonts.gstatic.com/s/quicksand/v37/6xKtdSZaM9iE8KbpRA_hK1QN.woff2|$FONTS_DIR/quicksand/Quicksand-Variable.woff2|2add7d60b1cd2ab84c9967e23d5ec08eb3fc9635c46855b17d59404dec6b410e"
+  "Pixelify Sans|https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&display=swap|https://fonts.gstatic.com/s/pixelifysans/v3/CHylV-3HFUT7aC4iv1TxGDR9Jn0Eiw.woff2|$FONTS_DIR/pixelify-sans/PixelifySans-Variable.woff2|4a5633a0c9c1b73abd133a56d3716c2d8df2ed03cb987346f72194aeb224f382"
 )
 
 sha256_of() {
