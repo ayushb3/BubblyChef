@@ -45,6 +45,14 @@ export interface ReviewSurfaceProps extends PutAwayTiers {
   onChange: (next: PutAwayTiers) => void
   /** Locks every control (a write is in flight). */
   disabled?: boolean
+  /**
+   * The parse judged the image not to be a receipt (issue #856). The tiers are
+   * held back behind a notice with "Try another photo" first and "Use it anyway"
+   * second; the host owns what each does (and keeps its write off meanwhile).
+   */
+  notReceipt?: boolean
+  onTryAnother?: () => void
+  onUseAnyway?: () => void
 }
 
 const HEADING =
@@ -75,12 +83,17 @@ export default function ReviewSurface({
   warnings = [],
   onChange,
   disabled = false,
+  notReceipt = false,
+  onTryAnother,
+  onUseAnyway,
 }: ReviewSurfaceProps) {
   // Which items have their editor open: a Fix card, or a group in Edit.
   const [editing, setEditing] = useState<ReadonlySet<string>>(new Set())
   const [showSkipped, setShowSkipped] = useState(false)
 
   const tiers: PutAwayTiers = { readyToAdd, needsReview, skipped }
+  // Not a receipt (#856): ask first; the tiers come back once the host says use it.
+  const askFirst = notReceipt && !!onTryAnother && !!onUseAnyway
 
   function setEditingFor(ids: string[], on: boolean) {
     setEditing((prev) => {
@@ -126,7 +139,28 @@ export default function ReviewSurface({
         </div>
       )}
 
-      {needsReview.length > 0 && (
+      {askFirst && onTryAnother && onUseAnyway && (
+        <section
+          role="group"
+          aria-label="This doesn't look like a receipt"
+          className="flex flex-col gap-2 rounded-xl border-2 border-[color:var(--color-border)] bg-[var(--color-surface)] px-3 py-3"
+        >
+          <h3 className={HEADING}>This doesn&apos;t look like a receipt</h3>
+          <p className="text-[13px] font-bold text-[color:var(--color-text)]">
+            Nothing has been added. Try a photo of the receipt, or use what I read anyway.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <SpringButton size="sm" disabled={disabled} onClick={onTryAnother}>
+              Try another photo
+            </SpringButton>
+            <SpringButton size="sm" variant="secondary" disabled={disabled} onClick={onUseAnyway}>
+              Use it anyway
+            </SpringButton>
+          </div>
+        </section>
+      )}
+
+      {!askFirst && needsReview.length > 0 && (
         <section className="flex flex-col gap-2">
           <h3 className={HEADING}>Did I read these right? {needsReview.length}</h3>
           <ul className="m-0 flex list-none flex-col gap-2 p-0">
@@ -150,7 +184,7 @@ export default function ReviewSurface({
         </section>
       )}
 
-      {readyToAdd.length > 0 && (
+      {!askFirst && readyToAdd.length > 0 && (
         <section className="flex flex-col gap-2">
           <h3 className={HEADING}>Going in {readyToAdd.length}</h3>
           {groups.map(({ place, items }) => {
@@ -229,7 +263,7 @@ export default function ReviewSurface({
         </section>
       )}
 
-      {skipped.length > 0 && (
+      {!askFirst && skipped.length > 0 && (
         <section className="flex flex-col gap-2">
           <p className="text-xs leading-4 font-bold text-[color:var(--color-text)] tabular-nums">
             Skipped {skipped.length} {plural(skipped.length, 'line', 'lines')}: {skippedNames(skipped)}.{' '}

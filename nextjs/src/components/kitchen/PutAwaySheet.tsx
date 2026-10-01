@@ -71,6 +71,12 @@ export interface PutAwaySheetProps {
   onClose: () => void
   record: PendingPutAway | null
   onPutAway: (count: number, hops: PutAwayHop[]) => void | Promise<void>
+  /**
+   * "Try another photo" on a scan the parse judged not to be a receipt (issue
+   * #856). The sheet drops that scan first; the host then takes the user back to
+   * the scan (HeroHome opens the add sheet's scan tab). Without it, it just closes.
+   */
+  onTryAnother?: () => void
 }
 
 function plural(n: number): string {
@@ -113,7 +119,13 @@ function collectHops(items: readonly ScannedItemWithId[]): PutAwayHop[] {
     }))
 }
 
-export default function PutAwaySheet({ open, onClose, record, onPutAway }: PutAwaySheetProps) {
+export default function PutAwaySheet({
+  open,
+  onClose,
+  record,
+  onPutAway,
+  onTryAnother,
+}: PutAwaySheetProps) {
   const queryClient = useQueryClient()
   const { wiggle } = useReactionVariants()
   const wiggleControls = useAnimationControls()
@@ -170,9 +182,11 @@ export default function PutAwaySheet({ open, onClose, record, onPutAway }: PutAw
 
   // What the key writes: Going in only. Lines still being asked about stay out
   // until they are answered Yes (or fixed), and the key says so.
-  const count = pendingItemCount(shown)
+  // A scan judged not to be a receipt (#856) puts nothing away until "Use it anyway".
+  const notReceipt = shown.notReceipt === true
+  const count = notReceipt ? 0 : pendingItemCount(shown)
   const lines = pendingLineCount(shown)
-  const toCheck = shown.review.length
+  const toCheck = notReceipt ? 0 : shown.review.length
 
   function edit(next: PutAwayTiers) {
     if (!shown) return
@@ -232,6 +246,17 @@ export default function PutAwaySheet({ open, onClose, record, onPutAway }: PutAw
   function discard() {
     clearPendingPutAway()
     onClose()
+  }
+
+  function tryAnother() {
+    clearPendingPutAway()
+    if (onTryAnother) onTryAnother()
+    else onClose()
+  }
+
+  function useAnyway() {
+    if (!shown) return
+    savePendingPutAway({ ...shown, notReceipt: false })
   }
 
   const store = shown.store ? `${shown.store} · ` : ''
@@ -301,6 +326,9 @@ export default function PutAwaySheet({ open, onClose, record, onPutAway }: PutAw
           warnings={shown.warnings}
           onChange={edit}
           disabled={submitting}
+          notReceipt={notReceipt}
+          onTryAnother={tryAnother}
+          onUseAnyway={useAnyway}
         />
 
         {confirmingDiscard ? (

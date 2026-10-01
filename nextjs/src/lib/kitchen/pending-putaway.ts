@@ -48,6 +48,12 @@ export interface PendingPutAway {
   /** Lines that are probably not food (bag fee, tax): "Skipped". */
   skipped: ScannedItemWithId[]
   warnings: string[]
+  /**
+   * The parse judged the image not to be a receipt (issue #856): put-away asks
+   * "Try another photo" / "Use it anyway" before anything can go in. Absent or
+   * false for a receipt; "Use it anyway" sets it false.
+   */
+  notReceipt?: boolean
 }
 
 function defaultStorage(): Storage | null {
@@ -70,6 +76,7 @@ export function pendingFromScan(result: ScanResult, now: Date = new Date()): Pen
     review: tiers.needs_review,
     skipped: tiers.skipped,
     warnings: Array.isArray(result.warnings) ? result.warnings.filter((w) => typeof w === 'string') : [],
+    ...(result.is_receipt === false ? { notReceipt: true } : {}),
   }
 }
 
@@ -157,6 +164,7 @@ export function parsePendingPutAway(raw: string | null): PendingPutAway | null {
     warnings: Array.isArray(parsed.warnings)
       ? parsed.warnings.filter((w): w is string => typeof w === 'string')
       : [],
+    ...(parsed.notReceipt === true ? { notReceipt: true } : {}),
   }
 }
 
