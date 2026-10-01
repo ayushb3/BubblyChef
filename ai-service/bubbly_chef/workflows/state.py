@@ -216,6 +216,10 @@ class WorkflowState(TypedDict, total=False):
     # metadata["saved_recipe_matches"] and read by update_session_node to pin
     # a single unambiguous match.
     saved_recipe_matches: list[dict[str, Any]]
+    # Saved (non-draft) meals the same lookup matched (issue #760), surfaced to
+    # metadata["saved_meal_matches"]: {id, title, description, servings,
+    # dishes: [{role, position, recipe_id, title}]}.
+    saved_meal_matches: list[dict[str, Any]]
 
     # ==========================================================================
     # Response Fields

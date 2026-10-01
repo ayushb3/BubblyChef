@@ -396,14 +396,22 @@ async def general_chat_response(state: WorkflowState) -> WorkflowState:
 
 async def saved_recipe_lookup_response(state: WorkflowState) -> WorkflowState:
     """
-    Node: Look up a recipe the user already saved.
+    Node: Look up a recipe, or a meal, the user already saved.
     Routes here when intent == SAVED_RECIPE_LOOKUP.
 
     Deterministic — no LLM call. Searches only this user's own saved recipes
-    (`SupabaseRepository.search_saved_recipes` is scoped by user_id) and
-    replies with a ranked text summary. Never generates a new recipe; a
-    0-match reply invites the user to ask for generation explicitly instead,
-    which a follow-up already routes to recipe_generation.
+    (`SupabaseRepository.search_saved_recipes` is scoped by user_id) and, for
+    a named dish, their saved meals (`search_saved_meals`, issue #760: saved
+    and non-draft only), and replies with a ranked text summary. Never
+    generates anything new; a 0-match reply invites the user to ask for
+    generation explicitly instead, which a follow-up already routes to
+    recipe_generation.
+
+    A matched meal rides on `saved_meal_matches` and leads the text — the
+    user said "dinner"/"meal" — while `saved_recipe_matches` keeps its shape
+    and order. A meal-search failure never costs the user their recipe
+    matches; it only matters when nothing else was found, because then
+    "no match" would be a guess.
     """
     user_id = state.get("user_id") or ""
     input_text = state.get("input_text", "")
@@ -412,6 +420,8 @@ async def saved_recipe_lookup_response(state: WorkflowState) -> WorkflowState:
     browsing = not lookup_query_terms(input_text)
 
     rows: list[dict[str, Any]] = []
+    meal_rows: list[dict[str, Any]] = []
+    meal_lookup_failed = False
     try:
         repo = await get_repository()
         if browsing:
@@ -436,7 +446,15 @@ async def saved_recipe_lookup_response(state: WorkflowState) -> WorkflowState:
             "errors": state.get("errors", []) + [f"Saved recipe lookup error: {e}"],
             "workflow_status": WorkflowStatus.COMPLETED.value,
             "saved_recipe_matches": [],
+            "saved_meal_matches": [],
         }
+
+    if not browsing:
+        try:
+            meal_rows = await repo.search_saved_meals(user_id, input_text, limit=3)
+        except Exception as e:
+            logger.warning(f"saved_recipe_lookup_response: meal search failed: {e}")
+            meal_lookup_failed = True
 
     # Only the fields the issue's metadata contract names leave this node;
     # full rows (user_id, ingredients, instructions) never go over the wire.
@@ -444,8 +462,37 @@ async def saved_recipe_lookup_response(state: WorkflowState) -> WorkflowState:
         {key: row.get(key) for key in ("id", "title", "description", "cuisine")}
         for row in rows
     ]
+    meal_matches = [
+        {
+            **{key: meal.get(key) for key in ("id", "title", "description", "servings")},
+            "dishes": [
+                {key: dish.get(key) for key in ("role", "position", "recipe_id", "title")}
+                for dish in meal.get("dishes") or []
+            ],
+        }
+        for meal in meal_rows
+    ]
 
-    if not matches and browsing:
+    if meal_matches:
+        if len(meal_matches) == 1:
+            message = f"Found it — your saved meal {meal_matches[0].get('title') or 'that meal'}!"
+        else:
+            meal_lines = [
+                f"{i + 1}. {m.get('title') or 'Untitled'}" for i, m in enumerate(meal_matches)
+            ]
+            message = (
+                "I found a few saved meals that might match:\n"
+                + "\n".join(meal_lines)
+                + "\nWhich one did you mean?"
+            )
+        if matches:
+            message += " Saved recipes that match follow below."
+    elif not matches and meal_lookup_failed:
+        message = (
+            "Oops — I couldn't reach your saved meals just now."
+            " Please try again in a moment."
+        )
+    elif not matches and browsing:
         message = (
             "You haven't saved any recipes yet — ask me for one"
             " and you can save it from there!"
@@ -483,6 +530,7 @@ async def saved_recipe_lookup_response(state: WorkflowState) -> WorkflowState:
         "confidence": 1.0,
         "workflow_status": WorkflowStatus.COMPLETED.value,
         "saved_recipe_matches": matches,
+        "saved_meal_matches": meal_matches,
     }
 
 
