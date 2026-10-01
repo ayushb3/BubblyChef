@@ -698,6 +698,8 @@ export function useChat(options?: UseChatOptions) {
       // picks it up, same as every other awarding mutation (CookModal,
       // RecipeBook import, scan confirm, the pantry add sheet).
       queryClient.invalidateQueries({ queryKey: ['bubbles'] })
+      // The approved proposal changed the pantry: refresh pantry-derived views (food tags, #784).
+      queryClient.invalidateQueries({ queryKey: ['pantry'] })
     } catch (err) {
       // Nothing is known to have applied and the pending set is unchanged, so
       // every pending row stays retryable.

@@ -6,7 +6,7 @@ import { useMotionConfig } from '@/lib/motion'
 import HeaderQuickSetTimers from '@/components/timers/HeaderQuickSetTimers'
 import Chip from '@/components/ui/Chip'
 import RecipeSteps from './RecipeSteps'
-import { tagForIngredient } from './ingredient-tags'
+import { tagForIngredient, tagForRow } from './ingredient-tags'
 import type { IngredientMatch, RecipeIngredient, Step } from '@/types/recipes'
 
 /**
@@ -53,13 +53,19 @@ interface RecipeDetailProps {
    * "Short ½" or "Staple". Omitted: no tags (the page never guesses).
    */
   ingredientMatches?: IngredientMatch[]
+  /**
+   * The same, aligned to the ingredient rows (`rowMatches[i]` is row `i`'s match;
+   * issue #784). Wins over `ingredientMatches`: a name lookup can't tell "2 eggs"
+   * from "1 egg", a row index can.
+   */
+  rowMatches?: (IngredientMatch | null)[]
 }
 
 // Ruled-paper constants — text line-height must match the gradient repeat
 const LINE_HEIGHT = 28 // px — matches repeating-linear-gradient step
 const FIRST_LINE_OFFSET = 4 // px — pad-top so first text line sits on first rule
 
-export default function RecipeDetail({ recipe, ingredientMatches }: RecipeDetailProps) {
+export default function RecipeDetail({ recipe, ingredientMatches, rowMatches }: RecipeDetailProps) {
   const { reduced } = useMotionConfig()
   return (
     <>
@@ -97,7 +103,7 @@ export default function RecipeDetail({ recipe, ingredientMatches }: RecipeDetail
           <ul>
             {recipe.ingredients.map((ing, i) => {
               const label = ingredientLabel(ing)
-              const tag = tagForIngredient(label, ingredientMatches)
+              const tag = rowMatches ? tagForRow(rowMatches, i) : tagForIngredient(label, ingredientMatches)
               return (
                 <motion.li
                   key={i}
