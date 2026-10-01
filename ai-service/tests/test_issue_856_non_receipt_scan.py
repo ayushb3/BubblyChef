@@ -160,3 +160,49 @@ async def test_ingest_route_proposal_carries_is_receipt() -> None:
 
     assert resp.status_code == 200
     assert resp.json()["proposal"]["is_receipt"] is False
+
+
+@pytest.mark.asyncio
+async def test_scan_route_reports_non_receipt_with_zero_items() -> None:
+    """Not a receipt AND nothing found: the verdict must still reach the client so
+    it can show 'doesn't look like a receipt' instead of 'nothing found'."""
+    from bubbly_chef.api.routes.scan import router
+
+    ocr = MagicMock()
+    ocr.extract_text = AsyncMock(return_value="Settings\nNotifications\nDark mode")
+    manager = _manager(LLMParseResult(is_receipt=False, items=[], confidence=0.9))
+
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(router)), base_url="http://test"
+    ) as ac:
+        with (
+            patch("bubbly_chef.services.ocr.get_ocr_service", return_value=ocr),
+            patch("bubbly_chef.workflows.receipt_ingest.get_ai_manager", return_value=manager),
+        ):
+            resp = await ac.post(
+                "/v1/scan/receipt",
+                files={"file": ("scan.png", b"\x89PNG fake", "image/png")},
+            )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["is_receipt"] is False
+    assert data["total_items"] == 0
+    assert data["ready_to_add"] == data["needs_review"] == data["skipped"] == []
+
+
+@pytest.mark.asyncio
+async def test_ingest_route_non_receipt_with_zero_items() -> None:
+    from bubbly_chef.api.routes.ingest import router
+
+    manager = _manager(LLMParseResult(is_receipt=False, items=[], confidence=0.9))
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(router)), base_url="http://test"
+    ) as ac:
+        with patch("bubbly_chef.workflows.receipt_ingest.get_ai_manager", return_value=manager):
+            resp = await ac.post("/v1/ingest", data={"ocr_text": "Settings\nDark mode"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["proposal"]["is_receipt"] is False
+    assert body["proposal"]["actions"] == []
