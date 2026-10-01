@@ -238,7 +238,14 @@ class TestOptionStageFollowUps:
                         _dish_llm("main", "Creamy Pasta", ["pasta", "cream"]),
                         _dish_llm("side", "Garlic Bread", ["bread", "butter"]),
                     ],
-                )
+                ),
+                MealOptionLLM(
+                    title="Cozy Pasta Night Too",
+                    dishes=[
+                        _dish_llm("main", "Creamy Pasta", ["pasta", "cream"]),
+                        _dish_llm("side", "Garlic Bread", ["bread", "butter"]),
+                    ],
+                ),
             ],
             follow_ups=[
                 "Something with less prep",
@@ -495,7 +502,14 @@ class TestPantryOptOutFollowUps:
                         _dish_llm("main", "Stir Fry", ["tofu", "soy sauce"]),
                         _dish_llm("side", "Steamed Greens", ["broccoli"]),
                     ],
-                )
+                ),
+                MealOptionLLM(
+                    title="Takeout-Style Stir Fry Too",
+                    dishes=[
+                        _dish_llm("main", "Stir Fry", ["tofu", "soy sauce"]),
+                        _dish_llm("side", "Steamed Greens", ["broccoli"]),
+                    ],
+                ),
             ],
             follow_ups=["Use up the spinach in your fridge", "Can I use chicken stock instead?"],
         )
@@ -666,7 +680,14 @@ class TestMealFollowupRouting:
                         _dish_llm("main", "Pasta", ["pasta"]),
                         _dish_llm("side", "Salad", ["lettuce"]),
                     ],
-                )
+                ),
+                MealOptionLLM(
+                    title="Simple Dinner Too",
+                    dishes=[
+                        _dish_llm("main", "Pasta", ["pasta"]),
+                        _dish_llm("side", "Salad", ["lettuce"]),
+                    ],
+                ),
             ]
         )
         meal_ai = MagicMock()
@@ -789,7 +810,14 @@ class TestMealFollowupInheritance:
                         _dish_llm("main", "Quick Pasta", ["pasta"]),
                         _dish_llm("side", "Side Salad", ["lettuce"]),
                     ],
-                )
+                ),
+                MealOptionLLM(
+                    title="Quick Pasta Night Too",
+                    dishes=[
+                        _dish_llm("main", "Quick Pasta", ["pasta"]),
+                        _dish_llm("side", "Side Salad", ["lettuce"]),
+                    ],
+                ),
             ]
         )
         ai = self._dispatching_ai(
@@ -886,7 +914,14 @@ class TestMealFollowupInheritance:
                         _dish_llm("main", "Veggie Pasta", ["pasta"]),
                         _dish_llm("side", "Side Salad", ["lettuce"]),
                     ],
-                )
+                ),
+                MealOptionLLM(
+                    title="Veggie Pasta Night Too",
+                    dishes=[
+                        _dish_llm("main", "Veggie Pasta", ["pasta"]),
+                        _dish_llm("side", "Side Salad", ["lettuce"]),
+                    ],
+                ),
             ]
         )
         ai = self._dispatching_ai(
@@ -948,7 +983,14 @@ class TestMealFollowupInheritance:
                         _dish_llm("main", "Quick Pasta", ["pasta"]),
                         _dish_llm("side", "Side Salad", ["lettuce"]),
                     ],
-                )
+                ),
+                MealOptionLLM(
+                    title="Quick Pasta Night Too",
+                    dishes=[
+                        _dish_llm("main", "Quick Pasta", ["pasta"]),
+                        _dish_llm("side", "Side Salad", ["lettuce"]),
+                    ],
+                ),
             ]
         )
         ai = self._dispatching_ai(
@@ -1033,7 +1075,14 @@ class TestMealFollowupInheritance:
                         _dish_llm("main", "Quick Pasta", ["pasta"]),
                         _dish_llm("side", "Side Salad", ["lettuce"]),
                     ],
-                )
+                ),
+                MealOptionLLM(
+                    title="Quick Pasta Night Too",
+                    dishes=[
+                        _dish_llm("main", "Quick Pasta", ["pasta"]),
+                        _dish_llm("side", "Side Salad", ["lettuce"]),
+                    ],
+                ),
             ]
         )
         ai = self._dispatching_ai(
@@ -1112,7 +1161,14 @@ class TestMealFollowupInheritance:
                         _dish_llm("main", "Chicken Pasta", ["pasta", "chicken"]),
                         _dish_llm("side", "Side Salad", ["lettuce"]),
                     ],
-                )
+                ),
+                MealOptionLLM(
+                    title="Chicken Pasta Night Too",
+                    dishes=[
+                        _dish_llm("main", "Chicken Pasta", ["pasta", "chicken"]),
+                        _dish_llm("side", "Side Salad", ["lettuce"]),
+                    ],
+                ),
             ]
         )
         ai = self._dispatching_ai(
@@ -1194,7 +1250,14 @@ class TestMealFollowupInheritance:
                         _dish_llm("main", "Veggie Stir Fry", ["tofu"]),
                         _dish_llm("side", "Steamed Greens", ["broccoli"]),
                     ],
-                )
+                ),
+                MealOptionLLM(
+                    title="Veggie Stir Fry Too",
+                    dishes=[
+                        _dish_llm("main", "Veggie Stir Fry", ["tofu"]),
+                        _dish_llm("side", "Steamed Greens", ["broccoli"]),
+                    ],
+                ),
             ]
         )
         ai = self._dispatching_ai(

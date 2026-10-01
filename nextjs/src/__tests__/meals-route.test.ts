@@ -241,7 +241,7 @@ describe('POST /api/meals', () => {
     expect(inserts.recipes).toHaveLength(0)
   })
 
-  it('rejects a meal with zero sides (the side-count rule)', async () => {
+  it('accepts a main with no side (issue #758: a main can be a whole plate)', async () => {
     const { supabase, inserts } = makeCreateSupabase()
     ;(requireAuth as jest.Mock).mockResolvedValue([supabase, mockUser])
 
@@ -252,9 +252,10 @@ describe('POST /api/meals', () => {
       }),
     )
 
-    expect(res.status).toBe(400)
-    // Validation runs before any write.
-    expect(inserts.meals).toHaveLength(0)
+    expect(res.status).toBe(201)
+    expect(inserts.meals).toHaveLength(1)
+    expect(inserts.meal_dishes).toHaveLength(1)
+    expect(inserts.meal_dishes[0]).toMatchObject({ role: 'main', position: 0 })
   })
 
   it('rejects a meal with three sides (the side-count rule)', async () => {

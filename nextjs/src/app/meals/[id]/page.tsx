@@ -864,7 +864,7 @@ export default function MealDetailPage() {
           ))}
         </div>
 
-        {sideCount === 1 && (
+        {sideCount < 2 && (
           <FadeInView>
             <div className="flex flex-col gap-2">
               {!row && (

@@ -289,6 +289,14 @@ describe('meal screen — side-count rule (issue #652)', () => {
     expect(screen.getByRole('button', { name: '+ Add a side' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Swap' })).toBeInTheDocument()
   })
+
+  it('offers Add on a main with no side (issue #758), and nothing to Swap or Remove', async () => {
+    fetchMeal.mockResolvedValue(baseMeal({ dishes: [baseMeal().dishes[0]] }))
+    renderPage()
+    expect(await screen.findByRole('button', { name: '+ Add a side' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Swap' })).not.toBeInTheDocument()
+  })
 })
 
 describe('meal screen — serve-at (issue #652)', () => {
