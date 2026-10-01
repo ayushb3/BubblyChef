@@ -7,13 +7,18 @@ Serves only AI-powered endpoints:
 - Workflow events (approve/reject proposals)
 """
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# Register URL extractor into the ingest dispatcher at import time.
+# This module-level import triggers dispatcher.register_url_extractor() inside
+# url_extractor.py, mirroring how ingest_dispatcher.py self-registers the receipt
+# extractor.  Must come after bubbly_chef packages are importable.
+import bubbly_chef.services.url_extractor as _url_extractor_registration  # noqa: F401
 from bubbly_chef.api.routes import (
     chat,
     dashboard,
@@ -27,12 +32,6 @@ from bubbly_chef.api.routes import (
 )
 from bubbly_chef.config import settings
 from bubbly_chef.repository.supabase_repo import get_repository
-
-# Register URL extractor into the ingest dispatcher at import time.
-# This module-level import triggers dispatcher.register_url_extractor() inside
-# url_extractor.py, mirroring how ingest_dispatcher.py self-registers the receipt
-# extractor.  Must come after bubbly_chef packages are importable.
-import bubbly_chef.services.url_extractor as _url_extractor_registration  # noqa: F401
 
 logging.basicConfig(level=logging.INFO)
 # #515: httpx logs every outgoing request line (method + full URL, including

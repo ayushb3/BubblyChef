@@ -47,6 +47,7 @@ function statusColor(status: IngredientMatch['status']): string {
     case 'missing':
       return 'var(--color-border)'
     case 'assumed':
+    case 'to_taste':
       return 'var(--color-border)'
     default:
       return 'var(--color-border)'
@@ -69,9 +70,16 @@ function statusLabel(status: IngredientMatch['status']): string {
       return 'Missing'
     case 'assumed':
       return 'Assumed'
+    case 'to_taste':
+      return 'To taste'
     default:
       return status
   }
+}
+
+/** Rows shown as a summary line below the table, not as table rows. */
+function isQuietLine(m: IngredientMatch): boolean {
+  return m.status === 'assumed' || m.status === 'to_taste'
 }
 
 function formatQty(qty: number | null, unit: string | null): string {
@@ -396,7 +404,8 @@ export function summariseDeductions(
   let matchedCount = 0
 
   proposal.matches.forEach((m: IngredientMatch, i: number) => {
-    if (m.pantry_item_id == null || m.status === 'missing') return
+    // A to-taste seasoning is never counted: nothing to deduct, nothing to resolve (#756).
+    if (m.pantry_item_id == null || m.status === 'missing' || m.status === 'to_taste') return
     matchedCount += 1
 
     // For unit_conflict rows, use the user's override qty (or 0 if not set).
@@ -530,8 +539,8 @@ export function CookReviewBody({
         />
       )}
 
-      {/* Ingredient table — assumed staples are collapsed into a summary line below */}
-      {proposal.matches.filter((m: IngredientMatch) => m.status !== 'assumed').length > 0 && (
+      {/* Ingredient table — assumed staples and to-taste seasonings are collapsed into summary lines below */}
+      {proposal.matches.filter((m: IngredientMatch) => !isQuietLine(m)).length > 0 && (
         <table className="w-full text-xs" style={{ fontFamily: 'Nunito, sans-serif' }}>
           <thead>
             <tr className="text-[var(--color-muted)] text-left">
@@ -544,7 +553,7 @@ export function CookReviewBody({
           <tbody>
             {proposal.matches
               .map((m: IngredientMatch, origIdx: number) => ({ m, origIdx }))
-              .filter(({ m }) => m.status !== 'assumed')
+              .filter(({ m }) => !isQuietLine(m))
               .map(({ m, origIdx }) => {
                 const note = sourceNote?.(m) ?? null
                 return (
@@ -617,6 +626,23 @@ export function CookReviewBody({
             aria-label="Assumed culinary staples"
           >
             Basics assumed: {assumedNames.join(', ')}
+          </p>
+        )
+      })()}
+
+      {/* Seasonings with no amount — one quiet line, not counted anywhere (#756) */}
+      {(() => {
+        const toTasteNames = proposal.matches
+          .filter((m: IngredientMatch) => m.status === 'to_taste')
+          .map((m: IngredientMatch) => m.ingredient_name)
+        if (toTasteNames.length === 0) return null
+        return (
+          <p
+            className="text-[10px] text-[var(--color-muted)] italic"
+            style={{ fontFamily: 'Nunito, sans-serif' }}
+            aria-label="Seasonings to taste"
+          >
+            Not deducted: to taste ({toTasteNames.join(', ')})
           </p>
         )
       })()}

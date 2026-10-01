@@ -148,10 +148,10 @@ ruleset's earlier required checks are in the git history of
 
 ## Still to tidy
 
-- `.claude/workflows/agent-loop.js` still runs in shadow mode and tiers PRs by CODEOWNERS,
-  still assumes the deleted fail-to-pass CI job, and still escalates protected-path
-  decisions to a human — issue #645, "agent-loop.js still follows the gated policy".
-- A few comments in `ai-service/bubbly_chef/prompts/` and tests still say "CODEOWNERS-gated"
-  (rolled into issue #645).
+- Done in issue #645 ("agent-loop.js still follows the gated policy"):
+  `.claude/workflows/agent-loop.js` no longer tiers PRs by CODEOWNERS, no longer assumes the
+  fail-to-pass CI job, and escalates only v1-scope and spend decisions; shadow mode is an
+  opt-in (`shadow: true`) and the loop requests auto-merge on the §6 conditions. The
+  "CODEOWNERS-gated" comments in `ai-service/bubbly_chef/prompts/` and tests were reworded.
 - The post-merge smoke test and auto-revert described under "What stays" were never
   actually built — issue #646, "Post-merge smoke test + auto-revert".

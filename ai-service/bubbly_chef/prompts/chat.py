@@ -3,7 +3,7 @@
 Feeds `bubbly_chef.workflows.chat.nodes`: `general_chat_response` (small talk,
 food-storage questions) and `cooking_help_response` (single-shot and ReAct
 cooking-help paths, plus the recipe-amendment detector run after a cooking
-reply), and the follow-up-chip pass run after a streamed chat reply. Edits here are CODEOWNERS-gated: prompt wording changes model
+reply), and the follow-up-chip pass run after a streamed chat reply. Edits here are fresh-context reviewed and `verify`-checked: prompt wording changes model
 behavior even though the test suite can stay green.
 """
 

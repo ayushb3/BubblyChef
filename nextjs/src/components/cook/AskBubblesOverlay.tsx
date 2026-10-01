@@ -26,6 +26,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useReducedMotion } from 'framer-motion'
+import PixelSheet from '@/components/ui/PixelSheet'
 import { streamChatMessage } from '@/lib/api/chat'
 import { isRecipeAmendmentProposal, type ChatRequest } from '@/types/chat'
 import type { MealCookIngredient } from '@/types/meals'
@@ -352,122 +353,107 @@ export default function AskBubblesOverlay({
   })
 
   return (
-    <div
-      className="fixed inset-0 z-[9998] flex flex-col justify-end"
-      style={{ background: 'var(--color-backdrop)' }}
-      onClick={onClose}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Ask Bubbles about step ${stepN}`}
-        className="w-full max-w-[480px] mx-auto rounded-t-3xl px-5 pt-3 pb-6 flex flex-col"
-        style={{ background: 'var(--color-surface)', maxHeight: '75vh' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Drag handle */}
-        <div className="flex items-center mb-3">
-          <span className="w-10 h-1.5 rounded-full mx-auto" style={{ background: 'var(--color-border)' }} />
-        </div>
-
-        <p
-          className="text-xs font-bold uppercase tracking-wide mb-3"
-          style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
-        >
-          {pinned ? `Asking about ${pinned.title}` : `Asking about step ${stepN}`}
-        </p>
-
-        {/* Message thread */}
-        <div
-          ref={threadRef}
-          data-testid="ask-bubbles-thread"
-          className="flex-1 overflow-y-auto space-y-2 mb-4 min-h-0"
-        >
-          {messages.length === 0 && !streaming && (
-            <p
-              className="text-sm text-center py-4"
-              style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+    <PixelSheet
+      open
+      onClose={onClose}
+      layer="cook"
+      title="Ask Bubbles"
+      ariaLabel={`Ask Bubbles about step ${stepN}`}
+      subtitle={pinned ? `Asking about ${pinned.title}` : `Asking about step ${stepN}`}
+      footer={
+        <>
+          {/* Input row */}
+          <div className="flex gap-2">
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask about this step…"
+              disabled={streaming}
+              className="flex-1 rounded-full px-4 py-2.5 text-sm outline-none disabled:opacity-60"
+              style={{
+                background: 'var(--color-bg)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text)',
+                fontFamily: 'Nunito, sans-serif',
+              }}
+            />
+            <button
+              onClick={() => void handleSend()}
+              disabled={!input.trim() || streaming}
+              aria-label="Send question"
+              className="rounded-full px-4 font-bold text-sm disabled:opacity-50 active:scale-95 transition-transform"
+              style={{
+                background: 'var(--color-primary)',
+                color: 'var(--color-text)',
+                fontFamily: 'Nunito, sans-serif',
+              }}
             >
-              Ask Bubbles anything about this step!
-            </p>
-          )}
-          {messages.map((m, i) => (
-            <div key={i}>
-              <ChatBubble who={m.role}>{m.text}</ChatBubble>
-              {m.amendment && (
-                <AmendmentCard
-                  amendment={m.amendment}
-                  pinnedTitle={pinned?.title ?? recipeTitle}
-                  isLatest={i === latestAmendmentIndex}
-                  streaming={streaming}
-                  autoFocusResolved={i === justResolvedIndex}
-                  onUse={() => handleUseChange(i, m.amendment!)}
-                  onKeep={() => handleKeepOriginal(i)}
-                />
-              )}
-            </div>
-          ))}
-          {streaming && streamingText && (
-            <ChatBubble who="assistant">{streamingText}</ChatBubble>
-          )}
-          {streaming && !streamingText && (
-            <ChatBubble who="assistant">
-              <span className="animate-pulse">…</span>
-            </ChatBubble>
-          )}
-          {error && (
-            <p
-              className="text-xs text-center py-2"
-              style={{ color: '#D9534F', fontFamily: 'Nunito, sans-serif' }}
-              role="alert"
-            >
-              {error}
-            </p>
-          )}
-        </div>
+              Send
+            </button>
+          </div>
 
-        {/* Input row */}
-        <div className="flex gap-2">
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask about this step…"
-            disabled={streaming}
-            className="flex-1 rounded-full px-4 py-2.5 text-sm outline-none disabled:opacity-60"
-            style={{
-              background: 'var(--color-bg)',
-              border: '1px solid var(--color-border)',
-              color: 'var(--color-text)',
-              fontFamily: 'Nunito, sans-serif',
-            }}
-          />
           <button
-            onClick={() => void handleSend()}
-            disabled={!input.trim() || streaming}
-            aria-label="Send question"
-            className="rounded-full px-4 font-bold text-sm disabled:opacity-50 active:scale-95 transition-transform"
-            style={{
-              background: 'var(--color-primary)',
-              color: 'var(--color-text)',
-              fontFamily: 'Nunito, sans-serif',
-            }}
+            onClick={onClose}
+            className="mt-3 w-full text-sm font-bold active:opacity-70 transition-opacity"
+            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+            aria-label={`Back to step ${stepN}`}
           >
-            Send
+            &darr; Back to step {stepN}
           </button>
-        </div>
-
-        <button
-          onClick={onClose}
-          className="mt-3 w-full text-sm font-bold active:opacity-70 transition-opacity"
-          style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
-          aria-label={`Back to step ${stepN}`}
-        >
-          &darr; Back to step {stepN}
-        </button>
+        </>
+      }
+    >
+      {/* Message thread */}
+      <div
+        ref={threadRef}
+        data-testid="ask-bubbles-thread"
+        className="max-h-[40dvh] min-h-0 overflow-y-auto space-y-2"
+      >
+        {messages.length === 0 && !streaming && (
+          <p
+            className="text-sm text-center py-4"
+            style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}
+          >
+            Ask Bubbles anything about this step!
+          </p>
+        )}
+        {messages.map((m, i) => (
+          <div key={i}>
+            <ChatBubble who={m.role}>{m.text}</ChatBubble>
+            {m.amendment && (
+              <AmendmentCard
+                amendment={m.amendment}
+                pinnedTitle={pinned?.title ?? recipeTitle}
+                isLatest={i === latestAmendmentIndex}
+                streaming={streaming}
+                autoFocusResolved={i === justResolvedIndex}
+                onUse={() => handleUseChange(i, m.amendment!)}
+                onKeep={() => handleKeepOriginal(i)}
+              />
+            )}
+          </div>
+        ))}
+        {streaming && streamingText && (
+          <ChatBubble who="assistant">{streamingText}</ChatBubble>
+        )}
+        {streaming && !streamingText && (
+          <ChatBubble who="assistant">
+            <span className="animate-pulse">…</span>
+          </ChatBubble>
+        )}
+        {error && (
+          <p
+            className="text-xs text-center py-2"
+            style={{ color: '#D9534F', fontFamily: 'Nunito, sans-serif' }}
+            role="alert"
+          >
+            {error}
+          </p>
+        )}
       </div>
-    </div>
+    </PixelSheet>
   )
 }
 
