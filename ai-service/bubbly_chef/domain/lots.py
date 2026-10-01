@@ -5,9 +5,10 @@ can hold 2 onions bought last week and 3 bought today as two rows. Everything
 that asks "how much do I have" sums the rows, and everything that uses some
 up takes the lot that will go off first. This module is the one place that
 says which lot that is and what a lot is worth in the base unit, so the cook
-matcher and the repository's deduction can't disagree. Chat uses
-`soonest_first_key`; cook deduction uses `fresh_first_key`, which also keeps an
-expired lot behind every fresh one (#756).
+matcher and the repository's deduction can't disagree. Chat `use` and cook
+deduction both spend in `fresh_first_key` order, which keeps an expired lot
+behind every fresh one (#756, #767). `soonest_first_key` only picks the single
+row a by-name update acts on.
 """
 
 from __future__ import annotations
@@ -46,7 +47,7 @@ def soonest_first_key(item: PantryItem) -> tuple[bool, bool, date, float, str]:
 def fresh_first_key(
     item: PantryItem, today: date | None = None
 ) -> tuple[bool, bool, bool, date, float, str]:
-    """Sort key for cook deduction: fresh lots first, expired lots only after them (#756).
+    """Sort key for spending lots: fresh lots first, expired lots only after them (#756).
 
     Stocked lots before empty ones, then lots that have not expired (a lot
     expiring today is still fresh, matching `PantryItem.is_expired`) before
@@ -54,7 +55,7 @@ def fresh_first_key(
     purchase, then the id. An expired lot is not usable stock while a fresh one
     exists, but it is still spent when it is all there is.
 
-    Chat `use` keeps `soonest_first_key` (#711); only the cook paths use this.
+    Shared by cook deduction and chat `use` (#767), so the two cannot disagree.
     """
     today = today or date.today()
     expired = item.expiry_date is not None and item.expiry_date < today

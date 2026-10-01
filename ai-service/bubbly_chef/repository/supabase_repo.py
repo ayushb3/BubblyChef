@@ -345,9 +345,10 @@ def _plan_pantry_use(
 def _plan_use_across_lots(
     lots: list[PantryItem], name: str, action: dict[str, Any]
 ) -> tuple[list[tuple[PantryItem, _PantryUsePlan]], str | None]:
-    """Plan a chat `use` over every lot of a food, soonest expiry first (#711).
+    """Plan a chat `use` over every lot of a food, fresh lots first (#711, #767).
 
-    `lots` arrive soonest-first with empty rows last. Each stocked lot is used
+    `lots` arrive in `fresh_first_key` order: fresh lots soonest expiry first,
+    expired lots after them, empty rows last. Each stocked lot is used
     up in turn until the amount is covered, and the lot where it runs out keeps
     the rest (`_plan_pantry_use`, so the display amount and base stay in step).
     Using more than every lot holds clears them all, as it does for one lot.
@@ -500,7 +501,10 @@ class SupabaseRepository:
         return min(lots, key=soonest_first_key)
 
     async def find_food_lots(self, user_id: str, name: str) -> list[PantryItem]:
-        """Every lot of the food `name` names, soonest expiry first (#711).
+        """Every lot of the food `name` names, in the order a use spends them (#711, #767).
+
+        Fresh lots soonest expiry first, expired lots after them (`fresh_first_key`,
+        the cook deduction's order).
 
         Starts from the row `find_similar_item` finds and adds the user's other
         rows of the same food (same synonym-normalised name, as the cook matcher
@@ -529,7 +533,7 @@ class SupabaseRepository:
                 lots[item.id] = (item, dict(row))
         if anchor.id not in lots:
             lots[anchor.id] = (anchor, self._pantry_item_row(user_id, anchor))
-        return sorted(lots.values(), key=lambda pair: soonest_first_key(pair[0]))
+        return sorted(lots.values(), key=lambda pair: fresh_first_key(pair[0]))
 
     def _pantry_item_row(self, user_id: str, item: PantryItem) -> dict[str, Any]:
         """The insert payload for `item` as it is now, keeping its id and dates."""
@@ -863,7 +867,8 @@ class SupabaseRepository:
 
                 elif action_type == "use":
                     # #711: a food can sit in several lots, so a use is spread over
-                    # them (soonest expiry first) instead of acting on one row.
+                    # them (fresh lots soonest expiry first, expired ones last, #767) instead of
+                    # acting on one row.
                     lot_rows = await self._food_lot_rows(user_id, name)
                     if not lot_rows:
                         _record_failure(index, f"Item not found: {name}")
