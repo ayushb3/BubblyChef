@@ -1,25 +1,34 @@
 /**
- * Tests for `KitchenScene` (issue #521): empty / partially-filled / fully-
- * filled states, the balance pill, and that malformed `unlocked` rows (an
- * id not in the catalog, or a slot not in SLOTS) are dropped silently
+ * Tests for `KitchenScene` (issue #521, carried onto the pixel wall in #748):
+ * empty / partially-filled / fully-filled states, and that malformed `unlocked`
+ * rows (an id not in the catalog, or a slot not in SLOTS) are dropped silently
  * rather than thrown on.
+ *
+ * Rewritten in #748: the scene no longer draws the bubbles balance or the
+ * streak (they moved to the header and the toolbar, tested in
+ * `kitchen-header.test.tsx` and `kitchen-home.test.tsx`), and empty slots are no
+ * longer dashed placeholder boxes (on the wall they would read as clutter).
  */
 import React from 'react'
 import { render, screen } from '@testing-library/react'
-import KitchenScene from '@/components/kitchen/KitchenScene'
+import KitchenScene, { type KitchenSceneProps } from '@/components/kitchen/KitchenScene'
 import { SLOTS } from '@/lib/kitchen/slots'
 import { CATALOG } from '@/lib/kitchen/catalog'
 
-describe('KitchenScene (#521)', () => {
-  it('renders 12 dashed-outline placeholders and the balance when nothing is unlocked', () => {
-    render(<KitchenScene unlocked={[]} balance={0} />)
+function renderScene(props: Partial<KitchenSceneProps> = {}) {
+  return render(<KitchenScene unlocked={[]} onOpenPlace={jest.fn()} {...props} />)
+}
+
+describe('KitchenScene (#521, #748)', () => {
+  it('renders the 12 slots, all empty, when nothing is unlocked', () => {
+    renderScene()
 
     expect(screen.getByTestId('kitchen-scene')).toBeInTheDocument()
+    expect(screen.getByTestId('kitchen-wall')).toBeInTheDocument()
     for (const slot of SLOTS) {
       const el = screen.getByTestId(`kitchen-slot-${slot.key}`)
       expect(el.getAttribute('data-filled')).toBe('false')
     }
-    expect(screen.getByTestId('kitchen-bubbles-balance')).toHaveAttribute('aria-label', '0 bubbles')
   })
 
   it('renders some filled and some empty slots when partially unlocked', () => {
@@ -27,55 +36,45 @@ describe('KitchenScene (#521)', () => {
     // wall_shelf, so the second would overwrite the first.
     const first = CATALOG[0]
     const second = CATALOG.find((d) => d.slot !== first.slot)!
-    render(
-      <KitchenScene
-        unlocked={[
-          { id: first.id, slot: first.slot },
-          { id: second.id, slot: second.slot },
-        ]}
-        balance={7}
-      />,
-    )
+    renderScene({
+      unlocked: [
+        { id: first.id, slot: first.slot },
+        { id: second.id, slot: second.slot },
+      ],
+    })
 
     const filledKeys = new Set([first.slot, second.slot])
     for (const slot of SLOTS) {
       const el = screen.getByTestId(`kitchen-slot-${slot.key}`)
       expect(el.getAttribute('data-filled')).toBe(filledKeys.has(slot.key) ? 'true' : 'false')
     }
-    expect(screen.getByTestId('kitchen-bubbles-balance')).toHaveAttribute('aria-label', '7 bubbles')
-    expect(screen.getByTestId('kitchen-bubbles-balance')).toHaveTextContent('7')
   })
 
   it('renders every slot filled when one catalog entry per slot is unlocked', () => {
     // One entry per slot key — CATALOG guarantees at least one exists
     // (kitchen-catalog.test.ts), so pick the first match per slot.
-    const oneEntryPerSlot = SLOTS.map(
-      (slot) => CATALOG.find((d) => d.slot === slot.key)!,
-    )
-    render(
-      <KitchenScene
-        unlocked={oneEntryPerSlot.map((d) => ({ id: d.id, slot: d.slot }))}
-        balance={42}
-      />,
-    )
+    const oneEntryPerSlot = SLOTS.map((slot) => CATALOG.find((d) => d.slot === slot.key)!)
+    renderScene({ unlocked: oneEntryPerSlot.map((d) => ({ id: d.id, slot: d.slot })) })
 
     for (const slot of SLOTS) {
-      expect(screen.getByTestId(`kitchen-slot-${slot.key}`).getAttribute('data-filled')).toBe(
-        'true',
-      )
+      expect(screen.getByTestId(`kitchen-slot-${slot.key}`).getAttribute('data-filled')).toBe('true')
     }
   })
 
-  it('hides the balance pill while the balance is unknown, rather than showing 0', () => {
-    render(<KitchenScene unlocked={[]} balance={null} />)
-
-    expect(screen.getByTestId('kitchen-scene')).toBeInTheDocument()
-    expect(screen.queryByTestId('kitchen-bubbles-balance')).not.toBeInTheDocument()
+  it('positions every slot with its percent box on the wall', () => {
+    renderScene()
+    for (const slot of SLOTS) {
+      const el = screen.getByTestId(`kitchen-slot-${slot.key}`)
+      expect(el.style.left).toBe(`${slot.x}%`)
+      expect(el.style.top).toBe(`${slot.y}%`)
+      expect(el.style.width).toBe(`${slot.w}%`)
+      expect(el.style.height).toBe(`${slot.h}%`)
+    }
   })
 
   it('hides empty slots from screen readers and names filled ones after the decoration', () => {
     const first = CATALOG[0]
-    render(<KitchenScene unlocked={[{ id: first.id, slot: first.slot }]} balance={0} />)
+    renderScene({ unlocked: [{ id: first.id, slot: first.slot }] })
 
     for (const slot of SLOTS) {
       const el = screen.getByTestId(`kitchen-slot-${slot.key}`)
@@ -85,39 +84,37 @@ describe('KitchenScene (#521)', () => {
         expect(el).toHaveAttribute('aria-hidden', 'true')
       }
     }
-    // Only the one filled slot reaches the accessibility tree, under the
-    // decoration's own name rather than the slot's label.
+    // Only the one filled slot reaches the accessibility tree as an image (the
+    // wall's SVG is decorative), under the decoration's own name.
     expect(screen.getAllByRole('img')).toHaveLength(1)
     expect(screen.getByRole('img', { name: first.name })).toBeInTheDocument()
   })
 
+  it('lets a tap through a decoration to the place under it', () => {
+    const first = CATALOG[0]
+    renderScene({ unlocked: [{ id: first.id, slot: first.slot }] })
+    expect(screen.getByTestId(`kitchen-slot-${first.slot}`).className).toContain('pointer-events-none')
+  })
+
   it('ignores an unlocked row whose id is not in CATALOG, without throwing', () => {
-    expect(() =>
-      render(<KitchenScene unlocked={[{ id: 'not_a_real_id', slot: 'wall_shelf' }]} balance={0} />),
-    ).not.toThrow()
+    expect(() => renderScene({ unlocked: [{ id: 'not_a_real_id', slot: 'wall_shelf' }] })).not.toThrow()
     expect(screen.getByTestId('kitchen-slot-wall_shelf').getAttribute('data-filled')).toBe('false')
   })
 
   it('ignores an unlocked row whose slot is not in SLOTS, without throwing', () => {
     const real = CATALOG[0]
-    expect(() =>
-      render(<KitchenScene unlocked={[{ id: real.id, slot: 'not_a_real_slot' }]} balance={0} />),
-    ).not.toThrow()
+    expect(() => renderScene({ unlocked: [{ id: real.id, slot: 'not_a_real_slot' }] })).not.toThrow()
     // The real catalog entry's actual slot stays empty because the row
     // claimed a different (bogus) slot than the one the catalog assigns it.
-    expect(screen.getByTestId(`kitchen-slot-${real.slot}`).getAttribute('data-filled')).toBe(
-      'false',
-    )
+    expect(screen.getByTestId(`kitchen-slot-${real.slot}`).getAttribute('data-filled')).toBe('false')
   })
 
-  it('renders the aspect-ratio wrapper and empty slot outlines while loading', () => {
-    render(<KitchenScene unlocked={[]} balance={0} loading />)
+  it('renders the wall at its final size and the empty slots while loading', () => {
+    renderScene({ loading: true })
 
-    expect(screen.getByTestId('kitchen-scene')).toBeInTheDocument()
+    expect(screen.getByTestId('kitchen-wall').className).toContain('aspect-[96/80]')
     for (const slot of SLOTS) {
-      expect(screen.getByTestId(`kitchen-slot-${slot.key}`).getAttribute('data-filled')).toBe(
-        'false',
-      )
+      expect(screen.getByTestId(`kitchen-slot-${slot.key}`).getAttribute('data-filled')).toBe('false')
     }
   })
 
@@ -129,32 +126,22 @@ describe('KitchenScene (#521)', () => {
     // to render; passing real, resolvable rows here means the assertions
     // below only pass because the guard suppresses them, not because there
     // was nothing to show.
-    const oneEntryPerSlot = SLOTS.map(
-      (slot) => CATALOG.find((d) => d.slot === slot.key)!,
-    )
-    render(
-      <KitchenScene
-        unlocked={oneEntryPerSlot.map((d) => ({ id: d.id, slot: d.slot }))}
-        balance={42}
-        loading
-      />,
-    )
+    const oneEntryPerSlot = SLOTS.map((slot) => CATALOG.find((d) => d.slot === slot.key)!)
+    renderScene({
+      unlocked: oneEntryPerSlot.map((d) => ({ id: d.id, slot: d.slot })),
+      loading: true,
+    })
 
     for (const slot of SLOTS) {
-      expect(screen.getByTestId(`kitchen-slot-${slot.key}`).getAttribute('data-filled')).toBe(
-        'false',
-      )
+      expect(screen.getByTestId(`kitchen-slot-${slot.key}`).getAttribute('data-filled')).toBe('false')
     }
   })
 
-  it('shows no streak indicator for a null streak (#550: not computed) and renders it for a real one', () => {
-    const { rerender } = render(<KitchenScene unlocked={[]} balance={3} streakWeeks={null} />)
-    expect(screen.queryByTestId('kitchen-streak')).not.toBeInTheDocument()
-
-    rerender(<KitchenScene unlocked={[]} balance={3} streakWeeks={0} />)
-    expect(screen.queryByTestId('kitchen-streak')).not.toBeInTheDocument()
-
-    rerender(<KitchenScene unlocked={[]} balance={3} streakWeeks={2} />)
-    expect(screen.getByTestId('kitchen-streak')).toHaveTextContent('🔥 2')
+  it('passes the place tap and the plan-dinner link through to the wall', () => {
+    const onOpenPlace = jest.fn()
+    renderScene({ onOpenPlace, planDinnerHref: '/chat?x=1' })
+    screen.getByRole('button', { name: 'Fridge' }).click()
+    expect(onOpenPlace).toHaveBeenCalledWith('fridge')
+    expect(screen.getByRole('link', { name: 'Plan dinner' })).toHaveAttribute('href', '/chat?x=1')
   })
 })
