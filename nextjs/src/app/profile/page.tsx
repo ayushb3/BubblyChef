@@ -10,6 +10,7 @@ import {
   DEFAULT_EXPIRY_PRIORITY,
   type ExpiryPriority,
 } from '@/lib/expiry-priority'
+import SetUpStaplesButton from '@/components/profile/SetUpStaplesButton'
 import TakeTourButton from '@/components/profile/TakeTourButton'
 import { isGuestUser } from '@/lib/auth/guest'
 import ThemePicker from '@/components/ui/ThemePicker'
@@ -116,6 +117,14 @@ export default async function ProfilePage() {
             Expiring Food
           </p>
           <ExpiryPriorityControl profileId={profileId} initialValue={initialExpiryPriority} />
+        </section>
+
+        {/* Your kitchen — the first-run staples + household size step, reachable again (#853) */}
+        <section>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">
+            Your Kitchen
+          </p>
+          <SetUpStaplesButton />
         </section>
 
         {/* Help — replay the first-run coach-mark tour (#390) */}

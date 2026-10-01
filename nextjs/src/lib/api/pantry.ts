@@ -40,6 +40,12 @@ export interface BulkAddItem {
    * used as a fallback only when this is absent.
    */
   estimated_expiry?: boolean
+  /**
+   * Shelf-stable item (the first-run staples, issue #853): save it with no
+   * expiry rather than letting the server estimate one. Ignored when
+   * `expiry_date` is set.
+   */
+  no_expiry?: boolean
 }
 
 export interface BulkAddResult {

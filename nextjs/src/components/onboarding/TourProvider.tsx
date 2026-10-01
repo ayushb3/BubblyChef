@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { markStaplesStepDone } from '@/lib/api/profile'
 import { TOUR_STEPS } from './steps'
 
 const TOTAL_STEPS = TOUR_STEPS.length
@@ -22,6 +23,15 @@ interface TourContextValue {
   goNext: () => void
   goBack: () => void
   totalSteps: number
+  /** The first-run "tick what you usually have" sheet (issue #853). */
+  staplesOpen: boolean
+  /** Open the staples sheet on its own (the Profile entry); closing it does not start the tour. */
+  openStaples: () => void
+  /**
+   * Close the staples sheet (finished or skipped) and remember it was seen. On the
+   * first-run path the tour follows; opened from Profile, nothing does.
+   */
+  closeStaples: () => void
 }
 
 const TourContext = createContext<TourContextValue | null>(null)
@@ -55,6 +65,9 @@ async function markOnboardingComplete(): Promise<void> {
 export function TourProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false)
   const [stepIndex, setStepIndex] = useState(0)
+  const [staplesOpen, setStaplesOpen] = useState(false)
+  // True while the staples sheet is the first-run step (the tour follows it).
+  const staplesFirstRunRef = useRef(false)
   const pathname = usePathname()
   // Prevent re-triggering auto-open when the flag is already set for this mount.
   const hasAutoOpenedRef = useRef(false)
@@ -79,8 +92,14 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
         } = await supabase.auth.getUser()
         const completed = user?.user_metadata?.onboarding_completed === true
         if (!completed) {
-          setIsOpen(true)
-          setStepIndex(0)
+          // First run: the staples step comes before the tour, once (#853).
+          if (user?.user_metadata?.staples_step_done !== true) {
+            staplesFirstRunRef.current = true
+            setStaplesOpen(true)
+          } else {
+            setIsOpen(true)
+            setStepIndex(0)
+          }
         }
       } catch {
         // non-fatal — skip auto-open
@@ -92,6 +111,21 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const openTour = useCallback(() => {
     setStepIndex(0)
     setIsOpen(true)
+  }, [])
+
+  const openStaples = useCallback(() => {
+    staplesFirstRunRef.current = false
+    setStaplesOpen(true)
+  }, [])
+
+  const closeStaples = useCallback(() => {
+    setStaplesOpen(false)
+    void markStaplesStepDone()
+    if (staplesFirstRunRef.current) {
+      staplesFirstRunRef.current = false
+      setStepIndex(0)
+      setIsOpen(true)
+    }
   }, [])
 
   const closeTour = useCallback(async () => {
@@ -115,7 +149,18 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <TourContext.Provider
-      value={{ isOpen, stepIndex, openTour, closeTour, goNext, goBack, totalSteps: TOTAL_STEPS }}
+      value={{
+        isOpen,
+        stepIndex,
+        openTour,
+        closeTour,
+        goNext,
+        goBack,
+        totalSteps: TOTAL_STEPS,
+        staplesOpen,
+        openStaples,
+        closeStaples,
+      }}
     >
       {children}
     </TourContext.Provider>

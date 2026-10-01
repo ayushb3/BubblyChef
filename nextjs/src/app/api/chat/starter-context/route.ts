@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/response-helpers'
+import { coerceHouseholdSize } from '@/lib/household'
 import type { StarterContext } from '@/types/chat'
 
 /**
@@ -68,9 +69,12 @@ function computeRecentCuisines(rows: RecipeCuisineRow[]): string[] {
  * The shared §6 default-servings rule: the mode of `servings` over up to 3
  * cooked meals, ties broken toward the most recent (rows arrive already
  * ordered desc by `last_cooked_at`, so the same stable-sort trick as above
- * applies). `[]` (no cooked meals) gives 2.
+ * applies). `[]` (no cooked meals) gives 2. A household size the user set
+ * (#853) takes precedence over all of that.
  */
-function computeDefaultServings(rows: MealServingsRow[]): number {
+function computeDefaultServings(rows: MealServingsRow[], householdSize: number | null): number {
+  // The user's own answer (first-run / profile household size, #853) beats the guess.
+  if (householdSize !== null) return householdSize
   const counts = new Map<number, number>()
   for (const r of rows) {
     if (r.servings == null || r.last_cooked_at == null) continue
@@ -174,7 +178,10 @@ export async function GET() {
       cuisine: r.cuisine,
     })),
     recent_cuisines: computeRecentCuisines(cuisineRows),
-    default_servings: computeDefaultServings((mealServingsRes.data as MealServingsRow[] | null) ?? []),
+    default_servings: computeDefaultServings(
+      (mealServingsRes.data as MealServingsRow[] | null) ?? [],
+      coerceHouseholdSize(user.user_metadata?.household_size),
+    ),
   }
 
   return NextResponse.json(body)

@@ -7,13 +7,19 @@
 // first page load).
 
 import { test as authenticatedTest, expect } from './fixtures/auth'
-import { test as baseTest } from '@playwright/test'
+import { test as baseTest, type Page } from '@playwright/test'
 
 // ---------------------------------------------------------------------------
 // Helper: "no-flag" storage state — fresh guest, onboarding flag NOT set.
 // ---------------------------------------------------------------------------
 const freshTest = baseTest.extend({})
 freshTest.use({ storageState: { cookies: [], origins: [] } })
+
+// A first run now opens the "tick what you usually have" staples step (#853)
+// before the tour. These tests are about the tour, so they skip past it.
+async function skipStaples(page: Page) {
+  await page.getByRole('button', { name: 'Skip for now' }).click({ timeout: 10_000 })
+}
 
 // ---------------------------------------------------------------------------
 // TC1: first-run auto-open — fresh session on '/' shows step 1 copy
@@ -22,6 +28,7 @@ freshTest.describe('onboarding / TC1: first-run auto-open', () => {
   freshTest('step 1 copy visible on fresh "/" visit', async ({ page }) => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
+    await skipStaples(page)
     await expect(page.getByText("Hi! I'm Bubbles, your kitchen assistant.")).toBeVisible({
       timeout: 10_000,
     })
@@ -44,6 +51,7 @@ freshTest.describe('onboarding / TC2: full step navigation', () => {
 
     await page.goto('/')
     await page.waitForLoadState('networkidle')
+    await skipStaples(page)
 
     // Mirrors TOUR_STEPS (components/onboarding/steps.ts). The Pantry-tab step
     // became "tap the fridge" when the Pantry tab went (#750), and the dead
@@ -77,7 +85,10 @@ freshTest.describe('onboarding / TC3: skip persists flag and closes overlay', ()
 
     await page.route('**/auth/v1/user**', async (route) => {
       if (route.request().method() === 'PUT') {
-        updateUserCalled = true
+        // The staples step also writes its own flag (#853); only the tour's counts here.
+        if ((route.request().postData() ?? '').includes('onboarding_completed')) {
+          updateUserCalled = true
+        }
         await route.fulfill({ status: 200, body: JSON.stringify({ user: {} }) })
       } else {
         await route.continue()
@@ -86,12 +97,13 @@ freshTest.describe('onboarding / TC3: skip persists flag and closes overlay', ()
 
     await page.goto('/')
     await page.waitForLoadState('networkidle')
+    await skipStaples(page)
 
     await expect(page.getByText("Hi! I'm Bubbles, your kitchen assistant.")).toBeVisible({
       timeout: 10_000,
     })
 
-    await page.getByRole('button', { name: 'Skip' }).click()
+    await page.getByRole('button', { name: 'Skip', exact: true }).click()
 
     await expect(
       page.getByText("Hi! I'm Bubbles, your kitchen assistant."),
