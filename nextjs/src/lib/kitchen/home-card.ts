@@ -122,12 +122,9 @@ export interface HomeCardSnapshot {
 
 // ---- small copy helpers ---------------------------------------------------
 
-/** "Lemon pasta" -> "lemon pasta", leaving an acronym ("BBQ ribs") alone. */
-export function lowerFirst(text: string): string {
-  const t = text.trim()
-  if (t.length < 2) return t.toLowerCase()
-  return t[1] === t[1].toUpperCase() && t[1] !== t[1].toLowerCase() ? t : t[0].toLowerCase() + t.slice(1)
-}
+// A dish name goes into card copy exactly as written ("Back to the Salmon Avocado
+// Toast?"). Lower-casing only its first letter read wrong mid-sentence, and
+// lower-casing all of it breaks proper nouns ("Thai", "Caesar"): issue #838.
 
 const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']
 
@@ -176,7 +173,7 @@ const PLAN_DINNER: HomeCardAction = { label: 'Plan a whole dinner', href: planDi
 // ---- the cases ------------------------------------------------------------
 
 function cookCard(cook: CookResume): HomeCard {
-  const title = lowerFirst(cook.title)
+  const title = cook.title.trim()
   return {
     kind: 'cook',
     fingerprint: `cook:${cook.kind}:${cook.id}:${cook.step}`,
@@ -209,7 +206,7 @@ const PLANNED_GRACE_MS = 60 * 60_000
 function plannedCard(planned: PlannedTonight, now: Date): HomeCard {
   const start =
     planned.startAtMs <= now.getTime() ? 'now' : `at ${clock(planned.startAtMs)}`
-  const what = planned.startDish ? `Start the ${lowerFirst(planned.startDish)}` : 'Start cooking'
+  const what = planned.startDish ? `Start the ${planned.startDish.trim()}` : 'Start cooking'
   return {
     kind: 'planned',
     fingerprint: `planned:${planned.mealId}:${planned.serveAtMs}`,
@@ -230,7 +227,7 @@ function urgentItem(items: ExpiringItem[]): ExpiringItem | null {
 function makeAgainOption(starter: StarterContext | null): HomeCardAction | null {
   const recent = starter?.recent_cooks[0]
   if (!recent) return null
-  const name = lowerFirst(recent.title.replace(/^the\s+/i, ''))
+  const name = recent.title.replace(/^the\s+/i, '').trim()
   return {
     label: `Make the ${truncate(name)} again`,
     href: askHref(`Show me my saved ${recent.title}`),

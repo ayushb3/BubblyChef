@@ -20,7 +20,7 @@ const STARTER: StarterContext = {
   default_servings: 2,
 }
 
-const COOK = { kind: 'recipe' as const, id: 'r-lemon', title: 'lemon pasta', step: 4, totalSteps: 7 }
+const COOK = { kind: 'recipe' as const, id: 'r-lemon', title: 'Lemon pasta', step: 4, totalSteps: 7 }
 const MEAL_COOK = { kind: 'meal' as const, id: 'm-1', title: 'Pasta night', step: 3, totalSteps: 9 }
 const SCAN = { savedAt: '2026-10-01T16:00:00.000Z', itemCount: 6 }
 const PLANNED = {
@@ -61,7 +61,7 @@ describe('each case alone', () => {
   it('1. a cook left mid-recipe', () => {
     const card = pickHomeCard(snap({ cook: COOK }))!
     expect(card.kind).toBe('cook')
-    expect(card.message).toBe('Back to the lemon pasta? You were on step 4 of 7.')
+    expect(card.message).toBe('Back to the Lemon pasta? You were on step 4 of 7.')
     expect(labels(card)).toEqual(['I finished it', 'Pick up at step 4'])
     expect(card.options[0].action).toBe('finish-cook')
     expect(card.primary.href).toBe('/recipes?resume=r-lemon')
@@ -70,7 +70,30 @@ describe('each case alone', () => {
   it('1. a meal cook picks up on the cook-along route', () => {
     const card = pickHomeCard(snap({ cook: MEAL_COOK }))!
     expect(card.primary.href).toBe('/meals/m-1/cook')
-    expect(card.message).toBe('Back to the pasta night? You were on step 3 of 9.')
+    expect(card.message).toBe('Back to the Pasta night? You were on step 3 of 9.')
+  })
+
+  it('1. a dish name keeps its own casing in the cook card (issue #838)', () => {
+    const card = pickHomeCard(snap({ cook: { ...COOK, title: 'Salmon Avocado Toast' } }))!
+    expect(card.message).toBe('Back to the Salmon Avocado Toast? You were on step 4 of 7.')
+    const bare = pickHomeCard(snap({ cook: { ...COOK, title: 'Thai Green Curry', totalSteps: 0 } }))!
+    expect(bare.message).toBe('Back to the Thai Green Curry?')
+  })
+
+  it('2. a dish name keeps its own casing in the planned card (issue #838)', () => {
+    const card = pickHomeCard(
+      snap({ now: at(15, 30), planned: { ...PLANNED, startDish: 'Hearty Tomato Garlic Noodles' } }),
+    )!
+    expect(card.message).toContain('Start the Hearty Tomato Garlic Noodles at 6:15')
+  })
+
+  it('3. a recent dish keeps its own casing in the make-again option (issue #838)', () => {
+    const starter = {
+      ...STARTER,
+      recent_cooks: [{ ...STARTER.recent_cooks[0], title: 'Caesar Salad' }],
+    }
+    const card = pickHomeCard(snap({ expiring: [ROMAINE], starter }))!
+    expect(labels(card)).toContain('Make the Caesar Salad again')
   })
 
   it('1. scanned groceries not put away', () => {
@@ -91,7 +114,7 @@ describe('each case alone', () => {
     const card = pickHomeCard(snap({ now: at(15, 30), planned: PLANNED }))!
     expect(card.kind).toBe('planned')
     expect(card.message).toBe(
-      'Dinner for two at 7:00. Start the rice at 6:15 and everything lands together.',
+      'Dinner for two at 7:00. Start the Rice at 6:15 and everything lands together.',
     )
     expect(labels(card)).toEqual(['Move it to tomorrow', 'Show the timeline'])
     expect(card.options[0].action).toBe('move-tomorrow')
@@ -101,7 +124,7 @@ describe('each case alone', () => {
   it('2. the start time has passed: start now', () => {
     const card = pickHomeCard(snap({ now: at(18, 30), planned: PLANNED }))!
     expect(card.message).toBe(
-      'Dinner for two at 7:00. Start the rice now and everything lands together.',
+      'Dinner for two at 7:00. Start the Rice now and everything lands together.',
     )
   })
 
@@ -142,7 +165,7 @@ describe('each case alone', () => {
     expect(labels(card)).toEqual([
       'Dinner with the romaine',
       'Something in 20 minutes',
-      'Make the lemon pasta again',
+      'Make the Lemon pasta again',
       'Plan a whole dinner',
     ])
     expect(card.options[0].href).toBe('/chat?plan=dinner&with=romaine')
