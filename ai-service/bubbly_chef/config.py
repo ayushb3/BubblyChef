@@ -64,13 +64,14 @@ class Settings(BaseSettings):
     # /health/ai read green through an outage where every generation 429'd. The
     # probe runs one tiny real generation through AIManager and caches the
     # result for this many seconds so health checks do not burn quota (each
-    # probe that isn't served from the cache is a real provider call; 900s is
-    # at most 96 successful probes a day). 0 disables the probe and keeps the
+    # probe that isn't served from the cache is a real provider call; 3600s is
+    # at most 24 successful probes a day). 0 disables the probe and keeps the
     # old reachability-only behaviour. The token cap keeps each probe nearly
-    # free. A FAILED probe is cached for the shorter failure TTL so /health/ai
+    # free. Tradeoff (approved by Ayush 2026-10-01): an outage that starts
+    # after a successful probe can read healthy for up to an hour. A FAILED probe is cached for the shorter failure TTL so /health/ai
     # recovers soon after an outage ends (a 429/error isn't billed, so probing
     # a down provider more often costs nothing); 0 re-probes on every call.
-    health_generation_probe_ttl_seconds: int = Field(default=900, ge=0)
+    health_generation_probe_ttl_seconds: int = Field(default=3600, ge=0)
     health_generation_probe_failure_ttl_seconds: int = Field(default=60, ge=0)
     # 16, not 1-5: on a thinking model (gemini-3.1-flash-lite) thinking tokens
     # count against maxOutputTokens, so a 4-token cap can be spent before any

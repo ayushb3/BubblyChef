@@ -95,7 +95,7 @@ class TestGenerationProbe:
         gemini = FakeProvider("gemini/test", fail_kind="quota_exhausted")
         manager = AIManager(providers=[gemini])
 
-        status = await manager.health_check(generation_probe_ttl_seconds=900)
+        status = await manager.health_check(generation_probe_ttl_seconds=3600)
 
         assert status["healthy"] is False
         probe = status["generation_probe"]
@@ -112,7 +112,7 @@ class TestGenerationProbe:
         manager = AIManager(providers=[gemini])
 
         await manager.health_check(
-            generation_probe_ttl_seconds=900, generation_probe_max_output_tokens=3
+            generation_probe_ttl_seconds=3600, generation_probe_max_output_tokens=3
         )
 
         assert len(gemini.complete_calls) == 1
@@ -125,7 +125,7 @@ class TestGenerationProbe:
         ollama = FakeProvider("ollama/test")
         manager = AIManager(providers=[gemini, ollama])
 
-        status = await manager.health_check(generation_probe_ttl_seconds=900)
+        status = await manager.health_check(generation_probe_ttl_seconds=3600)
 
         probe = status["generation_probe"]
         assert status["healthy"] is True
@@ -143,7 +143,7 @@ class TestGenerationProbe:
         ollama = FakeProvider("ollama/test")
         manager = AIManager(providers=[gemini, ollama])
 
-        status = await manager.health_check(generation_probe_ttl_seconds=900)
+        status = await manager.health_check(generation_probe_ttl_seconds=3600)
 
         probe = status["generation_probe"]
         assert status["healthy"] is True
@@ -161,7 +161,7 @@ class TestGenerationProbe:
         ollama = FakeProvider("ollama/test", fail_kind="network")
         manager = AIManager(providers=[gemini, ollama])
 
-        status = await manager.health_check(generation_probe_ttl_seconds=900)
+        status = await manager.health_check(generation_probe_ttl_seconds=3600)
 
         assert status["healthy"] is False
         assert status["generation_probe"]["failure_kind"] == "quota_exhausted"
@@ -173,7 +173,7 @@ class TestGenerationProbe:
     ) -> None:
         manager = AIManager(providers=[])
 
-        status = await manager.health_check(generation_probe_ttl_seconds=900)
+        status = await manager.health_check(generation_probe_ttl_seconds=3600)
 
         assert status["healthy"] is False
         assert status["generation_probe"]["healthy"] is False
@@ -188,7 +188,7 @@ class TestEmptyCappedReply:
         gemini = FakeProvider("gemini/test", empty_reply=True)
         manager = AIManager(providers=[gemini])
 
-        status = await manager.health_check(generation_probe_ttl_seconds=900)
+        status = await manager.health_check(generation_probe_ttl_seconds=3600)
 
         assert status["healthy"] is True
         probe = status["generation_probe"]
@@ -205,7 +205,7 @@ class TestEmptyCappedReply:
         ollama = FakeProvider("ollama/test")
         manager = AIManager(providers=[gemini, ollama])
 
-        status = await manager.health_check(generation_probe_ttl_seconds=900)
+        status = await manager.health_check(generation_probe_ttl_seconds=3600)
 
         assert status["generation_probe"]["provider"] == "gemini/test"
         assert status["generation_probe"]["fallback"] is False
@@ -249,7 +249,7 @@ class TestProbeDoesNotTouchCurrentProvider:
         manager = AIManager(providers=[gemini, ollama])
         assert manager.current_provider is None
 
-        status = await manager.health_check(generation_probe_ttl_seconds=900)
+        status = await manager.health_check(generation_probe_ttl_seconds=3600)
 
         assert status["generation_probe"]["provider"] == "ollama/test"
         assert manager.current_provider is None
@@ -265,9 +265,18 @@ class TestProbeDoesNotTouchCurrentProvider:
         assert manager.current_provider is gemini
 
         gemini.fail_kind = "quota_exhausted"
-        await manager.health_check(generation_probe_ttl_seconds=900)
+        await manager.health_check(generation_probe_ttl_seconds=3600)
 
         assert manager.current_provider is gemini
+
+
+class TestApprovedDefaults:
+    def test_success_ttl_is_hourly_failure_ttl_is_a_minute_cap_is_16(self) -> None:
+        # Approved by Ayush 2026-10-01: success 3600 s / failure 60 s / 16 tokens.
+        fields = type(settings).model_fields
+        assert fields["health_generation_probe_ttl_seconds"].default == 3600
+        assert fields["health_generation_probe_failure_ttl_seconds"].default == 60
+        assert fields["health_generation_probe_max_output_tokens"].default == 16
 
 
 class TestDefaultProbeCap:
@@ -276,7 +285,7 @@ class TestDefaultProbeCap:
         gemini = FakeProvider("gemini/test")
         manager = AIManager(providers=[gemini])
 
-        await manager.health_check(generation_probe_ttl_seconds=900)
+        await manager.health_check(generation_probe_ttl_seconds=3600)
 
         assert gemini.complete_calls[0]["max_output_tokens"] == 16
         assert settings.health_generation_probe_max_output_tokens == 16
@@ -290,9 +299,9 @@ class TestProbeCache:
         gemini = FakeProvider("gemini/test")
         manager = AIManager(providers=[gemini])
 
-        first = await manager.health_check(generation_probe_ttl_seconds=900)
-        clock.now += 899
-        second = await manager.health_check(generation_probe_ttl_seconds=900)
+        first = await manager.health_check(generation_probe_ttl_seconds=3600)
+        clock.now += 3599
+        second = await manager.health_check(generation_probe_ttl_seconds=3600)
 
         assert len(gemini.complete_calls) == 1
         assert first["generation_probe"]["cached"] is False
@@ -306,9 +315,9 @@ class TestProbeCache:
         gemini = FakeProvider("gemini/test", fail_kind="quota_exhausted")
         manager = AIManager(providers=[gemini])
 
-        await manager.health_check(generation_probe_ttl_seconds=900)
+        await manager.health_check(generation_probe_ttl_seconds=3600)
         clock.now += 59
-        await manager.health_check(generation_probe_ttl_seconds=900)
+        await manager.health_check(generation_probe_ttl_seconds=3600)
 
         assert len(gemini.complete_calls) == 1
 
@@ -319,27 +328,27 @@ class TestProbeCache:
         gemini = FakeProvider("gemini/test", fail_kind="quota_exhausted")
         manager = AIManager(providers=[gemini])
 
-        await manager.health_check(generation_probe_ttl_seconds=900)
+        await manager.health_check(generation_probe_ttl_seconds=3600)
         clock.now += 61
         gemini.fail_kind = None  # the cap was lifted
-        status = await manager.health_check(generation_probe_ttl_seconds=900)
+        status = await manager.health_check(generation_probe_ttl_seconds=3600)
 
         assert len(gemini.complete_calls) == 2
         assert status["healthy"] is True
         assert status["generation_probe"]["cached"] is False
 
     @pytest.mark.asyncio
-    async def test_a_successful_probe_is_not_repeated_until_900s(self, clock: FakeClock) -> None:
+    async def test_a_successful_probe_is_not_repeated_until_3600s(self, clock: FakeClock) -> None:
         gemini = FakeProvider("gemini/test")
         manager = AIManager(providers=[gemini])
 
-        await manager.health_check(generation_probe_ttl_seconds=900)
+        await manager.health_check(generation_probe_ttl_seconds=3600)
         clock.now += 61  # past the failure TTL, which must not apply to a success
-        await manager.health_check(generation_probe_ttl_seconds=900)
+        await manager.health_check(generation_probe_ttl_seconds=3600)
         assert len(gemini.complete_calls) == 1
 
-        clock.now += 840  # 901s since the probe
-        status = await manager.health_check(generation_probe_ttl_seconds=900)
+        clock.now += 3540  # 3601s since the probe
+        status = await manager.health_check(generation_probe_ttl_seconds=3600)
         assert len(gemini.complete_calls) == 2
         assert status["generation_probe"]["cached"] is False
 
@@ -352,7 +361,7 @@ class TestProbeCache:
 
         for _ in range(3):
             await manager.health_check(
-                generation_probe_ttl_seconds=900, generation_probe_failure_ttl_seconds=0
+                generation_probe_ttl_seconds=3600, generation_probe_failure_ttl_seconds=0
             )
 
         assert len(gemini.complete_calls) == 3
@@ -366,7 +375,7 @@ class TestProbeCache:
 
         for _ in range(3):
             await manager.health_check(
-                generation_probe_ttl_seconds=900, generation_probe_failure_ttl_seconds=0
+                generation_probe_ttl_seconds=3600, generation_probe_failure_ttl_seconds=0
             )
 
         assert len(gemini.complete_calls) == 1
@@ -381,7 +390,7 @@ class TestSingleFlight:
         manager = AIManager(providers=[gemini])
 
         results = await asyncio.gather(
-            *[manager.health_check(generation_probe_ttl_seconds=900) for _ in range(10)]
+            *[manager.health_check(generation_probe_ttl_seconds=3600) for _ in range(10)]
         )
 
         assert len(gemini.complete_calls) == 1
@@ -397,7 +406,7 @@ class TestSingleFlight:
         results = await asyncio.gather(
             *[
                 manager.health_check(
-                    generation_probe_ttl_seconds=900, generation_probe_failure_ttl_seconds=0
+                    generation_probe_ttl_seconds=3600, generation_probe_failure_ttl_seconds=0
                 )
                 for _ in range(10)
             ]
@@ -490,7 +499,7 @@ class TestHealthRoutes:
 
         with (
             patch("bubbly_chef.api.deps.get_ai_manager", return_value=manager),
-            patch.object(settings, "health_generation_probe_ttl_seconds", 900),
+            patch.object(settings, "health_generation_probe_ttl_seconds", 3600),
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
