@@ -1,7 +1,8 @@
 /**
  * Tests for `KitchenScene`'s `theme` prop (issue #523): decorations render
- * identically across themes, only the background differs, and an unset
- * `theme` prop defaults to `pastel` (pre-#523 callers keep working).
+ * identically across themes, only the wall's palette differs, and an unset
+ * `theme` prop defaults to `pastel` (pre-#523 callers keep working). On the
+ * pixel wall (#748) a theme recolours the wall palette and moves no decoration.
  */
 import React from 'react'
 import { render, screen } from '@testing-library/react'
@@ -15,12 +16,12 @@ const unlocked = oneEntryPerSlot.map((d) => ({ id: d.id, slot: d.slot }))
 
 describe('KitchenScene — theme prop (#523)', () => {
   it('defaults to pastel when no theme prop is passed', () => {
-    render(<KitchenScene unlocked={[]} balance={0} />)
+    render(<KitchenScene unlocked={[]} onOpenPlace={jest.fn()} />)
     expect(screen.getByTestId('kitchen-scene')).toHaveAttribute('data-kitchen-theme', 'pastel')
   })
 
   it.each(KITCHEN_THEMES)('renders every slot filled the same way under $key', (theme) => {
-    render(<KitchenScene unlocked={unlocked} balance={0} theme={theme} />)
+    render(<KitchenScene unlocked={unlocked} onOpenPlace={jest.fn()} theme={theme} />)
 
     expect(screen.getByTestId('kitchen-scene')).toHaveAttribute('data-kitchen-theme', theme.key)
     for (const slot of SLOTS) {
@@ -37,13 +38,13 @@ describe('KitchenScene — theme prop (#523)', () => {
     const nightKitchen = KITCHEN_THEMES.find((t) => t.key === 'night_kitchen')!
 
     const { unmount, container: containerA } = render(
-      <KitchenScene unlocked={unlocked} balance={0} theme={pastel} />,
+      <KitchenScene unlocked={unlocked} onOpenPlace={jest.fn()} theme={pastel} />,
     )
     const namesA = screen.getAllByRole('img').map((el) => el.getAttribute('aria-label'))
     unmount()
 
     const { container: containerB } = render(
-      <KitchenScene unlocked={unlocked} balance={0} theme={nightKitchen} />,
+      <KitchenScene unlocked={unlocked} onOpenPlace={jest.fn()} theme={nightKitchen} />,
     )
     const namesB = screen.getAllByRole('img').map((el) => el.getAttribute('aria-label'))
 
@@ -54,5 +55,42 @@ describe('KitchenScene — theme prop (#523)', () => {
     expect(pastel.background).not.toEqual(nightKitchen.background)
     void containerA
     void containerB
+  })
+
+  it('recolours the wall through its palette and moves no decoration (#748)', () => {
+    const pastel = KITCHEN_THEMES.find((t) => t.key === 'pastel')!
+    const night = KITCHEN_THEMES.find((t) => t.key === 'night_kitchen')!
+
+    const { unmount } = render(<KitchenScene unlocked={unlocked} onOpenPlace={jest.fn()} theme={pastel} />)
+    const wallA = screen.getByTestId('kitchen-wall')
+    const baseA = wallA.style.getPropertyValue('--wall-base')
+    const boxesA = SLOTS.map((s) => {
+      const el = screen.getByTestId(`kitchen-slot-${s.key}`)
+      return [el.style.left, el.style.top, el.style.width, el.style.height]
+    })
+    unmount()
+
+    render(<KitchenScene unlocked={unlocked} onOpenPlace={jest.fn()} theme={night} />)
+    const wallB = screen.getByTestId('kitchen-wall')
+    const boxesB = SLOTS.map((s) => {
+      const el = screen.getByTestId(`kitchen-slot-${s.key}`)
+      return [el.style.left, el.style.top, el.style.width, el.style.height]
+    })
+
+    expect(wallB.style.getPropertyValue('--wall-base')).toBe(night.wall.base)
+    expect(wallB.style.getPropertyValue('--wall-base')).not.toBe(baseA)
+    expect(boxesB).toEqual(boxesA)
+  })
+
+  it.each(KITCHEN_THEMES)('gives $key a complete wall palette', (theme) => {
+    const keys = ['base', 'stripe', 'trim', 'ink', 'soft', 'appliance', 'applianceDark', 'floor', 'floorTile', 'glass']
+    expect(Object.keys(theme.wall).sort()).toEqual([...keys].sort())
+    for (const k of keys) expect((theme.wall as unknown as Record<string, string>)[k]).toBeTruthy()
+  })
+
+  it('keeps the default wall on the app theme variables, so Sakura/Mint/... still tint it', () => {
+    const pastel = KITCHEN_THEMES.find((t) => t.key === 'pastel')!
+    expect(pastel.wall.base).toBe('var(--color-border)')
+    expect(pastel.wall.ink).toBe('var(--color-text)')
   })
 })

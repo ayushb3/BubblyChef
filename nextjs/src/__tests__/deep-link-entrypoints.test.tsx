@@ -120,22 +120,23 @@ describe('dashboard hero ignores already-expired items', () => {
   })
 })
 
-describe('dashboard Plan dinner card (issue #651)', () => {
+// The Plan dinner card of the old quick-action row (issue #651) became the
+// chalkboard on the kitchen wall's door (#748); the other three cards went.
+describe('kitchen wall Plan dinner chalkboard (issue #651, #748)', () => {
   beforeEach(() => {
     global.fetch = jest.fn(async () =>
       jsonResponse({ items: [], total_count: 0, count: 0 }),
     ) as unknown as typeof fetch
   })
 
-  it('links to the plan-dinner seed, aria-labelled, alongside the other three cards', async () => {
+  it('links to the plan-dinner seed, aria-labelled, and the quick-action row is gone', async () => {
     renderHero()
 
     const planLink = await screen.findByRole('link', { name: 'Plan dinner' })
     expect(planLink.getAttribute('href')).toBe('/chat?plan=dinner')
 
-    expect(screen.getByRole('link', { name: /use soon/i })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /scan/i })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /ask/i })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /use soon/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /^scan$/i })).not.toBeInTheDocument()
   })
 })
 
