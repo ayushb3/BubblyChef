@@ -107,9 +107,9 @@ export async function resolvePantryItem(
 /**
  * Fields the edit modal can change on a single pantry item. Every field is
  * optional — `PUT /api/pantry/[id]` only touches the keys that are present.
- * Kitchen location is deliberately not among them (issue #397): the edit
- * modal no longer shows it, and omitting the key leaves the stored value
- * untouched.
+ * `location` (issue #749, the edit sheet's Place field) is one of the four
+ * stored values (`fridge` / `freezer` / `pantry` / `counter`); omitting it
+ * leaves the stored value untouched.
  */
 export interface UpdatePantryItemInput {
   name?: string
@@ -117,6 +117,7 @@ export interface UpdatePantryItemInput {
   unit?: string
   category?: string
   expiry_date?: string | null
+  location?: string
 }
 
 const NETWORK_ERROR_COPY = 'Network problem — check your connection and try again.'

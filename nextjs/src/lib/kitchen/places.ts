@@ -269,3 +269,176 @@ export function kitchenStock(
     }),
   ) as KitchenStock
 }
+
+// ─── The storage sheet (issue #749) ──────────────────────────────────────────
+
+/** The slice of a pantry row the storage sheet reads. */
+export interface StoredItem extends PlaceItem {
+  id: string
+  name: string
+  category?: string | null
+  quantity: number
+  unit: string
+}
+
+/** The stored `pantry_items.location` a place saves: what "Add to the Freezer" writes. */
+export function placeLocation(key: PlaceKey): PlaceDef['location'] {
+  return placeDef(key).location
+}
+
+/** The rows stored in one place. */
+export function itemsInPlace<T extends PlaceItem>(items: readonly T[], key: PlaceKey): T[] {
+  return items.filter((item) => placeForLocation(item.location) === key)
+}
+
+/** The Use Soon view's window: expired, or expiring within this many days. */
+const USE_SOON_DAYS = 3
+
+/** The most the "Use first" row shows; the rest stay in their category group. */
+export const USE_FIRST_LIMIT = 6
+
+function daysOf(item: PlaceItem, today: string): number | null {
+  return daysUntilExpiryOn(item.expiry_date ?? null, today)
+}
+
+/** Soonest first (expired most of all), no date last, then by name. */
+function bySoonest<T extends StoredItem>(today: string) {
+  return (a: T, b: T): number => {
+    const da = daysOf(a, today)
+    const db = daysOf(b, today)
+    if (da !== db) {
+      if (da === null) return 1
+      if (db === null) return -1
+      return da - db
+    }
+    return a.name.localeCompare(b.name)
+  }
+}
+
+/** Sorted soonest first, as the list and the groups show them. Does not mutate. */
+export function sortSoonestFirst<T extends StoredItem>(
+  items: readonly T[],
+  today: string = localDateString(),
+): T[] {
+  return [...items].sort(bySoonest<T>(today))
+}
+
+/**
+ * The items that need attention, by the existing Use Soon rules (`needsAttention`:
+ * expired, or expiring within 3 days), soonest first and capped at `limit`.
+ */
+export function pickUseFirst<T extends StoredItem>(
+  items: readonly T[],
+  today: string = localDateString(),
+  limit: number = USE_FIRST_LIMIT,
+): T[] {
+  return items
+    .filter((item) => {
+      const days = daysOf(item, today)
+      return days !== null && days <= USE_SOON_DAYS
+    })
+    .sort(bySoonest<T>(today))
+    .slice(0, limit)
+}
+
+// Heading order and wording. Several stored categories share a heading (meat and
+// seafood are "Meat and fish"); anything unknown is titled from its own key and
+// sorts after the known ones, with "Other" last.
+const CATEGORY_HEADINGS: ReadonlyArray<readonly [label: string, keys: readonly string[]]> = [
+  ['Produce', ['produce']],
+  ['Dairy and eggs', ['dairy']],
+  ['Meat and fish', ['meat', 'seafood']],
+  ['Frozen', ['frozen']],
+  ['Dry goods', ['dry_goods', 'pantry', 'grains', 'bakery']],
+  ['Cans', ['canned']],
+  ['Jars and sauces', ['condiments']],
+  ['Snacks', ['snacks']],
+  ['Drinks', ['beverages']],
+]
+
+const HEADING_BY_KEY = new Map<string, string>(
+  CATEGORY_HEADINGS.flatMap(([label, keys]) => keys.map((k) => [k, label] as const)),
+)
+const HEADING_ORDER = CATEGORY_HEADINGS.map(([label]) => label)
+
+/** The heading a stored food category sits under: "Produce", "Dairy and eggs", ... */
+export function categoryHeading(category: string | null | undefined): string {
+  const key = (category ?? '').trim().toLowerCase()
+  if (!key || key === 'other') return 'Other'
+  const known = HEADING_BY_KEY.get(key)
+  if (known) return known
+  const words = key.replace(/[_-]+/g, ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+export interface CategoryGroup<T> {
+  /** The heading, which is also the group's stable key. */
+  label: string
+  items: T[]
+}
+
+/** Items under food-category headings in a fixed order, soonest first inside each. */
+export function categoryGroups<T extends StoredItem>(
+  items: readonly T[],
+  today: string = localDateString(),
+): CategoryGroup<T>[] {
+  const groups = new Map<string, T[]>()
+  for (const item of sortSoonestFirst(items, today)) {
+    const label = categoryHeading(item.category)
+    const list = groups.get(label)
+    if (list) list.push(item)
+    else groups.set(label, [item])
+  }
+  const rank = (label: string): number => {
+    if (label === 'Other') return HEADING_ORDER.length + 1
+    const i = HEADING_ORDER.indexOf(label)
+    return i === -1 ? HEADING_ORDER.length : i
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
+    .map(([label, list]) => ({ label, items: list }))
+}
+
+export interface PlaceSearchGroup<T> {
+  key: PlaceKey
+  label: string
+  items: T[]
+}
+
+export interface PlaceSearchResult<T> {
+  /** Matches across every place. */
+  total: number
+  /** All four places in wall order; a place with no match stays, empty. */
+  groups: PlaceSearchGroup<T>[]
+}
+
+function normalizeQuery(query: string): string {
+  return query.trim().toLowerCase()
+}
+
+/** Where `query` sits inside `name` (`[start, end)`), or `null`: for the highlight. */
+export function matchRange(name: string, query: string): [number, number] | null {
+  const q = normalizeQuery(query)
+  if (!q) return null
+  const start = name.toLowerCase().indexOf(q)
+  return start === -1 ? null : [start, start + q.length]
+}
+
+/**
+ * Search every place at once, by name. A blank query matches nothing. Each
+ * place's matches are soonest first, so what needs using still leads.
+ */
+export function searchPlaces<T extends StoredItem>(
+  items: readonly T[],
+  query: string,
+  today: string = localDateString(),
+): PlaceSearchResult<T> {
+  const q = normalizeQuery(query)
+  const hits = q ? items.filter((item) => item.name.toLowerCase().includes(q)) : []
+  const groups = PLACES.map((p) => ({
+    key: p.key,
+    label: p.label,
+    items: sortSoonestFirst(itemsInPlace(hits, p.key), today),
+  }))
+  return { total: hits.length, groups }
+}

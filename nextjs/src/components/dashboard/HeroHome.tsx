@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Lightbulb } from '@phosphor-icons/react/dist/ssr'
 import BubblesMascot from '@/components/ui/BubblesMascot'
@@ -11,7 +12,14 @@ import { titleCase } from '@/lib/format'
 import { useMotionConfig } from '@/lib/motion'
 import { cookThisHref, planDinnerHref, tipChatHref } from '@/lib/chat-seed'
 import { kitchenEyebrow } from '@/lib/kitchen/eyebrow'
-import { kitchenStock, summarizePlaces, type KitchenStock, type PlaceSummaries } from '@/lib/kitchen/places'
+import {
+  PLACE_KEYS,
+  kitchenStock,
+  summarizePlaces,
+  type KitchenStock,
+  type PlaceKey,
+  type PlaceSummaries,
+} from '@/lib/kitchen/places'
 import { fetchDashboardDaily } from '@/lib/api/dashboard'
 import type { DashboardTip, DashboardSuggestion } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
@@ -19,6 +27,12 @@ import { estimatedExpirySuffix } from '@/lib/pantry-helpers'
 import { useDecorations } from '@/lib/api/kitchen'
 import { useBubbles } from '@/lib/api/bubbles'
 import KitchenScene from '@/components/kitchen/KitchenScene'
+import StorageSheet, { isStorageView, type StorageView } from '@/components/kitchen/StorageSheet'
+import EditItemModal from '@/components/pantry/AddItemModal'
+import PantryAddSheet from '@/components/pantry/PantryAddSheet'
+import PixelBubbles from '@/components/kitchen/PixelBubbles'
+import { sceneLabel } from '@/lib/kitchen/bubbles-spot'
+import { useBubblesSpot } from '@/hooks/useBubblesSpot'
 import KitchenHeader from '@/components/kitchen/KitchenHeader'
 import UnlockOffer from '@/components/kitchen/UnlockOffer'
 import KitchenThemePicker from '@/components/kitchen/KitchenThemePicker'
@@ -37,6 +51,8 @@ interface HomeData {
   places: PlaceSummaries | null
   /** What each place draws (category sprites and up to 3 wilting items); `null` like `places`. */
   stock: KitchenStock | null
+  /** Every pantry row, for the storage sheet; `null` until the pantry loads, and if it fails to. */
+  items: EnrichedPantryItem[] | null
 }
 
 // Client-side fallback only — used when `GET /v1/dashboard/daily` (#225, #168)
@@ -109,7 +125,14 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     hasUnusedExpired: false,
     places: null,
     stock: null,
+    items: null,
   })
+
+  // The pantry, dashboard and expiring reads. `reload` runs it again behind an
+  // open sheet (an edit or an add changed the rows): the skeletons are the first
+  // load's only, so the home does not flash while the counts catch up.
+  const [reloadTick, setReloadTick] = useState(0)
+  const reload = useCallback(() => setReloadTick((n) => n + 1), [])
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -167,6 +190,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
           // names only rather than claiming four empty places.
           places: pantryRes.ok ? summarizePlaces(allItems) : null,
           stock: pantryRes.ok ? kitchenStock(allItems) : null,
+          items: pantryRes.ok ? allItems : null,
         })
       } catch {
         // silent
@@ -175,7 +199,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
       }
     }
     fetchAll()
-  }, [])
+  }, [reloadTick])
 
   // The header's weekday / part-of-day eyebrow and the fallback tip are derived
   // from the *client's* clock, which can disagree with the server's. We follow
@@ -207,11 +231,17 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     hasUnusedExpired,
     places,
     stock,
+    items,
   } = data
 
   // Kitchen scene (#521): `decorations` rows use `name`/`decoration_type`;
   // KitchenScene expects `id`/`slot`. The balance is `null` until `/api/bubbles`
   // answers, so the header hides its counter rather than flashing a `0`.
+  // The pixel Bubbles (#752): the door while a scan or put-away is open (nothing
+  // on home opens one yet: the put-away sheet wires `scanOpen`), the stove while
+  // a cook is on record in storage, the fridge when food is going off, else the
+  // stove.
+  const { spot: bubblesSpot, cooking } = useBubblesSpot({ places })
   const { data: decorationsData, isLoading: decorationsLoading } = useDecorations()
   const { data: bubblesData } = useBubbles()
   const balance = bubblesData?.balance ?? null
@@ -300,9 +330,42 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     return () => window.removeEventListener('resize', measure)
   }, [loading, tipExpanded, tip])
 
-  // Tapping a place opens its storage sheet (issue #749). Until that lands it
-  // goes to the existing pantry page.
-  const openPlace = () => router.push('/pantry')
+  // Storage sheet (issue #749): tapping a place opens it on that place. The
+  // `?place=fridge&view=scene|list` deep link opens it directly, on load or when
+  // the URL changes under a mounted home.
+  const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
+  const [sheet, setSheet] = useState<{ place: PlaceKey; view: StorageView } | null>(null)
+  const [editItem, setEditItem] = useState<EnrichedPantryItem | null>(null)
+  const [addPlace, setAddPlace] = useState<PlaceKey | null>(null)
+  const linkedPlace = searchParams.get('place')
+  const linkedView = searchParams.get('view')
+  useEffect(() => {
+    if (!PLACE_KEYS.includes(linkedPlace as PlaceKey)) return
+    // The URL is an external system being synced into React, which is what an
+    // effect is for. It cannot be derived state: the user closes the sheet, and
+    // once opened its visibility belongs to the component, not the param.
+    setSheet({
+      place: linkedPlace as PlaceKey,
+      view: isStorageView(linkedView) ? linkedView : 'scene',
+    })
+  }, [linkedPlace, linkedView])
+
+  const closeSheet = () => {
+    setSheet(null)
+    // A deep-linked visit must not reopen on refresh.
+    if (linkedPlace || linkedView) router.replace('/', { scroll: false })
+  }
+
+  // The pantry changed behind the sheet: re-read the home's own copy, and mark
+  // the pantry page's cache and the Bubbles balance (an add earns) stale.
+  const pantryChanged = () => {
+    reload()
+    queryClient.invalidateQueries({ queryKey: ['pantry'] })
+    queryClient.invalidateQueries({ queryKey: ['bubbles'] })
+  }
+
+  const pantryStatus = loading ? 'loading' : items ? 'ready' : 'error'
 
   const mascotState = hasUnusedExpired ? 'worried' : !suggestion && urgentItem ? 'surprised' : 'happy'
 
@@ -320,8 +383,10 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         theme={kitchenTheme}
         places={places}
         stock={stock}
-        onOpenPlace={openPlace}
+        onOpenPlace={(place) => setSheet({ place, view: 'scene' })}
         planDinnerHref={planDinnerHref()}
+        bubblesLayer={<PixelBubbles spot={bubblesSpot} cooking={cooking} />}
+        sceneLabel={sceneLabel(bubblesSpot, cooking)}
       />
 
       {/* Under the wall: the pantry count on the left, the streak (#524) and the
@@ -503,6 +568,39 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
       </FadeInView>
 
       </div>
+
+      {/* The storage sheet (#749). It steps aside, keeping its search text, while
+          the edit or add sheet is on top: two sheets cannot both hold focus. */}
+      <StorageSheet
+        open={sheet !== null}
+        suspended={editItem !== null || addPlace !== null}
+        place={sheet?.place ?? 'fridge'}
+        view={sheet?.view ?? 'scene'}
+        items={items}
+        status={pantryStatus}
+        palette={kitchenTheme.wall}
+        onPlaceChange={(place) => setSheet((s) => (s ? { ...s, place } : s))}
+        onViewChange={(view) => setSheet((s) => (s ? { ...s, view } : s))}
+        onClose={closeSheet}
+        onEdit={setEditItem}
+        onAdd={setAddPlace}
+        onRetry={reload}
+      />
+      <EditItemModal
+        isOpen={editItem !== null}
+        onClose={() => {
+          setEditItem(null)
+          pantryChanged()
+        }}
+        editItem={editItem}
+      />
+      <PantryAddSheet
+        isOpen={addPlace !== null}
+        onClose={() => setAddPlace(null)}
+        initialTab="type"
+        place={addPlace ?? undefined}
+        onItemsAdded={pantryChanged}
+      />
     </div>
   )
 }

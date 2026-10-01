@@ -66,6 +66,8 @@ export interface KitchenSceneProps {
   /** Hooks for issues #751 and #752; see `KitchenWall`. A given `spritesLayer` wins over `stock`. */
   spritesLayer?: ReactNode
   bubblesLayer?: ReactNode
+  /** The scene's accessible label; describes where Bubbles is. See `KitchenWall`. */
+  sceneLabel?: string
 }
 
 const CATALOG_BY_ID = new Map(CATALOG.map((d) => [d.id, d]))
@@ -87,6 +89,7 @@ export default function KitchenScene({
   stock = null,
   spritesLayer,
   bubblesLayer,
+  sceneLabel,
 }: KitchenSceneProps) {
   // The sprites and the wilting tags, positioned on the wall (#751). `null`
   // stock (loading, or the pantry failed) draws none: never a made-up empty.
@@ -120,6 +123,7 @@ export default function KitchenScene({
         spritesLayer={spritesLayer ?? (placed ? <KitchenSprites sprites={placed.sprites} /> : undefined)}
         tagsLayer={placed ? <WiltTags tags={placed.tags} /> : undefined}
         bubblesLayer={bubblesLayer}
+        sceneLabel={sceneLabel}
       >
         {SLOTS.map((slot) => {
           const decoration = decorationBySlot.get(slot.key)

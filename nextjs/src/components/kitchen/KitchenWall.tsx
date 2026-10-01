@@ -25,9 +25,15 @@
  *    it is given, the board's static stock (`wall-art.ts` layers) is not drawn;
  *    without it, a place that has items shows that static stock.
  *  - `tagsLayer`: HTML over the room for the wilting items' pixel-lettered tags
- *    (issue #751, `sprites/WiltTags`). It takes no taps.
- *  - `bubblesLayer`: SVG nodes in wall units, painted last, over everything
- *    (the pixel Bubbles and the stove's steam, issue #752).
+ *    (issue #751, `sprites/WiltTags`). Painted above Bubbles, below the place
+ *    buttons, and it takes no taps.
+ *  - `bubblesLayer`: SVG nodes in wall units (the pixel Bubbles and the stove's
+ *    steam, `PixelBubbles`, issue #752). Painted in a second SVG of its own, on
+ *    the same 96 x 80 grid, over the decorations (Bubbles walks in front of the
+ *    table, not behind it) and under every place's tag and button, so it can
+ *    never cover a label, and it takes no taps (`pointer-events-none`). Bubbles
+ *    stays below row 58 and the tags end at row 55.2, so they never meet.
+ *    `bubbles-spot.ts` and `kitchen-bubbles-spot.test.ts` hold the guarantee.
  *  - `PLACE_BOXES` anchors each place in wall units.
  *
  * Places with no data yet (`places === null`: loading, or the pantry failed to
@@ -157,8 +163,14 @@ export interface KitchenWallProps {
   spritesLayer?: ReactNode
   /** Issue #751: the wilting items' tags, HTML in percent of the wall. Takes no taps. */
   tagsLayer?: ReactNode
-  /** Issue #752: pixel Bubbles and the stove's steam, in wall units. */
+  /** Issue #752: pixel Bubbles and the stove's steam, in wall units, over the decorations. */
   bubblesLayer?: ReactNode
+  /**
+   * What the scene looks like, for assistive tech (issue #752: where Bubbles is,
+   * since the sprite is decorative). Makes the wall a labelled group around its
+   * buttons, which stay individually named and reachable.
+   */
+  sceneLabel?: string
   /** The decoration slots. Absolutely positioned, in percent of the wall. */
   children?: ReactNode
 }
@@ -171,6 +183,7 @@ export default function KitchenWall({
   spritesLayer,
   tagsLayer,
   bubblesLayer,
+  sceneLabel,
   children,
 }: KitchenWallProps) {
   const vars = {
@@ -210,6 +223,8 @@ export default function KitchenWall({
       className="@container relative aspect-[96/80] w-full overflow-hidden"
       style={vars}
       data-testid="kitchen-wall"
+      role={sceneLabel ? 'group' : undefined}
+      aria-label={sceneLabel}
     >
       <svg
         viewBox={`0 0 ${WALL_W} ${WALL_H}`}
@@ -223,11 +238,26 @@ export default function KitchenWall({
           visible.has(p.layer) ? <path key={i} d={p.d} style={{ fill: p.fill }} /> : null,
         )}
         {spritesLayer}
-        {bubblesLayer}
       </svg>
 
       {/* Decorations sit under the places, so a tag is never covered. */}
       {children}
+
+      {/* Bubbles (#752): over the decorations, under the places. */}
+      {bubblesLayer && (
+        <svg
+          viewBox={`0 0 ${WALL_W} ${WALL_H}`}
+          preserveAspectRatio="xMidYMid slice"
+          shapeRendering="crispEdges"
+          aria-hidden="true"
+          focusable="false"
+          className="pointer-events-none absolute inset-0 block h-full w-full"
+        >
+          {bubblesLayer}
+        </svg>
+      )}
+
+      {/* The wilting tags (#751): over Bubbles, so a tag is never covered. */}
       {tagsLayer}
 
       {PLACES.map((p) => {
