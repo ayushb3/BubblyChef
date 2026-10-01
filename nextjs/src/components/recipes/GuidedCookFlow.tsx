@@ -17,6 +17,12 @@
  *  - Step ⏱ chips (issue #495 / Spec B.3) — real, functional timers replacing
  *    the old non-functional placeholder.
  *
+ * Issue #825: the step cards, progress bar, timer start, Ask Bubbles entry and
+ * Back / Next footer wear the meal cook's pixel language (`PixelPanel`,
+ * `SpringButton` keycaps, `HandsChip`, the solid-edge tag and the pastel bar), so
+ * the two cook flows read as one. Pure restyle: step navigation, timers, Ask
+ * Bubbles and the finish / deduction path are untouched.
+ *
  * Ask Bubbles context (issues #410, #814):
  *  The overlay sends the step-framed question over the real chat stream, plus
  *  `context.cooking_recipe` (this recipe's ingredient lines) and one
@@ -40,6 +46,8 @@ import StepTimerChips, { StructuredStepTimerChip } from '@/components/timers/Ste
 import { useRaiseTimerDock, useTimerDockRaised } from '@/components/timers/TimerDockLayer'
 import { useCookingTimers } from '@/lib/useCookingTimers'
 import AskBubblesOverlay from '@/components/cook/AskBubblesOverlay'
+import HandsChip from '@/components/meal/HandsChip'
+import { DISH_BG, SOLID_EDGE } from '@/components/meal/dish-style'
 import type { Recipe } from './RecipePage'
 import type { Step } from '@/types/recipes'
 
@@ -140,7 +148,7 @@ function PrepIngredientList({ recipe }: { recipe: Recipe }) {
         return (
           <li key={i} className="font-sans flex items-center gap-2 text-sm" style={{ color: 'var(--color-text)' }}>
             <span
-              className="flex-shrink-0 w-2 h-2 rounded-full"
+              className="flex-shrink-0 w-2 h-2 border-[1.5px] border-[color:var(--color-text)]"
               style={{ background: 'var(--color-primary)' }}
             />
             {label}
@@ -156,7 +164,7 @@ function YoullNeedBlock({ uses }: { uses: string[] }) {
   if (uses.length === 0) return null
   return (
     <div
-      className="font-sans rounded-2xl px-4 py-3 mt-4"
+      className="font-sans rounded-[10px] border-2 border-[color:var(--color-border)] px-4 py-3 mt-4"
       style={{ background: 'var(--color-bg)' }}
     >
       <p
@@ -187,20 +195,11 @@ function ProgressDots({ steps, idx }: { steps: CookStep[]; idx: number }) {
         return (
           <span
             key={s.n}
-            className="rounded-full flex items-center justify-center transition-all"
+            className={`rounded-full flex items-center justify-center border-[1.5px] border-[color:var(--color-text)] text-[10px] font-extrabold leading-none text-[color:var(--color-text)] transition-all ${
+              complete ? DISH_BG.main : current ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-surface)]'
+            }`}
             aria-label={complete ? `Step ${i + 1} complete` : current ? `Step ${i + 1} current` : `Step ${i + 1}`}
-            style={{
-              width: current ? 24 : 16,
-              height: 16,
-              fontSize: 10,
-              fontWeight: 800,
-              color: 'var(--color-on-primary)',
-              background: complete
-                ? 'var(--color-accent-dark)'
-                : current
-                ? 'var(--color-primary-dark)'
-                : 'var(--color-border)',
-            }}
+            style={{ width: current ? 24 : 16, height: 16 }}
           >
             {complete ? '✓' : ''}
           </span>
@@ -417,10 +416,10 @@ export default function GuidedCookFlow({
           transition={springs.snappy}
         >
           {/* Locked recipe card header (#269 — flow replaces card as strongest lock) */}
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center gap-2 mb-1">
             <button
               onClick={onExit}
-              className="flex items-center gap-1 text-xs font-semibold active:opacity-70 transition-opacity"
+              className="-ml-3 flex min-h-[44px] min-w-[44px] items-center justify-center gap-1 text-xs font-semibold active:opacity-70 transition-opacity"
               style={{ color: 'var(--color-muted)' }}
               aria-label="Exit guided cooking"
               data-testid="guided-cook-exit-header"
@@ -434,8 +433,7 @@ export default function GuidedCookFlow({
               {recipe.title}
             </p>
             <span
-              className="text-[10px] font-bold uppercase rounded-full px-2 py-0.5 shrink-0"
-              style={{ background: 'var(--color-surface)', color: 'var(--color-primary-dark)', border: '1px solid var(--color-border)' }}
+              className={`text-[10px] font-extrabold uppercase rounded-full px-2 py-0.5 shrink-0 text-[color:var(--color-text)] ${SOLID_EDGE} ${DISH_BG.main}`}
             >
               🍳 cooking
             </span>
@@ -462,14 +460,8 @@ export default function GuidedCookFlow({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -12 }}
                 transition={springs.snappy}
-                className="rounded-3xl px-5 py-5"
-                style={{
-                  background: 'var(--color-surface)',
-                  border: '1px solid var(--color-border)',
-                  boxShadow: 'var(--shadow-soft)',
-                }}
-                data-testid="guided-cook-prep"
               >
+               <PixelPanel as="div" contentClassName="p-5" data-testid="guided-cook-prep">
                 <p
                   className="text-xs font-bold uppercase tracking-wide mb-1"
                   style={{ color: 'var(--color-muted)' }}
@@ -488,6 +480,7 @@ export default function GuidedCookFlow({
                   </p>
                 )}
                 <PrepIngredientList recipe={recipe} />
+               </PixelPanel>
               </motion.div>
             )}
 
@@ -498,50 +491,66 @@ export default function GuidedCookFlow({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -12 }}
                 transition={springs.snappy}
-                className="rounded-3xl px-5 py-5"
-                style={{
-                  background: 'var(--color-surface)',
-                  border: '1px solid var(--color-border)',
-                  boxShadow: 'var(--shadow-soft)',
-                }}
-                data-testid={`guided-cook-step-${step.n}`}
               >
-                {/* Step header */}
-                <div className="flex items-center gap-2 mb-3">
-                  <span
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-black shrink-0"
-                    style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
-                    aria-hidden="true"
+                <PixelPanel
+                  as="div"
+                  contentClassName="p-5"
+                  data-testid={`guided-cook-step-${step.n}`}
+                >
+                  {/* Step meta, laid out like the meal cook's Now card: a solid-edge
+                      tag on the left, the hands-on / hands-off chip on the right. */}
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <span
+                      className={`inline-flex max-w-full items-center rounded-full px-2.5 py-0.5 text-xs leading-4 font-extrabold text-[color:var(--color-text)] ${SOLID_EDGE} ${DISH_BG.main}`}
+                    >
+                      <span className="truncate">
+                        Step {step.n} of {steps.length}
+                      </span>
+                    </span>
+                    {step.structured && (
+                      <HandsChip
+                        handsOn={step.structured.hands_on}
+                        fillClass={DISH_BG.main}
+                        testId="guided-cook-step-badge"
+                      />
+                    )}
+                  </div>
+
+                  {/* Step body */}
+                  <p
+                    className="text-lg font-semibold leading-relaxed text-[color:var(--color-text)]"
+                    data-testid="guided-cook-step-text"
                   >
-                    {step.n}
-                  </span>
-                  <span
-                    className="text-xs font-bold uppercase tracking-wide"
-                    style={{ color: 'var(--color-muted)' }}
-                  >
-                    Step {step.n} of {steps.length}
-                  </span>
-                  {/* Step timing (issue #648): a structured hands-off step gets a
-                      real timer chip named with its own label; a structured
-                      hands-on step shows its duration as plain text, no chip
-                      (starting a timer would just distract from a step that
-                      needs active attention). A step with no structured data
-                      yet — steps still `null`, or the ensure call is pending
-                      or failed — falls back to the regex chip (issue #495),
-                      which renders nothing when the text has no parseable
-                      duration. */}
-                  <span className="ml-auto">
+                    {step.text}
+                  </p>
+
+                  {/* Step timing (issue #648): a structured hands-on step shows its
+                      duration as plain text, no timer (starting one would just
+                      distract from a step that needs active attention). */}
+                  {step.structured?.hands_on && (
+                    <p
+                      className="mt-2 text-xs font-bold text-[color:var(--color-text)] tabular-nums"
+                      data-testid="step-duration-text"
+                    >
+                      {step.structured.duration_minutes} min
+                    </p>
+                  )}
+
+                  {/* "You'll need" block — recipe framing, not inventory diff */}
+                  <YoullNeedBlock uses={step.uses} />
+
+                  {/* Actions row, like the meal cook's: the timer start key and Ask
+                      Bubbles, always one tap away. A structured hands-off step
+                      (issue #648) gets a real timer named with its own label. A
+                      step with no structured data yet (steps still `null`, or the
+                      ensure call pending or failed) falls back to the regex chip
+                      (issue #495), which renders nothing when the text has no
+                      parseable duration. */}
+                  <div className="mt-4 flex flex-wrap gap-2.5">
                     {step.structured ? (
-                      step.structured.hands_on ? (
-                        <span
-                          className="text-xs font-bold"
-                          style={{ color: 'var(--color-muted)' }}
-                          data-testid="step-duration-text"
-                        >
-                          {step.structured.duration_minutes} min
-                        </span>
-                      ) : (
+                      !step.structured.hands_on && (
                         <StructuredStepTimerChip
+                          keycap
                           label={step.structured.label}
                           durationMinutes={step.structured.duration_minutes}
                           onStart={(id) => timerOwnerRef.current.set(id, idx)}
@@ -549,38 +558,24 @@ export default function GuidedCookFlow({
                       )
                     ) : (
                       <StepTimerChips
+                        keycap
                         stepText={step.text}
                         onStart={(id) => timerOwnerRef.current.set(id, idx)}
                       />
                     )}
-                  </span>
-                </div>
-
-                {/* Step body */}
-                <p
-                  className="text-lg font-semibold leading-relaxed mb-4"
-                  style={{ color: 'var(--color-text)' }}
-                  data-testid="guided-cook-step-text"
-                >
-                  {step.text}
-                </p>
-
-                {/* "You'll need" block — recipe framing, not inventory diff */}
-                <YoullNeedBlock uses={step.uses} />
-
-                {/* Ask Bubbles — chat always one tap away */}
-                <button
-                  onClick={() => {
-                    setChatOpen(true)
-                    setChatPresent(true)
-                  }}
-                  className="mt-4 w-full rounded-full py-2.5 text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform"
-                  style={{ background: 'var(--color-accent)', color: 'var(--color-text)' }}
-                  data-testid="guided-cook-ask-bubbles"
-                  aria-label="Ask Bubbles about this step"
-                >
-                  💬 Ask Bubbles about this step
-                </button>
+                    <SpringButton
+                      variant="secondary"
+                      onClick={() => {
+                        setChatOpen(true)
+                        setChatPresent(true)
+                      }}
+                      aria-label="Ask Bubbles about this step"
+                      data-testid="guided-cook-ask-bubbles"
+                    >
+                      💬 Ask Bubbles
+                    </SpringButton>
+                  </div>
+                </PixelPanel>
               </motion.div>
             )}
 
@@ -602,27 +597,24 @@ export default function GuidedCookFlow({
       {!isDone && (
         <div className="sticky bottom-0 w-full">
           <div
-            className="max-w-[480px] mx-auto px-5 py-4 flex gap-3"
+            className="max-w-[480px] mx-auto px-5 py-4 flex gap-2.5"
             style={{ background: 'linear-gradient(to top, var(--color-bg) 70%, transparent)' }}
           >
-            <button
+            {/* Keycaps: the same SpringButton the meal cook's actions use. */}
+            <SpringButton
+              variant="secondary"
               onClick={goBack}
               disabled={isPrep}
-              className="font-sans flex-1 rounded-full py-3 font-bold text-sm disabled:opacity-30 active:scale-95 transition-transform"
-              style={{
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                color: 'var(--color-text)',
-              }}
+              className="flex-1 inline-flex items-center justify-center px-4 py-2.5 text-sm leading-5 text-center"
               data-testid="guided-cook-back"
               aria-label="Previous step"
             >
               Back
-            </button>
-            <button
+            </SpringButton>
+            <SpringButton
+              variant="primary"
               onClick={goNext}
-              className="font-sans flex-[2] rounded-full py-3 font-bold text-sm active:scale-95 transition-transform"
-              style={{ background: 'var(--color-primary)', color: 'var(--color-text)' }}
+              className="flex-[2] inline-flex items-center justify-center px-4 py-2.5 text-sm leading-5 text-center"
               data-testid="guided-cook-next"
               aria-label={isPrep ? 'Skip prep and start cooking' : idx === steps.length - 1 ? 'Finish cooking' : 'Next step'}
             >
@@ -631,7 +623,7 @@ export default function GuidedCookFlow({
                 : idx === steps.length - 1
                 ? 'Finish cooking 🎉'
                 : 'Next step →'}
-            </button>
+            </SpringButton>
           </div>
         </div>
       )}
