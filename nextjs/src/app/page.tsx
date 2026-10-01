@@ -1,6 +1,4 @@
 import { createClient } from '@/lib/supabase/server'
-import BubblesHeader from '@/components/layout/BubblesHeader'
-import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
 import HeroHome from '@/components/dashboard/HeroHome'
 
 export default async function HomePage() {
@@ -20,15 +18,12 @@ export default async function HomePage() {
   // for why that's safe (post-merge review on PR #594, finding 2).
   const initialKitchenTheme: string | null = user?.user_metadata?.kitchen_theme ?? null
 
+  // The kitchen home (#748) owns its own header (eyebrow, title, the bubbles
+  // counter, the bell and the profile button) and runs full-bleed, so the page
+  // adds no header and no side padding.
   return (
     <main className="min-h-screen pb-24">
-      <BubblesHeader
-        showSubtitle
-        rightSlot={<ProfileHeaderButton />}
-      />
-      <div className="px-4 pt-4 max-w-lg mx-auto">
-        <HeroHome displayName={displayName} initialKitchenTheme={initialKitchenTheme} />
-      </div>
+      <HeroHome displayName={displayName} initialKitchenTheme={initialKitchenTheme} />
     </main>
   )
 }

@@ -3,7 +3,7 @@
  *
  * Covers the two halves of the fix:
  *  1. `app/loading.tsx` renders a theme-safe skeleton (no hardcoded palette hexes).
- *  2. `HeroHome` paints the greeting / mascot / tip immediately instead of
+ *  2. `HeroHome` paints the header / wall / mascot immediately instead of
  *     blocking the whole hero behind one all-or-nothing `loading` flag.
  */
 import { render, screen, waitFor } from '@testing-library/react'
@@ -11,6 +11,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Loading from '@/app/loading'
 import ProfileLoading from '@/app/profile/loading'
 import HeroHome from '@/components/dashboard/HeroHome'
+
+// The kitchen wall's places navigate (#748), so HeroHome reads the router.
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: jest.fn(), push: jest.fn(), refresh: jest.fn() }),
+  useSearchParams: () => new URLSearchParams(''),
+}))
 
 // HeroHome now also fetches decorations via `useDecorations()` (#521), which
 // needs a QueryClient in context.
@@ -97,14 +103,17 @@ describe('HeroHome progressive paint', () => {
     jest.restoreAllMocks()
   })
 
-  it('paints the greeting and mascot while the data fetches are still pending', () => {
+  it('paints the header, the wall and the mascot while the data fetches are still pending', () => {
     // Never-resolving fetches: this is the "still loading" frame.
     global.fetch = jest.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch
 
     renderHero()
 
-    // Greeting + name are known server-side, so they must be on screen already.
-    expect(screen.getByText('ayush')).toBeInTheDocument()
+    // The title and the wall (at its final size) need no data, so they must be on
+    // screen already; the places show their names without counts.
+    expect(screen.getByRole('heading', { name: 'Your kitchen' })).toBeInTheDocument()
+    expect(screen.getByTestId('kitchen-wall').className).toContain('aspect-[96/80]')
+    expect(screen.getByRole('button', { name: 'Fridge' })).toBeInTheDocument()
     expect(screen.getByAltText(/^Bubbles /)).toBeInTheDocument()
 
     // ...while the data-dependent hero message AND the tip (sourced from
@@ -131,7 +140,7 @@ describe('HeroHome progressive paint', () => {
       expect(screen.getByText(/Your pantry is empty/)).toBeInTheDocument()
     )
     expect(screen.getByText(/Tip:/)).toBeInTheDocument()
-    // Greeting never disappeared during the transition.
-    expect(screen.getByText('ayush')).toBeInTheDocument()
+    // The title never disappeared during the transition.
+    expect(screen.getByRole('heading', { name: 'Your kitchen' })).toBeInTheDocument()
   })
 })

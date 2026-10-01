@@ -22,12 +22,6 @@ export const TOUR_STEPS: TourStep[] = [
     placement: 'below',
   },
   {
-    id: 'quick-actions',
-    selector: '[data-tour="quick-actions"]',
-    copy: 'Quick actions: plan dinner, see what to use soon, scan a receipt, or ask me anything.',
-    placement: 'below',
-  },
-  {
     id: 'nav-pantry',
     selector: '[data-tour="nav-pantry"]',
     copy: 'Your pantry lives here — tap + Add Item inside it to scan a receipt.',
