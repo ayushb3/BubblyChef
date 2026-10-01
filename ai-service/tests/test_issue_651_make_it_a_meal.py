@@ -570,7 +570,10 @@ class TestOptionStageKeepsTheMain:
 
     @pytest.mark.asyncio
     async def test_no_valid_option_is_the_existing_failure_state(self) -> None:
-        options = [MealOptionLLM(title="Only main", dishes=[_dish_llm("main", "Steak")])]
+        options = [
+            MealOptionLLM(title="Only main", dishes=[_dish_llm("main", "Steak")]),
+            MealOptionLLM(title="Only main too", dishes=[_dish_llm("main", "Lamb")]),
+        ]
         repo = _repo({(_USER_A, _RID): _row()})
         with _env(repo, _option_ai(options)):
             out = await meal_options_stage(_state({"meal_fixed_main": {"recipe_id": _RID}}))

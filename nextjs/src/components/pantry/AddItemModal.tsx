@@ -10,7 +10,7 @@ import { PLACES, placeForLocation, placeLocation, type PlaceKey } from '@/lib/ki
 import type { PantryItem } from '@/types/pantry'
 
 /**
- * EditItemModal — the single-item edit sheet on `/pantry`.
+ * EditItemModal — the single-item edit sheet, opened from the storage sheet on the kitchen home.
  *
  * Despite the filename (kept as `AddItemModal.tsx` so the focus-trap test and
  * the count guard that reads test names textually are undisturbed), this is

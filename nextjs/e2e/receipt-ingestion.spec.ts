@@ -15,7 +15,8 @@
  *       Loose assertions to tolerate OCR noise.
  *
  * Traced files (verify before changing selectors):
- *   - nextjs/src/app/pantry/page.tsx          — ?add=scan opens sheet (line ~134)
+ *   - nextjs/src/components/dashboard/HeroHome.tsx — /?add=scan opens the add sheet
+ *                                                    (/pantry?add=scan redirects there, #750)
  *   - nextjs/src/components/pantry/ScanTab.tsx — input[type=file], upload trigger
  *   - nextjs/src/components/kitchen/PutAwaySheet.tsx - "Put away N items" key,
  *                                                      POST /api/pantry/bulk call
@@ -363,7 +364,10 @@ test.describe('3a — receipt ingestion (live, opt-in)', () => {
     // If the bulk route estimated expiries (fix #158), items like Chicken Breasts
     // or Milk will show "Xd left" badges immediately.
     // Source: pantry/page.tsx ~L86: expiryBadge renders "{N}d left"
-    await expect(page.locator('text=/\\d+d left/').first()).toBeVisible({ timeout: 10_000 });
+    // (#750: the pantry grid is the storage sheet's List now; the badge is the food tag.)
+    await page.getByRole('button', { name: /^Fridge/ }).click();
+    await page.getByRole('button', { name: 'List' }).click();
+    await expect(page.getByTestId('storage-expiry-pill').first()).toBeVisible({ timeout: 10_000 });
   });
 
   test('city-harvest.png → OCR → confirm → ≥5 items with non-null expiry', async ({ page }) => {
@@ -397,6 +401,9 @@ test.describe('3a — receipt ingestion (live, opt-in)', () => {
     await expect(page.getByRole('heading', { name: 'Add to Pantry' })).not.toBeVisible({ timeout: 15_000 });
 
     // At least one expiry badge should appear after the pantry refetches
-    await expect(page.locator('text=/\\d+d left/').first()).toBeVisible({ timeout: 10_000 });
+    // (#750: the pantry grid is the storage sheet's List now; the badge is the food tag.)
+    await page.getByRole('button', { name: /^Fridge/ }).click();
+    await page.getByRole('button', { name: 'List' }).click();
+    await expect(page.getByTestId('storage-expiry-pill').first()).toBeVisible({ timeout: 10_000 });
   });
 });

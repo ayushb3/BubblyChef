@@ -16,8 +16,8 @@ describe('validateMealDishRoles (the side-count rule)', () => {
     ).toBeNull()
   })
 
-  it('rejects zero sides', () => {
-    expect(validateMealDishRoles([main])).toMatch(/one or two sides/)
+  it('accepts a main with no side (issue #758)', () => {
+    expect(validateMealDishRoles([main])).toBeNull()
   })
 
   it('rejects three sides', () => {
@@ -28,7 +28,7 @@ describe('validateMealDishRoles (the side-count rule)', () => {
         { role: 'side', position: 2 },
         { role: 'side', position: 3 },
       ]),
-    ).toMatch(/one or two sides|position/)
+    ).toMatch(/at most two sides|position/)
   })
 
   it('rejects zero mains', () => {
