@@ -68,6 +68,8 @@ export interface KitchenSceneProps {
   bubblesLayer?: ReactNode
   /** The scene's accessible label; describes where Bubbles is. See `KitchenWall`. */
   sceneLabel?: string
+  /** Shopping waiting to be put away, per place: the tags read +N (issue #753). See `KitchenWall`. */
+  incoming?: Record<PlaceKey, number> | null
 }
 
 const CATALOG_BY_ID = new Map(CATALOG.map((d) => [d.id, d]))
@@ -90,6 +92,7 @@ export default function KitchenScene({
   spritesLayer,
   bubblesLayer,
   sceneLabel,
+  incoming = null,
 }: KitchenSceneProps) {
   // The sprites and the wilting tags, positioned on the wall (#751). `null`
   // stock (loading, or the pantry failed) draws none: never a made-up empty.
@@ -124,6 +127,7 @@ export default function KitchenScene({
         tagsLayer={placed ? <WiltTags tags={placed.tags} /> : undefined}
         bubblesLayer={bubblesLayer}
         sceneLabel={sceneLabel}
+        incoming={incoming}
       >
         {SLOTS.map((slot) => {
           const decoration = decorationBySlot.get(slot.key)

@@ -25,8 +25,9 @@ import type { PlacedSprite, PlacedTag } from '@/lib/kitchen/sprite-layout'
 /** How faded a wilting item is once it has drooped. */
 export const WILT_OPACITY = 0.85
 
-function WiltingSprite({ sprite }: { sprite: PlacedSprite }) {
-  const { reduced } = useMotionConfig()
+function WiltingSprite({ sprite, still }: { sprite: PlacedSprite; still: boolean }) {
+  const { reduced: reducedMotion } = useMotionConfig()
+  const reduced = reducedMotion || still
   const { rows, palette } = spriteArt(sprite.kind, true)
   return (
     <motion.g
@@ -46,11 +47,22 @@ function WiltingSprite({ sprite }: { sprite: PlacedSprite }) {
   )
 }
 
-export function KitchenSprites({ sprites }: { sprites: readonly PlacedSprite[] }) {
+/**
+ * `still` draws every wilting item at its held pose with no arrival animation:
+ * for a small icon of the place (the storage sheet's header, issue #794), which
+ * re-mounts on every tab switch and should not replay the wall's droop.
+ */
+export function KitchenSprites({
+  sprites,
+  still = false,
+}: {
+  sprites: readonly PlacedSprite[]
+  still?: boolean
+}) {
   return (
     <g data-testid="kitchen-sprites">
       {sprites.map((s) => {
-        if (s.wilting) return <WiltingSprite key={`${s.key}-${s.wilting.id}`} sprite={s} />
+        if (s.wilting) return <WiltingSprite key={`${s.key}-${s.wilting.id}`} sprite={s} still={still} />
         const { rows, palette } = spriteArt(s.kind, false)
         return (
           <g key={s.key} data-testid="kitchen-sprite" data-place={s.place} data-kind={s.kind}>
