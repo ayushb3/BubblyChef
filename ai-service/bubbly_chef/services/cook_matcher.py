@@ -13,18 +13,27 @@ import re
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, Callable, Literal, TypeVar
 
 from pydantic import BaseModel, Field
 
-from bubbly_chef.domain.lots import fresh_first_key, lot_base
+from bubbly_chef.domain.conversion import (
+    Converted,
+    convert_amount,
+    juice_as_fruit,
+    juice_fruit,
+)
+from bubbly_chef.domain.lots import fresh_first_key, lot_base, lot_base_approximate
 from bubbly_chef.domain.normalizer import (
     SIZE_ADJECTIVE_UNITS,  # noqa: F401  re-export: single source of truth
+    effective_unit,
     get_unit_dimension,
     is_package_unit,
     is_piece_unit,
     normalize_food_name,
     normalize_to_base_unit,
+    normalize_unit,
 )
 from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.models.cook import (
@@ -32,6 +41,7 @@ from bubbly_chef.models.cook import (
     CompoundSuggestion,
     CookProposal,
     IngredientMatch,
+    IngredientMatchStatus,
 )
 from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.prompts.cook import _SUBSTITUTION_PROMPT
@@ -373,26 +383,38 @@ class _LLMMatchBatch(BaseModel):
     results: list[_LLMIngredientMatch] = Field(default_factory=list)
 
 
+# A number as a recipe writes it: "1 1/2", "1/2", "0.5", "2". Unicode fractions are
+# rewritten to the ASCII form first (see _ascii_fractions).
+_NUM = r"(?:\d+\s+\d+\s*/\s*\d+|\d+\s*/\s*\d+|\d+(?:\.\d+)?)"
+# "1-2", "1 - 2", "1 to 2".
+_RANGE_SEP = r"(?:\s*[-–—]\s*|\s+to\s+)"
+
 # Matches leading quantity+unit in a raw ingredient string, e.g.:
 #   "2 large eggs"       → qty=2,  unit=None,   rest="large eggs"
 #   "1/2 cup flour"      → qty=0.5, unit="cup",  rest="flour"
 #   "1 teaspoon lemon zest" → qty=1, unit="tsp", rest="lemon zest"
+#   "1 1/2 cups flour"   → qty=1.5, unit="cups"
+#   "1-2 cloves garlic"  → qty=1, qty_max=2, unit="cloves"
 _LEADING_QTY_RE = re.compile(
     r"^\s*"
-    r"(?P<qty>\d+\s*/\s*\d+|\d+(?:\.\d+)?)"   # fraction or decimal
+    rf"(?P<qty>{_NUM})"
+    rf"(?:{_RANGE_SEP}(?P<qty_max>{_NUM}))?"
     r"(?:\s+(?P<unit>cup|cups|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons"
-    r"|oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg|ml|l|liter|liters"
-    r"|pint|quart|gallon|fl\s+oz|fluid\s+ounce|stick|sticks|clove|cloves"
-    r"|bunch|bunches|slice|slices|piece|pieces|can|cans|package|packages"
+    r"|oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg|kilogram|kilograms|ml"
+    r"|milliliter|milliliters|millilitre|millilitres|l|liter|liters|litre|litres"
+    r"|pint|pints|quart|quarts|gallon|gallons|fl\s+oz|fluid\s+ounce|fluid\s+ounces"
+    r"|stick|sticks|clove|cloves"
+    r"|bunch|bunches|slice|slices|piece|pieces|can|cans|tin|tins|package|packages"
     r"|head|heads|sprig|sprigs|leaf|leaves|pinch|pinches|dash|dashes"
-    r"|handful|handfuls|item|count|dozen))?"
+    r"|handful|handfuls|item|count|dozen|jar|jars|bottle|bottles|bag|bags|box|boxes"
+    r"|container|containers|carton|cartons))?"
     r"\s+",
     re.IGNORECASE,
 )
 
 # Adjectives that appear between quantity and the actual food noun
 _ADJECTIVE_RE = re.compile(
-    r"^(?:large|small|medium|extra-large|xl|fresh|dried|whole|finely|coarsely"
+    r"^(?:large|small|medium|extra-large|xl|freshly|fresh|dried|whole|finely|coarsely"
     r"|roughly|thinly|thickly|grated|sliced|diced|chopped|minced|crushed"
     r"|peeled|seeded|boneless|skinless|lean|ground|frozen|canned|organic"
     r"|plus|more|additional|extra)\s+",
@@ -401,6 +423,85 @@ _ADJECTIVE_RE = re.compile(
 
 # Conjunctions that split multi-ingredient strings, e.g. "2 eggs and 1 yolk"
 _CONJUNCTION_RE = re.compile(r"\s*(?:,\s*|\s+and\s+|\s+or\s+|\s+plus\s+).*$", re.IGNORECASE)
+
+_FRACTION_CHARS = {
+    "½": "1/2", "⅓": "1/3", "⅔": "2/3", "¼": "1/4", "¾": "3/4",
+    "⅕": "1/5", "⅙": "1/6", "⅛": "1/8", "⅜": "3/8", "⅝": "5/8",
+    "⅞": "7/8",
+}
+_FRACTION_CHAR_RE = re.compile("(?:(\\d+)\\s*)?([" + "".join(_FRACTION_CHARS) + "])")
+
+# "a pinch of salt", "pinch salt", "2 dashes bitters": a trace amount, not a measure.
+_TRACE_RE = re.compile(
+    r"^(?:(?:a|an|one|\d+)\s+)?(?P<unit>pinch|pinches|dash|dashes)\s+(?:of\s+)?(?P<rest>.+)$",
+    re.IGNORECASE,
+)
+# "salt, to taste", "pepper to taste", "oil as needed".
+_TO_TASTE_TAIL_RE = re.compile(r"[,;]?\s*\b(?:to taste|as needed|to season)\s*$", re.IGNORECASE)
+# "juice of 1 lemon", "the juice of half a lime".
+_JUICE_OF_RE = re.compile(
+    rf"^(?:the\s+)?juice\s+of\s+(?P<qty>{_NUM}|a|an|half(?:\s+an?)?)\s+(?P<fruit>[a-z]+)\b",
+    re.IGNORECASE,
+)
+# "a dozen eggs", "half a dozen eggs".
+_DOZEN_RE = re.compile(
+    r"^(?:(?P<half>half(?:\s+an?)?)|(?:a|an|one))\s+dozen\s+(?P<rest>.+)$", re.IGNORECASE
+)
+# A container's stated size next to the quantity: "1 (14.5 oz) can tomatoes" and
+# "1 can (14.5 oz) tomatoes" both read as quantity 1 of unit "14.5 oz can".
+_SIZE_CONTAINER_RE = re.compile(
+    rf"^\s*(?P<qty>{_NUM})\s*\(\s*(?P<size>\d+(?:\.\d+)?\s*-?\s*[a-z.\s]{{1,12}}?)\s*\)\s*"
+    r"(?P<container>cans?|jars?|bottles?|bags?|boxes|box|packages?|containers?|cartons?)\s+",
+    re.IGNORECASE,
+)
+_CONTAINER_SIZE_RE = re.compile(
+    rf"^\s*(?P<qty>{_NUM})\s+(?P<container>cans?|jars?|bottles?|bags?|boxes|box|packages?|"
+    r"containers?|cartons?)\s*"
+    r"\(\s*(?P<size>\d+(?:\.\d+)?\s*-?\s*[a-z.\s]{1,12}?)\s*\)\s*",
+    re.IGNORECASE,
+)
+
+
+def _ascii_fractions(text: str) -> str:
+    """Rewrite unicode fractions to ASCII: "1½ cups" -> "1 1/2 cups"."""
+
+    def _sub(m: re.Match[str]) -> str:
+        whole, frac = m.group(1), _FRACTION_CHARS[m.group(2)]
+        return f"{whole} {frac}" if whole else frac
+
+    return _FRACTION_CHAR_RE.sub(_sub, text)
+
+
+def _to_number(text: str) -> float | None:
+    """A recipe number ("1 1/2", "3/4", "2.5") as a float, or None when it isn't one."""
+    cleaned = text.strip()
+    try:
+        mixed = re.fullmatch(r"(\d+)\s+(\d+)\s*/\s*(\d+)", cleaned)
+        if mixed:
+            return float(mixed.group(1)) + float(mixed.group(2)) / float(mixed.group(3))
+        if "/" in cleaned:
+            num, den = cleaned.split("/")
+            return float(num) / float(den)
+        return float(cleaned)
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
+def _quantity_from_match(m: re.Match[str]) -> tuple[float | None, float | None]:
+    """(quantity, quantity_max) for a leading-quantity match.
+
+    A range ("1-2") gives its midpoint as the quantity, which is what a deduction
+    uses, and its upper bound as the maximum, which is what an availability check
+    uses. A single number has no maximum.
+    """
+    low = _to_number(m.group("qty"))
+    high_text = m.groupdict().get("qty_max")
+    if low is None or high_text is None:
+        return low, None
+    high = _to_number(high_text)
+    if high is None or high <= low:
+        return low, None
+    return (low + high) / 2, high
 
 
 def _parse_ingredient_string(raw: str) -> dict[str, Any]:
@@ -411,8 +512,25 @@ def _parse_ingredient_string(raw: str) -> dict[str, Any]:
       "1/2 cup finely grated Parmesan" → {name: "parmesan", quantity: 0.5, unit: "cup"}
       "1 teaspoon lemon zest" → {name: "lemon zest", quantity: 1.0, unit: "teaspoon"}
       "1/2 cup plus 2 tbsp Parmesan" → {name: "parmesan", quantity: 0.5, unit: "cup"}
+      "1 1/2 cups flour", "½ cup milk" → mixed numbers and unicode fractions
+      "1-2 cloves garlic" → quantity 1.5 (the midpoint) and quantity_max 2.0
+      "a pinch of salt" → {name: "salt", quantity: 1.0, unit: "pinch"}
+      "salt, to taste" → {name: "salt", quantity: None, unit: "to taste"}
+      "1 (14.5 oz) can tomatoes" → {name: "tomatoes", quantity: 1.0, unit: "14.5 oz can"}
+      "juice of 1 lemon" → {name: "lemon", quantity: 1.0, unit: None}
+
+    `quantity_max` is only present for a range.
     """
-    stripped = raw.strip()
+    stripped = _ascii_fractions(raw.strip())
+
+    # "to taste" is an amount of its own, only when the line has no other amount.
+    to_taste = _TO_TASTE_TAIL_RE.search(stripped)
+    if to_taste:
+        stripped = stripped[: to_taste.start()].strip(" ,;")
+
+    simple = _parse_special_forms(stripped)
+    if simple is not None:
+        return simple
 
     # Split on first conjunction — use the first segment for qty/unit, last for the food noun
     conj_m = _CONJUNCTION_RE.search(stripped)
@@ -420,17 +538,19 @@ def _parse_ingredient_string(raw: str) -> dict[str, Any]:
     last_segment = stripped[conj_m.start():].lstrip(" ,").strip() if conj_m else first_segment
 
     qty: float | None = None
+    qty_max: float | None = None
     unit: str | None = None
     text = first_segment
 
-    m = _LEADING_QTY_RE.match(text)
-    if m:
-        qty_str = m.group("qty").replace(" ", "")
-        if "/" in qty_str:
-            num, den = qty_str.split("/")
-            qty = float(num) / float(den)
-        else:
-            qty = float(qty_str)
+    sized = _SIZE_CONTAINER_RE.match(text) or _CONTAINER_SIZE_RE.match(text)
+    m = None if sized else _LEADING_QTY_RE.match(text)
+    if sized:
+        size_text = re.sub(r"\s+", " ", sized.group("size")).strip().rstrip(".")
+        qty = _to_number(sized.group("qty"))
+        unit = f"{size_text} {sized.group('container').lower()}"
+        text = text[sized.end():]
+    elif m:
+        qty, qty_max = _quantity_from_match(m)
         unit = m.group("unit")
         text = text[m.end():]
 
@@ -468,7 +588,43 @@ def _parse_ingredient_string(raw: str) -> dict[str, Any]:
             last = stripped_adj
         name = last.strip().lower() or name
 
-    return {"name": name, "quantity": qty, "unit": unit}
+    if qty is None and unit is None and to_taste:
+        unit = "to taste"
+
+    parsed: dict[str, Any] = {"name": name, "quantity": qty, "unit": unit}
+    if qty_max is not None:
+        parsed["quantity_max"] = qty_max
+    return parsed
+
+
+def _parse_special_forms(text: str) -> dict[str, Any] | None:
+    """Lines whose shape isn't "<quantity> <unit> <food>": a pinch, a dozen, juice of."""
+    trace = _TRACE_RE.match(text)
+    if trace:
+        rest = _CONJUNCTION_RE.sub("", trace.group("rest")).strip().lower()
+        if rest:
+            return {"name": rest, "quantity": 1.0, "unit": trace.group("unit").lower()}
+
+    dozen = _DOZEN_RE.match(text)
+    if dozen:
+        rest = _CONJUNCTION_RE.sub("", dozen.group("rest")).strip().lower()
+        for _ in range(5):
+            stripped_adj = _ADJECTIVE_RE.sub("", rest)
+            if stripped_adj == rest:
+                break
+            rest = stripped_adj
+        if rest:
+            return {"name": rest, "quantity": 0.5 if dozen.group("half") else 1.0, "unit": "dozen"}
+
+    juice = _JUICE_OF_RE.match(text)
+    if juice:
+        word = juice.group("qty").lower()
+        number = (
+            0.5 if word.startswith("half") else 1.0 if word in ("a", "an") else _to_number(word)
+        )
+        if number is not None:
+            return {"name": juice.group("fruit").lower(), "quantity": number, "unit": None}
+    return None
 
 
 def _normalize_ingredient_name(name: str) -> str:
@@ -617,6 +773,9 @@ class _FoodLots:
     base_unit: str | None
     total_base: float | None
     uncounted: tuple[PantryItem, ...]
+    # True when any lot in `total_base` is worth what it is only through an
+    # estimate (a head of garlic as 50 g, a bag of flour as 5 lb).
+    approximate: bool = False
 
 
 def _group_lots(key: str, rows: list[PantryItem]) -> _FoodLots:
@@ -634,10 +793,12 @@ def _group_lots(key: str, rows: list[PantryItem]) -> _FoodLots:
 
     primary, _basis_qty, base_unit = basis
     total = 0.0
+    approximate = False
     uncounted: list[PantryItem] = []
     for item, qty, unit in measured:
         if qty is not None and unit == base_unit:
             total += qty
+            approximate = approximate or lot_base_approximate(item)
         else:
             uncounted.append(item)
     if uncounted:
@@ -648,7 +809,7 @@ def _group_lots(key: str, rows: list[PantryItem]) -> _FoodLots:
             base_unit,
             [f"{i.quantity:g} {i.unit}" for i in uncounted],
         )
-    return _FoodLots(key, primary, base_unit, total, tuple(uncounted))
+    return _FoodLots(key, primary, base_unit, total, tuple(uncounted), approximate)
 
 
 def _index_pantry_lots(pantry_items: list[PantryItem]) -> dict[str, _FoodLots]:
@@ -698,6 +859,55 @@ def _is_compound_seasoning(norm_name: str) -> bool:
 def _has_no_amount(quantity: float | None, unit: str | None) -> bool:
     """True for a line with no quantity, or whose unit just says "to taste"."""
     return quantity is None or (unit or "").strip().lower() in _TO_TASTE_UNITS
+
+
+def _range_max(quantity: float | None, raw_max: Any) -> float | None:
+    """The upper bound of a quantity range ("1-2 cloves" -> 2), or None for a plain amount."""
+    if quantity is None or isinstance(raw_max, bool) or not isinstance(raw_max, (int, float)):
+        return None
+    return float(raw_max) if raw_max > quantity else None
+
+
+def _is_trace_amount(quantity: float | None, unit: str | None) -> bool:
+    """True for a pinch, a dash or "to taste": an amount too small to measure or deduct."""
+    if not unit:
+        return False
+    if unit.strip().lower() in _TO_TASTE_UNITS:
+        return True
+    return normalize_unit(unit) in ("pinch", "dash")
+
+
+def _make_match(
+    raw_name: str,
+    quantity: float | None,
+    unit: str | None,
+    status: IngredientMatchStatus,
+    *,
+    item: PantryItem | None = None,
+    available: float | None = None,
+    deduct: float | None = None,
+    base: str | None = None,
+    shortfall: float | None = None,
+    approximate: bool = False,
+    match_type: Literal["exact", "substitute", "none"] = "none",
+    note: str | None = None,
+) -> IngredientMatch:
+    """One line of the proposal. The recipe side is always the line as written."""
+    return IngredientMatch(
+        ingredient_name=raw_name,
+        ingredient_qty=quantity,
+        ingredient_unit=unit,
+        pantry_item_id=item.id if item is not None else None,
+        pantry_item_name=item.name if item is not None else None,
+        pantry_qty_available=available,
+        deduct_qty=deduct,
+        base_unit=base,
+        status=status,
+        shortfall=shortfall,
+        approximate=approximate,
+        match_type=match_type,
+        substitution_note=note,
+    )
 
 
 def match_ingredients(
@@ -762,7 +972,10 @@ def match_ingredients(
 
         ing_qty: float | None = ingredient.get("quantity")
         ing_unit: str | None = ingredient.get("unit")
+        ing_qty_max = _range_max(ing_qty, ingredient.get("quantity_max"))
         norm_name = _normalize_ingredient_name(raw_name)
+
+        line = partial(_make_match, raw_name, ing_qty, ing_unit)
 
         # --- Compound seasoning with no amount: "salt and pepper" (#756) ---
         # Nothing to deduct and nothing to ask for, so it is neither matched to a
@@ -770,21 +983,7 @@ def match_ingredients(
         # allowed to become a unit conflict. The review shows it as one quiet line.
         compound_seasoning = _is_compound_seasoning(norm_name)
         if compound_seasoning and _has_no_amount(ing_qty, ing_unit):
-            matches.append(
-                IngredientMatch(
-                    ingredient_name=raw_name,
-                    ingredient_qty=ing_qty,
-                    ingredient_unit=ing_unit,
-                    pantry_item_id=None,
-                    pantry_item_name=None,
-                    pantry_qty_available=None,
-                    deduct_qty=None,
-                    base_unit=None,
-                    status="to_taste",
-                    match_type="none",
-                    substitution_note=None,
-                )
-            )
+            matches.append(line("to_taste"))
             continue
 
         # --- Find pantry match ---
@@ -799,28 +998,47 @@ def match_ingredients(
                     # Alias named an item that is not actually in the pantry.
                     alias = None
 
+        # The food and amount the conversion is worked out in. Normally the line as
+        # written; "2 tbsp lemon juice" with no juice in the pantry but lemons on the
+        # shelf is squeezed from them (a lemon gives ~3 tbsp), so it is worked out as
+        # that many lemons, and flagged as the estimate it is.
+        calc_name = norm_name
+        calc_qty = ing_qty
+        calc_qty_max = ing_qty_max
+        calc_unit_override: str | None = None
+        from_juice = False
+        if lots is None and not compound_seasoning and ing_qty is not None and ing_unit:
+            fruit = juice_fruit(norm_name)
+            if fruit is not None and fruit in pantry_index:
+                fruit_count = juice_as_fruit(fruit, ing_qty, ing_unit)
+                if fruit_count is not None:
+                    lots = pantry_index[fruit]
+                    calc_name = fruit
+                    calc_qty = fruit_count
+                    calc_qty_max = (
+                        juice_as_fruit(fruit, ing_qty_max, ing_unit)
+                        if ing_qty_max is not None
+                        else None
+                    )
+                    calc_unit_override = "count"
+                    from_juice = True
+
         if lots is None:
             # No match at all — but a culinary staple (salt, pepper, oil, …)
             # is presumed on hand even when not in the pantry (#305). So is a
             # compound of them ("salt and pepper") when it carries an amount.
             if is_staple(norm_name) or compound_seasoning:
-                matches.append(
-                    IngredientMatch(
-                        ingredient_name=raw_name,
-                        ingredient_qty=ing_qty,
-                        ingredient_unit=ing_unit,
-                        pantry_item_id=None,
-                        pantry_item_name=None,
-                        pantry_qty_available=None,
-                        deduct_qty=None,
-                        base_unit=None,
-                        status="assumed",
-                        match_type="none",
-                        substitution_note=None,
-                    )
-                )
+                matches.append(line("assumed"))
             else:
                 missing.append(raw_name)
+            continue
+
+        # --- A pinch, a dash, "to taste": never blocks, never deducts ---
+        # The amount is too small to measure and too small to matter, so it is
+        # neither converted nor subtracted: the food is on hand, and that is all the
+        # review needs to say. Not a unit conflict, not "imprecise".
+        if _is_trace_amount(ing_qty, ing_unit):
+            matches.append(line("to_taste"))
             continue
 
         # A stand-in is surfaced as its own status so the user can see the swap,
@@ -841,33 +1059,29 @@ def match_ingredients(
         # recipe took their share.
         already_claimed = consumed.get(lots.key, 0.0)
 
+        # The food is on hand but the recipe gave no usable amount: nothing is deducted.
+        unclaimed_total = (
+            None if lots.total_base is None else max(0.0, lots.total_base - already_claimed)
+        )
+        quiet_ready = line(
+            ok_status,
+            item=pantry_item,
+            available=unclaimed_total,
+            base=lots.base_unit,
+            match_type=match_type,
+            note=note,
+        )
+
         # A bare number ("1 lemon") counts that many of the food. Against a row
-        # counted in units it is deducted by count (#756); against a weighed or
-        # measured row it stays unconvertible and is left as before.
-        calc_unit = ing_unit
-        if ing_qty is not None and ing_unit is None and lots.base_unit == "count":
-            calc_unit = "count"
+        # counted in units that is a plain count (#756); against a weighed or
+        # measured row it goes through the food's typical piece weight, and where
+        # there is none it stays unconvertible and is left as before.
+        bare_count = ing_qty is not None and ing_unit is None and not from_juice
+        calc_unit = calc_unit_override or ("count" if bare_count else ing_unit)
 
         # --- No quantity on recipe ingredient → can't deduct, just note as ready ---
-        if ing_qty is None or calc_unit is None:
-            unclaimed = lots.total_base
-            if unclaimed is not None:
-                unclaimed = max(0.0, unclaimed - already_claimed)
-            matches.append(
-                IngredientMatch(
-                    ingredient_name=raw_name,
-                    ingredient_qty=ing_qty,
-                    ingredient_unit=ing_unit,
-                    pantry_item_id=pantry_item.id,
-                    pantry_item_name=pantry_item.name,
-                    pantry_qty_available=unclaimed,
-                    deduct_qty=None,
-                    base_unit=lots.base_unit,
-                    status=ok_status,
-                    match_type=match_type,
-                    substitution_note=note,
-                )
-            )
+        if calc_qty is None or calc_unit is None:
+            matches.append(quiet_ready)
             continue
 
         # --- Resolve the pantry side first ---
@@ -877,6 +1091,9 @@ def match_ingredients(
         # with no base values of its own is derived from its name/quantity/unit.
         pantry_base_qty = lots.total_base
         pantry_base_unit = lots.base_unit
+        # The row's own unit says what one counted thing is (a can, a clove, an egg),
+        # and a size its name states ("tomatoes 28 oz") belongs to that unit.
+        pantry_unit = effective_unit(pantry_item.name, pantry_item.unit)
 
         # --- Convert recipe ingredient into the pantry row's unit ---
         # Target the pantry's base unit when it is known, rather than looking the
@@ -886,12 +1103,29 @@ def match_ingredients(
         # category default of "count" — turning a perfectly ordinary gram quantity
         # into a spurious unit_conflict. It matters most for substitutes (#123),
         # where the recipe name and the pantry name are different words by design.
-        req_base_qty, req_base_unit = normalize_to_base_unit(
-            name=norm_name,
-            quantity=ing_qty,
-            unit=calc_unit,
-            target_unit=pantry_base_unit,
-        )
+        #
+        # `convert_amount` is exact inside a dimension and estimates across them (a
+        # piece weight, a density, a typical can); `approximate` carries that to the
+        # review. A pair with no honest figure comes back None and is asked about.
+        converted: Converted | None = None
+        if pantry_base_unit is not None:
+            converted = convert_amount(
+                calc_name,
+                calc_qty,
+                calc_unit,
+                pantry_base_unit,
+                pantry_name=lots.key,
+                pantry_unit=pantry_unit,
+            )
+
+        # A bare number the food has no typical piece weight for, against a weighed or
+        # measured row, is left as it was: the food is on hand, nothing is deducted.
+        if bare_count and converted is None and pantry_base_unit != "count":
+            matches.append(quiet_ready)
+            continue
+
+        req_base_qty = converted.quantity if converted is not None else None
+        req_base_unit = converted.unit if converted is not None else None
 
         # --- Imprecise: pieces of an ingredient against a package of it ---
         # "4 slices bread" against "1 item bread" converts — both sides reach
@@ -901,14 +1135,12 @@ def match_ingredients(
         # just cannot say how much of it the recipe uses. Nothing is deducted.
         #
         # A genuine conversion always wins: "2 slices cheese" against a 500 g
-        # row resolves through the conventional piece weight to grams, so
-        # req_base_unit is "g" and this branch never sees it. Only a pair that
-        # landed on "count" (or failed to convert at all) can be imprecise.
-        if (
-            is_piece_unit(calc_unit)
-            and is_package_unit(pantry_item.unit)
-            and req_base_unit in (None, "count")
-        ):
+        # row resolves through the conventional piece weight to grams, and "2
+        # cloves garlic" against "1 head garlic" through the clove and head
+        # weights, so `converted` is set and this branch never sees them. Only a
+        # pair with no figure for the package (a loaf has no stated slice count)
+        # can be imprecise.
+        if is_piece_unit(calc_unit) and is_package_unit(pantry_item.unit) and converted is None:
             # Report what the row has left after earlier lines took their share,
             # as every other branch does — an imprecise line claims nothing, but
             # it should not display stock a previous line already spoke for.
@@ -916,29 +1148,26 @@ def match_ingredients(
                 None if pantry_base_qty is None else max(0.0, pantry_base_qty - already_claimed)
             )
             matches.append(
-                IngredientMatch(
-                    ingredient_name=raw_name,
-                    ingredient_qty=ing_qty,
-                    ingredient_unit=ing_unit,
-                    pantry_item_id=pantry_item.id,
-                    pantry_item_name=pantry_item.name,
-                    pantry_qty_available=unclaimed,
-                    deduct_qty=None,
-                    base_unit=pantry_base_unit or pantry_item.unit,
-                    status="imprecise",
+                line(
+                    "imprecise",
+                    item=pantry_item,
+                    available=unclaimed,
+                    base=pantry_base_unit or pantry_item.unit,
                     match_type=match_type,
-                    substitution_note=note,
+                    note=note,
                 )
             )
             continue
 
         # --- Unit conflict or soft fallback: can't convert either side ---
         #
-        # Two distinct situations both land here after normalize_to_base_unit
-        # returns (None, None) or produces mismatched base units:
+        # Two distinct situations both land here after the conversion
+        # returns None or produces mismatched base units:
         #
         # 1. GENUINE DIMENSION MISMATCH — both sides have a known unit dimension
-        #    (g vs ml, g vs count, …) but those dimensions are different.
+        #    (g vs ml, g vs count, …) but those dimensions are different, and no
+        #    typical figure bridges them (no density for matcha, no weight for a
+        #    bunch of parsley).
         #    No conversion is possible even in principle; keep this as a hard
         #    unit_conflict so the user knows something is structurally wrong.
         #
@@ -974,18 +1203,13 @@ def match_ingredients(
                 }
                 unit_conflicts.append(conflict_info)
                 matches.append(
-                    IngredientMatch(
-                        ingredient_name=raw_name,
-                        ingredient_qty=ing_qty,
-                        ingredient_unit=ing_unit,
-                        pantry_item_id=pantry_item.id,
-                        pantry_item_name=pantry_item.name,
-                        pantry_qty_available=pantry_base_qty,
-                        deduct_qty=None,
-                        base_unit=pantry_base_unit or calc_unit,
-                        status="unit_conflict",
+                    line(
+                        "unit_conflict",
+                        item=pantry_item,
+                        available=pantry_base_qty,
+                        base=pantry_base_unit or calc_unit,
                         match_type=match_type,
-                        substitution_note=note,
+                        note=note,
                     )
                 )
             else:
@@ -1005,45 +1229,47 @@ def match_ingredients(
                     else max(0.0, pantry_base_qty - already_claimed)
                 )
                 matches.append(
-                    IngredientMatch(
-                        ingredient_name=raw_name,
-                        ingredient_qty=ing_qty,
-                        ingredient_unit=ing_unit,
-                        pantry_item_id=pantry_item.id,
-                        pantry_item_name=pantry_item.name,
-                        pantry_qty_available=unclaimed,
-                        deduct_qty=None,
-                        base_unit=pantry_base_unit or pantry_item.unit,
-                        status="imprecise",
+                    line(
+                        "imprecise",
+                        item=pantry_item,
+                        available=unclaimed,
+                        base=pantry_base_unit or pantry_item.unit,
                         match_type=match_type,
-                        substitution_note=note,
+                        note=note,
                     )
                 )
             continue
 
         # --- Quantity comparison ---
+        assert converted is not None
         assert req_base_qty is not None
         assert pantry_base_qty is not None
         assert req_base_unit is not None
 
+        approximate = converted.approximate or lots.approximate or from_juice
+
+        # A range ("1-2 cloves") is checked against its upper bound, so a ready line
+        # means the pantry covers the most the recipe could ask for, and deducts its
+        # midpoint, the amount the cook most likely uses.
+        needed_base_qty = req_base_qty
+        if calc_qty_max is not None and calc_qty and calc_qty_max > calc_qty:
+            needed_base_qty = req_base_qty * (calc_qty_max / calc_qty)
+
         # Compare against what is left, not the row's original quantity.
         available_base_qty = max(0.0, pantry_base_qty - already_claimed)
 
-        if available_base_qty + _QTY_TOLERANCE >= req_base_qty:
+        if available_base_qty + _QTY_TOLERANCE >= needed_base_qty:
             consumed[lots.key] = already_claimed + req_base_qty
             matches.append(
-                IngredientMatch(
-                    ingredient_name=raw_name,
-                    ingredient_qty=ing_qty,
-                    ingredient_unit=ing_unit,
-                    pantry_item_id=pantry_item.id,
-                    pantry_item_name=pantry_item.name,
-                    pantry_qty_available=available_base_qty,
-                    deduct_qty=req_base_qty,
-                    base_unit=req_base_unit,
-                    status=ok_status,
+                line(
+                    ok_status,
+                    item=pantry_item,
+                    available=available_base_qty,
+                    deduct=req_base_qty,
+                    base=req_base_unit,
+                    approximate=approximate,
                     match_type=match_type,
-                    substitution_note=note,
+                    note=note,
                 )
             )
         elif lots.uncounted:
@@ -1053,37 +1279,32 @@ def match_ingredients(
             # have, and the uncountable lot can't be deducted from, so report the
             # line as imprecise: nothing is auto-deducted and no stock is claimed.
             matches.append(
-                IngredientMatch(
-                    ingredient_name=raw_name,
-                    ingredient_qty=ing_qty,
-                    ingredient_unit=ing_unit,
-                    pantry_item_id=pantry_item.id,
-                    pantry_item_name=pantry_item.name,
-                    pantry_qty_available=available_base_qty,
-                    deduct_qty=None,
-                    base_unit=pantry_base_unit or pantry_item.unit,
-                    status="imprecise",
+                line(
+                    "imprecise",
+                    item=pantry_item,
+                    available=available_base_qty,
+                    base=pantry_base_unit or pantry_item.unit,
                     match_type=match_type,
-                    substitution_note=note,
+                    note=note,
                 )
             )
         else:
-            shortfall = req_base_qty - available_base_qty
-            consumed[lots.key] = already_claimed + available_base_qty
+            shortfall = needed_base_qty - available_base_qty
+            # What is taken off: all that is left, but never more than the line's
+            # own amount (a range whose midpoint fits takes the midpoint).
+            taken = min(available_base_qty, req_base_qty)
+            consumed[lots.key] = already_claimed + taken
             matches.append(
-                IngredientMatch(
-                    ingredient_name=raw_name,
-                    ingredient_qty=ing_qty,
-                    ingredient_unit=ing_unit,
-                    pantry_item_id=pantry_item.id,
-                    pantry_item_name=pantry_item.name,
-                    pantry_qty_available=available_base_qty,
-                    deduct_qty=available_base_qty,  # deduct what is left
-                    base_unit=req_base_unit,
-                    status="shortfall",
+                line(
+                    "shortfall",
+                    item=pantry_item,
+                    available=available_base_qty,
+                    deduct=taken,  # deduct what is left
+                    base=req_base_unit,
                     shortfall=round(shortfall, 4),
+                    approximate=approximate,
                     match_type=match_type,
-                    substitution_note=note,
+                    note=note,
                 )
             )
 

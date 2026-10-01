@@ -8,7 +8,8 @@ from pathlib import Path
 
 from bubbly_chef.domain.catalog import categorize as catalog_categorize
 from bubbly_chef.domain.catalog import lookup as catalog_lookup
-from bubbly_chef.domain.density import density_g_per_ml, piece_weight_g
+from bubbly_chef.domain.density import density_g_per_ml, is_exact_piece_weight, piece_weight_g
+from bubbly_chef.domain.piece_weights import container_size
 
 # Synonym mappings: normalized_name -> [synonyms]
 SYNONYMS: dict[str, list[str]] = {
@@ -404,7 +405,7 @@ SIZE_ADJECTIVE_UNITS: frozenset[str] = frozenset({
 })
 
 _UNIT_ALIASES: dict[str, str] = {
-    "pound": "lb", "pounds": "lb",
+    "pound": "lb", "pounds": "lb", "lbs": "lb",
     "ounce": "oz", "ounces": "oz",
     "kilogram": "kg", "kilograms": "kg",
     "gram": "g", "grams": "g",
@@ -413,11 +414,13 @@ _UNIT_ALIASES: dict[str, str] = {
     "piece": "item", "pieces": "item",
     "each": "item",
     # Culinary units
-    "dozen": "dozen",
+    "dozen": "dozen", "doz": "dozen",
+    "half dozen": "half dozen", "half-dozen": "half dozen", "halfdozen": "half dozen",
+    "pair": "pair", "pairs": "pair",
     "stick": "stick",
     "cup": "cup", "cups": "cup",
-    "tbsp": "tbsp", "tablespoon": "tbsp", "tablespoons": "tbsp",
-    "tsp": "tsp", "teaspoon": "tsp", "teaspoons": "tsp",
+    "tbsp": "tbsp", "tbsps": "tbsp", "tbs": "tbsp", "tablespoon": "tbsp", "tablespoons": "tbsp",
+    "tsp": "tsp", "tsps": "tsp", "teaspoon": "tsp", "teaspoons": "tsp",
     "fl oz": "fl oz", "fluid ounce": "fl oz", "fluid ounces": "fl oz",
     "gallon": "gallon", "gallons": "gallon", "gal": "gallon",
     "quart": "quart", "quarts": "quart", "qt": "quart",
@@ -437,13 +440,19 @@ _UNIT_ALIASES: dict[str, str] = {
     "pinch": "pinch", "pinches": "pinch",
     "dash": "dash", "dashes": "dash",
     # Package units — one purchased container of a thing
-    "can": "can", "cans": "can",
+    "can": "can", "cans": "can", "tin": "can", "tins": "can",
     "package": "package", "packages": "package", "pkg": "package", "pkgs": "package",
+    "pack": "package", "packs": "package", "packet": "package", "packets": "package",
     "bag": "bag", "bags": "bag",
     "bottle": "bottle", "bottles": "bottle",
     "jar": "jar", "jars": "jar",
     "box": "box", "boxes": "box",
     "container": "container", "containers": "container",
+    # Cartons, tubs and canisters are all "one purchased container" here; the
+    # per-food container size (piece_weights.CONTAINER_SIZES) says what is in it.
+    "carton": "container", "cartons": "container",
+    "tub": "container", "tubs": "container",
+    "canister": "container", "canisters": "container",
     "loaf": "loaf", "loaves": "loaf",
 }
 
@@ -457,7 +466,7 @@ def normalize_unit(unit: str) -> str:
     """
     if not unit:
         return "item"
-    normalized = unit.lower().strip()
+    normalized = unit.lower().strip().rstrip(".").strip()
     # Size adjectives are not units. Treat them as "no unit given" so the
     # normalizer falls through to the ingredient's canonical count-based unit
     # rather than returning (None, None) and producing a spurious unit_conflict.
@@ -589,6 +598,8 @@ _TO_COUNT: dict[str, float] = {
     # PIECE_UNITS/PACKAGE_UNITS, so it never trips the piece-vs-package guard.
     "whole": 1.0,
     "dozen": 12.0,
+    "half dozen": 6.0,
+    "pair": 2.0,
     # Pieces of an ingredient
     "slice": 1.0,
     "leaf": 1.0,
@@ -606,6 +617,134 @@ _TO_COUNT: dict[str, float] = {
     "container": 1.0,
     "loaf": 1.0,
 }
+
+
+# ── Units that count whole pieces ──────────────────────────────────────────
+#
+# "3 eggs", "1 dozen eggs", "a pair of chicken thighs": a count of the food's own
+# natural piece, as opposed to a piece unit (clove, slice) or a package unit (can,
+# bag). Each of these converts exactly to the others (a dozen is 12 of them).
+EACH_LIKE_UNITS: frozenset[str] = frozenset(
+    {"count", "item", "whole", "dozen", "half dozen", "pair"}
+)
+
+# One purchased container of a thing. When the container states its size
+# ("28 oz can") the size converts exactly; otherwise piece_weights.CONTAINER_SIZES
+# supplies a typical one, flagged approximate.
+CONTAINER_UNITS: frozenset[str] = frozenset(
+    {"can", "jar", "bottle", "bag", "box", "package", "container"}
+)
+
+# "28 oz can", "14.5-oz can", "(14.5 oz) can", "can (14.5 oz)". The size is the
+# weight or volume of ONE container, so "2 x 28 oz can" is 56 oz.
+_SIZE_UNIT = (
+    r"fl\.?\s*oz|fluid\s+ounces?|ounces?|oz|pounds?|lbs?|grams?|g|kilograms?|kg|"
+    r"milliliters?|millilitres?|ml|liters?|litres?|l"
+)
+_SIZE_CONTAINER = (
+    r"cans?|tins?|jars?|bottles?|bags?|boxes|box|packages?|pkgs?|packs?|packets?|containers?|"
+    r"cartons?|tubs?|canisters?"
+)
+_SIZED_PREFIX_RE = re.compile(
+    rf"^\(?\s*(?P<amt>\d+(?:\.\d+)?)\s*-?\s*(?P<unit>{_SIZE_UNIT})\.?\s*\)?\s*"
+    rf"(?P<container>{_SIZE_CONTAINER})$",
+    re.IGNORECASE,
+)
+_SIZED_SUFFIX_RE = re.compile(
+    rf"^(?P<container>{_SIZE_CONTAINER})\s*\(\s*(?P<amt>\d+(?:\.\d+)?)\s*-?\s*"
+    rf"(?P<unit>{_SIZE_UNIT})\.?\s*\)$",
+    re.IGNORECASE,
+)
+# A size written into a food's name by a receipt or a label: "tomatoes 28 oz".
+_NAME_SIZE_RE = re.compile(
+    rf"(?<![\d.])(?P<amt>\d+(?:\.\d+)?)\s*-?\s*(?P<unit>{_SIZE_UNIT})(?![a-z])",
+    re.IGNORECASE,
+)
+
+
+def _measure_unit(raw: str) -> str:
+    return normalize_unit(re.sub(r"\s+", " ", raw.lower().replace(".", "")).strip())
+
+
+def parse_sized_container(unit: str | None) -> tuple[float, str, str] | None:
+    """Split "28 oz can" into (28.0, "oz", "can"), or None for any other unit.
+
+    The measure comes back as a canonical unit (`normalize_unit`), the container
+    as its canonical word. A bare "can" is not sized, nor is "28 oz".
+    """
+    if not unit:
+        return None
+    text = unit.strip()
+    m = _SIZED_PREFIX_RE.match(text) or _SIZED_SUFFIX_RE.match(text)
+    if m is None:
+        return None
+    measure = _measure_unit(m.group("unit"))
+    if measure not in _TO_G and measure not in _TO_ML:
+        return None
+    container = normalize_unit(m.group("container"))
+    if container not in CONTAINER_UNITS:
+        return None
+    return float(m.group("amt")), measure, container
+
+
+def _stated_container_size(name: str, unit: str) -> tuple[float, str] | None:
+    """A container's stated size, from the unit ("28 oz can") or else the name.
+
+    The name is only consulted when the unit is a bare container word, so
+    "tomatoes 28 oz" held as "1 can" is a 28 oz can, while "2 lb onions" held as
+    "3 item" is not touched.
+    """
+    sized = parse_sized_container(unit)
+    if sized is not None:
+        amount, measure, _container = sized
+        return amount, measure
+    if normalize_unit(unit) in CONTAINER_UNITS:
+        m = _NAME_SIZE_RE.search(name)
+        if m is not None:
+            measure = _measure_unit(m.group("unit"))
+            if measure in _TO_G or measure in _TO_ML:
+                return float(m.group("amt")), measure
+    return None
+
+
+def effective_unit(name: str, unit: str) -> str:
+    """`unit`, spelled with the container size the row's name states, when it does.
+
+    A pantry row "tomatoes 28 oz" held as "1 can" is a 28 oz can: the name carries
+    the size because that is how receipts and labels write it. Callers that
+    normalise the name first (and so lose the size) pass the raw name through
+    here to get a unit that still knows it: "28 oz can".
+    """
+    if parse_sized_container(unit) is not None:
+        return unit
+    stated = _stated_container_size(name.lower().strip(), unit)
+    if stated is None:
+        return unit
+    amount, measure = stated
+    return f"{amount:g} {measure} {normalize_unit(unit)}"
+
+
+def each_factor(unit: str | None) -> float | None:
+    """How many pieces one `unit` is, for the units that count whole pieces
+    (dozen = 12, pair = 2, count = 1); None for any other unit."""
+    if not unit:
+        return None
+    canonical = normalize_unit(unit)
+    if canonical not in EACH_LIKE_UNITS:
+        return None
+    return _TO_COUNT.get(canonical)
+
+
+def measure_in_base(amount: float, unit: str) -> tuple[float, str] | None:
+    """`amount` of a plain measure unit (oz, cup, kg, count) as (quantity, "g"|"ml"|"count")."""
+    canonical = normalize_unit(unit)
+    if canonical in _TO_G:
+        return amount * _TO_G[canonical], "g"
+    if canonical in _TO_ML:
+        return amount * _TO_ML[canonical], "ml"
+    if canonical == "count":
+        return amount, "count"
+    return None
 
 
 # ── Unit → dimension ───────────────────────────────────────────────────────
@@ -643,10 +782,13 @@ def get_unit_dimension(unit: str | None) -> str | None:
     """
     if unit is None:
         return None
+    sized = parse_sized_container(unit)
+    if sized is not None:
+        return _UNIT_DIMENSION.get(sized[1])
     return _UNIT_DIMENSION.get(normalize_unit(unit))
 
 
-def _resolve_density(name: str, category: str) -> float | None:
+def resolve_density(name: str, category: str) -> float | None:
     """Density in g/ml for *name*, retrying under its canonical name.
 
     The caller may hand us a raw label ("unsalted butter", "greek yogurt") that
@@ -660,12 +802,145 @@ def _resolve_density(name: str, category: str) -> float | None:
     return density
 
 
-def _resolve_piece_weight(unit: str, name: str) -> float | None:
+def resolve_piece_weight(unit: str, name: str) -> float | None:
     """Grams in one *unit* of *name*, retrying under its canonical name."""
     weight = piece_weight_g(unit, name)
     if weight is None:
         weight = piece_weight_g(unit, normalize_food_name(name))
     return weight
+
+
+def resolve_container_size(unit: str, name: str) -> tuple[float, str] | None:
+    """Typical size of one *unit* of *name*, retrying under its canonical name."""
+    size = container_size(unit, name)
+    if size is None:
+        size = container_size(unit, normalize_food_name(name))
+    return size
+
+
+def to_base_unit(
+    name: str,
+    quantity: float,
+    unit: str,
+    category: str = "other",
+    target_unit: str | None = None,
+) -> tuple[float, str, bool] | None:
+    """`normalize_to_base_unit`, plus whether the result is an estimate.
+
+    Returns ``(quantity_base, unit_base, approximate)`` or None when no defensible
+    conversion exists. ``approximate`` is False for anything exact: the same
+    dimension (cups to ml, oz to g, dozen to count), a stated container size
+    ("28 oz can") and a piece weight that is a definition (a stick of butter).
+    It is True for a typical figure standing in for an unstated one: a density
+    (cup to g), a piece weight (clove to g), a typical container size (a bag of
+    flour). See ``normalize_to_base_unit`` for the tiers and the target rules.
+    """
+    from bubbly_chef.domain.defaults import (
+        CATEGORY_CANONICAL_UNIT,
+        INGREDIENT_CANONICAL_UNIT,
+    )
+
+    name_lower = name.lower().strip()
+
+    # A container that states its size ("28 oz can", or "1 can" of "tomatoes 28 oz")
+    # is that many ounces/grams/ml, and converts like any other measure.
+    stated = _stated_container_size(name_lower, unit)
+    if stated is not None:
+        amount, measure = stated
+        return to_base_unit(name, quantity * amount, measure, category, target_unit)
+
+    canonical_unit = normalize_unit(unit)
+
+    # Caller-supplied destination wins; otherwise the ingredient registry (under
+    # the given name, then its canonical form, so "basmati rice" reaches "rice"),
+    # then the category default.
+    caller_set_target = target_unit is not None
+    registry_unit: str | None = None
+    if target_unit is None:
+        registry_unit = INGREDIENT_CANONICAL_UNIT.get(name_lower)
+        if registry_unit is None:
+            registry_unit = INGREDIENT_CANONICAL_UNIT.get(normalize_food_name(name_lower))
+        target_unit = registry_unit or CATEGORY_CANONICAL_UNIT.get(category, "count")
+
+    # Same unit — no conversion needed
+    if canonical_unit == target_unit:
+        return quantity, target_unit, False
+
+    # A container with a known count inside it: a carton of eggs is a dozen.
+    typical = (
+        resolve_container_size(canonical_unit, name_lower)
+        if canonical_unit in CONTAINER_UNITS
+        else None
+    )
+    if target_unit == "count" and typical is not None and typical[1] == "count":
+        return quantity * typical[0], "count", True
+
+    # count conversions
+    if target_unit == "count" and canonical_unit in _TO_COUNT:
+        return quantity * _TO_COUNT[canonical_unit], "count", False
+
+    # ml conversions
+    if target_unit == "ml" and canonical_unit in _TO_ML:
+        return quantity * _TO_ML[canonical_unit], "ml", False
+
+    # g conversions
+    if target_unit == "g" and canonical_unit in _TO_G:
+        return quantity * _TO_G[canonical_unit], "g", False
+
+    # Piece units with a conventional weight for THIS ingredient
+    # (1 stick butter = 113 g, 1 clove garlic = 5 g)
+    if target_unit == "g":
+        piece_g = resolve_piece_weight(canonical_unit, name_lower)
+        if piece_g is not None:
+            exact = is_exact_piece_weight(canonical_unit, name_lower) or is_exact_piece_weight(
+                canonical_unit, normalize_food_name(name_lower)
+            )
+            return quantity * piece_g, "g", not exact
+
+    # A container at its typical size (1 bag flour = 5 lb, 1 bottle olive oil = 500 ml),
+    # brought into the target dimension, through density when it crosses.
+    if target_unit in ("g", "ml") and typical is not None and typical[1] != "count":
+        measured = measure_in_base(quantity * typical[0], typical[1])
+        if measured is not None:
+            measured_qty, measured_dim = measured
+            if measured_dim == target_unit:
+                return measured_qty, target_unit, True
+            density = resolve_density(name_lower, category)
+            if density is not None and density > 0:
+                if target_unit == "g":
+                    return measured_qty * density, "g", True
+                return measured_qty / density, "ml", True
+
+    # Cross-dimension via ingredient density (volume <-> mass)
+    density = None
+    if (target_unit == "g" and canonical_unit in _TO_ML) or (
+        target_unit == "ml" and canonical_unit in _TO_G
+    ):
+        density = resolve_density(name_lower, category)
+
+    if density is not None and density > 0:
+        if target_unit == "g":
+            return quantity * _TO_ML[canonical_unit] * density, "g", True
+        return quantity * _TO_G[canonical_unit] / density, "ml", True
+
+    # Last resort: base the ingredient in whatever dimension its own unit is in.
+    #
+    # Without this, any ingredient missing from INGREDIENT_CANONICAL_UNIT and
+    # called without a category — which is how the cook matcher resolves the
+    # pantry side — targets "count" via the category default, so a perfectly
+    # ordinary "500 g greek yogurt" row cannot resolve a base unit at all and
+    # every recipe line touching it reports a unit conflict.
+    #
+    # It applies only when neither the caller nor the registry named a target.
+    # A registry entry is a deliberate statement about the ingredient (eggs are
+    # counted), so "1 pinch eggs" stays a refusal rather than becoming millilitres.
+    if not caller_set_target and registry_unit is None:
+        inferred_unit = _UNIT_DIMENSION.get(canonical_unit)
+        if inferred_unit is not None and inferred_unit != target_unit:
+            return to_base_unit(name, quantity, unit, category, target_unit=inferred_unit)
+
+    # No defensible conversion — say so rather than guess at one
+    return None
 
 
 def normalize_to_base_unit(
@@ -677,15 +952,17 @@ def normalize_to_base_unit(
 ) -> tuple[float, str] | tuple[None, None]:
     """Convert (quantity, unit) to (quantity_base, unit_base) for a named ingredient.
 
-    Conversion is attempted in four tiers, cheapest and most certain first:
-    within a dimension (count/ml/g), then a conventional piece weight for the
-    ingredient (1 clove garlic = 3 g), then across dimensions using ingredient
-    density (1 tsp butter = 5 ml x 0.911 g/ml = 4.6 g).
+    Conversion is attempted in tiers, cheapest and most certain first: within a
+    dimension (count/ml/g), then a conventional piece weight for the ingredient
+    (1 clove garlic = 5 g), then a container at its stated or typical size
+    (a "28 oz can", a bag of flour = 5 lb), then across dimensions using
+    ingredient density (1 tsp butter = 5 ml x 0.911 g/ml = 4.6 g).
 
     Returns (None, None) when none of those apply — an unknown unit, or a
     cross-dimension pair for an ingredient with no defensible density. That
     refusal is deliberate: the cook flow turns it into a visible "unit conflict"
     the user can resolve, which is safer than deducting a made-up quantity.
+    ``to_base_unit`` is the same conversion with an ``approximate`` flag.
 
     Args:
         target_unit: Convert toward this unit instead of looking one up by name.
@@ -704,77 +981,7 @@ def normalize_to_base_unit(
         normalize_to_base_unit("matcha", 3.0, "tbsp")  -> (None, None)  # no density
         normalize_to_base_unit("sour cream", 100.0, "g", target_unit="g") -> (100.0, "g")
     """
-    from bubbly_chef.domain.defaults import (
-        CATEGORY_CANONICAL_UNIT,
-        INGREDIENT_CANONICAL_UNIT,
-    )
-
-    canonical_unit = normalize_unit(unit)
-    name_lower = name.lower().strip()
-
-    # Caller-supplied destination wins; otherwise the ingredient registry (under
-    # the given name, then its canonical form, so "basmati rice" reaches "rice"),
-    # then the category default.
-    caller_set_target = target_unit is not None
-    registry_unit: str | None = None
-    if target_unit is None:
-        registry_unit = INGREDIENT_CANONICAL_UNIT.get(name_lower)
-        if registry_unit is None:
-            registry_unit = INGREDIENT_CANONICAL_UNIT.get(normalize_food_name(name_lower))
-        target_unit = registry_unit or CATEGORY_CANONICAL_UNIT.get(category, "count")
-
-    # Same unit — no conversion needed
-    if canonical_unit == target_unit:
-        return quantity, target_unit
-
-    # count conversions
-    if target_unit == "count" and canonical_unit in _TO_COUNT:
-        return quantity * _TO_COUNT[canonical_unit], "count"
-
-    # ml conversions
-    if target_unit == "ml" and canonical_unit in _TO_ML:
-        return quantity * _TO_ML[canonical_unit], "ml"
-
-    # g conversions
-    if target_unit == "g" and canonical_unit in _TO_G:
-        return quantity * _TO_G[canonical_unit], "g"
-
-    # Piece units with a conventional weight for THIS ingredient
-    # (1 stick butter = 113 g, 1 clove garlic = 3 g)
-    if target_unit == "g":
-        piece_g = _resolve_piece_weight(canonical_unit, name_lower)
-        if piece_g is not None:
-            return quantity * piece_g, "g"
-
-    # Cross-dimension via ingredient density (volume <-> mass)
-    density = None
-    if (target_unit == "g" and canonical_unit in _TO_ML) or (
-        target_unit == "ml" and canonical_unit in _TO_G
-    ):
-        density = _resolve_density(name_lower, category)
-
-    if density is not None and density > 0:
-        if target_unit == "g":
-            return quantity * _TO_ML[canonical_unit] * density, "g"
-        return quantity * _TO_G[canonical_unit] / density, "ml"
-
-    # Last resort: base the ingredient in whatever dimension its own unit is in.
-    #
-    # Without this, any ingredient missing from INGREDIENT_CANONICAL_UNIT and
-    # called without a category — which is how the cook matcher resolves the
-    # pantry side — targets "count" via the category default, so a perfectly
-    # ordinary "500 g greek yogurt" row cannot resolve a base unit at all and
-    # every recipe line touching it reports a unit conflict.
-    #
-    # It applies only when neither the caller nor the registry named a target.
-    # A registry entry is a deliberate statement about the ingredient (eggs are
-    # counted), so "1 pinch eggs" stays a refusal rather than becoming millilitres.
-    if not caller_set_target and registry_unit is None:
-        inferred_unit = _UNIT_DIMENSION.get(canonical_unit)
-        if inferred_unit is not None and inferred_unit != target_unit:
-            return normalize_to_base_unit(
-                name, quantity, unit, category, target_unit=inferred_unit
-            )
-
-    # No defensible conversion — say so rather than guess at one
-    return None, None
+    result = to_base_unit(name, quantity, unit, category, target_unit)
+    if result is None:
+        return None, None
+    return result[0], result[1]
