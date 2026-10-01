@@ -1,59 +1,39 @@
 /**
- * Issue #807 — the bubble-pop reaction fires on a use-up award, end to end.
+ * Issues #807 and #843 — the award reaction on a use-up, end to end, and there is
+ * exactly one of it.
  *
- * The Goal 3 demo saw the balance go 1,312 -> 1,320 after "Mark baby spinach as
- * used up" but caught no `bubble-pop` element in a 2.4s window. `bubble-pop.test`
- * proves BubblePop reacts to a balance change in isolation; this proves the
- * whole chain on the real home: the storage sheet's Used up action -> the
- * resolve endpoint (which awards) -> the bubbles balance refetch -> the
- * app-level pop. A break anywhere along it (the resolve path stops
- * invalidating `['bubbles']`, BubblePop stops reading the shared cache) fails
- * here, which the isolated test cannot see.
+ * #807: the Goal 3 demo saw the balance go 1,312 -> 1,320 after "Mark baby spinach
+ * as used up" with no reaction on screen. This proves the whole chain on the real
+ * home: the storage sheet's Used up action -> the resolve endpoint (which awards)
+ * -> the bubbles balance refetch -> the reaction. A break anywhere along it (the
+ * resolve path stops invalidating `['bubbles']`, the reaction stops reading the
+ * shared cache) fails here, which the isolated tests cannot see.
+ *
+ * #843: on the kitchen home the reaction is the header counter's own "+N" tag
+ * (`bubbles-counter-rise`); the global `BubblePop` stays quiet there while the
+ * counter is showing. So an award is one "+N", never two. (`bubble-pop.test` and
+ * `bubble-reaction-owner.test` cover `BubblePop` off the home.)
+ *
+ * "Used it" waits out its undo window before the resolve is written (#851); the
+ * window is shortened through the store's test seam so this stays on real timers.
  *
  * Only the network and the router are faked; HeroHome, the storage sheet,
- * react-query and BubblePop are the real ones, sharing one QueryClient exactly
- * as `Providers` does. `framer-motion` is real too, except that the reduced
- * motion switch is controllable and the pop's `animate` prop is surfaced as a
- * data attribute so the reduced form can be asserted (opacity only, no rise).
+ * react-query, the counter and BubblePop are the real ones, sharing one QueryClient
+ * exactly as `Providers` does. Reduced motion is a switch.
  */
 import React from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import HeroHome from '@/components/dashboard/HeroHome'
 import BubblePop from '@/components/ui/BubblePop'
+import UndoToastHost from '@/components/pantry/UndoToastHost'
+import { resetDeferredResolvesForTests, setUndoWindowMsForTests } from '@/lib/pantry-undo'
 
 let mockReduced = false
-jest.mock('framer-motion', () => {
-  const actual = jest.requireActual('framer-motion')
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- a jest.mock factory can't use the module-scope import
-  const ReactLib = require('react') as typeof import('react')
-  const cache = new Map<string, unknown>()
-  // Same behaviour as the real `motion.span`, plus the `animate` prop mirrored
-  // onto a data attribute for the one element under test.
-  const motion = new Proxy(actual.motion, {
-    get(target, tag: string) {
-      const Real = target[tag]
-      if (tag !== 'span') return Real
-      if (!cache.has(tag)) {
-        const Wrapped = ReactLib.forwardRef<HTMLSpanElement, Record<string, unknown>>(
-          function WrappedSpan(props, ref) {
-            const animate = props.animate
-            return ReactLib.createElement(Real, {
-              ...props,
-              ref,
-              ...(typeof animate === 'object' && animate !== null
-                ? { 'data-animate': JSON.stringify(animate) }
-                : {}),
-            })
-          },
-        )
-        cache.set(tag, Wrapped)
-      }
-      return cache.get(tag)
-    },
-  })
-  return { ...actual, motion, useReducedMotion: () => mockReduced }
-})
+jest.mock('framer-motion', () => ({
+  ...jest.requireActual('framer-motion'),
+  useReducedMotion: () => mockReduced,
+}))
 
 const replaceSpy = jest.fn()
 jest.mock('next/navigation', () => ({
@@ -117,13 +97,18 @@ function mockApi(rows: Row[], awardOnUse: number) {
   }) as unknown as typeof fetch
 }
 
-/** HeroHome and the app-level BubblePop on one QueryClient, as `Providers` mounts them. */
+/**
+ * HeroHome and the app-level BubblePop on one QueryClient, as `Providers` mounts
+ * them. The undo toast host is part of `Providers` too, so a resolve's write lands
+ * and refreshes `['bubbles']` the way it does in the app.
+ */
 function renderApp() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       <HeroHome displayName="ayush" />
       <BubblePop />
+      <UndoToastHost />
     </QueryClientProvider>,
   )
 }
@@ -135,35 +120,44 @@ async function openList() {
   return sheet
 }
 
+/** Every "+N" award chip on screen: the global pop and the counter's own tag. */
+const chips = () => [
+  ...screen.queryAllByTestId('bubble-pop'),
+  ...screen.queryAllByTestId('bubbles-counter-rise'),
+]
+
 const originalFetch = global.fetch
 let rows: Row[]
 beforeEach(() => {
   mockReduced = false
   rows = seed()
+  resetDeferredResolvesForTests()
+  setUndoWindowMsForTests(50)
 })
 afterEach(() => {
   global.fetch = originalFetch
+  resetDeferredResolvesForTests()
 })
 
-describe('bubble pop on a use-up award (#807)', () => {
-  it('pops "+8" after "Mark baby spinach as used up" awards 8 bubbles', async () => {
+describe('one award reaction on a use-up award (#807, #843)', () => {
+  it('shows one "+8" after "Mark baby spinach as used up" awards 8 bubbles: the counter tag', async () => {
     mockApi(rows, AWARD)
     renderApp()
     // The starting balance has to be known first: the very first observation is
-    // an initial load, never a pop.
+    // an initial load, never a reaction.
     await screen.findByRole('group', { name: `${START} bubbles` })
-    expect(screen.queryByTestId('bubble-pop')).toBeNull()
+    expect(chips()).toHaveLength(0)
 
     const sheet = await openList()
     fireEvent.click(within(sheet).getByRole('button', { name: /Mark baby spinach as used up/i }))
 
-    const pop = await screen.findByTestId('bubble-pop')
-    expect(pop).toHaveTextContent(`+${AWARD}`)
-    // Full motion: it rises as well as fades.
-    expect(JSON.parse(pop.getAttribute('data-animate') ?? '{}')).toHaveProperty('y', -40)
+    const tag = await screen.findByTestId('bubbles-counter-rise')
+    expect(tag).toHaveTextContent(`+${AWARD}`)
+    expect(screen.queryByTestId('bubble-pop')).toBeNull()
+    expect(chips()).toHaveLength(1)
   })
 
-  it('gets its reduced form under reduced motion: still pops, fades in place, no rise', async () => {
+  it('is still exactly one under reduced motion', async () => {
     mockReduced = true
     mockApi(rows, AWARD)
     renderApp()
@@ -172,14 +166,12 @@ describe('bubble pop on a use-up award (#807)', () => {
     const sheet = await openList()
     fireEvent.click(within(sheet).getByRole('button', { name: /Mark baby spinach as used up/i }))
 
-    const pop = await screen.findByTestId('bubble-pop')
-    expect(pop).toHaveTextContent(`+${AWARD}`)
-    const animate = JSON.parse(pop.getAttribute('data-animate') ?? '{}')
-    expect(animate).toHaveProperty('opacity')
-    expect(animate).not.toHaveProperty('y')
+    expect(await screen.findByTestId('bubbles-counter-rise')).toHaveTextContent(`+${AWARD}`)
+    expect(screen.queryByTestId('bubble-pop')).toBeNull()
+    expect(chips()).toHaveLength(1)
   })
 
-  it('pops once for a bulk "Used up", with the combined award', async () => {
+  it('is one chip for a bulk "Used up", with the combined award', async () => {
     mockApi(rows, AWARD)
     renderApp()
     await screen.findByRole('group', { name: `${START} bubbles` })
@@ -190,11 +182,11 @@ describe('bubble pop on a use-up award (#807)', () => {
     fireEvent.click(within(sheet).getByRole('checkbox', { name: /^Carrots/ }))
     fireEvent.click(within(sheet).getByRole('button', { name: 'Used up' }))
 
-    const pop = await screen.findByTestId('bubble-pop')
-    expect(pop).toHaveTextContent(`+${AWARD * 2}`)
+    expect(await screen.findByTestId('bubbles-counter-rise')).toHaveTextContent(`+${AWARD * 2}`)
+    expect(chips()).toHaveLength(1)
   })
 
-  it('does not pop when the use-up earns nothing', async () => {
+  it('shows nothing when the use-up earns nothing', async () => {
     mockApi(rows, 0)
     renderApp()
     await screen.findByRole('group', { name: `${START} bubbles` })
@@ -202,8 +194,8 @@ describe('bubble pop on a use-up award (#807)', () => {
     const sheet = await openList()
     fireEvent.click(within(sheet).getByRole('button', { name: /Mark baby spinach as used up/i }))
     await waitFor(() => expect(within(sheet).queryByRole('button', { name: /^Baby spinach/i })).not.toBeInTheDocument())
-    // Give the balance refetch time to land; the pop must still not appear.
-    await new Promise((r) => setTimeout(r, 150))
-    expect(screen.queryByTestId('bubble-pop')).toBeNull()
+    // Give the write and the balance refetch time to land; no chip must appear.
+    await new Promise((r) => setTimeout(r, 250))
+    expect(chips()).toHaveLength(0)
   })
 })

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useBubbles } from '@/lib/api/bubbles'
+import { useBubbleReactionClaimed } from '@/lib/bubble-reaction'
 import { useMotionConfig } from '@/lib/motion'
 
 interface Pop {
@@ -30,6 +31,10 @@ interface Pop {
  * balance is always treated as an initial load rather than a delta off the
  * previous user's leftover number (issue #525 review).
  *
+ * Silent on the kitchen home while the header counter is showing (issue #843):
+ * the counter's own anchored "+N" tag is the reaction there, and two chips per
+ * award read as a bug. See `lib/bubble-reaction.ts`.
+ *
  * Pinned top-right, just under the app header — the same corner the kitchen
  * scene's own 🫧 balance pill occupies on home, so the pop reads as feeding
  * that balance rather than floating disconnected from it. `top-16` clears
@@ -45,6 +50,13 @@ export default function BubblePop() {
   const [pop, setPop] = useState<Pop | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { reduced: prefersReducedMotion } = useMotionConfig()
+  // Kept in a ref (written in an effect, like `lastSeenRef`'s readers) so a counter
+  // mounting or leaving never re-runs the balance effect below.
+  const counterReacts = useBubbleReactionClaimed()
+  const counterReactsRef = useRef(counterReacts)
+  useEffect(() => {
+    counterReactsRef.current = counterReacts
+  }, [counterReacts])
 
   useEffect(() => {
     if (typeof balance !== 'number') {
@@ -55,7 +67,10 @@ export default function BubblePop() {
       return
     }
     const lastSeen = lastSeenRef.current
-    if (lastSeen !== null && balance > lastSeen) {
+    // One award moment per award (#843): while a visible counter is showing its own
+    // "+N" (the kitchen home), that tag is the reaction and this stays quiet. The
+    // balance is still recorded below, so the next award off-home is a true delta.
+    if (lastSeen !== null && balance > lastSeen && !counterReactsRef.current) {
       const delta = balance - lastSeen
       setPop({ key: Date.now(), delta })
       if (timerRef.current) clearTimeout(timerRef.current)

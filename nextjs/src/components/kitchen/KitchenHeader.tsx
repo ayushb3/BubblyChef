@@ -22,6 +22,7 @@
  * (issue #839).
  */
 import BubblesCounter from '@/components/ui/BubblesCounter'
+import { useClaimBubbleReaction } from '@/lib/bubble-reaction'
 import PageHeader from '@/components/layout/PageHeader'
 import NotificationBell from '@/components/layout/NotificationBell'
 import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
@@ -32,6 +33,9 @@ export interface KitchenHeaderProps {
 }
 
 export default function KitchenHeader({ eyebrow, balance }: KitchenHeaderProps) {
+  // While the counter is showing, its "+N" tag is the award reaction here, so the
+  // global `BubblePop` stays quiet (issue #843).
+  useClaimBubbleReaction(balance !== null)
   return (
     <PageHeader
       eyebrow={eyebrow}
