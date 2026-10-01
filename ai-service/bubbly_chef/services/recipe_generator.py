@@ -1,7 +1,8 @@
 """Recipe generation service using AI."""
 
 import asyncio
-from typing import Any
+import logging
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -13,6 +14,16 @@ from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.models.recipe import Ingredient, RecipeCard, StepMetadata, build_structured_steps
 from bubbly_chef.prompts.recipe import RECIPE_FOLLOWUP_PROMPT, RECIPE_GENERATION_PROMPT
+from bubbly_chef.services.recipe_refine import (
+    AppliedEdits,
+    RefineEdits,
+    apply_ingredient_edits,
+    instructions_mentioning_removed,
+    name_divergence,
+    unreported_additions,
+)
+
+logger = logging.getLogger(__name__)
 
 # Maximum retry attempts for AI generation
 MAX_RETRIES = 2
@@ -49,6 +60,45 @@ class AIRecipeOutput(BaseModel):
     tips: list[str] = Field(default_factory=list, description="Cooking tips")
     cuisine: str | None = Field(default=None, description="Cuisine type")
     difficulty: str | None = Field(default=None, description="easy, medium, or hard")
+
+
+class AIRecipeRefineOutput(AIRecipeOutput):
+    """Schema for the LLM's output on a refine (follow-up) turn (issues #579, #535).
+
+    A refine is an edit, so the model reports *what it touched* and the code
+    applies only that onto the previous card. `ingredients` is still the model's
+    full updated list, but it is context for the instructions, not the source of
+    truth: the card's ingredient list is the previous list plus `added`,
+    `removed` and `changed`, so an ingredient the model didn't report can't be
+    renamed, swapped or rescaled, however the full list reads.
+    """
+
+    added: list[AIRecipeIngredient] = Field(
+        default_factory=list,
+        description=(
+            "Ingredients the user's request introduces that are not on the previous "
+            "recipe. Empty when the request adds nothing."
+        ),
+    )
+    removed: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Names of previous-recipe ingredients the user's request takes out, copied "
+            "exactly as written on the previous recipe. Empty when it removes nothing."
+        ),
+    )
+    changed: list[AIRecipeIngredient] = Field(
+        default_factory=list,
+        description=(
+            "Previous-recipe ingredients whose amount, unit or preparation the request "
+            "changes: the exact previous name plus the new values. Never rename an "
+            "ingredient here and never list one the request didn't mention; a "
+            "substitution is a removal in `removed` plus an addition in `added`."
+        ),
+    )
+
+
+_RecipeOutputT = TypeVar("_RecipeOutputT", bound=AIRecipeOutput)
 
 
 class IngredientStatus(BaseModel):
@@ -301,6 +351,149 @@ def calculate_pantry_match_score(statuses: list[IngredientStatus]) -> float:
     return score / len(statuses)
 
 
+async def _complete_recipe(
+    ai_manager: AIManager, full_prompt: str, schema: type[_RecipeOutputT]
+) -> _RecipeOutputT:
+    """One structured recipe completion, retried on intermittent AI failures."""
+    last_error: StructuredOutputError | None = None
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            result = await ai_manager.complete(
+                prompt=full_prompt,
+                response_schema=schema,
+                temperature=0.8,  # Higher temperature for creativity
+            )
+        except StructuredOutputError as e:
+            last_error = e
+            if attempt < MAX_RETRIES:
+                # Wait briefly before retry (exponential backoff)
+                await asyncio.sleep(2**attempt)  # 1s, 2s, 4s
+                continue
+            # All retries exhausted
+            raise StructuredOutputError(
+                f"Failed to generate recipe after {MAX_RETRIES + 1} attempts. "
+                f"Last error: {str(last_error)}"
+            ) from e
+        if isinstance(result, str):
+            raise StructuredOutputError(
+                f"AI returned raw text instead of structured output: {result[:200]}"
+            )
+        return result
+    raise StructuredOutputError("Failed to generate recipe")  # pragma: no cover
+
+
+def _to_ingredient(ing: AIRecipeIngredient) -> Ingredient:
+    return Ingredient(
+        name=ing.name,
+        quantity=ing.quantity,
+        unit=ing.unit,
+        preparation=ing.preparation,
+        optional=ing.optional,
+        substitutes=[],
+    )
+
+
+def _reported_edits(result: AIRecipeOutput) -> RefineEdits:
+    """The edit list a refine reply reported.
+
+    A provider (or test double) that answers with the plain recipe schema has
+    reported nothing, the same as a reply that left all three lists empty.
+    """
+    return RefineEdits(
+        added=[_to_ingredient(i) for i in getattr(result, "added", None) or []],
+        removed=list(getattr(result, "removed", None) or []),
+        changed=[_to_ingredient(i) for i in getattr(result, "changed", None) or []],
+    )
+
+
+def _edits_for_refine(
+    previous: RecipeCard, result: AIRecipeOutput, instruction: str
+) -> RefineEdits:
+    """`_reported_edits`, with an unreported-but-evident addition taken (#579 review).
+
+    Gemini's structured output here is a schema embedded in the prompt and
+    validated afterwards, so a reply can omit `added`/`removed`/`changed` and
+    still validate. "No edits reported" and "the model ignored the new keys"
+    then look alike, so when nothing was reported but the regenerated list
+    differs from the card the divergence is logged, and an ingredient the
+    instruction itself names (the mushrooms of "add mushrooms") is accepted.
+
+    Rejected alternative: a silent no-op, which ships a card whose steps cook
+    mushrooms and whose ingredient list has none. Also rejected: trusting every
+    new name in the regenerated list, which is the drift this fixes.
+    """
+    edits = _reported_edits(result)
+    if not edits.is_empty:
+        return edits
+
+    regenerated = [_to_ingredient(i) for i in result.ingredients]
+    new_names, gone_names = name_divergence(previous.ingredients, regenerated)
+    if not new_names and not gone_names:
+        return edits
+
+    logger.warning(
+        "Refine reported no ingredient edits but its regenerated list differs from the "
+        "card (only in the reply: %s; only on the card: %s); the card's own list is kept "
+        "apart from additions the instruction names",
+        new_names,
+        gone_names,
+    )
+    named = unreported_additions(previous.ingredients, regenerated, instruction)
+    if named:
+        logger.warning(
+            "Accepting unreported addition(s) the instruction names: %s",
+            [i.name for i in named],
+        )
+        edits.added = named
+    return edits
+
+
+def _apply_refine_edits(previous: RecipeCard, edits: RefineEdits) -> AppliedEdits:
+    """The previous card's ingredients plus the edits the model reported."""
+    applied = apply_ingredient_edits(
+        previous.ingredients,
+        added=edits.added,
+        removed=edits.removed,
+        changed=edits.changed,
+    )
+    if applied.unmatched_removals or applied.unmatched_changes or applied.unmatched_additions:
+        logger.warning(
+            "Refine edits that matched no single ingredient on the previous card were "
+            "ignored: removed=%s changed=%s added=%s",
+            applied.unmatched_removals,
+            applied.unmatched_changes,
+            applied.unmatched_additions,
+        )
+    return applied
+
+
+def _stale_instruction_indices(
+    instructions: list[str], applied: AppliedEdits, edits: RefineEdits
+) -> list[int]:
+    return instructions_mentioning_removed(
+        instructions,
+        removed=applied.removed,
+        reported_names=edits.removed,
+        remaining=applied.ingredients,
+    )
+
+
+def _stale_steps_prompt(
+    base_prompt: str, applied: AppliedEdits, instructions: list[str], stale: list[int]
+) -> str:
+    """The same refine prompt, plus a note on steps that still cook a removed ingredient."""
+    removed = ", ".join(ing.name for ing in applied.removed)
+    offending = "\n".join(f"- {instructions[i]}" for i in stale)
+    return (
+        f"{base_prompt}\n\n## Correction\n"
+        f"Your previous answer removed {removed} but these instructions still use it:\n"
+        f"{offending}\n"
+        "Answer again, rewriting the instructions (and matching steps) so nothing "
+        "uses a removed ingredient. Keep reporting the same removals in `removed`, "
+        "and keep every other ingredient exactly as it was."
+    )
+
+
 async def generate_recipe(
     prompt: str,
     pantry_items: list[PantryItem],
@@ -339,7 +532,7 @@ async def generate_recipe(
     constraints_formatted = format_constraints(constraints)
 
     # Choose prompt based on whether this is a follow-up
-    if previous_recipe:
+    if previous_recipe is not None:
         full_prompt = RECIPE_FOLLOWUP_PROMPT.format(
             previous_recipe=format_recipe_for_context(previous_recipe),
             pantry_items_formatted=pantry_formatted,
@@ -354,51 +547,58 @@ async def generate_recipe(
             constraints=constraints_formatted,
         )
 
-    # Retry logic for AI generation
-    last_error = None
-    for attempt in range(MAX_RETRIES + 1):
-        try:
-            # Call AI to generate recipe
-            result = await ai_manager.complete(
-                prompt=full_prompt,
-                response_schema=AIRecipeOutput,
-                temperature=0.8,  # Higher temperature for creativity
-            )
+    result: AIRecipeOutput
+    if previous_recipe is None:
+        result = await _complete_recipe(ai_manager, full_prompt, AIRecipeOutput)
+        instructions = list(result.instructions)
+        steps_meta = list(result.steps)
+        ingredients = [_to_ingredient(ing) for ing in result.ingredients]
+    else:
+        result = await _complete_recipe(ai_manager, full_prompt, AIRecipeRefineOutput)
+        instructions = list(result.instructions)
+        steps_meta = list(result.steps)
 
-            # Success! Break out of retry loop
-            break
+        # A refine is an edit: the ingredient list is the previous card's plus
+        # the model's reported edits, never its regenerated list (#579, #535).
+        edits = _edits_for_refine(previous_recipe, result, prompt)
+        applied = _apply_refine_edits(previous_recipe, edits)
 
-        except StructuredOutputError as e:
-            last_error = e
-            if attempt < MAX_RETRIES:
-                # Wait briefly before retry (exponential backoff)
-                wait_time = 2**attempt  # 1s, 2s, 4s
-                await asyncio.sleep(wait_time)
-                continue
+        # The steps may be rewritten, but not to cook a removed ingredient. One
+        # corrective re-ask; whatever still names it after that is dropped.
+        stale = _stale_instruction_indices(instructions, applied, edits)
+        if stale:
+            retry_prompt = _stale_steps_prompt(full_prompt, applied, instructions, stale)
+            try:
+                retried = await _complete_recipe(ai_manager, retry_prompt, AIRecipeRefineOutput)
+            except StructuredOutputError:
+                logger.warning("Refine re-ask for stale steps failed; dropping the steps instead")
             else:
-                # All retries exhausted
-                raise StructuredOutputError(
-                    f"Failed to generate recipe after {MAX_RETRIES + 1} attempts. "
-                    f"Last error: {str(last_error)}"
-                ) from e
-
-    # Convert AI output to RecipeCard
-    if isinstance(result, str):
-        raise StructuredOutputError(
-            f"AI returned raw text instead of structured output: {result[:200]}"
-        )
-
-    ingredients = [
-        Ingredient(
-            name=ing.name,
-            quantity=ing.quantity,
-            unit=ing.unit,
-            preparation=ing.preparation,
-            optional=ing.optional,
-            substitutes=[],
-        )
-        for ing in result.ingredients
-    ]
+                # The re-ask is about the steps: its edit list extends the first
+                # answer's and can never undo a removal it made.
+                edits = edits.carried_into(_reported_edits(retried), applied.removed)
+                applied = _apply_refine_edits(previous_recipe, edits)
+                result = retried
+                instructions = list(retried.instructions)
+                steps_meta = list(retried.steps)
+            stale = _stale_instruction_indices(instructions, applied, edits)
+            if stale:
+                kept = [t for i, t in enumerate(instructions) if i not in stale]
+                if kept:
+                    logger.warning(
+                        "Dropping %d refined step(s) that still name a removed ingredient",
+                        len(stale),
+                    )
+                    instructions = kept
+                    # Step metadata is positional (depends_on indexes into it), so
+                    # after a drop it can't be realigned: leave steps unstructured.
+                    steps_meta = []
+                else:
+                    # Every step names it: dropping them all would leave a card
+                    # with nothing to cook from, so keep them and say so.
+                    logger.warning(
+                        "Every refined step still names a removed ingredient; keeping them"
+                    )
+        ingredients = applied.ingredients
 
     # Calculate total time
     total_time = None
@@ -417,8 +617,8 @@ async def generate_recipe(
         total_time_minutes=total_time,
         servings=result.servings,
         ingredients=ingredients,
-        instructions=result.instructions,
-        steps=build_structured_steps(result.steps, result.instructions),
+        instructions=instructions,
+        steps=build_structured_steps(steps_meta, instructions),
         tips=result.tips,
         cuisine=result.cuisine,
         difficulty=result.difficulty,

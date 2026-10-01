@@ -169,6 +169,25 @@ MODE_BIAS_RECIPE_BROWSING_PROMPT = (
     "Use 'recipe_brainstorm' if they want new ideas."
 )
 
+# Appended to the classifier prompt by `classify_intent`, NOT part of
+# INTENT_CLASSIFICATION_SYSTEM_PROMPT: that constant's hash pins the captured intent
+# fixtures, and this section only adds an orthogonal flag, so the captured intents
+# stay valid (#687). A bare "I'm not vegetarian any more" is food talk with no dish,
+# so the intent alone lands on general_chat, where constraint extraction never runs.
+# The flag sends it to the diet extractor instead.
+DIET_CHANGE_FLAG_PROMPT = (
+    "\n\nAlso set `diet_change_mentioned` (independent of the intent above) to true "
+    "when the message talks about dropping, relaxing or no longer following a diet or "
+    "food restriction -- whoever's it is, and however it is phrased, including "
+    "questions and complaints: 'I'm not vegetarian any more', 'we're not vegan "
+    "tonight', 'no longer vegan?', 'that's not vegetarian!', 'I'm not a vegetarian "
+    "but my partner is'. The flag only sends the message to a separate extractor that "
+    "decides whether anything actually changes; it never clears a diet by itself, so "
+    "set it whenever a diet is being talked about as ending or not applying. Leave it "
+    "false for a message that merely states a diet ('I'm vegetarian') or asks for a "
+    "dish."
+)
+
 MODE_BIAS_COOKING_PROMPT = (
     "\n\nSESSION CONTEXT: The user is actively cooking a recipe. "
     "Bias toward 'cooking_help' for questions about technique, timing, or substitutions. "

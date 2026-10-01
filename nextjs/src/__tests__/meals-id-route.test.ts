@@ -263,6 +263,38 @@ describe('DELETE /api/meals/[id] — keeps saved dish recipes, removes draft one
     expect(deletes.recipes).toEqual([['side-1']])
   })
 
+  it("returns 404 and deletes nothing when the meal does not exist or is not this user's (issue #675)", async () => {
+    const recipeDeletes: unknown[] = []
+    const supabase = {
+      from(table: string) {
+        if (table === 'meal_dishes') {
+          // RLS + the user_id filter: another user's (or a missing) meal has no visible dishes.
+          return { select: () => ({ eq: () => ({ eq: async () => ({ data: [], error: null }) }) }) }
+        }
+        if (table === 'recipes') {
+          return {
+            delete: () => ({
+              in: (_c: string, ids: string[]) => {
+                recipeDeletes.push(ids)
+                return { eq: async () => ({ error: null }) }
+              },
+            }),
+          }
+        }
+        if (table === 'meals') {
+          return { delete: () => ({ eq: () => ({ eq: async () => ({ error: null, count: 0 }) }) }) }
+        }
+        throw new Error(`unexpected table ${table}`)
+      },
+    }
+    ;(requireAuth as jest.Mock).mockResolvedValue([supabase, mockUser])
+
+    const res = await DELETE(new Request('http://localhost/api/meals/nope'), params('nope'))
+
+    expect(res.status).toBe(404)
+    expect(recipeDeletes).toHaveLength(0)
+  })
+
   it('returns 401 without touching Supabase when unauthenticated', async () => {
     const unauthorized = NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     ;(requireAuth as jest.Mock).mockResolvedValue(unauthorized)

@@ -83,6 +83,17 @@ class LLMIntentResult(BaseModel):
             "something else'), or anything unrelated."
         ),
     )
+    diet_change_mentioned: bool = Field(
+        default=False,
+        description=(
+            "Set true when the message talks about dropping, relaxing or no longer "
+            "following a diet or food restriction (issue #687): 'I'm not vegetarian any "
+            "more', 'we're not vegan tonight', 'my partner is vegetarian, I'm not', "
+            "'no longer vegan?'. Independent of `intent`. It only sends the message to "
+            "the diet extractor, which decides whether anything changes; it never "
+            "clears a diet itself, so when unsure, set it."
+        ),
+    )
 
 
 class LLMGeneralChatResult(BaseModel):

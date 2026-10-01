@@ -33,6 +33,7 @@ from bubbly_chef.prompts.pantry import (
     SUGGEST_SPECIFICS_SYSTEM_PROMPT,
     SUGGEST_SPECIFICS_USER_PROMPT,
 )
+from bubbly_chef.repository.supabase_repo import get_repository
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 from bubbly_chef.workflows.state import (
     LLMClarificationResult,
@@ -709,7 +710,55 @@ async def suggest_specifics(state: WorkflowState) -> WorkflowState:
         return {**state, "clarification_suggestions": []}
 
 
-def finalize_pantry_proposal(state: WorkflowState) -> WorkflowState:
+async def _lot_notes(user_id: str, actions: list[PantryUpsertAction]) -> list[str]:
+    """One sentence per `remove` or `use` action that reaches several lots (#711).
+
+    Applying a remove clears every lot of the food, so the card says how many go
+    and what they are. A use only gets a sentence when it would draw on a lot
+    under a different name than the user said (the same grouping that makes
+    `remove onion` reach `organic onion`). Best effort: a lookup that fails or
+    finds one lot (or none) adds nothing, and never blocks the proposal.
+    """
+    targets = [
+        (a.item.name, a.action_type)
+        for a in actions
+        if a.action_type in (ActionType.REMOVE, ActionType.USE)
+    ]
+    if not targets or not user_id:
+        return []
+    notes: list[str] = []
+    try:
+        repo = await get_repository()
+        for name, action_type in targets:
+            lots = await repo.find_food_lots(user_id, name)
+            if len(lots) < 2:
+                continue
+            # Lots are grouped by synonym-normalised name, so a lot can carry a
+            # different name ("organic onion"): say so, it is part of what is touched.
+            renamed = any(lot.name.strip().lower() != name.strip().lower() for lot in lots)
+            described = "; ".join(
+                f"{lot.quantity:g} {lot.unit}"
+                + (f" of {lot.name}" if lot.name.strip().lower() != name.strip().lower() else "")
+                + (f", expires {lot.expiry_date.isoformat()}" if lot.expiry_date else "")
+                for lot in lots
+            )
+            if action_type == ActionType.REMOVE:
+                notes.append(
+                    f"You have {len(lots)} lots of {name} ({described}); removing it clears all "
+                    f"{len(lots)} lots."
+                )
+            elif renamed:
+                notes.append(
+                    f"You have {len(lots)} lots of {name} ({described}); using it takes from "
+                    "the soonest expiry first."
+                )
+    except Exception as e:
+        logger.warning(f"Could not look up lots for a pantry proposal: {e}")
+        return []
+    return notes
+
+
+async def finalize_pantry_proposal(state: WorkflowState) -> WorkflowState:
     """
     Node: Create final PantryProposal from state.
     """
@@ -722,6 +771,15 @@ def finalize_pantry_proposal(state: WorkflowState) -> WorkflowState:
         dedup_applied=bool(state.get("pantry_snapshot")),
         normalization_applied=True,
     )
+
+    notes = await _lot_notes(state.get("user_id") or "", actions)
+    if notes:
+        message = state.get("assistant_message", "")
+        return {
+            **state,
+            "proposal": proposal,
+            "assistant_message": " ".join([message, *notes]).strip(),
+        }
 
     return {
         **state,

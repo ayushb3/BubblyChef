@@ -89,7 +89,11 @@ So the body must let someone approve or reject **without opening the diff**:
   pantry proposal now writes to the pantry" beats "updated `useChat.ts`".
 - **Evidence it works.** For anything visual, attach before/after screenshots or a
   short clip — drive the app and capture it; Chromium and Playwright are available
-  in cloud sessions, so "I couldn't run it" is rarely true. For anything else, name
+  in cloud sessions, so "I couldn't run it" is rarely true. Embed each image with an
+  absolute URL pinned to a commit,
+  `https://github.com/ayushb3/BubblyChef/blob/<full-sha>/docs/media/...?raw=true`:
+  GitHub doesn't render a relative path in a PR description, and a
+  `blob/<branch>/` URL breaks once the branch is deleted. For anything else, name
   the tests that cover it and show the relevant output.
 - **What you verified, and how.** Distinguish "tests pass" from "I reproduced the
   original bug and watched it stop happening" — only the second is evidence the
@@ -254,7 +258,10 @@ Because nobody reads the diff, **the PR body carries the review** (§4).
 
 **Guard the context window:** agents post *summaries* to the issue/PR, not full
 transcripts or diffs. Detail lives in linked artifacts (a demo doc, a decisions log,
-screenshots under `docs/media/`) — link to it, don't paste it inline.
+screenshots under `docs/media/`) — link to it, don't paste it inline. An image in a PR
+body uses an absolute URL pinned to a commit
+(`https://github.com/ayushb3/BubblyChef/blob/<sha>/docs/media/...?raw=true`), never a
+relative path (GitHub doesn't render it) or a branch URL (it breaks after merge).
 
 **PR bodies stay reviewable at a glance.** The human reviews from whatever device is
 at hand, including a phone browser — a PR body padded with pasted logs, full diffs,

@@ -21,13 +21,13 @@ import { titleCase } from '@/lib/format'
 import { cookThisHref } from '@/lib/chat-seed'
 import {
   daysUntilExpiry,
-  estimatedExpirySuffix,
   isExpiringSoon,
   isExpired,
   itemMatchesFacets,
 } from '@/lib/pantry-helpers'
 import type { PantryFacetSelection } from '@/lib/pantry-helpers'
 import FacetDropdown from '@/components/ui/FacetDropdown'
+import { expiryBadge } from '@/lib/pantry-expiry-display'
 
 // Category card tints — dedicated --color-cat-* tokens (globals.css). These must
 // never reference expiry/status tokens (fresh/expiring/expired): status signals
@@ -88,20 +88,6 @@ const EXPIRY_OPTIONS = [
 // from the card badges.
 function isUrgent(days: number | null): boolean {
   return isExpiringSoon(days)
-}
-
-// `estimated` appends a subtle " · est." suffix (#182) when the expiry date
-// is a heuristic guess rather than one read from a receipt/label or entered
-// by hand — a provenance signal, so it must not affect the badge's
-// fresh/expiring/expired colouring.
-export function expiryBadge(days: number | null, estimated?: boolean) {
-  if (days === null) return null
-  const suffix = estimatedExpirySuffix(estimated)
-  if (days < 0) return { label: `Expired${suffix}`, color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
-  if (days === 0) return { label: `Today${suffix}`, color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
-  if (days <= 2) return { label: `${days}d left${suffix}`, color: 'bg-[var(--color-expired)] text-[var(--color-expired-text)]' }
-  if (days <= 5) return { label: `${days}d left${suffix}`, color: 'bg-[var(--color-expiring)] text-[var(--color-expiring-text)]' }
-  return { label: `${days}d left${suffix}`, color: 'bg-[var(--color-fresh)] text-[var(--color-fresh-text)]' }
 }
 
 function groupByCategory(items: PantryItem[]) {

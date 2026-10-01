@@ -25,6 +25,7 @@ from bubbly_chef.domain.normalizer import (
     normalize_to_base_unit,
 )
 from bubbly_chef.domain.normalizer import SIZE_ADJECTIVE_UNITS  # noqa: F401  re-export: single source of truth
+from bubbly_chef.domain.lots import lot_base, soonest_first_key
 from bubbly_chef.domain.staples import is_staple
 from bubbly_chef.models.cook import (
     CompoundComponent,
@@ -595,6 +596,68 @@ def _validate_compound_quantity(
     return qty
 
 
+@dataclass(frozen=True)
+class _FoodLots:
+    """Every pantry row of one food, summed through the base unit (#356).
+
+    Each add of a food is its own row with its own expiry, so a pantry can
+    hold 2 onions and 3 onions as two rows. `primary` is the lot to use first
+    (soonest expiry, undated last, among lots that have stock and a base unit):
+    it is the row a match names, and the one a deduction starts from.
+    `total_base` is the stock across every lot whose base unit agrees with
+    `base_unit` (the soonest lot's). `uncounted` are lots that hold stock but
+    are not in that total: no base unit could be worked out ("1 bag"), or a
+    different one (eggs by count next to eggs by weight). They are never
+    summed, deducted from, or guessed at.
+    """
+
+    key: str
+    primary: PantryItem
+    base_unit: str | None
+    total_base: float | None
+    uncounted: tuple[PantryItem, ...]
+
+
+def _group_lots(key: str, rows: list[PantryItem]) -> _FoodLots:
+    ordered = sorted(rows, key=soonest_first_key)
+    measured = [(item, *lot_base(item)) for item in ordered if item.quantity > 0]
+    basis = next(((i, q, u) for i, q, u in measured if q is not None and u is not None), None)
+
+    if basis is None:
+        # Nothing with stock can be measured (or nothing has stock): the row the
+        # old single-row matching used, so a lone row behaves exactly as before.
+        primary = ordered[0]
+        qty, unit = lot_base(primary)
+        others = tuple(i for i, _q, _u in measured if i is not primary)
+        return _FoodLots(key, primary, unit, qty, others)
+
+    primary, _basis_qty, base_unit = basis
+    total = 0.0
+    uncounted: list[PantryItem] = []
+    for item, qty, unit in measured:
+        if qty is not None and unit == base_unit:
+            total += qty
+        else:
+            uncounted.append(item)
+    if uncounted:
+        logger.info(
+            "cook_matcher: %d %r lot(s) left out of the %s total (no comparable base unit): %s",
+            len(uncounted),
+            key,
+            base_unit,
+            [f"{i.quantity:g} {i.unit}" for i in uncounted],
+        )
+    return _FoodLots(key, primary, base_unit, total, tuple(uncounted))
+
+
+def _index_pantry_lots(pantry_items: list[PantryItem]) -> dict[str, _FoodLots]:
+    """Group `pantry_items` by food (synonym-normalised name), one `_FoodLots` each."""
+    by_key: dict[str, list[PantryItem]] = {}
+    for item in pantry_items:
+        by_key.setdefault(_normalize_ingredient_name(item.name), []).append(item)
+    return {key: _group_lots(key, rows) for key, rows in by_key.items()}
+
+
 def match_ingredients(
     recipe_id: str,
     recipe_title: str,
@@ -626,25 +689,16 @@ def match_ingredients(
     """
     from uuid import UUID
 
-    # Build a lookup: normalized_name -> PantryItem
-    pantry_index: dict[str, PantryItem] = {}
-    for item in pantry_items:
-        key = _normalize_ingredient_name(item.name)
-        # Keep the item with the highest quantity if there are duplicates.
-        # NOTE: this discards the other rows' quantities, so a pantry holding
-        # 2 onions + 3 onions as separate rows reports 3 available rather than 5.
-        # Fixing that needs a match to span multiple rows (and a deduction plan
-        # per row), which is a contract change reaching the frontend — tracked
-        # separately rather than bolted on here.
-        if key not in pantry_index or item.quantity > pantry_index[key].quantity:
-            pantry_index[key] = item
+    # normalized_name -> every row of that food, summed. Rows of one food are
+    # separate lots with their own expiry (#356), not duplicates to pick between.
+    pantry_index = _index_pantry_lots(pantry_items)
 
     matches: list[IngredientMatch] = []
     missing: list[str] = []
     unit_conflicts: list[dict[str, str]] = []
 
-    # Base-unit quantity already claimed from each pantry row by earlier ingredients
-    # in THIS recipe, keyed by pantry item id.
+    # Base-unit quantity already claimed from each food's lots by earlier ingredients
+    # in THIS recipe, keyed by the food's normalised name.
     #
     # Two recipe lines can resolve to the same pantry row — either as literal
     # duplicates ("onion" twice) or because normalize_food_name() collapses
@@ -652,7 +706,7 @@ def match_ingredients(
     # total each line compares against the row's untouched quantity, so both are
     # reported "ready" even when the row only covers one of them, and the confirm
     # step then deducts twice.
-    consumed: dict[Any, float] = {}
+    consumed: dict[str, float] = {}
 
     for ingredient in recipe_ingredients:
         # Ingredients may be stored as plain strings (e.g. "1 cup flour") or dicts.
@@ -669,18 +723,18 @@ def match_ingredients(
         norm_name = _normalize_ingredient_name(raw_name)
 
         # --- Find pantry match ---
-        pantry_item = pantry_index.get(norm_name)
+        lots = pantry_index.get(norm_name)
         alias: ResolvedAlias | None = None
 
-        if pantry_item is None and aliases:
+        if lots is None and aliases:
             alias = aliases.get(norm_name)
             if alias is not None:
-                pantry_item = pantry_index.get(alias.pantry_name)
-                if pantry_item is None:
+                lots = pantry_index.get(alias.pantry_name)
+                if lots is None:
                     # Alias named an item that is not actually in the pantry.
                     alias = None
 
-        if pantry_item is None:
+        if lots is None:
             # No match at all — but a culinary staple (salt, pepper, oil, …)
             # is presumed on hand even when not in the pantry (#305).
             if is_staple(norm_name):
@@ -713,13 +767,17 @@ def match_ingredients(
         note = alias.note if is_substitute and alias is not None else None
         ok_status: Literal["ready", "substitute"] = "substitute" if is_substitute else "ready"
 
-        # What this row still has after earlier ingredients in this recipe took
-        # their share.
-        already_claimed = consumed.get(pantry_item.id, 0.0)
+        # The lot to use first. A match names this one row; its amounts cover
+        # every lot of the food.
+        pantry_item = lots.primary
+
+        # What the food's lots still hold after earlier ingredients in this
+        # recipe took their share.
+        already_claimed = consumed.get(lots.key, 0.0)
 
         # --- No quantity on recipe ingredient → can't deduct, just note as ready ---
         if ing_qty is None or ing_unit is None:
-            unclaimed = pantry_item.quantity_base
+            unclaimed = lots.total_base
             if unclaimed is not None:
                 unclaimed = max(0.0, unclaimed - already_claimed)
             matches.append(
@@ -731,7 +789,7 @@ def match_ingredients(
                     pantry_item_name=pantry_item.name,
                     pantry_qty_available=unclaimed,
                     deduct_qty=None,
-                    base_unit=pantry_item.unit_base,
+                    base_unit=lots.base_unit,
                     status=ok_status,
                     match_type=match_type,
                     substitution_note=note,
@@ -742,17 +800,10 @@ def match_ingredients(
         # --- Resolve the pantry side first ---
         # The recipe line is then converted toward whatever unit the pantry row
         # actually uses, which is the only unit the deduction can be expressed in.
-        pantry_base_qty = pantry_item.quantity_base
-        pantry_base_unit = pantry_item.unit_base
-
-        # If pantry item lacks base values, try to derive them. Normalized name
-        # here, since the registry is keyed by canonical names.
-        if pantry_base_qty is None or pantry_base_unit is None:
-            pantry_base_qty, pantry_base_unit = normalize_to_base_unit(
-                name=_normalize_ingredient_name(pantry_item.name),
-                quantity=pantry_item.quantity,
-                unit=pantry_item.unit,
-            )
+        # Summed across every lot of the food through the base unit (#356); a lot
+        # with no base values of its own is derived from its name/quantity/unit.
+        pantry_base_qty = lots.total_base
+        pantry_base_unit = lots.base_unit
 
         # --- Convert recipe ingredient into the pantry row's unit ---
         # Target the pantry's base unit when it is known, rather than looking the
@@ -906,7 +957,7 @@ def match_ingredients(
         available_base_qty = max(0.0, pantry_base_qty - already_claimed)
 
         if available_base_qty >= req_base_qty:
-            consumed[pantry_item.id] = already_claimed + req_base_qty
+            consumed[lots.key] = already_claimed + req_base_qty
             matches.append(
                 IngredientMatch(
                     ingredient_name=raw_name,
@@ -922,9 +973,30 @@ def match_ingredients(
                     substitution_note=note,
                 )
             )
+        elif lots.uncounted:
+            # Short on what can be measured, but other lots of this food hold stock
+            # that can't be converted to the same unit ("1 bag" next to grams).
+            # Calling that a shortfall would tell the user they lack something they
+            # have, and the uncountable lot can't be deducted from, so report the
+            # line as imprecise: nothing is auto-deducted and no stock is claimed.
+            matches.append(
+                IngredientMatch(
+                    ingredient_name=raw_name,
+                    ingredient_qty=ing_qty,
+                    ingredient_unit=ing_unit,
+                    pantry_item_id=pantry_item.id,
+                    pantry_item_name=pantry_item.name,
+                    pantry_qty_available=available_base_qty,
+                    deduct_qty=None,
+                    base_unit=pantry_base_unit or pantry_item.unit,
+                    status="imprecise",
+                    match_type=match_type,
+                    substitution_note=note,
+                )
+            )
         else:
             shortfall = req_base_qty - available_base_qty
-            consumed[pantry_item.id] = already_claimed + available_base_qty
+            consumed[lots.key] = already_claimed + available_base_qty
             matches.append(
                 IngredientMatch(
                     ingredient_name=raw_name,
@@ -1024,7 +1096,9 @@ async def resolve_aliases_with_llm(
     # Built before the cache check: needed on both the hit and miss paths, since
     # component_items is never cached and must be resolved against THIS request's
     # pantry every time (see _alias_cache_key's docstring).
-    pantry_by_norm = {_normalize_ingredient_name(i.name): i for i in pantry_items}
+    # One row per food for compound components: the lot to use first (#356). A
+    # deduction against it carries over into the food's later lots.
+    pantry_by_norm = {k: v.primary for k, v in _index_pantry_lots(pantry_items).items()}
     cache_key = _alias_cache_key(unmatched_names, pantry_items)
     cached = _alias_cache_get(cache_key, now)
     if cached is not None:
