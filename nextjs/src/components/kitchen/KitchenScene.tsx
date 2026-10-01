@@ -72,6 +72,8 @@ export interface KitchenSceneProps {
   incoming?: Record<PlaceKey, number> | null
   /** The put-away flight's landings per place: each rise bounces that tag (issue #754). See `KitchenWall`. */
   bounce?: Record<PlaceKey, number> | null
+  /** A scan waits for put-away: tapping the door reopens it (issue #803). See `KitchenWall`. */
+  onDoorTap?: () => void
 }
 
 const CATALOG_BY_ID = new Map(CATALOG.map((d) => [d.id, d]))
@@ -96,6 +98,7 @@ export default function KitchenScene({
   sceneLabel,
   incoming = null,
   bounce = null,
+  onDoorTap,
 }: KitchenSceneProps) {
   // The sprites and the wilting tags, positioned on the wall (#751). `null`
   // stock (loading, or the pantry failed) draws none: never a made-up empty.
@@ -132,6 +135,7 @@ export default function KitchenScene({
         sceneLabel={sceneLabel}
         incoming={incoming}
         bounce={bounce}
+        onDoorTap={onDoorTap}
       >
         {SLOTS.map((slot) => {
           const decoration = decorationBySlot.get(slot.key)

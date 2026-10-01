@@ -30,6 +30,12 @@ const GENERIC_COPY = "Couldn't read that receipt — try again, or add items man
  */
 export const SCAN_NO_ITEMS_CODE = 'no_items_found'
 
+/**
+ * What a host passes for a failure that carried no code (a bare network
+ * `TypeError`, a proxy 502): it maps to the generic copy.
+ */
+export const GENERIC_SCAN_ERROR_CODE = 'scan_failed'
+
 const COPY_BY_CODE: Record<string, string> = {
   // Client-side abort and a server-reported timeout are the same thing to a
   // user: the scan took too long. Different codes, one message.
@@ -39,7 +45,7 @@ const COPY_BY_CODE: Record<string, string> = {
     "Scanning is temporarily unavailable. Try again in a moment, or add items manually.",
   unreadable_image:
     "We couldn't read that photo. Try a clearer picture of the receipt, or add items manually.",
-  scan_failed: GENERIC_COPY,
+  [GENERIC_SCAN_ERROR_CODE]: GENERIC_COPY,
   scan_rate_limited:
     'Scanning is busy right now. Give it a minute and try again, or add items manually.',
   scan_auth_expired: 'Your session expired. Sign in again, then try scanning once more.',
