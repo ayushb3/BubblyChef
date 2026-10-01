@@ -5,10 +5,12 @@ import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
+import SpringButton from '@/components/ui/SpringButton'
+import ScanFailureNotice from '@/components/scan/ScanFailureNotice'
 import { useFileDropzone } from '@/hooks/useFileDropzone'
 import { useScanHandOff } from '@/hooks/useScanHandOff'
 import { uploadReceipt, ScanError } from '@/lib/api/scan'
-import { scanErrorCopy, SCAN_NO_ITEMS_CODE } from '@/lib/scan-error-copy'
+import { GENERIC_SCAN_ERROR_CODE, SCAN_NO_ITEMS_CODE } from '@/lib/scan-error-copy'
 import { isEmptyScan } from '@/lib/scan-helpers'
 import type { ScanResult } from '@/types/scan'
 
@@ -80,7 +82,7 @@ export default function ScanPage() {
       ) {
         // The scan worked but found nothing: say so, rather than putting an
         // empty scan away (#642).
-        setError(scanErrorCopy(SCAN_NO_ITEMS_CODE))
+        setError(SCAN_NO_ITEMS_CODE)
         setState('upload')
         if (inputRef.current) inputRef.current.value = ''
         return
@@ -92,7 +94,7 @@ export default function ScanPage() {
       // #396 — never render a raw error at the user. ScanTab had this fixed;
       // this route builds its own state machine and was missed, so a network
       // TypeError or a proxy 502 still leaked raw text here.
-      setError(scanErrorCopy(err instanceof ScanError ? err.code : undefined))
+      setError(err instanceof ScanError ? err.code : GENERIC_SCAN_ERROR_CODE)
       setState('upload')
       // Retrying the same receipt is the obvious next move after a transient
       // failure, but `onChange` doesn't fire for an unchanged value — so
@@ -133,9 +135,7 @@ export default function ScanPage() {
 
       <div className="px-6 pt-4">
         {error && (
-          <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 rounded-2xl text-sm">
-            {error}
-          </div>
+          <ScanFailureNotice code={error} onRetry={() => inputRef.current?.click()} />
         )}
 
         <AnimatePresence mode="wait">
@@ -208,13 +208,11 @@ export default function ScanPage() {
                 <p className="font-semibold text-[var(--color-text)]">Scanning receipt…</p>
               </div>
               <p className="text-sm text-[var(--color-muted)] mt-2">Bubbles is reading your items</p>
-              <button
-                type="button"
-                onClick={handleCancelScan}
-                className="mt-4 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] underline transition-colors"
-              >
-                Cancel scan
-              </button>
+              <div className="mt-4 flex justify-center">
+                <SpringButton variant="secondary" size="sm" onClick={handleCancelScan}>
+                  Cancel scan
+                </SpringButton>
+              </div>
             </motion.div>
           )}
 
