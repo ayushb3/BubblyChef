@@ -25,6 +25,7 @@ import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
 import Chip, { type ChipTone } from '@/components/ui/Chip'
 import EmptyState from '@/components/ui/EmptyState'
 import { useChat } from '@/hooks/useChat'
+import { useChatScroll } from '@/hooks/useChatScroll'
 import { checkAIHealth } from '@/lib/api/chat'
 import { fetchRecipe, promoteRecipeDraft } from '@/lib/api/recipes'
 import { createMeal, updateMeal } from '@/lib/api/meals'
@@ -216,7 +217,6 @@ function ChatSurface() {
    * fresh pill set rather than one frozen at first mount.
    */
   const [mountedAt, setMountedAt] = useState(() => new Date())
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   // The recipe only needs to ride along on the first message — the backend
   // pins it to the conversation session for subsequent turns.
@@ -449,10 +449,6 @@ function ChatSurface() {
     startNewChat()
   }
 
-  // Auto-scroll on new messages
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isStreaming])
 
   // Mascot state
   const mascotState = isStreaming ? 'thinking' : 'happy'
@@ -764,6 +760,14 @@ function ChatSurface() {
 
   const hasMessages = messages.length > 0
 
+  // Anchor a sent message to the top and let the reply stream in below it, rather
+  // than chasing the bottom of a reply taller than the screen (#811).
+  const { scrollRef, threadRef, spacerRef, showJump, jumpToLatest } = useChatScroll({
+    messages,
+    isStreaming,
+    hasThread: hasMessages || isResuming,
+  })
+
   // Derived like the cook card: shown until the user dismisses this exact seed.
   const activeSeed = seed && seed.key !== dismissedSeedKey ? seed : null
 
@@ -843,8 +847,11 @@ function ChatSurface() {
         )}
       </AnimatePresence>
 
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      {/* Messages area. The wrapper hosts the jump pill; the inner div is the
+          one scroll container (#731) and `relative` so the hook can measure
+          offsets against it. */}
+      <div className="relative flex flex-col flex-1 min-h-0">
+      <div ref={scrollRef} className="relative flex-1 overflow-y-auto px-4 py-4">
         {/* Deep-link seed context (?tip= / ?use=) — same slot, same idiom */}
         <AnimatePresence>
           {activeSeed && (
@@ -861,7 +868,8 @@ function ChatSurface() {
         </AnimatePresence>
 
         {(hasMessages || isResuming) ? (
-          <div className="flex flex-col gap-3">
+          <>
+          <div ref={threadRef} className="flex flex-col gap-3">
             {messages.map((msg, index) => (
               <MessageRenderer
                 key={msg.id}
@@ -962,9 +970,11 @@ function ChatSurface() {
             <AnimatePresence>
               {showTypingIndicator && <TypingIndicator />}
             </AnimatePresence>
-
-            <div ref={messagesEndRef} />
           </div>
+          {/* Blank room under the thread so a sent message can scroll to the top
+              while its reply is still short. Height is owned by useChatScroll. */}
+          <div ref={spacerRef} aria-hidden="true" />
+          </>
         ) : (
           /* Empty state — drops the full-height centering when the cook card
              is above it, so the two don't fight for the same space. */
@@ -1010,6 +1020,17 @@ function ChatSurface() {
             )}
           </div>
         )}
+      </div>
+      {showJump && (
+        <button
+          type="button"
+          data-testid="jump-to-latest"
+          onClick={jumpToLatest}
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md px-3 py-1.5 rounded-full hover:bg-[var(--color-border)] transition-colors"
+        >
+          Jump to latest ↓
+        </button>
+      )}
       </div>
 
       {/* Input bar — pinned under the list (a flex row, not a fixed overlay) */}
@@ -1210,6 +1231,8 @@ function MessageRenderer({
   if (message.role === 'user') {
     return (
       <motion.div
+        // useChatScroll anchors a sent message to the top by this attribute (#811).
+        data-chat-user-message={message.id}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 20 }}
