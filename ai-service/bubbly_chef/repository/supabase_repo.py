@@ -16,7 +16,7 @@ from postgrest.types import JSON
 from supabase import Client, create_client
 
 from bubbly_chef.config import settings
-from bubbly_chef.domain.lots import lot_base, lot_food_key, soonest_first_key
+from bubbly_chef.domain.lots import fresh_first_key, lot_base, lot_food_key, soonest_first_key
 from bubbly_chef.domain.normalizer import (
     normalize_food_name,
     normalize_to_base_unit,
@@ -138,6 +138,15 @@ _QUERY_STOPWORDS = frozenset(
         "one",
         "another",
     }
+)
+
+
+# Words that name the *occasion* a saved meal was planned for rather than any
+# dish in it. "make that pasta dinner again" asks for a saved meal about pasta;
+# "dinner" says meal, it isn't a dish to find. Stripped from the query side of
+# `search_saved_meals` only -- a saved *recipe* really can be called "Dinner Rolls".
+_MEAL_OCCASION_WORDS = frozenset(
+    {"meal", "meals", "dinner", "dinners", "lunch", "lunches", "supper", "tonight"}
 )
 
 
@@ -1276,10 +1285,10 @@ class SupabaseRepository:
 
         Takes from the named row first. When `deduct_qty` is more than that row
         holds, the remainder goes to the food's other lots (same synonym-normalised
-        name, same base unit, with stock), soonest expiry first and undated last
-        (#356). The cook matcher names the soonest lot and reports the total
-        across all of them, so one confirmed deduction consumes lots in expiry
-        order. Returns whether the named row was updated; see
+        name, same base unit, with stock): fresh lots soonest expiry first and
+        undated last (#356), expired lots only after every fresh one (#756). The
+        cook matcher names the first of those lots and reports the total across
+        all of them, so one confirmed deduction consumes lots in that order. Returns whether the named row was updated; see
         `_deduct_from_row` for what that means.
         """
         applied, overflow, food, base_unit = await self._deduct_from_row(
@@ -1292,7 +1301,8 @@ class SupabaseRepository:
     async def _carry_deduction_to_lots(
         self, user_id: str, item_id: str, food: str, base_unit: str, remainder: float
     ) -> None:
-        """Spend `remainder` (in `base_unit`) on the other lots of `food`, soonest first."""
+        """Spend `remainder` (in `base_unit`) on the other lots of `food`, fresh lots
+        soonest-expiry first, expired lots only after them (#756)."""
         result = self.client.table("pantry_items").select("*").eq("user_id", user_id).execute()
         lots: list[tuple[PantryItem, float]] = []
         for row in _as_rows(result.data):
@@ -1305,7 +1315,7 @@ class SupabaseRepository:
             if qty is None or qty <= 0 or unit != base_unit:
                 continue
             lots.append((item, qty))
-        lots.sort(key=lambda lot: soonest_first_key(lot[0]))
+        lots.sort(key=lambda lot: fresh_first_key(lot[0]))
         for item, qty in lots:
             if remainder <= _LOT_EPSILON:
                 return
@@ -1673,6 +1683,82 @@ class SupabaseRepository:
             for row in _as_rows(result.data or [])
             if row.get("servings") is not None and row.get("last_cooked_at") is not None
         ]
+
+    async def search_saved_meals(
+        self, user_id: str, query: str, limit: int = 3
+    ) -> list[dict[str, Any]]:
+        """Rank a user's *saved* meals against a free-text lookup (issue #760).
+
+        Mirrors `search_saved_recipes` for the `meals` table: scoped
+        `.eq("user_id", user_id)` and `.eq("is_draft", False)`, so another
+        user's meal, or a meal the user opened but never saved, can never
+        appear. Each result is the raw `meals` row plus a `dishes` list
+        (`{"role", "position", "recipe_id", "title"}`, main first), read in the
+        same query through the `meal_dishes -> recipes(title)` embed.
+
+        Matching is against the meal's title, description and dish titles
+        together. Meal-occasion words ("dinner", "meal") are dropped from the
+        query, since they say "a meal" rather than naming a dish; every
+        remaining query token must appear somewhere in the meal, so a
+        two-word ask is never padded with meals that share only one word. A
+        query that is *only* occasion words ("show me my saved meals") returns
+        the most recently cooked, then most recently created, meals instead.
+        Ranked by title hits, then dish-title hits, then recency.
+
+        Raises on a query error (unlike `get_recent_meal_servings`): the caller
+        must tell "no such meal" from "couldn't look".
+        """
+        tokens = _tokenize_query(query)
+        if not tokens:
+            return []
+        wanted = {t for t in tokens if t not in _MEAL_OCCASION_WORDS}
+
+        result = (
+            self.client.table("meals")
+            .select(
+                "id,title,description,servings,last_cooked_at,created_at,"
+                "meal_dishes(role,position,recipe_id,recipes(title))"
+            )
+            .eq("user_id", user_id)
+            .eq("is_draft", False)
+            .eq("meal_dishes.user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(200)
+            .execute()
+        )
+
+        scored: list[tuple[tuple[int, int, str, str], dict[str, Any]]] = []
+        for row in _as_rows(result.data or []):
+            raw_dishes = row.get("meal_dishes")
+            dishes: list[dict[str, Any]] = []
+            for raw in _as_rows(raw_dishes) if isinstance(raw_dishes, list) else []:
+                recipe = raw.get("recipes")
+                dishes.append(
+                    {
+                        "role": raw.get("role"),
+                        "position": raw.get("position"),
+                        "recipe_id": str(raw["recipe_id"]) if raw.get("recipe_id") else None,
+                        "title": recipe.get("title") if isinstance(recipe, dict) else None,
+                    }
+                )
+            dishes.sort(key=lambda d: d["position"] if isinstance(d["position"], int) else 99)
+
+            title_tokens = set(_tokenize(str(row.get("title") or "")))
+            dish_tokens = {t for d in dishes for t in _tokenize(str(d.get("title") or ""))}
+            desc_tokens = set(_tokenize(str(row.get("description") or "")))
+            if wanted and not wanted <= (title_tokens | dish_tokens | desc_tokens):
+                continue
+
+            meal = {k: v for k, v in row.items() if k != "meal_dishes"}
+            meal["dishes"] = dishes
+            recency = str(row.get("last_cooked_at") or "")
+            created = str(row.get("created_at") or "")
+            scored.append(
+                ((len(wanted & title_tokens), len(wanted & dish_tokens), recency, created), meal)
+            )
+
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        return [meal for _score, meal in scored[:limit]]
 
     async def get_meal_with_dishes(self, user_id: str, meal_id: str) -> dict[str, Any] | None:
         """Return `{"meal": <meals row>, "dishes": [...]}` for one meal, or

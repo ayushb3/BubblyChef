@@ -32,6 +32,7 @@ import { SLOTS } from '@/lib/kitchen/slots'
 import { CATALOG, type Decoration } from '@/lib/kitchen/catalog'
 import { getDefaultKitchenTheme, type KitchenTheme } from '@/lib/kitchen/themes'
 import { useMotionConfig } from '@/lib/motion'
+import BubblesCounter from '@/components/ui/BubblesCounter'
 
 export interface UnlockedDecoration {
   id: string
@@ -175,13 +176,10 @@ export default function KitchenScene({
                 🔥 {streakWeeks}
               </div>
             )}
-            <div
-              className="rounded-full px-3 py-1 text-xs font-bold text-[var(--color-text)] shadow-sm border border-[var(--color-border)]"
-              style={{ background: 'var(--color-surface)' }}
-              data-testid="kitchen-bubbles-balance"
-            >
-              🫧 {balance}
-            </div>
+            {/* The pixel bubbles counter (issue #741): pixel digits in a stepped
+                frame; pops and counts up when the balance rises. The testid
+                stays on the element that carries the "N bubbles" label. */}
+            <BubblesCounter value={balance} testId="kitchen-bubbles-balance" />
           </div>
         )}
       </div>

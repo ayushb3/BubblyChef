@@ -9,7 +9,14 @@ from pydantic import BaseModel, Field, field_validator
 # Shared with IngredientMatch below and MealCookSource (issue #654) so both
 # sides of a merge speak the exact same vocabulary.
 IngredientMatchStatus = Literal[
-    "ready", "substitute", "shortfall", "imprecise", "unit_conflict", "missing", "assumed"
+    "ready",
+    "substitute",
+    "shortfall",
+    "imprecise",
+    "unit_conflict",
+    "missing",
+    "assumed",
+    "to_taste",
 ]
 IngredientMatchType = Literal["exact", "substitute", "none"]
 
@@ -40,7 +47,9 @@ class IngredientMatch(BaseModel):
             "outside the recognised vocabulary) — nothing is auto-deducted, "
             "deduct_qty is None, unit_conflict=can't compare, "
             "missing=not in pantry, "
-            "assumed=a culinary staple presumed on hand even though it's not in the pantry"
+            "assumed=a culinary staple presumed on hand even though it's not in the pantry, "
+            "to_taste=a seasoning line with no amount (\"salt and pepper\", \"to taste\") — "
+            "never matched to a pantry row, nothing is deducted or asked for (#756)"
         )
     )
     shortfall: float | None = Field(

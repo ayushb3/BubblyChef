@@ -50,10 +50,10 @@ from bubbly_chef.prompts.router import (
     DIET_CHANGE_FLAG_PROMPT,
     INTENT_CLASSIFICATION_SYSTEM_PROMPT,
     INTENT_CLASSIFICATION_USER_PROMPT,
-    MODE_BIAS_RECIPE_PICKED_PROMPT,
-    MODE_BIAS_RECIPE_BROWSING_PROMPT,
     MODE_BIAS_COOKING_PROMPT,
     MODE_BIAS_PANTRY_PROMPT,
+    MODE_BIAS_RECIPE_BROWSING_PROMPT,
+    MODE_BIAS_RECIPE_PICKED_PROMPT,
 )
 from bubbly_chef.repository.supabase_repo import SupabaseRepository, get_repository
 from bubbly_chef.services.recipe_url_ingestor import ingest_recipe_from_url
@@ -115,6 +115,22 @@ from bubbly_chef.workflows.state import (
 logger = logging.getLogger(__name__)
 
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+
+# A request to bring back a meal the user already has (issue #760): "make that
+# pasta dinner again", "show me my saved dinners", "the dinner I made last
+# week". The word "dinner"/"meal" is what drags these toward meal_plan or
+# recipe_generation, so they are routed deterministically instead of leaving it
+# to the LLM classifier (whose prompt and replay fixtures are frozen together).
+# "make a pasta dinner" and "what's for dinner?" have neither "again" nor a
+# saved/made reference and are untouched.
+_MEAL_WORD = r"(?:dinner|meal|lunch|supper)s?"
+_SAVED_MEAL_LOOKUP_RE = re.compile(
+    rf"^\s*(?:please\s+)?(?:(?:can|could|will|would)\s+you\s+)?"
+    rf"(?:make|cook|have|do|repeat|redo)\b.*\b{_MEAL_WORD}\b.*\bagain\b"
+    rf"|\bsaved\s+(?:\w+\s+){{0,3}}{_MEAL_WORD}\b"
+    rf"|\b{_MEAL_WORD}\s+(?:that\s+)?(?:i|we)\s+(?:made|saved|cooked)\b",
+    re.IGNORECASE,
+)
 
 # Rolling cap on session.pending_proposal's two lists — bounds how much
 # cross-turn pantry context a single conversation can accumulate in
@@ -300,6 +316,8 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
     3. Empty input — short-circuit to general_chat.
     4. Exit phrase — breaks out of any active mode.
     5. URL shortcut — unambiguous recipe_ingest (no LLM).
+    5a. Saved-meal phrasing ("make that pasta dinner again") — saved_recipe_lookup
+       (#760), no LLM; skipped while COOKING.
     6. Brainstorm set re-pick — re-pick from stored set without regeneration.
     7. LLM classifier — with session-mode bias injected into the prompt.
        Post-classify logic then:
@@ -447,6 +465,18 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "intent": Intent.RECIPE_INGEST.value,
             "intent_confidence": 0.95,
             "intent_reasoning": "URL detected — recipe ingest shortcut",
+            "detected_entities": [],
+        }
+
+    # ── Priority 3b: bring back a saved meal (#760) — deterministic, no LLM ──
+    # Skipped mid-cook: the COOKING gate below owns what a message means then.
+    if session_mode != SessionMode.COOKING.value and _SAVED_MEAL_LOOKUP_RE.search(input_text):
+        logger.info("classify_intent: saved-meal phrasing — saved_recipe_lookup shortcut")
+        return {
+            **state,
+            "intent": Intent.SAVED_RECIPE_LOOKUP.value,
+            "intent_confidence": 0.95,
+            "intent_reasoning": "Saved-meal phrasing — saved lookup shortcut",
             "detected_entities": [],
         }
 
@@ -1415,8 +1445,10 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
             # but here the id is the real DB row id from search_saved_recipes,
             # not an ephemeral session-local card uuid. 0 or many matches leave
             # the session untouched: there is nothing unambiguous to pin yet.
+            # A matched saved meal leads the reply (#760), so a lone recipe
+            # beside it is not "the" unambiguous answer: don't pin it.
             matches = state.get("saved_recipe_matches") or []
-            if len(matches) == 1:
+            if len(matches) == 1 and not state.get("saved_meal_matches"):
                 match = matches[0]
                 session.pinned_recipe_id = str(match.get("id"))
                 session.metadata.last_recipe_title = match.get("title")
@@ -2021,6 +2053,7 @@ async def run_chat_workflow(
         envelope.suggested_action = final_state.get("suggested_action")
         envelope.metadata["brainstorm_ideas"] = final_state.get("brainstorm_ideas", [])
         envelope.metadata["saved_recipe_matches"] = final_state.get("saved_recipe_matches", [])
+        envelope.metadata["saved_meal_matches"] = final_state.get("saved_meal_matches", [])
         # Confirm band (#416 Q5) — surface the CONFIRM_CHOICE decision + options.
         if final_state.get("next_action") == NextAction.CONFIRM_CHOICE.value:
             envelope.next_action = NextAction.CONFIRM_CHOICE
@@ -2199,6 +2232,7 @@ def _build_envelope_from_state(
         envelope.metadata["brainstorm_ideas"] = final_state.get("brainstorm_ideas", [])
     if intent == Intent.SAVED_RECIPE_LOOKUP.value:
         envelope.metadata["saved_recipe_matches"] = final_state.get("saved_recipe_matches", [])
+        envelope.metadata["saved_meal_matches"] = final_state.get("saved_meal_matches", [])
 
     # Confirm band (#416 Q5): carry the CONFIRM_CHOICE next_action + the two
     # one-tap options into the envelope so the frontend can render the buttons.

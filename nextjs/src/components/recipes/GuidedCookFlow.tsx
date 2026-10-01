@@ -323,7 +323,10 @@ export default function GuidedCookFlow({
   // order is stable.
   useRaiseTimerDock(!chatOpen && !chatPresent)
   const dockRaised = useTimerDockRaised()
-  const { timers } = useCookingTimers()
+  const { timers, dismiss: dismissTimer } = useCookingTimers()
+  // Issue #757 — which step started each dock timer (timer id -> step idx), so
+  // a finished chip can clear when the cook moves past its step.
+  const timerOwnerRef = useRef<Map<string, number>>(new Map())
   const dockClearance = dockRaised && timers.length > 0
 
   // Structured steps (issue #648). `recipe.steps` is the source of truth
@@ -377,7 +380,17 @@ export default function GuidedCookFlow({
     return () => { document.body.style.overflow = prev }
   }, [])
 
-  const goNext = () => setIdx((i) => i + 1)
+  const goNext = () => {
+    // Moving past a step clears the finished chips it owns; running timers stay.
+    for (const t of timers) {
+      const owner = timerOwnerRef.current.get(t.id)
+      if (t.status === 'completed' && owner !== undefined && owner <= idx) {
+        dismissTimer(t.id)
+        timerOwnerRef.current.delete(t.id)
+      }
+    }
+    setIdx((i) => i + 1)
+  }
   const goBack = () => setIdx((i) => Math.max(PREP, i - 1))
 
   // Empty recipe guard — if the recipe has no instructions, skip to done.
@@ -537,10 +550,14 @@ export default function GuidedCookFlow({
                         <StructuredStepTimerChip
                           label={step.structured.label}
                           durationMinutes={step.structured.duration_minutes}
+                          onStart={(id) => timerOwnerRef.current.set(id, idx)}
                         />
                       )
                     ) : (
-                      <StepTimerChips stepText={step.text} />
+                      <StepTimerChips
+                        stepText={step.text}
+                        onStart={(id) => timerOwnerRef.current.set(id, idx)}
+                      />
                     )}
                   </span>
                 </div>

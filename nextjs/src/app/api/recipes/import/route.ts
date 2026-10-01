@@ -44,6 +44,15 @@ export async function POST(request: Request): Promise<NextResponse> {
   const envelope = await res.json() as Record<string, unknown>
 
   if (!res.ok) {
+    // A typed import failure (not_a_recipe, video_unavailable, ...) arrives as
+    // detail: { message, reason } — already sanitized by the AI service. Hand
+    // `reason` through so the import modal can show its friendly copy.
+    const detail = envelope?.detail
+    if (detail && typeof detail === 'object' && typeof (detail as { reason?: unknown }).reason === 'string') {
+      const { message, reason } = detail as { message?: string; reason: string }
+      console.log('[import] AI service import error: status=%d reason=%s', res.status, reason)
+      return NextResponse.json({ error: message ?? 'Import failed', reason }, { status: res.status })
+    }
     console.log('[import] AI service error: status=%d detail=%s', res.status, envelope?.detail ?? envelope?.error)
     return NextResponse.json(
       { error: envelope?.detail ?? envelope?.error ?? 'AI service error' },

@@ -9,6 +9,7 @@ import logging
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from bubbly_chef.api.auth import get_current_user_id
+from bubbly_chef.services.recipe_import_errors import RecipeImportError
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,12 @@ async def ingest(
     try:
         envelope = await dispatcher.dispatch(payload)
         return envelope.model_dump(mode="json")
+    except RecipeImportError as e:
+        # Already sanitized (issue #528); `reason` is what RecipeImportModal switches on.
+        raise HTTPException(
+            status_code=e.status_code,
+            detail={"message": e.message, "reason": e.reason},
+        ) from e
     except NotImplementedError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
