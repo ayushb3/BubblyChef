@@ -232,7 +232,7 @@ export function useModalFocusTrap(
         document.activeElement !== document.body && panel.contains(document.activeElement)
       if (!alreadyFocusedInside) {
         const focusable = getFocusable(panel)
-        ;(focusable[0] ?? panel).focus()
+        ;(focusable[0] ?? panel).focus({ preventScroll: true })
       }
     }
 
@@ -268,11 +268,11 @@ export function useModalFocusTrap(
       if (e.shiftKey) {
         if (active === first || !panel.contains(active)) {
           e.preventDefault()
-          last.focus()
+          last.focus({ preventScroll: true })
         }
       } else if (active === last || !panel.contains(active)) {
         e.preventDefault()
-        first.focus()
+        first.focus({ preventScroll: true })
       }
     }
 
@@ -294,7 +294,7 @@ export function useModalFocusTrap(
       // actually just leaving focus wherever the browser already put it.
       const trigger = triggerRef.current
       if (trigger?.isConnected && trigger !== document.body) {
-        trigger.focus()
+        trigger.focus({ preventScroll: true })
       } else {
         // Nothing usable survived to hand focus back to. Rather than leave
         // that to chance (the whole point of this hook), fall back to the
@@ -304,7 +304,7 @@ export function useModalFocusTrap(
         const main = document.querySelector<HTMLElement>('main')
         if (main) {
           if (!main.hasAttribute('tabindex')) main.setAttribute('tabindex', '-1')
-          main.focus()
+          main.focus({ preventScroll: true })
         }
       }
     }

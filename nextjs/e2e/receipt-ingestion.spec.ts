@@ -265,6 +265,95 @@ test.describe('3b — receipt ingestion (stubbed, CI-safe)', () => {
     expect(captured.map((i) => i.name)).toEqual(['Eggs', 'Whole Milk', 'Bananas', 'Org Cane Sugar']);
   });
 
+  test('a scan judged not to be a receipt asks first; nothing is written until "Use it anyway"', async ({ page }) => {
+    // Issue #856. Screenshots only when a verify run asks for them.
+    const shots = process.env.VERIFY_SHOTS_DIR;
+    const shot = async (name: string) => {
+      if (!shots) return;
+      await page.waitForTimeout(900); // let the sheets finish sliding
+      await page.screenshot({ path: path.join(shots, `${name}.png`) });
+    };
+    let bulkCalls = 0;
+
+    await page.route('**/api/ai/scan', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ocr_text: 'BubblyChef\nFresh bread\nExpires in 2 days',
+          ready_to_add: [
+            { name: 'Fresh bread', quantity: 1, unit: 'item', category: 'bakery', location: 'pantry', confidence: 0.9 },
+          ],
+          needs_review: [],
+          skipped: [],
+          total_items: 1,
+          warnings: [],
+          is_receipt: false,
+        }),
+      }),
+    );
+    await stubPantryReads(page);
+    await page.route('**/api/pantry/bulk', async (route) => {
+      bulkCalls += 1;
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ count: 1, items: makeBulkResponse().items.slice(0, 1) }),
+      });
+    });
+
+    await page.goto('/pantry?add=scan');
+    await page.locator('input[type="file"][accept="image/*"]').setInputFiles(RECEIPT_STUB_PNG);
+
+    const sheet = page.getByTestId('put-away-sheet');
+    await expect(sheet).toBeVisible({ timeout: 10_000 });
+    await expect(sheet.getByText("This doesn't look like a receipt")).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Nothing to put away' })).toBeDisabled();
+    await expect(sheet.getByText('Fresh bread')).toHaveCount(0);
+    await shot('01-not-a-receipt');
+    expect(bulkCalls).toBe(0);
+
+    await sheet.getByRole('button', { name: 'Use it anyway' }).click();
+    await expect(sheet.getByText("This doesn't look like a receipt")).toHaveCount(0);
+    await expect(sheet.getByText('Fresh bread')).toBeVisible();
+    await shot('02-use-it-anyway');
+    expect(bulkCalls).toBe(0);
+
+    await sheet.getByRole('button', { name: 'Put away 1 item' }).click();
+    await expect(sheet).not.toBeVisible({ timeout: 8_000 });
+    expect(bulkCalls).toBe(1);
+  });
+
+  test('"Try another photo" drops the scan and reopens the scan tab', async ({ page }) => {
+    await page.route('**/api/ai/scan', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ocr_text: 'BubblyChef\nFresh bread',
+          ready_to_add: [
+            { name: 'Fresh bread', quantity: 1, unit: 'item', category: 'bakery', location: 'pantry', confidence: 0.9 },
+          ],
+          needs_review: [],
+          skipped: [],
+          total_items: 1,
+          warnings: [],
+          is_receipt: false,
+        }),
+      }),
+    );
+    await stubPantryReads(page);
+
+    await page.goto('/pantry?add=scan');
+    await page.locator('input[type="file"][accept="image/*"]').setInputFiles(RECEIPT_STUB_PNG);
+    const sheet = page.getByTestId('put-away-sheet');
+    await expect(sheet).toBeVisible({ timeout: 10_000 });
+
+    await sheet.getByRole('button', { name: 'Try another photo' }).click();
+    await expect(sheet).not.toBeVisible({ timeout: 8_000 });
+    await expect(page.getByText(/Drop your receipt here/)).toBeVisible();
+  });
+
   test('error from /api/ai/scan shows an error message and stays on upload state', async ({ page }) => {
     await page.route('**/api/ai/scan', (route) =>
       route.fulfill({

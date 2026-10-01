@@ -4,7 +4,7 @@ import BubblesMascot, { type BubblesState } from '@/components/ui/BubblesMascot'
 import PixelPanel from '@/components/ui/PixelPanel'
 import SpringButton from '@/components/ui/SpringButton'
 import { SCAN_NOT_AN_IMAGE_CODE } from '@/lib/api/scan'
-import { scanErrorCopy, SCAN_NO_ITEMS_CODE } from '@/lib/scan-error-copy'
+import { scanErrorCopy, SCAN_NO_ITEMS_CODE, SCAN_NOT_A_RECEIPT_CODE } from '@/lib/scan-error-copy'
 
 /**
  * ScanFailureNotice: every scan failure and empty state, in the pixel language
@@ -29,6 +29,7 @@ import { scanErrorCopy, SCAN_NO_ITEMS_CODE } from '@/lib/scan-error-copy'
 
 const PHOTO_PROBLEM_CODES = new Set<string>([
   SCAN_NO_ITEMS_CODE,
+  SCAN_NOT_A_RECEIPT_CODE,
   'unreadable_image',
   SCAN_NOT_AN_IMAGE_CODE,
 ])
@@ -55,7 +56,7 @@ export default function ScanFailureNotice({ code, onRetry }: ScanFailureNoticePr
       </div>
       <div className="mt-3">
         <SpringButton variant="primary" fullWidth onClick={onRetry}>
-          Choose a photo
+          {code === SCAN_NOT_A_RECEIPT_CODE ? 'Try another photo' : 'Choose a photo'}
         </SpringButton>
       </div>
     </PixelPanel>

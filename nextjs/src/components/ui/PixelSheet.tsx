@@ -117,16 +117,37 @@ const FLICK_VELOCITY = 0.5
 
 // Scroll lock is reference counted so stacked sheets (one opening from
 // another) don't release the page while one is still up.
+//
+// Issue #844: `overflow: hidden` on the body stops the user scrolling the page but
+// not the browser, which scrolls it to reveal whatever takes focus (the sheet's
+// close button, or the opener on close). So the lock also remembers where the page
+// was and, on release, puts it back exactly. (Focus moves are made with
+// `preventScroll` too, so the page does not move in between.) A navigation while
+// the sheet was open is the one case where "back where it was" is wrong: the new
+// page has its own position, so nothing is restored when the address changed.
 let scrollLocks = 0
 let scrollBefore = ''
+let lockedAt: { x: number; y: number; href: string } | null = null
 function lockScroll() {
   if (scrollLocks++ === 0) {
     scrollBefore = document.body.style.overflow
+    lockedAt = { x: window.scrollX, y: window.scrollY, href: window.location.href }
     document.body.style.overflow = 'hidden'
   }
 }
 function unlockScroll() {
-  if (--scrollLocks === 0) document.body.style.overflow = scrollBefore
+  if (--scrollLocks === 0) {
+    document.body.style.overflow = scrollBefore
+    const at = lockedAt
+    lockedAt = null
+    if (
+      at &&
+      at.href === window.location.href &&
+      (window.scrollX !== at.x || window.scrollY !== at.y)
+    ) {
+      window.scrollTo({ left: at.x, top: at.y, behavior: 'instant' as ScrollBehavior })
+    }
+  }
 }
 
 export interface PixelModalLayerProps {
@@ -232,7 +253,9 @@ export default function PixelSheet({
   // inside the panel already has it (same path as a native `autoFocus`).
   useLayoutEffect(() => {
     if (!open || !initialFocus) return
-    panelRef.current?.querySelector<HTMLElement>(initialFocus)?.focus()
+    // preventScroll: moving focus into a sheet must never scroll the page behind
+    // it (issue #844).
+    panelRef.current?.querySelector<HTMLElement>(initialFocus)?.focus({ preventScroll: true })
   }, [open, initialFocus])
 
   // ---- drag to dismiss (handle only) ------------------------------------

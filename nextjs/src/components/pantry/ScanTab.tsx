@@ -7,7 +7,11 @@ import ScanFailureNotice from '@/components/scan/ScanFailureNotice'
 import { useFileDropzone } from '@/hooks/useFileDropzone'
 import { uploadReceipt, ScanError } from '@/lib/api/scan'
 import { isEmptyScan } from '@/lib/scan-helpers'
-import { GENERIC_SCAN_ERROR_CODE, SCAN_NO_ITEMS_CODE } from '@/lib/scan-error-copy'
+import {
+  GENERIC_SCAN_ERROR_CODE,
+  SCAN_NO_ITEMS_CODE,
+  SCAN_NOT_A_RECEIPT_CODE,
+} from '@/lib/scan-error-copy'
 import type { ScanResult } from '@/types/scan'
 
 /**
@@ -105,7 +109,8 @@ export default function ScanTab({ onParsed, onProcessingChange }: ScanTabProps) 
       ) {
         // The scan worked but found nothing: say so, rather than handing an
         // empty scan to put-away (#642).
-        setError(SCAN_NO_ITEMS_CODE)
+        // Not a receipt and nothing in it (#856): say that, not "nothing found".
+        setError(result.is_receipt === false ? SCAN_NOT_A_RECEIPT_CODE : SCAN_NO_ITEMS_CODE)
         setState('upload')
         if (inputRef.current) inputRef.current.value = ''
         return

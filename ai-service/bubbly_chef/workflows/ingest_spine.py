@@ -159,6 +159,7 @@ def build_proposal_envelope(
         source_text=source_text,
         dedup_applied=False,
         normalization_applied=True,
+        is_receipt=final_state.get("is_receipt", True),
     )
 
     return create_pantry_envelope(

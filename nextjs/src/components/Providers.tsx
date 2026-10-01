@@ -5,7 +5,9 @@ import { useState } from 'react'
 import { ThemeProvider } from './ThemeProvider'
 import { TourProvider } from './onboarding/TourProvider'
 import { TourOverlay } from './onboarding/TourOverlay'
+import StaplesStep from './onboarding/StaplesStep'
 import BubblePop from './ui/BubblePop'
+import UndoToastHost from './pantry/UndoToastHost'
 import { CookingTimersProvider } from '@/lib/useCookingTimers'
 import TimerDock from './timers/TimerDock'
 import { TimerDockLayerProvider } from './timers/TimerDockLayer'
@@ -31,6 +33,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
             <TourProvider>
               {children}
               <TourOverlay />
+              <StaplesStep />
             </TourProvider>
             {/* Mounted alongside routed content (not inside it) so timers
                 survive navigation and the dock stays visible on every route
@@ -40,6 +43,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
         </CookingTimersProvider>
       </ThemeProvider>
       <BubblePop />
+      {/* "Used it" undo toast (#851): at the root so it outlives the page. */}
+      <UndoToastHost />
     </QueryClientProvider>
   )
 }
