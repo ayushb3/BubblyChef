@@ -9,6 +9,7 @@
  */
 
 import {
+  addMissingToGroceryList,
   addToGroceryList,
   groceryStorageKey,
   loadGroceryLines,
@@ -138,6 +139,42 @@ describe('addToGroceryList (the pantry item "Add to list" helper)', () => {
     saveGroceryLines(BOB, sample())
     addToGroceryList(ALICE, ['basil'])
     expect(loadGroceryLines(BOB)).toEqual(sample())
+  })
+})
+
+describe("addMissingToGroceryList (a meal or recipe's missing items, issue #787)", () => {
+  it('adds the names and never duplicates a food', () => {
+    addMissingToGroceryList(ALICE, ['basil', 'feta'])
+    addMissingToGroceryList(ALICE, ['Basil'])
+    expect(loadGroceryLines(ALICE).map((l) => l.name)).toEqual(['basil', 'feta'])
+  })
+
+  it('leaves an already ticked line ticked on a re-add, and still adds the unticked and new ones', () => {
+    addMissingToGroceryList(ALICE, ['parsley', '1 lemon'])
+    const parsley = loadGroceryLines(ALICE).find((l) => l.name === 'parsley')!
+    saveGroceryLines(ALICE, setLineChecked(loadGroceryLines(ALICE), parsley.key, true))
+
+    addMissingToGroceryList(ALICE, ['Parsley', '1 lemon', 'thyme'])
+    const lines = loadGroceryLines(ALICE)
+    expect(lines).toHaveLength(3)
+    expect(lines.find((l) => l.name === 'parsley')?.checked).toBe(true)
+    expect(lines.find((l) => l.name === '1 lemon')?.checked).toBe(false)
+    expect(lines.find((l) => l.name === 'thyme')?.checked).toBe(false)
+  })
+
+  it('does not rewrite the list when every name is already ticked', () => {
+    addMissingToGroceryList(ALICE, ['parsley'])
+    saveGroceryLines(ALICE, setLineChecked(loadGroceryLines(ALICE), 'parsley', true))
+    const before = window.localStorage.getItem(groceryStorageKey(ALICE))
+    addMissingToGroceryList(ALICE, ['parsley'])
+    expect(window.localStorage.getItem(groceryStorageKey(ALICE))).toBe(before)
+  })
+
+  it('leaves the pantry item "Add to list" un-ticking a listed food on purpose', () => {
+    addToGroceryList(ALICE, ['parsley'])
+    saveGroceryLines(ALICE, setLineChecked(loadGroceryLines(ALICE), 'parsley', true))
+    addToGroceryList(ALICE, ['parsley'])
+    expect(loadGroceryLines(ALICE).find((l) => l.name === 'parsley')?.checked).toBe(false)
   })
 })
 
