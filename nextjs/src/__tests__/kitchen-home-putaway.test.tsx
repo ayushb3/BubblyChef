@@ -13,7 +13,7 @@
  * The pantry fetches are mocked and so is the bulk write. No model is called.
  */
 import React from 'react'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import HeroHome from '@/components/dashboard/HeroHome'
 import {
@@ -75,6 +75,8 @@ const SCAN: ScanResult = {
 
 let pantryItems: Array<Record<string, unknown>>
 let fetchSpy: jest.Mock
+// While set, the pantry read waits for it (a slow refresh after the flight).
+let pantryGate: Promise<void> | null = null
 
 function mockFetch() {
   fetchSpy = jest.fn(async (input: RequestInfo | URL) => {
@@ -83,6 +85,7 @@ function mockFetch() {
     if (url.includes('/api/bubbles')) return jsonResponse({ balance: 0, recent: [], streak_weeks: 0 })
     if (url.includes('/api/pantry/expiring')) return jsonResponse({ items: [], count: 0 })
     if (url.includes('/api/pantry')) {
+      if (pantryGate) await pantryGate
       return jsonResponse({ items: pantryItems, total_count: pantryItems.length })
     }
     return jsonResponse({ recipes: [], total_count: 0 })
@@ -107,6 +110,7 @@ const originalFetch = global.fetch
 const originalScrollTo = window.scrollTo
 
 beforeEach(() => {
+  pantryGate = null
   mockReduced = false
   jest.clearAllMocks()
   window.localStorage.clear()
@@ -349,6 +353,25 @@ describe('the items hop into their places after a successful put-away', () => {
     expect(screen.queryByTestId('put-away-chip')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^Basket/ })).toHaveTextContent('Basket 1')
     expect(pantryFetchCount()).toBe(2)
+  })
+
+  it('keeps the +N until the real counts are read, never flashing the old numbers', async () => {
+    await putAway5()
+    await screen.findAllByTestId('put-away-chip')
+    // The refresh after the flight is slow.
+    let release!: () => void
+    pantryGate = new Promise<void>((r) => { release = r })
+
+    fireEvent.pointerDown(document.body)
+
+    // The flight is over, but the tags still read what landed, not the stale 1.
+    await waitFor(() => expect(screen.queryByTestId('put-away-chip')).not.toBeInTheDocument())
+    expect(fridgeButton()).toHaveTextContent('Fridge +2')
+    expect(fridgeButton()).not.toHaveTextContent('Fridge 1')
+
+    await act(async () => release())
+    await waitFor(() => expect(fridgeButton()).toHaveTextContent('Fridge 3'))
+    expect(fridgeButton()).not.toHaveTextContent('+')
   })
 
   it('under reduced motion nothing flies: the counts just update', async () => {

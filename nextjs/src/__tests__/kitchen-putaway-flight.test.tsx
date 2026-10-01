@@ -112,11 +112,14 @@ describe('PutAwayFlight', () => {
   })
 
   it('a batch chip says how many it carries', () => {
-    renderFlight(hops(30))
+    const list = hops(30)
+    const firstBatch = planFlight(list).steps.find((st) => st.items.length > 1)!
+    renderFlight(list)
     // The tail (items 13 on) leaves after the twelfth single; fast-forward to it.
-    act(() => jest.advanceTimersByTime(3200))
-    const batches = screen.queryAllByTestId('put-away-chip').filter((c) => c.getAttribute('data-batch'))
-    for (const b of batches) expect(b).toHaveTextContent(/×\d/)
+    act(() => jest.advanceTimersByTime(firstBatch.at + 10))
+    const batches = screen.getAllByTestId('put-away-chip').filter((c) => c.getAttribute('data-batch'))
+    expect(batches.length).toBeGreaterThan(0)
+    expect(batches[0]).toHaveTextContent(`×${firstBatch.items.length}`)
   })
 
   it('a tap during the animation jumps to the end state, and the tap is not swallowed', () => {

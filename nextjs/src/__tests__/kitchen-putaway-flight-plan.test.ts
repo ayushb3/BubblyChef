@@ -9,10 +9,12 @@ import {
   CHIP_UNITS,
   FLIGHT_ANCHORS,
   HOP_FRAMES,
+  HOP_FRAMES_MAX,
   HOP_MS,
   INDIVIDUAL_MAX,
   SPARKLE_MS,
   finalLanded,
+  hopFrames,
   hopPath,
   landedBy,
   planFlight,
@@ -122,18 +124,31 @@ describe('planFlight', () => {
 })
 
 describe('hopPath', () => {
-  it('steps from the row to the place in HOP_FRAMES + 1 stills, with a hop in the middle', () => {
-    const { x, y } = hopPath({ x: 200, y: 600 }, { x: 60, y: 100 })
-    expect(x).toHaveLength(HOP_FRAMES + 1)
-    expect(y).toHaveLength(HOP_FRAMES + 1)
+  it('steps from the row to the place in stills, with a hop in the middle', () => {
+    const from = { x: 200, y: 600 }
+    const to = { x: 60, y: 100 }
+    const { x, y } = hopPath(from, to)
+    const frames = hopFrames(from, to)
+    expect(x).toHaveLength(frames + 1)
+    expect(y).toHaveLength(frames + 1)
     expect([x[0], y[0]]).toEqual([200, 600])
-    expect([x[HOP_FRAMES], y[HOP_FRAMES]]).toEqual([60, 100])
+    expect([x[frames], y[frames]]).toEqual([60, 100])
     // Frame by frame it keeps heading to the place (x only ever decreases here)...
     for (let i = 1; i < x.length; i++) expect(x[i]).toBeLessThan(x[i - 1])
     // ...and the middle frames are lifted above the straight line (the hop).
-    const mid = Math.floor(HOP_FRAMES / 2)
-    const straight = 600 + (100 - 600) * (mid / HOP_FRAMES)
+    const mid = Math.floor(frames / 2)
+    const straight = 600 + (100 - 600) * (mid / frames)
     expect(y[mid]).toBeLessThan(straight)
+  })
+
+  it('a short hop has the fewest stills, a long way more, never more than the cap', () => {
+    const near = hopFrames({ x: 0, y: 0 }, { x: 60, y: 0 })
+    const far = hopFrames({ x: 0, y: 0 }, { x: 0, y: 500 })
+    const absurd = hopFrames({ x: 0, y: 0 }, { x: 0, y: 5000 })
+    expect(near).toBe(HOP_FRAMES)
+    expect(far).toBeGreaterThan(near)
+    expect(far).toBeLessThanOrEqual(HOP_FRAMES_MAX)
+    expect(absurd).toBe(HOP_FRAMES_MAX)
   })
 })
 

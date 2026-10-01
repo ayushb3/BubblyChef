@@ -38,7 +38,6 @@ import {
   CHIP_PX,
   FLIGHT_ANCHORS,
   HOP_MS,
-  HOP_FRAMES,
   finalLanded,
   hopPath,
   planFlight,
@@ -68,7 +67,7 @@ interface Flying {
 const WALL_SELECTOR = '[data-testid="kitchen-wall"]'
 
 /** Each frame holds its still, then jumps to the next (world motion, not a glide). */
-const FRAME_EASE = Array.from({ length: HOP_FRAMES }, () => steppedEase(1))
+const HOLD_STILL = steppedEase(1)
 
 function wallTarget(wall: Element, place: PlaceKey): Point {
   const r = wall.getBoundingClientRect()
@@ -174,7 +173,7 @@ export default function PutAwayFlight({ hops, onLanded, onDone }: PutAwayFlightP
               x: path.x.map((v) => v - half),
               y: path.y.map((v) => v - half),
             }}
-            transition={{ duration: HOP_MS / 1000, ease: FRAME_EASE }}
+            transition={{ duration: HOP_MS / 1000, ease: path.x.slice(1).map(() => HOLD_STILL) }}
           >
             <span aria-hidden="true">{first.emoji}</span>
             {batch && (

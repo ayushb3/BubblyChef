@@ -133,10 +133,18 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     items: null,
   })
 
+  // After a successful put-away (#754) the items hop from the sheet to their
+  // places. While they do, the tags read the running +N (`landed`, ticking up as
+  // each lands) and the real counts are held back: they are re-read when it ends.
+  const [flightHops, setFlightHops] = useState<PutAwayHop[] | null>(null)
+  const [landed, setLanded] = useState<Record<PlaceKey, number> | null>(null)
+
   // The pantry, dashboard and expiring reads. `reload` runs it again behind an
   // open sheet (an edit or an add changed the rows): the skeletons are the first
   // load's only, so the home does not flash while the counts catch up.
   const [reloadTick, setReloadTick] = useState(0)
+  // Set when the flight ends: the next read drops the running +N (see `fetchAll`).
+  const settleLanded = useRef(false)
   const reload = useCallback(() => setReloadTick((n) => n + 1), [])
 
   useEffect(() => {
@@ -201,6 +209,13 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         // silent
       } finally {
         setLoading(false)
+        // The put-away flight is over and its counts are now re-read (#754):
+        // only now do the tags drop the running +N for the real counts, so they
+        // never flash the old numbers in between.
+        if (settleLanded.current) {
+          settleLanded.current = false
+          setLanded(null)
+        }
       }
     }
     fetchAll()
@@ -247,11 +262,6 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
   // badges) and Bubbles stands at the door. The sheet opens over the scene when
   // home mounts with one pending (a hand-off from a scan, or a reload).
   const pending = usePendingPutAway()
-  // After a successful put-away (#754) the items hop from the sheet to their
-  // places. While they do, the tags read the running +N (`landed`, ticking up as
-  // each lands) and the real counts are held back: they are re-read when it ends.
-  const [flightHops, setFlightHops] = useState<PutAwayHop[] | null>(null)
-  const [landed, setLanded] = useState<Record<PlaceKey, number> | null>(null)
   const incoming = landed ?? (pending ? incomingByPlace(pending) : null)
   const [putAwayOpen, setPutAwayOpen] = useState(false)
   const putAwayOffered = useRef(false)
@@ -452,8 +462,9 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
           hops={flightHops}
           onLanded={setLanded}
           onDone={() => {
+            // Re-read the counts; the +N stays until they are in (see `fetchAll`).
+            settleLanded.current = true
             setFlightHops(null)
-            setLanded(null)
             pantryChanged()
           }}
         />
