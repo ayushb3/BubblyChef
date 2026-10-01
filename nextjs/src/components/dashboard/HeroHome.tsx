@@ -296,6 +296,14 @@ export default function HeroHome({
     setAddSheet({ tab: linkedAdd })
   }, [linkedAdd])
 
+  // Issue #803: with a scan pending, a tag reading +N is the shopping waiting there,
+  // and tapping it reopens put-away: the way back in after the card was answered
+  // "Not now" and the sheet closed. A place with nothing coming opens its storage sheet.
+  const openPlace = (place: PlaceKey) => {
+    if (pending && incomingByPlace(pending)[place] > 0) setPutAwayOpen(true)
+    else setSheet({ place, view: 'scene' })
+  }
+
   const closeSheet = () => {
     setSheet(null)
     // A deep-linked visit must not reopen on refresh.
@@ -344,12 +352,13 @@ export default function HeroHome({
         theme={kitchenTheme}
         places={places}
         stock={stock}
-        onOpenPlace={(place) => setSheet({ place, view: 'scene' })}
+        onOpenPlace={openPlace}
         planDinnerHref={planDinnerHref()}
         bubblesLayer={<PixelBubbles spot={bubblesSpot} cooking={cooking} />}
         sceneLabel={sceneLabel(bubblesSpot, cooking)}
         incoming={incoming}
         bounce={landed}
+        onDoorTap={pending ? () => setPutAwayOpen(true) : undefined}
       />
       </div>
 
