@@ -367,6 +367,11 @@ export default function HeroHome({
         open={putAwayOpen}
         record={pending}
         onClose={() => setPutAwayOpen(false)}
+        onTryAnother={() => {
+          // Not a receipt (#856): the scan is dropped; back to the scan tab for another photo.
+          setPutAwayOpen(false)
+          setAddSheet({ tab: 'scan' })
+        }}
         onPutAway={(_count, hops) => {
           // The write succeeded: play the hop into place, then refresh the counts.
           setLanded(null)

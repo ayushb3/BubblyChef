@@ -122,6 +122,7 @@ async def parse_receipt_llm(state: WorkflowState) -> WorkflowState:
             **state,
             "parsed_items": parsed_items,
             "parse_error": None,
+            "is_receipt": result.is_receipt,
             "confidence": adjusted_confidence,
         }
 

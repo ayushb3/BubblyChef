@@ -113,6 +113,8 @@ class WorkflowState(TypedDict, total=False):
     raw_llm_output: str
     parsed_items: list[dict[str, Any]]
     parse_error: str | None
+    # Document-kind signal from the receipt parse (issue #856). Absent = a receipt.
+    is_receipt: bool
 
     # ==========================================================================
     # Normalized Items
