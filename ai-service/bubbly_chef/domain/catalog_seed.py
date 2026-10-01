@@ -30,9 +30,9 @@ from bubbly_chef.domain.expiry import CATEGORY_DEFAULTS, CATEGORY_LOCATIONS
 CATALOG_PATH = Path(__file__).parent / "pantry_catalog.json"
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "supabase" / "migrations"
 
-# Matches the leading ``('canonical', 'category',`` of a generated VALUES row.
-_ROW_RE = re.compile(r"^\s*\('((?:[^']|'')*)',\s*'((?:[^']|'')*)',", re.MULTILINE)
-_INSERT_RE = re.compile(r"INSERT INTO food_catalog\b.*?ON CONFLICT", re.DOTALL | re.IGNORECASE)
+# ``INSERT INTO food_catalog (<columns>) VALUES`` - the column list is read by name so a
+# seed is understood whatever order its columns come in.
+_INSERT_RE = re.compile(r"INSERT\s+INTO\s+food_catalog\s*\(([^)]*)\)\s*VALUES", re.IGNORECASE)
 
 
 def load_catalog() -> list[dict[str, object]]:
@@ -55,14 +55,79 @@ def _row(entry: dict[str, object]) -> str:
     )
 
 
+def _parse_rows(sql: str, pos: int) -> list[list[str | None]]:
+    """Parse the parenthesised VALUES tuples starting at ``pos``.
+
+    Returns one list of fields per row: the unquoted text of a string literal
+    (``''`` unescaped), or ``None`` for anything else (numbers, NULL, expressions).
+    Stops at the first thing that is not another tuple (``ON CONFLICT``, ``;``).
+    """
+    rows: list[list[str | None]] = []
+    n = len(sql)
+    while pos < n:
+        while pos < n and (sql[pos].isspace() or sql[pos] == ","):
+            pos += 1
+        if pos >= n or sql[pos] != "(":
+            break
+        pos += 1
+        fields: list[str | None] = []
+        buf: list[str] = []
+        literal: str | None = None
+        while pos < n:
+            ch = sql[pos]
+            if ch == "'":
+                chars: list[str] = []
+                pos += 1
+                while pos < n:
+                    if sql[pos] == "'":
+                        if pos + 1 < n and sql[pos + 1] == "'":
+                            chars.append("'")
+                            pos += 2
+                            continue
+                        break
+                    chars.append(sql[pos])
+                    pos += 1
+                literal = "".join(chars)
+                pos += 1
+                continue
+            if ch in ",)":
+                fields.append(literal if literal is not None and not "".join(buf).strip() else None)
+                buf, literal = [], None
+                pos += 1
+                if ch == ")":
+                    break
+                continue
+            buf.append(ch)
+            pos += 1
+        rows.append(fields)
+    return rows
+
+
 def seeded_canonicals(migrations_dir: Path = MIGRATIONS_DIR) -> dict[str, str]:
-    """Map canonical -> category for every row a migration already seeds."""
+    """Map canonical -> category for every row a migration already seeds.
+
+    Rows are read by column name from each ``INSERT INTO food_catalog (cols) VALUES``
+    list, so column order and the trailing conflict clause do not matter. A seed this
+    cannot read (no VALUES list, or no canonical/category column) raises rather than
+    silently counting as zero rows, which would make the guard demand duplicates.
+    """
     seeded: dict[str, str] = {}
     for path in sorted(migrations_dir.glob("*.sql")):
         sql = path.read_text(encoding="utf-8")
-        for block in _INSERT_RE.findall(sql):
-            for canonical, category in _ROW_RE.findall(block):
-                seeded[canonical.replace("''", "'")] = category.replace("''", "'")
+        for match in _INSERT_RE.finditer(sql):
+            columns = [c.strip().strip('"').lower() for c in match.group(1).split(",")]
+            if "canonical" not in columns or "category" not in columns:
+                raise ValueError(
+                    f"{path.name}: INSERT INTO food_catalog must list canonical and "
+                    f"category columns to be recognised as a seed (got {columns})"
+                )
+            ci, ki = columns.index("canonical"), columns.index("category")
+            for row in _parse_rows(sql, match.end()):
+                if len(row) != len(columns) or row[ci] is None or row[ki] is None:
+                    raise ValueError(
+                        f"{path.name}: cannot read canonical/category from seed row {row!r}"
+                    )
+                seeded[str(row[ci])] = str(row[ki])
     return seeded
 
 
