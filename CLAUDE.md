@@ -485,11 +485,10 @@ the same credential differently.
 - `mutating` state in RecipeBook — buttons not yet `disabled={mutating}`
 - iOS Safari bottom nav bug — issue #4
 - Recipe generation ignores constraint modifications from chat follow-up — BubblyChef-747
-- The `decorations` table and `GET /api/decorations` exist, but nothing in
-  `nextjs/src` consumes them and there is no kitchen-scene component — the
-  milestone/decoration feature is a backend stub with no UI. The gamification
-  and live-kitchen design that would build on it is held (high risk, medium
-  value, not MVP) — see PR #124
+- The home kitchen (`components/kitchen/KitchenScene.tsx`, M1) is still the flat
+  12-slot decoration scene with themes and unlocks. The pixel "kitchen is the app"
+  redraw (Goal 2 of `docs/plans/2026-09-29-signature-prd.md`, settled 2026-10-01)
+  keeps its data and logic and replaces only the drawing
 - Chat can't be told to ignore the pantry, and the instruction is lost on the
   next turn — issue #287
 - Expiring items are forced into every suggestion regardless of whether they
