@@ -138,8 +138,15 @@ class LLMRecipeResult(BaseModel):
     cook_time_minutes: int | None = None
     total_time_minutes: int | None = None
     servings: int | None = None
-    ingredients: list[dict[str, Any]] = Field(default_factory=list)
-    instructions: list[str] = Field(default_factory=list)
+    # Required and non-empty (issue #720): with `default_factory=list` neither was in
+    # the JSON schema's `required` list, so a grammar-constrained local model could
+    # answer with just a title and times and the card shipped with nothing to cook.
+    ingredients: list[dict[str, Any]] = Field(
+        min_length=1, description="Every ingredient with its amount; never empty"
+    )
+    instructions: list[str] = Field(
+        min_length=1, description="Step-by-step instructions; never empty"
+    )
     steps: list[StepMetadata] = Field(
         default_factory=list,
         description=(

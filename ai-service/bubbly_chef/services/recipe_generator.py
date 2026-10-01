@@ -54,8 +54,12 @@ class AIRecipeOutput(BaseModel):
     prep_time_minutes: int | None = Field(default=None)
     cook_time_minutes: int | None = Field(default=None)
     servings: int | None = Field(default=None)
-    ingredients: list[AIRecipeIngredient]
-    instructions: list[str] = Field(description="Step-by-step instructions")
+    ingredients: list[AIRecipeIngredient] = Field(
+        min_length=1, description="Every ingredient with its amount; never empty"
+    )
+    instructions: list[str] = Field(
+        min_length=1, description="Step-by-step instructions; never empty"
+    )
     steps: list[StepMetadata] = Field(
         default_factory=list,
         description=(

@@ -40,7 +40,7 @@ def _mock_ai() -> Any:
         return_value=LLMRecipeResult(
             title="Chicken Potato Bake",
             description="d",
-            ingredients=[],
+            ingredients=[{"name": "rice"}],
             instructions=["step"],
         )
     )

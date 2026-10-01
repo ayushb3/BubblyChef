@@ -80,6 +80,7 @@ from bubbly_chef.tools.web_search import search_recipe
 from bubbly_chef.workflows.recipe.exclusions import apply_food_exclusions, union_case_insensitive
 from bubbly_chef.workflows.recipe.diet_change import diet_change_reply, resolve_diet_change
 from bubbly_chef.workflows.recipe.refine_diet import added_clauses, added_text, negated_text
+from bubbly_chef.workflows.recipe_result import complete_recipe
 from bubbly_chef.workflows.state import (
     LLMRecipeResult,
     WorkflowState,
@@ -2021,14 +2022,12 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
     ai_manager = get_ai_manager()
 
     async def _generate(extra: str) -> LLMRecipeResult:
-        result = await ai_manager.complete(
+        return await complete_recipe(
+            ai_manager,
             prompt=prompt + extra,
             response_schema=LLMRecipeResult,
             temperature=0.5,
         )
-        if not isinstance(result, LLMRecipeResult):
-            raise ValueError("Unexpected response type from AI provider")
-        return result
 
     try:
         # The model is not the only line of defence against an allergen (#500): a card
@@ -2055,6 +2054,8 @@ async def generate_grounded_recipe(state: WorkflowState) -> WorkflowState:
             "workflow_status": WorkflowStatus.COMPLETED.value,
         }
     except Exception as e:
+        # Includes `BlankRecipeError` (#720): a card with no ingredients or steps,
+        # twice, is a failed generation. It is reported as one, never shipped.
         logger.error("Grounded recipe generation failed: %s", e)
         return {
             **state,

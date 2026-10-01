@@ -13,7 +13,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from bubbly_chef.models.recipe import StepMetadata
-from bubbly_chef.services.recipe_generator import AIRecipeOutput, generate_recipe
+from bubbly_chef.services.recipe_generator import (
+    AIRecipeIngredient,
+    AIRecipeOutput,
+    generate_recipe,
+)
 from bubbly_chef.workflows.recipe.nodes import generate_grounded_recipe
 from bubbly_chef.workflows.state import LLMRecipeResult
 
@@ -31,7 +35,7 @@ async def test_generate_recipe_attaches_valid_structured_steps():
         return_value=AIRecipeOutput(
             title="Tomato Pasta",
             description="Simple and quick",
-            ingredients=[],
+            ingredients=[AIRecipeIngredient(name="pasta")],
             instructions=["Boil the pasta", "Toss with sauce"],
             steps=[
                 StepMetadata(label="Boil pasta", hands_on=False, ongoing_label="the pasta boils"),
@@ -58,7 +62,7 @@ async def test_generate_recipe_falls_back_to_null_steps_on_count_mismatch():
         return_value=AIRecipeOutput(
             title="Tomato Pasta",
             description="Simple and quick",
-            ingredients=[],
+            ingredients=[AIRecipeIngredient(name="pasta")],
             instructions=["Boil the pasta", "Toss with sauce"],
             steps=[StepMetadata(label="Boil pasta")],  # only one, for two instructions
         )
@@ -79,7 +83,7 @@ async def test_generate_recipe_with_no_model_steps_leaves_steps_none():
         return_value=AIRecipeOutput(
             title="Tomato Pasta",
             description="d",
-            ingredients=[],
+            ingredients=[AIRecipeIngredient(name="pasta")],
             instructions=["Boil the pasta"],
         )
     )
@@ -108,7 +112,7 @@ async def test_grounded_chat_recipe_carries_structured_steps():
     llm_result = LLMRecipeResult(
         title="Chicken Potato Bake",
         description="d",
-        ingredients=[],
+        ingredients=[{"name": "potato"}],
         instructions=["Preheat the oven", "Roast for 40 minutes"],
         steps=[
             StepMetadata(label="Preheat oven", hands_on=True),
@@ -139,7 +143,7 @@ async def test_grounded_chat_recipe_falls_back_to_null_steps_on_mismatch():
     llm_result = LLMRecipeResult(
         title="Chicken Potato Bake",
         description="d",
-        ingredients=[],
+        ingredients=[{"name": "potato"}],
         instructions=["Preheat the oven", "Roast for 40 minutes"],
         steps=[StepMetadata(label="Preheat oven")],  # count mismatch
     )
