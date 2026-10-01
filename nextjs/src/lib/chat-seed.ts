@@ -135,9 +135,22 @@ export function cookThisHref(name: string, expiryDate?: string | null): string {
   return `/chat?${params.toString()}`
 }
 
-/** Home screen "Plan" card → chat primed to plan dinner (issue #651). */
-export function planDinnerHref(): string {
-  return '/chat?plan=dinner'
+/** The most foods a plan-dinner link carries (the storage sheet's Use first row). */
+const PLAN_WITH_LIMIT = 6
+
+/**
+ * Home screen "Plan" card → chat primed to plan dinner (issue #651). With
+ * `foods` (issue #749: the storage sheet's "Plan dinner around these") the
+ * request names them, in one `with` param joined by `|`.
+ */
+export function planDinnerHref(foods?: readonly string[]): string {
+  const names = (foods ?? []).map((f) => cleanSeedTitle(f)).filter((f): f is string => f !== null)
+  if (names.length === 0) return '/chat?plan=dinner'
+  const params = new URLSearchParams({
+    plan: 'dinner',
+    with: names.slice(0, PLAN_WITH_LIMIT).join('|'),
+  })
+  return `/chat?${params.toString()}`
 }
 
 /**
@@ -163,6 +176,19 @@ export function makeMealMessage(title?: string | null): string {
 
 /** Auto-sent message for the `?plan=dinner` seed (issue #651). */
 export const PLAN_DINNER_MESSAGE = 'Plan dinner for tonight'
+
+/** "A", "A and B", "A, B and C". */
+function joinFoods(foods: readonly string[]): string {
+  if (foods.length <= 1) return foods.join('')
+  return `${foods.slice(0, -1).join(', ')} and ${foods[foods.length - 1]}`
+}
+
+/** `PLAN_DINNER_MESSAGE`, built around the named foods when there are any (issue #749). */
+export function planDinnerMessage(foods: readonly string[] = []): string {
+  return foods.length === 0
+    ? PLAN_DINNER_MESSAGE
+    : `${PLAN_DINNER_MESSAGE}, built around my ${joinFoods(foods)}`
+}
 
 export function tipSeedMessage(tip: string): string {
   return `Tell me more about this kitchen tip: "${tip}" — why does it work, and when should I use it?`
@@ -259,15 +285,23 @@ export function deriveChatSeed(
   // through to the seeds below rather than erroring.
   const plan = param(params, 'plan')
   if (plan && plan.toLowerCase() === 'dinner') {
+    // `with` (issue #749) names the foods to build it around: cleaned like any
+    // crafted-link text, blanks dropped, at most six.
+    const foods = (param(params, 'with') ?? '')
+      .split('|')
+      .map((f) => cleanSeedTitle(f))
+      .filter((f): f is string => f !== null)
+      .slice(0, PLAN_WITH_LIMIT)
     return {
-      key: 'plan:dinner',
+      key: foods.length > 0 ? `plan:dinner:${foods.join('|')}` : 'plan:dinner',
       kind: 'plan',
-      message: PLAN_DINNER_MESSAGE,
+      message: planDinnerMessage(foods),
       card: {
         emoji: '🍽️',
         label: 'Plan dinner',
         title: 'Planning dinner',
-        subtitle: 'Bubbles will suggest a few meals',
+        subtitle:
+          foods.length > 0 ? `Using your ${joinFoods(foods)}` : 'Bubbles will suggest a few meals',
         dismissLabel: 'Dismiss dinner planning context',
       },
     }

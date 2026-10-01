@@ -166,12 +166,13 @@ describe('kitchen home wall (#748)', () => {
     expect(screen.queryByRole('button', { name: /empty/ })).not.toBeInTheDocument()
   })
 
-  it('sends a tapped place to the existing pantry page until the storage sheet lands', async () => {
+  it('opens the storage sheet on a tapped place, where it was the pantry page before (#749)', async () => {
     mockFetch({ items: [row('fridge')] })
     renderHome()
 
     fireEvent.click(await screen.findByRole('button', { name: /^Fridge, 1 item/ }))
-    expect(pushSpy).toHaveBeenCalledWith('/pantry')
+    expect(await screen.findByTestId('storage-sheet')).toBeInTheDocument()
+    expect(pushSpy).not.toHaveBeenCalled()
   })
 
   it('opens the plan-dinner chat flow from the chalkboard', async () => {

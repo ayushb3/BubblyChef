@@ -168,14 +168,37 @@ describe('KitchenWall scene (#748)', () => {
     expect(withFridge).not.toBe(withShelves)
   })
 
-  it('renders the hooks for the sprite and Bubbles tickets inside the SVG', () => {
-    const { container } = renderWall({
-      spritesLayer: <g data-testid="sprites" />,
-      bubblesLayer: <g data-testid="bubbles" />,
-    })
+  it('renders the sprites hook inside the scene SVG', () => {
+    const { container } = renderWall({ spritesLayer: <g data-testid="sprites" /> })
     const svg = container.querySelector('svg')!
     expect(within(svg as unknown as HTMLElement).getByTestId('sprites')).toBeInTheDocument()
-    expect(within(svg as unknown as HTMLElement).getByTestId('bubbles')).toBeInTheDocument()
+  })
+
+  it('paints the Bubbles layer in its own SVG over the decorations and under the places (#752)', () => {
+    const { container } = renderWall({
+      bubblesLayer: <g data-testid="bubbles" />,
+      children: <div data-testid="decoration" />,
+    })
+    const wall = screen.getByTestId('kitchen-wall')
+    const layer = screen.getByTestId('bubbles').closest('svg')!
+    // a second SVG on the same 96 x 80 grid, so wall units mean the same thing in it
+    expect(layer).not.toBe(container.querySelector('svg'))
+    expect(layer).toHaveAttribute('viewBox', '0 0 96 80')
+    expect(layer).toHaveAttribute('shape-rendering', 'crispEdges')
+    expect(layer).toHaveAttribute('aria-hidden', 'true')
+    expect(layer.getAttribute('class')).toContain('pointer-events-none')
+    // in paint order: scene, decorations, Bubbles, then every place's button
+    const kids = Array.from(wall.children)
+    const deco = kids.indexOf(screen.getByTestId('decoration'))
+    const bubbles = kids.indexOf(layer as unknown as Element)
+    const fridge = kids.indexOf(screen.getByRole('button', { name: /^Fridge/ }))
+    expect(deco).toBeLessThan(bubbles)
+    expect(bubbles).toBeLessThan(fridge)
+  })
+
+  it('draws no second SVG when there is no Bubbles layer', () => {
+    const { container } = renderWall()
+    expect(container.querySelectorAll('svg')).toHaveLength(1)
   })
 
   it('renders decorations passed as children under the places, so they never cover a tag', () => {
