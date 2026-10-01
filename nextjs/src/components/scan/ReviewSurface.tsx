@@ -204,7 +204,7 @@ export default function ReviewSurface({
                 ) : (
                   <ul className="m-0 flex min-w-0 flex-1 list-none flex-wrap items-center gap-1.5 p-0">
                     {items.map((item) => (
-                      <li key={item._id} className="min-w-0 max-w-full">
+                      <li key={item._id} data-putaway-item={item._id} className="min-w-0 max-w-full">
                         <Chip tone="muted" emoji={getFoodEmoji(item.name, item.category)}>
                           {item.name}
                         </Chip>
