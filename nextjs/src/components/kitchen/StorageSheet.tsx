@@ -219,7 +219,7 @@ export default function StorageSheet<T extends StoredItem>({
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center gap-2">
         <div
-          className="relative flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-xl border-2 px-3 text-[color:var(--color-text)]"
+          className="relative flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-xl border-2 px-3 text-[color:var(--color-text)] has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-[color:var(--color-text)]"
           style={{ borderColor: PIXEL_INK, background: 'var(--color-surface)' }}
         >
           <SearchIcon />
@@ -241,7 +241,7 @@ export default function StorageSheet<T extends StoredItem>({
             placeholder={items ? `Search all ${rows.length} items` : 'Search all items'}
             autoComplete="off"
             enterKeyHint="search"
-            className="min-w-0 flex-1 border-0 bg-transparent p-0 text-base font-semibold text-[color:var(--color-text)] outline-none placeholder:text-[color:var(--color-muted)] [&::-webkit-search-cancel-button]:hidden"
+            className="min-w-0 flex-1 border-0 bg-transparent p-0 text-base font-semibold text-[color:var(--color-text)] focus-visible:outline-none! placeholder:text-[color:var(--color-muted)] [&::-webkit-search-cancel-button]:hidden"
           />
           {query && (
             <button

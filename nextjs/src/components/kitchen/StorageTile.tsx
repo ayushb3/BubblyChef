@@ -87,7 +87,7 @@ export function StorageTile({
       aria-label={itemLabel(item, days)}
       data-testid="storage-tile"
       data-urgent={urgent ? 'true' : undefined}
-      className="flex min-h-[44px] w-full min-w-0 flex-col items-start gap-[3px] rounded-xl border-2 px-2.5 py-2 text-left text-[color:var(--color-text)] active:translate-y-px motion-reduce:active:translate-y-0"
+      className="flex min-h-[44px] w-full min-w-0 flex-col items-start gap-[3px] rounded-xl border-2 px-2 py-2 text-left text-[color:var(--color-text)] active:translate-y-px motion-reduce:active:translate-y-0"
       style={style}
     >
       <span aria-hidden="true" className="text-[22px] leading-[26px]">
