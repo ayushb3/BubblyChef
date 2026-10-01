@@ -1007,7 +1007,50 @@ def constraints_to_persist(state: WorkflowState) -> dict[str, Any] | None:
         persisted["excluded_ingredients"] = [
             x for x in persisted["excluded_ingredients"] if x.strip().lower() not in from_profile
         ]
-    return persisted
+    if state.get("brainstorm_ideas") and state.get("next_action") == NextAction.PICK_RECIPE.value:
+        # A brainstorm's options are waiting for a pick: the pick continues this
+        # request, so it keeps the foods the request named (issue #719).
+        return persisted
+    final_dietary = list((constraints or {}).get("dietary") or [])
+    return _without_turn_scoped_foods(persisted, state, final_dietary)
+
+
+def _without_turn_scoped_foods(
+    persisted: dict[str, Any], state: WorkflowState, final_dietary: list[str]
+) -> dict[str, Any]:
+    """`persisted` minus the foods that set a diet aside on this turn (issue #719).
+
+    `final_dietary` is the diet this turn's reply was generated under (not the
+    persisted one, which puts a set-aside session diet back).
+
+    A diet set aside because this turn named a food it forbids ("we're not vegan
+    tonight, can I use butter?", "chicken curry" under a stored Vegetarian) is
+    set aside for this reply only. The food was recorded as a preferred or
+    must-use ingredient, and persisting it would hand it to every later turn,
+    whose diet check reads the merged ingredients and would set the diet aside
+    again for as long as the session lives: the one-turn relaxation of #687 would
+    never expire.
+
+    So the foods the set-aside labels forbid are left out of what the session
+    remembers. Foods that don't clash with the diet are kept. Refining the same
+    card is unaffected: it reads the card's own `diets_set_aside` and ingredients,
+    not these lists, so it keeps the diet set aside. A new request sees neither the
+    food nor the set-aside.
+    """
+    held = [*(state.get("stored_dietary") or []), *(state.get("session_dietary") or [])]
+    set_aside = _diets_set_aside(held, final_dietary)
+    if not set_aside:
+        return persisted
+    result = dict(persisted)
+    for key in ("preferred_ingredients", "must_use_ingredients"):
+        foods = persisted.get(key)
+        if foods:
+            result[key] = [
+                food
+                for food in foods
+                if not any(_dietary_contradicted(label, str(food)) for label in set_aside)
+            ]
+    return result
 
 
 def _tag_key(tag: str) -> str:
@@ -1208,6 +1251,13 @@ def _prior_constraints_from_state(state: WorkflowState) -> dict[str, Any] | None
         return None
     prior = metadata.get("recipe_constraints")
     return prior if isinstance(prior, dict) else None
+
+
+def _brainstorm_pending(state: WorkflowState) -> bool:
+    """True when the session still holds a brainstorm's options awaiting a pick (#719)."""
+    session = state.get("session")
+    metadata = session.get("metadata") if isinstance(session, dict) else None
+    return isinstance(metadata, dict) and bool(metadata.get("brainstorm_ideas"))
 
 
 def _constraints_prompt(input_text: str, session_held: list[str], stored: list[str]) -> str:
@@ -1777,12 +1827,20 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
     if not state.get("constraints_extracted"):
         # A brainstorm pick (or the defensive case): extract did not run this
         # turn, so re-check the diet ourselves rather than blindly re-applying
-        # the stored one (#544). The picked name is the only text checked; `{}`
-        # is passed for the constraints so a stored must_use of "chicken" from
-        # the brainstorm turn doesn't count as this pick naming chicken. A diet
-        # set aside for a "Chicken Tikka" pick stays set aside, and one set
+        # the stored one (#544). The picked name is the only message text checked.
+        # A diet set aside for a "Chicken Tikka" pick stays set aside, and one set
         # aside by the brainstorm reasserts once the pick stops contradicting
         # it (the #394 design).
+        #
+        # The exception is the food the brainstorm request itself asked for
+        # (issue #719): "give me some chicken ideas" under a Vegetarian diet is
+        # still a chicken request when the user picks "Honey Garlic Thighs", whose
+        # title doesn't say chicken. The session keeps those foods while the
+        # brainstorm's options are pending (`constraints_to_persist`), so while
+        # they are pending the foods are read here as part of the pick and keep the
+        # diet set aside. Without pending options a stored must_use food doesn't
+        # count as the pick naming it. Once the pick is made they are no longer
+        # persisted.
         #
         # The same filter applies to the rehydrated conversation diet, not only
         # the stored one: a session "Vegetarian" doesn't survive a "Chicken
@@ -1790,11 +1848,27 @@ async def research_recipe(state: WorkflowState) -> WorkflowState:
         rehydrated_dietary = list(constraints.get("dietary") or [])
         session_dietary = rehydrated_dietary
         name_lower = recipe_name.lower()
+        request_foods = (
+            {
+                key: constraints[key]
+                for key in ("must_use_ingredients", "preferred_ingredients")
+                if constraints.get(key)
+            }
+            if _brainstorm_pending(state)
+            else {}
+        )
+        foods_text = join_fields(
+            *request_foods.get("must_use_ingredients", []),
+            *request_foods.get("preferred_ingredients", []),
+        )
         rehydrated_kept = [
-            label for label in rehydrated_dietary if not _dietary_contradicted(label, name_lower)
+            label
+            for label in rehydrated_dietary
+            if not _dietary_contradicted(label, name_lower)
+            and not _dietary_contradicted(label, foods_text)
         ]
         dietary = _combine_dietary_preferences(
-            stored_dietary, rehydrated_kept, {}, recipe_name
+            stored_dietary, rehydrated_kept, request_foods, recipe_name
         )
         if dietary != rehydrated_dietary:
             logger.info(
