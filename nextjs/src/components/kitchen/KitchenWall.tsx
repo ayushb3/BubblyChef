@@ -35,6 +35,11 @@
  *    stays below row 58 and the tags end at row 55.2, so they never meet.
  *    `bubbles-spot.ts` and `kitchen-bubbles-spot.test.ts` hold the guarantee.
  *  - `PLACE_BOXES` anchors each place in wall units.
+ *  - `onDoorTap` (issue #803): while a scan waits for put-away, the door spot where
+ *    Bubbles stands with the shopping is a button (`DOOR_BOX`) that reopens it. It is
+ *    the way back in once the Bubbles card was answered "Not now" and the sheet closed.
+ *    It is not drawn at all without the callback, so a wall with nothing waiting has
+ *    no extra tap target.
  *
  * Places with no data yet (`places === null`: loading, or the pantry failed to
  * load) show their name only and draw no stock; never a made-up zero.
@@ -85,6 +90,15 @@ export const PLACE_BOXES: Record<
   // board it grows leftwards over the door instead of being clipped.
   chalkboard: { box: [73.6, 13, 21.4, 22.5], tag: [94.5, 29.54], anchorRight: true },
 }
+
+/**
+ * The door spot's tap area (issue #803), in wall units: where the pixel Bubbles
+ * stands at the door (`SPOT_X.door`, `BUBBLES_Y`, 16 x 18) with a margin round it, on
+ * the floor (from row 56) so it starts below every place's box and tag (the lowest
+ * ends at row 55.2). 77 x 85 px at 390 px wide, past the 44 px minimum.
+ * `kitchen-pending-reentry.test.tsx` holds all of that.
+ */
+export const DOOR_BOX: WallBox = [76, 57, 19, 21]
 
 /**
  * What each place draws, in wall units: the objects a decoration must never
@@ -239,6 +253,12 @@ export interface KitchenWallProps {
    * while the flight runs, so the tag ticks up (+1, +2, ...) as each lands.
    */
   bounce?: Record<PlaceKey, number> | null
+  /**
+   * Issue #803: a scan is waiting to be put away, and tapping the door spot (where
+   * Bubbles stands with the shopping) reopens it. Without it there is no door
+   * button at all.
+   */
+  onDoorTap?: () => void
   /** The decoration slots. Absolutely positioned, in percent of the wall. */
   children?: ReactNode
 }
@@ -254,6 +274,7 @@ export default function KitchenWall({
   sceneLabel,
   incoming = null,
   bounce = null,
+  onDoorTap,
   children,
 }: KitchenWallProps) {
   const vars = {
@@ -368,6 +389,17 @@ export default function KitchenWall({
           </button>
         )
       })}
+
+      {onDoorTap && (
+        <button
+          type="button"
+          data-testid="kitchen-door"
+          aria-label="Put the shopping away"
+          onClick={onDoorTap}
+          className={HIT}
+          style={boxStyle(DOOR_BOX)}
+        />
+      )}
 
       <Link
         href={planDinnerHref}
