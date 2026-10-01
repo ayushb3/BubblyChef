@@ -14,7 +14,11 @@ from bubbly_chef.domain.stock import filter_usable_pantry_items
 from bubbly_chef.models.pantry import PantryItem
 from bubbly_chef.models.recipe import Ingredient, RecipeCard, StepMetadata, build_structured_steps
 from bubbly_chef.prompts.recipe import RECIPE_FOLLOWUP_PROMPT, RECIPE_GENERATION_PROMPT
-from bubbly_chef.services.allergen_guard import card_allergens, generate_allergen_safe
+from bubbly_chef.services.allergen_guard import (
+    allergen_card_warning,
+    card_allergens,
+    generate_allergen_safe,
+)
 from bubbly_chef.services.food_exclusions import allergy_never_block
 from bubbly_chef.services.recipe_refine import (
     AppliedEdits,
@@ -135,6 +139,9 @@ class GenerateRecipeResponse(BaseModel):
     have_count: int
     partial_count: int
     pantry_match_score: float = Field(ge=0.0, le=1.0)
+    # Set when a refine of the user's own recipe leaves an allergen they put there on
+    # the card (#500): the card is kept as made and this says so.
+    allergy_warning: str | None = None
 
 
 def format_pantry_for_prompt(pantry_items: list[PantryItem]) -> str:
@@ -387,6 +394,10 @@ async def _complete_recipe(
     raise StructuredOutputError("Failed to generate recipe")  # pragma: no cover
 
 
+def _ingredient_key(name: str) -> str:
+    return " ".join(name.lower().split())
+
+
 def _to_ingredient(ing: AIRecipeIngredient) -> Ingredient:
     return Ingredient(
         name=ing.name,
@@ -627,12 +638,39 @@ async def generate_recipe(
             ingredients = applied.ingredients
         return _Produced(result, instructions, steps_meta, ingredients)
 
+    # A refine edits the user's own card, so an allergen already on it (they saved
+    # the recipe before listing the allergy) stays as they made it: the guard rejects
+    # only what the refine would ADD. Rejected alternative: refusing every refine of
+    # such a recipe, which makes "make it spicier" impossible on a saved satay.
+    prior_names = (
+        {_ingredient_key(i.name) for i in previous_recipe.ingredients}
+        if previous_recipe is not None
+        else set()
+    )
+    prior_allergens = (
+        card_allergens(
+            allergy_list, previous_recipe.title, [i.name for i in previous_recipe.ingredients]
+        )
+        if previous_recipe is not None
+        else []
+    )
+
     def _named_allergens(candidate: _Produced) -> list[str]:
         # The FINAL card, after a refine's edit list is applied: an allergen the model
         # `added` lands on it exactly as a regenerated one would (#500).
-        return card_allergens(
-            allergy_list, candidate.result.title, [ing.name for ing in candidate.ingredients]
-        )
+        if previous_recipe is None:
+            return card_allergens(
+                allergy_list, candidate.result.title, [i.name for i in candidate.ingredients]
+            )
+        introduced = [
+            i.name for i in candidate.ingredients if _ingredient_key(i.name) not in prior_names
+        ]
+        in_title = [
+            a
+            for a in card_allergens(allergy_list, candidate.result.title, [])
+            if a not in prior_allergens
+        ]
+        return list(dict.fromkeys([*in_title, *card_allergens(allergy_list, "", introduced)]))
 
     # The model is not the only line of defence against an allergen (#500).
     produced = await generate_allergen_safe(_produce, _named_allergens, allergy_list)
@@ -677,6 +715,8 @@ async def generate_recipe(
     # Calculate match score
     match_score = calculate_pantry_match_score(statuses)
 
+    # Only ever non-empty on a refine: a fresh card that names an allergen never gets here.
+    carried = card_allergens(allergy_list, recipe.title, [i.name for i in recipe.ingredients])
     return GenerateRecipeResponse(
         recipe=recipe,
         ingredients_status=statuses,
@@ -684,4 +724,5 @@ async def generate_recipe(
         have_count=have_count,
         partial_count=partial_count,
         pantry_match_score=match_score,
+        allergy_warning=allergen_card_warning(carried) or None,
     )

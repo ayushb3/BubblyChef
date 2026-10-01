@@ -255,7 +255,9 @@ async def generate_side_alternatives(
     avoid_line = ""
     if replaced_dish is not None:
         replaced_name = _dish_title(replaced_dish)
-        avoid_line = f'Suggest alternatives to "{replaced_name}"; don\'t suggest it or a close variant.'
+        avoid_line = (
+            f'Suggest alternatives to "{replaced_name}"; don\'t suggest it or a close variant.'
+        )
 
     prompt = MEAL_SIDE_ALTERNATIVES_SYSTEM_PROMPT.format(
         meal_title=loaded.title,
@@ -278,12 +280,14 @@ async def generate_side_alternatives(
         )
 
     def _alternative_allergens(alt: Any) -> list[str]:
-        return allergens_named(allergies, alt.name, alt.blurb or "", *alt.key_ingredients)
+        return allergens_named(allergies, alt.name, *alt.key_ingredients)
 
     def _named_allergens(candidate: Any) -> list[str]:
         if not isinstance(candidate, MealSideAlternativesLLMResult):
             return []
-        return list(dict.fromkeys(a for alt in candidate.alternatives for a in _alternative_allergens(alt)))
+        return list(
+            dict.fromkeys(a for alt in candidate.alternatives for a in _alternative_allergens(alt))
+        )
 
     def _without_allergen_alternatives(candidate: Any) -> Any:
         # Still dirty after one regeneration: keep the clean alternatives, refuse when none is.

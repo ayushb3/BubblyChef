@@ -2229,7 +2229,10 @@ async def refine_recipe_node(state: WorkflowState) -> WorkflowState:
         field_confidences={},
         warnings=state.get("warnings", []),
         errors=state.get("errors", []),
-        assistant_message=f"Updated {refined_recipe.title}!{allergen_safe_note(list(decision.allergies))}",
+        assistant_message=(
+            f"Updated {refined_recipe.title}!{allergen_safe_note(list(decision.allergies))}"
+            + (f" {result.allergy_warning}" if result.allergy_warning else "")
+        ),
         request_id=state.get("request_id"),
         workflow_id=state.get("workflow_id"),
     )

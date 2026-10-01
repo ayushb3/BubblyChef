@@ -896,6 +896,48 @@ class TestMealEngine:
         assert titles == ["Meal 0", "Meal 1"]
 
     @pytest.mark.asyncio
+    async def test_a_reassuring_blurb_does_not_drop_an_option(self) -> None:
+        """Prose is not an ingredient list: "no peanuts in sight" keeps the option."""
+        reassuring = _option("Noodle Night", "Plain Noodles", ["noodles"])
+        reassuring.blurb = "Simple and peanut-free: no peanuts in sight."
+        reassuring.dishes[0].blurb = "Not a peanut anywhere."
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=MealOptionsLLMResult(
+                options=[reassuring]
+                + [_option(f"Meal {i}", f"Main {i}", ["rice"]) for i in range(2)]
+            )
+        )
+        out = await self._options(ai)
+        assert ai.complete.await_count == 1
+        assert "Noodle Night" in [o.title for o in out["proposal"].options]
+
+    def test_a_fixed_mains_allergen_in_the_option_title_is_the_users_own(self) -> None:
+        from bubbly_chef.workflows.meal.nodes import option_allergens
+
+        own = _option("Peanut Noodles Night", "Peanut Noodles", ["noodles", "peanut sauce"])
+        assert option_allergens(own, ["peanut"], skip_main=True) == []
+        # a side that brings the allergen in is still the model's to answer for
+        side = _option("Peanut Noodles Night", "Peanut Noodles", ["peanut sauce"], side="Satay Slaw")
+        side.dishes[1].key_ingredients = ["peanuts"]
+        assert option_allergens(side, ["peanut"], skip_main=True) == ["peanut"]
+        # without a fixed main the title is scanned as before
+        assert option_allergens(own, ["peanut"]) == ["peanut"]
+
+    @pytest.mark.asyncio
+    async def test_an_allergen_in_a_key_ingredient_still_drops_the_option(self) -> None:
+        sneaky = _option("Noodle Night", "Plain Noodles", ["noodles", "peanut sauce"])
+        sneaky.blurb = "Nothing to worry about."
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=MealOptionsLLMResult(
+                options=[sneaky] + [_option(f"Meal {i}", f"Main {i}", ["rice"]) for i in range(2)]
+            )
+        )
+        out = await self._options(ai)
+        assert "Noodle Night" not in [o.title for o in out["proposal"].options]
+
+    @pytest.mark.asyncio
     async def test_all_options_dirty_is_an_honest_error(self) -> None:
         dirty = MealOptionsLLMResult(
             options=[_option(f"Satay {i}", "Chicken Satay", ["peanut sauce"]) for i in range(3)]
@@ -1013,3 +1055,42 @@ class TestMealEngine:
             )
         assert [a.name for a in alternatives] == ["Cucumber Salad"]
         assert NEVER in ai.complete.call_args_list[0].kwargs["prompt"]
+
+    @pytest.mark.asyncio
+    async def test_a_reassuring_side_blurb_keeps_the_alternative(self) -> None:
+        from bubbly_chef.workflows.meal.sides import generate_side_alternatives
+
+        ai = MagicMock()
+        ai.complete = AsyncMock(
+            return_value=MealSideAlternativesLLMResult(
+                alternatives=[
+                    MealDishOutlineLLM(
+                        role="side",
+                        name="Cucumber Salad",
+                        blurb="Crisp and peanut-free, no peanuts in sight.",
+                        key_ingredients=["cucumber"],
+                    ),
+                ]
+            )
+        )
+        repo = MagicMock()
+        repo.get_all_pantry_items = AsyncMock(return_value=[])
+        repo.get_meal = AsyncMock(return_value=None)
+        loaded = MagicMock()
+        loaded.dishes = [{"role": "main", "position": 0, "recipe": {"title": "Noodles"}}]
+        loaded.constraints_echo = MealConstraintsEcho()
+        loaded.title = "Night"
+        loaded.servings = 2
+        with (
+            patch("bubbly_chef.workflows.meal.sides._load_meal", AsyncMock(return_value=loaded)),
+            patch(
+                "bubbly_chef.workflows.meal.sides._pantry_items_for_matching",
+                AsyncMock(return_value=[]),
+            ),
+            profile(("peanut",)),
+        ):
+            alternatives = await generate_side_alternatives(
+                user_id=USER, meal_id="m1", position=None, repo=repo, ai_manager=ai
+            )
+        assert [a.name for a in alternatives] == ["Cucumber Salad"]
+        assert ai.complete.await_count == 1

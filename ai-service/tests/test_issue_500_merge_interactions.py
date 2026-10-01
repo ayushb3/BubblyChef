@@ -146,6 +146,135 @@ class TestRefineEditListIsGuarded:
         assert ai.complete.await_count == 1
         assert not any("peanut" in i.name.lower() for i in result.recipe.ingredients)
 
+    # -- the user's own saved recipe already contains the allergen -------------------
+
+    @staticmethod
+    def _satay_card() -> RecipeCard:
+        return RecipeCard(
+            id=uuid4(),
+            title="Chicken Satay",
+            description="Skewers.",
+            ingredients=[
+                Ingredient(name="Chicken", quantity=400, unit="g"),
+                Ingredient(name="Peanut sauce", quantity=3, unit="tbsp"),
+            ],
+            instructions=["Skewer the chicken.", "Grill, then brush with the peanut sauce."],
+        )
+
+    @pytest.mark.asyncio
+    async def test_refining_a_saved_recipe_that_has_the_allergen_is_not_refused(self) -> None:
+        """Rejected alternative: refusing every refine of such a recipe (decision 5)."""
+        ai = _scripted(_refine_output(added=["Chilli flakes"], title="Spicy Chicken Satay"))
+        result = await generate_recipe(
+            "make it spicier",
+            [],
+            ai,
+            previous_recipe=self._satay_card(),
+            allergies=["peanut"],
+        )
+        assert ai.complete.await_count == 1  # no regeneration for what the user already had
+        names = [i.name for i in result.recipe.ingredients]
+        assert "Peanut sauce" in names and "Chilli flakes" in names
+        assert result.allergy_warning == (
+            "This recipe contains peanut, which is on your allergy list."
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_chat_reply_carries_the_one_line_warning(self) -> None:
+        from bubbly_chef.workflows.recipe.nodes import refine_recipe_node
+
+        ai = _scripted(_refine_output(added=["Chilli flakes"], title="Spicy Chicken Satay"))
+        card = self._satay_card()
+        state: Any = {
+            "input_text": "make it spicier",
+            "user_id": USER,
+            "errors": [],
+            "warnings": [],
+            "session": {"metadata": {"picked_recipe": card.model_dump(mode="json")}},
+        }
+        repo = MagicMock()
+        repo.get_all_pantry_items = AsyncMock(return_value=[])
+        with (
+            patch(f"{_NODES}.get_ai_manager", MagicMock(return_value=ai)),
+            patch(f"{_NODES}.get_repository", AsyncMock(return_value=repo)),
+            patch(f"{_NODES}.get_stored_dietary_preferences", AsyncMock(return_value=[])),
+            _profile("peanut"),
+        ):
+            out = await refine_recipe_node(state)
+        assert out.get("proposal") is not None, out.get("assistant_message")
+        assert "This recipe contains peanut, which is on your allergy list." in (
+            out["assistant_message"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_refine_that_adds_a_new_allergen_to_such_a_recipe_is_still_rejected(
+        self,
+    ) -> None:
+        """The card already has peanut sauce; adding peanut butter is a NEW ingredient."""
+        ai = _scripted(
+            _refine_output(added=["Peanut butter"]), _refine_output(added=["Peanut butter"])
+        )
+        with pytest.raises(AllergenViolation):
+            await generate_recipe(
+                "creamier please",
+                [],
+                ai,
+                previous_recipe=self._satay_card(),
+                allergies=["peanut"],
+            )
+        assert ai.complete.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_a_new_allergen_is_regenerated_away_even_when_the_card_already_has_one(
+        self,
+    ) -> None:
+        ai = _scripted(
+            _refine_output(added=["Crushed peanuts"]), _refine_output(added=["Lime wedges"])
+        )
+        result = await generate_recipe(
+            "add some crunch",
+            [],
+            ai,
+            previous_recipe=self._satay_card(),
+            allergies=["peanut"],
+        )
+        names = [i.name for i in result.recipe.ingredients]
+        assert "Lime wedges" in names and "Crushed peanuts" not in names
+        assert "Peanut sauce" in names
+        assert result.allergy_warning is not None
+
+    @pytest.mark.asyncio
+    async def test_a_rescaled_allergen_ingredient_is_not_new(self) -> None:
+        out = _refine_output()
+        out.changed = [AIRecipeIngredient(name="Peanut sauce", quantity=6, unit="tbsp")]
+        ai = _scripted(out)
+        result = await generate_recipe(
+            "double the sauce", [], ai, previous_recipe=self._satay_card(), allergies=["peanut"]
+        )
+        assert ai.complete.await_count == 1
+        sauce = next(i for i in result.recipe.ingredients if i.name == "Peanut sauce")
+        assert sauce.quantity == 6
+
+    @pytest.mark.asyncio
+    async def test_no_warning_when_the_card_carries_no_allergen(self) -> None:
+        ai = _scripted(_refine_output(added=["Sesame seeds"]))
+        result = await generate_recipe(
+            "add crunch", [], ai, previous_recipe=_noodle_card(), allergies=["peanut"]
+        )
+        assert result.allergy_warning is None
+
+    @pytest.mark.asyncio
+    async def test_removing_the_allergen_clears_the_warning(self) -> None:
+        ai = _scripted(_refine_output(removed=["Peanut sauce"]))
+        result = await generate_recipe(
+            "drop the peanut sauce",
+            [],
+            ai,
+            previous_recipe=self._satay_card(),
+            allergies=["peanut"],
+        )
+        assert result.allergy_warning is None
+
     @pytest.mark.asyncio
     async def test_no_allergies_leaves_the_refine_untouched(self) -> None:
         ai = _scripted(_refine_output(added=["Crushed peanuts"]))
