@@ -48,7 +48,25 @@ LISTENERS="$STATE/listeners"
 # The probe runs in a subshell, which closes the connection when it exits. Do not
 # add an `exec ... 2>/dev/null` here: outside a subshell that silences stderr for
 # the rest of the script, which hid every error message after the first probe.
-port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+port_listening() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
+# A port is busy if something answers on 127.0.0.1 OR the process table lists a
+# listener on it. The second catches a holder bound to another interface (for
+# example ::1), which the socket probe cannot see but which still makes the
+# server's own bind fail (issue #870).
+port_busy() { port_listening "$1" || [ -n "$(listening_pids "$1")" ]; }
+
+# "pid 123" or "pids 123, 456" for whatever holds a port, or a note that it could
+# not be identified (no netstat/lsof/ss, or another user's process).
+describe_holders() {
+  local pids
+  pids=$(listening_pids "$1" | tr '\n' ' ' | sed 's/ *$//; s/ /, /g')
+  case "$pids" in
+    "") echo "an unidentified process" ;;
+    *,*) echo "pids $pids" ;;
+    *) echo "pid $pids" ;;
+  esac
+}
 
 wait_for() {
   local url=$1 name=$2 tries=${3:-60}
@@ -94,8 +112,8 @@ fail_up() {
 cmd_up() {
   for p in "$PORT" "$AI_PORT"; do
     if port_busy "$p"; then
-      echo "Port $p is already in use. If an earlier '$0 up' started it, run '$0 down';" >&2
-      echo "otherwise something else owns it — find and stop it yourself, then retry." >&2
+      echo "Port $p is already in use by $(describe_holders "$p"). If an earlier '$0 up' started it, run '$0 down';" >&2
+      echo "otherwise something else owns it — stop it yourself, then retry." >&2
       exit 1
     fi
   done
@@ -112,6 +130,8 @@ cmd_up() {
       >"$STATE/ai-service.log" 2>&1 &
   )
   wait_for "$AI_URL/health" ai-service 30 || fail_up "ai-service did not answer" "$STATE/ai-service.log"
+  confirm_listener ai-service "$AI_PORT" "$STATE/ai-service.log" \
+    || fail_up "ai-service lost port $AI_PORT to another process" "$STATE/ai-service.log"
   record_listener "$AI_PORT"
 
   echo "== nextjs production build (AI at $AI_URL)"
@@ -141,6 +161,8 @@ cmd_up() {
       >"$STATE/nextjs.log" 2>&1 &
   )
   wait_for "$WEB_URL/api/health" nextjs 60 || fail_up "nextjs did not answer" "$STATE/nextjs.log"
+  confirm_listener nextjs "$PORT" "$STATE/nextjs.log" \
+    || fail_up "nextjs lost port $PORT to another process" "$STATE/nextjs.log"
   record_listener "$PORT"
 
   echo
@@ -172,17 +194,28 @@ cmd_status() {
 # parse, so it silently drops the whole process and `lsof -i` never listed the
 # frontend at all. Nothing got recorded, `down` never tried, and the leftover
 # server was then reported as somebody else's (issue #477).
+#
+# Which lookup runs is picked by port_tool: netstat on Windows (Git Bash has no
+# lsof/ss/pgrep), /proc on Linux, then lsof, then ss. STACK_PORT_TOOL forces one
+# (netstat|proc|lsof|ss|none); the tests use it to exercise every path on any OS.
+port_tool() {
+  if [ -n "${STACK_PORT_TOOL:-}" ]; then echo "$STACK_PORT_TOOL"
+  elif command -v taskkill >/dev/null 2>&1; then echo netstat
+  elif [ -r /proc/net/tcp ]; then echo proc
+  elif command -v lsof >/dev/null 2>&1; then echo lsof
+  elif command -v ss >/dev/null 2>&1; then echo ss
+  else echo none
+  fi
+}
+
 listening_pids() {
   local port=$1
-  if command -v taskkill >/dev/null 2>&1; then
-    netstat -ano 2>/dev/null | awk -v p=":$port" '$2 ~ p"$" && $4=="LISTENING" {print $5}' | sort -u
-  elif [ -r /proc/net/tcp ]; then
-    proc_listening_pids "$port"
-  elif command -v lsof >/dev/null 2>&1; then
-    lsof -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u
-  elif command -v ss >/dev/null 2>&1; then
-    ss -Hltnp "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u
-  fi
+  case "$(port_tool)" in
+    netstat) netstat -ano 2>/dev/null | awk -v p=":$port" '$2 ~ p"$" && $4=="LISTENING" {print $5}' | sort -u ;;
+    proc) proc_listening_pids "$port" ;;
+    lsof) lsof -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u ;;
+    ss) ss -Hltnp "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u ;;
+  esac
 }
 
 # Linux only. /proc/net/tcp{,6} list every socket with its state (0A = LISTEN)
@@ -202,6 +235,19 @@ proc_listening_pids() {
         BEGIN { n = split(want, a, " "); for (i = 1; i <= n; i++) w["socket:[" a[i] "]"] = 1 }
         ($2 in w) { split($1, p, "/"); print p[3] }' \
     | sort -u
+}
+
+# `up` checked the port was free, but a third process can still take it before
+# the service binds. The service then fails with EADDRINUSE (or exits), yet the
+# health check is answered by the OTHER process, so `up` would report success and
+# record that stranger's PID. A service that lost the race always says so in its
+# own log, so read it: this is the check that the listener is the one we started.
+confirm_listener() {
+  local name=$1 port=$2 log=$3
+  if [ -f "$log" ] && grep -qiE 'EADDRINUSE|address already in use|error while attempting to bind|Errno (98|48|10048)' "$log"; then
+    echo "  $name could not bind port $port: another process holds it ($(describe_holders "$port"))" >&2
+    return 1
+  fi
 }
 
 record_listener() {
@@ -250,10 +296,13 @@ cmd_down() {
   echo "stopped: nothing listening on $PORT or $AI_PORT"
 }
 
-case "${1:-}" in
-  ports)  cmd_ports ;;
-  up)     cmd_up ;;
-  status) cmd_status ;;
-  down)   cmd_down ;;
-  *) echo "usage: $0 {ports|up|status|down}" >&2; exit 2 ;;
-esac
+# Sourcing this file (the tests do) defines the functions and runs nothing.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  case "${1:-}" in
+    ports)  cmd_ports ;;
+    up)     cmd_up ;;
+    status) cmd_status ;;
+    down)   cmd_down ;;
+    *) echo "usage: $0 {ports|up|status|down}" >&2; exit 2 ;;
+  esac
+fi
