@@ -126,6 +126,7 @@ class GeminiProvider(AIProvider):
         vision_timeout: float = 18.0,
         vision_max_retries: int = 1,
         vision_retry_backoff: float = 1.0,
+        video_timeout: float = 60.0,
     ):
         """
         Initialize Gemini provider.
@@ -146,6 +147,10 @@ class GeminiProvider(AIProvider):
                 internal error). 4xx responses (auth, malformed request, rate
                 limit) are not retried — retrying them can't help.
             vision_retry_backoff: Seconds to wait before a vision retry.
+            video_timeout: Request timeout in seconds for a video call (issue
+                #528). Gemini watching a video from its URL is far slower than
+                a text or image call, so it has its own limit. Video calls are
+                not retried.
         """
         self.api_key = api_key
         self.model = model
@@ -153,6 +158,7 @@ class GeminiProvider(AIProvider):
         self.vision_timeout = vision_timeout
         self.vision_max_retries = vision_max_retries
         self.vision_retry_backoff = vision_retry_backoff
+        self.video_timeout = video_timeout
         self._client = httpx.AsyncClient(timeout=timeout)
         # #515: the key used to travel as a `?key=...` query param, which
         # httpx (and anything logging request URLs, e.g. Railway/httpx's own
@@ -276,6 +282,10 @@ Return ONLY the JSON, no markdown formatting or extra text."""
 
     @property
     def supports_vision(self) -> bool:
+        return True
+
+    @property
+    def supports_video(self) -> bool:
         return True
 
     @property
@@ -539,6 +549,109 @@ Return ONLY the JSON, no markdown formatting or extra text."""
                 ) from e
 
         assert response is not None  # loop always ends via break or raise
+
+        data = response.json()
+        try:
+            text = data["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError) as e:
+            raise StructuredOutputError(f"Unexpected Gemini response format: {data}") from e
+
+        if not response_schema:
+            return str(text)
+
+        try:
+            cleaned = text.strip()
+            if cleaned.startswith("```json"):
+                cleaned = cleaned[7:]
+            if cleaned.startswith("```"):
+                cleaned = cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+
+            parsed = json.loads(cleaned)
+            result: T = response_schema.model_validate(parsed)
+            return result
+        except json.JSONDecodeError as e:
+            raise StructuredOutputError(f"Failed to parse JSON: {text}") from e
+        except ValidationError as e:
+            raise StructuredOutputError(f"Schema validation failed: {e}") from e
+
+    async def video_complete(
+        self,
+        prompt: str,
+        video_url: str,
+        response_schema: type[T] | None = None,
+        temperature: float = 0.3,
+    ) -> T | str:
+        """Generate a completion from a public video URL + text prompt (issue #528).
+
+        Gemini fetches and watches the video itself (visual + audio), so
+        nothing is downloaded or transcribed here. One attempt, on the
+        dedicated ``video_timeout``: a retry would double a slow, billed call.
+        A private / removed / age-restricted video comes back as HTTP 400 and
+        is classified ``bad_request``.
+        """
+        url = f"{self.BASE_URL}/models/{self.model}:generateContent"
+
+        full_prompt = prompt
+        if response_schema:
+            schema_json = json.dumps(response_schema.model_json_schema(), indent=2)
+            full_prompt = f"""{prompt}
+
+Respond with valid JSON matching this schema:
+```json
+{schema_json}
+```
+
+Return ONLY the JSON, no markdown formatting or extra text."""
+
+        generation_config: dict[str, Any] = {
+            "temperature": temperature,
+            "topP": 0.95,
+            "topK": 40,
+            # ~66 tokens/frame instead of ~258 — keeps a Short near half a cent.
+            "mediaResolution": "MEDIA_RESOLUTION_LOW",
+        }
+        if response_schema:
+            generation_config["responseMimeType"] = "application/json"
+
+        payload: dict[str, Any] = {
+            "contents": [
+                {
+                    "parts": [
+                        {"file_data": {"file_uri": video_url}},
+                        {"text": full_prompt},
+                    ]
+                }
+            ],
+            "generationConfig": generation_config,
+        }
+
+        try:
+            response = await self._client.post(
+                url,
+                json=payload,
+                headers=self._auth_headers,
+                timeout=self.video_timeout,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            full_body = e.response.text if hasattr(e.response, "text") else str(e)
+            status = e.response.status_code
+            raise ProviderUnavailableError(
+                f"Gemini [{self.model}] video API error {status}: {full_body[:500]}",
+                kind=_classify_http_error(status, full_body),
+                status_code=status,
+            ) from e
+        except httpx.RequestError as e:
+            video_kind: ProviderFailureKind = (
+                "timeout" if isinstance(e, httpx.TimeoutException) else "network"
+            )
+            raise ProviderUnavailableError(
+                f"Gemini [{self.model}] video connection error: {type(e).__name__}: {e}",
+                kind=video_kind,
+            ) from e
 
         data = response.json()
         try:

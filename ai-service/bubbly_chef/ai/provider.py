@@ -210,6 +210,27 @@ class AIProvider(ABC):
         """Whether this provider supports image input."""
         return False
 
+    async def video_complete(
+        self,
+        prompt: str,
+        video_url: str,
+        response_schema: type[T] | None = None,
+        temperature: float = 0.3,
+    ) -> T | str:
+        """
+        Generate a completion from a video (by public URL) + text prompt.
+
+        Default: raises ProviderUnavailableError — providers that can watch a
+        video override this. Callers should check supports_video before calling
+        (issue #528).
+        """
+        raise ProviderUnavailableError(f"{self.name} does not support video", kind="bad_request")
+
+    @property
+    def supports_video(self) -> bool:
+        """Whether this provider can watch a video from its URL."""
+        return False
+
     @property
     def supports_tool_calling(self) -> bool:
         """Whether this provider supports tool-calling (function calling).

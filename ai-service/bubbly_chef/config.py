@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     gemini_vision_max_retries: int = Field(default=1, ge=0)
     gemini_vision_retry_backoff_seconds: float = Field(default=1.0, ge=0)
 
+    # Gemini video (YouTube recipe import) — issue #528. Gemini watches the
+    # video from its URL, which takes noticeably longer than a text or image
+    # call, so it gets its own per-call timeout. One attempt only: a retry
+    # would double a slow, billed call. The recipe import modal gives up at
+    # 90s (nextjs RecipeImportModal), so this stays comfortably under it.
+    gemini_video_timeout_seconds: float = Field(default=60.0, gt=0)
+
     # Whole-request budget for POST /v1/scan/receipt — issue #481. A scan is
     # two AI calls in one HTTP request: the vision/OCR leg above, then a
     # structured text parse of the OCR output. #476 bounded only the first

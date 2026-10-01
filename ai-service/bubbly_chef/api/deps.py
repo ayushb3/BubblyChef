@@ -48,6 +48,7 @@ def get_ai_manager() -> AIManager:
                 vision_timeout=settings.gemini_vision_timeout_seconds,
                 vision_max_retries=settings.gemini_vision_max_retries,
                 vision_retry_backoff=settings.gemini_vision_retry_backoff_seconds,
+                video_timeout=settings.gemini_video_timeout_seconds,
             )
         )
         logger.info(f"Registered Gemini provider (model={settings.gemini_model})")
