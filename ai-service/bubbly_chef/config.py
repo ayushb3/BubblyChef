@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     # AI providers
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.1-flash-lite"
+    # Optional second Gemini key (issue #737), ideally from its own Google
+    # project with its own spend cap. Registered after the primary and before
+    # Ollama, and tried only when the primary fails with quota_exhausted, auth
+    # or rate_limited. Empty (the default) means no second provider at all.
+    gemini_fallback_api_key: str = ""
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"
